@@ -3,7 +3,10 @@
 mod aggregate_groups;
 mod aggregate_zero;
 mod append_only;
+mod lexical_scope;
 mod map_fusion;
+mod static_candidates;
+pub use static_candidates::{static_candidates, StaticCandidates};
 pub use map_fusion::{fuse_expensive_maps, map_fusion_fragments, map_fusion_groups, FusionMember};
 mod star_joins;
 pub use star_joins::{expand_star_join_layer, find_join_trees, remove_star_joins, replace_star_joins, StarJoinTree};

@@ -182,12 +182,15 @@ public class ConstantExpressions extends InnerVisitor {
             this.setConstant(expression);
     }
 
+    public static CompilationError untypedArray(DBSPArrayExpression expression) {
+        return new CompilationError("Could not infer a type for array elements; " +
+                "please specify it using CAST(array AS X ARRAY)", expression.getNode());
+    }
+
     @Override
     public void postorder(DBSPArrayExpression expression) {
-        if (expression.getElementType().code == DBSPTypeCode.ANY) {
-            throw new CompilationError("Could not infer a type for array elements; " +
-                    "please specify it using CAST(array AS X ARRAY)", expression.getNode());
-        }
+        if (expression.getElementType().code == DBSPTypeCode.ANY)
+            throw untypedArray(expression);
         if (expression.isConstant())
             this.setConstant(expression);
     }

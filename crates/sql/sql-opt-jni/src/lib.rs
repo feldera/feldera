@@ -139,15 +139,16 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "FuseExpensiveMaps/Fragments" => {
-            // The simplified closure has its own identities and can be analyzed in isolation.
+        "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {
             let empty = Circuit::from_json(json!({
                 "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
             }))?;
             let (arena, roots) = empty.with_inner_roots([feldera_sql_ir::parse_json(input)?])?;
-            return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_fragments(
-                &arena, roots[0],
-            )?)?);
+            return if pass == "ImplementStatics/Candidates" {
+                Ok(serde_json::to_value(feldera_sql_opt::static_candidates(&arena, roots[0])?)?)
+            } else {
+                Ok(serde_json::to_value(feldera_sql_opt::map_fusion_fragments(&arena, roots[0])?)?)
+            };
         }
         "FuseExpensiveMaps/Groups" => {
             let fingerprints: Vec<Vec<usize>> = serde_json::from_slice(input)?;

@@ -1,9 +1,8 @@
-//! Resolve the declarations visible to each variable in a simplified map closure.
-use super::expression_children;
+//! Lexical declarations and captures in a serialized closure.
 use feldera_sql_ir::{Circuit, Error, ExpressionKind as Expr, InnerKind, Node, NodeId};
 use std::collections::{HashMap, HashSet};
 
-pub(super) type References = HashMap<NodeId, NodeId>;
+pub(crate) type References = HashMap<NodeId, NodeId>;
 
 fn name<'a>(node: &'a Node, field: &str) -> Result<&'a str, Error> {
     node.data(field)
@@ -30,7 +29,7 @@ enum Visit<'a> {
     Restore(usize),
 }
 
-pub(super) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, Error> {
+pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, Error> {
     let mut references = HashMap::new();
     let mut bindings = Vec::new();
     let mut path = HashSet::new();
@@ -52,7 +51,7 @@ pub(super) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, 
             }
         };
         if !path.insert(id) {
-            return Err(Error::new("cycle in a map closure"));
+            return Err(Error::new("cycle in a closure"));
         }
         pending.push(Visit::Leave(id));
         let node = circuit.node(id).expect("validated inner edge");
@@ -63,9 +62,7 @@ pub(super) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, 
                     .iter()
                     .rev()
                     .find_map(|&(bound, id)| (bound == variable).then_some(id))
-                    .ok_or_else(|| {
-                        Error::new(format!("unbound variable {variable} in map closure"))
-                    })?;
+                    .ok_or_else(|| Error::new(format!("unbound variable {variable} in closure")))?;
                 record(&mut references, id, declaration)?;
             }
             Some(InnerKind::Expression(Expr::Closure)) => {
@@ -103,4 +100,47 @@ pub(super) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, 
         }
     }
     Ok(references)
+}
+
+pub(crate) fn expression_children(node: &Node) -> Vec<NodeId> {
+    let mut children = Vec::new();
+    if !matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
+        for (name, field) in node.fields() {
+            if !matches!(name, "type" | "originalStruct") {
+                field.collect_inner_edges(&mut children);
+            }
+        }
+    }
+    children
+}
+
+/// A movable expression may refer to its own declarations and an optional outer parameter.
+pub(crate) fn closed_over(
+    circuit: &Circuit,
+    root: NodeId,
+    parameter: Option<NodeId>,
+    references: &References,
+) -> Result<bool, Error> {
+    let mut inside = HashSet::new();
+    let mut required = Vec::new();
+    let mut pending = vec![root];
+    while let Some(id) = pending.pop() {
+        if !inside.insert(id) {
+            continue;
+        }
+        let node = circuit.node(id).expect("validated inner edge");
+        if matches!(
+            node.inner_kind(),
+            Some(InnerKind::Expression(Expr::VariablePath))
+        ) {
+            let declaration = references
+                .get(&id)
+                .ok_or_else(|| Error::new("unresolved variable"))?;
+            required.push(*declaration);
+        }
+        pending.extend(expression_children(node));
+    }
+    Ok(required
+        .into_iter()
+        .all(|id| Some(id) == parameter || inside.contains(&id)))
 }

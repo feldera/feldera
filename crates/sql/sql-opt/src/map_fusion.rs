@@ -1,7 +1,6 @@
 //! Share the distinct output columns of sibling maps identified by the expensive-expression analysis.
 mod fragments;
 mod groups;
-mod references;
 
 pub use fragments::map_fusion_fragments;
 pub use groups::map_fusion_groups;
@@ -9,24 +8,12 @@ pub use groups::map_fusion_groups;
 use crate::{rebuild::ProjectionNames, stream_rewrites::body_members, terms::Terms};
 use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
-    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind, Field, InnerKind, Node,
+    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind, Field, InnerKind,
     NodeId, OperatorKind, OutputPort,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
-
-fn expression_children(node: &Node) -> Vec<NodeId> {
-    let mut children = Vec::new();
-    if !matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
-        for (name, field) in node.fields() {
-            if !matches!(name, "type" | "originalStruct") {
-                field.collect_inner_edges(&mut children);
-            }
-        }
-    }
-    children
-}
 
 /// The analysis simplifies each member's closure before deciding which siblings to fuse.
 #[derive(Deserialize)]

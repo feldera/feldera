@@ -86,6 +86,7 @@ public class EquivalenceTests {
      * 'withoutCells' when statics are declared. */
     static void assertCellsBecomeStatics(
             DBSPCompiler compiler, IDBSPInnerNode withCells, IDBSPInnerNode withoutCells) {
+        compiler.options.ioOptions.rustOptimizerPasses |= Boolean.getBoolean("feldera.optimizer.compareRustStatics");
         for (boolean declare : new boolean[] { true, false }) {
             DBSPExpression result = new ImplementStatics(compiler, declare).apply(withCells).to(DBSPExpression.class);
             assertCseVariables(compiler, result, 0);
@@ -506,6 +507,7 @@ public class EquivalenceTests {
         DBSPExpression lets = new DBSPLetExpression(p, new DBSPLazyExpression(closureValue),
                 new DBSPLetExpression(q, new DBSPLazyExpression(tupleValue), body));
         DBSPClosureExpression closure = lets.closure(t);
+        compiler.options.ioOptions.rustOptimizerPasses |= Boolean.getBoolean("feldera.optimizer.compareRustStatics");
         for (boolean declare : new boolean[] { true, false }) {
             IDBSPInnerNode result = new ImplementStatics(compiler, declare).apply(closure);
             assertCseVariables(compiler, result, 2);

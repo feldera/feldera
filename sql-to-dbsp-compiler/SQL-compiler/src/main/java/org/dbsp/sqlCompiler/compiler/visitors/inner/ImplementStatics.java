@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -49,10 +50,11 @@ public class ImplementStatics extends ExpressionTranslator {
     final boolean declare;
     @Nullable
     ConstantExpressions constants = null;
+    @Nullable RustCircuitPass.StaticPlan nativePlan;
     final ResolveReferences resolver;
     /** Maps the declaration of each variable bound to a lazy cell with a constant value
      * to a reference to the static that replaces the cell */
-    final Map<IDBSPDeclaration, DBSPExpression> constantCells;
+    final Map<Long, DBSPExpression> constantCells;
 
     /** Used to renumber indexes in {@link org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression}.
      * These expressions hold an index within the operator they belong to; when made global, the index
@@ -105,9 +107,15 @@ public class ImplementStatics extends ExpressionTranslator {
     @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
         if (this.context.isEmpty()) {
-            this.constants = new ConstantExpressions(this.compiler);
-            this.constants.apply(expression);
-            this.resolver.apply(expression);
+            if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                this.nativePlan = RustCircuitPass.staticCandidates(this.compiler, expression);
+                this.constants = null;
+            } else {
+                this.nativePlan = null;
+                this.constants = new ConstantExpressions(this.compiler);
+                this.constants.apply(expression);
+                this.resolver.apply(expression);
+            }
             this.constantCells.clear();
         }
         return VisitDecision.CONTINUE;
@@ -150,6 +158,8 @@ public class ImplementStatics extends ExpressionTranslator {
     /** True if a static should hold the value of 'expression': a static can hold the value,
      * and computing it once saves work. */
     boolean shouldBeStatic(DBSPExpression expression) {
+        if (this.nativePlan != null)
+            return this.nativePlan.candidates().contains(expression.id);
         if (expression.is(DBSPClosureExpression.class) ||
                 expression.is(DBSPPathExpression.class) ||
                 expression.is(DBSPLiteral.class))
@@ -191,14 +201,16 @@ public class ImplementStatics extends ExpressionTranslator {
      * @return True if 'initializer' is such a cell. */
     boolean makeCellStatic(IDBSPDeclaration declaration, @Nullable DBSPExpression initializer) {
         // A node shared by two parents is visited twice
-        if (this.constantCells.containsKey(declaration))
+        if (this.constantCells.containsKey(declaration.getId()))
             return true;
         if (initializer == null || !initializer.is(DBSPLazyExpression.class))
             return false;
         DBSPExpression value = initializer.to(DBSPLazyExpression.class).expression;
-        if (!this.shouldBeStatic(value))
+        boolean replace = this.nativePlan == null ? this.shouldBeStatic(value) :
+                this.nativePlan.cells().contains(declaration.getId());
+        if (!replace)
             return false;
-        Utilities.putNew(this.constantCells, declaration, this.makeStatic(value));
+        Utilities.putNew(this.constantCells, declaration.getId(), this.makeStatic(value));
         return true;
     }
 
@@ -228,7 +240,7 @@ public class ImplementStatics extends ExpressionTranslator {
         List<DBSPStatement> statements = new ArrayList<>();
         for (DBSPStatement statement : expression.contents) {
             DBSPLetStatement let = statement.as(DBSPLetStatement.class);
-            if (let != null && this.constantCells.containsKey(let))
+            if (let != null && this.constantCells.containsKey(let.id))
                 continue;
             statements.add(this.get(statement).to(DBSPStatement.class));
         }
@@ -243,10 +255,14 @@ public class ImplementStatics extends ExpressionTranslator {
         DBSPVariablePath var = expression.as(DBSPVariablePath.class);
         if (var == null)
             return null;
+        if (this.nativePlan != null) {
+            Long declaration = this.nativePlan.reads().get(var.id);
+            return declaration == null ? null : this.constantCells.get(declaration);
+        }
         IDBSPDeclaration declaration = this.resolver.reference.get(var);
         if (declaration == null)
             return null;
-        return this.constantCells.get(declaration);
+        return this.constantCells.get(declaration.getId());
     }
 
     @Override

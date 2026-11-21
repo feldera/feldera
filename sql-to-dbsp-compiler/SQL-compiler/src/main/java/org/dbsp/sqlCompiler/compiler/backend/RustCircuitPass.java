@@ -71,7 +71,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.OrderErrorConsumers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -257,21 +259,45 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static List<DBSPExpression> mapFusionFragments(DBSPCompiler compiler,
-            DBSPClosureExpression function) {
-        var writer = new ToJsonInnerVisitor(compiler, JsonStream.compactCircuit(), 0);
-        var nodes = new HashMap<Long, IDBSPInnerNode>();
-        writer.liveNodes = nodes;
-        function.accept(writer);
+    private record ClosureSnapshot(byte[] graph, Map<Long, IDBSPInnerNode> nodes) {
+        static ClosureSnapshot capture(DBSPCompiler compiler, DBSPClosureExpression function) {
+            var writer = new ToJsonInnerVisitor(compiler, JsonStream.compactCircuit(), 0);
+            var nodes = new HashMap<Long, IDBSPInnerNode>();
+            writer.liveNodes = nodes;
+            function.accept(writer);
+            return new ClosureSnapshot(writer.stream.toString().getBytes(StandardCharsets.UTF_8), nodes);
+        }
+
+        byte[] analyze(String pass) {
+            return transformWithContext(pass, this.graph, 0, "", EMPTY_CONTEXT);
+        }
+    }
+
+    public static List<DBSPExpression> mapFusionFragments(DBSPCompiler compiler, DBSPClosureExpression function) {
+        var snapshot = ClosureSnapshot.capture(compiler, function);
         try {
-            byte[] reply = transformWithContext("FuseExpensiveMaps/Fragments",
-                    writer.stream.toString().getBytes(StandardCharsets.UTF_8), 0, "", EMPTY_CONTEXT);
             var fragments = new ArrayList<DBSPExpression>();
-            for (long id : MAPPER.readValue(reply, long[].class))
-                fragments.add(Utilities.getExists(nodes, id).to(DBSPExpression.class));
+            for (long id : MAPPER.readValue(snapshot.analyze("FuseExpensiveMaps/Fragments"), long[].class))
+                fragments.add(Utilities.getExists(snapshot.nodes, id).to(DBSPExpression.class));
             return fragments;
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid map fusion fragments from Rust", error);
+        }
+    }
+
+    public record StaticPlan(Set<Long> candidates, Set<Long> cells, Map<Long, Long> reads) {}
+
+    public static StaticPlan staticCandidates(DBSPCompiler compiler, DBSPClosureExpression closure) {
+        var snapshot = ClosureSnapshot.capture(compiler, closure);
+        try {
+            var result = MAPPER.readTree(snapshot.analyze("ImplementStatics/Candidates"));
+            if (result.has("untyped_array")) {
+                var array = Utilities.getExists(snapshot.nodes, result.required("untyped_array").longValue());
+                throw ConstantExpressions.untypedArray(array.to(DBSPArrayExpression.class));
+            }
+            return MAPPER.treeToValue(result.required("plan"), StaticPlan.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid static initializer candidates from Rust", error);
         }
     }
 
