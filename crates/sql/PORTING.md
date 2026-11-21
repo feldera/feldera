@@ -808,6 +808,13 @@ containing `LATENESS` or `NOW()` matched through limiter insertion and cleanup,
 including the generated-name counter and diagnostics.
 [Monotonicity and filter bounds](evidence/p3-monotone-filter-bounds.json)
 
+Rust also selects the lower bound for binary arithmetic, extrema and
+`COALESCE`. A nullable operand can bound `MAX_IGNORE_NULLS` only when the
+expression cannot produce NULL. Time-of-day arithmetic can wrap at midnight.
+The expanded-graph comparison matched Java on all 550 selected programs,
+including tuple-valued expressions with no lower bound.
+[Binary waterline comparisons](evidence/p3-binary-waterlines.json)
+
 Rust chooses the key for each candidate left-join chain and decides whether
 deferring columns saves enough work. Across 17 classic and 17 Gen-2 cases,
 Java and Rust selected the same 20 chains and agreed on every column layout.

@@ -249,8 +249,8 @@
   "compiler": {
     "profile": "Linux ARM64, offline Maven package and release Rust tools",
     "pass_kinds": 99,
-    "jar_sha256": "88f3af009c5d3bdb27ee38b2ba4db69338e466e054c4fce70223e7c6ca234581",
-    "driver_sha256": "591ad09ff78222724a1a9e89e25295b1cdc3f261764edb9082f17638d218ec5b",
-    "optimizer_library_sha256": "7bb141406da369758c7f757cc9ef90ef45a3290fe1f7e85a03afee35aba992af"
+    "jar_sha256": "9af643fab8e7a6330dd18e9647da578cc694db152d8b4481deef7eebca990130",
+    "driver_sha256": "c7adbc70ebb0238821478539fa60bf4a8e441d493ddbb8b59b78d34cf7643e2d",
+    "optimizer_library_sha256": "cefc30c6a43a4c63a91f589c1cba1a1c7bc08944452965cbd35fe847cb424585"
   }
 }

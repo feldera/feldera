@@ -255,6 +255,20 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public record FilterBound(int column, DBSPOpcode comparison, DBSPExpression value) {}
 
+    public enum BinaryDomain { Scalar, Temporal, TimeOfDay }
+    public enum BinaryWaterline { None, Left, Right, Both, InheritLeft, InheritRight, Coalesce }
+    public record WaterlineOperand(boolean monotone, boolean constant, boolean positiveLiteral, boolean neverNull) {}
+    public record BinaryBounds(BinaryDomain domain, DBSPOpcode opcode, WaterlineOperand left, WaterlineOperand right) {}
+
+    public static BinaryWaterline binaryWaterline(BinaryBounds bounds) {
+        try {
+            var reply = transformWithContext("Monotonicity/Binary", MAPPER.writeValueAsBytes(bounds), 0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, BinaryWaterline.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid binary waterline rule from Rust", error);
+        }
+    }
+
     public static List<FilterBound> filterLowerBounds(DBSPCompiler compiler, DBSPClosureExpression closure) {
         var reply = invokeLowering(compiler, "Monotonicity/FilterBounds", closure);
         var decoder = expressionDecoder(reply.writer);

@@ -290,6 +290,19 @@ fn transform(
         return Ok(json!({"needs_full_snapshot":required}));
     }
     match pass {
+        "Monotonicity/Binary" => {
+            #[derive(serde::Deserialize)]
+            struct Binary<'a> {
+                domain: feldera_sql_opt::BinaryDomain,
+                opcode: &'a str,
+                left: feldera_sql_opt::WaterlineOperand,
+                right: feldera_sql_opt::WaterlineOperand,
+            }
+            let facts: Binary = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::binary_waterline(
+                facts.domain, facts.opcode, facts.left, facts.right,
+            ))?);
+        }
         "InnerCSE/Bindings" => {
             let scope: feldera_sql_opt::BindingScope = serde_json::from_slice(state)?;
             let bindings: Vec<feldera_sql_opt::PendingBinding> = serde_json::from_slice(input)?;

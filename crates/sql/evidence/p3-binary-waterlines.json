@@ -1,0 +1,28 @@
+{
+  "scope": "Rust chooses lower bounds for binary scalar arithmetic, COALESCE, nullable extrema and temporal arithmetic during expanded-graph monotonicity analysis. Java constructs the reduced expressions. Both compilers insert and clean up limiters on the original graph.",
+  "selection": "All frozen programs whose submitted SQL contains LATENESS or NOW(), case insensitive.",
+  "comparison": "Same detached S2, canonical graphs on entry and exit from MonotoneAnalyzer, pass placement, generated names and diagnostics.",
+  "populations": {
+    "classic": {
+      "cases": 291,
+      "invocations": 291,
+      "added_operators": 11729,
+      "cases_gaining_operators": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "32c419fed45691543682f5ff1710fe58d692a7e39fddb992bbc80f950b387b58",
+      "rust_gzip_sha256": "85ee42b78783ab6f0d908efa7049194f81871b40b31d615cb6b49c617e6c078a"
+    },
+    "gen2": {
+      "cases": 259,
+      "invocations": 259,
+      "added_operators": 11575,
+      "cases_gaining_operators": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "027cb8db5e9daa98efa88401cb735bd4683f57724790703c23ff560ed75f227d",
+      "rust_gzip_sha256": "f9dd6dd087e8642861bdebc470e888235a61d7c48b04c095b7eecf2213807e7f"
+    }
+  },
+  "compiler_jar_sha256": "9af643fab8e7a6330dd18e9647da578cc694db152d8b4481deef7eebca990130",
+  "optimizer_library_sha256": "cefc30c6a43a4c63a91f589c1cba1a1c7bc08944452965cbd35fe847cb424585",
+  "comparator_sha256": "d211c937e8d064fb98a82c41462a412e63a4675bb2c1f60fa722872fe41ced93"
+}

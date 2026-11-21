@@ -12,6 +12,9 @@ mod append_only;
 mod lexical_scope;
 mod map_fusion;
 mod monotonicity;
+pub use monotonicity::binary::{
+    binary_waterline, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
+};
 pub use monotonicity::{filter_lower_bounds, monotone_identity, FilterBound};
 mod static_candidates;
 pub use static_candidates::{static_candidates, StaticCandidates};

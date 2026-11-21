@@ -1,4 +1,5 @@
 //! Transfer almost-monotone columns through identity operators and filter comparisons.
+pub mod binary;
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId, TypeId,
     TypeKind,

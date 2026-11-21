@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -632,8 +633,6 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
     @Override
     public void postorder(DBSPTimeAddSub expression) {
-        MonotoneExpression left = this.get(expression.left);
-        MonotoneExpression right = this.get(expression.right);
         DBSPExpression reduced = null;
         if (this.constantExpressions.contains(expression.left) &&
                 this.constantExpressions.contains(expression.right))
@@ -641,6 +640,13 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
         // TIME plus or minus an INTERVAL wraps around midnight, so it is not monotone
         boolean wraps = expression.type.is(DBSPTypeTime.class);
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var domain = wraps ? RustCircuitPass.BinaryDomain.TimeOfDay : RustCircuitPass.BinaryDomain.Temporal;
+            this.setBinaryWaterline(expression, domain, expression.opcode, expression.left, expression.right);
+            return;
+        }
+        MonotoneExpression left = this.get(expression.left);
+        MonotoneExpression right = this.get(expression.right);
         boolean lm = !wraps && left.mayBeMonotone();
         boolean rm = !wraps && right.mayBeMonotone();
 
@@ -679,15 +685,53 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         return expression.is(DBSPLiteral.class) && this.positiveExpressions.contains(expression);
     }
 
+    private RustCircuitPass.WaterlineOperand operand(DBSPOpcode opcode, DBSPExpression expression, MonotoneExpression value) {
+        return new RustCircuitPass.WaterlineOperand(value.mayBeMonotone(), this.constantExpressions.contains(expression),
+                this.isPositiveLiteral(expression), opcode == DBSPOpcode.MAX_IGNORE_NULLS && neverNull(expression));
+    }
+
+    private void setBinaryWaterline(DBSPExpression expression, RustCircuitPass.BinaryDomain domain, DBSPOpcode opcode,
+                                    DBSPExpression lhs, DBSPExpression rhs) {
+        var left = this.get(lhs);
+        var right = this.get(rhs);
+        var rule = RustCircuitPass.BinaryWaterline.None;
+        if (left.mayBeMonotone() || right.mayBeMonotone())
+            rule = RustCircuitPass.binaryWaterline(new RustCircuitPass.BinaryBounds(domain, opcode,
+                    this.operand(opcode, lhs, left), this.operand(opcode, rhs, right)));
+        DBSPExpression reduced = switch (rule) {
+            case None -> null;
+            case Left -> castToTypeOf(expression, left.getReducedExpression());
+            case Right -> castToTypeOf(expression, right.getReducedExpression());
+            case Coalesce -> new DBSPBinaryExpression(expression.getNode(), expression.type.withMayBeNull(false),
+                    DBSPOpcode.MIN, castToTypeOf(expression, left.getReducedExpression()),
+                    castToTypeOf(expression, right.getReducedExpression()));
+            case Both, InheritLeft, InheritRight -> expression instanceof DBSPTimeAddSub time
+                    ? onWaterlines(time, left.getReducedExpression(), right.getReducedExpression())
+                    : onWaterlines(expression.to(DBSPBinaryExpression.class), left.getReducedExpression(), right.getReducedExpression());
+        };
+        IMaybeMonotoneType type = switch (rule) {
+            case None -> NonMonotoneType.nonMonotone(expression.type);
+            case InheritLeft -> left.copyMonotonicity(expression.type);
+            case InheritRight -> right.copyMonotonicity(expression.type);
+            default -> new MonotoneType(expression.type);
+        };
+        this.set(expression, new MonotoneExpression(expression, type, reduced));
+    }
+
     @Override
     public void postorder(DBSPBinaryExpression expression) {
-        MonotoneExpression left = this.get(expression.left);
-        MonotoneExpression right = this.get(expression.right);
         DBSPExpression reduced = null;
         if (this.constantExpressions.contains(expression.left) &&
             this.constantExpressions.contains(expression.right))
             this.constantExpressions.add(expression);
 
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            this.setBinaryWaterline(expression, RustCircuitPass.BinaryDomain.Scalar,
+                    expression.opcode, expression.left, expression.right);
+            return;
+        }
+        MonotoneExpression left = this.get(expression.left);
+        MonotoneExpression right = this.get(expression.right);
         boolean lm = left.mayBeMonotone();
         boolean rm = right.mayBeMonotone();
 
