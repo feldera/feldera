@@ -274,7 +274,22 @@ public final class RustCircuitPass implements CircuitTransform {
         if (graph.isNull())
             return input;
         var shuffles = Objects.requireNonNull(writer.innerVisitor.liveShuffles);
+        // TrimWindows gives each inserted operator a new ID. Its clone visitor
+        // preserves other operators with unchanged inputs, including the identities
+        // recorded by earlier iterations of unused-field removal.
+        var originalOperators = this.nativeName.equals("TrimWindows") ? operatorsById(input) : Map.<Long, DBSPOperator>of();
         var decoder = new JsonDecoder() {
+            @Override
+            DBSPOperator decodedOperator(long id, DBSPOperator decoded) {
+                var original = originalOperators.get(id);
+                if (original == null || !original.inputs.equals(decoded.inputs))
+                    return decoded;
+                if (original instanceof DBSPNestedOperator nested &&
+                        !nested.sameCircuit(decoded.to(DBSPNestedOperator.class)))
+                    return decoded;
+                return original;
+            }
+
             @Override
             public Shuffle decodeShuffle(JsonNode flatmap) {
                 return Shuffle.fromJson(flatmap.required("shuffle"), shuffles.get(flatmap.required("id").longValue()));
@@ -526,8 +541,7 @@ public final class RustCircuitPass implements CircuitTransform {
                 visitConstants(circuit.getAllOperators(), seen::add);
                 return circuit;
             }
-            var writer = this.snapshots.writer();
-            OptimizerTopology.writeSelected(circuit, payloads, writer);
+            var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, payloads, OptimizerTopology.Details.NONE);
             var result = this.invoke("CSE", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                     next, this.passState(circuit, writer));
             visitConstants(circuit.getAllOperators(), seen::add);
@@ -607,8 +621,7 @@ public final class RustCircuitPass implements CircuitTransform {
         });
         if (windows.isEmpty() || this.compiler.metadata.windowSharingDisabled())
             return;
-        var writer = this.snapshots.writer();
-        OptimizerTopology.writeSelected(circuit, payloads, writer);
+        var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, payloads, OptimizerTopology.Details.NONE);
         var candidates = this.invoke("FindWindowGroups", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                 next, EMPTY_CONTEXT);
         var selected = new ArrayList<DBSPWindowOperator>();
@@ -710,8 +723,7 @@ public final class RustCircuitPass implements CircuitTransform {
         var selected = MAPPER.convertValue(payloads, new TypeReference<Set<Long>>() {});
         if (selected.isEmpty())
             return;
-        var writer = this.snapshots.writer();
-        OptimizerTopology.writeSelected(circuit, selected, writer, details);
+        var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, selected, details);
         var result = this.invoke(this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8), next, EMPTY_CONTEXT);
         var operators = operatorsById(circuit);
         for (var plan : MAPPER.treeToValue(result, SharedProjection[].class)) {
@@ -728,8 +740,7 @@ public final class RustCircuitPass implements CircuitTransform {
         if (readers.isEmpty())
             return;
         var selected = MAPPER.convertValue(readers, new TypeReference<Set<Long>>() {});
-        var writer = this.snapshots.writer();
-        OptimizerTopology.writeSelected(circuit, selected, writer);
+        var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, selected, OptimizerTopology.Details.NONE);
         var uses = this.invoke(this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                 next, EMPTY_CONTEXT);
         var operators = operatorsById(circuit);
@@ -750,8 +761,7 @@ public final class RustCircuitPass implements CircuitTransform {
         } else {
             var payloads = new HashSet<Long>();
             plan.required("payloads").forEach(id -> payloads.add(id.longValue()));
-            var writer = this.snapshots.writer();
-            OptimizerTopology.writeSelected(circuit, payloads, writer);
+            var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, payloads, OptimizerTopology.Details.NONE);
             result = this.invoke("MultisetAnalysis", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                     next, EMPTY_CONTEXT);
         }

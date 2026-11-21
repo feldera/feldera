@@ -61,6 +61,12 @@ Linux ARM64 CPU gave a 95% bootstrap interval of 0.703–0.735 for the ratio of
 mean process medians. This measurement excludes JNI and the optimizer passes.
 [Decoder timings](evidence/p3-stream-decode-latency.json)
 
+On Nexmark, the five read-only expression analyses can omit replay metadata,
+and the two retention analyses can compare unrelated policies from the operator
+graph alone. In a paired capture on the 97-pass build, request traffic at the
+pass adapter fell from 143,617,231 to 128,736,618 bytes. All five emitted files
+matched byte for byte. [JNI byte counts](evidence/p3-analysis-payloads.json)
+
 In a separate Nexmark run on the 18-pass compiler, Java Flight Recorder captured 1,054 main-thread
 stack samples. Of those, 340 were inside a Rust JNI call, 170 were encoding
 or applying pass results in Java and 386 were in the Java Rust printer.

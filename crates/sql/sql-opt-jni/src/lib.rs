@@ -192,16 +192,12 @@ fn transform(
     }
     let analysis = pass.strip_prefix("Topology/").unwrap_or(pass);
     if matches!(analysis, "FindEquivalentNoops" | "FindMultipleRetains") {
-        // All other retention kinds can be compared from the flags and edges.
-        if analysis != pass
-            && circuit
-                .operator_order(BodyOrder::Preorder)?
-                .iter()
-                .any(|&id| {
-                    circuit.node(id).and_then(|n| n.operator_kind())
-                        == Some(feldera_sql_ir::OperatorKind::IntegrateTraceRetainNValues)
-                })
-        {
+        let group = if analysis == "FindEquivalentNoops" {
+            feldera_sql_opt::RetentionGroup::SiblingNoops
+        } else {
+            feldera_sql_opt::RetentionGroup::DataInput
+        };
+        if analysis != pass && group.needs_expressions(&circuit)? {
             return Ok(json!({"needs_full_snapshot":true}));
         }
         let facts = if analysis == "FindEquivalentNoops" {

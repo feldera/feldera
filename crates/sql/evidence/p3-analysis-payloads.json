@@ -1,0 +1,26 @@
+{
+  "scope": "Payload bytes at RustCircuitPass.invoke during one Nexmark compilation per build. Classes instrumented identically. Aggregate helper calls outside invoke are excluded.",
+  "workspace_archive": ".bench-results/p3-jni-traffic/2026-21-11-03-36-cc4d3",
+  "baseline": {
+    "calls": 323,
+    "request_bytes": 143617231,
+    "pass_state_bytes": 132594,
+    "reply_bytes": 21391979,
+    "emitted_files": 5,
+    "emitted_file_hashes_sha256": "71c98e95a0faa98eb1154f77e0cceb3f6f66e4e2ed05e83679dee028ce81a7f4",
+    "profile_sha256": "a73f93828fb0e0b9de0bcaa85c782a45ba0070f139077f0dfe657a91107a01dd",
+    "jar_sha256": "a4c73ad9be640da28b9c481d8b70e95af859f1961f3a400ea1bdea76a233b6b5",
+    "jni_sha256": "c47727f8120a18cd4158683a2fe581bcd92c5d9674979dbd50dc36b8e2a156b9"
+  },
+  "candidate": {
+    "calls": 321,
+    "request_bytes": 128736618,
+    "pass_state_bytes": 132592,
+    "reply_bytes": 21391923,
+    "emitted_files": 5,
+    "emitted_file_hashes_sha256": "71c98e95a0faa98eb1154f77e0cceb3f6f66e4e2ed05e83679dee028ce81a7f4",
+    "profile_sha256": "491d36b9e4fe95856b92571defddd20827278ef49ce6a768a4335ffb1ede8ad8",
+    "jar_sha256": "d1bbccb7525c621a194efd305cf18e39cb0606f188377cb8bd60633ced43b48c",
+    "jni_sha256": "c88e1d017a64e7fc1539d59aff5b108b383e4c016333828cc8edfb81c097101d"
+  }
+}

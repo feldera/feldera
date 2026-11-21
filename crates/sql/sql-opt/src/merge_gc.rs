@@ -122,6 +122,47 @@ fn can_merge(circuit: &Circuit, a: NodeId, b: NodeId, terms: &mut Terms) -> Resu
     }
 }
 
+/// Only two distinct N-value policies can require expression equality. Policies
+/// from separate groups never reach that comparison.
+#[derive(Clone, Copy)]
+pub enum RetentionGroup {
+    DataInput,
+    SiblingNoops,
+}
+
+impl RetentionGroup {
+    pub fn needs_expressions(self, circuit: &Circuit) -> Result<bool, Error> {
+        let mut inputs = HashSet::new();
+        for id in circuit.operator_order(BodyOrder::Preorder)? {
+            let node = circuit.node(id).expect("validated operator");
+            if node.operator_kind() != Some(Op::IntegrateTraceRetainNValues) {
+                continue;
+            }
+            let data = node
+                .inputs()
+                .next()
+                .ok_or_else(|| Error::new("missing retention data input"))?;
+            let key = match self {
+                Self::DataInput => data,
+                Self::SiblingNoops => {
+                    let producer = circuit.node(data.operator).expect("validated producer");
+                    if producer.operator_kind() != Some(Op::Noop) {
+                        continue;
+                    }
+                    producer
+                        .inputs()
+                        .next()
+                        .ok_or_else(|| Error::new("missing Noop input"))?
+                }
+            };
+            if !inputs.insert(key) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
 /// Each group begins at the first eligible retainer in body order. Retainers
 /// with different bounds may share keys or values, but retaining N values
 /// requires the same bound, ordering, count and predicate.
@@ -302,6 +343,35 @@ mod tests {
             json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":operators}),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn unrelated_n_value_policies_only_need_topology() {
+        let mut ops = vec![
+            operator(1, "Constant", &[]),
+            operator(2, "Constant", &[]),
+            operator(3, "Noop", &[1]),
+            operator(4, "Noop", &[2]),
+            operator(5, "IntegrateTraceRetainNValues", &[3, 2]),
+            operator(6, "IntegrateTraceRetainNValues", &[4, 2]),
+        ];
+        let graph = circuit(ops.clone());
+        assert!(!RetentionGroup::DataInput.needs_expressions(&graph).unwrap());
+        assert!(!RetentionGroup::SiblingNoops
+            .needs_expressions(&graph)
+            .unwrap());
+
+        ops[3] = operator(4, "Noop", &[1]);
+        let graph = circuit(ops.clone());
+        assert!(!RetentionGroup::DataInput.needs_expressions(&graph).unwrap());
+        assert!(RetentionGroup::SiblingNoops
+            .needs_expressions(&graph)
+            .unwrap());
+
+        ops.push(operator(7, "IntegrateTraceRetainNValues", &[4, 1]));
+        assert!(RetentionGroup::DataInput
+            .needs_expressions(&circuit(ops))
+            .unwrap());
     }
 
     #[test]

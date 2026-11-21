@@ -34,6 +34,7 @@ import org.dbsp.util.JsonStream;
 
 import javax.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Set;
 
 /** Circuit projection for passes that read only operator kinds, edges and annotations. */
@@ -86,17 +87,21 @@ final class OptimizerTopology {
         }
     }
 
-    static void writeSelected(DBSPCircuit circuit, Set<Long> selected, ToJsonOuterVisitor writer) {
-        writeSelected(circuit, selected, writer, Details.NONE);
-    }
-
-    static void writeSelected(DBSPCircuit circuit, Set<Long> selected, ToJsonOuterVisitor writer, Details details) {
-        var json = writer.stream;
+    /** Analyses return facts about existing IDs. They need expression definitions and
+     * flatmap shuffle identities. Source positions and replay metadata belong to the
+     * full snapshot used when a pass returns new IR. */
+    static ToJsonOuterVisitor selectedExpressions(DBSPCompiler compiler, DBSPCircuit circuit,
+                                                  Set<Long> selected, Details details) {
+        var json = JsonStream.compactCircuit();
+        var inner = new ToJsonInnerVisitor(compiler, json, 0);
+        inner.liveShuffles = new HashMap<>();
+        var writer = new ToJsonOuterVisitor(compiler, 0, inner);
         json.beginObject().appendClass(circuit).label("id").append(circuit.id);
         json.label("declarations").beginArray();
         json.endArray().label("allOperators");
         writeBody(json, circuit.getAllOperators(), details, null, new SelectedPayloads(selected, writer));
         json.endObject();
+        return writer;
     }
 
     private static void writeBody(JsonStream json, Iterable<DBSPOperator> operators, Details details,

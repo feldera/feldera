@@ -85,6 +85,11 @@ public class JsonDecoder {
         return org.dbsp.util.Shuffle.fromJson(Utilities.getProperty(flatmap, "shuffle"));
     }
 
+    /** A live clone pass can retain a source operator whose inputs and body did not change. */
+    DBSPOperator decodedOperator(long originalId, DBSPOperator decoded) {
+        return decoded;
+    }
+
     public ProgramMetadata decodeProgramMetadata(JsonNode node) {
         if (this.programMetadata == null)
             return ProgramMetadata.fromJson(node);
@@ -228,6 +233,8 @@ public class JsonDecoder {
                         Utilities.getBooleanProperty(object, "sourceEmpty"));
             }
             if (outer) {
+                if (result instanceof DBSPOperator operator)
+                    result = this.decodedOperator(originalId, operator);
                 this.outer.cache(originalId, result);
             } else {
                 this.inner.cache(originalId, result);

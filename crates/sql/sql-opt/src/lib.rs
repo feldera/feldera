@@ -132,7 +132,7 @@ pub use integrate::remove_redundant_integrates;
 pub use left_joins::{remove_useless_left_joins, substitute_left_joins};
 pub use linear_retention::{linear_postprocess_retain_keys, linear_retention_order};
 pub use merge_gc::{
-    merge_retention_policies, retention_groups, share_trace_inputs, SharedTraceInputs,
+    merge_retention_policies, retention_groups, share_trace_inputs, RetentionGroup, SharedTraceInputs,
 };
 pub use metadata_casts::{expand_circuit_casts, expand_metadata_casts};
 pub use multiset::{plan_multiplicities, stream_multiplicities, Multiplicities, MultiplicityPlan};
