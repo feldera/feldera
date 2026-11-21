@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
@@ -237,6 +238,8 @@ public class LowerAsof implements CircuitTransform {
         final Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces;
         final Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces;
         final Map<IGCOperator, IGCOperator> original;
+        // One LowerAsofInner instance visits one circuit. Most circuits contain no ASOF joins.
+        @javax.annotation.Nullable private Map<DBSPAsofJoinOperator, List<IGCOperator>> nativeRetainers;
 
         public LowerAsofInner(
                 DBSPCompiler compiler, CircuitGraphs graphs,
@@ -344,6 +347,20 @@ public class LowerAsof implements CircuitTransform {
                     .copyAnnotations(join)
                     .to(DBSPConcreteAsofJoinOperator.class);
             this.map(join, result);
+
+            if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+                if (this.nativeRetainers == null)
+                    this.nativeRetainers = RustCircuitPass.asofRetainers(this.getCircuit());
+                for (var retainer : this.nativeRetainers.getOrDefault(join, List.of())) {
+                    if (retainer instanceof DBSPIntegrateTraceRetainValuesOperator)
+                        Utilities.putNew(this.leftGces, retainer, result);
+                    else if (retainer instanceof DBSPIntegrateTraceRetainNValuesOperator)
+                        Utilities.putNew(this.rightGces, retainer, result);
+                    else
+                        throw new IllegalStateException("Unexpected ASOF retention operator " + retainer);
+                }
+                return;
+            }
 
             // If there is an IntegrateTraceRetainValues operator on the left input, it needs to be moved.
             // The graph has edges per operator, so a successor can read another output of the input.

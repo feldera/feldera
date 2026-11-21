@@ -250,6 +250,9 @@ fn transform(
             &circuit
         )?));
     }
+    if pass == "AsofRetainers" {
+        return Ok(serde_json::to_value(feldera_sql_opt::asof_retainers(&circuit)?)?);
+    }
     if pass == "DetectStreamingOperations" {
         return Ok(json!(feldera_sql_opt::detects_streaming(
             &circuit

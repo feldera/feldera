@@ -123,10 +123,10 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.active.put("names_before", DBSPVariablePath.nextGeneratedName());
         var writer = this.snapshotWriter(circuit);
         this.active.set("before", this.snapshot(writer));
-        // Compare the temporal policy on identical Java prefixes. The rest
-        // of the optimizer, including the producer of this pass's state,
-        // keeps its original implementation.
+        // Switch only for the selected observation, after capturing its Java prefix.
         this.previousRustPasses = this.compiler.options.ioOptions.rustOptimizerPasses;
+        if (pass instanceof LowerAsof && Boolean.getBoolean("feldera.optimizer.compareRustAsofRetainers"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if ((pass instanceof ReorderTemporalFilters.Scan || pass instanceof ReorderTemporalFilters.Reorder
                 || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.MergeFilters
                 || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow)

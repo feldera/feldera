@@ -11,6 +11,8 @@ import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.CheckPersistentIds;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -748,6 +750,27 @@ public final class RustCircuitPass implements CircuitTransform {
         var operators = new HashMap<Long, DBSPOperator>();
         visitOperators(circuit.getAllOperators(), op -> operators.put(op.id, op));
         return operators;
+    }
+
+    public static Map<DBSPAsofJoinOperator, List<IGCOperator>> asofRetainers(DBSPCircuit circuit) {
+        try {
+            var topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.CONSUMERS);
+            var reply = transformWithContext("AsofRetainers", topology, 0, "", EMPTY_CONTEXT);
+            var pairs = MAPPER.readValue(reply, long[][].class);
+            if (pairs.length == 0)
+                return Map.of();
+            var operators = operatorsById(circuit);
+            Map<DBSPAsofJoinOperator, List<IGCOperator>> result = new HashMap<>();
+            for (var pair : pairs) {
+                if (pair.length != 2 || !(operators.get(pair[0]) instanceof DBSPAsofJoinOperator join)
+                        || !(operators.get(pair[1]) instanceof IGCOperator retainer))
+                    throw new IllegalStateException("Invalid ASOF join and retainer pair");
+                result.computeIfAbsent(join, ignored -> new ArrayList<>()).add(retainer);
+            }
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid ASOF retainers from the Rust optimizer", error);
+        }
     }
 
     private record StateFinding(long operator, List<Integer> inputs) {}
