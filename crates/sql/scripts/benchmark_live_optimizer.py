@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Measure paired cold SQL-to-classic-artifact latency for the supervised Rust optimizer."""
 import argparse
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -12,26 +13,42 @@ import time
 from benchmark_java_baseline import latency
 from benchmark_seams import bootstrap_ratio
 from run_determinism import classpath_digest, file_digest
+from type_binding_compare import no_duplicates
+
+
+@dataclass(frozen=True)
+class JsonNumber:
+    """Keep the compiler's number token distinct from booleans and strings."""
+    token: str
+
+
+def artifact_json(data):
+    def invalid_constant(token):
+        raise ValueError(f"Invalid JSON constant {token}")
+
+    return json.loads(data, parse_int=JsonNumber, parse_float=JsonNumber,
+                      parse_constant=invalid_constant, object_pairs_hook=no_duplicates)
 
 
 def compare(direct, hybrid):
-    result = json.loads((hybrid / "result.json").read_bytes())
-    if ((result["compiler"], result["status"], result["attempts"]) != ("hybrid", "ok", 1)
+    result = artifact_json((hybrid / "result.json").read_bytes())
+    if ((result["compiler"], result["status"], result["attempts"]) != ("hybrid", "ok", JsonNumber("1"))
             or result.get("rust_optimizer_passes") is not True):
         raise ValueError(f"Unexpected hybrid result {result}")
     diagnostics = direct / "diagnostics.json"
-    messages = json.loads(diagnostics.read_bytes() or b"[]") if diagnostics.exists() else []
+    messages = artifact_json(diagnostics.read_bytes() or b"[]") if diagnostics.exists() else []
     if messages != result["messages"]:
         raise ValueError("Compiler diagnostics differ")
     artifacts = {p.name for p in direct.iterdir() if p != diagnostics}
     published = {p.name for p in hybrid.iterdir() if p.name != "result.json"}
-    if artifacts != set(result["artifacts"]) or artifacts != published or "circuit.rs" not in artifacts:
+    required = {"circuit.rs", "schema.json", "dataflow.json"}
+    if artifacts != set(result["artifacts"]) or artifacts != published or not required <= artifacts:
         raise ValueError("Compiler output file sets differ")
     for name in artifacts:
         if file_digest(hybrid / name) != result["artifacts"][name]:
             raise ValueError(f"Incorrect output digest for {name}")
         if name in {"dataflow.json", "schema.json"}:
-            equal = json.loads((direct / name).read_bytes()) == json.loads((hybrid / name).read_bytes())
+            equal = artifact_json((direct / name).read_bytes()) == artifact_json((hybrid / name).read_bytes())
         else:
             equal = file_digest(direct / name) == result["artifacts"][name]
         if not equal:
