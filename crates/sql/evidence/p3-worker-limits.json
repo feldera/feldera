@@ -1015,6 +1015,43 @@
       "load": "shared devcontainer host during verification",
       "meets_cancellation_limit": true,
       "meets_waiting_rss_limit": true
+    },
+    {
+      "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+      "rust_optimizer_passes": true,
+      "rounds": 5,
+      "slots_per_round": 4,
+      "signal_to_reap_ms": [
+        5.493248,
+        9.433122,
+        8.004581,
+        9.687705,
+        6.728456,
+        8.031998,
+        8.509789,
+        8.174956,
+        8.218872,
+        5.841664,
+        8.461705,
+        7.314498,
+        10.907205,
+        7.252498,
+        7.35529,
+        10.957663,
+        15.593871,
+        16.131078,
+        7.368623,
+        15.881537
+      ],
+      "p95_ms": 15.881537,
+      "largest_driver_plus_front_end_rss_bytes": 78131200,
+      "compiler_sha256": "271fe3bb4ce4506d74c0a4eda24e5336608bcd908f4328fbbfd4d5e0985fa94a",
+      "compiler_jar_sha256": "88e1becba20371c3e0e71e07af3fbbdd2696145ba32d1440b132b3898f6ad677",
+      "optimizer_library_sha256": "d49fcf7fd28cd899cdd667f15b57243cfd1f6d5931dee07ca21f7bcc4425ed91",
+      "pass_kinds": 90,
+      "load": "shared devcontainer host during verification",
+      "meets_cancellation_limit": true,
+      "meets_waiting_rss_limit": true
     }
   ],
   "loaded_child_exit_diagnostic": {

@@ -49,7 +49,7 @@
       "FixupViewReferences": 8571,
       "FuseIntoArrayAgg": 17142,
       "GcHashPrefixes": 8571,
-      "Graph": 227115,
+      "Graph": 235695,
       "ImplementChains": 8571,
       "ImplementJoins": 8571,
       "ImplementWindowGroups": 8571,
@@ -60,6 +60,7 @@
       "MergeNoops": 8571,
       "MergeRetain": 8571,
       "MergeSums": 8571,
+      "MoveGC": 9,
       "MultisetAnalysis": 25713,
       "NoConnectorMetadata": 8571,
       "NoIntegralVisitor": 601,
@@ -96,19 +97,19 @@
     "shards": [
       {
         "manifest_sha256": "00c41018dbfabb0024bbaa87e0fa3c6e01260a386a3a93d0c9f2d4c43472c97c",
-        "records_sha256": "882e72fb12958a1cdc402cd2ef35504b2fbb7c40b7f6d756c093c3a95d9b65e0"
+        "records_sha256": "42b83832df1a5e2e598f79b87b5f01e31679d3eb37f5f32f4b80bb0d679de34b"
       },
       {
         "manifest_sha256": "ca5330c8596f4860dd844964febd707436eae8e92e7092dce7f7c27a68cf18bd",
-        "records_sha256": "30113e6279ba0963968e606f8c2937983b46db21d4dc4c9a70a3f7a788a7ce5e"
+        "records_sha256": "e3414f29b395fff33704cfe0550d798e86aa35cf0658e756efc5e2162e9e1956"
       },
       {
         "manifest_sha256": "32c32263c6515c6734cb3b60ff430745a13ce89d376f139de521f6290594803e",
-        "records_sha256": "437a3a90dcac02ed9ab0cf489c857707b17022e7b17185a452fc1618d7dab59a"
+        "records_sha256": "a2c9aa92924682e5452a85da5de6cadba05cb32bcd0bbcc2cd368851afcfb0f3"
       },
       {
         "manifest_sha256": "ad14be7678a1d49611822c17220eb08e0c4aa01cdde4ced72cbef02a2c3b3330",
-        "records_sha256": "5f4957599289022d5d2d7f55635046749d0cf29e0d8acf28f58f266873ae0c25"
+        "records_sha256": "1063a11ec1092bf79cb8c510181b51c3b75b194a0a00f8108a40215abe64c647"
       }
     ]
   },
@@ -163,7 +164,7 @@
       "FuseIntoArrayAgg": 17054,
       "GcHashPrefixes": 8527,
       "Gen2Passes": 8526,
-      "Graph": 229933,
+      "Graph": 238469,
       "ImplementChains": 8527,
       "ImplementJoins": 8527,
       "ImplementWindowGroups": 8527,
@@ -174,6 +175,7 @@
       "MergeNoops": 8527,
       "MergeRetain": 8527,
       "MergeSums": 8527,
+      "MoveGC": 9,
       "MultisetAnalysis": 25581,
       "NoConnectorMetadata": 8527,
       "NoIntegralVisitor": 8526,
@@ -210,27 +212,27 @@
     "shards": [
       {
         "manifest_sha256": "422b481a7f85824ca7c4db1ddc9051bfbf956e575923ec32185fad1cfa15e772",
-        "records_sha256": "cc867d0e00db1c75e4de363a89530b8f7ec8fe0ef05eaf1bfb41035bb6b7badd"
+        "records_sha256": "5b46310be12bb9eff31178d3cc60532d8f76af32f323d70b1701950a851ce779"
       },
       {
         "manifest_sha256": "ff1dad87106c66ebc5d53549cc1955d1d911b3eea3a6909bcdd12bd53aa59b5e",
-        "records_sha256": "3b458e10141e18f241e74e95377ff77b1bd3a7726f49c31effcef9ad6dfc836b"
+        "records_sha256": "d32671d806fca347c0383f3e4c02d1c74312cb8e3d6fbe7a6493e272a15f0e91"
       },
       {
         "manifest_sha256": "09d90f1d213b979b6e26fac6f0d9ae0429998bd75369d7161be17fd714ca627e",
-        "records_sha256": "0eaec48a2002ff2144dedc6aa0afb8397e52dc068034ff50ddeba85bf00a8b10"
+        "records_sha256": "b586101dec15ad85adccf9dca5a60e02bf720834b5b5214488c993c625421959"
       },
       {
         "manifest_sha256": "bf8cd5e5d098fcdd7f5bfeb68c1431831a6e8f2636905fa69c27b4c47005350f",
-        "records_sha256": "aa981ebca3d51aa14efc72d85ef9e1d3323b6b1c3be1913b3dbe1ba9bf7aafce"
+        "records_sha256": "a122e42672b0e4753c35f32dddc2acbdbae05fb76a639b503c121f2a37c2b2ac"
       }
     ]
   },
   "compiler": {
     "profile": "Linux ARM64, offline Maven package and release Rust tools",
-    "pass_kinds": 89,
-    "jar_sha256": "50b6fce700735e3580ab1c09962ae358db5a202337c71fce8b6335c1040fb37b",
-    "driver_sha256": "d44b88abc8160c6482b2b23dcc01942056ea5a6e33b769e395f01cfa3ba6d5be",
-    "optimizer_library_sha256": "3ba5f01126fda824cf21eb20e867883cafd8f0a86e56e1dbc59cc7a4b632e3bc"
+    "pass_kinds": 90,
+    "jar_sha256": "88e1becba20371c3e0e71e07af3fbbdd2696145ba32d1440b132b3898f6ad677",
+    "driver_sha256": "271fe3bb4ce4506d74c0a4eda24e5336608bcd908f4328fbbfd4d5e0985fa94a",
+    "optimizer_library_sha256": "d49fcf7fd28cd899cdd667f15b57243cfd1f6d5931dee07ca21f7bcc4425ed91"
   }
 }
