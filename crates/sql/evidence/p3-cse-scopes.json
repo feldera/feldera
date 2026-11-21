@@ -1,0 +1,78 @@
+{
+  "scope": "CSE alias calculation on all 24 graphs captured across 12 CSE placements compiling Nexmark; circuit decoding excluded.",
+  "archive": ".bench-results/p3-cse-scopes/2026-21-11-09-02-88ee9",
+  "baseline_commit": "88ee907de980f7861a9861cb7d99899a696971e3",
+  "benchmark": "Alternating order, 14 process pairs pinned to CPU 12, 8 repetitions per process, first 2 discarded. Every repetition checks every alias reply.",
+  "binary_sha256": {
+    "before": "c7b50e2f0e5b8e02270b85c5ac33370bfb7b5ff77f8573e17f981f5d1a134ffb",
+    "after": "efc5797ca31170c4ef8e6d295533d5fee6dd4f6873097b7a0f4bd214cca32cb0"
+  },
+  "inputs_sha256": "ab6b6c902cd84af43e2b25002979ed87e1429b528e2fcacb884ab2122c18f909",
+  "raw_process_medians_ms": [
+    [
+      33.459734,
+      27.450538
+    ],
+    [
+      32.666379,
+      27.527163
+    ],
+    [
+      33.1318585,
+      27.675872
+    ],
+    [
+      32.836983,
+      27.5277885
+    ],
+    [
+      32.921254,
+      27.4833915
+    ],
+    [
+      32.8088375,
+      27.5994965
+    ],
+    [
+      32.5197115,
+      27.6436015
+    ],
+    [
+      32.6085455,
+      27.567725
+    ],
+    [
+      32.6896075,
+      27.610934
+    ],
+    [
+      32.878712,
+      27.7181425
+    ],
+    [
+      33.254651,
+      27.689184
+    ],
+    [
+      33.058212,
+      27.5923095
+    ],
+    [
+      32.6203165,
+      27.650205
+    ],
+    [
+      33.6337545,
+      27.5222885
+    ]
+  ],
+  "baseline_median_ms": 32.8578475,
+  "candidate_median_ms": 27.595903,
+  "median_paired_reduction_ms": 5.259267749999999,
+  "paired_bootstrap_95pct_interval_ms": [
+    5.090018249999998,
+    5.4659024999999986
+  ],
+  "bootstrap_resamples": 10000,
+  "bootstrap_seed": 4791
+}

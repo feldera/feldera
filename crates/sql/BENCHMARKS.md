@@ -25,6 +25,13 @@ On the earlier ASOF build (`54c227440`), the ratios were 0.961×, 2.551× and 1.
 The static-declaration build at `a039e2fda` measured 1.237×, 2.435× and 1.198× in workload order. The directed limiter comparisons overlapped the beginning of that run. The full corpus and restore runs started after that benchmark.
 
 The isolated snapshot join build at `65fbccc7f` measured 1.239×, 2.843× and 1.189× in workload order.
+
+Reusing lexical scopes during common subexpression elimination reduced the time to
+compute alias maps for all 24 rounds of one Nexmark compilation. Across 14 paired
+processes the median fell from 32.86 ms to 27.60 ms. The 95% paired bootstrap
+interval for the median reduction was 5.09–5.47 ms. Each timed repetition checked
+all 24 alias maps. The timer started after decoding the graphs. [CSE measurements](evidence/p3-cse-scopes.json)
+
 On a captured Nexmark fanout rewrite, tracking emitted nodes in a preallocated
 hash set reduced the median from 92.26 ms to 85.54 ms. The 95% paired bootstrap
 interval for the reduction was 6.49–6.85 ms. Sixteen pairs used identical Cargo

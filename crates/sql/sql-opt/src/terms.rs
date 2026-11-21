@@ -22,7 +22,9 @@ pub(crate) struct Terms {
     shuffles: std::collections::BTreeMap<NodeId, u64>,
     visiting: HashSet<NodeId>,
     shapes: HashMap<Shape, ShapeId>,
-    cache: HashMap<(NodeId, Vec<String>), ShapeId>,
+    // Shared nodes can resolve to different bindings in another scope.
+    // Store each scope's names once, alongside the nodes compared in it.
+    cache: HashMap<Vec<String>, HashMap<NodeId, ShapeId>>,
 }
 
 impl Terms {
@@ -61,13 +63,11 @@ impl Terms {
     }
 
     fn node(&mut self, circuit: &Circuit, id: NodeId, scope: &[String]) -> ShapeId {
-        let key = (id, scope.to_vec());
-        if let Some(&shape) = self.cache.get(&key) {
+        if let Some(&shape) = self.cache.get(scope).and_then(|nodes| nodes.get(&id)) {
             return shape;
         }
-        let identity = self.intern(Shape::Identity(id));
         if !self.visiting.insert(id) {
-            return identity;
+            return self.intern(Shape::Identity(id));
         }
         let node = circuit.node(id).expect("validated edge");
         let shape = match node.inner_kind() {
@@ -133,9 +133,17 @@ impl Terms {
                 Some(Shape::Node(node.class().into(), fields))
             }
         };
-        let result = shape.map_or(identity, |shape| self.intern(shape));
+        let result = self.intern(shape.unwrap_or(Shape::Identity(id)));
         self.visiting.remove(&id);
-        self.cache.insert(key, result);
+        match self.cache.get_mut(scope) {
+            Some(nodes) => {
+                nodes.insert(id, result);
+            }
+            None => {
+                self.cache
+                    .insert(scope.to_vec(), HashMap::from([(id, result)]));
+            }
+        }
         result
     }
 
