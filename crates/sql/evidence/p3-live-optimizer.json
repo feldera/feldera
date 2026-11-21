@@ -81,6 +81,7 @@
       "RemoveIAfterD": 8571,
       "RemoveIdentityOperators": 8571,
       "RemoveNoops": 17142,
+      "RemoveStarJoins": 1,
       "RemoveTable": 17073,
       "RemoveUselessLeftJoinsVisitor": 8571,
       "RemoveViewOperators": 17142,
@@ -110,7 +111,7 @@
       },
       {
         "manifest_sha256": "32c32263c6515c6734cb3b60ff430745a13ce89d376f139de521f6290594803e",
-        "records_sha256": "18aea3c19d664bac6764463d37d285b214f157b6a902ab61186352c9ffd3f8ec"
+        "records_sha256": "602c923d3bfbc65c7b5221198e3dee41727bce1a0d6c4a8bc78e55ed862629c9"
       },
       {
         "manifest_sha256": "ad14be7678a1d49611822c17220eb08e0c4aa01cdde4ced72cbef02a2c3b3330",
@@ -201,6 +202,7 @@
       "RemoveIAfterD": 8527,
       "RemoveIdentityOperators": 8527,
       "RemoveNoops": 17054,
+      "RemoveStarJoins": 1,
       "RemoveTable": 16994,
       "RemoveUselessLeftJoinsVisitor": 8527,
       "RemoveViewOperators": 17054,
@@ -230,7 +232,7 @@
       },
       {
         "manifest_sha256": "09d90f1d213b979b6e26fac6f0d9ae0429998bd75369d7161be17fd714ca627e",
-        "records_sha256": "6e272700cda1831a64afc6052b5aaf0f087f2c3d40fe248ec0af94985ae9bb8f"
+        "records_sha256": "c9f8b10057b7fc922079949565c464adcf72c4b994b35338711e0d0c26f8672f"
       },
       {
         "manifest_sha256": "bf8cd5e5d098fcdd7f5bfeb68c1431831a6e8f2636905fa69c27b4c47005350f",
@@ -240,9 +242,9 @@
   },
   "compiler": {
     "profile": "Linux ARM64, offline Maven package and release Rust tools",
-    "pass_kinds": 95,
-    "jar_sha256": "691bfdc8b2f41429316624d03722946700ff531ee977663ed1753314e33f6ba3",
-    "driver_sha256": "67807cafc3b37c97987ee5f77f410c7ca0ae20bd547f7514c1ef7b7a9dff2945",
-    "optimizer_library_sha256": "a60534b66f576d03889d7c35ed0e1827f688ccdb01ffc76ec14a6cb1bd87c142"
+    "pass_kinds": 96,
+    "jar_sha256": "1c736992ddf7ffa7ae1a076a3beaea0ab54fc87183c0b886b1546d29c3250237",
+    "driver_sha256": "94b58e2302be1f20e1559ab6d24251b995bf6e31680f3ebb3396c592ee070e1b",
+    "optimizer_library_sha256": "8d0e74c7f4462a32d1e33cdedcdb5a876018fcd2fb16708848c6cc84f1c9dcb1"
   }
 }
