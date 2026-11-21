@@ -257,9 +257,6 @@ impl Sharing {
             }
             let result = rewrite_index_reader(edit, function, &parameters)?;
             edit.set_operator_field(id, name, link(result))?;
-            if !rolling {
-                edit.clear_annotations(id)?;
-            }
         } else if matches!(kind, Some(Op::Aggregate | Op::StreamAggregate)) {
             if let Some(list) = operator.field("aggregate").and_then(Field::node_id) {
                 let source = slots
@@ -308,4 +305,98 @@ pub fn replace_shared_indexes(
     *next = counter;
     warnings.extend(emitted);
     Ok(Some(result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn annotated_join_keeps_its_annotation_and_reuses_the_index_on_both_inputs() -> Result<(), Error>
+    {
+        let original = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+                {"class":"DBSPConstantOperator","id":1,"inputs":[],"annotations":[{"class":"NoChain"}]}
+            ]
+        }))?;
+        let (original, types) = original.with_inner_roots([json!({
+            "class":"DBSPTypeInteger","id":1,"code":"INT32","width":32,"signed":true,"mayBeNull":false
+        })])?;
+        let root = original.root_id();
+        let mut edit = CircuitEditor::new(original);
+        let port = |operator| OutputPort {
+            operator,
+            number: 0,
+        };
+        let source = NodeId::Outer(1);
+        let tuple = edit.tuple_type(types[0], false, [types[0]])?;
+        let mut next = 0;
+        let row = edit.ref_parameter(tuple, &mut next)?;
+        let read = edit.deref_parameter(&row)?;
+        let value = edit.tuple_field(read, 0)?;
+        let value = edit.tuple_expr(source, false, &[value])?;
+        let pair = edit.tuple_expr(source, true, &[value, value])?;
+        let function = edit.closure(pair, &[row])?;
+        let (l, _) = append_map(
+            &mut edit,
+            root,
+            source,
+            Op::MapIndex,
+            port(source),
+            function,
+        )?;
+        let (r, _) = append_map(
+            &mut edit,
+            root,
+            source,
+            Op::MapIndex,
+            port(source),
+            function,
+        )?;
+        let key = edit.ref_parameter(tuple, &mut next)?;
+        let left = edit.ref_parameter(tuple, &mut next)?;
+        let right = edit.ref_parameter(tuple, &mut next)?;
+        let read = edit.deref_parameter(&left)?;
+        let result = edit.tuple_field(read, 0)?;
+        let join_fn = edit.closure(result, &[key, left, right])?;
+        let out = edit.zset_type(edit.expression_type(result)?)?;
+        let join = edit.append_operator(
+            root,
+            source,
+            Op::Join,
+            &[port(l), port(r)],
+            [
+                ("function", link(join_fn)),
+                ("outputType", link(out)),
+                ("balanced", Field::Data(false.into())),
+            ],
+        )?;
+        edit.copy_annotations(source, join)?;
+        let NodeId::Outer(consumer) = join else {
+            unreachable!()
+        };
+        let mut members = Vec::new();
+        for (slot, id) in [l, r].into_iter().enumerate() {
+            let NodeId::Outer(index) = id else {
+                unreachable!()
+            };
+            members.push(IndexReader {
+                index,
+                consumer,
+                slot,
+            });
+        }
+        let graph = replace_shared_indexes(edit.finish()?, &[members], &mut next, &mut Vec::new())?
+            .unwrap();
+        let join = graph.node(join).unwrap();
+        assert_eq!(
+            join.data("annotations"),
+            Some(&json!([{"class":"NoChain"}]))
+        );
+        let ports: Vec<_> = join.inputs().collect();
+        assert_eq!(ports[0], ports[1]);
+        assert_ne!(ports[0], port(l));
+        Ok(())
+    }
 }
