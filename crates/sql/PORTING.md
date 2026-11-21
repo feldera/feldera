@@ -818,6 +818,11 @@ window. A computed key retains the full row as its value. All 133 active
 `RewriteNow` invocations matched the preceding Java build on both engines.
 [Temporal window projections](evidence/p3-temporal-window-projections.json)
 
+Rust also builds the bound closures. They guard clock-dependent expressions
+until the first clock value arrives and preserve the SQL source locations of
+rewritten calls. All 133 temporal comparisons matched the same Java reference.
+[Window bound comparisons](evidence/p3-temporal-window-bounds.json)
+
 Rust builds the row and indexed identity closures used by monotonicity analysis.
 For an unindexed filter it extracts lower bounds from comparisons, including
 columns offset by numeric or temporal literals. The Java transfer functions

@@ -581,6 +581,17 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static DBSPClosureExpression temporalWindowBounds(DBSPCompiler compiler, DBSPType key,
+            DBSPExpression clockMinimum, DBSPExpression lowerInitial, DBSPExpression upperInitial,
+            @Nullable DBSPExpression lower, @Nullable DBSPExpression upper) {
+        try {
+            return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/WindowBounds",
+                    MAPPER.writeValueAsBytes(lower != null), key, clockMinimum, lowerInitial, upperInitial, lower, upper));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode temporal window bounds", error);
+        }
+    }
+
     public static RewriteNow.WindowProjection windowProjection(DBSPCompiler compiler, DBSPParameter parameter,
             DBSPType row, DBSPExpression key, DBSPType keyType) {
         var reply = invokeLowering(compiler, "RewriteNow/WindowProjection", parameter, row, key, keyType);

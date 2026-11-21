@@ -181,6 +181,24 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("RewriteNow/WindowBounds", [key, clock_min, lower_initial, upper_initial, bounds @ ..]) => {
+            let lower_present: bool = serde_json::from_slice(state)?;
+            let (lower, upper) = match (lower_present, bounds) {
+                (true, [lower, upper]) => (Some(*lower), Some(*upper)),
+                (true, [lower]) => (Some(*lower), None),
+                (false, [upper]) => (None, Some(*upper)),
+                _ => return Err("invalid temporal window endpoints".into()),
+            };
+            let endpoint = |initial, expr: Option<NodeId>| -> Result<_, feldera_sql_ir::Error> {
+                Ok(feldera_sql_opt::WindowEndpoint {initial:edit.expression(initial)?,
+                    expression:expr.map(|id| edit.expression(id)).transpose()?})
+            };
+            let lower = endpoint(*lower_initial, lower)?;
+            let upper = endpoint(*upper_initial, upper)?;
+            let key = edit.type_id(*key)?;
+            let clock_min = edit.expression(*clock_min)?;
+            feldera_sql_opt::temporal_window_bounds(&mut edit, key, clock_min, lower, upper, &mut next)?
+        }
         ("RewriteNow/WindowProjection", [parameter, row, key, key_type]) => {
             let row = edit.type_id(*row)?;
             let key = edit.expression(*key)?;
@@ -469,7 +487,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "RewriteNow/WindowProjection" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "RewriteNow/WindowBounds" | "RewriteNow/WindowProjection" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

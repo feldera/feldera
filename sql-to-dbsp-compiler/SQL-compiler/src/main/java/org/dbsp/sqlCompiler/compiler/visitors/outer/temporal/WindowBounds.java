@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -29,6 +30,14 @@ record WindowBounds(
     DBSPClosureExpression makeWindow(DBSPType windowKeyType) {
         // The input has type Tup1<Timestamp>, since it is produced by scalarNow().
         DBSPType timestampType = ContainsNow.timestampType();
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var domain = windowKeyType.to(IsBoundedType.class);
+            return RustCircuitPass.temporalWindowBounds(this.compiler, windowKeyType,
+                    timestampType.to(IsBoundedType.class).getMinValue(), domain.getMinValue(),
+                    this.upper == null ? domain.getMaxValue() : domain.getMinValue(),
+                    this.lower == null ? null : this.lower.expression(),
+                    this.upper == null ? null : this.upper.expression());
+        }
         DBSPVariablePath var = new DBSPTypeTuple(timestampType).ref().var();
         RewriteNow.RewriteNowExpression rn = new RewriteNow.RewriteNowExpression(
                 this.compiler(), var.deref().field(0));

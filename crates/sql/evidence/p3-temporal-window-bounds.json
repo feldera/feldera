@@ -1,0 +1,23 @@
+{
+  "scope": "Window-bound closures initialize each endpoint from the SQL key domain, replace NOW() with the clock stream and box the resulting bounds. Java supplies the type-specific initial literals.",
+  "java_reference_commit": "54c227440",
+  "comparison": "Replay identical detached S2 through RewriteNow using the Java reference and the candidate. Check entry and exit circuits and the generated names.",
+  "compiler_jar_sha256": "8a0518532576e6303c6670baad838045f6e97883b04d40634fcf380dc79bf43c",
+  "optimizer_library_sha256": "1b9e1a2764511b7a32909b17e4e057d0ae58206d9d94400dfed861ebe9778b27",
+  "populations": {
+    "classic": {
+      "cases": 71,
+      "mismatches": 0,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_sha256": "ddd0078d5b87eb0f7d71bde39b908f9fe307e5c7544c7f9498807c8adbb87c04",
+      "hybrid_sha256": "819fb43d4f2781ef53a2f18aee9860545f965d21bee28a9ed8fb3800c06f4f9b"
+    },
+    "gen2": {
+      "cases": 62,
+      "mismatches": 0,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_sha256": "a7a01e1e395f5ab65667052aa069dbe064eace19e1ec0d5abdb7dd49948a7cab",
+      "hybrid_sha256": "dfe9a46583a20729eea0bd545233e3f5d07a4371e12bb59cd13c7ebf4441199f"
+    }
+  }
+}
