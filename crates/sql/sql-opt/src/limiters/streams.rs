@@ -9,6 +9,20 @@ pub enum StreamKind {
     Delta,
 }
 
+impl TryFrom<feldera_sql_ir::StreamKind> for StreamKind {
+    type Error = Error;
+
+    fn try_from(clock: feldera_sql_ir::StreamKind) -> Result<Self, Error> {
+        match clock {
+            feldera_sql_ir::StreamKind::Collection => Ok(Self::Collection),
+            feldera_sql_ir::StreamKind::Delta => Ok(Self::Delta),
+            feldera_sql_ir::StreamKind::Waterline => {
+                Err(Error::new("a table or view cannot carry a waterline"))
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Stream {
     pub port: OutputPort,

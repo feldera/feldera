@@ -2,7 +2,8 @@
 use crate::{Circuit, Error, NodeId, OperatorKind as Op, OutputPort};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum StreamKind {
     Collection,
     Delta,

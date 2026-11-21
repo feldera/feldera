@@ -839,6 +839,12 @@ out that bound because it can produce NULL. The selector matched Java on
 mode. All 550 selected monotonicity boundaries matched.
 [Cast waterline comparisons](evidence/p3-cast-waterlines.json)
 
+The standalone limiter replay infers collection and delta clocks from the
+original circuit. It checks the recorded clocks when replaying older traces.
+All 24 directed limiter invocations matched Java on the S4 graph, checkpoint
+and next generated name. Four keyed Gen-2 inputs produced the expected refusal.
+[Limiter clock comparisons](evidence/p3-limiter-clocks.json)
+
 Rust binds limiter closures to the actual waterline port types and reduces
 their calls before Java inserts the apply operators. The resulting graph,
 generated names and diagnostics matched Java at all 550 selected

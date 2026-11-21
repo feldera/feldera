@@ -1,0 +1,25 @@
+{
+  "scope": "Replay InsertLimiters on the original circuit using inferred output clocks and compare against Java. Historical sidecars record input clocks and current sidecars omit them.",
+  "checks": {
+    "classic": {
+      "fresh_s4_and_checkpoint_pairs": 14,
+      "matching_refusals": 0,
+      "historical_s4_replays": 14
+    },
+    "gen2": {
+      "fresh_s4_and_checkpoint_pairs": 10,
+      "matching_refusals": 4,
+      "historical_s4_replays": 10
+    }
+  },
+  "fresh_trace": {
+    "java_package_sha256": "05839621890a8928862c39a88705c95e2199f5d1c55843d7355252e1d2ec0299",
+    "report_sha256": "797fdb288e752dbd9b47ac45dd7fa0bb7c2207805e4bda5cfbbad85fa910b417",
+    "driver_sha256": "94bf1913c10613f06d5bd59bf6be18449fce4ea1135eaac7d17c69e49780bd17",
+    "comparator_sha256": "bc0568837ff0cc931a18cd244e5db87cdb816cef2581c58de03c0d4992897c74"
+  },
+  "sidecar_replay": {
+    "driver_sha256": "a22af3bf4258d7da6993d761178e9360b32e7348ad5078518e96abe93f99ccad",
+    "comparator_sha256": "b54092278f23f4c3cb2cd161b3e91bdb2edd572797130e75a48d9ea4a554cc58"
+  }
+}

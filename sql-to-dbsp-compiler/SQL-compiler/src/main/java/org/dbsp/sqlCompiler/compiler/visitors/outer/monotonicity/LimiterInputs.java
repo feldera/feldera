@@ -40,9 +40,6 @@ public final class LimiterInputs {
             var entry = facts.putObject(Long.toString(operator.getId()));
             entry.set("position",operator.getNode().getPositionRange().asJson());
             entry.put("reachable_from_error", pass.reachableFromError.contains(operator));
-            var kinds = entry.putArray("input_kinds");
-            for (var input : operator.inputs)
-                kinds.add(input.kind().name());
             if (operator instanceof DBSPSimpleOperator simple
                     && pass.expandedInto.get(simple) instanceof ReplacementDeltaExpansion expansion) {
                 var replacement = expansion.replacement;

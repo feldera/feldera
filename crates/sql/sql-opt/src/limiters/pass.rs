@@ -1,10 +1,10 @@
 //! Apply the source, view and bound-combination portion of InsertLimiters to
 //! the original circuit, using the analysis from its matching expansion.
 
-use super::source::{source_bounds, Columns, LatenessSite};
-use super::{connect_error_view, minimum_bound, Bound, Projection, Stream, StreamKind};
-use feldera_sql_ir::{provenance::SourceRange, OutputPort};
+use super::source::{Columns, LatenessSite, source_bounds};
+use super::{Bound, Projection, Stream, StreamKind, connect_error_view, minimum_bound};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, Field, Node, NodeId, OperatorKind as Op};
+use feldera_sql_ir::{OutputClocks, OutputPort, StreamKind as Clock, provenance::SourceRange};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 struct OperatorFacts {
     position: SourceRange,
     reachable_from_error: bool,
-    input_kinds: Vec<StreamKind>,
+    input_kinds: Option<Vec<Clock>>,
     projection: Option<Projection>,
 }
 
@@ -74,6 +74,74 @@ fn apply_bound(
     })
 }
 
+/// The pass needs data clocks only at tables and views. Infer them on the
+/// original graph before editing the sources. Earlier sidecars also recorded
+/// every input clock, which lets replay detect mismatched circuit/state pairs.
+fn relation_clocks(
+    circuit: &Circuit,
+    facts: &BTreeMap<u64, OperatorFacts>,
+) -> Result<BTreeMap<NodeId, StreamKind>, Error> {
+    let mut clocks = circuit
+        .root()
+        .field("incremental")
+        .map(|_| OutputClocks::new(circuit))
+        .transpose()?;
+    let mut recorded = BTreeMap::new();
+    for (id, node) in circuit.operators() {
+        let NodeId::Outer(number) = id else {
+            unreachable!("validated circuit member")
+        };
+        let facts = facts
+            .get(&number)
+            .ok_or_else(|| Error::new(format!("missing limiter facts for {id:?}")))?;
+        let Some(kinds) = &facts.input_kinds else {
+            if clocks.is_none() {
+                return Err(Error::new(
+                    "limiter replay needs the circuit incremental flag or recorded input clocks",
+                ));
+            }
+            continue;
+        };
+        if kinds.len() != node.inputs().count() {
+            return Err(Error::new("limiter input stream kinds disagree with graph"));
+        }
+        for (port, &kind) in node.inputs().zip(kinds) {
+            if let Some(clocks) = clocks.as_mut() {
+                if clocks.get(port)? != kind {
+                    return Err(Error::new(format!(
+                        "recorded limiter clock differs at {port:?}"
+                    )));
+                }
+            } else if recorded.insert(port, kind).is_some_and(|old| old != kind) {
+                return Err(Error::new("conflicting stream kinds for the same output"));
+            }
+        }
+    }
+    let mut relations = BTreeMap::new();
+    for (id, node) in circuit.operators() {
+        if !matches!(node.operator_kind(), Some(Op::SourceMultiset | Op::View)) {
+            continue;
+        }
+        let port = OutputPort {
+            operator: id,
+            number: 0,
+        };
+        let kind = if let Some(clocks) = clocks.as_mut() {
+            clocks.get(port)?
+        } else {
+            // Legacy snapshots without a circuit mode carried clocks at the readers.
+            let source = node.inputs().next().unwrap_or(port);
+            recorded
+                .get(&source)
+                .or_else(|| recorded.get(&port))
+                .copied()
+                .unwrap_or(Clock::Collection)
+        };
+        relations.insert(id, StreamKind::try_from(kind)?);
+    }
+    Ok(relations)
+}
+
 pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circuit, u64), Error> {
     let body = circuit.root_id();
     let original = circuit.root().edges("allOperators")?;
@@ -82,12 +150,7 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
             "limiter facts and circuit have different populations",
         ));
     }
-    let default_kind = if circuit.root().data("incremental").and_then(|v| v.as_bool()) == Some(true)
-    {
-        StreamKind::Delta
-    } else {
-        StreamKind::Collection
-    };
+    let clocks = relation_clocks(&circuit, &state.operators)?;
     let mut edit = CircuitEditor::new(circuit);
     for number in state.singletons {
         let id = NodeId::Inner(number);
@@ -96,23 +159,6 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
         }
     }
     let mut next = state.next_generated_name;
-    let mut kinds = BTreeMap::new();
-    for (&number, facts) in &state.operators {
-        let id = NodeId::Outer(number);
-        edit.remember_position(id, facts.position)?;
-        let op = edit.node(id)?;
-        if facts.input_kinds.len() != op.inputs().count() {
-            return Err(Error::new("limiter input stream kinds disagree with graph"));
-        }
-        for (port, &kind) in op.inputs().zip(&facts.input_kinds) {
-            if kinds
-                .insert(port, kind)
-                .is_some_and(|previous| previous != kind)
-            {
-                return Err(Error::new("conflicting stream kinds for the same output"));
-            }
-        }
-    }
     let mut errors = Vec::new();
     let mut data = BTreeMap::<OutputPort, Stream>::new();
     let mut bounds = BTreeMap::<OutputPort, (Bound, &Projection)>::new();
@@ -124,6 +170,7 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
             .operators
             .get(&number)
             .ok_or_else(|| Error::new(format!("missing limiter facts for {id:?}")))?;
+        edit.remember_position(id, facts.position)?;
         let op = edit.node(id)?;
         let inputs = op.inputs().collect::<Vec<_>>();
         let output = OutputPort {
@@ -144,9 +191,11 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
                         .ok_or_else(|| Error::new("missing table name"))?
                         .to_owned();
                     if state.gen2 && !columns.key.is_empty() {
-                        return Err(Error::new(format!("LATENESS on the primary-key table '{name}' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version")));
+                        return Err(Error::new(format!(
+                            "LATENESS on the primary-key table '{name}' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
+                        )));
                     }
-                    let kind = kinds.get(&output).copied().unwrap_or(default_kind);
+                    let kind = clocks[&id];
                     let inherited = inputs.first().and_then(|p| bounds.get(p)).copied();
                     if let Some(input) = inputs.first().and_then(|p| data.get(p)) {
                         edit.replace_stream_inputs(id, &[input.port], input.ty)?;
@@ -186,10 +235,10 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
                 }
             }
             Some(Op::View) if identifier(op, "viewName") == Some("error_view") => {
-                let [kind] = facts.input_kinds.as_slice() else {
+                if inputs.len() != 1 {
                     return Err(Error::new("ERROR_VIEW needs one input"));
-                };
-                connect_error_view(&mut edit, body, id, &errors, *kind)?;
+                }
+                connect_error_view(&mut edit, body, id, &errors, clocks[&id])?;
                 continue;
             }
             Some(Op::Sum | Op::AtomicSum | Op::Subtract) => {
@@ -227,7 +276,7 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
                 return Err(Error::new(format!(
                     "{} requires another InsertLimiters visitor",
                     op.class()
-                )))
+                )));
             }
         }
         if inputs.iter().any(|port| data.contains_key(port)) {
@@ -244,4 +293,48 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
         }
     }
     Ok((edit.finish()?, next))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn unused_view_keeps_the_clock_of_its_input() {
+        let circuit = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "incremental": true, "declarations": [],
+            "allOperators": [
+                {"class": "DBSPIncrementalConstantOperator", "id": 1, "inputs": []},
+                {"class": "DBSPIntegrateOperator", "id": 2,
+                 "inputs": [{"operator": {"node": 1}, "outputNumber": 0}]},
+                {"class": "DBSPViewOperator", "id": 3,
+                 "inputs": [{"operator": {"node": 2}, "outputNumber": 0}]}
+            ]
+        }))
+        .unwrap();
+        let mut facts: BTreeMap<_, _> = (1..=3)
+            .map(|id| {
+                (
+                    id,
+                    OperatorFacts {
+                        position: SourceRange::default(),
+                        reachable_from_error: false,
+                        input_kinds: None,
+                        projection: None,
+                    },
+                )
+            })
+            .collect();
+        let clocks = relation_clocks(&circuit, &facts).unwrap();
+        assert_eq!(clocks[&NodeId::Outer(3)], StreamKind::Collection);
+
+        facts.get_mut(&3).unwrap().input_kinds = Some(vec![Clock::Delta]);
+        assert!(
+            relation_clocks(&circuit, &facts)
+                .unwrap_err()
+                .to_string()
+                .contains("recorded limiter clock differs")
+        );
+    }
 }
