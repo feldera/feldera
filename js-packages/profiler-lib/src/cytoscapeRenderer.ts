@@ -9,6 +9,8 @@
 //   drawNodeUnderlay      paint below the node body and its chips (`nodeShadow.ts`)
 //
 //   drawNodeOverlay       paint above the node body and its chips (`nodeText.ts`)
+//
+//   requestedFrame        pause the frames while a layout runs (`cytograph.ts`)
 
 import type { Core, NodeSingular } from 'cytoscape';
 
@@ -30,6 +32,8 @@ interface CanvasRenderer {
     projectIntoViewport?: (clientX: number, clientY: number) => [number, number];
     drawNodeUnderlay?: DrawNodeLayer;
     drawNodeOverlay?: DrawNodeLayer;
+    requestedFrame?: boolean;
+    redraw?: () => void;
 }
 
 const canvasRenderer = (cy: Core): CanvasRenderer =>
@@ -86,5 +90,33 @@ export function paintNodeLayer(
             });
         }
         original.call(this, context, node, ...rest);
+    };
+}
+
+/** Pauses the frames of the cytoscape renderer. Returns a function that resumes them. The pause keeps
+ *  each frame request, and the first frame after the resume draws it. Does nothing if `cy` has no
+ *  canvas renderer.
+ *
+ *  Depends on the render loop of cytoscape 3.33. In each animation frame, the loop draws only if
+ *  `requestedFrame` is true. If `requestedFrame` is false, the loop also skips the style update of
+ *  the changed elements. This update is the most expensive part of a frame after a graph change. */
+export function pauseFrames(cy: Core): () => void {
+    const renderer = canvasRenderer(cy);
+    // A headless cytoscape instance has no `redraw`.
+    if (typeof renderer.redraw !== 'function') {
+        return () => { };
+    }
+    let isFrameRequested = renderer.requestedFrame === true;
+    Object.defineProperty(renderer, 'requestedFrame', {
+        configurable: true,
+        get: () => false,
+        set: (value: boolean) => {
+            isFrameRequested = value;
+        }
+    });
+    return () => {
+        // Replaces the accessor with a plain property that holds the kept request.
+        delete renderer.requestedFrame;
+        renderer.requestedFrame = isFrameRequested;
     };
 }

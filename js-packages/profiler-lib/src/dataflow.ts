@@ -127,13 +127,29 @@ export class SourcePositionRanges {
         return this.positions;
     }
 
-    // Append includes deduplication
+    /** The keys of `positions`. `has` builds this set when the list has more than `MAX_SCANNED`
+     *  ranges. A region appends the ranges of each node inside it, so a scan of a long list for each
+     *  new range takes quadratic time. For a short list, a scan is faster than a build of the set.
+     *  `sort` removes only duplicates, so the set stays correct after a sort. */
+    private keys: Set<string> | undefined;
+    private static readonly MAX_SCANNED = 16;
+
+    /** Adds the ranges of `other` that this list does not have, in their order. */
     append(other: SourcePositionRanges) {
         for (const position of other.positions) {
-            if (!this.positions.find(v => v.equals(position))) {
+            if (!this.has(position)) {
                 this.positions.push(position);
+                this.keys?.add(position.key());
             }
         }
+    }
+
+    private has(position: SourcePositionRange): boolean {
+        if (this.keys === undefined && this.positions.length <= SourcePositionRanges.MAX_SCANNED) {
+            return this.positions.some(p => p.equals(position));
+        }
+        this.keys ??= new Set(this.positions.map(p => p.key()));
+        return this.keys.has(position.key());
     }
 }
 
@@ -180,6 +196,12 @@ export class SourcePositionRange implements Comparable<SourcePositionRange> {
             return c;
         }
         return this.end.compareTo(other.end);
+    }
+
+    /** A string that is the same for two ranges exactly when `equals` is true. */
+    public key(): string {
+        const r = this.range;
+        return `${r.start_line_number}:${r.start_column}:${r.end_line_number}:${r.end_column}`;
     }
 
     public is_empty(): boolean {

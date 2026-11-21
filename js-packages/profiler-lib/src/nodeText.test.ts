@@ -11,8 +11,9 @@ import {
 import { installNodeText, nodeTextRuns, paintTextRuns, textCenter, type TextRun } from './nodeText.js'
 
 /** A context that records what it was asked to draw. Each character is one unit wide, and a run set
- *  in a heavier weight twice that, so run widths are readable in the assertions. */
-const fakeContext = () => ({
+ *  in a heavier weight twice that, so run widths are readable in the assertions.
+ *  `scale` is the scale of the context, from graph coordinates to device pixels. */
+const fakeContext = (scale = 1) => ({
     font: '',
     fillStyle: '' as string,
     textAlign: 'start' as CanvasTextAlign,
@@ -34,7 +35,8 @@ const fakeContext = () => ({
         })
     },
     save() { this.log.push('save') },
-    restore() { this.log.push('restore') }
+    restore() { this.log.push('restore') },
+    getTransform() { return { a: scale } }
 })
 
 const runs = (heat = 0, theme: 'light' | 'dark' = 'light') =>
@@ -225,6 +227,20 @@ describe('installNodeText', () => {
             palette.textOnHeat,
             palette.textOnHeat
         ])
+    })
+
+    it('paints no text that is too small to read', () => {
+        const renderer = { drawNodeOverlay: () => {} }
+        installNodeText({ renderer: () => renderer } as never, () => 'light')
+        const node = headlessNode({ id: 'nn42', operator: 'map' })
+        // The node has the default cytoscape font of 16 px, so the text is 3.2 px on screen at scale
+        // 0.2, and 8 px at 0.5.
+        const zoomedOut = fakeContext(0.2)
+        renderer.drawNodeOverlay(zoomedOut as never, node as never)
+        expect(zoomedOut.drawn).toEqual([])
+        const readable = fakeContext(0.5)
+        renderer.drawNodeOverlay(readable as never, node as never)
+        expect(readable.drawn.map((d) => d.text)).toEqual(['nn42', 'map'])
     })
 
     it('leaves a headless instance alone', () => {

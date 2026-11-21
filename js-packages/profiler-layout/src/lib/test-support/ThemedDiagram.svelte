@@ -6,13 +6,11 @@
   palette and all, which passes a repaint test without repainting anything.
 -->
 <script lang="ts">
-  import type { Dataflow, DiagramTheme, JsonProfiles, ProfilerCallbacks } from 'profiler-lib'
+  import type { CircuitProfile, DiagramTheme, ProfilerCallbacks } from 'profiler-lib'
   import ProfilerDiagram from '../components/ProfilerDiagram.svelte'
 
   interface Props {
-    profileData: JsonProfiles
-    dataflowData: Dataflow | undefined
-    programCode: string[] | undefined
+    profile: CircuitProfile
     callbacks: ProfilerCallbacks
     theme: DiagramTheme
   }
@@ -22,7 +20,13 @@
   let switched = $state<DiagramTheme | undefined>()
   const theme = $derived(switched ?? props.theme)
   let diagram = $state<
-    { search(query: string): void, showGlobalMetrics(isSticky?: boolean): void } | undefined
+    | {
+        search(query: string): void
+        showGlobalMetrics(isSticky?: boolean): void
+        selectMetric(metricId: string): void
+        toggleWorker(workerId: string): void
+      }
+    | undefined
   >()
 
   export const setTheme = (next: DiagramTheme) => {
@@ -30,13 +34,13 @@
   }
   export const search = (query: string) => diagram?.search(query)
   export const showGlobalMetrics = (isSticky?: boolean) => diagram?.showGlobalMetrics(isSticky)
+  export const selectMetric = (metricId: string) => diagram?.selectMetric(metricId)
+  export const toggleWorker = (workerId: string) => diagram?.toggleWorker(workerId)
 </script>
 
 <ProfilerDiagram
   bind:this={diagram}
-  profileData={props.profileData}
-  dataflowData={props.dataflowData}
-  programCode={props.programCode}
+  profile={props.profile}
   callbacks={props.callbacks}
   {theme}
 />

@@ -35,6 +35,12 @@
  * `onError` is passed per call so each call site can choose its own fallback
  * message, much like the catch block it replaces.
  */
+/** Resolves after the browser paints the next frame. A `requestAnimationFrame` callback runs
+ *  before the paint, and a timeout queued from it runs after the paint. */
+function afterNextPaint(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)))
+}
+
 export function createLoadGuard(opts: {
   setLoading: (loading: boolean) => void
   onFinally?: () => void
@@ -51,6 +57,9 @@ export function createLoadGuard(opts: {
     isRunning = true
     opts.setLoading(true)
     try {
+      // The work can block the main thread for seconds, so the browser must paint the loading
+      // state first.
+      await afterNextPaint()
       await work()
     } catch (e) {
       onError(e)
