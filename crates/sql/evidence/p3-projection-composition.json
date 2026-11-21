@@ -1,7 +1,7 @@
 {
-  "scope": "OptimizeProjections entry and exit graphs, pass state, generated names and diagnostics from identical S2. Includes Rust join and indexed map composition, projection classification, antijoin splitting and TopK output narrowing.",
-  "jar_sha256": "8cb47824449270b22377b45cacfd12c2e9f3678144155a94e2867b4ff769e61a",
-  "optimizer_library_sha256": "5c8894ef0fa89678488d054fce3f06e29bcd4efbe6ab68d173bdede6cf41c534",
+  "scope": "All OptimizeProjections iterations from the same saved S2, including Rust projection classification, map and join composition, antijoin splitting, aggregate and TopK narrowing, UNNEST shuffles and projected aggregate zeros.",
+  "jar_sha256": "4847c5f09fa870ad1b56f52d23d130693ffa9692349b592a3d96305199f39aa5",
+  "optimizer_library_sha256": "4b6905e36813ddf65820de1de9d2b2200bffff01f0ccb25f67e544ef7fda7ffc",
   "comparator_sha256": "b536cbf6d23e47d621574c59764bc4f46856e6a87ff18f05078d22b5b97a6427",
   "engines": {
     "classic": {
@@ -14,28 +14,28 @@
           "invocations": 10785,
           "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
           "control_sha256": "2cb633c098d7e90e0a91f8239c3b2d85f25c6d2c1adc686139fb10b0b40251b2",
-          "candidate_sha256": "5a97eb5ccd9fc5bd3d8eae6b77439a99d10d94a600e29081b0eb014552e84b7b"
+          "candidate_sha256": "0549bb793c0e1286d64289c3429ade3ca2ebc85df271f7c30986a48201294100"
         },
         {
           "cases": 2143,
           "invocations": 10923,
           "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
           "control_sha256": "70fd1a722367829e5ade0030f7225d34c4b2db4a2e94c34fc0298ce8725ba5d0",
-          "candidate_sha256": "d84367ee1e635be6550a300408ab25fe974486f4b286697783afdace7a8a13d4"
+          "candidate_sha256": "6a0d985b619dd3173d29aa50ce9097b4832fc6ecf1becbdc655ce57cb48a22d9"
         },
         {
           "cases": 2143,
           "invocations": 10741,
           "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
           "control_sha256": "f23d9f09f536fd2a6ac577175a035796f6a5cc276adcfbb49f7cdc13c46a9c7a",
-          "candidate_sha256": "3d628534c8c8e5757ba48c785f83eedb47954fdfedefeb9ae7cca5097886cd51"
+          "candidate_sha256": "0bbc9fc0368b7fa0ee1d04516aeb8ca823ec004fa2b3b58b44575648fc8aab04"
         },
         {
           "cases": 2142,
           "invocations": 10901,
           "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
           "control_sha256": "24ee88deffc1067513629fd6a55633896c1f96c8568308b378f6eeee290708a4",
-          "candidate_sha256": "6a5d8c76c58f23fa106f0d154c38c97904e0a18195dc8be458934bc538d93d78"
+          "candidate_sha256": "366e9be339762a0eddf1bba89b2f3d9b3ad09bfe4b7a171d478d27bf917cfc1e"
         }
       ]
     },
@@ -49,28 +49,28 @@
           "invocations": 10942,
           "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
           "control_sha256": "094948aa3910a0ba0e811e4d21cae8b82bbd35fb90177d82e31ccd56b50c60e4",
-          "candidate_sha256": "57f3748469b947021c68a2103a3a3d572cf4756ed35e3fcb423602195dba3f2f"
+          "candidate_sha256": "82e99e831e8f55ce030aac20a617da1f62953e240aa241a37b70068ba77f96a4"
         },
         {
           "cases": 2132,
           "invocations": 10647,
           "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
           "control_sha256": "6a58076e322bada8c5b020d4b2706d98781bb0d773bd32a848b9caddb4a22d78",
-          "candidate_sha256": "0c35301a295f43a82e67e9311ce2cfab1d5de0ec2a66e6b1ae818c5dfc9b67cd"
+          "candidate_sha256": "c578c7eec54a28c1a8627524a01e0384b0467fe758e82faf6687a14aef747e89"
         },
         {
           "cases": 2132,
           "invocations": 10779,
           "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
           "control_sha256": "40892d8a848ea2171dfaa9097a4827e23ceb3adfdb25286fdfba23331b78ad4e",
-          "candidate_sha256": "91cb548e6d04f9b1dadd519ef0f54724f8bef424b858b933652e7f0c4ddb458d"
+          "candidate_sha256": "fbb9c7b9b23f8db7b49f3a163d6995a04982f7d49587b81dce7c7688974b9cea"
         },
         {
           "cases": 2131,
           "invocations": 10754,
           "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
           "control_sha256": "22b662039bcf443de1826f207225bfddf38e494023e4aa365dbc41acca3eedae",
-          "candidate_sha256": "1ba6b4a8911c168d679febd2f7de1b5f249027525e3566307eb8c1a853ebd64c"
+          "candidate_sha256": "0235ce68561687d6b7b0b521dbcae158eb1b41763f80f4fd8397dcb913e9f1a7"
         }
       ]
     }

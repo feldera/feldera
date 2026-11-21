@@ -818,6 +818,9 @@ projection after it. When an indexed producer is expensive, the unrestricted
 pass can bind the result once and reuse its key and value.
 Rust classifies strict and nested projections and narrows TopK output rows,
 preserving the key and rebinding each value field to its new offset.
+It drops unread aggregate components and fills their original positions with
+the corresponding empty-set results. It also composes UNNEST shuffles and
+projects the default row of an aggregate over an empty input.
 All 86,472 projection invocations matched Java across 8,571 classic
 and 8,527 Gen-2 programs. The comparison checked the entry and exit graphs,
 including type sharing and source positions, as well as the allocator,
