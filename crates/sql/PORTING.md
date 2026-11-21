@@ -834,6 +834,7 @@ measured 1.270×, 2.774× and 1.158×. With live graph encoding reuse, the
 measured 1.303×, 2.693× and 1.230×, all above the 1.2× ceiling.
 With streaming circuit decode the 96-pass build measured 1.290×, 2.367× and 1.171×.
 The corrected 97-pass build measured 1.175×, 1.980× and 1.241×.
+The 99-pass build before the retained-relation change measured 1.312×, 1.994× and 1.248×.
 Each timing covers SQL through emitted classic artifacts.
 [Paired latency and profile](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-20)
 
