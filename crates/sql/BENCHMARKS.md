@@ -14,14 +14,14 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.89 | 2.33 | 2.35 | 3.33 | 1.419× |
-| Nexmark suite | 4.46 | 10.50 | 6.22 | 14.16 | 2.275× |
-| Outer join | 1.85 | 2.21 | 2.53 | 2.98 | 1.176× |
+| Correlated array subquery | 1.83 | 2.27 | 2.49 | 3.01 | 1.208× |
+| Nexmark suite | 4.14 | 9.87 | 5.56 | 13.49 | 2.428× |
+| Outer join | 1.72 | 2.09 | 2.31 | 2.83 | 1.228× |
 
-The table measures the ASOF retainer build at `fbff97a54`. All 69 pairs
-passed the stricter public JSON comparison, which checks numeric precision,
-JSON types, duplicate keys and required artifacts. Only the outer join met
-the p95 ceiling. This timing predates the RANK decoder repair.
+The table measures the decoder build at `b3a0afd8c` on CPU 15. All 69 pairs
+matched on diagnostics and artifacts. All three p95 ratios exceeded the 1.2×
+ceiling. On the earlier ASOF retainer build at `fbff97a54`, the ratios were
+1.419×, 2.275× and 1.176× in workload order.
 
 On the join-filter build at `77879893f`, all 69 pairs matched. The array subquery took 1.92 s hybrid and 1.57 s direct at p95 (1.223×), Nexmark took 6.40 s and 2.62 s (2.442×), and the outer join took 1.58 s and 1.37 s (1.152×). This run allowed CPUs 0–15. The earlier pinned runs and this run have different scheduling conditions.
 
@@ -39,7 +39,7 @@ The 94-pass build measured 1.303×, 2.693× and 1.230× in workload order. The 9
 
 Each workload has two warmup pairs and 21 measured pairs. All 69 pairs
 matched on diagnostics and output artifacts. The harness alternated compiler
-order and rotated workload order. The ASOF retainer run used one pinned Linux ARM64 CPU with a warm
+order and rotated workload order. The decoder and ASOF retainer runs each used one pinned Linux ARM64 CPU with a warm
 filesystem cache on a shared host. The p95 is the twentieth ordered observation out of 21.
 
 The earlier twelve-pass run used Java class directories on a bind mount. The

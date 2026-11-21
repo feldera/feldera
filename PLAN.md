@@ -50,9 +50,9 @@ Path prefixes used in this document:
   frozen classic and Gen-2 programs. Detached S2 matched direct Java through
   final S3, persistent-ID inputs and emitted artifacts. The verified build ran 99 pass kinds
   in Rust. All 8,256 classic executable cases passed on the join-filter build. Java still runs the
-  remaining passes. The join-filter build met the 1.2× SQL-to-artifact p95
-  ceiling on the outer join (1.152× direct Java). The array subquery (1.223×)
-  and Nexmark (2.442×) exceeded it. The owner confirmed that
+  remaining passes. On the pinned decoder build the array subquery (1.208× direct
+  Java), Nexmark (2.428×) and outer join (1.228×) exceeded the 1.2× SQL-to-artifact
+  p95 ceiling. The owner confirmed that
   the field-shadow gate stays open until qualifying field evidence exists.
   [P3 implementation and measurements](crates/sql/PORTING.md#p3-optimizer-replay)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across
