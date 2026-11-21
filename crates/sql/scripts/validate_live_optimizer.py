@@ -124,6 +124,7 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
         expected["ContainsNow"] = clock_scans
         if clock_scans == 2:
             expected["DesugarNowEquality"] = 1
+            expected["Graph"] += 1  # Input fanout for temporal filter sharing.
         if now_stream is not None and (clock_scans == 1 or not now_stream):
             expected["RemoveTable"] += 1
     if temporal_splits is not None:

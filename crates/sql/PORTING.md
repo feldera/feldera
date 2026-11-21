@@ -844,6 +844,12 @@ the bound function, nullable-key filter, index and optional row restoration in
 one call. Both compiler paths matched the Java reference at all 133 active
 `RewriteNow` boundaries. [Temporal window comparisons](evidence/p3-temporal-window.json)
 
+The hybrid optimizer uses the Rust consumer graph when looking for windows
+that can share an input. Rust rebuilds the filter conjunction in the chosen
+order, preserving nullable casts between successive partitions. All 133
+active `Reorder` boundaries matched the saved Java reference.
+[Temporal conjunction comparisons](evidence/p3-temporal-conjunction.json)
+
 Rust builds the row and indexed identity closures used by monotonicity analysis.
 For an unindexed filter it extracts lower bounds from comparisons, including
 columns offset by numeric or temporal literals. The Java transfer functions

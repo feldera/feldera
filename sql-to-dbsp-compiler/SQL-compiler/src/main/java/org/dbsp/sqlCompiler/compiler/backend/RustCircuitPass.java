@@ -864,15 +864,17 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public record TemporalCandidate(String fingerprint, int conjunct) {}
     public record TemporalBound(String fingerprint, boolean lower) {}
-    public record TimestampPartition(boolean first, Set<String> timestamps) {}
 
-    public static TimestampPartition[] temporalFilterOrder(List<TemporalBound> bounds, @Nullable String shared) {
+    private record TemporalOrder(List<TemporalBound> bounds, @Nullable Integer chosen) {}
+
+    public static DBSPExpression reorderTemporalPredicate(DBSPCompiler compiler, DBSPExpression body,
+            List<TemporalBound> bounds, @Nullable Integer chosen) {
         try {
-            byte[] reply = transformWithContext("WindowGroups/TemporalOrder", MAPPER.writeValueAsBytes(bounds),
-                    0, "", MAPPER.writeValueAsBytes(shared));
-            return MAPPER.readValue(reply, TimestampPartition[].class);
+            var reply = invokeLowering(compiler, "WindowGroups/ReorderPredicate",
+                    MAPPER.writeValueAsBytes(new TemporalOrder(bounds, chosen)), body);
+            return loweredFunction(compiler, reply.writer, reply.value, DBSPExpression.class);
         } catch (IOException error) {
-            throw new UncheckedIOException("Invalid temporal filter ordering from the Rust optimizer", error);
+            throw new UncheckedIOException("Cannot encode temporal filter classifications", error);
         }
     }
 

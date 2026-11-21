@@ -1,0 +1,93 @@
+//! Rebuild a filter's conjunction in the order chosen for its temporal windows.
+use super::temporal::{TemporalBound, temporal_filter_order};
+use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, Field};
+use std::collections::HashMap;
+
+fn is_wrapper(edit: &CircuitEditor, expr: ExpressionId) -> Result<bool, Error> {
+    Ok(edit.expr_kind(expr)? == ExpressionKind::Unary
+        && edit
+            .node(expr.into())?
+            .data("opcode")
+            .and_then(|v| v.as_str())
+            == Some("WRAP_BOOL"))
+}
+
+fn conjuncts(edit: &CircuitEditor, mut body: ExpressionId) -> Result<Vec<ExpressionId>, Error> {
+    while is_wrapper(edit, body)? {
+        body = edit.expression(edit.node(body.into())?.edge("source")?)?;
+    }
+    let mut pending = vec![body];
+    let mut terms = Vec::new();
+    while let Some(term) = pending.pop() {
+        let node = edit.node(term.into())?;
+        if edit.expr_kind(term)? == ExpressionKind::Binary
+            && node.data("opcode").and_then(|v| v.as_str()) == Some("AND")
+        {
+            pending.push(edit.expression(node.edge("right")?)?);
+            pending.push(edit.expression(node.edge("left")?)?);
+        } else {
+            terms.push(term);
+        }
+    }
+    Ok(terms)
+}
+
+/// The timestamp classification belongs to each original comparison. An implicit
+/// cast around a rebuilt subtree is an opaque conjunct in subsequent partitions.
+pub fn reorder_temporal_predicate(
+    edit: &mut CircuitEditor,
+    mut body: ExpressionId,
+    bounds: &[Option<TemporalBound>],
+    chosen: Option<usize>,
+) -> Result<ExpressionId, Error> {
+    let terms = conjuncts(edit, body)?;
+    if terms.len() != bounds.len() {
+        return Err(Error::new(
+            "expected one temporal classification per conjunct",
+        ));
+    }
+    let shared = chosen
+        .map(|i| {
+            bounds
+                .get(i)
+                .ok_or_else(|| Error::new("shared conjunct is out of range"))
+        })
+        .transpose()?
+        .and_then(Option::as_ref)
+        .map(|bound| bound.fingerprint.as_str());
+    let keys: HashMap<_, _> = terms
+        .into_iter()
+        .zip(bounds)
+        .filter_map(|(id, bound)| Some((id, bound.as_ref()?.fingerprint.as_str())))
+        .collect();
+    for partition in temporal_filter_order(bounds, shared) {
+        let terms = conjuncts(edit, body)?;
+        let mut ordered = terms.clone();
+        ordered.sort_by_key(|term| {
+            let selected = keys
+                .get(term)
+                .is_some_and(|key| partition.timestamps.contains(key));
+            selected != partition.first
+        });
+        if ordered == terms {
+            continue;
+        }
+        let mut nullable = false;
+        for &term in &ordered {
+            nullable |= edit.nullable(edit.expression_type(term)?)?;
+        }
+        let origin = ordered[0].into();
+        let ty = edit.bool_type(origin, nullable)?;
+        let predicate = edit.binary_expressions(origin, ty, BinaryOp::And, &ordered)?;
+        body = if is_wrapper(edit, body)? {
+            let wrapper = edit.derive_inner(
+                body.into(),
+                [("source", Field::Reference(predicate.into()))],
+            )?;
+            edit.expression(wrapper)?
+        } else {
+            predicate
+        };
+    }
+    Ok(body)
+}

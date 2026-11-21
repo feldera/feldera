@@ -15,7 +15,7 @@ use crate::{
     CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeKind as Ty,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ExpressionId(NodeId);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -241,6 +241,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 "lower_inclusive": window.lower_inclusive, "upper_inclusive": window.upper_inclusive,
                 "lower_unbounded": window.lower_unbounded}));
         }
+        ("WindowGroups/ReorderPredicate", [body]) => {
+            #[derive(serde::Deserialize)]
+            struct TemporalOrder {
+                bounds: Vec<Option<feldera_sql_opt::TemporalBound>>,
+                chosen: Option<usize>,
+            }
+            let order: TemporalOrder = serde_json::from_slice(state)?;
+            let body = edit.expression(*body)?;
+            feldera_sql_opt::reorder_temporal_predicate(&mut edit, body, &order.bounds, order.chosen)?
+        }
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;
             let filter = edit.expression(*filter)?;
@@ -521,6 +531,7 @@ fn transform(
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
+        | "WindowGroups/ReorderPredicate"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
@@ -581,14 +592,6 @@ fn transform(
         "TemporalComparisons" => {
             let nodes: Vec<feldera_sql_opt::TemporalPredicate> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::classify_temporal_predicates(&nodes)?)?);
-        }
-        "WindowGroups/TemporalOrder" => {
-            let bounds: Vec<Option<feldera_sql_opt::TemporalBound>> =
-                serde_json::from_slice(input)?;
-            let shared: Option<String> = serde_json::from_slice(state)?;
-            return Ok(json!(feldera_sql_opt::temporal_filter_order(
-                &bounds, shared.as_deref()
-            )));
         }
         _ => {}
     }

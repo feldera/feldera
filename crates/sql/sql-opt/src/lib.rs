@@ -144,7 +144,7 @@ mod window_groups;
 
 pub use window_groups::{
     implement_window_groups, qualifying_window_groups, shared_temporal_inputs, shared_window_fields,
-    temporal_filter_order, window_candidates, TemporalBound, TemporalCandidate, TimestampPartition,
+    reorder_temporal_predicate, window_candidates, TemporalBound, TemporalCandidate,
     WindowFields, WindowProjection,
 };
 

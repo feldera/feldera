@@ -1,7 +1,7 @@
 //! Choose which timestamp each temporal filter should index when several
 //! filters can share an input. A filter may join only one sharing group.
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::cmp::Reverse;
 
 #[derive(Deserialize)]
@@ -18,15 +18,15 @@ pub struct TemporalBound {
     pub lower: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
-pub struct TimestampPartition<'a> {
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct TimestampPartition<'a> {
     pub first: bool,
     pub timestamps: Vec<&'a str>,
 }
 
 /// Apply these stable partitions in sequence. Rebuilding an AND can insert
 /// nullable casts, so later partitions inspect the rebuilt expression tree.
-pub fn temporal_filter_order<'a>(
+pub(super) fn temporal_filter_order<'a>(
     bounds: &'a [Option<TemporalBound>],
     shared: Option<&'a str>,
 ) -> Vec<TimestampPartition<'a>> {

@@ -1,13 +1,15 @@
 //! Select bounded windows that can use the same indexed input. Java supplies
 //! canonical closure text while it owns the expression printer.
 mod implement;
+mod reorder;
 mod temporal;
+pub use reorder::reorder_temporal_predicate;
 use feldera_sql_ir::{
     BodyOrder, Circuit, Error, ExpressionKind as Expr, Field, InnerKind, NodeId, OperatorKind,
 };
 pub use implement::{implement_window_groups, WindowProjection};
 pub use temporal::{
-    shared_temporal_inputs, temporal_filter_order, TemporalBound, TemporalCandidate, TimestampPartition,
+    shared_temporal_inputs, TemporalBound, TemporalCandidate,
 };
 use serde::Serialize;
 use std::collections::HashMap;

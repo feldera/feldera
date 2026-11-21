@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
@@ -31,14 +32,15 @@ import org.dbsp.util.Maybe;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 
 /** Reorders the conjuncts within a filter.
  * The goal is to enable many temporal filters that share an input
@@ -59,9 +61,13 @@ public class ReorderTemporalFilters extends Passes {
     }
 
     public ReorderTemporalFilters(DBSPCompiler compiler) {
+        this(compiler, UnaryOperator.identity());
+    }
+
+    ReorderTemporalFilters(DBSPCompiler compiler, UnaryOperator<CircuitTransform> select) {
         super("ReorderTemporalFilters", compiler);
         Graph graph = new Graph(compiler);
-        this.add(graph);
+        this.add(select.apply(graph));
         Scan scan = new Scan(compiler, graph.getGraphs());
         this.add(new Conditional(compiler, scan, () -> !compiler.metadata.windowSharingDisabled()));
         this.add(new Conditional(compiler, new Reorder(compiler, scan.chosenConjunct),
@@ -521,27 +527,16 @@ public class ReorderTemporalFilters extends Passes {
             if (conjuncts.size() < 2)
                 return condition.body;
             DBSPParameter parameter = condition.parameters[0];
-            var fingerprints = new IdentityHashMap<DBSPExpression, String>();
             var bounds = new ArrayList<RustCircuitPass.TemporalBound>(conjuncts.size());
             for (var conjunct : conjuncts) {
                 var bound = temporalFilter(this.compiler(), filter, parameter, conjunct);
                 String key = bound == null ? null : CanonicalForm.asString(this.compiler(),
                         timestampClosure(this.compiler(), parameter, bound.noNow()));
-                fingerprints.put(conjunct, key);
                 bounds.add(bound == null ? null : new RustCircuitPass.TemporalBound(key, RewriteNow.isGreater(bound.opcode())));
             }
-            String shared = chosen == null ? null : fingerprints.get(conjuncts.get(chosen));
-            var result = condition.body;
-            for (var partition : RustCircuitPass.temporalFilterOrder(bounds, shared)) {
-                result = reorder(result, partition.first() ? FilterOrderPolicy.FIRST : FilterOrderPolicy.LAST, term -> {
-                    // A rebuilt conjunction can add a cast around a nullable operand.
-                    if (!fingerprints.containsKey(term))
-                        fingerprints.put(term, timestampFingerprint(this.compiler(), filter, parameter, term));
-                    String key = fingerprints.get(term);
-                    return key != null && partition.timestamps().contains(key);
-                });
-            }
-            return result;
+            if (bounds.stream().allMatch(Objects::isNull))
+                return condition.body;
+            return RustCircuitPass.reorderTemporalPredicate(this.compiler(), condition.body, bounds, chosen);
         }
 
         private DBSPExpression reorderWithJava(DBSPFilterOperator filter, DBSPClosureExpression condition,
