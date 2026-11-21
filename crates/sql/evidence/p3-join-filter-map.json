@@ -1,0 +1,48 @@
+{
+  "scope": "Compare LowerCircuitVisitor in two fresh replay JVMs using the same S2 checkpoints. Rust lowers fused inner, left and star join predicates and optional maps. Java performs the other LowerCircuitVisitor rewrites.",
+  "comparison": [
+    "canonical entry and exit graph",
+    "generated names",
+    "diagnostics",
+    "pass placement and instance",
+    "S2 digest per pair"
+  ],
+  "initial_sql_observation": "The SQL control and candidate differed on a Calcite relation ID before entering LowerCircuitVisitor for IncrementalRegressionTests#testHashes2, including an isolated-JVM run. Both sides subsequently consumed the identical saved S2 and ran the complete preceding optimizer schedule.",
+  "boundaries": {
+    "classic": {
+      "LowerCircuitVisitor": {
+        "cases": 40,
+        "invocations": 40,
+        "changed_circuits": 38,
+        "DBSPJoinFilterMapOperator+filter": 51,
+        "DBSPJoinFilterMapOperator+map": 8,
+        "DBSPLeftJoinFilterMapOperator+filter": 10,
+        "DBSPStarJoinFilterMapOperator+filter": 1,
+        "control_sha256": "f59f269e0da62808c3db505afbb5e84c0c2dcf6ff19c60f2b136e872b87bcf12",
+        "candidate_sha256": "bd2c8a92a843841a99da61c08c3a52e003d4ec91b05da0b76a407fe667b27fed",
+        "population_sha256": "58de270fe0d7810d46d1c96081277ea7bbeb76f1dbc2fee408124880111181c0",
+        "s2_manifest_sha256": "e31eafbffa649012f2cbd8fe87abc93905ad52a7459e933125c7c28e8dd3eeac"
+      }
+    },
+    "gen2": {
+      "LowerCircuitVisitor": {
+        "cases": 120,
+        "invocations": 120,
+        "changed_circuits": 118,
+        "DBSPJoinFilterMapOperator+filter": 109,
+        "DBSPJoinFilterMapOperator+map": 30,
+        "DBSPLeftJoinFilterMapOperator+filter": 10,
+        "DBSPStarJoinFilterMapOperator+filter": 1,
+        "control_sha256": "34b8be07a00023b9706e2c1a022ad8a6c503e3f7d3158d4226f0e9ef9c68586e",
+        "candidate_sha256": "fe03289e8f45005450fbec33180554d8a13f9444ee309b9270d03cbe9b65d43c",
+        "population_sha256": "b5add434f770617e8361fa3a89fa05eed6b02c3ccbb58473d00778202230d6a9",
+        "s2_manifest_sha256": "41b90a35ae50cf61043d0130ff43d853303a5372cc29c47603aecf1baf5a5fc9"
+      }
+    }
+  },
+  "jar_sha256": "3f6742958758fc016d5e19153b9c0bbfe2c7d6b04a2a7e1bfda97a231b4c59d7",
+  "optimizer_library_sha256": "dedb0c934cbd8e616e5a914c1507993cf0a975125c582c8b68a043cb888e86b1",
+  "comparator_sha256": "1a9349410f3e1e2052f272f247bed0761a3985581ae488c584b46c93c1d63f2f",
+  "oracle_class_sha256": "35b97fbf33cb7931a37bb2ea7e7ded2d261d4f127362aad65cd13ef5067f3bbb",
+  "observer_class_sha256": "cfadc91541c3235562dd9b1a000c0a8f6dc289d77d2a84978aa748cd4caa9706"
+}

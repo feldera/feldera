@@ -182,6 +182,22 @@ fn transform(
     } else {
         Circuit::from_json_bytes(input)?
     };
+    if pass == "LowerJoinFilterMap" {
+        let [id] = circuit.root().edges("allOperators")?.try_into()
+            .map_err(|_| "join lowering requires one operator")?;
+        let operator = circuit.node(id).expect("validated circuit member");
+        let mut edit = feldera_sql_ir::CircuitEditor::new(circuit.clone());
+        let mut warnings = Vec::new();
+        let closure = feldera_sql_opt::lower_join_filter_map(
+            &mut edit, operator.edge("function")?, operator.edge("filter")?,
+            operator.field("map").map(|_| operator.edge("map")).transpose()?, &mut warnings,
+        )?;
+        let mut functions = edit.circuit().additional_expressions(&circuit, &[closure])?;
+        let warnings: Vec<_> = warnings.into_iter().map(|w| {
+            json!({"range":w.position, "error_type":w.kind, "message":w.message})
+        }).collect();
+        return Ok(json!({"function": functions.pop().expect("one requested closure"), "warnings": warnings}));
+    }
     if pass == "UDFInliner/Declarations" {
         let calls = serde_json::from_slice::<Vec<(String, usize)>>(state)?;
         return Ok(json!({"needs_full_snapshot": feldera_sql_opt::may_inline_udfs(circuit, &calls)?}));

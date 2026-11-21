@@ -804,6 +804,26 @@ and generated-name counters matched at all 1,872 projection iterations on the
 296 selected inputs. Of those iterations, 770 changed the graph.
 [Projection field comparisons](evidence/p3-projection-fields.json)
 
+Rust lowers a fused join, filter and optional map to a single closure. The
+unprojected form binds the joined row once. The projected form applies the map
+only when the predicate succeeds. The comparison covered 198 inner joins,
+20 left joins and two star joins. All 160 pass boundaries matched on graph
+structure, generated names and diagnostics. Both JVMs replayed the same S2
+files to preserve the Calcite relation IDs observed on entry.
+[Join-filter lowering comparisons](evidence/p3-join-filter-map.json)
+
+To repeat a paired pass comparison, capture the population once, then give
+both JVMs that checkpoint directory. Each observation records the S2 digest.
+
+```sh
+oracle=org.dbsp.sqlCompiler.compiler.sql.tools.PassCorpusOracle
+java -ea -cp "$JAVA_TEST_CLASSPATH" "$oracle" --capture-s2 "$POPULATION" "$NEW_S2_DIR"
+for rust in false true; do
+    java -ea -Djava.library.path="$NATIVE_LIB_DIR" -Dfeldera.optimizer.compareRustJoinFilterMap="$rust" \
+        -cp "$JAVA_TEST_CLASSPATH" "$oracle" "$POPULATION" LowerCircuitVisitor "$NEW_S2_DIR" > "lower-$rust.jsonl"
+done
+```
+
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
 detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,931,889 scheduled invocations
 across the two populations, including fast paths that returned an unchanged circuit. Final S3, hash inputs, schema, diagnostics,

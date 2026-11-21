@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
@@ -72,8 +73,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.util.Shuffle;
+import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
 
 import java.io.IOException;
@@ -197,6 +200,41 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     private static native byte[] transformWithContext(String pass, byte[] circuit, long next, String errorView, byte[] state);
+
+    public static DBSPClosureExpression lowerJoinFilterMap(DBSPCompiler compiler, DBSPCircuit circuit,
+            DBSPSimpleOperator operator, DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
+        var json = JsonStream.compactCircuit();
+        var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
+        inner.liveNodes = new HashMap<>();
+        json.beginObject().appendClass(circuit).label("id").append(circuit.id)
+                .label("declarations").beginArray();
+        json.endArray().label("allOperators").beginArray();
+        json.beginObject().appendClass(operator).label("id").append(operator.id);
+        json.label("function");
+        operator.getClosureFunction().accept(inner);
+        json.label("filter");
+        filter.accept(inner);
+        if (map != null) {
+            json.label("map");
+            map.accept(inner);
+        }
+        json.endObject();
+        json.endArray().endObject();
+        try {
+            byte[] reply = transformWithContext("LowerJoinFilterMap", json.toString().getBytes(StandardCharsets.UTF_8),
+                    0, "", EMPTY_CONTEXT);
+            var result = MAPPER.readTree(reply);
+            var decoder = new JsonDecoder();
+            inner.liveNodes.forEach(decoder.inner::cache);
+            var closure = decoder.decodeInner(result.required("function"), DBSPClosureExpression.class);
+            for (var warning : result.required("warnings"))
+                compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
+                        warning.required("error_type").textValue(), warning.required("message").textValue());
+            return closure;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid join-filter-map closure from Rust", error);
+        }
+    }
 
     public static LeftJoinChainsVisitor.KeyChoice chooseChainKey(LeftJoinChainsVisitor.KeyInput facts) {
         try {

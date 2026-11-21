@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.ConstantViews;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.InputFieldOracle;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import java.util.Comparator;
@@ -127,6 +128,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.previousRustPasses = this.compiler.options.ioOptions.rustOptimizerPasses;
         if (pass instanceof LowerAsof && Boolean.getBoolean("feldera.optimizer.compareRustAsofRetainers"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
+        if (pass instanceof LowerCircuitVisitor && Boolean.getBoolean("feldera.optimizer.compareRustJoinFilterMap"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjections
                 && Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
@@ -179,7 +182,7 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             this.active.put("dedup_keys", this.compiler.options.ioOptions.gen2);
             this.active.put("lazy_upsert", this.compiler.metadata.lazyUpsert());
         }
-        if (this.passClass.equals("Fuse") || this.passClass.equals("ExpandStreamAggregates") || this.passClass.equals("Simplify") || this.passClass.equals("PropagateConstants")
+        if (pass instanceof LowerCircuitVisitor || this.passClass.equals("Fuse") || this.passClass.equals("ExpandStreamAggregates") || this.passClass.equals("Simplify") || this.passClass.equals("PropagateConstants")
                 || this.passClass.equals("PullFilterVisitor") || this.passClass.equals("OptimizeProjectionVisitor"))
             this.diagnostics = this.active.putArray("diagnostics");
         if (pass instanceof ExpandAggregates.ExpandStreamAggregates expand) {
@@ -382,8 +385,13 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     }
 
     public static void main(String[] args) throws IOException {
-        if (args.length != 2)
-            throw new IllegalArgumentException("Expected POPULATION.jsonl and a pass class");
-        run(Path.of(args[0]), (compiler, record) -> new PassCorpusOracle(compiler, record, args[1]));
+        if (args.length == 3 && args[0].equals("--capture-s2")) {
+            captureS2(Path.of(args[1]), Path.of(args[2]));
+            return;
+        }
+        if (args.length < 2 || args.length > 3)
+            throw new IllegalArgumentException("Expected POPULATION.jsonl PASS [S2_DIRECTORY] or --capture-s2 POPULATION.jsonl NEW_DIRECTORY");
+        run(Path.of(args[0]), (compiler, record) -> new PassCorpusOracle(compiler, record, args[1]),
+                args.length == 3 ? Path.of(args[2]) : null);
     }
 }

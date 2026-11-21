@@ -48,6 +48,8 @@ mod indexed_inputs;
 mod input_fields;
 pub use input_fields::{input_field_uses, input_projections, map_field_dependencies, InputFieldUse};
 mod integrate;
+mod join_filter_map;
+pub use join_filter_map::lower_join_filter_map;
 mod left_joins;
 pub mod limiters;
 mod linear_retention;

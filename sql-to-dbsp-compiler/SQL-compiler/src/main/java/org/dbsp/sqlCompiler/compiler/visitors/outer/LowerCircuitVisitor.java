@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
@@ -379,6 +380,13 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         }
     }
 
+    private DBSPClosureExpression lowerJoinFunction(DBSPSimpleOperator node,
+            DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
+        if (this.compiler().options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.lowerJoinFilterMap(this.compiler(), this.getCircuit(), node, filter, map);
+        return lowerJoinFilterMapFunctions(this.compiler(), node.getClosureFunction(), filter, map);
+    }
+
     @Override
     public void postorder(DBSPJoinFilterMapOperator node) {
         if (node.filter == null) {
@@ -386,8 +394,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(),
-                node.getClosureFunction(), node.filter, node.map);
+        DBSPExpression newFunction = this.lowerJoinFunction(node, node.filter, node.map);
         DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, this.mapped(node.left()), this.mapped(node.right()), node.balanced)
                 .copyAnnotations(node);
@@ -401,8 +408,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPClosureExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(),
-                node.getClosureFunction(), node.filter, node.map);
+        DBSPClosureExpression newFunction = this.lowerJoinFunction(node, node.filter, node.map);
         DBSPSimpleOperator result = new DBSPStarJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, Linq.map(node.inputs, this::mapped))
                 .copyAnnotations(node);
@@ -416,8 +422,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(), node.getClosureFunction(),
-                node.filter, node.map);
+        DBSPExpression newFunction = this.lowerJoinFunction(node, node.filter, node.map);
         DBSPSimpleOperator result = new DBSPLeftJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, this.mapped(node.left()), this.mapped(node.right()), node.balanced)
                 .copyAnnotations(node);
