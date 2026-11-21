@@ -16,30 +16,51 @@
           "invocations": 6247,
           "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
           "control_sha256": "d59945037a8c9c5e7018888231b56360c9e91845cd20a4443c2eff257eab6fad",
-          "candidate_sha256": "75ac41948e8f0cf33c65a42186c3d27c3709afde0733de8810f437200a3732ca"
+          "candidate_sha256": "75ac41948e8f0cf33c65a42186c3d27c3709afde0733de8810f437200a3732ca",
+          "optimize_projections": {
+            "invocations": 10785,
+            "control_sha256": "d655f0506d786fc8722b5ef1b29fb8f1f0a834e54f1ddcdca91eebbb94bb6296",
+            "candidate_sha256": "0549bb793c0e1286d64289c3429ade3ca2ebc85df271f7c30986a48201294100"
+          }
         },
         {
           "cases": 2143,
           "invocations": 6386,
           "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
           "control_sha256": "dfbbfa2525c1df50f4a765767de88dcd7c837caed8d708e6a8b3f44a1f8230e3",
-          "candidate_sha256": "a4ea1728faec4c36237626da89bd1f02234ba5b19c19da1dcba203bba38d5c2c"
+          "candidate_sha256": "a4ea1728faec4c36237626da89bd1f02234ba5b19c19da1dcba203bba38d5c2c",
+          "optimize_projections": {
+            "invocations": 10923,
+            "control_sha256": "e8dce2761bed881009d512a1ac4b5d45de560efa872d390eeff115458e900d13",
+            "candidate_sha256": "6a0d985b619dd3173d29aa50ce9097b4832fc6ecf1becbdc655ce57cb48a22d9"
+          }
         },
         {
           "cases": 2143,
           "invocations": 6222,
           "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
           "control_sha256": "9ad7533d7a1f80135ef3c930fe3db1873bf1f3d3da23949793d752230493eb6e",
-          "candidate_sha256": "5ef4ddf5ded057218bcee56dcea19e4b0a613484f8bae4d935008b4e7fb991fc"
+          "candidate_sha256": "5ef4ddf5ded057218bcee56dcea19e4b0a613484f8bae4d935008b4e7fb991fc",
+          "optimize_projections": {
+            "invocations": 10741,
+            "control_sha256": "449abebdd4d5cd0fcf581a831e5e7d1bec1bad08be78c2a43d5ed42e043ca581",
+            "candidate_sha256": "0bbc9fc0368b7fa0ee1d04516aeb8ca823ec004fa2b3b58b44575648fc8aab04"
+          }
         },
         {
           "cases": 2142,
           "invocations": 6359,
           "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
           "control_sha256": "31c8e753e97e5edcbb9fdae28ba78b981abdf4cc889b0ebede2031f3e14b9e2d",
-          "candidate_sha256": "b4e78235e5c6bbaebe5c371881dd5f4b927f4839d20b1946df192d2f08b8d47e"
+          "candidate_sha256": "b4e78235e5c6bbaebe5c371881dd5f4b927f4839d20b1946df192d2f08b8d47e",
+          "optimize_projections": {
+            "invocations": 10901,
+            "control_sha256": "52c668379cff139989ab3450df67bd8ac5e5cd8544768257ac0ba342e3392a20",
+            "candidate_sha256": "366e9be339762a0eddf1bba89b2f3d9b3ad09bfe4b7a171d478d27bf917cfc1e"
+          }
         }
-      ]
+      ],
+      "optimize_projections_invocations": 43350
     },
     "gen2": {
       "cases": 8527,
@@ -51,30 +72,51 @@
           "invocations": 6408,
           "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
           "control_sha256": "df7c1502d22b40c449b7be1f81a64ce53635d77c946d30d64c8a5c3c5b4df098",
-          "candidate_sha256": "0dd88f88826c48be7a39b3669ff37f61a5f042597a47e1d3c61df80059cfc2fb"
+          "candidate_sha256": "0dd88f88826c48be7a39b3669ff37f61a5f042597a47e1d3c61df80059cfc2fb",
+          "optimize_projections": {
+            "invocations": 10942,
+            "control_sha256": "871626c99efb0002494ea3c158d9fe1e4e7282180709ec4af1b29f0e017d385a",
+            "candidate_sha256": "82e99e831e8f55ce030aac20a617da1f62953e240aa241a37b70068ba77f96a4"
+          }
         },
         {
           "cases": 2132,
           "invocations": 6156,
           "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
           "control_sha256": "e1a0a2d4915624db2c490232034848f8dfa6dacc2660e73d395f33d094f39024",
-          "candidate_sha256": "2ab273962272a6081459aec1fc1544a1efdda789ccc136c8b109d3c6513eeb32"
+          "candidate_sha256": "2ab273962272a6081459aec1fc1544a1efdda789ccc136c8b109d3c6513eeb32",
+          "optimize_projections": {
+            "invocations": 10647,
+            "control_sha256": "1907ac3aa590b32db9f4b5197b5e1e113d539d80844367db4d7bea7fe4c4dd1c",
+            "candidate_sha256": "c578c7eec54a28c1a8627524a01e0384b0467fe758e82faf6687a14aef747e89"
+          }
         },
         {
           "cases": 2132,
           "invocations": 6266,
           "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
           "control_sha256": "c4d800e94014389e723c222cf7ec95062190a12f07bd092dfbaab6c47a790f15",
-          "candidate_sha256": "803536e968350ed757727b6d551de055dfc655c1f1ea801d9d90f794555c1f28"
+          "candidate_sha256": "803536e968350ed757727b6d551de055dfc655c1f1ea801d9d90f794555c1f28",
+          "optimize_projections": {
+            "invocations": 10779,
+            "control_sha256": "34ab4720e7c5eef8c59478254a1126bda7cc28b7230480e41c4076507bdf89a7",
+            "candidate_sha256": "fbb9c7b9b23f8db7b49f3a163d6995a04982f7d49587b81dce7c7688974b9cea"
+          }
         },
         {
           "cases": 2131,
           "invocations": 6230,
           "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
           "control_sha256": "708b9d4a00084444dcf526c29fa749774a2df18e7cde4135a4d1d5f8e7853501",
-          "candidate_sha256": "e484adc2fbe349f6c67a78de6943c8f306d8d01b079d3eccec4b8dd8efe598e9"
+          "candidate_sha256": "e484adc2fbe349f6c67a78de6943c8f306d8d01b079d3eccec4b8dd8efe598e9",
+          "optimize_projections": {
+            "invocations": 10754,
+            "control_sha256": "4bf370a00cd5d3110ad0632808146caca5bb843bb8e85880517e5702d4abd999",
+            "candidate_sha256": "0235ce68561687d6b7b0b521dbcae158eb1b41763f80f4fd8397dcb913e9f1a7"
+          }
         }
-      ]
+      ],
+      "optimize_projections_invocations": 43122
     }
   },
   "total_invocations": 50274

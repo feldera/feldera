@@ -801,11 +801,12 @@ deferring columns saves enough work. Across 17 classic and 17 Gen-2 cases,
 Java and Rust selected the same 20 chains and agreed on every column layout.
 [Left-join key selection](evidence/p3-chain-key-choice.json)
 
-During unused-field removal, Rust finds the input fields read by each distinct
-map and map-index closure. Java uses those fields to rewrite the operators.
-The circuit and name allocator matched through 497 iterations on 58 classic
-and 58 Gen-2 inputs, including 263 iterations that changed the circuit.
-[Unused-field replay](evidence/p3-map-dependencies.json)
+During unused-field removal, Rust finds the fields used by each distinct map
+and map-index closure. It builds a projection of the input and rewrites the
+reader to use the retained fields. All 33,176 iterations matched Java
+across the two frozen populations. The comparison checks graph sharing,
+source positions, generated names, diagnostics and pass state. [Map input
+closures](evidence/p3-map-input-closures.json) · [Field dependencies](evidence/p3-map-dependencies.json)
 
 Rust also computes the fields read by a map-index after an aggregate or TopK.
 The first implementation passed those paths to the Java rewriter. The graphs and
@@ -997,7 +998,10 @@ The temporal classification, left-join key and unused-field builds each
 matched both frozen populations and restored COUNT and LATENESS checkpoints
 in both directions. Their four-worker cancellation p95s were 35.25 ms,
 15.35 ms and 10.82 ms, respectively. Peak waiting RSS on the unused-field
-build was 78,012,416 bytes per worker.
+build was 78,012,416 bytes per worker. The shared-projection build measured
+25.95 ms during corpus replay and 10.81 ms with replay idle. The subsequent
+map-input build measured 7.49 ms with replay idle, with 77,963,264 bytes
+peak waiting RSS.
 [Worker limits and trial timings](evidence/p3-worker-limits.json)
 
 The release decoder processed 5,807,488 inputs in 3,600 worker CPU seconds

@@ -1,0 +1,81 @@
+{
+  "scope": "Compare the entry and exit circuits, pass state, diagnostics and generated-name counters for map and map-index input narrowing at every unused-field iteration. Both compilers resume the same S2.",
+  "pass_name": "RemoveUnusedFields",
+  "oracle_sha256": "fafbcea5e3a231d29a38072f50c8b3911d161a8b43ebabb7b124fac53247fa7c",
+  "jar_sha256": "413d135aa268116ba460b3cae1a03d6b3ee88369833912ebc142f623ddf51697",
+  "optimizer_library_sha256": "fcaecc1a4219e5f39a6fa0e4de9324100975a90c9f760cc65a37fc33f04ee94f",
+  "comparator_sha256": "f6c5b54b1b6b1c01a9d95ba1f0cc75770e7c225c64e1f6eb47e5b8bec5a000e2",
+  "engines": {
+    "classic": {
+      "cases": 8571,
+      "invocations": 16643,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "shards": [
+        {
+          "cases": 2143,
+          "invocations": 4104,
+          "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+          "control_sha256": "499645f828d533bdf78b9a05473c770bf289f6048af344879f9f660d63c675e6",
+          "candidate_sha256": "783dcfe5d76dbf215d4c84ac169e7f0517ab74aa9625d77e5a037a7893d8d2b9"
+        },
+        {
+          "cases": 2143,
+          "invocations": 4243,
+          "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+          "control_sha256": "7f5627b7b54b01fe41d6d821a215bd39db0afc56c5bf86d22f04ce16d7dc0a08",
+          "candidate_sha256": "eaba4394a6e51c07b799c89ee90c9e1f20ea4bfa0349513618c3a8444484f8bb"
+        },
+        {
+          "cases": 2143,
+          "invocations": 4079,
+          "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+          "control_sha256": "0a8bb6614b956af06dc6e1909b7c61383f9e2d77bd68e3db14f531955c05cd5b",
+          "candidate_sha256": "95c7122e802f492d2c0493a0017de95f9d065d32569d276ddb149f52938d38c3"
+        },
+        {
+          "cases": 2142,
+          "invocations": 4217,
+          "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+          "control_sha256": "54967a8872864ccaa4a070585d3b277ae1d59f668458495b25e32142d1aacff5",
+          "candidate_sha256": "6c662f8eb51a9e976896e2e1fd291551f3d923e120f83254d5067e9c9f8fa9ce"
+        }
+      ]
+    },
+    "gen2": {
+      "cases": 8527,
+      "invocations": 16533,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "shards": [
+        {
+          "cases": 2132,
+          "invocations": 4276,
+          "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+          "control_sha256": "c2571e153f7db02c6887df21be704d408612cfee1dbe9fad3fc018abeba11158",
+          "candidate_sha256": "ad858ec8182257c851311f639de1a601808a0604b63d8cb7271dc58bbd66fcab"
+        },
+        {
+          "cases": 2132,
+          "invocations": 4024,
+          "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+          "control_sha256": "49bbc672da11928e246a6fcf6b64634d173254768de1f1a7d1d0d3f3daff01e8",
+          "candidate_sha256": "e823e6dc4b6bf926bf11b31c2486c5aac1505ce200de3afeb678a1fea33b3043"
+        },
+        {
+          "cases": 2132,
+          "invocations": 4134,
+          "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+          "control_sha256": "3016b717b30771cf25771b1e2e1db9c5a4c21fe0f1f24f192ae31e6ae86de3e5",
+          "candidate_sha256": "bf9bceb77c72d7f3e724e57c651e8ac30dc4744eacfcec1090524f98114e6d5b"
+        },
+        {
+          "cases": 2131,
+          "invocations": 4099,
+          "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+          "control_sha256": "92533c67a7e4c1f6cd989b3b2d4254f60fc0b4de98f9f6d3c672f47b7fcb0866",
+          "candidate_sha256": "ba9aea52983cb95cde908988ee6025e14522f0d3c5779ed8f5f8618fe9db7d1c"
+        }
+      ]
+    }
+  },
+  "total_invocations": 33176
+}
