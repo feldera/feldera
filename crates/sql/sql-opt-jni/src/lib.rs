@@ -87,6 +87,15 @@ fn expression_arena(roots: impl IntoIterator<Item = Value>) -> Result<(Circuit, 
     }))?.with_inner_roots(roots)
 }
 
+fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
+    let (pairs, rest) = roots.as_chunks::<2>();
+    if rest.is_empty() {
+        Ok(pairs)
+    } else {
+        Err("expected a variable and value for each lazy binding")
+    }
+}
+
 fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
         return Err("expected an array of lowering inputs".into());
@@ -112,6 +121,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("InnerCSE/Let", [body, pairs @ ..]) => {
+            let body = edit.expression(*body)?;
+            let pairs = binding_pairs(pairs)?;
+            feldera_sql_opt::bind_lazy_expression(&mut edit, pairs, body)?
+        }
+        ("InnerCSE/Statements", pairs) => {
+            let pairs = binding_pairs(pairs)?;
+            let statements = feldera_sql_opt::lazy_statements(&mut edit, pairs)?;
+            return Ok(serde_json::to_value(edit.circuit().additional_inner_nodes(&arena, statements)?)?);
+        }
         ("SplitRowMapInput" | "SplitIndexedMapInput", [reader]) => {
             let output = if pass == "SplitIndexedMapInput" {
                 feldera_sql_opt::MapOutput::Indexed
@@ -268,7 +287,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {

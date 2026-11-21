@@ -275,19 +275,9 @@ fn rebuild_result_type(
             let [_, any] = arguments.as_slice() else {
                 return Err(Error::new("lazy expression requires two type arguments"));
             };
-            arena.inner_at(
-                result,
-                InnerKind::Type(TypeKind::Lazy),
-                [
-                    (
-                        "typeArgs",
-                        Field::Array(vec![Field::Reference(result), Field::Reference(*any)]),
-                    ),
-                    ("name", Field::Data("LazyCell".into())),
-                    ("code", Field::Data("USER".into())),
-                    ("mayBeNull", Field::Data(false.into())),
-                ],
-            )?
+            arena
+                .lazy_type(arena.type_id(result)?, arena.type_id(*any)?)?
+                .into()
         }
         Some(ExpressionKind::HandleError) => {
             let source = arena.node(value.edge("source")?)?.edge("type")?;

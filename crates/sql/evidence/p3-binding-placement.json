@@ -1,5 +1,5 @@
 {
-  "scope": "Rust chooses the enclosing let, last local declaration, or closure entry for a pending lazy binding.",
+  "scope": "Rust selects the enclosing let, last local declaration, or closure entry and constructs the nested let expressions or block declarations that bind each lazy cell.",
   "comparison": "Same saved S2 for each pair. Java and Rust matched pass placement, diagnostics, names, and canonical entry and exit circuits.",
   "engines": {
     "classic": {
@@ -12,7 +12,7 @@
       ],
       "population_sha256": "752e2d6d9f373df4a1e00f6f3c27a556855936531dfbad23d1a65aa12621d6ff",
       "control_gzip_sha256": "268a566f0719fc91fe7eee6c51e6d52a7a6e6b5e68f36ced312add20ab2eea1c",
-      "candidate_gzip_sha256": "268a566f0719fc91fe7eee6c51e6d52a7a6e6b5e68f36ced312add20ab2eea1c"
+      "candidate_gzip_sha256": "1ce501a8f8457325e36d610a02f9afd42cad81364385cac785ddbfc42965c8cc"
     },
     "gen2": {
       "cases": 93,
@@ -23,11 +23,11 @@
       ],
       "population_sha256": "18f4eaf05bff72f68f542be1f7b3a7d493d7c34266c5f37ec4a16f084fc304f0",
       "control_gzip_sha256": "a1a685da60ed7285d2be7220ec0e4c298baad07a148e38056188504aff626b71",
-      "candidate_gzip_sha256": "a1a685da60ed7285d2be7220ec0e4c298baad07a148e38056188504aff626b71"
+      "candidate_gzip_sha256": "ce6c916cea6fb69fbf70597e4fa2606ad75e164aba7f8b0dd7b8d313aa647d0f"
     }
   },
   "junit_rust_equivalence_tests": 22,
-  "jar_sha256": "ca7ffe9f88179f108ceeb036d461b8aca744e551f15699591c465ad9fee34841",
-  "jni_sha256": "408ebeb946aab74a728f5ff084f22eb25e2cf8bda57c2bd90d8760fd4ceb3602",
-  "comparator_sha256": "c0853db6ef8a0594d52fcd8fa4946d5ce1aa0659d4c31d8c1509f9c60a768240"
+  "jar_sha256": "b6c1c49df3bb86d9de917d0216ba6d3e61812ff570180c744a04a44abf90d02c",
+  "jni_sha256": "78cdef1f1445d2ef37eaec0262896966e5bc4ee74e388aaf51539ae5ffc12f61",
+  "comparator_sha256": "d211c937e8d064fb98a82c41462a412e63a4675bb2c1f60fa722872fe41ced93"
 }

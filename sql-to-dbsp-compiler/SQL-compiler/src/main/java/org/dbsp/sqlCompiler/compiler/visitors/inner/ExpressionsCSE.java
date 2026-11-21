@@ -97,7 +97,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
     }
 
     record Assignment(DBSPClosureExpression owner, DBSPVariablePath var,
-                      DBSPExpression expression, Set<IDBSPDeclaration> dependsOn) {
+                      DBSPExpression expression, Set<IDBSPDeclaration> dependsOn) implements RustCircuitPass.LazyBinding {
         Assignment {
             Utilities.enforce(var.getType().deref().sameType(expression.getType()));
         }
@@ -280,7 +280,9 @@ public class ExpressionsCSE extends ExpressionTranslator {
     }
 
     /** Earlier bindings enclose later ones, which may refer to them. */
-    private static DBSPExpression bind(List<Assignment> bindings, DBSPExpression body) {
+    private DBSPExpression bind(List<Assignment> bindings, DBSPExpression body) {
+        if (!bindings.isEmpty() && this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.bindLazyExpression(this.compiler, bindings, body);
         for (int i = bindings.size() - 1; i >= 0; i--) {
             Assignment assignment = bindings.get(i);
             body = new DBSPLetExpression(assignment.var, new DBSPLazyExpression(assignment.expression), body);
@@ -310,8 +312,14 @@ public class ExpressionsCSE extends ExpressionTranslator {
         List<DBSPStatement> result = new ArrayList<>();
         for (DBSPStatement stat : expression.contents) {
             result.add(this.get(stat).to(DBSPStatement.class));
-            for (Assignment a : inserted.getOrDefault(stat.getId(), List.of()))
-                result.add(new DBSPLetStatement(a.var.variable, new DBSPLazyExpression(a.expression)));
+            var bindings = inserted.get(stat.getId());
+            if (bindings == null)
+                continue;
+            if (this.compiler.options.ioOptions.rustOptimizerPasses)
+                result.addAll(RustCircuitPass.lazyStatements(this.compiler, bindings));
+            else
+                for (Assignment a : bindings)
+                    result.add(new DBSPLetStatement(a.var.variable, new DBSPLazyExpression(a.expression)));
         }
         this.map(expression, new DBSPBlockExpression(result, last));
     }

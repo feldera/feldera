@@ -44,7 +44,7 @@ mod error_consumers;
 mod error_wrappers;
 mod expand_aggregates;
 mod binding_placement;
-pub use binding_placement::{BindingScope, PendingBinding};
+pub use binding_placement::{BindingScope, PendingBinding, bind_lazy_expression, lazy_statements};
 mod expression_uses;
 pub use expression_uses::{shared_expression_uses, NumberedExpression};
 mod expression_visitor;

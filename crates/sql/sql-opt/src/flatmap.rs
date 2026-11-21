@@ -11,23 +11,6 @@ fn link(id: impl Into<NodeId>) -> Field {
     Field::Reference(id.into())
 }
 
-fn binding(
-    edit: &mut CircuitEditor,
-    name: &str,
-    initializer: ExpressionId,
-) -> Result<NodeId, Error> {
-    edit.inner_at(
-        initializer.into(),
-        InnerKind::Other("DBSPLetStatement".into()),
-        [
-            ("type", link(edit.expression_type(initializer)?)),
-            ("initializer", link(initializer)),
-            ("mutable", Field::Data(false.into())),
-            ("variable", Field::Data(name.into())),
-        ],
-    )
-}
-
 /// The element type is retained from the collection. MAP owns a cached key/value tuple type.
 pub fn lower_flatmap(
     edit: &mut CircuitEditor,
@@ -66,7 +49,7 @@ pub fn lower_flatmap(
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| Error::new("missing flatmap binding name"))?
                 .to_owned();
-            statements.push(link(binding(edit, &name, owned)?));
+            statements.push(link(edit.let_statement(&name, owned)?));
         }
         values.push(edit.clone_if_needed(var)?);
     }

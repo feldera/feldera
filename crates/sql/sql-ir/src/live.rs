@@ -97,11 +97,23 @@ impl Circuit {
         input: &Self,
         roots: &[crate::ExpressionId],
     ) -> Result<Vec<Value>, crate::Error> {
+        self.additional_inner_nodes(input, roots.iter().copied().map(NodeId::from))
+    }
+
+    /// Encode new expressions or statements, preserving shared nodes across roots.
+    pub fn additional_inner_nodes(
+        &self,
+        input: &Self,
+        roots: impl IntoIterator<Item = NodeId>,
+    ) -> Result<Vec<Value>, crate::Error> {
         let mut emitted = BTreeSet::new();
         roots
-            .iter()
-            .map(|&root| {
-                self.additional_field(&Field::Reference(root.into()), input, &mut emitted, 0)
+            .into_iter()
+            .map(|root| {
+                if !matches!(root, NodeId::Inner(_)) {
+                    return Err(crate::Error::new("expected an inner node"));
+                }
+                self.additional_field(&Field::Reference(root), input, &mut emitted, 0)
             })
             .collect()
     }

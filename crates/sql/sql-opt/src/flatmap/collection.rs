@@ -1,4 +1,4 @@
-use super::{binding, link};
+use super::link;
 use feldera_sql_expr::{SimplifyWarning, apply_closure, simplify_closure_with_warnings};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
@@ -64,7 +64,7 @@ pub(super) fn extract(
     let cloned = edit.clone_value(value)?;
     let simplified = simplify_closure_with_warnings(edit, cloned.into(), Some(warnings))?;
     let collection = edit.expression(simplified)?;
-    statements.push(link(binding(edit, "collection", collection)?));
+    statements.push(link(edit.let_statement("collection", collection)?));
     let ty = edit.expression_type(collection)?;
     let var = edit.named_variable(ty, "collection")?;
     let owned = if edit.nullable(ty)? {
@@ -100,6 +100,6 @@ pub(super) fn extract(
         let contents = edit.dereference(var)?;
         edit.clone_value(contents)?
     };
-    statements.push(link(binding(edit, "collection_clone", owned)?));
+    statements.push(link(edit.let_statement("collection_clone", owned)?));
     edit.named_variable(edit.expression_type(owned)?, "collection_clone")
 }

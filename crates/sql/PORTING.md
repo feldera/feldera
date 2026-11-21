@@ -860,8 +860,9 @@ in both directions. [UNNEST lowering comparisons](evidence/p3-flatmap-lowering.j
 
 Rust counts distinct uses of an expensive expression within each closure. A
 borrow, clone, dereference or tuple passes its own uses on to its operands.
-Java supplies canonical expression IDs and constructs the lazy bindings.
-Rust chooses where to insert each binding so its dependencies are in scope.
+Java supplies canonical expression IDs. Rust constructs each lazy initializer, nests
+earlier bindings around later consumers and inserts block declarations after
+their last local dependency.
 All 187 selected pass invocations matched on entry and exit. Two classic cases and one
 Gen-2 case introduced a lazy binding. The 22 expression-equivalence tests also
 passed with Rust choosing the insertion point.

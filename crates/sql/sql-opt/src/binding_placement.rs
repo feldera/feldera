@@ -1,4 +1,5 @@
 //! Choose where pending lazy bindings become visible during the bottom-up CSE rewrite.
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeKind};
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -39,6 +40,80 @@ impl BindingScope {
             })
             .collect()
     }
+}
+
+/// A previously allocated CSE variable and the expression computed on its first read.
+struct LazyBinding {
+    variable: ExpressionId,
+    initializer: ExpressionId,
+}
+
+impl LazyBinding {
+    fn new(edit: &mut CircuitEditor, [variable, value]: [NodeId; 2]) -> Result<Self, Error> {
+        let variable = edit.expression(variable)?;
+        let cell = edit.expression_type(variable)?;
+        if edit.expr_kind(variable)? != ExpressionKind::VariablePath
+            || edit.type_kind(cell)? != TypeKind::Lazy
+        {
+            return Err(Error::new("CSE requires a lazy variable"));
+        }
+        let [expected, closure] = edit
+            .node(cell.into())?
+            .edges("typeArgs")?
+            .try_into()
+            .map_err(|_| Error::new("lazy variable requires two type arguments"))?;
+        let value = edit.expression(value)?;
+        let result = edit.expression_type(value)?;
+        if !edit.same_type(edit.type_id(expected)?, result)? {
+            return Err(Error::new(
+                "lazy variable and initializer have different value types",
+            ));
+        }
+        let ty = edit.lazy_type(result, edit.type_id(closure)?)?;
+        let initializer = edit.make_expr(
+            value.into(),
+            ExpressionKind::Lazy,
+            ty,
+            [("expression", Field::Reference(value.into()))],
+        )?;
+        Ok(Self {
+            variable,
+            initializer,
+        })
+    }
+}
+
+/// Nest earlier bindings around later ones, whose initializers may read them.
+pub fn bind_lazy_expression(
+    edit: &mut CircuitEditor,
+    pairs: &[[NodeId; 2]],
+    mut body: ExpressionId,
+) -> Result<ExpressionId, Error> {
+    for &pair in pairs.iter().rev() {
+        let binding = LazyBinding::new(edit, pair)?;
+        body = edit.let_expression(binding.variable, binding.initializer, body)?;
+    }
+    Ok(body)
+}
+
+/// Statements in one block follow their last local dependency in creation order.
+pub fn lazy_statements(
+    edit: &mut CircuitEditor,
+    pairs: &[[NodeId; 2]],
+) -> Result<Vec<NodeId>, Error> {
+    pairs
+        .iter()
+        .map(|&pair| {
+            let binding = LazyBinding::new(edit, pair)?;
+            let name = edit
+                .node(binding.variable.into())?
+                .data("variable")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| Error::new("CSE variable requires a name"))?
+                .to_owned();
+            edit.let_statement(&name, binding.initializer)
+        })
+        .collect()
 }
 
 #[cfg(test)]

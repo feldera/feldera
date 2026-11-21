@@ -85,6 +85,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.util.Shuffle;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
@@ -424,6 +425,41 @@ public final class RustCircuitPass implements CircuitTransform {
     public record OperandUse(long closure, long parent, int operand, boolean forwards) {}
     public record NumberedExpression(long value, boolean candidate, List<OperandUse> users) {}
     public record ScopedValue(long closure, long value) {}
+
+    public interface LazyBinding {
+        DBSPVariablePath var();
+        DBSPExpression expression();
+    }
+
+    /** Keep live references shared between the consumer and all its initializers. */
+    private static LoweringReply lowerBindings(DBSPCompiler compiler, List<? extends LazyBinding> bindings,
+            @Nullable DBSPExpression consumer) {
+        var inputs = new ArrayList<IDBSPInnerNode>();
+        if (consumer != null)
+            inputs.add(consumer);
+        for (var binding : bindings) {
+            inputs.add(binding.var());
+            inputs.add(binding.expression());
+        }
+        return invokeLowering(compiler, consumer == null ? "InnerCSE/Statements" : "InnerCSE/Let",
+                inputs.toArray(IDBSPInnerNode[]::new));
+    }
+
+    public static DBSPExpression bindLazyExpression(DBSPCompiler compiler, List<? extends LazyBinding> bindings,
+            DBSPExpression body) {
+        var reply = lowerBindings(compiler, bindings, body);
+        return loweredFunction(compiler, reply.writer, reply.value, DBSPExpression.class);
+    }
+
+    public static List<DBSPLetStatement> lazyStatements(DBSPCompiler compiler, List<? extends LazyBinding> bindings) {
+        var reply = lowerBindings(compiler, bindings, null);
+        Utilities.enforce(reply.value.isArray() && reply.value.size() == bindings.size());
+        var decoder = expressionDecoder(reply.writer);
+        var statements = new ArrayList<DBSPLetStatement>();
+        for (var node : reply.value)
+            statements.add(decoder.decodeInner(node, DBSPLetStatement.class));
+        return statements;
+    }
 
     public record PendingBinding(long owner, List<Long> dependencies) {}
     public record BindingScope(List<Long> declarations, @Nullable Long closure, boolean outermost) {}

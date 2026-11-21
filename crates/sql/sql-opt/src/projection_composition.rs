@@ -4,7 +4,7 @@ use crate::{
     projection::{projection, strict_projection, Projection},
 };
 use feldera_sql_expr::{compose_closures, parameter_references, SimplifyWarning};
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId};
 use std::collections::HashSet;
 
 pub(crate) fn should_inline(
@@ -70,24 +70,6 @@ pub fn compose_projection(
     compose_closures(edit, before, false, after, Some(warnings)).map(Some)
 }
 
-fn bind(
-    edit: &mut CircuitEditor,
-    variable: ExpressionId,
-    initializer: ExpressionId,
-    consumer: ExpressionId,
-) -> Result<ExpressionId, Error> {
-    edit.make_expr(
-        initializer.into(),
-        Expr::Let,
-        edit.expression_type(consumer)?,
-        [
-            ("variable", Field::Reference(variable.into())),
-            ("initializer", Field::Reference(initializer.into())),
-            ("consumer", Field::Reference(consumer.into())),
-        ],
-    )
-}
-
 /// Fuse two indexed maps. Expensive producers must run once per input even
 /// when the consumer needs both their key and their value.
 pub fn compose_indexed_projection(
@@ -128,8 +110,8 @@ pub fn compose_indexed_projection(
         .to_owned();
     let parameter_type = edit.type_id(parameter.edge("type")?)?;
     let parameter = edit.named_variable(parameter_type, &name)?;
-    let apply = bind(edit, parameter, arguments, consumer)?;
-    let body = bind(edit, pair, producer, apply)?;
+    let apply = edit.let_expression(parameter, arguments, consumer)?;
+    let body = edit.let_expression(pair, producer, apply)?;
     let parameters = edit.node(before)?.edges("parameters")?;
     edit.closure_with_parameters(body, &parameters).map(Some)
 }

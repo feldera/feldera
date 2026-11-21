@@ -1,6 +1,7 @@
 //! Typed construction of expressions in the circuit's inner arena.
 
 mod aggregate;
+mod binding;
 pub use aggregate::OperatorSite;
 mod closure;
 pub use closure::RefParameter;
