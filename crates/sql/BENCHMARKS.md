@@ -6,7 +6,7 @@ Java p95 on representative workloads.
 
 ## Packaged mixed optimizer, 2026-11-20
 
-The opt-in compiler ran 99 Rust pass kinds, including filter trimming and deferred left-join columns. Each timing starts a fresh
+The opt-in compiler ran 99 Rust pass kinds, including lazy binding placement and sibling map grouping. Each timing starts a fresh
 process and ends when it publishes the classic Rust source, UDF stubs,
 schema and dataflow. The hybrid starts one JVM and an isolated Rust worker.
 The baseline runs direct Java from the same Maven JAR. Cargo compilation of
@@ -14,13 +14,14 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.83 | 2.27 | 2.49 | 3.01 | 1.208× |
-| Nexmark suite | 4.14 | 9.87 | 5.56 | 13.49 | 2.428× |
-| Outer join | 1.72 | 2.09 | 2.31 | 2.83 | 1.228× |
+| Correlated array subquery | 1.39 | 1.68 | 1.59 | 2.15 | 1.350× |
+| Nexmark suite | 3.13 | 7.37 | 4.61 | 10.76 | 2.334× |
+| Outer join | 1.32 | 1.53 | 2.14 | 2.30 | 1.074× |
 
-The table measures the decoder build at `b3a0afd8c` on CPU 15. All 69 pairs
-matched on diagnostics and artifacts. All three p95 ratios exceeded the 1.2×
-ceiling. On the earlier ASOF retainer build at `fbff97a54`, the ratios were
+The table measures commit `6db65a1a9` on CPU 15. All 69 pairs matched on
+diagnostics and artifacts. Only the outer join met the 1.2× p95 ceiling.
+The preceding decoder build at `b3a0afd8c` measured 1.208×, 2.428× and
+1.228× in workload order. On the earlier ASOF retainer build at `fbff97a54`, the ratios were
 1.419×, 2.275× and 1.176× in workload order.
 
 On the join-filter build at `77879893f`, all 69 pairs matched. The array subquery took 1.92 s hybrid and 1.57 s direct at p95 (1.223×), Nexmark took 6.40 s and 2.62 s (2.442×), and the outer join took 1.58 s and 1.37 s (1.152×). This run allowed CPUs 0–15. The earlier pinned runs and this run have different scheduling conditions.
@@ -39,7 +40,7 @@ The 94-pass build measured 1.303×, 2.693× and 1.230× in workload order. The 9
 
 Each workload has two warmup pairs and 21 measured pairs. All 69 pairs
 matched on diagnostics and output artifacts. The harness alternated compiler
-order and rotated workload order. The decoder and ASOF retainer runs each used one pinned Linux ARM64 CPU with a warm
+order and rotated workload order. The map grouping, decoder and ASOF retainer runs each used one pinned Linux ARM64 CPU with a warm
 filesystem cache on a shared host. The p95 is the twentieth ordered observation out of 21.
 
 The earlier twelve-pass run used Java class directories on a bind mount. The
