@@ -46,9 +46,9 @@ Path prefixes used in this document:
   passed, including 232 expected runtime errors. The checkpoint and decoder
   results and the outstanding independent reviews are recorded in the
   [phase status](crates/sql/PORTING.md#local-compiler-and-phase-status).
-- 2026-11-21. The mixed optimizer ran 2,931,889 Rust pass adapter invocations on 17,098
+- 2026-11-21. The mixed optimizer ran 2,948,987 Rust pass adapter invocations on 17,098
   frozen classic and Gen-2 programs. Detached S2 matched direct Java through
-  final S3, persistent-ID inputs and emitted artifacts. The verified build ran 99 pass kinds
+  final S3, persistent-ID inputs and emitted artifacts. The verified build ran 100 pass kinds
   in Rust. All 8,256 classic executable cases passed on the filter-bound build
   (`c5c800f7f`). The declared waterline build passed all 2,076 runtime commands
   in the classic LATENESS and NOW() sample and restored COUNT and LATENESS checkpoints in

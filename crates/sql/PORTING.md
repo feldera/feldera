@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | The opt-in mixed optimizer executed 99 Rust pass kinds in the verified replay. Detached S2 replay matched direct Java on all 8,571 classic and 8,527 Gen-2 programs through final S3, persistent-ID inputs and engine output. [Pass comparisons](#p3-optimizer-replay) | Port the remaining Java passes, including projection optimization, monotonicity and limiter insertion. Verify its S4 boundaries and run the phase gates on that complete build. The latency ceiling and field-shadow window remain open. |
+| P3 | The opt-in mixed optimizer executed 100 Rust pass kinds in the verified replay. Detached S2 replay matched direct Java on all 8,571 classic and 8,527 Gen-2 programs through final S3, persistent-ID inputs and engine output. [Pass comparisons](#p3-optimizer-replay) | Port the remaining Java passes, including temporal filter rewriting, monotonicity analysis and limiter insertion. Verify its S4 boundaries and run the phase gates on that complete build. The latency ceiling and field-shadow window remain open. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -950,6 +950,15 @@ operators across 373 programs. All 17,098 lowering boundaries and final
 artifact comparisons matched Java. The COUNT and LATENESS checkpoints restored
 in both directions. [UNNEST lowering comparisons](evidence/p3-flatmap-lowering.json)
 
+Rust now runs the whole circuit lowering pass, including identity streams and
+optional debug instrumentation for apply operators. On TPC-H, rebuilding a map
+chain after lowering a fused join exposed a type-sharing difference. A rebuilt
+map chain now allocates a fresh collection type. Filter-only chains retain
+their declared input type. All 17,098 lowering boundaries matched, including
+656 changed classic graphs and 356 changed Gen-2 graphs. Three directed cases
+also matched Java with apply tracing enabled.
+[Circuit lowering comparisons](evidence/p3-circuit-lowering.json)
+
 Rust counts distinct uses of an expensive expression within each closure. A
 borrow, clone, dereference or tuple passes its own uses on to its operands.
 Java supplies canonical expression IDs. Rust constructs each lazy initializer, nests
@@ -988,7 +997,7 @@ target/release/sql-difftest --compare-pass LowerCircuitVisitor "$POPULATION" low
 ```
 
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
-detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,931,889 scheduled invocations
+detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,948,987 scheduled invocations
 across the two populations, including fast paths that returned an unchanged circuit. Final S3, hash inputs, schema, diagnostics,
 classic workspace bytes, canonical Gen-2 IR and parsed dataflow matched.
 The clean Maven package initially hit Calcite nullability assertions on two

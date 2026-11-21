@@ -1,0 +1,67 @@
+{
+  "compiler_commit": "99f23c273984f27c22826aee523b7bd7e77c1cb4",
+  "scope": "LowerCircuitVisitor, replayed in Rust from each Java pass entry. The comparator checks graph sharing, generated names, diagnostics and captured pass state.",
+  "compiler": {
+    "profile": "Linux ARM64, offline Maven package and release Rust tools",
+    "pass_kinds": 100,
+    "jar_sha256": "afdc377ba2b5fda825ae296ccbc520151061a414e5214ea4733bdc674f1abd69",
+    "driver_sha256": "4bcd6e846a9da5fd6d1f0652de3f85c7a8a59b9690474c35a9a44acbcfba89d0",
+    "optimizer_library_sha256": "d39fa6c1ad4770c277a85fa682b45923aba3e6c0ef14f58dc45d0b086fc95f05"
+  },
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "82f1d8dd92c9fa1de5c1a71b6a6d4642982d0e40c95f27a08a7578743f1e1cbe",
+      "587f133f95d1d30bbfa4d1c6b2be41d4842f173ad8a2a204ae3e6e30625b006b",
+      "d021f8056456cf09ee1319fecd70d24f007bf6d045f4b28e38ab24859ac63997",
+      "c53726254399d4af3092f46d497a67404404996799b3f42b68bca44260265c54"
+    ],
+    "pass": "LowerCircuitVisitor",
+    "invocations": 8571,
+    "changed": 656,
+    "cases_without_placement": 0,
+    "java_observations_gzip_sha256": [
+      "54f82c1f78b0492a1659f57f3538127d6ea21159cd0f9e6fde75c272c3f5e9a0",
+      "53e3d1ee1a13f90980d799f2e932fb5d4f176af0c82aac7bb9eec019b91e8c58",
+      "e438f47607dec3ae9a0fdb9745ee2e6b5317fa925aad3dddf60f1529d7775e06",
+      "bec05af36e6f193e561cac9304876031e57dac4b34348d48610d0a70ab820043"
+    ],
+    "repaired_chain_case": "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0"
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "41c15d0a8a1e64b11d093e9d8ce355d3f54aa4cada59d4f28f1c648545692802",
+      "9dad5722c35189eb4d0552e89fefb9e6fe4ce90867b8e66d3255e8ae0d2adb27",
+      "de2ed4e252ede6ed804c42d92476948d36557a9c909922862810a34ffd3701c8",
+      "1cb1b9c00049cb5bcc6dd38a6833cd5a44d64debb1de08cd97ee841326004be3"
+    ],
+    "pass": "LowerCircuitVisitor",
+    "invocations": 8527,
+    "changed": 356,
+    "cases_without_placement": 0,
+    "java_observations_gzip_sha256": [
+      "554ea65cda3f339fb777b7307d6fa09307e30b54999dec236c07aab4b8057e5a",
+      "8917a1cbf0f6ba4804ca521ceeaa9608040c8d93a27a4ec6d53f33b670809002",
+      "e5b72dd165aa5a96e92db3c229f6551a10fb07509d0fee11336c50131e10d4c3",
+      "e631e205032dad9544ce2a092e5462c21323bb2a3078622829177f5f73f700c5"
+    ],
+    "repaired_chain_case": "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0"
+  },
+  "debug_apply_instrumentation": {
+    "cases": 3,
+    "mismatches": 0,
+    "population_sha256": "ad1fbf0e228b0db4208fdd3a51ca36db071cd15c9c049c646e437ec864d9b86b",
+    "result_shards_sha256": [
+      "a802a6f3568d8c58a28a6b40e2766805c9a759e429f87507fb75e1fc75681c15"
+    ],
+    "pass": "LowerCircuitVisitor",
+    "invocations": 3,
+    "changed": 3,
+    "cases_without_placement": 0
+  }
+}
