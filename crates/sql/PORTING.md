@@ -748,11 +748,14 @@ and source positions matched Java at all 17,098 placements. The pass changed
 when a closure receives another closure as an argument.
 [Canonical name comparisons](evidence/p3-canonical-form.json)
 
-Given the sibling groups discovered by Java, Rust builds one map for their
-distinct output columns and one projection per original map. The rewrite
-matched all 17,098 Java pass boundaries. Five programs per engine changed,
-including a repeated expensive expression within one map and expressions
-shared across views. [Map fusion comparisons](evidence/p3-map-fusion.json)
+Rust groups sibling maps that share expensive expressions. Java supplies
+expression fingerprints and checks single maps for duplicated columns.
+The groups and resulting circuits matched Java on 95 classic and 94 Gen-2
+programs, including all five programs per engine that fused maps. Three
+fused two maps and two shared a computation within a single map. Rust
+builds one map for the distinct columns and one projection per original
+map. The rewrite matched Java at all 17,098 frozen pass boundaries.
+[Sibling groups](evidence/p3-map-fusion-groups.json) · [Map rewrites](evidence/p3-map-fusion.json)
 
 With star joins disabled, Rust expands multiway joins into a balanced tree of binary
 indexed joins and projects the result back to the original column order. Each
@@ -814,10 +817,13 @@ files to preserve the Calcite relation IDs observed on entry.
 
 Rust counts distinct uses of an expensive expression within each closure. A
 borrow, clone, dereference or tuple passes its own uses on to its operands.
-Java supplies canonical expression IDs and builds the lazy bindings. All 187
+Java supplies canonical expression IDs and constructs the lazy bindings.
+Rust chooses where to insert each binding so its dependencies are in scope.
+All 187
 selected pass invocations matched on entry and exit. Two classic cases and one
 Gen-2 case introduced a lazy binding. The 22 expression-equivalence tests also
-passed with the Rust analysis enabled. [Expression-use comparisons](evidence/p3-expression-uses.json)
+passed with Rust choosing the insertion point.
+[Expression-use comparisons](evidence/p3-expression-uses.json) · [Binding placement](evidence/p3-binding-placement.json)
 
 To repeat a paired pass comparison, capture the population once, then give
 both JVMs that checkpoint directory. Each observation records the S2 digest.

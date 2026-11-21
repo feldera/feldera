@@ -130,6 +130,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
                 && rewriter.transform instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.InnerCSE
                 && Boolean.getBoolean("feldera.optimizer.compareRustExpressionUses"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps
+                && Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof LowerAsof && Boolean.getBoolean("feldera.optimizer.compareRustAsofRetainers"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof LowerCircuitVisitor && Boolean.getBoolean("feldera.optimizer.compareRustJoinFilterMap"))
@@ -285,6 +288,17 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             throw new IllegalStateException("Incomplete " + this.passClass);
         var current = Objects.requireNonNull(this.active);
         this.compiler.options.ioOptions.rustOptimizerPasses = this.previousRustPasses;
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps maps) {
+            for (var step : maps.passes) {
+                if (step instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.Fuse fuse) {
+                    var groups = current.putArray("fusion_groups");
+                    for (var cluster : fuse.clusters()) {
+                        var group = groups.addArray();
+                        cluster.forEach(member -> group.add(member.operator().id));
+                    }
+                }
+            }
+        }
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor chains) {
             var reader = new org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns(this.compiler, chains.chainEnd);
             current.set("carried_columns", org.dbsp.util.Utilities.deterministicObjectMapper().valueToTree(reader.layouts()));

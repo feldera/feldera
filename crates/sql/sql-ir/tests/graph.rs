@@ -363,6 +363,31 @@ fn binary_result_defines_a_shared_operand_type_before_java_reads_it() {
 }
 
 #[test]
+fn generated_expression_has_a_readable_position_before_finishing_the_edit() {
+    use feldera_sql_ir::{provenance::SourceRange, CircuitEditor, ExpressionKind, InnerKind};
+
+    let graph = Circuit::from_json(json!({
+        "class": "DBSPCircuit", "id": 0, "declarations": [],
+        "allOperators": [{"class": "DBSPConstantOperator", "id": 1, "inputs": []}]
+    }))
+    .unwrap();
+    let operator = NodeId::Outer(1);
+    let range = SourceRange {
+        start_line_number: 2,
+        start_column: 8,
+        end_line_number: 2,
+        end_column: 12,
+    };
+    let mut editor = CircuitEditor::new(graph);
+    editor.remember_position(operator, range).unwrap();
+    let expr = editor
+        .inner_at(operator, InnerKind::Expression(ExpressionKind::NullLiteral), [])
+        .unwrap();
+    let position = editor.node(expr).unwrap().field("position").unwrap();
+    assert_eq!(position.source_range().unwrap(), range);
+}
+
+#[test]
 fn edited_structured_data_obeys_wire_identity_and_depth_rules() {
     use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind, InnerKind};
 

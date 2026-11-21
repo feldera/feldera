@@ -240,6 +240,31 @@ public final class RustCircuitPass implements CircuitTransform {
     public record NumberedExpression(long value, boolean candidate, List<OperandUse> users) {}
     public record ScopedValue(long closure, long value) {}
 
+    public record PendingBinding(long owner, List<Long> dependencies) {}
+    public record BindingScope(List<Long> declarations, @Nullable Long closure, boolean outermost) {}
+
+    public static Integer[] bindingPlacements(BindingScope scope, List<PendingBinding> bindings) {
+        try {
+            byte[] reply = transformWithContext("InnerCSE/Bindings", MAPPER.writeValueAsBytes(bindings),
+                    0, "", MAPPER.writeValueAsBytes(scope));
+            var placements = MAPPER.readValue(reply, Integer[].class);
+            Utilities.enforce(placements.length == bindings.size());
+            return placements;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid lazy binding placements from Rust", error);
+        }
+    }
+
+    public static int[][] mapFusionGroups(List<int[]> fingerprints) {
+        try {
+            byte[] reply = transformWithContext("FuseExpensiveMaps/Groups", MAPPER.writeValueAsBytes(fingerprints),
+                    0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, int[][].class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid map fusion groups from Rust", error);
+        }
+    }
+
     public static Set<ScopedValue> sharedExpressionUses(List<NumberedExpression> graph) {
         try {
             byte[] reply = transformWithContext("InnerCSE/Uses", MAPPER.writeValueAsBytes(graph), 0, "", EMPTY_CONTEXT);

@@ -12,6 +12,22 @@ use std::collections::BTreeMap;
 const MAX_ORIGIN_DEPTH: usize = 128;
 const MAX_INTERMEDIATE_NODES: usize = 65_536;
 
+impl From<SourceRange> for Field {
+    fn from(range: SourceRange) -> Self {
+        Self::Object(
+            [
+                ("start_line_number", range.start_line_number),
+                ("start_column", range.start_column),
+                ("end_line_number", range.end_line_number),
+                ("end_column", range.end_column),
+            ]
+            .into_iter()
+            .map(|(name, number)| (name.to_owned(), Self::Data(number.into())))
+            .collect(),
+        )
+    }
+}
+
 impl Field {
     pub fn source_range(&self) -> Result<SourceRange, Error> {
         let Field::Object(fields) = self else {

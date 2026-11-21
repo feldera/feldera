@@ -1,0 +1,46 @@
+{
+  "scope": "Rust finds connected components of sibling maps by shared fingerprints. The Java front end renders the fingerprints and checks lone maps for duplicated columns.",
+  "comparison": "Same saved S2 for each pair. Java and Rust matched pass placement, diagnostics, names, and canonical entry and exit circuits.",
+  "engines": {
+    "classic": {
+      "cases": 95,
+      "invocations": 95,
+      "active_cases": [
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testVariantSharing/0",
+        "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#testRounding/31",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testCrossViewFusion/0",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testUnionSharing/0",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testWithinSingleMap/0"
+      ],
+      "population_sha256": "88edab94582a8b1ece924bcbae6ee3e83170bc631c9c63d0943cbc74017b7d49",
+      "control_gzip_sha256": "2f32a1690e4f787d971edfdad8e08345b60abf452c5ab846e750613a56c7e2eb",
+      "candidate_gzip_sha256": "f5a9fb3ab209fe6c798c4c46ef89cc07afd925ad643156803b46144362ec0270",
+      "groups_by_member_count": {
+        "1": 2,
+        "2": 3
+      }
+    },
+    "gen2": {
+      "cases": 94,
+      "invocations": 94,
+      "active_cases": [
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testVariantSharing/0",
+        "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#testRounding/31",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testCrossViewFusion/0",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testUnionSharing/0",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testWithinSingleMap/0"
+      ],
+      "population_sha256": "07ed55e986c7251cd475f6e4a73b3cc7bde341ad73e92413ffbf5a2abcaed732",
+      "control_gzip_sha256": "e1447046f4c78ff4c6406a30f4d5079445fe1844921c93bde24ac2f8e4da49e3",
+      "candidate_gzip_sha256": "3b47fcd1894a8cac25ea34c7085d55fbdcf91cc30ca47626fd74737b23fadd85",
+      "groups_by_member_count": {
+        "1": 2,
+        "2": 3
+      }
+    }
+  },
+  "junit_rust_equivalence_tests": 22,
+  "jar_sha256": "551062bd41cda6f44ddb68101afa8e3fe8bb019b594f05d07184e1af6e1f977f",
+  "jni_sha256": "4e77ddb1aa736e7103e09d6e8046f9224fac4f1fe1c778a991d530566e5eb99c",
+  "comparator_sha256": "284e99170ac4d9ccadea0d03bf284c7510d37b58dbb681e5db974e5d9727b7b8"
+}

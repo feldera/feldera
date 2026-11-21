@@ -204,12 +204,12 @@ impl CircuitEditor {
             location.clear();
             location.push(("sourceEmpty", Field::Data(empty.into())));
             if entry.position.is_valid() || !empty {
-                location.push(("position", Field::Data(serde_json::json!(entry.position))));
+                location.push(("position", entry.position.into()));
             }
         }
         if location.is_empty() {
             if let Some(pos) = self.source_positions.get(&origin).filter(|p| p.is_valid()) {
-                location.push(("position", Field::Data(serde_json::json!(pos))));
+                location.push(("position", (*pos).into()));
             }
         }
         let fields = location

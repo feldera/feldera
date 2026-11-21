@@ -1,0 +1,33 @@
+{
+  "scope": "Rust chooses the enclosing let, last local declaration, or closure entry for a pending lazy binding.",
+  "comparison": "Same saved S2 for each pair. Java and Rust matched pass placement, diagnostics, names, and canonical entry and exit circuits.",
+  "engines": {
+    "classic": {
+      "cases": 94,
+      "invocations": 94,
+      "lazy_cells_added": 2,
+      "active_cases": [
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testUnionSharing/0",
+        "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#unicodeStringTests/47"
+      ],
+      "population_sha256": "752e2d6d9f373df4a1e00f6f3c27a556855936531dfbad23d1a65aa12621d6ff",
+      "control_gzip_sha256": "268a566f0719fc91fe7eee6c51e6d52a7a6e6b5e68f36ced312add20ab2eea1c",
+      "candidate_gzip_sha256": "268a566f0719fc91fe7eee6c51e6d52a7a6e6b5e68f36ced312add20ab2eea1c"
+    },
+    "gen2": {
+      "cases": 93,
+      "invocations": 93,
+      "lazy_cells_added": 1,
+      "active_cases": [
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testUnionSharing/0"
+      ],
+      "population_sha256": "18f4eaf05bff72f68f542be1f7b3a7d493d7c34266c5f37ec4a16f084fc304f0",
+      "control_gzip_sha256": "a1a685da60ed7285d2be7220ec0e4c298baad07a148e38056188504aff626b71",
+      "candidate_gzip_sha256": "a1a685da60ed7285d2be7220ec0e4c298baad07a148e38056188504aff626b71"
+    }
+  },
+  "junit_rust_equivalence_tests": 22,
+  "jar_sha256": "ca7ffe9f88179f108ceeb036d461b8aca744e551f15699591c465ad9fee34841",
+  "jni_sha256": "408ebeb946aab74a728f5ff084f22eb25e2cf8bda57c2bd90d8760fd4ceb3602",
+  "comparator_sha256": "c0853db6ef8a0594d52fcd8fa4946d5ce1aa0659d4c31d8c1509f9c60a768240"
+}

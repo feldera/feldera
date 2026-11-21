@@ -125,7 +125,7 @@ impl CircuitEditor {
             if let Some(range) = site.position.filter(|range| range.is_valid()) {
                 output = self.derive_inner(
                     output,
-                    [("position", Field::Data(serde_json::json!(range)))],
+                    [("position", range.into())],
                 )?;
             }
         }

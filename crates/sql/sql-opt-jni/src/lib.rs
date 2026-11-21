@@ -130,9 +130,18 @@ fn transform(
         return Ok(json!({"needs_full_snapshot":required}));
     }
     match pass {
+        "InnerCSE/Bindings" => {
+            let scope: feldera_sql_opt::BindingScope = serde_json::from_slice(state)?;
+            let bindings: Vec<feldera_sql_opt::PendingBinding> = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(scope.placements(&bindings))?);
+        }
         "InnerCSE/Uses" => {
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
+        }
+        "FuseExpensiveMaps/Groups" => {
+            let fingerprints: Vec<Vec<usize>> = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_groups(&fingerprints))?);
         }
         "AggregateGroups" => {
             let kinds: Vec<feldera_sql_opt::AggregateKind> = serde_json::from_slice(input)?;

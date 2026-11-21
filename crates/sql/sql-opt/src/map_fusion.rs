@@ -1,4 +1,7 @@
 //! Share the distinct output columns of sibling maps identified by the expensive-expression analysis.
+mod groups;
+pub use groups::map_fusion_groups;
+
 use crate::{rebuild::ProjectionNames, stream_rewrites::body_members, terms::Terms};
 use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{

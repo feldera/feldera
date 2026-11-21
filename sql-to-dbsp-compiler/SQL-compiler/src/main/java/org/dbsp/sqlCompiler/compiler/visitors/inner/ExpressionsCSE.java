@@ -4,7 +4,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
@@ -30,7 +29,6 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -102,18 +100,6 @@ public class ExpressionsCSE extends ExpressionTranslator {
                       DBSPExpression expression, Set<IDBSPDeclaration> dependsOn) {
         Assignment {
             Utilities.enforce(var.getType().deref().sameType(expression.getType()));
-        }
-
-        /** The last let statement of 'block' that declares a value used by 'expression', or null if none. */
-        @Nullable
-        DBSPLetStatement lastDependency(DBSPBlockExpression block) {
-            DBSPLetStatement last = null;
-            for (DBSPStatement stat : block.contents) {
-                DBSPLetStatement let = stat.as(DBSPLetStatement.class);
-                if (let != null && this.dependsOn.contains(let))
-                    last = let;
-            }
-            return last;
         }
 
         @Override
@@ -245,28 +231,71 @@ public class ExpressionsCSE extends ExpressionTranslator {
         throw new InternalCompilerError("CSE does not work on expressions that use assignment");
     }
 
+    /** Group the bindings consumed at this scope by the declaration after which
+     * they are inserted. Bindings at closure entry use the closure itself as the key. */
+    private Map<Long, List<Assignment>> takeBindings(List<? extends IDBSPDeclaration> declarations,
+            @Nullable DBSPClosureExpression closure) {
+        if (this.assignments.isEmpty() || (closure == null && declarations.isEmpty()))
+            return Map.of();
+        boolean outermost = closure != null && this.context.isEmpty();
+        Integer[] placements;
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var scope = new RustCircuitPass.BindingScope(
+                    declarations.stream().map(IDBSPDeclaration::getId).toList(),
+                    closure == null ? null : closure.id, outermost);
+            var pending = this.assignments.stream().map(a -> new RustCircuitPass.PendingBinding(
+                    a.owner.id, a.dependsOn.stream().map(IDBSPDeclaration::getId).toList())).toList();
+            placements = RustCircuitPass.bindingPlacements(scope, pending);
+        } else {
+            placements = new Integer[this.assignments.size()];
+            for (int i = 0; i < this.assignments.size(); i++) {
+                Assignment a = this.assignments.get(i);
+                if (closure != null && (outermost || a.owner == closure)) {
+                    placements[i] = 0;
+                    continue;
+                }
+                for (int j = declarations.size() - 1; j >= 0; j--) {
+                    if (a.dependsOn.contains(declarations.get(j))) {
+                        placements[i] = closure == null ? j : 0;
+                        break;
+                    }
+                }
+            }
+        }
+        Map<Long, List<Assignment>> inserted = new HashMap<>();
+        List<Assignment> remaining = new ArrayList<>();
+        for (int i = 0; i < placements.length; i++) {
+            Integer position = placements[i];
+            Assignment a = this.assignments.get(i);
+            if (position == null) {
+                remaining.add(a);
+            } else {
+                long anchor = closure == null ? declarations.get(position).getId() : closure.id;
+                inserted.computeIfAbsent(anchor, ignored -> new ArrayList<>()).add(a);
+            }
+        }
+        this.assignments.clear();
+        this.assignments.addAll(remaining);
+        return inserted;
+    }
+
+    /** Earlier bindings enclose later ones, which may refer to them. */
+    private static DBSPExpression bind(List<Assignment> bindings, DBSPExpression body) {
+        for (int i = bindings.size() - 1; i >= 0; i--) {
+            Assignment assignment = bindings.get(i);
+            body = new DBSPLetExpression(assignment.var, new DBSPLazyExpression(assignment.expression), body);
+        }
+        return body;
+    }
+
     @Override
     public VisitDecision preorder(DBSPLetExpression node) {
         node.initializer.accept(this);
         DBSPExpression initializer = this.getE(node.initializer);
-        // Effects of initializer should be visible while processing consumer
         node.consumer.accept(this);
         DBSPExpression consumer = this.getE(node.consumer);
-
-        List<Assignment> assignments = new ArrayList<>(this.assignments);
-        // LetExpressions are created inside-out, so we need to reverse the assignments
-        Collections.reverse(assignments);
-        this.assignments.clear();
-        for (Assignment assign : assignments) {
-            if (assign.dependsOn.contains(node)) {
-                consumer = new DBSPLetExpression(
-                        assign.var, new DBSPLazyExpression(assign.expression), consumer);
-            } else {
-                // Put it back, we'll insert it later
-                this.assignments.add(assign);
-            }
-        }
-        Collections.reverse(this.assignments);
+        var inserted = this.takeBindings(List.of(node), null);
+        consumer = bind(inserted.getOrDefault(node.id, List.of()), consumer);
         this.map(node, new DBSPLetExpression(node.variable, initializer, consumer));
         return VisitDecision.STOP;
     }
@@ -274,68 +303,23 @@ public class ExpressionsCSE extends ExpressionTranslator {
     @Override
     public void postorder(DBSPBlockExpression expression) {
         DBSPExpression last = this.getEN(expression.lastExpression);
-        if (this.assignments.isEmpty()) {
-            List<DBSPStatement> stats = Linq.map(
-                    expression.contents, e -> this.get(e).to(DBSPStatement.class));
-            this.map(expression, new DBSPBlockExpression(stats, last));
-            return;
-        }
-
-        // Maps a let statement of this block to the assignments inserted after it, in creation order
-        Map<DBSPLetStatement, List<Assignment>> insertAfter = new HashMap<>();
-        List<Assignment> outsideBlock = new ArrayList<>();
-        for (Assignment assign : this.assignments) {
-            DBSPLetStatement lastDependency = assign.lastDependency(expression);
-            if (lastDependency == null)
-                outsideBlock.add(assign);
-            else
-                insertAfter.computeIfAbsent(lastDependency, l -> new ArrayList<>()).add(assign);
-        }
-        this.assignments.clear();
-        this.assignments.addAll(outsideBlock);
-
+        var declarations = this.assignments.isEmpty() ? List.<DBSPLetStatement>of() :
+                expression.contents.stream().filter(DBSPLetStatement.class::isInstance)
+                        .map(DBSPLetStatement.class::cast).toList();
+        var inserted = this.takeBindings(declarations, null);
         List<DBSPStatement> result = new ArrayList<>();
-        for (DBSPStatement stat: expression.contents) {
+        for (DBSPStatement stat : expression.contents) {
             result.add(this.get(stat).to(DBSPStatement.class));
-            List<Assignment> inserted = insertAfter.getOrDefault(stat, List.of());
-            for (Assignment assign : inserted) {
-                var add = new DBSPLetStatement(
-                        assign.var.variable, new DBSPLazyExpression(assign.expression));
-                result.add(add);
-            }
+            for (Assignment a : inserted.getOrDefault(stat.getId(), List.of()))
+                result.add(new DBSPLetStatement(a.var.variable, new DBSPLazyExpression(a.expression)));
         }
         this.map(expression, new DBSPBlockExpression(result, last));
     }
 
     @Override
     public void postorder(DBSPClosureExpression node) {
-        boolean outer = this.context.isEmpty();
-        DBSPExpression translation = this.getE(node.body);
-        List<Assignment> assignments = new ArrayList<>(this.assignments);
-        this.assignments.clear();
-        Collections.reverse(assignments);
-        for (Assignment assign : assignments) {
-            // Insert in the closure that contains the expression's occurrences;
-            // the outermost closure collects everything left over
-            boolean insert = outer || assign.owner == node;
-            if (!insert) {
-                for (DBSPParameter param : node.parameters) {
-                    if (assign.dependsOn.contains(param)) {
-                        insert = true;
-                        break;
-                    }
-                }
-            }
-            if (insert) {
-                translation = new DBSPLetExpression(
-                        assign.var, new DBSPLazyExpression(assign.expression), translation);
-            } else {
-                // Put it back, we'll insert it later
-                this.assignments.add(assign);
-            }
-        }
-
-        Collections.reverse(this.assignments);
+        var inserted = this.takeBindings(List.of(node.parameters), node);
+        DBSPExpression translation = bind(inserted.getOrDefault(node.id, List.of()), this.getE(node.body));
         DBSPExpression result = new DBSPClosureExpression(node.getNode(), translation, node.parameters);
         this.map(node, result);
         if (!node.sameFields(result)) {

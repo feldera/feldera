@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -224,41 +225,65 @@ public class FuseExpensiveMaps extends Passes {
             return i;
         }
 
+        private Iterable<List<MapInfo>> javaComponents(List<MapInfo> group) {
+            int n = group.size();
+            // Union-find forest over the group: parent[i] points towards
+            // the root of i's cluster, and maps with one root fuse
+            // together.
+            int[] parent = new int[n];
+            for (int i = 0; i < n; i++)
+                parent[i] = i;
+            // Maps sharing a fingerprint are joined; linear in the total
+            // number of collected expressions, instead of comparing all
+            // expressions of all pairs of maps
+            Map<String, Integer> firstWithPrint = new HashMap<>();
+            for (int i = 0; i < n; i++) {
+                MapInfo info = group.get(i);
+                Set<String> prints = new HashSet<>();
+                for (DBSPExpression expression : info.minimal())
+                    prints.add(this.fingerprint(info, expression));
+                for (String print : prints) {
+                    Integer first = firstWithPrint.putIfAbsent(print, i);
+                    if (first == null)
+                        continue;
+                    int ri = this.find(parent, first);
+                    int rj = this.find(parent, i);
+                    if (ri != rj)
+                        parent[rj] = ri;
+                }
+            }
+
+            Map<Integer, List<MapInfo>> components = new LinkedHashMap<>();
+            for (int i = 0; i < n; i++)
+                components.computeIfAbsent(this.find(parent, i), r -> new ArrayList<>())
+                        .add(group.get(i));
+            return components.values();
+        }
+
+        private Iterable<List<MapInfo>> nativeComponents(List<MapInfo> group) {
+            if (group.size() == 1)
+                return List.of(group);
+            // Only equality within this input port matters. Keep the rendered text in the JVM.
+            Map<String, Integer> ids = new HashMap<>();
+            List<int[]> fingerprints = group.stream().map(info -> info.minimal().stream()
+                    .mapToInt(e -> ids.computeIfAbsent(this.fingerprint(info, e), ignored -> ids.size()))
+                    .toArray()).toList();
+            List<List<MapInfo>> components = new ArrayList<>();
+            for (int[] component : RustCircuitPass.mapFusionGroups(fingerprints)) {
+                List<MapInfo> members = new ArrayList<>(component.length);
+                for (int index : component)
+                    members.add(group.get(index));
+                components.add(members);
+            }
+            return components;
+        }
+
         @Override
         public void endVisit() {
             for (List<MapInfo> group : this.groups.values()) {
-                int n = group.size();
-                // Union-find forest over the group: parent[i] points towards
-                // the root of i's cluster, and maps with one root fuse
-                // together.
-                int[] parent = new int[n];
-                for (int i = 0; i < n; i++)
-                    parent[i] = i;
-                // Maps sharing a fingerprint are joined; linear in the total
-                // number of collected expressions, instead of comparing all
-                // expressions of all pairs of maps
-                Map<String, Integer> firstWithPrint = new HashMap<>();
-                for (int i = 0; i < n; i++) {
-                    MapInfo info = group.get(i);
-                    Set<String> prints = new HashSet<>();
-                    for (DBSPExpression expression : info.minimal())
-                        prints.add(this.fingerprint(info, expression));
-                    for (String print : prints) {
-                        Integer first = firstWithPrint.putIfAbsent(print, i);
-                        if (first == null)
-                            continue;
-                        int ri = this.find(parent, first);
-                        int rj = this.find(parent, i);
-                        if (ri != rj)
-                            parent[rj] = ri;
-                    }
-                }
-
-                Map<Integer, List<MapInfo>> components = new LinkedHashMap<>();
-                for (int i = 0; i < n; i++)
-                    components.computeIfAbsent(this.find(parent, i), r -> new ArrayList<>())
-                            .add(group.get(i));
-                for (List<MapInfo> members : components.values()) {
+                var components = this.compiler().options.ioOptions.rustOptimizerPasses
+                        ? this.nativeComponents(group) : this.javaComponents(group);
+                for (List<MapInfo> members : components) {
                     if (members.size() == 1 &&
                             !this.hasDuplicatedExpensiveField(members.get(0)))
                         // "Fusing" a single map when it contains a repeated computation
