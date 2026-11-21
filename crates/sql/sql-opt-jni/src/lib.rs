@@ -180,7 +180,7 @@ fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
 }
 
 fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
-    let (arena, roots) = if matches!(pass, "Monotonicity/Filter" | "Monotonicity/Minimum") {
+    let (arena, roots) = if matches!(pass, "Monotonicity/Filter" | "Monotonicity/Minimum" | "Monotonicity/ChainMinimum") {
         serde_json::from_slice::<ExpressionSite>(state)?.arena(input)?
     } else {
         let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
@@ -447,6 +447,13 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             feldera_sql_opt::minimum_transfer(&mut edit, arena.root_id(), pair,
                 postprocess.first().copied(), &mut next, &mut warnings)?
         }
+        ("Monotonicity/ChainMinimum", [input, accumulators, update]) => {
+            let input = edit.type_id(*input)?;
+            let accumulators = edit.type_id(*accumulators)?;
+            let function = feldera_sql_opt::chain_minimum_transfer(&mut edit, arena.root_id(),
+                input, accumulators, *update, &mut next, &mut warnings)?;
+            return lowered_function_reply(&arena, &edit, function, next, warnings);
+        }
         ("Monotonicity/Unary", [operator, bound]) => {
             let operator = edit.expression(*operator)?;
             let bound = edit.expression(*bound)?;
@@ -554,9 +561,15 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         }
         _ => return Err(format!("unexpected inputs to {pass}").into()),
     };
-    let mut functions = edit.circuit().additional_expressions(&arena, &[function])?;
+    lowered_function_reply(&arena, &edit, Some(function), next, warnings)
+}
+
+fn lowered_function_reply(arena: &Circuit, edit: &feldera_sql_ir::CircuitEditor,
+    function: Option<feldera_sql_ir::ExpressionId>, next: u64, warnings: Vec<feldera_sql_expr::SimplifyWarning>,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let mut functions = edit.circuit().additional_expressions(arena, function.as_slice())?;
     Ok(json!({
-        "function": functions.pop().expect("one requested expression"),
+        "function": functions.pop(),
         "next_generated_name": next,
         "warnings": warnings.into_iter().map(|w| json!({
             "range": w.position, "error_type": w.kind, "message": w.message,
@@ -676,7 +689,7 @@ fn transform(
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
-        | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
+        | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"

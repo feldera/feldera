@@ -993,6 +993,11 @@ unbounded. A directed test checks a nested nullable tuple that requires a cast
 on the compared field. Both frozen populations and all 550 selected
 monotonicity boundaries matched Java. [Primitive minimum comparisons](evidence/p3-primitive-min-waterline.json)
 
+For a chain of minimums, Rust binds each update's compared field to the
+incoming row and builds the bound for each accumulator. Java checks agreement
+between the initializer and update. All 550 selected monotonicity boundaries
+and both full frozen replays matched. [Chained minimum comparisons](evidence/p3-chain-minimum-waterline.json)
+
 For tables and views with LATENESS, Rust builds the predicate that admits a
 row and the error payload for a rejected row. The 550 selected limiter
 boundaries matched Java, including 997 controlled filters and 29 keyed
@@ -1227,6 +1232,12 @@ measured pairs. Direct Java took 7.567 s. [Checkpoint and compilation measuremen
 The static-declaration build measured 1.237× on the correlated array subquery, 2.435× on Nexmark and 1.198× on the outer join. Each ratio uses 21 measured SQL-to-artifact pairs.
 The subsequent circuit-writer build measured 1.246×, 2.112× and 1.214× on the same workloads. All 69 warmup and measured pairs matched on diagnostics and emitted artifacts.
 With compact consumer graph inputs (`f08e3eb5d`), the ratios were 1.072×, 2.394× and 1.131×. Nexmark exceeded its p95 ceiling by 5.39 seconds. [Paired timings](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)
+
+With compact view forwarding and grouped aggregate transfers, the hybrid/direct
+p95 ratios were 1.198× for the array subquery, 2.257× for Nexmark and 1.088×
+for the outer join. Nexmark took 13.923 s at p95 against 6.169 s for direct
+Java. All 69 pairs matched artifacts and diagnostics, including the six warmups.
+[Packaged latency measurements](evidence/p3-hybrid-latency.json)
 The checked waterline build (`5a92a1eb3`) measured 1.247×, 2.521× and 1.117× in the same workload order. The outer join met the 1.2× ceiling. [Paired latency and profile](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)
 
 On the 21-pass build, cancellation p95 for four occupied workers was 33.23 ms

@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.CheckPersistentIds;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
@@ -310,6 +311,23 @@ public final class RustCircuitPass implements CircuitTransform {
                     MAPPER.writeValueAsBytes(expressionSite(origin)), input, postprocess));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode aggregate source position", error);
+        }
+    }
+
+    @Nullable
+    public static DBSPClosureExpression chainMinimumTransfer(DBSPCompiler compiler,
+            DBSPChainAggregateOperator chain, DBSPType input) {
+        try {
+            var reply = invokeLowering(compiler, "Monotonicity/ChainMinimum",
+                    MAPPER.writeValueAsBytes(expressionSite(chain.getNode())), input,
+                    chain.getOutputIndexedZSetType().elementType, chain.getClosureFunction());
+            if (reply.value.required("function").isNull()) {
+                finishLowering(compiler, reply.value);
+                return null;
+            }
+            return loweredClosure(compiler, reply);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode chain aggregate source position", error);
         }
     }
 

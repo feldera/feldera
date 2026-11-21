@@ -1,6 +1,8 @@
 //! Transfer a group key or a rolling timestamp through an aggregate.
 use super::{indexed_parameter, unknown};
-use feldera_sql_expr::{SimplifyWarning, apply_closure};
+use feldera_sql_expr::{
+    SimplifyWarning, apply_closure, copy_expression, reduce_closure_body_with_warnings,
+};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, TypeId, TypeKind};
 
 /// Tuple fields are analyzed individually. Preserve the tuple constructor,
@@ -39,9 +41,19 @@ pub enum AggregateTransfer {
     Rolling,
 }
 
-/// MIN compares the first leaf of its input. ARG_MIN can also carry a payload
-/// alongside that leaf. Its fields have no known lower bound.
-fn minimum_value(
+fn first_leaf(edit: &mut CircuitEditor, mut value: ExpressionId) -> Result<ExpressionId, Error> {
+    while matches!(
+        edit.type_kind(edit.expression_type(value)?)?,
+        TypeKind::Tuple | TypeKind::RawTuple
+    ) {
+        value = edit.tuple_field(value, 0)?;
+    }
+    Ok(value)
+}
+
+/// Place the bound in the first leaf of the accumulator. ARG_MIN can also
+/// carry a payload alongside that leaf. Its fields have no known lower bound.
+fn with_first_leaf(
     edit: &mut CircuitEditor,
     origin: NodeId,
     value: ExpressionId,
@@ -54,19 +66,17 @@ fn minimum_value(
         ));
     }
     if !matches!(edit.type_kind(ty)?, TypeKind::Tuple | TypeKind::RawTuple) {
-        let owned = edit.clone_if_needed(value)?;
-        return edit.cast(origin, owned, ty);
+        return edit.cast(origin, value, ty);
     }
     let members = edit.node(ty.into())?.edges("tupFields")?;
     let (first, payload) = members
         .split_first()
         .ok_or_else(|| Error::new("minimum waterline requires a compared field"))?;
-    let first_value = edit.tuple_field(value, 0)?;
     let mut fields = Vec::with_capacity(members.len());
-    fields.push(minimum_value(
+    fields.push(with_first_leaf(
         edit,
         origin,
-        first_value,
+        value,
         edit.type_id(*first)?,
         depth + 1,
     )?);
@@ -94,7 +104,9 @@ pub fn minimum_transfer(
     let second_read = edit.derive_inner(row.into(), [])?;
     let value = edit.tuple_field(edit.expression(second_read)?, 1)?;
     let value = edit.dereference(value)?;
-    let minimum = minimum_value(edit, origin, value, value_type, 0)?;
+    let first = first_leaf(edit, value)?;
+    let owned = edit.clone_if_needed(first)?;
+    let minimum = with_first_leaf(edit, origin, owned, value_type, 0)?;
     let output = if let Some(function) = postprocess {
         let borrowed = edit.borrow_value(minimum)?;
         apply_closure(edit, function, &[borrowed], warnings)?
@@ -105,6 +117,65 @@ pub fn minimum_transfer(
     let key = edit.dereference(key)?;
     let body = edit.tuple_expr(origin, true, &[key, output])?;
     edit.closure_from_variables(body, &[row])
+}
+
+/// A chain of minimum updates retains the group key and the compared leaf of
+/// every accumulator. The caller has verified the initializer and update agree.
+pub fn chain_minimum_transfer(
+    edit: &mut CircuitEditor,
+    origin: NodeId,
+    pair: TypeId,
+    accumulators: TypeId,
+    update: NodeId,
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<Option<ExpressionId>, Error> {
+    let [key, value] = edit
+        .node(pair.into())?
+        .edges("tupFields")?
+        .try_into()
+        .map_err(|_| Error::new("chain minimum input requires a key and value"))?;
+    let row = indexed_parameter(edit, edit.type_id(key)?, edit.type_id(value)?, next)?;
+    let update = edit.node(update)?;
+    let [_, parameter, _] = update
+        .edges("parameters")?
+        .try_into()
+        .map_err(|_| Error::new("chain update requires accumulator, row and weight parameters"))?;
+    let updates = edit.node(update.edge("body")?)?.edges("fields")?;
+    let fields = edit.node(accumulators.into())?.edges("tupFields")?;
+    let row_field = edit.tuple_field(row, 1)?;
+    if fields.len() != updates.len()
+        || !edit.same_type(
+            edit.type_id(edit.node(parameter)?.edge("type")?)?,
+            edit.expression_type(row_field)?,
+        )?
+    {
+        return Ok(None);
+    }
+    let mut bounds = Vec::with_capacity(fields.len());
+    for (field, update) in fields.into_iter().zip(updates) {
+        let operand = edit.expression(edit.node(update)?.edge("right")?)?;
+        let compared = first_leaf(edit, operand)?;
+        let reduced = reduce_closure_body_with_warnings(
+            edit,
+            compared.into(),
+            &[parameter],
+            &[row_field.into()],
+            Some(warnings),
+        )?;
+        let copy = copy_expression(edit, reduced)?;
+        let field_type = edit.type_id(field)?;
+        let bound = with_first_leaf(edit, origin, edit.expression(copy)?, field_type, 0)?;
+        if !edit.same_type(edit.expression_type(bound)?, field_type)? {
+            return Ok(None);
+        }
+        bounds.push(bound);
+    }
+    let key = edit.tuple_field(row, 0)?;
+    let key = edit.dereference(key)?;
+    let values = edit.tuple_expr(origin, false, &bounds)?;
+    let body = edit.tuple_expr(origin, true, &[key, values])?;
+    edit.closure_from_variables(body, &[row]).map(Some)
 }
 
 pub fn aggregate_transfer(

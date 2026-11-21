@@ -1102,15 +1102,30 @@ public class Monotonicity extends CircuitVisitor {
         DBSPTypeTupleBase pairType = projection.getType().to(DBSPTypeTupleBase.class);
         if (pairType.size() != 2)
             return;
+        var transfer = this.compiler().options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.chainMinimumTransfer(this.compiler(), node, pairType)
+                : this.chainMinimumTransfer(node, pairType, updates);
+        if (transfer == null)
+            return;
+        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
+        MonotoneExpression result = analyzer.applyAnalysis(transfer);
+        if (result != null)
+            this.set(node, result);
+    }
+
+    @Nullable
+    private DBSPClosureExpression chainMinimumTransfer(DBSPChainAggregateOperator node,
+            DBSPTypeTupleBase pairType, List<DBSPConditionalIncrementExpression> updates) {
         DBSPTypeRawTuple varType = new DBSPTypeRawTuple(pairType.tupFields[0].ref(), pairType.tupFields[1].ref());
         DBSPVariablePath var = varType.var();
         DBSPParameter row = node.getClosureFunction().parameters[1];
         if (!row.getType().sameType(var.field(1).getType()))
-            return;
+            return null;
 
         DBSPTypeTuple accumulators = node.getOutputIndexedZSetType().getElementTypeTuple();
         if (accumulators.size() != updates.size())
-            return;
+            return null;
         List<DBSPExpression> fields = new ArrayList<>();
         int index = 0;
         for (DBSPConditionalIncrementExpression update : updates) {
@@ -1120,17 +1135,12 @@ public class Monotonicity extends CircuitVisitor {
                     .call(var.field(1)).reduce(this.compiler()).deepCopy();
             DBSPExpression field = withFirstField(node.getNode(), accumulatorType, compared);
             if (!field.getType().sameType(accumulatorType))
-                return;
+                return null;
             fields.add(field);
         }
         DBSPExpression body = new DBSPRawTupleExpression(
                 var.field(0).deref(), new DBSPTupleExpression(fields, false));
-        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
-        // Null when neither the key nor the compared expression is monotone
-        MonotoneExpression result = analyzer.applyAnalysis(body.closure(var));
-        if (result != null)
-            this.set(node, result);
+        return body.closure(var);
     }
 
     @Override
