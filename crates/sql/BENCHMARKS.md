@@ -6,7 +6,7 @@ Java p95 on representative workloads.
 
 ## Packaged mixed optimizer, 2026-11-20
 
-The opt-in compiler ran 88 Rust pass kinds, including input trimming and shared projection analysis. Each timing starts a fresh
+The opt-in compiler ran 89 Rust pass kinds, including input trimming and shared projection replacement. Each timing starts a fresh
 process and ends when it publishes the classic Rust source, UDF stubs,
 schema and dataflow. The hybrid starts one JVM and an isolated Rust worker.
 The baseline runs direct Java from the same Maven JAR. Cargo compilation of
@@ -14,11 +14,12 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 2.32 | 2.89 | 3.55 | 4.13 | 1.161× |
-| Nexmark suite | 5.38 | 15.49 | 6.71 | 21.63 | 3.221× |
-| Outer join | 2.18 | 2.61 | 3.03 | 4.25 | 1.403× |
+| Correlated array subquery | 2.84 | 3.48 | 3.54 | 4.29 | 1.211× |
+| Nexmark suite | 6.90 | 19.05 | 7.94 | 20.70 | 2.606× |
+| Outer join | 2.70 | 3.28 | 3.09 | 3.92 | 1.271× |
 
-The correlated subquery met the 1.2× ceiling. The 86-pass build measured
+All three p95 ratios exceeded the 1.2× ceiling. The corrected 88-pass build measured
+1.161×, 3.221× and 1.403×. The 86-pass build measured
 1.293×, 2.781× and 1.289× in workload order. The 84-pass build measured
 1.344×, 2.995× and 1.017× in workload order. The 83-pass build measured 1.315×,
 2.560× and 1.222× in workload order. The 81-pass build measured

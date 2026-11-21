@@ -789,6 +789,7 @@ On the 83-pass build the ratios were 1.315× for the subquery, 2.560× for Nexma
 On the 84-pass build the ratios were 1.344×, 2.995× and 1.017×, respectively.
 On the 86-pass build all three exceeded the ceiling at 1.293×, 2.781× and 1.289×.
 The corrected 88-pass build measured 1.161×, 3.221× and 1.403×.
+The 89-pass build measured 1.211×, 2.606× and 1.271×.
 Each timing covers SQL through emitted classic artifacts.
 [Paired latency and profile](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-20)
 
