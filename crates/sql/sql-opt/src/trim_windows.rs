@@ -2,11 +2,11 @@
 //! control stream retain their original values and window bounds.
 use crate::rebuild::ProjectionNames;
 use crate::row_projection::RowProjection;
-use crate::stream_rewrites::{body_members, reader_counts};
+use crate::stream_rewrites::{append_map, body_members, reader_counts};
 use feldera_sql_expr::input_field_paths;
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
-    OutputPort, TypeId,
+    OutputPort,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -36,25 +36,6 @@ fn closures(
         layout.project(edit, next, true)?,
         layout.rebind(edit, function)?,
     )))
-}
-
-fn add_index(
-    edit: &mut CircuitEditor,
-    body: NodeId,
-    site: NodeId,
-    input: OutputPort,
-    function: ExpressionId,
-) -> Result<(NodeId, TypeId), Error> {
-    let result = edit.node(function.into())?.edge("body")?;
-    let stream = edit.indexed_zset_from_pair(edit.expression_type(edit.expression(result)?)?)?;
-    let index = edit.append_operator(
-        body,
-        site,
-        Op::MapIndex,
-        &[input],
-        [("outputType", link(stream)), ("function", link(function))],
-    )?;
-    Ok((index, stream))
 }
 
 pub fn trim_windows(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
@@ -102,11 +83,11 @@ pub fn trim_windows(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> 
             ));
         }
         let body = parents[&id];
-        let (index, stream) = add_index(&mut edit, body, window, data, pre)?;
+        let (index, stream) = append_map(&mut edit, body, window, Op::MapIndex, data, pre)?;
         options.push(("outputType", link(stream)));
         let narrowed =
             edit.append_operator(body, window, Op::Window, &[output(index), control], options)?;
-        let (post, _) = add_index(&mut edit, body, id, output(narrowed), post)?;
+        let (post, _) = append_map(&mut edit, body, id, Op::MapIndex, output(narrowed), post)?;
         edit.place_before(body, index, id)?;
         replacements.insert(id, output(post));
         projections.replaced(id);

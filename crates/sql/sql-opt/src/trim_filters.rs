@@ -2,11 +2,10 @@
 //! reader must be able to run on the narrower stream element.
 use crate::rebuild::ProjectionNames;
 use crate::row_projection::RowProjection;
-use crate::stream_rewrites::{body_members, reader_counts};
+use crate::stream_rewrites::{append_map, body_members, reader_counts};
 use feldera_sql_expr::input_field_paths;
 use feldera_sql_ir::{
-    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
-    OutputPort, TypeId,
+    BodyOrder, Circuit, CircuitEditor, Error, Field, NodeId, OperatorKind as Op, OutputPort,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -15,36 +14,6 @@ fn output(operator: NodeId) -> OutputPort {
         operator,
         number: 0,
     }
-}
-
-fn add_map(
-    edit: &mut CircuitEditor,
-    body: NodeId,
-    site: NodeId,
-    kind: Op,
-    input: OutputPort,
-    function: ExpressionId,
-) -> Result<(NodeId, TypeId), Error> {
-    let result = edit.expression(edit.node(function.into())?.edge("body")?)?;
-    let ty = edit.expression_type(result)?;
-    let stream = match kind {
-        Op::Map => edit.zset_type(ty)?,
-        Op::MapIndex => edit.indexed_zset_from_pair(ty)?,
-        _ => {
-            return Err(Error::new("filter projection requires a map reader"));
-        }
-    };
-    let id = edit.append_operator(
-        body,
-        site,
-        kind,
-        &[input],
-        [
-            ("function", Field::Reference(function.into())),
-            ("outputType", Field::Reference(stream.into())),
-        ],
-    )?;
-    Ok((id, stream))
 }
 
 pub fn trim_filters(
@@ -102,18 +71,18 @@ pub fn trim_filters(
         let pre = layout.project(&mut edit, &mut names, reader_uses_input)?;
         let post = layout.rebind(&mut edit, function)?;
         let body = parents[&id];
-        let (pre, stream) = add_map(&mut edit, body, filter, Op::Map, input, pre)?;
+        let (pre, stream) = append_map(&mut edit, body, filter, Op::Map, input, pre)?;
         let narrowed = edit.append_operator(
             body,
             filter,
             Op::Filter,
             &[output(pre)],
             [
-                ("function", Field::Reference(predicate.into())),
                 ("outputType", Field::Reference(stream.into())),
+                ("function", Field::Reference(predicate.into())),
             ],
         )?;
-        let (post, _) = add_map(&mut edit, body, id, kind, output(narrowed), post)?;
+        let (post, _) = append_map(&mut edit, body, id, kind, output(narrowed), post)?;
         edit.place_before(body, pre, id)?;
         replacements.insert(id, output(post));
         projections.replaced(id);
