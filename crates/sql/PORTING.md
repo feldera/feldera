@@ -731,6 +731,11 @@ With the decoder repaired, all 46 active LowerAsof comparisons matched Java
 through the complete pass in fresh JVMs.
 [ASOF retention](evidence/p3-asof-retention.json) · [Pass comparisons and original failure](evidence/p3-asof-retainers.json)
 
+Rust builds the two indexed input maps, both timestamp extractors and the
+output projection for each concrete ASOF join. The resulting circuits and
+generated names matched the Java build from before the port on all 24
+classic and 22 Gen-2 ASOF cases. [ASOF closure comparisons](evidence/p3-asof-functions.json)
+
 Rust ordered the concrete joins before their retainers at all 18 active ASOF
 placements. The exact permutations of the original operators matched Java in
 both engines. The shared sort also preserved the linear aggregate retention

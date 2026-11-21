@@ -4,7 +4,7 @@ pub mod constant_rows;
 mod canonical;
 pub use canonical::canonicalize_names;
 mod tree;
-pub use tree::{copy_expression, ensure_expression_tree};
+pub use tree::{copy_expression, ensure_expression_tree, flatten_tuple_fields};
 mod beta;
 pub use beta::{
     apply_closure, compose_closures, parameter_paths, parameter_references, reduce_closure_body, reduce_closure_body_with_warnings,
@@ -345,19 +345,7 @@ fn rebuild_result_type(
         Some(ExpressionKind::CustomOrd) => {
             let source = arena.node(value.edge("source")?)?.edge("type")?;
             let comparator = arena.node(value.edge("comparator")?)?.edge("type")?;
-            arena.inner_at(
-                node,
-                InnerKind::Type(TypeKind::WithCustomOrd),
-                [
-                    (
-                        "typeArgs",
-                        Field::Array(vec![Field::Reference(source), Field::Reference(comparator)]),
-                    ),
-                    ("name", Field::Data("WithCustomOrd".into())),
-                    ("code", Field::Data("USER".into())),
-                    ("mayBeNull", Field::Data(false.into())),
-                ],
-            )?
+            arena.custom_order_type(node, arena.type_id(source)?, arena.type_id(comparator)?)?.into()
         }
         _ => return Ok(node),
     };

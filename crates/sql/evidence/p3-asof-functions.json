@@ -1,0 +1,25 @@
+{
+  "scope": "The Rust optimizer builds the two indexed input maps, the timestamp extractors, and the output projection for concrete ASOF joins. Java constructs the operators and comparators.",
+  "comparison": "Replay identical detached S2 through LowerAsof. Compare pass placement, generated names and canonical entry and exit circuits against the direct Java package from before the port.",
+  "java_reference_commit": "f08e3eb5d",
+  "java_reference_jar_sha256": "3a2281a9958ebf125939d3e296871b479d843d539a98c6b55275b693ec9f9119",
+  "compiler_jar_sha256": "dee95b8e776a25637face32146293ba49a8041b17a43d5518f9c47c60becdaf3",
+  "optimizer_library_sha256": "f08b22ca8e3e3f007a822e2fc1341d37269764544275ce9133d7021e6b7d52eb",
+  "comparator_sha256": "2cf522140cfcd69b2c4e01e3b58654aafa41b43b0b79e5ed6b7f443e8f7d5603",
+  "populations": {
+    "classic": {
+      "cases": 24,
+      "invocations": 24,
+      "population_sha256": "9fa2c2f35a9ba76c53cb9a560df6132edf0439e775301d901f91aa6b5fd28b3b",
+      "java_gzip_sha256": "70f8bce4acac97f23baee47507ec169dd8c2cdd6a3d4418e96bd560a51fb50c5",
+      "rust_gzip_sha256": "82ab361496bfc98847a40f2ef48d3b6d56f1de41d82026befda1739036e3c084"
+    },
+    "gen2": {
+      "cases": 22,
+      "invocations": 22,
+      "population_sha256": "7c8876d900bf00625521bb71d8bd0b77b4500bfcc04bb52d0e5e0deb5864db4d",
+      "java_gzip_sha256": "e1a30f6013724860571b7a5b75560fc07d8f94af84fb948fa7ce7d433596f863",
+      "rust_gzip_sha256": "2d0bbfc23973179c875e0a5a32855512083b3cf2ce326f4b6450429930c592b2"
+    }
+  }
+}

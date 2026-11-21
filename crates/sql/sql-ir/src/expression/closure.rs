@@ -401,6 +401,25 @@ impl CircuitEditor {
         self.indexed_zset_type(row.into(), self.type_id(key)?, self.type_id(value)?)
     }
 
+    pub fn custom_order_type(
+        &mut self,
+        site: NodeId,
+        row: TypeId,
+        comparator: TypeId,
+    ) -> Result<TypeId, Error> {
+        self.inner_at(
+            site,
+            InnerKind::Type(Ty::WithCustomOrd),
+            [
+                ("typeArgs", refs([row.into(), comparator.into()])),
+                ("name", Field::Data("WithCustomOrd".into())),
+                ("code", Field::Data("USER".into())),
+                ("mayBeNull", Field::Data(false.into())),
+            ],
+        )
+        .map(TypeId)
+    }
+
     pub fn indexed_zset_type(
         &mut self,
         site: NodeId,

@@ -9,7 +9,7 @@ use crate::{
     stream_rewrites::body_members,
     AggregateKind,
 };
-use feldera_sql_expr::{copy_expression, apply_closure, SimplifyWarning};
+use feldera_sql_expr::{copy_expression, flatten_tuple_fields, apply_closure, SimplifyWarning};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
     OperatorSite, OutputPort, TypeId, TypeKind as Ty,
@@ -67,20 +67,6 @@ impl Expansion<'_> {
         self.edit.dereference(field)
     }
 
-    fn flatten(&mut self, value: ExpressionId) -> Result<Vec<ExpressionId>, Error> {
-        let fields = self
-            .edit
-            .node(self.edit.expression_type(value)?.into())?
-            .edges("tupFields")?;
-        (0..fields.len())
-            .map(|i| {
-                let copy = copy_expression(self.edit, value.into())?;
-                let field = self.edit.tuple_field(self.edit.expression(copy)?, i)?;
-                self.edit.clone_if_needed(field)
-            })
-            .collect()
-    }
-
     fn map_index(
         &mut self,
         input: OutputPort,
@@ -109,10 +95,10 @@ impl Expansion<'_> {
         let var = self.pair_variable(value)?;
         let key = self.half(var, 0)?;
         let key = self.edit.clone_if_needed(key)?;
-        let keys = self.flatten(key)?;
+        let keys = flatten_tuple_fields(self.edit, key)?;
         let key = self.edit.tuple_expr(var.into(), false, &keys)?;
         let row = self.half(var, 1)?;
-        let fields = self.flatten(row)?;
+        let fields = flatten_tuple_fields(self.edit, row)?;
         if fields.len() != permutation.len() {
             return Err(Error::new(
                 "aggregate result width differs from its column permutation",

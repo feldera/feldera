@@ -4,7 +4,7 @@ use crate::{
     rebuild::{input_type, ProjectionNames},
     stream_rewrites::body_members,
 };
-use feldera_sql_expr::{copy_expression, reduce_closure_body_with_warnings, SimplifyWarning};
+use feldera_sql_expr::{flatten_tuple_fields, reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
     OutputPort, TypeId, TypeKind as Ty,
@@ -56,15 +56,7 @@ impl Expansion<'_> {
     /// Each field of a flattened tuple owns a copy of the expression reading it.
     fn flatten(&mut self, variable: ExpressionId) -> Result<Vec<ExpressionId>, Error> {
         let value = self.edit.dereference(variable)?;
-        let ty = self.edit.expression_type(value)?;
-        let width = self.edit.node(ty.into())?.edges("tupFields")?.len();
-        (0..width)
-            .map(|index| {
-                let copy = copy_expression(self.edit, value.into())?;
-                let field = self.edit.tuple_field(self.edit.expression(copy)?, index)?;
-                self.edit.clone_if_needed(field)
-            })
-            .collect()
+        flatten_tuple_fields(self.edit, value)
     }
 
     fn combine(

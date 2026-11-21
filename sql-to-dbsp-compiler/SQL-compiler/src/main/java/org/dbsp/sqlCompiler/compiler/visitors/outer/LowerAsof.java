@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
@@ -27,7 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.Linq;
@@ -252,53 +253,30 @@ public class LowerAsof implements CircuitTransform {
             this.original = original;
         }
 
-        @Override
-        public void postorder(DBSPAsofJoinOperator join) {
-            // Convert AsofJoinOperator to ConcreteAsofJoinOperator
-            // The new operator has two MapIndex operators in front of its
-            // inputs, producing DBSPCustomOrdExpressions.
-            // Internally the new operator also has a function which converts
-            // back to normal types.
-            CalciteRelNode node = join.getRelNode();
-            DBSPTypeTuple leftElementType = join.getLeftInputValueType()
-                    .to(DBSPTypeTuple.class);
-            DBSPTypeTuple rightElementType = join.getRightInputValueType()
-                    .to(DBSPTypeTuple.class);
-            DBSPType keyType = join.getKeyType();
+        private DBSPMapIndexOperator indexInput(CalciteRelNode node, OutputPort input, DBSPType keyType,
+                DBSPVariablePath pair, DBSPComparatorExpression comparator, boolean left) {
+            DBSPClosureExpression function;
+            if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+                function = RustCircuitPass.asofIndex(this.compiler(), pair, comparator, left);
+            } else {
+                var value = DBSPTupleExpression.flatten(pair.field(1).deref());
+                var wrapped = new DBSPCustomOrdExpression(node, value, comparator);
+                var key = pair.field(0).deref();
+                function = new DBSPRawTupleExpression(left ? DBSPTupleExpression.flatten(key) : key, wrapped)
+                        .closure(pair);
+            }
+            var valueType = function.getResultType().to(DBSPTypeRawTuple.class).getFieldType(1);
+            var index = new DBSPMapIndexOperator(node, function, TypeCompiler.makeIndexedZSet(keyType, valueType),
+                    this.mapped(input));
+            this.addOperator(index);
+            return index;
+        }
 
-            DBSPVariablePath l = join.left().getOutputIndexedZSetType().getKVRefType().var();
-            DBSPVariablePath r = join.right().getOutputIndexedZSetType().getKVRefType().var();
-
-            DBSPTupleExpression tuple = DBSPTupleExpression.flatten(l.field(1).deref());
-            DBSPComparatorExpression leftComparator =
-                    new DBSPNoComparatorExpression(node, leftElementType)
-                            .field(join.leftTimestampIndex, true);
-            DBSPComparatorType leftComparatorType = leftComparator.getComparatorType();
-            DBSPExpression wrapper = new DBSPCustomOrdExpression(node, tuple, leftComparator);
-            DBSPClosureExpression toLeftKey =
-                    new DBSPRawTupleExpression(DBSPTupleExpression.flatten(l.field(0).deref()), wrapper)
-                            .closure(l);
-            DBSPMapIndexOperator leftIndex = new DBSPMapIndexOperator(
-                    node, toLeftKey,
-                    TypeCompiler.makeIndexedZSet(keyType, wrapper.getType()), this.mapped(join.left()));
-            this.addOperator(leftIndex);
-
-            DBSPComparatorExpression rightComparator =
-                    new DBSPNoComparatorExpression(node, rightElementType)
-                            .field(join.rightTimestampIndex, true);
-            DBSPType rightComparatorType = rightComparator.getComparatorType();
-            wrapper = new DBSPCustomOrdExpression(node,
-                    DBSPTupleExpression.flatten(r.field(1).deref()), rightComparator);
-            DBSPClosureExpression toRightKey =
-                    new DBSPRawTupleExpression(r.field(0).deref(), wrapper)
-                            .closure(r);
-            DBSPMapIndexOperator rightIndex = new DBSPMapIndexOperator(
-                    node, toRightKey,
-                    TypeCompiler.makeIndexedZSet(keyType, wrapper.getType()), this.mapped(join.right()));
-            this.addOperator(rightIndex);
-
-            DBSPType wrappedLeftType = new DBSPTypeWithCustomOrd(node, leftElementType, leftComparatorType);
-            DBSPType wrappedRightType = new DBSPTypeWithCustomOrd(node, rightElementType, rightComparatorType);
+        private Pair<DBSPClosureExpression, DBSPClosureExpression> timestamps(DBSPAsofJoinOperator join,
+                DBSPTypeWithCustomOrd wrappedLeftType, DBSPTypeWithCustomOrd wrappedRightType) {
+            if (this.compiler().options.ioOptions.rustOptimizerPasses)
+                return RustCircuitPass.asofTimestamps(this.compiler(), wrappedLeftType, join.leftTimestampIndex,
+                        wrappedRightType, join.rightTimestampIndex);
 
             DBSPVariablePath leftVar = wrappedLeftType.ref().var();
             DBSPVariablePath rightVar = wrappedRightType.ref().var();
@@ -323,25 +301,64 @@ public class LowerAsof implements CircuitTransform {
                     rightTS.getNode(), commonTSType, DBSPCastExpression.CastType.SqlUnsafe)
                     .applyCloneIfNeeded()
                     .closure(rightVar);
+            return Pair.of(leftTimestamp, rightTimestamp);
+        }
 
-            DBSPVariablePath k = keyType.ref().var();
+        private DBSPClosureExpression projection(DBSPAsofJoinOperator join,
+                DBSPTypeWithCustomOrd wrappedLeftType, DBSPTypeWithCustomOrd wrappedRightType) {
+            if (this.compiler().options.ioOptions.rustOptimizerPasses)
+                return RustCircuitPass.asofProjection(this.compiler(), join.getClosureFunction(), join.getKeyType(),
+                        wrappedLeftType, wrappedRightType);
+
+            DBSPVariablePath k = join.getKeyType().ref().var();
             DBSPVariablePath l0 = wrappedLeftType.ref().var();
             // Signature of the function is (k: &K, l: &L, r: Option<&R>)
             DBSPVariablePath r0 = wrappedRightType.ref().withMayBeNull(true).var();
             List<DBSPExpression> lFields = new ArrayList<>();
-            for (int i = 0; i < leftElementType.size(); i++)
+            for (int i = 0; i < wrappedLeftType.size(); i++)
                 lFields.add(new DBSPUnwrapCustomOrdExpression(l0.deref()).field(i));
             List<DBSPExpression> rFields = new ArrayList<>();
-            for (int i = 0; i < rightElementType.size(); i++)
+            for (int i = 0; i < wrappedRightType.size(); i++)
                 rFields.add(new DBSPCustomOrdField(r0, i));
             DBSPTupleExpression lTuple = new DBSPTupleExpression(lFields, false);
             DBSPTupleExpression rTuple = new DBSPTupleExpression(rFields, false);
             DBSPExpression call = join.getClosureFunction().call(k, lTuple.borrow(), rTuple.borrow())
                     .reduce(this.compiler);
-            DBSPExpression function = call.closure(k, l0, r0);
+            return call.closure(k, l0, r0);
+        }
+
+        @Override
+        public void postorder(DBSPAsofJoinOperator join) {
+            // Convert AsofJoinOperator to ConcreteAsofJoinOperator
+            // The new operator has two MapIndex operators in front of its
+            // inputs, producing DBSPCustomOrdExpressions.
+            // Internally the new operator also has a function which converts
+            // back to normal types.
+            CalciteRelNode node = join.getRelNode();
+            DBSPTypeTuple leftElementType = join.getLeftInputValueType()
+                    .to(DBSPTypeTuple.class);
+            DBSPTypeTuple rightElementType = join.getRightInputValueType()
+                    .to(DBSPTypeTuple.class);
+            DBSPType keyType = join.getKeyType();
+
+            DBSPVariablePath l = join.left().getOutputIndexedZSetType().getKVRefType().var();
+            DBSPVariablePath r = join.right().getOutputIndexedZSetType().getKVRefType().var();
+
+            var leftComparator = new DBSPNoComparatorExpression(node, leftElementType)
+                    .field(join.leftTimestampIndex, true);
+            var leftIndex = this.indexInput(node, join.left(), keyType, l, leftComparator, true);
+            var rightComparator = new DBSPNoComparatorExpression(node, rightElementType)
+                    .field(join.rightTimestampIndex, true);
+            var rightIndex = this.indexInput(node, join.right(), keyType, r, rightComparator, false);
+
+            var wrappedLeftType = new DBSPTypeWithCustomOrd(node, leftElementType, leftComparator.getComparatorType());
+            var wrappedRightType = new DBSPTypeWithCustomOrd(node, rightElementType, rightComparator.getComparatorType());
+
+            var timestamps = this.timestamps(join, wrappedLeftType, wrappedRightType);
+            var function = this.projection(join, wrappedLeftType, wrappedRightType);
 
             DBSPConcreteAsofJoinOperator result = new DBSPConcreteAsofJoinOperator(node, join.getOutputZSetType(),
-                    function, leftTimestamp, rightTimestamp, join.comparator,
+                    function, timestamps.left, timestamps.right, join.comparator,
                     join.isLeft,
                     leftIndex.outputPort(), rightIndex.outputPort())
                     .copyAnnotations(join)

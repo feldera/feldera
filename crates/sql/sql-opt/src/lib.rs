@@ -25,6 +25,8 @@ pub use static_candidates::{static_candidates, StaticCandidates};
 pub use map_fusion::{fuse_expensive_maps, map_fusion_fragments, map_fusion_groups, FusionMember};
 mod star_joins;
 pub use star_joins::{expand_star_join_layer, find_join_trees, names_after_isolated_joins, remove_star_joins, replace_star_joins, StarJoinTree};
+mod asof;
+pub use asof::{asof_index, asof_projection, asof_timestamps};
 mod asof_retention;
 pub use asof_retention::{asof_retainers, move_asof_retention};
 mod array_agg;

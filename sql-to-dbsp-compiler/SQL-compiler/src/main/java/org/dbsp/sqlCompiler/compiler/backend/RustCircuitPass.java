@@ -489,6 +489,30 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static DBSPClosureExpression asofIndex(DBSPCompiler compiler, DBSPVariablePath pair,
+            DBSPExpression comparator, boolean left) {
+        return lowerFunction(compiler, left ? "Asof/LeftIndex" : "Asof/RightIndex", pair, comparator,
+                DBSPClosureExpression.class);
+    }
+
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> asofTimestamps(
+            DBSPCompiler compiler, DBSPType left, int leftIndex, DBSPType right, int rightIndex) {
+        try {
+            var reply = invokeLowering(compiler, "Asof/Timestamps",
+                    MAPPER.writeValueAsBytes(new int[]{leftIndex, rightIndex}), left, right);
+            var pair = decodeClosurePair(new LoweringReply(reply.writer, reply.value.required("functions")));
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            return pair;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode ASOF timestamp columns", error);
+        }
+    }
+
+    public static DBSPClosureExpression asofProjection(DBSPCompiler compiler, DBSPClosureExpression function,
+            DBSPType key, DBSPType left, DBSPType right) {
+        return loweredClosure(compiler, invokeLowering(compiler, "Asof/Projection", function, key, left, right));
+    }
+
     public static DBSPClosureExpression lowerJoinFilterMap(DBSPCompiler compiler, DBSPCircuit circuit,
             DBSPSimpleOperator operator, DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
         var json = JsonStream.compactCircuit();

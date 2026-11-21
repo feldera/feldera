@@ -1,7 +1,26 @@
 //! Copy scalar expression occurrences while retaining their type and binding identities.
 use super::rebuild_result_type;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, NodeId};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,
+};
 use std::collections::HashSet;
+
+/// Flatten a SQL tuple into owned fields. Each field reads a separate copy of
+/// the input expression, as required by the circuit's expression-tree passes.
+pub fn flatten_tuple_fields(
+    edit: &mut CircuitEditor,
+    value: ExpressionId,
+) -> Result<Vec<ExpressionId>, Error> {
+    let ty = edit.expression_type(value)?;
+    let width = edit.node(ty.into())?.edges("tupFields")?.len();
+    (0..width)
+        .map(|index| {
+            let copy = copy_expression(edit, value.into())?;
+            let field = edit.tuple_field(edit.expression(copy)?, index)?;
+            edit.clone_if_needed(field)
+        })
+        .collect()
+}
 
 /// A filter closure that is already a tree must retain its original identity.
 /// In a copied tree, separate uses of a nested closure need distinct parameters.

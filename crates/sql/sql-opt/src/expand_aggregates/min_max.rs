@@ -108,7 +108,7 @@ impl Expansion<'_> {
         if !identity_closure(self.edit, compared, self.next)? {
             let var = self.pair_variable(self.value)?;
             let key = self.half(var, 0)?;
-            let keys = self.flatten(key)?;
+            let keys = flatten_tuple_fields(self.edit, key)?;
             let key = self.edit.tuple_expr(part, false, &keys)?;
             let reference = self.edit.tuple_field(var, 1)?;
             let value = self.call(compared, &[reference])?;
