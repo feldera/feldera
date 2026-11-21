@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -138,10 +139,23 @@ public class RemoveStarJoins extends Repeat {
             this.delta = delta;
 
             DBSPType keyType = operator.inputs.get(0).getOutputIndexedZSetType().keyType;
-            var concat = this.concatenateFields(operator.getRelNode(), keyType, inputs);
-
-            DBSPClosureExpression reduced = this.rewriteStarClosure(
-                    concat.getOutputIndexedZSetType(), operator.getClosureFunction());
+            OutputPort concat;
+            DBSPClosureExpression reduced;
+            if (delta && compiler.options.ioOptions.rustOptimizerPasses) {
+                var term = RustCircuitPass.deltaStarJoinTerm(compiler, operator.getClosureFunction(), keyType, inputs);
+                var streams = new ArrayList<>(inputs);
+                for (var join : term.joins()) {
+                    var binary = new DBSPStreamJoinIndexOperator(operator.getRelNode(), join.type(), join.function(),
+                            streams.get(join.left()), streams.get(join.right()), false);
+                    this.joins.add(binary);
+                    streams.add(binary.outputPort());
+                }
+                concat = streams.getLast();
+                reduced = term.projection();
+            } else {
+                concat = this.concatenateFields(operator.getRelNode(), keyType, inputs);
+                reduced = this.rewriteStarClosure(concat.getOutputIndexedZSetType(), operator.getClosureFunction());
+            }
             if (operator.is(DBSPStarJoinOperator.class))
                 this.result = new DBSPMapOperator(operator.getRelNode(), reduced, concat);
             else if (operator.is(DBSPStarJoinIndexOperator.class))

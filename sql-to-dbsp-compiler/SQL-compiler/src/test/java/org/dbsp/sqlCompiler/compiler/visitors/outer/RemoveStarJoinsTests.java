@@ -12,6 +12,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DeltaExpandOperators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinFilterMapDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
@@ -51,16 +54,35 @@ public class RemoveStarJoinsTests {
         checkFilteredJoin(true, true);
     }
 
-    private static void checkFilteredJoin(boolean withMap, boolean nested) {
-        var compiler = new DBSPCompiler(new CompilerOptions());
+    @Test
+    public void deltaTermsUseOneChangingInputEach() {
+        var options = new CompilerOptions();
+        options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.rustPasses");
+        var compiler = new DBSPCompiler(options);
         var circuit = new DBSPCircuit(new ProgramMetadata(), true);
-        var site = CalciteEmptyRel.INSTANCE;
-        ICircuit body = circuit;
-        if (nested) {
-            var region = new DBSPNestedOperator(site);
-            circuit.addOperator(region);
-            body = region;
+        var star = addFilteredJoin(circuit, true);
+        var expand = new DeltaExpandOperators(compiler);
+        expand.apply(circuit);
+        var expansion = (StarJoinFilterMapDeltaExpansion) expand.expansion.get(star);
+        Assert.assertEquals(5, expansion.joins.size());
+        for (int i = 0; i < expansion.joins.size(); i++) {
+            var term = expansion.joins.get(i);
+            Assert.assertEquals(4, term.joins.size());
+            Assert.assertTrue(term.joins.stream().allMatch(DBSPStreamJoinIndexOperator.class::isInstance));
+            var leaves = List.of(term.joins.get(0).left(), term.joins.get(0).right(),
+                    term.joins.get(1).left(), term.joins.get(1).right(), term.joins.get(3).right());
+            for (int j = 0; j < leaves.size(); j++) {
+                var integral = expansion.integrators.get(j);
+                Assert.assertEquals(j == i ? integral.input() : integral.outputPort(), leaves.get(j));
+            }
+            Assert.assertEquals(term.result.outputPort(), expansion.sum.inputs.get(i));
         }
+        Assert.assertEquals(expansion.sum.outputPort(), expansion.filter.input());
+        Assert.assertEquals(expansion.filter.outputPort(), expansion.last().inputs.getFirst());
+    }
+
+    private static DBSPStarJoinFilterMapOperator addFilteredJoin(ICircuit body, boolean withMap) {
+        var site = CalciteEmptyRel.INSTANCE;
         var integer = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, false);
         var row = new DBSPTypeTuple(integer);
         var index = new DBSPTypeIndexedZSet(CalciteObject.EMPTY, row, row);
@@ -82,7 +104,22 @@ public class RemoveStarJoinsTests {
         var projected = new DBSPTupleExpression(input.deref().field(1));
         var map = withMap ? projected.closure(input) : null;
         var result = new DBSPTypeZSet(withMap ? projected.getType() : tuple.getType());
-        body.addOperator(new DBSPStarJoinFilterMapOperator(site, result, function, predicate, map, inputs));
+        var star = new DBSPStarJoinFilterMapOperator(site, result, function, predicate, map, inputs);
+        body.addOperator(star);
+        return star;
+    }
+
+    private static void checkFilteredJoin(boolean withMap, boolean nested) {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), true);
+        var site = CalciteEmptyRel.INSTANCE;
+        ICircuit body = circuit;
+        if (nested) {
+            var region = new DBSPNestedOperator(site);
+            circuit.addOperator(region);
+            body = region;
+        }
+        addFilteredJoin(body, withMap);
 
         CircuitTransform remove = new RemoveStarJoins(compiler);
         if (Boolean.getBoolean("feldera.optimizer.rustPasses"))

@@ -1,6 +1,8 @@
 //! Replace a maximal tree of snapshot joins with one star join.
 mod analysis;
 mod expand;
+mod tree;
+pub use tree::{expand_star_term, BinaryJoin, StarJoinExpansion};
 pub use expand::{expand_star_join_layer, remove_star_joins};
 use crate::{
     rebuild::{input_type, rebuild_input_closures},

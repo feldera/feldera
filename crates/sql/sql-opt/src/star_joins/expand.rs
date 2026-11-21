@@ -4,10 +4,10 @@ use crate::{
     rebuild::{input_type, ProjectionNames},
     stream_rewrites::body_members,
 };
-use feldera_sql_expr::{flatten_tuple_fields, reduce_closure_body_with_warnings, SimplifyWarning};
+use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{
-    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
-    OutputPort, TypeId, TypeKind as Ty,
+    BodyOrder, Circuit, CircuitEditor, Error, Field, NodeId, OperatorKind as Op, OutputPort,
+    TypeId, TypeKind as Ty,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -48,97 +48,6 @@ impl Expansion<'_> {
             .type_id(self.edit.node(collection.into())?.edge("elementType")?)
     }
 
-    fn by_ref(&mut self, ty: TypeId) -> Result<ExpressionId, Error> {
-        let ty = self.edit.reference_type(ty)?;
-        self.edit.variable(ty, self.next)
-    }
-
-    /// Each field of a flattened tuple owns a copy of the expression reading it.
-    fn flatten(&mut self, variable: ExpressionId) -> Result<Vec<ExpressionId>, Error> {
-        let value = self.edit.dereference(variable)?;
-        flatten_tuple_fields(self.edit, value)
-    }
-
-    fn combine(
-        &mut self,
-        key: TypeId,
-        left: OutputPort,
-        right: OutputPort,
-    ) -> Result<OutputPort, Error> {
-        let left_type = self.element(left)?;
-        let right_type = self.element(right)?;
-        let left_row = self.by_ref(left_type)?;
-        let right_row = self.by_ref(right_type)?;
-        let group = self.by_ref(key)?;
-        let mut types = self.edit.node(left_type.into())?.edges("tupFields")?;
-        types.extend(self.edit.node(right_type.into())?.edges("tupFields")?);
-        let raw = self.edit.type_kind(left_type)? == Ty::RawTuple;
-        let value_type = self.edit.tuple_type(left_type.into(), raw, types)?;
-        let value_type = self
-            .edit
-            .with_nullability(value_type, self.edit.nullable(left_type)?)?;
-        let result = self
-            .edit
-            .indexed_zset_type(value_type.into(), key, value_type)?;
-        let keys = self.flatten(group)?;
-        let keys = self.edit.tuple_expr(group.into(), false, &keys)?;
-        let mut values = self.flatten(left_row)?;
-        values.extend(self.flatten(right_row)?);
-        let values = self.edit.tuple_expr(left_row.into(), false, &values)?;
-        let pair = self.edit.tuple_expr(group.into(), true, &[keys, values])?;
-        let function = self
-            .edit
-            .closure_from_variables(pair, &[group, left_row, right_row])?;
-        self.append(Op::JoinIndex, &[left, right], result, function.into())
-    }
-
-    fn project(
-        &mut self,
-        input: OutputPort,
-        key: TypeId,
-        value: TypeId,
-        function: NodeId,
-        kind: Op,
-    ) -> Result<OutputPort, Error> {
-        let k = self.edit.reference_type(key)?;
-        let v = self.edit.reference_type(value)?;
-        let pair = self
-            .edit
-            .tuple_type(key.into(), true, [k.into(), v.into()])?;
-        let var = self.edit.variable(pair, self.next)?;
-        let key = self.edit.tuple_field(var, 0)?;
-        let mut arguments = vec![self.edit.clone_if_needed(key)?.into()];
-        let closure = self.edit.node(function)?;
-        let parameters = closure.edges("parameters")?;
-        let body = closure.edge("body")?;
-        let mut column = 0;
-        for param in parameters.iter().skip(1) {
-            let reference = self.edit.node(*param)?.edge("type")?;
-            let tuple = self.edit.node(reference)?.edge("type")?;
-            let width = self.edit.node(tuple)?.edges("tupFields")?.len();
-            let mut fields = Vec::with_capacity(width);
-            for index in column..column + width {
-                let value = self.edit.tuple_field(var, 1)?;
-                let row = self.edit.dereference(value)?;
-                let field = self.edit.tuple_field(row, index)?;
-                fields.push(self.edit.clone_if_needed(field)?);
-            }
-            column += width;
-            let tuple = self.edit.tuple_expr(var.into(), false, &fields)?;
-            arguments.push(self.edit.borrow_value(tuple)?.into());
-        }
-        let reduced = reduce_closure_body_with_warnings(
-            self.edit,
-            body,
-            &parameters,
-            &arguments,
-            Some(self.warnings),
-        )?;
-        let result = self.edit.expression(reduced)?;
-        let function = self.edit.closure_from_variables(result, &[var])?;
-        self.map(kind, function.into(), input)
-    }
-
     fn map(&mut self, kind: Op, function: NodeId, input: OutputPort) -> Result<OutputPort, Error> {
         let body = self.edit.node(function)?.edge("body")?;
         let row = self.edit.expression_type(self.edit.expression(body)?)?;
@@ -177,21 +86,6 @@ impl Expansion<'_> {
         self.map(kind, map, filter)
     }
 
-    fn join_tree(&mut self, key: TypeId, mut inputs: Vec<OutputPort>) -> Result<OutputPort, Error> {
-        while inputs.len() > 1 {
-            let mut pairs = Vec::with_capacity(inputs.len().div_ceil(2));
-            let (siblings, unpaired) = inputs.as_chunks::<2>();
-            for &[left, right] in siblings {
-                pairs.push(self.combine(key, left, right)?);
-            }
-            pairs.extend_from_slice(unpaired);
-            inputs = pairs;
-        }
-        inputs
-            .pop()
-            .ok_or_else(|| Error::new("star join requires inputs"))
-    }
-
     fn expand(
         &mut self,
         kind: Op,
@@ -215,13 +109,29 @@ impl Expansion<'_> {
             let key = self
                 .edit
                 .type_id(self.edit.node(source.into())?.edge("keyType")?)?;
-            let joined = self.join_tree(key, inputs)?;
+            let rows = inputs
+                .iter()
+                .map(|&port| self.element(port))
+                .collect::<Result<Vec<_>, _>>()?;
+            let plan =
+                super::expand_star_term(self.edit, function, key, &rows, self.next, self.warnings)?;
+            let mut streams = inputs;
+            for join in plan.joins {
+                let pair = join.inputs.map(|index| streams[index]);
+                streams.push(self.append(
+                    Op::JoinIndex,
+                    &pair,
+                    join.output_type,
+                    join.function.into(),
+                )?);
+            }
+            let joined = *streams.last().expect("nonempty star join");
             let map = if kind == Op::StarJoinIndex {
                 Op::MapIndex
             } else {
                 Op::Map
             };
-            self.project(joined, key, self.element(joined)?, function, map)?
+            self.map(map, plan.projection.into(), joined)?
         };
         self.edit.place_before(
             self.body,

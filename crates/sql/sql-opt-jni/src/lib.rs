@@ -1,6 +1,7 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
 mod shared_indexes;
+mod star_join;
 mod temporal;
 use feldera_sql_ir::{BodyOrder, Circuit, Field, NodeId, OutputPort};
 use jni::{
@@ -183,6 +184,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         return Err("expected an array of lowering inputs".into());
     };
     let (arena, roots) = expression_arena(roots)?;
+    if pass == "DeltaExpansion/StarJoinTerm" {
+        return star_join::delta_term(arena, &roots, next);
+    }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_expr::parameter_field_paths(&arena, *closure)?)?);
     }
@@ -628,7 +632,8 @@ fn transform(
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
-        | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
+        | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
+        | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"

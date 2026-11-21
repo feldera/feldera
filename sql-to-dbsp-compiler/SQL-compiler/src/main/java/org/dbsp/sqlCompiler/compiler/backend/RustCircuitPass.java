@@ -290,6 +290,30 @@ public final class RustCircuitPass implements CircuitTransform {
                 row, null, DBSPClosureExpression.class);
     }
 
+    public record BinaryJoin(int left, int right, DBSPTypeIndexedZSet type, DBSPClosureExpression function) {}
+    public record StarJoinTerm(List<BinaryJoin> joins, DBSPClosureExpression projection) {}
+
+    public static StarJoinTerm deltaStarJoinTerm(DBSPCompiler compiler, DBSPClosureExpression closure,
+                                                DBSPType key, List<OutputPort> inputs) {
+        var roots = new ArrayList<IDBSPInnerNode>(inputs.size() + 2);
+        roots.add(closure);
+        roots.add(key);
+        for (var input : inputs)
+            roots.add(input.getOutputIndexedZSetType().elementType);
+        var reply = invokeLowering(compiler, "DeltaExpansion/StarJoinTerm", roots.toArray(IDBSPInnerNode[]::new));
+        var decoder = expressionDecoder(reply.writer);
+        var joins = new ArrayList<BinaryJoin>();
+        for (var join : reply.value.required("joins")) {
+            var edges = join.required("inputs");
+            var type = decoder.decodeInner(join.required("type"), DBSPTypeIndexedZSet.class);
+            var function = decoder.decodeInner(join.required("function"), DBSPClosureExpression.class);
+            joins.add(new BinaryJoin(edges.required(0).intValue(), edges.required(1).intValue(), type, function));
+        }
+        var projection = decoder.decodeInner(reply.value.required("projection"), DBSPClosureExpression.class);
+        finishLowering(compiler, reply.value);
+        return new StarJoinTerm(joins, projection);
+    }
+
     public static DBSPClosureExpression applyWaterlines(DBSPCompiler compiler,
             DBSPClosureExpression function, List<OutputPort> inputs) {
         var roots = new IDBSPInnerNode[inputs.size() + 1];
@@ -1630,14 +1654,14 @@ public final class RustCircuitPass implements CircuitTransform {
             if (reply.isNull())
                 return null;
             var groups = MAPPER.treeToValue(reply.required("groups"), int[][].class);
-            reportIndexDiagnostics(compiler, reply);
+            finishLowering(compiler, reply);
             return groups;
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid shared index groups", error);
         }
     }
 
-    private static void reportIndexDiagnostics(DBSPCompiler compiler, JsonNode state) {
+    private static void finishLowering(DBSPCompiler compiler, JsonNode state) {
         for (var warning : state.required("warnings"))
             compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
                     warning.required("error_type").textValue(), warning.required("message").textValue());
@@ -1681,7 +1705,7 @@ public final class RustCircuitPass implements CircuitTransform {
             if (rows.size() != functions.size() || offset != fields.size())
                 throw new IllegalStateException("Invalid column counts in Rust shared index");
         }
-        reportIndexDiagnostics(compiler, reply.value);
+        finishLowering(compiler, reply.value);
         return new WideIndexFields(variable, key, reply.value.required("nullable").booleanValue(), fields, layout, rows);
     }
 
@@ -1707,7 +1731,7 @@ public final class RustCircuitPass implements CircuitTransform {
         var state = MAPPER.readTree(result);
         find.record(MAPPER.treeToValue(state.required("groups"), FindSharedIndexes.IndexReader[][].class),
                 MAPPER.treeToValue(state.required("visited"), long[].class), operatorsById(circuit));
-        reportIndexDiagnostics(this.compiler, state);
+        finishLowering(this.compiler, state);
     }
 
     private void findCommonProjections(DBSPCircuit circuit, long next, FindCommonProjections analysis) throws IOException {
