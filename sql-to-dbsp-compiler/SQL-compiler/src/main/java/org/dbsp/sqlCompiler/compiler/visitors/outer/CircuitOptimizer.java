@@ -46,6 +46,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandSafeCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandUnsafeCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.DuplicateSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
@@ -144,7 +145,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof MergeGC.FindEquivalentNoops
                     || pass instanceof MergeGC.FindMultipleRetains || pass instanceof CollapseSharedChains || pass instanceof RemoveUselessLeftJoinsVisitor
                     || pass instanceof FindWindowGroups || pass instanceof ImplementWindowGroups
-                    || pass instanceof FindMapChains || pass instanceof DuplicateSharedIndexes
+                    || pass instanceof FindMapChains || pass instanceof FindSharedIndexes || pass instanceof DuplicateSharedIndexes
                     || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections
                     || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections
                     || pass instanceof DeferCarriedColumns || pass instanceof TrimFilters || pass instanceof TrimWindows || pass instanceof UnusedFields.FindUnusedInputFields || pass instanceof UnusedFields.TrimInputs

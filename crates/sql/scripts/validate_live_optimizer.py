@@ -62,7 +62,7 @@ FROZEN_SCHEDULE = {
     "OrderErrorConsumers": 1, "UDFInliner": 1, "ShareOutputIntegrators": 1,
     "CollapseSharedChains": 1, "FindWindowGroups": 1, "ImplementWindowGroups": 1,
     "RemoveUselessLeftJoinsVisitor": 1,
-    "SubstituteLeftJoins": 1, "FindMapChains": 1, "DuplicateSharedIndexes": 1,
+    "SubstituteLeftJoins": 1, "FindMapChains": 1, "FindSharedIndexes": 1, "DuplicateSharedIndexes": 1,
     "LinearPostprocessRetainKeys": 1, "FixupViewReferences": 1, "BuildNestedOperators": 1, "ChainVisitor": 2, "StrayGC": 1, "CheckRetain": 1,
     "ExpandHop": 1, "RemoveIdentityOperators": 1,
     "CreateRuntimeErrorWrappers": 1, "ExpandMetadataCasts": 1, "AdjustSqlIndex": 1, "CircuitStatistics": 1,

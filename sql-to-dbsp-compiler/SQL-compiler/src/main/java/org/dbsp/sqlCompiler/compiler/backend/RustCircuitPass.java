@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitStatistics;
@@ -141,6 +142,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private final String nativeName;
     private final OptimizerSnapshots snapshots;
     @Nullable private final FindMapChains mapChains;
+    @Nullable private final FindSharedIndexes sharedIndexes;
     @Nullable private final FindUnboundedState.DetectStreamingOperations streaming;
     @Nullable private final FindUnboundedState.FindGCedStreams garbageCollected;
     @Nullable private final FindUnboundedState.FindBounded bounded;
@@ -220,6 +222,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.windowGroups = original instanceof FindWindowGroups windows ? windows : null;
         this.windowImplementation = original instanceof ImplementWindowGroups windows ? windows : null;
         this.collapseChains = original instanceof CollapseSharedChains collapse ? collapse : null;
+        this.sharedIndexes = original instanceof FindSharedIndexes find ? find : null;
         this.mapChains = original instanceof FindMapChains find ? find : null;
         this.errorOrder = original instanceof OrderErrorConsumers order ? order : null;
         this.tableToRemove = original instanceof RemoveTable table ? table.tableName() : null;
@@ -1446,6 +1449,26 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static boolean sameIndexKey(DBSPCompiler compiler, DBSPClosureExpression left, DBSPClosureExpression right) {
+        var reply = invokeLowering(compiler, "SharedIndexes/Keys", left, right);
+        var keys = loweredClosurePair(reply);
+        for (var warning : reply.value.required("warnings"))
+            compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
+                    warning.required("error_type").textValue(), warning.required("message").textValue());
+        return keys.left.equivalent(keys.right);
+    }
+
+    private void findSharedIndexes(DBSPCircuit circuit, long next, FindSharedIndexes find) throws IOException {
+        var details = OptimizerTopology.Details.SHARED_INDEXES;
+        var payloads = this.invoke("Topology/FindSharedIndexes", OptimizerTopology.encode(circuit, details), next, EMPTY_CONTEXT);
+        var selected = MAPPER.convertValue(payloads, new TypeReference<Set<Long>>() {});
+        if (selected.isEmpty())
+            return;
+        var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, selected, details);
+        var result = this.invoke(this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8), next, EMPTY_CONTEXT);
+        find.collect(MAPPER.treeToValue(result, FindSharedIndexes.CandidateInput[].class), operatorsById(circuit));
+    }
+
     private void findCommonProjections(DBSPCircuit circuit, long next, FindCommonProjections analysis) throws IOException {
         analysis.clear();
         var details = OptimizerTopology.Details.CONSUMERS;
@@ -1684,6 +1707,10 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             if (this.windowGroups != null) {
                 this.findWindowGroups(circuit, this.windowGroups, initial);
+                return circuit;
+            }
+            if (this.sharedIndexes != null) {
+                this.findSharedIndexes(circuit, initial, this.sharedIndexes);
                 return circuit;
             }
             if (this.mapChains != null) {

@@ -10,6 +10,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.FindWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ImplementWindowGroups;
@@ -58,6 +61,7 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     private final ArrayNode invocations;
     private final DBSPCompiler compiler;
     private final IdentityHashMap<CircuitTransform, Integer> instances = new IdentityHashMap<>();
+    private final IdentityHashMap<CircuitTransform, CircuitTransform> originalPasses = new IdentityHashMap<>();
     @Nullable private ObjectNode active;
 
     private PassCorpusOracle(DBSPCompiler compiler, ObjectNode record, String passClass) {
@@ -122,6 +126,20 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
 
     @Override
     public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {
+        // Replace just the observed analysis. Its Java prefix and the replacement
+        // pass that consumes the finder stay in their original positions.
+        if (pass instanceof ShareIndexes sharing && this.passClass.equals("FindSharedIndexes")
+                && Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes")) {
+            sharing.passes.replaceAll(step -> {
+                if (!(step instanceof FindSharedIndexes))
+                    return step;
+                var snapshots = new org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots(this.compiler);
+                var rust = new RustCircuitPass(this.compiler, step, snapshots);
+                this.originalPasses.put(rust, step);
+                return rust;
+            });
+        }
+        pass = this.originalPasses.getOrDefault(pass, pass);
         if (this.compareMonotonicity(pass))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (this.compareSharedProjections(pass))
@@ -153,6 +171,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof LowerAsof && Boolean.getBoolean("feldera.optimizer.compareRustAsofRetainers"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
+        if (pass instanceof FindSharedIndexes find)
+            this.active.set("previously_visited_indexes", org.dbsp.util.Utilities.deterministicObjectMapper()
+                    .valueToTree(find.visitedIds()));
         if (pass instanceof LowerCircuitVisitor) {
             byte[] types = org.dbsp.sqlCompiler.compiler.backend.CircuitLoweringTypes.encode(
                     writer, circuit, this.compiler.options.ioOptions.gen2);
@@ -319,6 +340,7 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     @Override
     public void after(String container, int index, int iteration, CircuitTransform pass,
                       DBSPCircuit circuit, boolean completed) {
+        pass = this.originalPasses.getOrDefault(pass, pass);
         if (this.compareMonotonicity(pass))
             this.compiler.options.ioOptions.rustOptimizerPasses = this.previousRustPasses;
         if (completed && this.compareSharedProjections(pass)) {
@@ -409,6 +431,11 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         }
         if (pass instanceof FindWindowGroups find)
             WindowGroupOracle.capture(this.compiler, circuit, find, current);
+        if (pass instanceof FindSharedIndexes find) {
+            var mapper = org.dbsp.util.Utilities.deterministicObjectMapper();
+            current.set("candidate_indexes", mapper.valueToTree(find.candidateIds()));
+            current.set("visited_indexes", mapper.valueToTree(find.visitedIds()));
+        }
         if (pass instanceof FindMapChains find) {
             var chains = current.putArray("map_chains");
             for (var ids : find.chainIds()) {

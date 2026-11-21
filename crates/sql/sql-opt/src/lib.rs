@@ -104,6 +104,7 @@ mod recursive_views;
 mod regions;
 mod remove_noops;
 mod remove_table;
+mod shared_index_candidates;
 mod shared_indexes;
 mod state_bounds;
 mod statistics;
@@ -203,6 +204,7 @@ pub use recursive_views::{resolve_view_references, ViewReferences, ViewResolutio
 pub use regions::tag_regions;
 pub use remove_noops::{optimize_noops, remove_noops};
 pub use remove_table::{remove_table, unreferenced_table_sources, TableRemoval};
+pub use shared_index_candidates::{index_key, shared_index_candidates, shared_index_payloads, IndexCandidate, IndexReader};
 pub use shared_indexes::{duplicate_shared_indexes, find_map_chains};
 pub use state_bounds::{
     detects_streaming, propagate_bounds, pruned_streams, unbounded_operators, UnboundedOperator,

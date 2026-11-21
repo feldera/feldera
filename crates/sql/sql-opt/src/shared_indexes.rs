@@ -30,7 +30,7 @@ fn is_indexed_join(kind: Option<Op>) -> bool {
     )
 }
 
-fn shares_input_integral(node: &Node, slot: usize) -> Result<bool, Error> {
+pub(super) fn shares_input_integral(node: &Node, slot: usize) -> Result<bool, Error> {
     let kind = node.operator_kind();
     Ok(match kind {
         Some(Op::Window) => slot == 0,

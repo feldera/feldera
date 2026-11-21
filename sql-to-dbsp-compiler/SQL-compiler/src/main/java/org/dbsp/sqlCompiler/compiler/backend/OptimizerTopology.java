@@ -42,7 +42,7 @@ import java.util.Set;
 
 /** Circuit projection for passes that read only operator kinds, edges and annotations. */
 final class OptimizerTopology {
-    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, COLUMN_INITIALIZERS, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, STATE_BOUNDS, AGGREGATE_RESULTS }
+    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, COLUMN_INITIALIZERS, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, SHARED_INDEXES, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, STATE_BOUNDS, AGGREGATE_RESULTS }
 
     private OptimizerTopology() {}
 
@@ -171,7 +171,7 @@ final class OptimizerTopology {
             }
             if (details == Details.VIEW_NAMES && op instanceof DBSPSinkOperator sink)
                 json.label("viewName").beginObject().label("name").append(sink.viewName.name()).endObject();
-            if (details == Details.RECURSIVE_VIEWS || details == Details.CONSUMERS || details == Details.GC_GROUPS) {
+            if (details == Details.RECURSIVE_VIEWS || details == Details.CONSUMERS || details == Details.GC_GROUPS || details == Details.SHARED_INDEXES) {
                 if (op instanceof DBSPViewDeclarationOperator decl)
                     json.label("tableName").beginObject().label("name").append(decl.tableName.name()).endObject();
                 if (op instanceof DBSPViewOperator view) {
@@ -209,7 +209,7 @@ final class OptimizerTopology {
             if (details == Details.TABLE_CHANGES && op instanceof DBSPSourceTableOperator table)
                 json.label("metadata").beginObject().label("changes")
                         .append(table.metadata.isAppendOnly() ? "AppendOnly" : "Unrestricted").endObject();
-            if ((details == Details.TRACE_INTEGRATORS || details == Details.SINK_KIND || details == Details.GC_GROUPS) && op instanceof DBSPSinkOperator sink)
+            if ((details == Details.TRACE_INTEGRATORS || details == Details.SINK_KIND || details == Details.GC_GROUPS || details == Details.SHARED_INDEXES) && op instanceof DBSPSinkOperator sink)
                 json.label("metadata").beginObject().label("viewKind").append(sink.metadata.viewKind.name()).endObject();
             if ((details == Details.TRACE_RETENTION || details == Details.GC_GROUPS) && op instanceof DBSPIntegrateTraceRetainKeysOperator retainer)
                 json.label("accumulate").append(retainer.accumulate);

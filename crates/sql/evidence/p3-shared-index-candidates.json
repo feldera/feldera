@@ -1,0 +1,104 @@
+{
+  "scope": "Rust selects eligible index readers and builds the reduced key closures. The Java bridge compares the closures and collects matching indexes. Compare the candidate triples in order, visited set, entry and exit circuit, generated names and ordered diagnostics at the original pass boundary.",
+  "compiler_jar_sha256": "313137d4fb8453a824e8e131745f23f3fda9418115d7d8a1918b9058e9d9e0fa",
+  "optimizer_library_sha256": "55e368cf8ed49239418fa01841ae5dc7c95664a5d9a0b3b0ae0ce1ac96b4d07c",
+  "java_reference_jar_sha256": "114e57290e9442a87ddadb0e64ecd30a3292ed434b848bdcd50bdf9f2cdbb888",
+  "shards": [
+    {
+      "shard": "classic-0",
+      "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+      "cases": 2143,
+      "matched": 2143,
+      "programs_with_groups": 44,
+      "groups": 70,
+      "group_members": 186,
+      "key_comparisons": 181,
+      "java_observations_gzip_sha256": "d7e846e56fac1fcc38f6906e556d5528c13e170022093a06930b9387e6c80078",
+      "hybrid_observations_gzip_sha256": "983d7b7eda30657381720cc15dde3183f5f2b00774ea8ffb30e627e87c1eefc5"
+    },
+    {
+      "shard": "classic-1",
+      "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+      "cases": 2143,
+      "matched": 2143,
+      "programs_with_groups": 56,
+      "groups": 80,
+      "group_members": 238,
+      "key_comparisons": 261,
+      "java_observations_gzip_sha256": "7e7647db2021fdd54bf7193c165121c48529b9c0a0c8347a829cab1c1cff3bd7",
+      "hybrid_observations_gzip_sha256": "cd01b582aa49b2ce7461a7b2bc74f31486bfb27e168c4e6907fd42aa5bbee242"
+    },
+    {
+      "shard": "classic-2",
+      "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+      "cases": 2143,
+      "matched": 2143,
+      "programs_with_groups": 52,
+      "groups": 116,
+      "group_members": 286,
+      "key_comparisons": 306,
+      "java_observations_gzip_sha256": "965229e5c0f66f7c0e113a7e82fac59fb30723230aaac89761e4a9742ee0a207",
+      "hybrid_observations_gzip_sha256": "bfd4c22ca58135211da8cc820cba3bf1fbd4c566850104e493ca4f97c8411734"
+    },
+    {
+      "shard": "classic-3",
+      "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+      "cases": 2142,
+      "matched": 2142,
+      "programs_with_groups": 50,
+      "groups": 117,
+      "group_members": 372,
+      "key_comparisons": 356,
+      "java_observations_gzip_sha256": "72321c0ca749a497ac9c74ee1a9f40708fd6704d0e0a18753859b09b167bb0bb",
+      "hybrid_observations_gzip_sha256": "6631834f963fb1ee47ba36017667d735700909e0558a1684ef4282ff18370161"
+    },
+    {
+      "shard": "gen2-0",
+      "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+      "cases": 2132,
+      "matched": 2132,
+      "programs_with_groups": 60,
+      "groups": 92,
+      "group_members": 240,
+      "key_comparisons": 294,
+      "java_observations_gzip_sha256": "5f24a655c68693281698692221e51a4faf030354c7371d77fc5440e140486d76",
+      "hybrid_observations_gzip_sha256": "4d6efc6cc28abefd2c45c82691abacf1d22b41d32b82da1eac2f5ca22185cb83"
+    },
+    {
+      "shard": "gen2-1",
+      "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+      "cases": 2132,
+      "matched": 2132,
+      "programs_with_groups": 59,
+      "groups": 116,
+      "group_members": 367,
+      "key_comparisons": 431,
+      "java_observations_gzip_sha256": "1f677b6e6b6d485e79b760b14cf4fa6b004868e6127d0060d77843392dae61b4",
+      "hybrid_observations_gzip_sha256": "3f6264d358a7516c31319a6ca4642fb045b10e9e5488a5a291d73a480440979e"
+    },
+    {
+      "shard": "gen2-2",
+      "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+      "cases": 2132,
+      "matched": 2132,
+      "programs_with_groups": 58,
+      "groups": 129,
+      "group_members": 307,
+      "key_comparisons": 322,
+      "java_observations_gzip_sha256": "d6ed6143d416654b6bb7abbcc1b772a40f0430c12b1054c4b1ff8e6c781248cd",
+      "hybrid_observations_gzip_sha256": "058f30dbd3c89e922cf7759873bfdfa5e5626d06da325eeb7c21a75d7b47d380"
+    },
+    {
+      "shard": "gen2-3",
+      "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+      "cases": 2131,
+      "matched": 2131,
+      "programs_with_groups": 66,
+      "groups": 93,
+      "group_members": 270,
+      "key_comparisons": 280,
+      "java_observations_gzip_sha256": "81d543592d03ed4323bc622abcffa216aa20bfdd924a62bc4d2c152e2f0090ba",
+      "hybrid_observations_gzip_sha256": "2c76190a905e0d3b0c485f54cc49c51922d3795b06387eee8c1a196edb8e9f5c"
+    }
+  ]
+}

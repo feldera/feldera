@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
@@ -35,12 +36,14 @@ import org.dbsp.util.graph.Port;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Set;
 
 /** Finds multiple {@link DBSPMapIndexOperator}s that can be combined into a single wide one */
-class FindSharedIndexes extends CircuitWithGraphsVisitor {
+public final class FindSharedIndexes extends CircuitWithGraphsVisitor {
     final List<Candidates> candidates;
     final Set<DBSPMapIndexOperator> visited;
 
@@ -60,6 +63,48 @@ class FindSharedIndexes extends CircuitWithGraphsVisitor {
         super(compiler, graphs);
         this.candidates = new ArrayList<>();
         this.visited = new HashSet<>();
+    }
+
+    /** Ordered index, consumer and input slot triples used by the replacement pass. */
+    public List<List<long[]>> candidateIds() {
+        return this.candidates.stream().map(group -> group.members.stream()
+                .map(m -> new long[]{m.index.id, m.consumer.id, m.inputIndex}).toList()).toList();
+    }
+
+    public List<Long> visitedIds() {
+        return this.visited.stream().map(op -> op.id).sorted().toList();
+    }
+
+    public record CandidateInput(long index, long consumer, int slot, int partition) {}
+
+    /** Materialize Rust's input partitions in visitor order. A seed is visited
+     * even when none of the remaining indexes in its partition has the same key. */
+    public void collect(CandidateInput[] inputs, Map<Long, DBSPOperator> operators) {
+        var partitions = new HashMap<Integer, List<MapIndexAndConsumer>>();
+        var ordered = new ArrayList<MapIndexAndConsumer>(inputs.length);
+        for (var input : inputs) {
+            var index = operators.get(input.index).to(DBSPMapIndexOperator.class);
+            var reader = operators.get(input.consumer).to(DBSPSimpleOperator.class);
+            var pair = new MapIndexAndConsumer(index, reader, input.slot);
+            partitions.computeIfAbsent(input.partition, unused -> new ArrayList<>()).add(pair);
+            ordered.add(pair);
+        }
+        for (int i = 0; i < ordered.size(); i++) {
+            var seed = ordered.get(i);
+            if (!this.visited.add(seed.index))
+                continue;
+            var matching = new ArrayList<MapIndexAndConsumer>();
+            matching.add(seed);
+            for (var sibling : partitions.get(inputs[i].partition)) {
+                if (!this.visited.contains(sibling.index) && RustCircuitPass.sameIndexKey(
+                        this.compiler, seed.index.getClosureFunction(), sibling.index.getClosureFunction())) {
+                    this.visited.add(sibling.index);
+                    matching.add(sibling);
+                }
+            }
+            if (matching.size() > 1)
+                this.candidates.add(new Candidates(matching));
+        }
     }
 
     /** Find if the node has a single successor which requires an integrator on this input */
