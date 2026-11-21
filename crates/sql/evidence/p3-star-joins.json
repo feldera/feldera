@@ -1,0 +1,46 @@
+{
+  "scope": "Compare maximal star join replacement at its original Java pass boundary, including ordered input ports, the generated-name counter, and the complete output circuit.",
+  "comparator_sha256": "947e2118cd11c726d2372fe78d09283bed897022aab07e58932ae315fd1aaac4",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "540296205d78c730af2a056902f5b942435953a5cbde4f66dea84eb6256169d6",
+      "7acae646bd593870c9c235cd5a1a98c6c708506fd299c479fa48948d23748320",
+      "86056c61d7d010fb1ca20f5ebdd99f598f152bd923e8307c1791c5fcb96d8772",
+      "73dd6ee8108567718f83351c56fc37c4287d12140129144c5b643bbd853a92f8"
+    ],
+    "pass": "ReplaceStarJoins",
+    "invocations": 8570,
+    "changed": 15,
+    "cases_without_placement": 1,
+    "oracle_stream_sha256": [
+      "5f7649fc9cb79c8990834fd28d80eaefe86a25a8321237a6739759e12c3471ba",
+      "159691ef2d0e55efdf3f7a449318c36bf6b24b1f4447c33f822fb91d871822ab",
+      "01517632954666d929c46b7cce890511102bb72049fbf75ece84594214feb3b4",
+      "f210061d8b9b31160ef1a313feb922e061192e596d2505a497743dd04e21b28b"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "1d319fe76dfcf2c27190f68682afe24c193bdb73b13e621ab58e4d9663917768",
+      "a3c6968c0706d9e0f6d12b92a7f83ae222ca762f1729ab2fdf0ff9ffa18f9a16",
+      "9d8a29b43463785996590981e463df19eae9cd8d374cd7d31ea1c426e7e95d1c",
+      "8734cd0902d2f9fafe8a47ffe75db6bb0d5593033d62f44b07207a3c5711dc1c"
+    ],
+    "pass": "ReplaceStarJoins",
+    "invocations": 8526,
+    "changed": 15,
+    "cases_without_placement": 1,
+    "oracle_stream_sha256": [
+      "d7f5177d249b0db9d5de29e63507617867e42445673f1277191ce0b9c6a604ce",
+      "2e4645c0b92369b6c5e01e8a19235b2b93cf3396bf8e15ae0a34f1e6a234719e",
+      "eea7376ddc25dad6847a84803c089151f1365eb9f86ed48003d4b030332e0ad0",
+      "04c11d07f5ab2583780b043700baa64f375c77af45c4315df006218730eb641a"
+    ]
+  }
+}

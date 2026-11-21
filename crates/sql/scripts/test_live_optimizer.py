@@ -31,6 +31,14 @@ class FrozenPlacements(unittest.TestCase):
             verify_placements("missing second graph", {**counts, "Graph": BASE_COUNTS["Graph"]},
                               False, asof_retention_moves=1)
 
+    def test_disabling_star_joins_skips_the_graph_and_replacement(self):
+        counts = BASE_COUNTS.copy()
+        del counts["ReplaceStarJoins"]
+        counts["Graph"] -= 1
+        verify_placements("disabled star joins", counts, False, star_joins_enabled=False)
+        with self.assertRaisesRegex(ValueError, "Rust placements"):
+            verify_placements("skipped star joins", counts, False)
+
     def test_trim_inputs_runs_only_for_programs_with_the_option(self):
         enabled = {**BASE_COUNTS, "TrimInputs": 1}
         verify_placements("trim enabled", enabled, False, trim_inputs=True)

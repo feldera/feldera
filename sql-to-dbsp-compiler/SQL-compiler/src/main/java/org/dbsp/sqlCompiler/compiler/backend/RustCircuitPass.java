@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
@@ -118,6 +119,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final FindUnusedInputFields inputFields;
     @Nullable private final TrimInputs trimInputs;
     @Nullable private final FindCommonProjections commonProjections;
+    @Nullable private final CreateStarJoins.ReplaceStarJoins starJoins;
     @Nullable private final ReplaceCommonProjections replaceCommon;
     @Nullable private final LowerAsof.MoveGC asofRetention;
     @Nullable private final LowerAsof.OrderGcDependencies asofOrder;
@@ -154,6 +156,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.bounded = original instanceof FindUnboundedState.FindBounded propagation ? propagation : null;
         this.unbounded = original instanceof FindUnboundedState.CollectUnbounded collect ? collect : null;
         this.garbageCollected = original instanceof FindUnboundedState.FindGCedStreams streams ? streams : null;
+        this.starJoins = original instanceof CreateStarJoins.ReplaceStarJoins joins ? joins : null;
         this.replaceCommon = original instanceof ReplaceCommonProjections replace ? replace : null;
         this.asofRetention = original instanceof LowerAsof.MoveGC move ? move : null;
         this.asofOrder = original instanceof LowerAsof.OrderGcDependencies order ? order : null;
@@ -766,6 +769,9 @@ public final class RustCircuitPass implements CircuitTransform {
                 this.findCommonProjections(circuit, initial, this.commonProjections);
                 return circuit;
             }
+            var trees = this.starJoins == null ? null : this.starJoins.replacements();
+            if (trees != null && trees.isEmpty())
+                return circuit;
             if (this.replaceCommon != null && this.replaceCommon.analysis().outputProjection.isEmpty())
                 return circuit;
             if (this.trimInputs != null) {
@@ -1006,7 +1012,9 @@ public final class RustCircuitPass implements CircuitTransform {
                 writer = this.snapshots.writer();
                 writer.innerVisitor.liveNodes = new HashMap<>();
                 writer.apply(circuit);
-                if (this.replaceCommon != null)
+                if (trees != null)
+                    state = StarJoinState.encode(writer, trees);
+                else if (this.replaceCommon != null)
                     state = SharedProjectionState.encode(writer, this.replaceCommon.analysis());
                 else if (state == EMPTY_CONTEXT)
                     state = this.passState(circuit, writer);

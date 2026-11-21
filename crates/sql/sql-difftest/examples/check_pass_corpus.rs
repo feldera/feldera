@@ -125,6 +125,9 @@ fn compare_invocation(
             serde_json::from_value(invocation["asof_joins"].clone())?,
             &mut next,
         )?,
+        "ReplaceStarJoins" => feldera_sql_opt::replace_star_joins(
+            input, serde_json::from_value(invocation["join_trees"].clone())?, &mut next,
+        )?,
         "ReplaceCommonProjections" => feldera_sql_opt::replace_common_projections(
             input, serde_json::from_value(invocation["projection_closures"].clone())?, &mut next)?,
         "TrimInputs" => feldera_sql_opt::trim_inputs(

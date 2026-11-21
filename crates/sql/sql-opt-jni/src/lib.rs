@@ -555,6 +555,9 @@ fn transform(
             feldera_sql_opt::remove_identity_operators(circuit, &mut next)?
         }
         "MoveGC" => feldera_sql_opt::move_asof_retention(circuit, serde_json::from_slice(state)?, &mut next)?,
+        "ReplaceStarJoins" => feldera_sql_opt::replace_star_joins(
+            circuit, serde_json::from_slice(state)?, &mut next,
+        )?,
         "ReplaceCommonProjections" => feldera_sql_opt::replace_common_projections(
             circuit, serde_json::from_slice(state)?, &mut next)?,
         "TrimInputs" => {

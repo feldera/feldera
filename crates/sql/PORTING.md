@@ -723,6 +723,11 @@ placements. The exact permutations of the original operators matched Java in
 both engines. The shared sort also preserved the linear aggregate retention
 results on all 17,098 frozen cases. [Ordering comparisons](evidence/p3-asof-gc-order.json)
 
+Rust replaced maximal join trees with star joins at 17,096 placements. Thirty
+placements changed the graph, all matching Java. One program per engine disabled
+star joins. Java still discovers the trees and builds their closures.
+[Star join replacements](evidence/p3-star-joins.json)
+
 Only two frozen cases per engine enable input trimming, and neither changes its graph.
 A separate 12-program comparison exercises ten rewrites per engine, including
 retaining a nested ROW and trimming every column for COUNT(*). Both regressions
@@ -817,7 +822,9 @@ The 86-pass build measured 26.83 ms, above the 25 ms budget, and
 fixes, the 88-pass build measured 13.84 ms and 78,323,712 bytes.
 The 89-pass build measured 23.26 ms and 78,123,008 bytes. The 90-pass build measured
 15.88 ms and 78,131,200 bytes. On the 91-pass build, cancellation exceeded the
-25 ms limit at 33.01 ms p95. Peak waiting RSS was 78,213,120 bytes.
+25 ms limit at 33.01 ms p95. Peak waiting RSS was 78,213,120 bytes. After
+the live codec change, the four-worker run measured 10.81 ms p95 and
+78,073,856 bytes peak waiting RSS.
 [Worker limits and trial timings](evidence/p3-worker-limits.json)
 
 The release decoder processed 5,807,488 inputs in 3,600 worker CPU seconds

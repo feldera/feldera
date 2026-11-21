@@ -24,11 +24,14 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 
 /** Recognize patterns of trees of joins that can be converted into a single @{link DBSPStarJoinOperator}
  * (or {@link DBSPStarJoinIndexOperator}).
@@ -42,12 +45,16 @@ import java.util.Set;
  * joins cannot be implemented as a {@link DBSPStarJoinOperator}. */
 public class CreateStarJoins extends Passes {
     public CreateStarJoins(DBSPCompiler compiler) {
+        this(compiler, UnaryOperator.identity());
+    }
+
+    public CreateStarJoins(DBSPCompiler compiler, UnaryOperator<CircuitTransform> select) {
         super("CreateStarJoins", compiler);
         Graph g = new Graph(compiler);
-        this.add(g);
+        this.add(select.apply(g));
         FindJoinTrees fjt = new FindJoinTrees(compiler, g.graphs);
         this.add(fjt);
-        this.add(new ReplaceStarJoins(compiler, fjt.joinTrees));
+        this.add(select.apply(new ReplaceStarJoins(compiler, fjt.joinTrees)));
     }
 
     /**
@@ -261,12 +268,24 @@ public class CreateStarJoins extends Passes {
         }
     }
 
-    static class ReplaceStarJoins extends CircuitCloneVisitor {
+    public record Replacement(long root, List<OutputPort> inputs, DBSPClosureExpression function) {}
+
+    public static class ReplaceStarJoins extends CircuitCloneVisitor {
         final JoinTrees joinTrees;
 
         public ReplaceStarJoins(DBSPCompiler compiler, JoinTrees joinTrees) {
             super(compiler, false);
             this.joinTrees = joinTrees;
+        }
+
+        /** Only maximal trees containing at least two joins are replaced. */
+        public List<Replacement> replacements() {
+            return this.joinTrees.maximalJoinRoots.stream()
+                    .sorted(Comparator.comparingLong(op -> op.id))
+                    .map(root -> Objects.requireNonNull(this.joinTrees.get(root)))
+                    .filter(tree -> tree.size() > 1)
+                    .map(tree -> new Replacement(tree.root.id, tree.inputs, tree.closure))
+                    .toList();
         }
 
         @Override

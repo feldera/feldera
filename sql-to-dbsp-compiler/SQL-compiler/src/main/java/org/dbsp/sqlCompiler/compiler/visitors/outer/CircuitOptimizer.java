@@ -131,7 +131,8 @@ public class CircuitOptimizer extends Passes {
             if (!supported && graph.transform instanceof Passes iteration)
                 iteration.passes.replaceAll(this::selectImplementation);
         } else {
-            supported = pass instanceof Graph || pass instanceof LowerAsof.MoveGC || pass instanceof LowerAsof.OrderGcDependencies
+            supported = pass instanceof Graph || pass instanceof CreateStarJoins.ReplaceStarJoins
+                    || pass instanceof LowerAsof.MoveGC || pass instanceof LowerAsof.OrderGcDependencies
                     || pass instanceof MergeGC.MergeNoops || pass instanceof MergeGC.MergeRetain
                     || pass instanceof HashPrefixPass || pass instanceof SetOperatorHashes || pass instanceof CheckPersistentIds
                     || pass instanceof MergeGC.FindEquivalentNoops
@@ -229,7 +230,7 @@ public class CircuitOptimizer extends Passes {
         this.addWithMultisets(multisets -> new PropagateConstants(compiler, multisets));
         this.add(new PropagateEmptySources(compiler));
         this.add(new MergeSums(compiler));
-        this.add(new Conditional(compiler, new CreateStarJoins(compiler), () -> !this.compiler.metadata.noStarJoins()));
+        this.add(new Conditional(compiler, new CreateStarJoins(compiler, this::selectImplementation), () -> !this.compiler.metadata.noStarJoins()));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
         this.add(new OptimizeWithGraph(compiler,

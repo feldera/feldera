@@ -417,6 +417,8 @@ public final class CorpusDeterminism {
             result.put("asof_retention_moves", asofMoves.get());
             result.put("temporal_filter_iterations", temporalSplits.get());
             result.set("dead_code_by_container", MAPPER.valueToTree(graphCleanups));
+            result.put("star_joins_enabled", !compiler.metadata.noStarJoins()
+                    && !compiler.metadata.disabledOptimizations().contains("CreateStarJoins"));
             result.put("validate_input_weights", compiler.metadata.enforcePositiveInputs());
         }
         result.set("id", source.get("id"));

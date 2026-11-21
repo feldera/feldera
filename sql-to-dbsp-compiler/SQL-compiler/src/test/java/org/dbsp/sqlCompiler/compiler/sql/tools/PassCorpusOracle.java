@@ -107,6 +107,14 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.active.put("names_before", DBSPVariablePath.nextGeneratedName());
         var writer = this.snapshotWriter(circuit);
         this.active.set("before", this.snapshot(writer));
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.ReplaceStarJoins star) {
+            byte[] trees = org.dbsp.sqlCompiler.compiler.backend.StarJoinState.encode(writer, star.replacements());
+            try {
+                this.active.set("join_trees", org.dbsp.util.Utilities.deterministicObjectMapper().readTree(trees));
+            } catch (java.io.IOException error) {
+                throw new java.io.UncheckedIOException(error);
+            }
+        }
         if (pass instanceof LowerAsof.OrderGcDependencies order)
             this.active.set("extra_edges", org.dbsp.util.Utilities.deterministicObjectMapper()
                     .valueToTree(order.edgeIds()));

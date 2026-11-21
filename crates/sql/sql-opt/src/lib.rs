@@ -3,6 +3,8 @@
 mod aggregate_groups;
 mod aggregate_zero;
 mod append_only;
+mod star_joins;
+pub use star_joins::{replace_star_joins, StarJoinTree};
 mod asof_retention;
 pub use asof_retention::move_asof_retention;
 mod array_agg;
