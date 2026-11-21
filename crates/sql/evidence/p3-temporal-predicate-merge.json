@@ -1,0 +1,39 @@
+{
+  "compiler_commit": "ab432e31d",
+  "scope": "The Java prefix selects compatible adjacent temporal filters. Rust constructs the combined predicate and beta-reduces the shared row parameter. Both compilers resume the same detached S2 in each pair. The comparison checks the entry and exit graphs, allocator, diagnostics and pass state.",
+  "compiler": {
+    "profile": "Linux ARM64, offline Maven package and release Rust tools",
+    "pass_kinds": 100,
+    "jar_sha256": "ee0df36893205c0fd4d3f19ad1d2746dec67be5143c83d271836f2213b1ad912",
+    "driver_sha256": "4ab727ab620c8b056b0508fa3bcb281fa9b838a6d4b5fc7b82f4d4feb764c5bd",
+    "optimizer_library_sha256": "c8db1713de92f960e7c18bd4bdd57ea34cfd59879ed85eef6ab28ab42dcc6c41"
+  },
+  "boundaries": {
+    "classic": {
+      "cases": 71,
+      "invocations": 71,
+      "cases_allocating_names": 19,
+      "generated_names": 28,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_sha256": "2b8aed66368e815482de5a2425ec9e636ffc36b859b8d2a477f445cffdae8483",
+      "rust_sha256": "60cc89f9afeb59b5832de262adc4ed895cb8712f19ee14216aaba63d4fe62fab"
+    },
+    "gen2": {
+      "cases": 62,
+      "invocations": 62,
+      "cases_allocating_names": 16,
+      "generated_names": 25,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_sha256": "f5d5d2b0a0dece3ecd98b2d45e54e8d33ccbe9e13c02d89ebb91cdb88c1dd5e3",
+      "rust_sha256": "fa573e3c68a6c5a196b7b6f6822d834d0d98be2aa0b3f6e95c3774f1bf85ee54"
+    }
+  },
+  "classic_runtime": {
+    "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+    "batch_receipts_sha256": "ecf8d575ee5eecd46172baede6a5f6d805c538dda401d19cf77a60c52f9bde58",
+    "executed": 52,
+    "compile_only": 19,
+    "input_commands": 181,
+    "expected_runtime_errors": 0
+  }
+}
