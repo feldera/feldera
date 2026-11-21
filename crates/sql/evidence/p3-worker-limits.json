@@ -3124,6 +3124,43 @@
       "load": "concurrent frozen corpus replay",
       "meets_cancellation_limit": true,
       "meets_waiting_rss_limit": true
+    },
+    {
+      "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+      "rust_optimizer_passes": true,
+      "rounds": 5,
+      "slots_per_round": 4,
+      "signal_to_reap_ms": [
+        13.854096,
+        12.440007,
+        4.241225,
+        13.914096,
+        6.576026,
+        4.615434,
+        4.490393,
+        7.059236,
+        9.442745,
+        10.189707,
+        9.142869,
+        11.304128,
+        10.931959,
+        7.107862,
+        10.969001,
+        7.25332,
+        5.387479,
+        8.645076,
+        6.91336,
+        6.249149
+      ],
+      "p95_ms": 13.854096,
+      "largest_driver_plus_front_end_rss_bytes": 80084992,
+      "compiler_sha256": "f9adace98d934fc51e571ad0a2c3fd51cbf75f255ba171db2357c42d42422fc2",
+      "compiler_jar_sha256": "1c7e58eea2e78ef42dd93b5b180567164be2c98841c39ba557c36a887e12bc5a",
+      "optimizer_library_sha256": "240ae2eb3e254bb86edee4ddb3d1f7749a46c8142f0bd60c4070021b676c240f",
+      "pass_kinds": 101,
+      "load": "concurrent frozen corpus replay",
+      "meets_cancellation_limit": true,
+      "meets_waiting_rss_limit": true
     }
   ],
   "loaded_child_exit_diagnostic": {
