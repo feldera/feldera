@@ -386,21 +386,41 @@ public class InsertLimiters extends CircuitCloneVisitor {
         MonotoneExpression monotone = this.expansionMonotoneValues.get(replacement);
         if (monotone == null)
             return null;
-        WindowEdges edges = this.windowEdges(operator);
         IMaybeMonotoneType output = Monotonicity.getBodyType(monotone);
         // A bound holds only the monotone columns: the key, and the value when it is
         // an empty tuple, which counts as monotone.
         boolean valueInBound = output.to(PartiallyMonotoneTuple.class).getFieldType(1).mayBeMonotone();
 
-        // WL(x) is the waterline of x; window.lower and window.upper are the current window bounds.
-        OutputPort bound;
-        if (operator.lowerUnbounded) {
+        OutputPort inputBound = operator.lowerUnbounded
+                ? this.boundOf(replacement, replacement.inputs.get(0)) : null;
+        OutputPort bound = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? this.rustWindowBound(operator, inputBound, valueInBound)
+                : this.javaWindowBound(operator, inputBound, valueInBound);
+        this.markBound(replacement.outputPort(), bound);
+        this.markBound(operator.outputPort(), bound);
+        return bound;
+    }
+
+    private OutputPort rustWindowBound(DBSPWindowOperator operator, @Nullable OutputPort inputBound,
+                                       boolean valueInBound) {
+        var clock = operator.right().node().to(DBSPApplyOperator.class);
+        var functions = RustCircuitPass.windowWaterline(this.compiler, clock.getClosureFunction(),
+                inputBound, valueInBound);
+        var edge = new DBSPApplyOperator(operator.getRelNode(), functions.endpoint(), this.mapped(clock.input()), null);
+        this.addOperator(edge);
+        return inputBound == null ? edge.outputPort()
+                : this.createApply2(inputBound, edge.outputPort(), Objects.requireNonNull(functions.combine()));
+    }
+
+    private OutputPort javaWindowBound(DBSPWindowOperator operator, @Nullable OutputPort inputBound,
+                                       boolean valueInBound) {
+        WindowEdges edges = this.windowEdges(operator);
+        if (inputBound != null) {
             // WL(output[key]) = min(WL(input[key]), window.upper).
             // Rows enter the window as new input rows, with key >= WL(input[key]),
             // or through the upper bound, with key >= window.upper.  No row leaves the
             // window, since window.upper never decreases: it is a monotone function of
             // a nondecreasing input, such as NOW() + 1 HOUR.
-            OutputPort inputBound = this.boundOf(replacement, replacement.inputs.get(0));
             DBSPApplyOperator upper = new DBSPApplyOperator(
                     operator.getRelNode(), edges.upper().deepCopy().closure(edges.parameter()), edges.input(), null);
             this.addOperator(upper);
@@ -413,7 +433,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPExpression boundValue = valueInBound ?
                     new DBSPRawTupleExpression(keyBound, new DBSPTupleExpression()) :
                     new DBSPRawTupleExpression(keyBound);
-            bound = this.createApply2(inputBound, upper.outputPort(), boundValue.closure(inputVar, upperVar));
+            return this.createApply2(inputBound, upper.outputPort(), boundValue.closure(inputVar, upperVar));
         } else {
             // WL(output[key]) = window.lower.
             // Every later change, including new input rows, has key >= window.lower, since
@@ -426,11 +446,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPApplyOperator apply = new DBSPApplyOperator(
                     operator.getRelNode(), boundValue.closure(edges.parameter()), edges.input(), null);
             this.addOperator(apply);
-            bound = apply.outputPort();
+            return apply.outputPort();
         }
-        this.markBound(replacement.outputPort(), bound);
-        this.markBound(operator.outputPort(), bound);
-        return bound;
     }
 
     @Override
@@ -2351,6 +2368,42 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 col.getPositionRange());
     }
 
+    public record FinalityFunctions(DBSPClosureExpression bounds, @Nullable DBSPClosureExpression filter,
+                                    DBSPClosureExpression index, @Nullable DBSPClosureExpression projectBound) {}
+
+    private FinalityFunctions finalityFunctions(DBSPSinkOperator sink, DBSPTypeTupleBase rowType,
+                                                DBSPType boundType, int rowIndex, int boundIndex) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.finalityFunctions(this.compiler, sink.getNode(),
+                    rowType, boundType, rowIndex, boundIndex);
+
+        DBSPVariablePath row = rowType.ref().var();
+        DBSPType keyType = rowType.getFieldType(rowIndex);
+        DBSPVariablePath control = boundType.ref().var();
+        DBSPExpression minimum = keyType.to(IsBoundedType.class).getMinValue();
+        DBSPExpression upper = control.deref().field(boundIndex);
+        if (keyType.mayBeNull)
+            upper = upper.some();
+        var bounds = new DBSPRawTupleExpression(DBSPTypeTypedBox.wrapTypedBox(minimum, false),
+                DBSPTypeTypedBox.wrapTypedBox(upper, false)).closure(control.asParameter());
+
+        DBSPClosureExpression filter = null;
+        if (keyType.mayBeNull) {
+            // A NULL key can never become final. Discard it before the window stores it.
+            DBSPVariablePath input = rowType.ref().var();
+            filter = new DBSPIsNullExpression(sink.getNode(), input.deref().field(rowIndex)).not().closure(input);
+        }
+        var index = new DBSPRawTupleExpression(row.deref().field(rowIndex).applyCloneIfNeeded(),
+                row.deref().applyCloneIfNeeded()).closure(row.asParameter());
+        DBSPClosureExpression projectBound = null;
+        if (boundType.to(DBSPTypeTuple.class).size() > 1) {
+            DBSPVariablePath input = boundType.ref().var();
+            projectBound = new DBSPTupleExpression(input.deref().field(boundIndex).applyCloneIfNeeded())
+                    .closure(input.asParameter());
+        }
+        return new FinalityFunctions(bounds, filter, index, projectBound);
+    }
+
     @Override
     public void postorder(DBSPSinkOperator operator) {
         int monotoneFieldIndex = operator.metadata.emitFinalColumn;
@@ -2378,46 +2431,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     }
 
                     DBSPTypeTupleBase dataType = operator.getOutputZSetType().elementType.to(DBSPTypeTupleBase.class);
-                    DBSPVariablePath t = dataType.ref().var();
                     DBSPType tsType = dataType.getFieldType(monotoneFieldIndex);
-                    DBSPExpression minimum = tsType.to(IsBoundedType.class).getMinValue();
-
-                    // boundSource has a type TupN; extract the field of the column
-                    DBSPVariablePath var = boundSource.outputType().ref().var();
-                    DBSPExpression upper = var.deref().field(controlFieldIndex);
-                    // The bounds have the type of the keys; a waterline is never NULL
-                    if (tsType.mayBeNull)
-                        upper = upper.some();
-                    DBSPExpression makePair = new DBSPRawTupleExpression(
-                            DBSPTypeTypedBox.wrapTypedBox(minimum, false),
-                            DBSPTypeTypedBox.wrapTypedBox(upper, false));
-                    DBSPApplyOperator apply = new DBSPApplyOperator(
-                            operator.getRelNode(), makePair.closure(var.asParameter()), boundSource,null);
+                    var functions = this.finalityFunctions(operator, dataType, boundSource.outputType(),
+                            monotoneFieldIndex, controlFieldIndex);
+                    var apply = new DBSPApplyOperator(operator.getRelNode(), functions.bounds(), boundSource, null);
                     this.addOperator(apply);
 
                     OutputPort data = this.mapped(operator.input());
-                    if (tsType.mayBeNull) {
-                        // A row with a NULL value is never late, so it is never final and never
-                        // emitted; the window does not need to store it.  The GC for the window
-                        // would never remove it, so the state of the window could grow unbounded.
-                        DBSPVariablePath row = dataType.ref().var();
-                        DBSPExpression notNull = new DBSPIsNullExpression(operator.getNode(),
-                                row.deref().field(monotoneFieldIndex)).not();
-                        DBSPFilterOperator filter = new DBSPFilterOperator(
-                                operator.getRelNode(), notNull.closure(row), data);
+                    if (functions.filter() != null) {
+                        var filter = new DBSPFilterOperator(operator.getRelNode(), functions.filter(), data);
                         this.addOperator(filter);
                         data = filter.outputPort();
                     }
-
-                    // Window requires data to be indexed
-                    DBSPExpression field = t.deref().field(monotoneFieldIndex);
-                    DBSPSimpleOperator ix = new DBSPMapIndexOperator(operator.getRelNode(),
-                            new DBSPRawTupleExpression(
-                                    field.applyCloneIfNeeded(),
-                                    t.deref().applyCloneIfNeeded()).closure(t.asParameter()),
-                            new DBSPTypeIndexedZSet(operator.getRelNode(),
-                                    field.getType(), dataType),
-                            data);
+                    var ix = new DBSPMapIndexOperator(operator.getRelNode(), functions.index(),
+                            new DBSPTypeIndexedZSet(operator.getRelNode(), tsType, dataType), data);
                     this.addOperator(ix);
                     // The upper bound must be exclusive; -infinity lower bound.
                     // The 'emit_final' annotation is the only source code behind this window,
@@ -2439,13 +2466,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             Linq.list(new MonotoneType(tsType)), false, false);
 
                     // The boundSource may have more than 1 monotone field, keep only the one we care about.
-                    DBSPTypeTuple monotoneFields = boundSource.outputType().to(DBSPTypeTuple.class);
-                    if (monotoneFields.size() > 1) {
-                        DBSPVariablePath v = boundSource.outputType().ref().var();
-                        DBSPExpression dropFields = new DBSPTupleExpression(
-                                v.deref().field(controlFieldIndex).applyCloneIfNeeded());
-                        DBSPApplyOperator dropOp = new DBSPApplyOperator(
-                                operator.getRelNode(), dropFields.closure(v.asParameter()), boundSource, "");
+                    if (functions.projectBound() != null) {
+                        var dropOp = new DBSPApplyOperator(operator.getRelNode(),
+                                functions.projectBound(), boundSource, "");
                         this.addOperator(dropOp);
                         boundSource = dropOp.outputPort();
                     }

@@ -145,6 +145,11 @@ impl CircuitEditor {
         Ok(())
     }
 
+    pub(crate) fn is_registered_singleton(&self, ty: crate::TypeId) -> Result<bool, Error> {
+        let key = (self.type_kind(ty)?, self.nullable(ty)?);
+        Ok(self.singletons.get(&key) == Some(&ty.into()))
+    }
+
     pub(crate) fn change_nullability(
         &mut self,
         id: NodeId,

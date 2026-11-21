@@ -85,11 +85,12 @@ impl CircuitEditor {
         }
         // The timestamp factories intern precisely the types with an empty origin.
         if matches!(kind, Ty::Timestamp | Ty::TimestampTz)
-            && self
+            && (self
                 .node(ty.0)?
                 .data("sourceEmpty")
                 .and_then(|v| v.as_bool())
                 == Some(true)
+                || self.is_registered_singleton(ty)?)
         {
             let code = if kind == Ty::Timestamp {
                 "TIMESTAMP"

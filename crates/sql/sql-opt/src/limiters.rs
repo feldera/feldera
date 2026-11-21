@@ -1,6 +1,8 @@
 //! Waterline operators built from monotonicity facts on the expanded circuit.
 
 mod filter;
+mod finality;
+pub use finality::{FinalityColumn, FinalityFunctions};
 mod join;
 mod keyed;
 mod pass;
@@ -12,6 +14,8 @@ mod projection;
 mod source;
 pub(crate) use source::timestamp_max;
 mod streams;
+mod window;
+pub use window::{window_waterline, WindowWaterline};
 pub use projection::Projection;
 pub use source::{declared_waterline, DeclaredWaterline};
 pub use streams::{connect_error_view, window, Stream, StreamKind, WindowBounds};

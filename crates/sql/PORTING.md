@@ -940,6 +940,18 @@ All 24 directed limiter invocations matched Java on the S4 graph, checkpoint
 and next generated name. Four keyed Gen-2 inputs produced the expected refusal.
 [Limiter clock comparisons](evidence/p3-limiter-clocks.json)
 
+For an `EMIT FINAL` view, Rust indexes rows by the finality column and filters
+out NULL keys before the window stores them. The detached pass also builds
+the clock adapters and delayed key retention. Incremental and collection
+examples matched the Java checkpoint, S4 graph, and generated names in both
+engines. The live optimizer uses the same Rust closure builder.
+
+Rust derives a temporal window's output waterline from its lower endpoint.
+For a window with an unbounded lower endpoint, it takes the minimum of the
+incoming key waterline and the upper endpoint. All 550 selected limiter
+boundaries matched direct Java. The classic runtime replay passed 2,076 input
+commands across 217 programs. [Window waterline comparisons](evidence/p3-window-waterlines.json)
+
 Rust binds limiter closures to the actual waterline port types and reduces
 their calls before Java inserts the apply operators. The resulting graph,
 generated names and diagnostics matched Java at all 550 selected

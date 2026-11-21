@@ -314,31 +314,34 @@ impl CircuitEditor {
         )
     }
 
+    /// Declare a closure argument at the source location chosen by its constructor.
+    pub fn parameter_at(&mut self, origin: NodeId, path: ExpressionId) -> Result<NodeId, Error> {
+        let name = self
+            .node(path.0)?
+            .data("variable")
+            .cloned()
+            .ok_or_else(|| Error::new("closure variable needs a name"))?;
+        let ty = self.expression_type(path)?;
+        self.inner_at(
+            origin,
+            InnerKind::Parameter,
+            [
+                ("name", Field::Data(name)),
+                ("type", Field::Reference(ty.0)),
+            ],
+        )
+    }
+
     pub fn closure_from_variables(
         &mut self,
         body: ExpressionId,
         paths: &[ExpressionId],
     ) -> Result<ExpressionId, Error> {
-        let mut declarations = Vec::with_capacity(paths.len());
-        let mut types = Vec::with_capacity(paths.len());
-        for &path in paths {
-            let name = self
-                .node(path.0)?
-                .data("variable")
-                .cloned()
-                .ok_or_else(|| Error::new("closure variable needs a name"))?;
-            let ty = self.expression_type(path)?;
-            declarations.push(self.inner_at(
-                path.0,
-                InnerKind::Parameter,
-                [
-                    ("name", Field::Data(name)),
-                    ("type", Field::Reference(ty.0)),
-                ],
-            )?);
-            types.push(ty.0);
-        }
-        self.closure_parts(body, &declarations, &types)
+        let parameters = paths
+            .iter()
+            .map(|&path| self.parameter_at(path.0, path))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.closure_with_parameters(body, &parameters)
     }
 
     /// Read a borrowed argument at a new expression occurrence.

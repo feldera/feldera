@@ -49,6 +49,17 @@
   "twofields": {
     "sql": "CREATE TABLE t(x INT NOT NULL LATENESS 2, y INT NOT NULL LATENESS 2); CREATE VIEW w AS SELECT * FROM t UNION ALL SELECT * FROM t;"
   },
+  "emitFinalMissingWaterline": {
+    "sql": "CREATE TABLE t(ts BIGINT LATENESS 1, other BIGINT); CREATE VIEW v WITH ('emit_final' = 'other') AS SELECT * FROM t;",
+    "error": "Could not infer a waterline for column 'v'.'other' which has an 'emit_final' annotation"
+  },
+  "emitFinalNullableTimestamp": {
+    "sql": "CREATE TABLE t(x INTEGER NOT NULL, lower_bound INTEGER LATENESS 1, ts TIMESTAMP LATENESS INTERVAL 1 HOUR); CREATE VIEW v WITH ('emit_final' = 'ts') AS SELECT * FROM t;"
+  },
+  "emitFinalCollection": {
+    "sql": "CREATE TABLE t(x INTEGER NOT NULL LATENESS 2); CREATE VIEW v WITH ('emit_final' = 'x') AS SELECT * FROM t;",
+    "incremental": false
+  },
   "collectionStream": {
     "sql": "CREATE TABLE t(x INT NOT NULL LATENESS 5, y TIMESTAMP LATENESS INTERVAL '3' MINUTE); CREATE VIEW v AS SELECT * FROM t;",
     "incremental": false

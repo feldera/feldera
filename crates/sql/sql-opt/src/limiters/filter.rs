@@ -18,7 +18,7 @@ fn node(id: impl Into<NodeId>) -> Field {
     Field::Reference(id.into())
 }
 
-fn bool_type(edit: &mut CircuitEditor, sample: NodeId) -> Result<TypeId, Error> {
+pub(super) fn bool_type(edit: &mut CircuitEditor, sample: NodeId) -> Result<TypeId, Error> {
     let ty = edit.empty_origin_node(
         sample,
         InnerKind::Type(Ty::Bool),

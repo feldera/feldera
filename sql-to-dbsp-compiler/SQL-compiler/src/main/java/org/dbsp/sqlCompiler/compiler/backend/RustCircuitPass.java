@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
@@ -329,13 +330,58 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static InsertLimiters.DeclaredWaterline declaredWaterline(DBSPCompiler compiler, CalciteObject origin,
-            DBSPVariablePath row, List<Integer> columns, List<DBSPExpression> intervals) {
+    public record WindowWaterline(DBSPClosureExpression endpoint, @Nullable DBSPClosureExpression combine) {}
+
+    public static WindowWaterline windowWaterline(DBSPCompiler compiler, DBSPClosureExpression endpoints,
+            @Nullable OutputPort inputBound, boolean retainEmptyValue) {
+        IDBSPInnerNode[] inputs = inputBound == null ? new IDBSPInnerNode[] { endpoints }
+                : new IDBSPInnerNode[] { endpoints, inputBound.outputType() };
+        try {
+            var reply = invokeLowering(compiler, "Limiters/Window", MAPPER.writeValueAsBytes(retainEmptyValue), inputs);
+            var decoder = expressionDecoder(reply.writer);
+            var roots = reply.value.required("functions");
+            var result = new WindowWaterline(decoder.decodeInner(roots.required(0), DBSPClosureExpression.class),
+                    inputBound == null ? null : decoder.decodeInner(roots.required(1), DBSPClosureExpression.class));
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode window waterline projection", error);
+        }
+    }
+
+    private static ObjectNode expressionSite(CalciteObject origin) {
         var site = MAPPER.createObjectNode();
         site.put("empty", origin.isEmpty());
         var range = origin.getPositionRange();
         if (!origin.isEmpty() || range.isValid())
             site.set("position", range.asJson());
+        return site;
+    }
+
+    public static InsertLimiters.FinalityFunctions finalityFunctions(DBSPCompiler compiler, CalciteObject origin,
+            DBSPType row, DBSPType bound, int rowIndex, int boundIndex) {
+        var site = expressionSite(origin);
+        site.put("row", rowIndex);
+        site.put("waterline", boundIndex);
+        try {
+            var reply = invokeLowering(compiler, "Limiters/Finality", MAPPER.writeValueAsBytes(site), row, bound);
+            var decoder = expressionDecoder(reply.writer);
+            var roots = reply.value.required("functions");
+            var result = new InsertLimiters.FinalityFunctions(
+                    decoder.decodeInner(roots.required(0), DBSPClosureExpression.class),
+                    roots.required(1).isNull() ? null : decoder.decodeInner(roots.get(1), DBSPClosureExpression.class),
+                    decoder.decodeInner(roots.required(2), DBSPClosureExpression.class),
+                    roots.required(3).isNull() ? null : decoder.decodeInner(roots.get(3), DBSPClosureExpression.class));
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode EMIT FINAL columns", error);
+        }
+    }
+
+    public static InsertLimiters.DeclaredWaterline declaredWaterline(DBSPCompiler compiler, CalciteObject origin,
+            DBSPVariablePath row, List<Integer> columns, List<DBSPExpression> intervals) {
+        var site = expressionSite(origin);
         site.set("columns", MAPPER.valueToTree(columns));
         var inputs = new ArrayList<DBSPExpression>(intervals.size() + 1);
         inputs.add(row);

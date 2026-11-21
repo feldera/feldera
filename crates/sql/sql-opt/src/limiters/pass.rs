@@ -74,7 +74,7 @@ fn apply_bound(
     })
 }
 
-/// The pass needs data clocks only at tables and views. Infer them on the
+/// The pass needs data clocks at tables, views and their output sinks. Infer them on the
 /// original graph before editing the sources. Earlier sidecars also recorded
 /// every input clock, which lets replay detect mismatched circuit/state pairs.
 fn relation_clocks(
@@ -119,7 +119,10 @@ fn relation_clocks(
     }
     let mut relations = BTreeMap::new();
     for (id, node) in circuit.operators() {
-        if !matches!(node.operator_kind(), Some(Op::SourceMultiset | Op::View)) {
+        if !matches!(
+            node.operator_kind(),
+            Some(Op::SourceMultiset | Op::View | Op::Sink)
+        ) {
             continue;
         }
         let port = OutputPort {
@@ -262,13 +265,26 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
                 }
             }
             Some(Op::Sink) => {
-                if let Some(Field::Object(metadata)) = op.field("metadata") {
-                    if matches!(metadata.get("emitFinalColumn"),Some(Field::Data(index)) if index.as_i64().is_some_and(|i|i>=0))
-                    {
-                        return Err(Error::new(
-                            "EMIT FINAL requires the sink visitor outside the P1 limiter slice",
-                        ));
-                    }
+                if let Some(field) = super::FinalityColumn::from_sink(op, projection)? {
+                    let input = op
+                        .inputs()
+                        .next()
+                        .ok_or_else(|| Error::new("EMIT FINAL sink needs a stream"))?;
+                    let (bound, _) = bounds.get(&input).copied().ok_or_else(|| {
+                        Error::new("missing upstream bound for monotone EMIT FINAL column")
+                    })?;
+                    let stream = match data.get(&input) {
+                        Some(stream) => *stream,
+                        None => Stream {
+                            port: input,
+                            ty: crate::rebuild::input_type(&edit, input)?,
+                            kind: clocks[&id],
+                        },
+                    };
+                    super::finality::emit_final(
+                        &mut edit, body, id, stream, bound, field, &mut next,
+                    )?;
+                    continue;
                 }
             }
             Some(Op::Constant | Op::IncrementalConstant) => {}

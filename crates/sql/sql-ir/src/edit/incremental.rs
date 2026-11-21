@@ -33,6 +33,49 @@ impl CircuitEditor {
         Ok(())
     }
 
+    /// Move a definition to the first operator that will precede its original owner.
+    pub fn move_origin_definition(&mut self, from: NodeId, to: NodeId) -> Result<(), Error> {
+        if let Some(origin) = self.node(from)?.data("provenance").cloned() {
+            if let Some(id) = origin.get("id") {
+                let reference = serde_json::json!({"ref": id});
+                if self.node(to)?.data("provenance") != Some(&reference) {
+                    return Err(Error::new("operators do not share a relational origin"));
+                }
+                self.set_intermediate_origin(to, Some(origin))?;
+                self.set_intermediate_origin(from, Some(reference))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// A property on the SQL view provides the source location for the window and its clock adapters.
+    pub fn set_property_position(
+        &mut self,
+        operators: &[NodeId],
+        position: crate::provenance::SourceRange,
+    ) -> Result<(), Error> {
+        let Some((&first, rest)) = operators.split_first() else {
+            return Err(Error::new("no operator for property position"));
+        };
+        if !position.is_valid() || self.node(first)?.field("provenance").is_none() {
+            return Ok(());
+        }
+        let id = self
+            .circuit
+            .provenance()?
+            .last_origin_number()
+            .checked_add(1)
+            .filter(|&i| i <= i32::MAX as u32)
+            .ok_or_else(|| Error::new("relational origin identity exhausted"))?;
+        self.set_intermediate_origin(first, Some(serde_json::json!({
+            "id":id, "kind":"PositionOnlyRel", "empty":true, "position":position, "positions":[position]
+        })))?;
+        for &op in rest {
+            self.set_intermediate_origin(op, Some(serde_json::json!({"ref":id})))?;
+        }
+        Ok(())
+    }
+
     pub fn aggregate_zero_to_sum(
         &mut self,
         site: NodeId,

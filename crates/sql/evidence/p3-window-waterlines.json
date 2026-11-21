@@ -1,0 +1,79 @@
+{
+  "compiler": {
+    "profile": "Linux ARM64, offline Maven and release Rust tools",
+    "jar_sha256": "bd6de83fae8c48f5b6c59271ee1c601899f54897f7e59fb6cb976c889f76a12a",
+    "optimizer_library_sha256": "8be2fd6e1f056bbe52af9e0188e26f7d314112784235f3aad6e5289615b534b2",
+    "driver_sha256": "80a24c5539a53b36ec4d6be508aa218d05eb5fd58dd5c2b159a4e5de2d0b734c"
+  },
+  "reference_jar_sha256": "7bd342ad761553917916d18d83481db054e1b35ec2ed6c6bc4bf25c64c72465c",
+  "directed_comparison": "Detached S4 graph, replay checkpoint, and next generated name against direct Java. Direct and hybrid final outputs compared bytewise for classic Rust and structurally for Gen-2 JSON.",
+  "directed": {
+    "emitFinalNullableTimestamp-classic": {
+      "replay": [
+        {
+          "sequence": 206,
+          "before": 5,
+          "after": 17,
+          "wire_changed": true
+        }
+      ],
+      "output_sha256": "a53adbe522154aa59ae9a447a93da262b653839ccb3d6c7d29d20763ea07f72b"
+    },
+    "emitFinalNullableTimestamp-gen2": {
+      "replay": [
+        {
+          "sequence": 206,
+          "before": 5,
+          "after": 17,
+          "wire_changed": true
+        }
+      ],
+      "output_sha256": "24ce44e9c5573687a0844d963f535ff312f0b207755f2243824e37df05d9226a"
+    },
+    "emitFinalCollection-classic": {
+      "replay": [
+        {
+          "sequence": 203,
+          "before": 5,
+          "after": 18,
+          "wire_changed": true
+        }
+      ],
+      "output_sha256": "3bab631eb4e1d0b96cf0e7947925dd5db0d05d5e249970e0bedab7de4463b6de"
+    },
+    "emitFinalCollection-gen2": {
+      "replay": [
+        {
+          "sequence": 203,
+          "before": 5,
+          "after": 18,
+          "wire_changed": true
+        }
+      ],
+      "output_sha256": "ccfa6037a7218698530b753b835bc38cd82d902f735b17512ff4c79a919ef961"
+    }
+  },
+  "populations": {
+    "classic": {
+      "matched_insert_limiters": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "fe100f83a360cf462d60b626f01b1ec413803c9ab0bca9740af8b76a9e264316",
+      "hybrid_gzip_sha256": "916b69147f017b3fb2126d3ece1ea0f1b68c0415e9da6529ac06da6e1c2064cb"
+    },
+    "gen2": {
+      "matched_insert_limiters": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "6c2b9e5fda042f169aece201e721c978e89edc8e9ed3f538fb35aeaececcab64",
+      "hybrid_gzip_sha256": "5df8b3bb7ea94fb2a546d6cd9f23029cca7ca516b741965fb96f57cf64c526e4"
+    }
+  },
+  "classic_runtime": {
+    "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+    "executed": 217,
+    "compile_only": 74,
+    "total_frozen_cases": 291,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "e3fd953ba4d64b694a5713483bd698ae89a30b1a87e02639a501f16a927ab39f"
+  }
+}

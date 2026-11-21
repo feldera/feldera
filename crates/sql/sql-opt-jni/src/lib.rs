@@ -89,39 +89,67 @@ fn expression_arena(roots: impl IntoIterator<Item = Value>) -> Result<(Circuit, 
     }))?.with_inner_roots(roots)
 }
 
-/// The arena root carries the table or view location for expressions created
-/// by the live builder. The supplied row and intervals keep their own origins.
-fn declared_waterline(
-    input: &[u8],
-    state: &[u8],
-    mut next: u64,
-) -> Result<Value, Box<dyn std::error::Error>> {
+#[derive(serde::Deserialize)]
+struct ExpressionSite {
+    empty: bool,
+    position: Option<Value>,
+}
+
+impl ExpressionSite {
+    fn arena(self, input: &[u8]) -> Result<(Circuit, Vec<NodeId>), Box<dyn std::error::Error>> {
+        let mut header = json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[], "sourceEmpty":self.empty
+        });
+        if let Some(position) = self.position {
+            header["position"] = position;
+        }
+        let Value::Array(inputs) = feldera_sql_ir::parse_json(input)? else {
+            return Err("expected an array of lowering inputs".into());
+        };
+        Ok(Circuit::from_json(header)?.with_inner_roots(inputs)?)
+    }
+}
+
+fn finality_functions(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
-    struct Site {
-        columns: Vec<usize>,
-        empty: bool,
-        position: Option<Value>,
+    struct Request {
+        #[serde(flatten)]
+        site: ExpressionSite,
+        #[serde(flatten)]
+        column: feldera_sql_opt::limiters::FinalityColumn,
     }
-    let site: Site = serde_json::from_slice(state)?;
-    let mut header = json!({
-        "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[], "sourceEmpty":site.empty
-    });
-    if let Some(range) = site.position {
-        header["position"] = range;
-    }
-    let Value::Array(inputs) = feldera_sql_ir::parse_json(input)? else {
-        return Err(
-            "expected a row parameter followed by its declared lateness expressions".into(),
-        );
+    let request: Request = serde_json::from_slice(state)?;
+    let (arena, roots) = request.site.arena(input)?;
+    let [row, bound] = roots.as_slice() else {
+        return Err("expected row and waterline types for EMIT FINAL".into());
     };
-    let (arena, roots) = Circuit::from_json(header)?.with_inner_roots(inputs)?;
+    let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
+    let row = edit.type_id(*row)?;
+    let bound = edit.type_id(*bound)?;
+    let f = request.column.functions(&mut edit, arena.root_id(), row, bound, &mut next)?;
+    let slots = [Some(f.bounds), f.filter, Some(f.index), f.project_bound];
+    let roots: Vec<_> = slots.into_iter().flatten().collect();
+    let mut encoded = edit.circuit().additional_expressions(&arena, &roots)?.into_iter();
+    let functions = slots.map(|slot| slot.and_then(|_| encoded.next()));
+    Ok(json!({"functions": functions, "next_generated_name": next}))
+}
+
+fn declared_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Request {
+        columns: Vec<usize>,
+        #[serde(flatten)]
+        site: ExpressionSite,
+    }
+    let request: Request = serde_json::from_slice(state)?;
+    let (arena, roots) = request.site.arena(input)?;
     let Some((&row, intervals)) = roots.split_first() else {
         return Err("missing waterline row".into());
     };
-    if site.columns.len() != intervals.len() {
+    if request.columns.len() != intervals.len() {
         return Err("expected one interval per LATENESS column".into());
     }
-    let columns: Vec<_> = site
+    let columns: Vec<_> = request
         .columns
         .into_iter()
         .zip(intervals.iter().copied())
@@ -291,6 +319,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let source = edit.expression(*source)?;
             let filter = edit.expression(*filter)?;
             feldera_sql_opt::merge_temporal_predicates(&mut edit, source, filter, &mut next, &mut warnings)?
+        }
+        ("Limiters/Window", [bounds, input @ ..]) if input.len() <= 1 => {
+            let bounds = edit.expression(*bounds)?;
+            let input = input.first().map(|id| edit.type_id(*id)).transpose()?;
+            let window = feldera_sql_opt::limiters::window_waterline(
+                &mut edit, bounds, input, serde_json::from_slice(state)?, &mut next,
+            )?;
+            let roots = [Some(window.endpoint), window.combine].into_iter().flatten().collect::<Vec<_>>();
+            let functions = edit.circuit().additional_expressions(&arena, &roots)?;
+            return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
         ("Limiters/KeyFilter", [key, waterline]) => {
             let (name, keys, declared): (String, Vec<usize>, Vec<usize>) = serde_json::from_slice(state)?;
@@ -565,10 +603,11 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
+        "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
-        | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

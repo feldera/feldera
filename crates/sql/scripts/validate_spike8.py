@@ -33,7 +33,8 @@ def run(args):
                     "--dump-circuits", trace, "--dump-producer-commit", args.producer,
                     "--dump-runtime-abi", args.runtime, "-o", Path(scratch) / "product", source,
                 ], capture_output=True, text=True)
-                refusal = limiters.get(name, {}).get("gen2_error") if engine == "gen2" else None
+                fixture = limiters.get(name, {})
+                refusal = fixture.get(f"{engine}_error", fixture.get("error"))
                 if refusal:
                     if java.returncode == 0 or refusal not in java.stderr:
                         raise ValueError(f"Expected Java to reject {engine}/{name}: {java.stderr}")
