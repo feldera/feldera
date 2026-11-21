@@ -735,10 +735,11 @@ Rust replaced maximal join trees with star joins at 17,096 placements. Thirty
 placements changed the graph, all matching Java. One program per engine disabled
 star joins. Rust also discovers the maximal trees and builds their closures.
 At all 17,096 active placements the ordered roots, input ports, shared expressions
-and generated-name counter matched Java. A directed indexed-root test checks
-the ordered leaves and names on both implementations. The subsequent replacement
-on that directed circuit exposes a Java stream-kind error when it connects
-collection inputs directly to the delta-only indexed star join.
+and generated-name counter matched Java. On a directed indexed-root tree, both compilers differentiate the three leaves
+in order and integrate the indexed result for its downstream consumer. The
+closures produced the same nested row, and the complete rewritten circuits
+were structurally equal. The corrected Rust pass also reproduced all eight
+frozen result shards. [Upstream Java fix](https://github.com/feldera/feldera/pull/8037)
 [Join-tree analysis](evidence/p3-find-join-trees.json) ·
 [Star join replacements](evidence/p3-star-joins.json)
 

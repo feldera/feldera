@@ -53,11 +53,6 @@ fn replace_tree(
         ("outputType", Field::Reference(result_type)),
         ("function", Field::Reference(closure)),
     ];
-    if join_kind == Op::StarJoinIndex {
-        let join = edit.append_operator(body, root, join_kind, &inputs, fields)?;
-        edit.place_before(body, join, root)?;
-        return Ok(output(join));
-    }
     let mut differences = Vec::with_capacity(inputs.len());
     for input in inputs {
         let ty = input_type(edit, input)?;

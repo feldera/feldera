@@ -3,6 +3,9 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -16,9 +19,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -56,6 +61,7 @@ public class StarJoinTreeTests {
         var b = input(circuit, type);
         var c = input(circuit, type);
         var root = indexedJoin(circuit, a, indexedJoin(circuit, b, c));
+        circuit.addOperator(new DBSPDifferentiateOperator(CalciteEmptyRel.INSTANCE, root));
 
         var graph = new Graph(compiler);
         graph.apply(circuit);
@@ -63,8 +69,9 @@ public class StarJoinTreeTests {
         var snapshots = new OptimizerSnapshots(compiler);
         long initial = DBSPVariablePath.nextGeneratedName();
         var mapper = Utilities.deterministicObjectMapper();
+        boolean nativePasses = Boolean.getBoolean("feldera.optimizer.rustPasses");
         byte[] plans;
-        if (Boolean.getBoolean("feldera.optimizer.rustPasses")) {
+        if (nativePasses) {
             Assert.assertSame(circuit, new RustCircuitPass(compiler, analysis, snapshots).apply(circuit));
             plans = new CreateStarJoins.ReplaceStarJoins(compiler, analysis.joinTrees).nativeReplacements();
         } else {
@@ -87,5 +94,30 @@ public class StarJoinTreeTests {
         Assert.assertEquals(4, tree.required("function").required("parameters").size());
         // Three child parameters, two variables for the key test and four parent parameters.
         Assert.assertEquals(initial + 9, DBSPVariablePath.nextGeneratedName());
+
+        var replacement = new CreateStarJoins.ReplaceStarJoins(compiler, analysis.joinTrees);
+        var rewritten = nativePasses
+                ? new RustCircuitPass(compiler, replacement, snapshots).apply(circuit)
+                : replacement.apply(circuit);
+        var output = rewritten.allOperators.getLast().to(DBSPDifferentiateOperator.class).input();
+        Assert.assertEquals(StreamKind.COLLECTION, output.kind());
+        Assert.assertTrue(root.outputType().sameType(output.outputType()));
+        var star = output.to(DBSPIntegrateOperator.class).input().to(DBSPStarJoinIndexOperator.class);
+        Assert.assertEquals(StreamKind.DELTA, star.outputPort().kind());
+        var rewrittenLeaves = rewritten.allOperators.stream()
+                .filter(DBSPConstantOperator.class::isInstance).map(op -> op.getOutput(0)).toList();
+        Assert.assertEquals(3, rewrittenLeaves.size());
+        Assert.assertEquals(rewrittenLeaves, star.inputs.stream()
+                .map(port -> port.to(DBSPDifferentiateOperator.class).input()).toList());
+
+        var key = new DBSPI32Literal(7);
+        var first = new DBSPI32Literal(1);
+        var second = new DBSPI32Literal(2);
+        var third = new DBSPI32Literal(3);
+        var row = star.getClosureFunction()
+                .call(key.borrow(), first.borrow(), second.borrow(), third.borrow()).reduce(compiler);
+        var expected = new DBSPRawTupleExpression(key,
+                new DBSPTupleExpression(first, new DBSPTupleExpression(second, third)));
+        Assert.assertTrue(row.toString(), expected.equivalent(row));
     }
 }

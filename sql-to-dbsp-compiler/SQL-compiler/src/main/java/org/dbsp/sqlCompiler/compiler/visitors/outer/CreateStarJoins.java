@@ -307,44 +307,36 @@ public class CreateStarJoins extends Passes {
             return Objects.requireNonNull(this.joinTrees.nativeReplacements);
         }
 
+        private void replaceJoinTree(DBSPJoinBaseOperator operator) {
+            JoinTree tree = this.joinTrees.get(operator);
+            if (tree == null || tree.size() <= 1 || !this.joinTrees.isMaximal(operator)) {
+                this.replace(operator);
+                return;
+            }
+
+            // Star joins consume and produce deltas. The join tree carries whole collections.
+            var node = operator.getRelNode();
+            List<OutputPort> deltas = new ArrayList<>();
+            for (var input: tree.inputs) {
+                var diff = new DBSPDifferentiateOperator(node, this.mapped(input));
+                this.addOperator(diff);
+                deltas.add(diff.outputPort());
+            }
+            var star = operator.is(DBSPStreamJoinIndexOperator.class)
+                    ? new DBSPStarJoinIndexOperator(node, operator.outputType, tree.closure, deltas)
+                    : new DBSPStarJoinOperator(node, operator.outputType, tree.closure, deltas);
+            this.addOperator(star);
+            this.map(operator, new DBSPIntegrateOperator(node, star.outputPort()));
+        }
+
         @Override
         public void postorder(DBSPStreamJoinOperator operator) {
-            if (this.joinTrees.isMaximal(operator)) {
-                JoinTree tree = this.joinTrees.get(operator);
-                Utilities.enforce(tree != null);
-                if (tree.size() > 1) {
-                    List<OutputPort> newInputs = Linq.map(tree.inputs, this::mapped);
-                    List<OutputPort> diffs = new ArrayList<>();
-                    for (var port: newInputs) {
-                        var diff = new DBSPDifferentiateOperator(operator.getRelNode(), port);
-                        this.addOperator(diff);
-                        diffs.add(diff.outputPort());
-                    }
-                    DBSPStarJoinOperator star = new DBSPStarJoinOperator(
-                            operator.getRelNode(), operator.outputType, tree.closure, diffs);
-                    this.addOperator(star);
-                    DBSPIntegrateOperator integrate = new DBSPIntegrateOperator(operator.getRelNode(), star.outputPort());
-                    this.map(operator, integrate);
-                    return;
-                }
-            }
-            super.postorder(operator);
+            this.replaceJoinTree(operator);
         }
 
         @Override
         public void postorder(DBSPStreamJoinIndexOperator operator) {
-            if (this.joinTrees.isMaximal(operator)) {
-                JoinTree tree = this.joinTrees.get(operator);
-                Utilities.enforce(tree != null);
-                if (tree.size() > 1) {
-                    List<OutputPort> newInputs = Linq.map(tree.inputs, this::mapped);
-                    DBSPStarJoinIndexOperator star = new DBSPStarJoinIndexOperator(
-                            operator.getRelNode(), operator.outputType, tree.closure, newInputs);
-                    this.map(operator, star);
-                    return;
-                }
-            }
-            super.postorder(operator);
+            this.replaceJoinTree(operator);
         }
     }
 }

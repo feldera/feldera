@@ -42,5 +42,19 @@
       "eea7376ddc25dad6847a84803c089151f1365eb9f86ed48003d4b030332e0ad0",
       "04c11d07f5ab2583780b043700baa64f375c77af45c4315df006218730eb641a"
     ]
+  },
+  "indexed_snapshot_regression": {
+    "upstream_pull_request": "https://github.com/feldera/feldera/pull/8037",
+    "test": "StarJoinTreeTests.indexedRootPreservesLeafOrder",
+    "direct_and_hybrid_checks": [
+      "ordered differentiated inputs",
+      "indexed collection output at downstream consumer",
+      "closure value (7, (1, (2, 3)))"
+    ],
+    "java_circuit_sha256": "26663c626b9a2e8e5e991b4cd75b84710a119660fd478272e55b3af9d432abaf",
+    "rust_circuit_sha256": "5855abd2208f526c5c468e78a37e98401e93f69380d21f368f9030cf4e27e0bb",
+    "structurally_equal": true,
+    "replay_comparator_sha256": "fa03eb2158f5232a7be4b0f30d7656407a9737d0e4ea0ab3c52d1968b6637075",
+    "frozen_result_shards_unchanged": true
   }
 }
