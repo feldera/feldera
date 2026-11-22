@@ -934,7 +934,17 @@ fn transform(
         )?));
     }
     if pass == "Topology/Monotonicity" {
-        return Ok(json!(operator_numbers(feldera_sql_opt::monotonicity_transfers(&circuit)?)));
+        #[derive(serde::Serialize)]
+        struct Step {
+            operator: u64,
+            #[serde(flatten)]
+            transfer: feldera_sql_opt::MonotonicityTransfer,
+        }
+        let steps: Vec<_> = feldera_sql_opt::monotonicity_transfers(&circuit)?
+            .into_iter()
+            .map(|(id, transfer)| Step { operator: operator_number(id), transfer })
+            .collect();
+        return Ok(serde_json::to_value(steps)?);
     }
     if pass == "Topology/MultisetAnalysis" {
         use feldera_sql_opt::MultiplicityPlan;
@@ -1077,6 +1087,11 @@ fn transform(
             if let Some(id) = feldera_sql_opt::snapshot_aggregate(&circuit)? {
                 return Ok(json!({"stream_aggregate":operator_number(id)}));
             }
+            let slots: BTreeMap<_, _> = feldera_sql_opt::separate_trace_inputs(&circuit)?
+                .into_iter()
+                .map(|(reader, slots)| (operator_number(reader), slots))
+                .collect();
+            return Ok(json!({"trace_inputs": slots}));
         }
         if name == "StrayGC" {
             if let Some(error) = feldera_sql_opt::retention_violation(&circuit)? {

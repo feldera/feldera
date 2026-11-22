@@ -1,0 +1,53 @@
+{
+  "scope": "Consumer input selection for private traces and operator transfer selection on the expanded circuit. Java applies the selected edits to live ports and analyzes the scheduled expression closures.",
+  "separate_integrators": {
+    "optimizer_library_sha256": "beffc9e52e144a67b113820480a2a4c3c764c3560f510719e5cb178c8720df43",
+    "compiler_jar_sha256": "df754df223e5c109a38de2e49b866ba689f61e4dbf75e08158823ba5e290ac27",
+    "classic": {
+      "cases": 291,
+      "matched_invocations": 265,
+      "input_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "f1225a2f4ca591bf061faf9addac7f58df5f635a7bef3c5bee8289be88e0da11",
+      "hybrid_stream_sha256": "6267220acce47031ed4c648b333ea1e62521fb39a74818c72154de9dbeefad23"
+    },
+    "gen2": {
+      "cases": 259,
+      "matched_invocations": 259,
+      "input_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "93050be7204bdd26b52b11e49a400e7ec79392fdac20011e417ca02a0af09717",
+      "hybrid_stream_sha256": "f5edfd5faf1649c105d7b47c0c1f85b6c5d74dd03ba7ee177fc95357d2fdd2de"
+    }
+  },
+  "monotone_analyzer": {
+    "optimizer_library_sha256": "9276b8d62b2d4a07f63e760cc3e3b7be09dbba5805c0b135ba5837e2d76d318d",
+    "compiler_jar_sha256": "032d9481ba49c6265596cd717351fad8ac29e2fcbf4620c0d2104d2e1f3f39c6",
+    "classic": {
+      "cases": 291,
+      "matched_invocations": 291,
+      "input_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "394084a76fd20b7cfdcbe7ef54b3cfe8b21f22b36f8fcfefb276a39bb6b194e7",
+      "hybrid_stream_sha256": "300c5d9d178681ed16028b4bbf5a22c4a39598d0e33b86f324638f9de4a5fca9"
+    },
+    "gen2": {
+      "cases": 259,
+      "matched_invocations": 259,
+      "input_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "12b2c06d99729cabe4a32e0989378a73a1a21a0181a6f5a5daf9b4a3bba2d167",
+      "hybrid_stream_sha256": "8d6a31490c4dccbd898b30b092fafc1f3023096c72beb7d1b7e33b2caf370b0e"
+    }
+  },
+  "detached_replay": {
+    "classic": {
+      "cases": 13,
+      "input_sha256": "a71512f00ea6e49f91dc1b78021120e6eaa9135af4f1a31d75757748ff0888b8",
+      "mismatches": 0,
+      "report_sha256": "507db4c776147da63dbe8db1685552854b373e3cc36782edce572c01fe3ac32d"
+    },
+    "gen2": {
+      "cases": 12,
+      "input_sha256": "26f705156c7a6f0a8b7d7c3bc188f3675c0fa8af4d3819724fc474327fc97dac",
+      "mismatches": 0,
+      "report_sha256": "98020162e53054b03eaa12b9e3f1d9e974ff1bd5f31e27a922ed2f63d4db543d"
+    }
+  }
+}

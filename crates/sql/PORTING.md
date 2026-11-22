@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selects the individual consumer inputs that need private traces. It also
+chooses which input supplies an identity waterline and which operators need
+closure analysis. Java applies these decisions to the live circuit. All 524
+trace-separation invocations and 550 enclosing monotonicity analyses matched
+direct Java. Detached replay also matched at every observed boundary and
+through emission for 13 classic and 12 Gen-2 programs.
+[Trace inputs and monotonicity transfers](evidence/p3-trace-inputs-and-transfer-rules.json)
+
 The hybrid optimizer now exposes the individual analysis, rewrite and cleanup
 steps of dead-code elimination, CSE, chain fusion and ARRAY_AGG fusion. It also
 exposes the final unchanged iteration of a fixed point. For the incremental

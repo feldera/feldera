@@ -1841,6 +1841,34 @@ public final class RustCircuitPass implements CircuitTransform {
         }.apply(circuit);
     }
 
+    private DBSPCircuit separateTraceInputs(DBSPCircuit circuit, JsonNode selected) {
+        if (selected.isEmpty())
+            return circuit;
+        Map<Long, List<Integer>> readers = MAPPER.convertValue(selected, new TypeReference<>() {});
+        var result = new CircuitCloneVisitor(this.compiler, false) {
+            @Override
+            public void replace(DBSPSimpleOperator operator) {
+                var slots = readers.remove(operator.id);
+                if (slots == null) {
+                    super.replace(operator);
+                    return;
+                }
+                if (!this.visited.add(operator))
+                    return;
+                var inputs = new ArrayList<>(Linq.map(operator.inputs, this::mapped));
+                for (int slot : slots) {
+                    var noop = new DBSPNoopOperator(operator.getRelNode(), inputs.get(slot));
+                    this.addOperator(noop);
+                    inputs.set(slot, noop.outputPort());
+                }
+                this.map(operator, operator.withInputs(inputs, false).to(DBSPSimpleOperator.class));
+            }
+        }.apply(circuit);
+        if (!readers.isEmpty())
+            throw new IllegalStateException("Unknown trace readers " + readers.keySet());
+        return result;
+    }
+
     private DBSPCircuit fuseChains(DBSPCircuit circuit, long next) throws IOException {
         var topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.CHAIN_FUNCTIONS);
         var plan = this.invoke("Topology/ChainReaders", topology, next, EMPTY_CONTEXT);
@@ -1988,18 +2016,23 @@ public final class RustCircuitPass implements CircuitTransform {
         return operators;
     }
 
-    /** Operators whose transfer functions can produce waterlines, in expanded circuit order. */
-    public static List<DBSPOperator> monotonicityTransfers(DBSPCircuit circuit) {
+    public enum TransferRule { Identity, ApplyClosure, Analyze }
+    public record MonotonicityTransfer(DBSPOperator operator, TransferRule rule, int input) {}
+
+    /** Reconnect the transfer schedule to the live expressions of the expanded circuit. */
+    public static List<MonotonicityTransfer> monotonicityTransfers(DBSPCircuit circuit) {
+        record Step(long operator, TransferRule rule, int input) {}
         byte[] topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.STREAMING);
         byte[] result = transformWithContext("Topology/Monotonicity", topology, 0, "", EMPTY_CONTEXT);
         try {
-            long[] ids = MAPPER.readValue(result, long[].class);
-            if (ids.length == 0)
+            var steps = MAPPER.readValue(result, Step[].class);
+            if (steps.length == 0)
                 return List.of();
             var operators = operatorsById(circuit);
-            var transfers = new ArrayList<DBSPOperator>(ids.length);
-            for (long id : ids)
-                transfers.add(Utilities.getExists(operators, id));
+            var transfers = new ArrayList<MonotonicityTransfer>(steps.length);
+            for (var step : steps)
+                transfers.add(new MonotonicityTransfer(Utilities.getExists(operators, step.operator()),
+                        step.rule(), step.input()));
             return transfers;
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid monotonicity transfer schedule", error);
@@ -2605,6 +2638,8 @@ public final class RustCircuitPass implements CircuitTransform {
                         var aggregate = findOperator(circuit.allOperators, probe.required("stream_aggregate").longValue());
                         throw new InternalCompilerError("StreamAggregate operator should have been removed " + Objects.requireNonNull(aggregate));
                     }
+                    if (probe.has("trace_inputs"))
+                        return this.separateTraceInputs(circuit, probe.required("trace_inputs"));
                     if (probe.has("retention_violation"))
                         throw retentionError(circuit, probe.required("retention_violation"));
                     if (!probe.required("needs_full_snapshot").booleanValue())

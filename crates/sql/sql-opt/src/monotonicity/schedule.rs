@@ -3,50 +3,77 @@
 //! a bound itself. Expression analysis determines which fields retain it.
 use crate::state_bounds::has_lateness;
 use feldera_sql_ir::{BodyOrder, Circuit, Error, NodeId, OperatorKind as Op};
+use serde::Serialize;
 use std::collections::HashSet;
 
-pub fn monotonicity_transfers(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "rule")]
+pub enum MonotonicityTransfer {
+    Identity { input: usize },
+    ApplyClosure,
+    Analyze,
+}
+
+pub fn monotonicity_transfers(
+    circuit: &Circuit,
+) -> Result<Vec<(NodeId, MonotonicityTransfer)>, Error> {
+    use MonotonicityTransfer::*;
     let mut bounded = HashSet::new();
     let mut transfers = Vec::new();
     for id in circuit.operator_order(BodyOrder::Postorder)? {
         let node = circuit.node(id).expect("validated circuit member");
         let mut inputs = node.inputs().map(|p| bounded.contains(&p.operator));
         let first = inputs.next().unwrap_or(false);
-        let required = match node.operator_kind() {
+        let clock = || {
+            node.data("annotations")
+                .and_then(|v| v.as_array())
+                .is_some_and(|items| items.iter().any(|a| a["class"] == "AlwaysMonotone"))
+        };
+        let transfer = match node.operator_kind() {
             // The expression visitor reports indexed sources as invalid at this stage.
-            Some(Op::SourceMap | Op::SourceLazyMap) => true,
-            Some(Op::SourceMultiset) => has_lateness(node, "columnMetadata")?,
-            Some(Op::View) => first || has_lateness(node, "columns")?,
+            Some(Op::SourceMap | Op::SourceLazyMap) => Some(Analyze),
+            Some(Op::SourceMultiset) => has_lateness(node, "columnMetadata")?.then_some(Analyze),
+            Some(Op::View) => (first || has_lateness(node, "columns")?).then_some(Analyze),
             Some(Op::Window) => {
                 let unbounded = node
                     .data("lowerUnbounded")
                     .and_then(|v| v.as_bool())
                     .ok_or_else(|| Error::new("window requires its lower-bound policy"))?;
-                !unbounded || first
+                (!unbounded || first).then_some(Analyze)
             }
-            Some(Op::ChainAggregate) => {
-                first
-                    || node
-                        .data("annotations")
-                        .and_then(|v| v.as_array())
-                        .is_some_and(|a| a.iter().any(|a| a["class"] == "AlwaysMonotone"))
-            }
-            Some(Op::BinaryDistinct) => inputs.next().unwrap_or(false),
-            Some(Op::AntiJoin) => first && inputs.next().unwrap_or(false),
+            Some(Op::ChainAggregate) => (first || clock()).then_some(Analyze),
+            Some(Op::DelayedIntegral) => (first && clock()).then_some(Identity { input: 0 }),
+            Some(
+                Op::Sink
+                | Op::Distinct
+                | Op::Positive
+                | Op::UpsertFeedback
+                | Op::Noop
+                | Op::Negate
+                | Op::StreamAntiJoin,
+            ) => first.then_some(Identity { input: 0 }),
+            Some(Op::Map | Op::MapIndex | Op::FlatMap) => first.then_some(ApplyClosure),
+            Some(Op::BinaryDistinct) => inputs
+                .next()
+                .unwrap_or(false)
+                .then_some(Identity { input: 1 }),
+            Some(Op::AntiJoin) => (first && inputs.next().unwrap_or(false)).then_some(Analyze),
             Some(Op::Sum | Op::AtomicSum | Op::Subtract) => {
                 // An empty sum must still receive the visitor's normal validation.
-                node.inputs().all(|p| bounded.contains(&p.operator))
+                node.inputs()
+                    .all(|p| bounded.contains(&p.operator))
+                    .then_some(Analyze)
             }
             Some(Op::StreamJoin | Op::StreamJoinIndex | Op::AsofJoin) => {
-                first || inputs.next().unwrap_or(false)
+                (first || inputs.next().unwrap_or(false)).then_some(Analyze)
             }
             // The enclosing recursive operator publishes no monotonicity facts.
             // Its individual children already occurred in body order.
-            Some(Op::Nested) => false,
-            _ => first,
+            Some(Op::Nested) => None,
+            _ => first.then_some(Analyze),
         };
-        if required {
-            transfers.push(id);
+        if let Some(transfer) = transfer {
+            transfers.push((id, transfer));
             bounded.insert(id);
         }
     }
@@ -78,7 +105,14 @@ mod tests {
         .unwrap();
         assert_eq!(
             monotonicity_transfers(&graph).unwrap(),
-            [2, 4, 5].map(NodeId::Outer)
+            [
+                (NodeId::Outer(2), MonotonicityTransfer::Analyze),
+                (NodeId::Outer(4), MonotonicityTransfer::Analyze),
+                (
+                    NodeId::Outer(5),
+                    MonotonicityTransfer::Identity { input: 1 }
+                ),
+            ]
         );
     }
 }

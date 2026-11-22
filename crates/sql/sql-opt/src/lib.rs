@@ -18,7 +18,7 @@ pub use monotonicity::bindings::{waterline_bindings, WaterlineBindings};
 pub use monotonicity::chain_minimum::is_minimum_chain;
 pub use monotonicity::flatmap::flatmap_waterline;
 pub use monotonicity::lag::lag_transfer;
-pub use monotonicity::schedule::monotonicity_transfers;
+pub use monotonicity::schedule::{monotonicity_transfers, MonotonicityTransfer};
 pub use monotonicity::casts::{cast_waterline, CastWaterline};
 pub use monotonicity::functions::{function_waterline, Argument as WaterlineArgument};
 pub use monotonicity::binary::{
@@ -238,7 +238,7 @@ pub use temporal_comparisons::{classify_temporal_predicates, TemporalPredicate};
 pub use temporal_equality::desugar_now_equality;
 pub use temporal_filters::{break_temporal_filters, merge_temporal_predicates};
 pub use topology::needs_full_snapshot;
-pub use trace_integrators::{separate_integrators, snapshot_aggregate};
+pub use trace_integrators::{separate_integrators, separate_trace_inputs, snapshot_aggregate};
 pub use trace_retention::{
     check_and_prune_retention, duplicate_retention, retention_violation, DuplicateRetention,
     Retained, RetentionViolation,

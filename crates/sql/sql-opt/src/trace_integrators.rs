@@ -135,6 +135,14 @@ pub(super) fn needs_separation(circuit: &Circuit) -> Result<bool, Error> {
     Ok(!shared_traces(circuit)?.is_empty())
 }
 
+/// Input slots where the live compiler must insert a no-op to isolate a trace.
+pub fn separate_trace_inputs(circuit: &Circuit) -> Result<Vec<(NodeId, Vec<usize>)>, Error> {
+    Ok(shared_traces(circuit)?
+        .into_iter()
+        .map(|consumer| (consumer.reader, consumer.slots))
+        .collect())
+}
+
 /// The original visitor rejects the first snapshot aggregate in constructor order.
 pub fn snapshot_aggregate(circuit: &Circuit) -> Result<Option<NodeId>, Error> {
     Ok(circuit
@@ -165,4 +173,31 @@ pub fn separate_integrators(circuit: Circuit, next: &mut u64) -> Result<Circuit,
         edit.rewire_inputs(consumer.reader, &inputs)?;
     }
     rebuild_input_closures(edit.finish_with_rewrites()?, next)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn each_integrating_slot_gets_its_own_trace() -> Result<(), Error> {
+        let port = |id| json!({"operator": {"node": id}, "outputNumber": 0});
+        let graph = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": [
+                {"class": "DBSPSourceMultisetOperator", "id": 1, "inputs": [],
+                 "metadata": {"materialized": false}},
+                {"class": "DBSPSourceMultisetOperator", "id": 2, "inputs": [],
+                 "metadata": {"materialized": true}},
+                {"class": "DBSPJoinOperator", "id": 3, "inputs": [port(1), port(1)]},
+                {"class": "DBSPWindowOperator", "id": 4, "inputs": [port(2), port(1)]},
+                {"class": "DBSPDistinctOperator", "id": 5, "inputs": [port(3)]}
+            ]
+        }))?;
+        assert_eq!(
+            separate_trace_inputs(&graph)?,
+            [(NodeId::Outer(3), vec![0, 1]), (NodeId::Outer(4), vec![0])]
+        );
+        Ok(())
+    }
 }

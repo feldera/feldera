@@ -175,8 +175,13 @@ public class Monotonicity extends CircuitVisitor {
             return super.apply(circuit);
         this.startVisit(circuit);
         try {
-            for (var operator : RustCircuitPass.monotonicityTransfers(circuit))
-                operator.accept(this);
+            for (var transfer : RustCircuitPass.monotonicityTransfers(circuit)) {
+                switch (transfer.rule()) {
+                    case Identity -> this.identity(transfer.operator().to(DBSPSimpleOperator.class), transfer.input());
+                    case ApplyClosure -> this.analyzeClosure(transfer.operator().to(DBSPUnaryOperator.class));
+                    case Analyze -> transfer.operator().accept(this);
+                }
+            }
             return circuit;
         } finally {
             this.endVisit();
@@ -342,7 +347,11 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     void identity(DBSPUnaryOperator node) {
-        MonotoneExpression input = this.getMonotoneExpression(node.input());
+        this.identity(node, 0);
+    }
+
+    private void identity(DBSPSimpleOperator node, int inputIndex) {
+        MonotoneExpression input = this.getMonotoneExpression(node.inputs.get(inputIndex));
         if (input == null)
             return;
         boolean pairOfReferences = node.getType().is(DBSPTypeIndexedZSet.class);
@@ -359,6 +368,10 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPMapIndexOperator node) {
+        this.analyzeClosure(node);
+    }
+
+    private void analyzeClosure(DBSPUnaryOperator node) {
         MonotoneExpression inputFunction = this.getMonotoneExpression(node.input());
         if (inputFunction == null)
             return;
@@ -463,33 +476,12 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPFlatMapOperator node) {
-        MonotoneExpression inputFunction = this.getMonotoneExpression(node.input());
-        if (inputFunction == null)
-            return;
-        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.compiler(), node,
-                MonotoneTransferFunctions.ArgumentKind.fromType(node.input().outputType()),
-                getBodyType(inputFunction));
-        MonotoneExpression result = mm.applyAnalysis(node.getFunction());
-        if (result == null)
-            return;
-        this.set(node, result);
+        this.analyzeClosure(node);
     }
 
     @Override
     public void postorder(DBSPMapOperator node) {
-        OutputPort input = node.input();
-        MonotoneExpression inputFunction = this.getMonotoneExpression(input);
-        if (inputFunction == null)
-            return;
-        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.compiler(), node,
-                MonotoneTransferFunctions.ArgumentKind.fromType(input.outputType()),
-                getBodyType(inputFunction));
-        MonotoneExpression result = mm.applyAnalysis(node.getFunction());
-        if (result == null)
-            return;
-        this.set(node, result);
+        this.analyzeClosure(node);
     }
 
     void sumOrDifference(DBSPSimpleOperator node) {
