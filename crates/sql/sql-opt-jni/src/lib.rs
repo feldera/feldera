@@ -933,6 +933,10 @@ fn transform(
             let inputs = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::join_arguments(inputs))?);
         }
+        "Monotonicity/AntiJoinProjection" => {
+            let inputs = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::antijoin_waterline(inputs))?);
+        }
         "Monotonicity/Union" | "Monotonicity/Intersection" => {
             use feldera_sql_opt::BoundCombination::{Intersection, Union};
             let mode = if pass == "Monotonicity/Union" { Union } else { Intersection };

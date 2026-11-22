@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,6 +38,10 @@ public final class CombinedBounds {
     private IMaybeMonotoneType result(JsonNode selection) {
         if (selection.isIntegralNumber())
             return this.types.get(selection.intValue());
+        if (selection.has("unbounded_fields")) {
+            var value = this.types.get(selection.required("unbounded_fields").intValue());
+            return PartiallyMonotoneTuple.noMonotoneFields(value.getType().to(DBSPTypeTupleBase.class));
+        }
         var template = this.types.get(selection.required("template").intValue());
         var fields = selection.required("fields");
         if (template instanceof MonotoneRefType)
@@ -72,19 +77,35 @@ public final class CombinedBounds {
         return union ? inputs.get(0).union(inputs.get(1)) : IMaybeMonotoneType.intersection(inputs);
     }
 
+    private JsonNode indexedInputs(PartiallyMonotoneTuple left, PartiallyMonotoneTuple right) {
+        var inputs = JsonNodeFactory.instance.arrayNode();
+        for (var pair : List.of(left, right)) {
+            var input = inputs.addObject();
+            input.set("key", this.input(pair.getFieldType(0)));
+            input.put("value", this.slot(pair.getFieldType(1)));
+        }
+        return inputs;
+    }
+
+    public static PartiallyMonotoneTuple commonKey(DBSPCompiler compiler,
+            PartiallyMonotoneTuple left, PartiallyMonotoneTuple right) {
+        if (compiler.options.ioOptions.rustOptimizerPasses) {
+            var bounds = new CombinedBounds();
+            var reply = RustCircuitPass.indexedBounds(compiler, bounds.indexedInputs(left, right), true);
+            if (!reply.isNull())
+                return new PartiallyMonotoneTuple(List.of(bounds.result(reply.required(0)),
+                        bounds.result(reply.required(1))), true, false);
+        }
+        var key = left.getFieldType(0).intersection(right.getFieldType(0));
+        var value = left.getFieldType(1).getType().to(DBSPTypeTupleBase.class);
+        return new PartiallyMonotoneTuple(List.of(key, PartiallyMonotoneTuple.noMonotoneFields(value)), true, false);
+    }
+
     public static IMaybeMonotoneType[] joinArguments(DBSPCompiler compiler,
             PartiallyMonotoneTuple left, PartiallyMonotoneTuple right) {
         if (compiler.options.ioOptions.rustOptimizerPasses) {
             var bounds = new CombinedBounds();
-            var inputs = JsonNodeFactory.instance.arrayNode();
-            for (var pair : List.of(left, right)) {
-                var input = inputs.addObject();
-                input.set("key", bounds.input(pair.getFieldType(0)));
-                input.put("value", bounds.slot(pair.getFieldType(1)));
-            }
-            var reply = RustCircuitPass.joinArguments(inputs);
-            if (compiler.stateObserver != null)
-                compiler.stateObserver.nativeDecision("Monotonicity/JoinArguments", !reply.isNull());
+            var reply = RustCircuitPass.indexedBounds(compiler, bounds.indexedInputs(left, right), false);
             if (!reply.isNull()) {
                 return new IMaybeMonotoneType[]{
                         bounds.result(reply.required(0)), bounds.result(reply.required(1)), bounds.result(reply.required(2))};

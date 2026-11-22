@@ -20,7 +20,9 @@ pub use monotonicity::aggregate::{aggregate_transfer, chain_minimum_transfer, mi
 pub use monotonicity::asof::asof_waterline;
 pub use monotonicity::bindings::{waterline_bindings, WaterlineBindings};
 pub use monotonicity::chain_minimum::is_minimum_chain;
-pub use monotonicity::combine::{combine_bounds, join_arguments, BoundCombination, BoundSelection, BoundType};
+pub use monotonicity::combine::{
+    antijoin_waterline, combine_bounds, join_arguments, BoundCombination, BoundSelection, BoundType,
+};
 pub use monotonicity::flatmap::flatmap_waterline;
 pub use monotonicity::lag::lag_transfer;
 pub use monotonicity::schedule::{monotonicity_transfers, MonotonicityTransfer};

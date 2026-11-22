@@ -30,6 +30,10 @@ enum Form {
 #[serde(untagged)]
 pub enum BoundSelection {
     Original(usize),
+    /// Retain the tuple type, clearing the bound of every value field.
+    UnboundedFields {
+        unbounded_fields: usize,
+    },
     /// Reuse the original tuple's raw and nullable flags, or the original reference shape.
     Rebuild {
         template: usize,
@@ -120,6 +124,20 @@ pub fn join_arguments([left, right]: [IndexedInput; 2]) -> Option<[BoundSelectio
     ])
 }
 
+/// A change on either side can retract a row. Only key fields bounded on both
+/// inputs survive, and the result keeps the left input's value type.
+pub fn antijoin_waterline([left, right]: [IndexedInput; 2]) -> Option<[BoundSelection; 2]> {
+    let key = left
+        .key
+        .combine(right.key, BoundCombination::Intersection)?;
+    Some([
+        key.selection(),
+        BoundSelection::UnboundedFields {
+            unbounded_fields: left.value,
+        },
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,6 +160,18 @@ mod tests {
                 },
                 Original(4),
                 Original(9),
+            ])
+        );
+        assert_eq!(
+            antijoin_waterline(serde_json::from_str(inputs).unwrap()),
+            Some([
+                Rebuild {
+                    template: 1,
+                    fields: vec![Original(7), Original(3)]
+                },
+                BoundSelection::UnboundedFields {
+                    unbounded_fields: 4
+                },
             ])
         );
     }

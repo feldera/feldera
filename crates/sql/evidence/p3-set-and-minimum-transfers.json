@@ -1,0 +1,516 @@
+{
+  "scope": "Compare set operations, antijoins and primitive and chained aggregate transfers through the packaged hybrid optimizer. Rust selects primitive minimums from the aggregate function and computes the shared antijoin key for both monotonicity and limiter insertion.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "974d7b90d03e7b97fe5dd7493c4ace9cd38a57801bd9e424c8c919f8819d3a7c",
+    "maven/sql-compiler.jar": "7f10434ac17c9f117b1de7b247b167be7a270545c9e9780169f0e16b0677d04a",
+    "tests.log": "08f09b2189ebc263bf99b57fa22ff4c41d690a4d81a40526c0524169d8c63341",
+    "clippy.log": "262545ee4e31141123760f884a2af59fb2199907275b3ee59b926e57f4e728e4",
+    "build.log": "0739a4b2e24a6d76c83fad10105186c3787e0ca1c400c129ca3dc50ec638fc6d",
+    "packaged-junit.log": "862a719482a6fc03ba37b910000299faeae20201c23e1ab7807b3ea097f660c4",
+    "maven/tests.jar": "4b2e5a1f54626b9b2681b42ec31c7ccc406e1e7c8aa05d08cb06050f9094d1a3",
+    "maven/build.log": "e12cc53ad2a0c9c83fe462cf72b839cac56decbf60873f104812e8a8ddce42c9"
+  },
+  "rust_tests": 176,
+  "junit_tests": 31,
+  "engines": {
+    "classic": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "mismatches": 0,
+      "receipt_sha256": "66a220455a0aaa522a7bcb39018ea4dcd44c1e4018cef4b063d089598b79c3d6",
+      "monotonicity": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+      "coverage": {
+        "programs": 291,
+        "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+        "observations_sha256": "c010b8b783e5a00b7bb4d25337c54ba901e27b777dcb28be61051e16d885d519",
+        "requests": {
+          "Monotonicity/JoinArguments": {
+            "calls": 824,
+            "fallbacks": 0
+          },
+          "Monotonicity/ProjectClosure": {
+            "calls": 3317,
+            "fallbacks": 0
+          },
+          "TemporalComparisons": {
+            "calls": 236,
+            "fallbacks": 0
+          },
+          "Monotonicity/IsMinimumChain": {
+            "calls": 74,
+            "fallbacks": 0
+          },
+          "Monotonicity/AntiJoinProjection": {
+            "calls": 43,
+            "fallbacks": 0
+          }
+        },
+        "transfer_rules": {
+          "DBSPMapIndexOperator": {
+            "ApplyClosure": 1086
+          },
+          "DBSPMapOperator": {
+            "ApplyClosure": 1677
+          },
+          "DBSPNegateOperator": {
+            "Identity": 57
+          },
+          "DBSPNoopOperator": {
+            "Identity": 382
+          },
+          "DBSPPrimitiveAggregateOperator": {
+            "AggregateKey": 107,
+            "PrimitiveMinimumOrKey": 50
+          },
+          "DBSPSourceMultisetOperator": {
+            "DeclaredColumns": 514
+          },
+          "DBSPStreamJoinIndexOperator": {
+            "JoinClosure": 361
+          },
+          "DBSPStreamJoinOperator": {
+            "JoinClosure": 556
+          },
+          "DBSPSumOperator": {
+            "IntersectRows": 276
+          },
+          "DBSPUpsertFeedbackOperator": {
+            "Identity": 157
+          },
+          "DBSPChainAggregateOperator": {
+            "ProjectIndex": 69,
+            "ChainMinimumOrKey": 74
+          },
+          "DBSPDeindexOperator": {
+            "ApplyClosure": 68
+          },
+          "DBSPSinkOperator": {
+            "Identity": 216
+          },
+          "DBSPWindowOperator": {
+            "ProjectIndex": 100
+          },
+          "DBSPAggregateLinearPostprocessOperator": {
+            "AggregateKey": 291
+          },
+          "DBSPFilterOperator": {
+            "ApplyClosure": 379,
+            "Identity": 39
+          },
+          "DBSPBinaryDistinctOperator": {
+            "Identity": 76
+          },
+          "DBSPAntiJoinOperator": {
+            "IntersectKeys": 48
+          },
+          "DBSPAsofJoinOperator": {
+            "JoinClosure": 16
+          },
+          "DBSPHopOperator": {
+            "ApplyClosure": 7
+          },
+          "DBSPFlatMapOperator": {
+            "ApplyClosure": 4
+          },
+          "DBSPPartitionedRollingAggregateOperator": {
+            "RollingTimestamp": 27
+          },
+          "DBSPViewOperator": {
+            "DeclaredColumns": 15
+          },
+          "DBSPLagOperator": {
+            "ApplyClosure": 10
+          },
+          "DBSPSubtractOperator": {
+            "IntersectRows": 11
+          }
+        }
+      },
+      "clock_coverage": {
+        "programs": 71,
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "observations_sha256": "f55bf8a65fea419ff113eb52a5a571d3dea0818cf4475ce4695d0c7404427fe9",
+        "requests": {
+          "Monotonicity/ProjectClosure": {
+            "calls": 291,
+            "fallbacks": 0
+          },
+          "TemporalComparisons": {
+            "calls": 236,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 14,
+            "fallbacks": 0
+          }
+        },
+        "transfer_rules": {
+          "DBSPChainAggregateOperator": {
+            "ProjectIndex": 69
+          },
+          "DBSPDeindexOperator": {
+            "ApplyClosure": 65
+          },
+          "DBSPMapIndexOperator": {
+            "ApplyClosure": 132
+          },
+          "DBSPMapOperator": {
+            "ApplyClosure": 121
+          },
+          "DBSPSinkOperator": {
+            "Identity": 39
+          },
+          "DBSPWindowOperator": {
+            "ProjectIndex": 100
+          },
+          "DBSPAggregateLinearPostprocessOperator": {
+            "AggregateKey": 27
+          },
+          "DBSPStreamJoinOperator": {
+            "JoinClosure": 21
+          },
+          "DBSPFilterOperator": {
+            "ApplyClosure": 32,
+            "Identity": 20
+          },
+          "DBSPSourceMultisetOperator": {
+            "DeclaredColumns": 13
+          },
+          "DBSPBinaryDistinctOperator": {
+            "Identity": 1
+          },
+          "DBSPNegateOperator": {
+            "Identity": 5
+          },
+          "DBSPSumOperator": {
+            "IntersectRows": 19
+          },
+          "DBSPNoopOperator": {
+            "Identity": 8
+          },
+          "DBSPStreamJoinIndexOperator": {
+            "JoinClosure": 10
+          },
+          "DBSPSubtractOperator": {
+            "IntersectRows": 11
+          },
+          "DBSPAntiJoinOperator": {
+            "IntersectKeys": 2
+          },
+          "DBSPPrimitiveAggregateOperator": {
+            "AggregateKey": 2
+          },
+          "DBSPUpsertFeedbackOperator": {
+            "Identity": 2
+          }
+        }
+      },
+      "direct_reference": {
+        "matching_records": 8,
+        "comparison_build": "temporal-aggregate-transfers",
+        "previous_records_sha256": "1c99d5766d236904968dd975063536535486ad7a2c97c562c2ca0d190224c4a9",
+        "current_records_sha256": "1c99d5766d236904968dd975063536535486ad7a2c97c562c2ca0d190224c4a9"
+      }
+    },
+    "gen2": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "mismatches": 0,
+      "receipt_sha256": "116b241dc238cbfe2eb47054ab32e70c2fb7ea6697c0bf370e08b6c5970fce4c",
+      "monotonicity": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+      "coverage": {
+        "programs": 259,
+        "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+        "observations_sha256": "c60c6d3ca7bdc1ca2376d578793c92198db7c3706f5ce6679faa18242fb7ef3f",
+        "requests": {
+          "Monotonicity/JoinArguments": {
+            "calls": 828,
+            "fallbacks": 0
+          },
+          "Monotonicity/ProjectClosure": {
+            "calls": 3283,
+            "fallbacks": 0
+          },
+          "TemporalComparisons": {
+            "calls": 216,
+            "fallbacks": 0
+          },
+          "Monotonicity/IsMinimumChain": {
+            "calls": 74,
+            "fallbacks": 0
+          },
+          "Monotonicity/AntiJoinProjection": {
+            "calls": 42,
+            "fallbacks": 0
+          }
+        },
+        "transfer_rules": {
+          "DBSPMapIndexOperator": {
+            "ApplyClosure": 1075
+          },
+          "DBSPMapOperator": {
+            "ApplyClosure": 1656
+          },
+          "DBSPNegateOperator": {
+            "Identity": 56
+          },
+          "DBSPNoopOperator": {
+            "Identity": 384
+          },
+          "DBSPPrimitiveAggregateOperator": {
+            "AggregateKey": 106,
+            "PrimitiveMinimumOrKey": 50
+          },
+          "DBSPSourceMultisetOperator": {
+            "DeclaredColumns": 483
+          },
+          "DBSPStreamJoinIndexOperator": {
+            "JoinClosure": 374
+          },
+          "DBSPStreamJoinOperator": {
+            "JoinClosure": 545
+          },
+          "DBSPSumOperator": {
+            "IntersectRows": 272
+          },
+          "DBSPUpsertFeedbackOperator": {
+            "Identity": 156
+          },
+          "DBSPAggregateLinearPostprocessOperator": {
+            "AggregateKey": 286
+          },
+          "DBSPSinkOperator": {
+            "Identity": 204
+          },
+          "DBSPChainAggregateOperator": {
+            "ProjectIndex": 60,
+            "ChainMinimumOrKey": 74
+          },
+          "DBSPDeindexOperator": {
+            "ApplyClosure": 59
+          },
+          "DBSPWindowOperator": {
+            "ProjectIndex": 94
+          },
+          "DBSPFilterOperator": {
+            "ApplyClosure": 371,
+            "Identity": 39
+          },
+          "DBSPBinaryDistinctOperator": {
+            "Identity": 76
+          },
+          "DBSPAntiJoinOperator": {
+            "IntersectKeys": 47
+          },
+          "DBSPAsofJoinOperator": {
+            "JoinClosure": 15
+          },
+          "DBSPHopOperator": {
+            "ApplyClosure": 7
+          },
+          "DBSPViewOperator": {
+            "DeclaredColumns": 14
+          },
+          "DBSPLagOperator": {
+            "ApplyClosure": 10
+          },
+          "DBSPFlatMapOperator": {
+            "ApplyClosure": 3
+          },
+          "DBSPSubtractOperator": {
+            "IntersectRows": 11
+          },
+          "DBSPPartitionedRollingAggregateOperator": {
+            "RollingTimestamp": 33
+          }
+        }
+      },
+      "clock_coverage": {
+        "programs": 62,
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "observations_sha256": "b831bc293a68b9e23a11c1aa43071292d6ba395eda711cc615964b939d7cfb25",
+        "requests": {
+          "Monotonicity/ProjectClosure": {
+            "calls": 274,
+            "fallbacks": 0
+          },
+          "TemporalComparisons": {
+            "calls": 216,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 14,
+            "fallbacks": 0
+          }
+        },
+        "transfer_rules": {
+          "DBSPAggregateLinearPostprocessOperator": {
+            "AggregateKey": 25
+          },
+          "DBSPChainAggregateOperator": {
+            "ProjectIndex": 60
+          },
+          "DBSPDeindexOperator": {
+            "ApplyClosure": 56
+          },
+          "DBSPMapIndexOperator": {
+            "ApplyClosure": 130
+          },
+          "DBSPStreamJoinOperator": {
+            "JoinClosure": 21
+          },
+          "DBSPWindowOperator": {
+            "ProjectIndex": 94
+          },
+          "DBSPMapOperator": {
+            "ApplyClosure": 115
+          },
+          "DBSPSinkOperator": {
+            "Identity": 41
+          },
+          "DBSPFilterOperator": {
+            "ApplyClosure": 30,
+            "Identity": 20
+          },
+          "DBSPSourceMultisetOperator": {
+            "DeclaredColumns": 11
+          },
+          "DBSPBinaryDistinctOperator": {
+            "Identity": 1
+          },
+          "DBSPNegateOperator": {
+            "Identity": 5
+          },
+          "DBSPSumOperator": {
+            "IntersectRows": 19
+          },
+          "DBSPNoopOperator": {
+            "Identity": 10
+          },
+          "DBSPStreamJoinIndexOperator": {
+            "JoinClosure": 10
+          },
+          "DBSPSubtractOperator": {
+            "IntersectRows": 11
+          },
+          "DBSPAntiJoinOperator": {
+            "IntersectKeys": 2
+          },
+          "DBSPPrimitiveAggregateOperator": {
+            "AggregateKey": 2
+          },
+          "DBSPUpsertFeedbackOperator": {
+            "Identity": 2
+          }
+        }
+      },
+      "direct_reference": {
+        "matching_records": 8,
+        "comparison_build": "temporal-aggregate-transfers",
+        "previous_records_sha256": "cf194d1e879a4ab9e35c86da75b69e83a000851871f8345fda67298e92a70626",
+        "current_records_sha256": "cf194d1e879a4ab9e35c86da75b69e83a000851871f8345fda67298e92a70626"
+      }
+    }
+  },
+  "maven": {
+    "passed": 113,
+    "skipped": 3,
+    "jni_enabled_junit_tests": 31
+  },
+  "checkpoints": {
+    "count": {
+      "restore_receipt_sha256": "3ba2a4e152bb329b4d76be764f85b195588a2de3e3ce528e4cd22dfe7b9f03d2",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20416-0250-7941-ba67-cfd6ce92c15e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20416-0278-7540-8cc9-1fc94b37ad29",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "restore_receipt_sha256": "64ab559190e6a1cc9247072fef3465d345bd75035624dcf382f512792e7c843e",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20417-12b0-7671-bec6-86fc538e6dc1",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20417-12dc-7c82-b573-14d0345476f6",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}

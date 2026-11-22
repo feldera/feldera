@@ -505,8 +505,11 @@ public final class RustCircuitPass implements CircuitTransform {
         return exchangeBounds(inputs, union ? "Monotonicity/Union" : "Monotonicity/Intersection");
     }
 
-    public static JsonNode joinArguments(JsonNode inputs) {
-        return exchangeBounds(inputs, "Monotonicity/JoinArguments");
+    public static JsonNode indexedBounds(DBSPCompiler compiler, JsonNode inputs, boolean antiJoin) {
+        String operation = antiJoin ? "Monotonicity/AntiJoinProjection" : "Monotonicity/JoinArguments";
+        var result = exchangeBounds(inputs, operation);
+        answered(compiler, operation, result);
+        return result;
     }
 
     private static JsonNode exchangeBounds(JsonNode inputs, String pass) {
@@ -570,7 +573,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static Boolean isMinimumChain(DBSPCompiler compiler, DBSPChainAggregateOperator chain) {
         var result = invokeLowering(compiler, "Monotonicity/IsMinimumChain", chain.init, chain.getClosureFunction()).value;
-        return result.isNull() ? null : result.booleanValue();
+        return answered(compiler, "Monotonicity/IsMinimumChain", result) ? result.booleanValue() : null;
     }
 
     @Nullable
@@ -2504,7 +2507,8 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public enum TransferRule { Identity, DeclaredColumns, ApplyClosure, ProjectIndex, JoinClosure,
-        AggregateKey, RollingTimestamp, Analyze }
+        AggregateKey, RollingTimestamp, IntersectRows, IntersectKeys, PrimitiveMinimumOrKey,
+        ChainMinimumOrKey, InvalidIndexedSource, Analyze }
     public enum ClosureBody { Operator, IndexedValue, Filter, Hop, Lag }
     public enum FieldWaterline { Whole, Unbounded, Unit, AllColumns }
     public record IndexedWaterline(boolean requireInputKey, FieldWaterline key, FieldWaterline value) {}

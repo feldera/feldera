@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
@@ -273,6 +274,9 @@ final class OptimizerTopology {
             if (details == Details.MONOTONICITY) {
                 if (op instanceof DBSPFilterOperator filter) {
                     json.label("indexedRows").append(filter.getType().is(DBSPTypeIndexedZSet.class));
+                } else if (op instanceof DBSPPrimitiveAggregateOperator aggregate) {
+                    json.label("aggregateKind").append(aggregate.function instanceof DBSPMinMax minMax
+                            ? minMax.aggregation.name() : "Other");
                 } else if (op instanceof DBSPAsofJoinOperator join) {
                     json.label("directComparator").append(join.comparator instanceof DBSPDirectComparatorExpression);
                     if (join.comparator instanceof DBSPDirectComparatorExpression order)

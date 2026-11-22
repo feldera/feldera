@@ -54,6 +54,31 @@ pub enum MonotonicityTransfer {
     JoinClosure,
     AggregateKey,
     RollingTimestamp,
+    IntersectRows,
+    IntersectKeys,
+    PrimitiveMinimumOrKey,
+    ChainMinimumOrKey,
+    InvalidIndexedSource,
+}
+
+fn primitive_transfer(circuit: &Circuit, node: &Node) -> MonotonicityTransfer {
+    use MonotonicityTransfer::{AggregateKey, Analyze, PrimitiveMinimumOrKey};
+    let kind = node
+        .data("aggregateKind")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            let function = circuit.node(node.field("function")?.node_id()?)?;
+            if function.class() == "DBSPMinMax" {
+                function.data("aggregation")?.as_str()
+            } else {
+                Some("Other")
+            }
+        });
+    match kind {
+        Some("Min" | "MinSome1") => PrimitiveMinimumOrKey,
+        Some(_) => AggregateKey,
+        None => Analyze, // Older compact topologies omit the aggregate function.
+    }
 }
 
 fn relation_transfer(
@@ -123,8 +148,7 @@ pub fn monotonicity_transfers(
                 .is_some_and(|items| items.iter().any(|a| a["class"] == "AlwaysMonotone"))
         };
         let transfer = match node.operator_kind() {
-            // The expression visitor reports indexed sources as invalid at this stage.
-            Some(Op::SourceMap | Op::SourceLazyMap) => Some(Analyze),
+            Some(Op::SourceMap | Op::SourceLazyMap) => Some(InvalidIndexedSource),
             Some(Op::SourceMultiset) => relation_transfer(node, "columnMetadata", false)?,
             Some(Op::View) if tuple_view(circuit, node)? => {
                 relation_transfer(node, "columns", first)?
@@ -152,7 +176,7 @@ pub fn monotonicity_transfers(
                     value: FieldWaterline::AllColumns,
                 },
             }),
-            Some(Op::ChainAggregate) => first.then_some(Analyze),
+            Some(Op::ChainAggregate) => first.then_some(ChainMinimumOrKey),
             Some(Op::DelayedIntegral) => (first && clock()).then_some(Identity { input: 0 }),
             Some(
                 Op::Sink
@@ -196,12 +220,14 @@ pub fn monotonicity_transfers(
                 .next()
                 .unwrap_or(false)
                 .then_some(Identity { input: 1 }),
-            Some(Op::AntiJoin) => (first && inputs.next().unwrap_or(false)).then_some(Analyze),
+            Some(Op::AntiJoin) => {
+                (first && inputs.next().unwrap_or(false)).then_some(IntersectKeys)
+            }
             Some(Op::Sum | Op::AtomicSum | Op::Subtract) => {
                 // An empty sum must still receive the visitor's normal validation.
                 node.inputs()
                     .all(|p| bounded.contains(&p.operator))
-                    .then_some(Analyze)
+                    .then_some(IntersectRows)
             }
             Some(Op::StreamJoin | Op::StreamJoinIndex) => {
                 (first || inputs.next().unwrap_or(false)).then_some(JoinClosure)
@@ -222,7 +248,7 @@ pub fn monotonicity_transfers(
                     None => Some(Analyze),
                 }
             }
-            Some(Op::PrimitiveAggregate) => first.then_some(Analyze),
+            Some(Op::PrimitiveAggregate) => first.then(|| primitive_transfer(circuit, node)),
             // The other operators have no transfer in the expanded graph.
             // Visiting an input with a bound does not give them a bound.
             // Nested circuits have already contributed their children in postorder.
@@ -240,6 +266,60 @@ pub fn monotonicity_transfers(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn set_operations_and_minimums_select_their_distinct_bound_rules() -> Result<(), Error> {
+        use MonotonicityTransfer::*;
+        let port = json!({"operator": {"node": 1}, "outputNumber": 0});
+        let mut operators = vec![json!({"class": "DBSPSourceMultisetOperator", "id": 1,
+            "inputs": [], "metadata": {"columnMetadata": [{"lateness": true}]}})];
+        let mut expected = Vec::new();
+        for (class, kind, rule, arity) in [
+            ("DBSPSumOperator", None, IntersectRows, 3),
+            ("DBSPSubtractOperator", None, IntersectRows, 2),
+            ("DBSPAntiJoinOperator", None, IntersectKeys, 2),
+            (
+                "DBSPPrimitiveAggregateOperator",
+                Some("Min"),
+                PrimitiveMinimumOrKey,
+                1,
+            ),
+            (
+                "DBSPPrimitiveAggregateOperator",
+                Some("MinSome1"),
+                PrimitiveMinimumOrKey,
+                1,
+            ),
+            (
+                "DBSPPrimitiveAggregateOperator",
+                Some("ArgMinSome"),
+                AggregateKey,
+                1,
+            ),
+            (
+                "DBSPPrimitiveAggregateOperator",
+                Some("Other"),
+                AggregateKey,
+                1,
+            ),
+            ("DBSPPrimitiveAggregateOperator", None, Analyze, 1),
+            ("DBSPChainAggregateOperator", None, ChainMinimumOrKey, 1),
+            ("DBSPSourceLazyMapOperator", None, InvalidIndexedSource, 0),
+        ] {
+            let id = operators.len() as u64 + 1;
+            let mut operator =
+                json!({"class": class, "id": id, "inputs": vec![port.clone(); arity]});
+            if let Some(kind) = kind {
+                operator["aggregateKind"] = json!(kind);
+            }
+            operators.push(operator);
+            expected.push((NodeId::Outer(id), rule));
+        }
+        let graph = Circuit::from_json(json!({"class":"DBSPCircuit", "id":0,
+            "declarations":[], "allOperators":operators}))?;
+        assert_eq!(monotonicity_transfers(&graph)?[1..], expected);
+        Ok(())
+    }
 
     #[test]
     fn asof_order_and_rolling_upper_bound_control_timestamp_transfers() -> Result<(), Error> {

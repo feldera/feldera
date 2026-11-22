@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The Rust transfer schedule selects the common fields of sums and differences,
+the shared key of an antijoin, and the minimum or grouping-key bound of an
+aggregate. Across 550 monotonicity comparisons, Rust answered all 85 antijoin
+projection requests and all 148 chain-minimum checks. No operator in that
+sample used the Java visitor's general transfer dispatch. Both engines
+matched direct Java through detached artifact emission on 16 selected cases.
+[Set and minimum transfers](evidence/p3-set-and-minimum-transfers.json)
+
 Rust selects waterlines for filters, deindexing, HOP, LAG, stream and ASOF
 joins, and linear and rolling aggregates. It computed all 1,652 join argument
 projections in the 550-program monotonicity comparison. All 11,178 ordered

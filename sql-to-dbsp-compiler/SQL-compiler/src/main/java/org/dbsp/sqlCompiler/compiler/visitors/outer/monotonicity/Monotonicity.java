@@ -190,6 +190,15 @@ public class Monotonicity extends CircuitVisitor {
                     case JoinClosure -> this.processJoinBase(transfer.operator().to(DBSPJoinBaseOperator.class));
                     case AggregateKey, RollingTimestamp -> this.aggregate(transfer.operator().to(DBSPSimpleOperator.class),
                             transfer.rule() == RustCircuitPass.TransferRule.RollingTimestamp);
+                    case IntersectRows -> this.sumOrDifference(transfer.operator().to(DBSPSimpleOperator.class));
+                    case IntersectKeys -> this.antiJoin(transfer.operator().to(DBSPAntiJoinOperator.class));
+                    case PrimitiveMinimumOrKey -> {
+                        var aggregate = transfer.operator().to(DBSPPrimitiveAggregateOperator.class);
+                        if (!this.minimumProjection(aggregate, aggregate.getFunction().to(DBSPMinMax.class)))
+                            this.aggregate(aggregate);
+                    }
+                    case ChainMinimumOrKey -> this.chainAggregate(transfer.operator().to(DBSPChainAggregateOperator.class));
+                    case InvalidIndexedSource -> throw indexedSourceError(transfer.operator().to(DBSPSourceMapOperator.class));
                     case Analyze -> transfer.operator().accept(this);
                 }
             }
@@ -383,8 +392,12 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPSourceMapOperator node) {
+        throw indexedSourceError(node);
+    }
+
+    private static InternalCompilerError indexedSourceError(DBSPSourceMapOperator node) {
         // Indexed sources are created by a pass that runs after this analysis
-        throw new InternalCompilerError("Monotonicity analysis reached an indexed source", node);
+        return new InternalCompilerError("Monotonicity analysis reached an indexed source", node);
     }
 
     void identity(DBSPUnaryOperator node) {
@@ -480,20 +493,18 @@ public class Monotonicity extends CircuitVisitor {
      * @param first   Monotone type of an indexed Z-set; the result has this type.
      * @param second  Monotone type of an indexed Z-set with the same key type. */
     static PartiallyMonotoneTuple commonKey(DBSPCompiler compiler, IMaybeMonotoneType first, IMaybeMonotoneType second) {
-        PartiallyMonotoneTuple firstKeyValue = first.to(PartiallyMonotoneTuple.class);
-        PartiallyMonotoneTuple secondKeyValue = second.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType key = CombinedBounds.intersection(compiler,
-                List.of(firstKeyValue.getFieldType(0), secondKeyValue.getFieldType(0)));
-        DBSPTypeTupleBase valueType = firstKeyValue.getFieldType(1)
-            .getType().to(DBSPTypeTupleBase.class);
-        return new PartiallyMonotoneTuple(
-                Linq.list(key, PartiallyMonotoneTuple.noMonotoneFields(valueType)), true, false);
+        return CombinedBounds.commonKey(compiler,
+                first.to(PartiallyMonotoneTuple.class), second.to(PartiallyMonotoneTuple.class));
     }
 
     /** A right change retracts or re-emits old left rows with the key of the right change,
      * so WL(output[key]) = min(WL(left[key]), WL(right[key])). No value field has a waterline. */
     @Override
     public void postorder(DBSPAntiJoinOperator node) {
+        this.antiJoin(node);
+    }
+
+    private void antiJoin(DBSPAntiJoinOperator node) {
         MonotoneExpression left = this.getMonotoneExpression(node.left());
         MonotoneExpression right = this.getMonotoneExpression(node.right());
         if (left == null || right == null)
@@ -956,6 +967,10 @@ public class Monotonicity extends CircuitVisitor {
         if (minMax.aggregation != DBSPMinMax.Aggregation.Min &&
                 minMax.aggregation != DBSPMinMax.Aggregation.MinSome1)
             return false;
+        return this.minimumProjection(node, minMax);
+    }
+
+    private boolean minimumProjection(DBSPPrimitiveAggregateOperator node, DBSPMinMax minMax) {
         MonotoneExpression inputValue = this.getMonotoneExpression(node.inputs.get(0));
         if (inputValue == null)
             return false;
@@ -1022,6 +1037,10 @@ public class Monotonicity extends CircuitVisitor {
             return;
         }
 
+        this.chainAggregate(node);
+    }
+
+    private void chainAggregate(DBSPChainAggregateOperator node) {
         if (this.isMinimumChain(node)) {
             this.setMinChainMonotonicity(node);
             return;
