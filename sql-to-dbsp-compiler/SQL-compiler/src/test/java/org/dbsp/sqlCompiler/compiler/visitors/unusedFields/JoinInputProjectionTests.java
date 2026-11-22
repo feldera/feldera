@@ -28,17 +28,40 @@ public class JoinInputProjectionTests {
         for (boolean nullable : List.of(false, true)) {
             var row = new DBSPTypeTuple(number, nested, text).withMayBeNull(nullable);
             var input = new DBSPTypeRawTuple(key.ref(), row.ref());
-            var used = new FieldUseMap(row.ref(), false);
             for (var columns : List.of(List.<Integer>of(), List.of(1, 2))) {
+                var used = new FieldUseMap(row.ref(), false);
                 for (int column : columns)
                     used.deref().setUsed(column);
+                long start = DBSPVariablePath.nextGeneratedName();
                 var projection = used.getProjection(1);
                 Assert.assertNotNull(projection);
-                long start = DBSPVariablePath.nextGeneratedName();
                 var expected = RemoveUnusedFields.indexedValueProjection(compiler, input, projection);
                 long end = DBSPVariablePath.nextGeneratedName();
                 DBSPVariablePath.restoreGeneratedNames(start);
-                var actual = RustCircuitPass.projectIndexedValue(compiler, input, projection);
+                var actual = RustCircuitPass.projectUsedFields(compiler, used.getType(), used.topLevelUsage(), input);
+                Assert.assertEquals(end, DBSPVariablePath.nextGeneratedName());
+                Assert.assertTrue(expected.getResultType().sameType(actual.getResultType()));
+                Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
+            }
+        }
+    }
+
+    @Test
+    public void fieldProjectionRetainsEmptyTuplesAndRawTuplePositions() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var text = DBSPTypeString.varchar(false);
+        var empty = new DBSPTypeTuple();
+        var nested = new DBSPTypeTuple(text);
+        for (var input : List.of(text, new DBSPTypeTuple(empty, text), new DBSPTypeRawTuple(text.ref(), nested))) {
+            for (boolean read : List.of(false, true)) {
+                var used = new FieldUseMap(input.ref(), read);
+                long start = DBSPVariablePath.nextGeneratedName();
+                var expected = used.getProjection(1);
+                Assert.assertNotNull(expected);
+                long end = DBSPVariablePath.nextGeneratedName();
+                DBSPVariablePath.restoreGeneratedNames(start);
+                var actual = RustCircuitPass.projectUsedFields(compiler, used.getType(), used.topLevelUsage(), null);
                 Assert.assertEquals(end, DBSPVariablePath.nextGeneratedName());
                 Assert.assertTrue(expected.getResultType().sameType(actual.getResultType()));
                 Assert.assertTrue(EquivalenceContext.equiv(expected, actual));

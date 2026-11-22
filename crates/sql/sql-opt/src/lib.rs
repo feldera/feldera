@@ -54,6 +54,7 @@ mod replace_projections;
 pub use replace_projections::{projection_edits, replace_common_projections, ProjectionClosures};
 mod row_fields;
 mod row_projection;
+pub use row_projection::project_used_fields;
 mod map_input;
 pub use map_input::{split_map_input, MapOutput};
 mod join_input;

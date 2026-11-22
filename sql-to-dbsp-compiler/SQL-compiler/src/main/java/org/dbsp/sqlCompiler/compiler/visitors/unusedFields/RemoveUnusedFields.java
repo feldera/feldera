@@ -315,11 +315,10 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
      * to keep only the specified fields */
     DBSPMapIndexOperator projectValue(DBSPUnaryOperator operator, FieldUseMap fm) {
         OutputPort source = this.mapped(operator.input());
-        DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
         DBSPType inputType = operator.input().getOutputIndexedZSetType().getKVRefType();
-        projection = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.projectIndexedValue(this.compiler, inputType, projection)
-                : indexedValueProjection(this.compiler, inputType, projection);
+        DBSPClosureExpression projection = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.projectUsedFields(this.compiler, fm.getType(), fm.topLevelUsage(), inputType)
+                : indexedValueProjection(this.compiler, inputType, Objects.requireNonNull(fm.getProjection(1)));
 
         int size = operator.getType().getToplevelFieldCount();
         DBSPMapIndexOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
@@ -461,7 +460,10 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         // Project away the unused fields before the flatmap operator
         int size = inputTuple.getToplevelFieldCount();
-        DBSPClosureExpression projection = Objects.requireNonNull(map.borrow().getProjection(1));
+        var borrowed = map.borrow();
+        DBSPClosureExpression projection = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.projectUsedFields(this.compiler, borrowed.getType(), borrowed.topLevelUsage(), null)
+                : Objects.requireNonNull(borrowed.getProjection(1));
         OutputPort source = this.mapped(operator.input());
         DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getRelNode(), projection, source)
                 .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);

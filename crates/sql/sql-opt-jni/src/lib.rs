@@ -795,9 +795,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             closure
         }
-        ("RemoveUnusedFields/IndexedValue", [input, projection]) => {
+        ("RemoveUnusedFields/Row", [row]) => {
+            let used = serde_json::from_slice(state)?;
+            let row = edit.type_id(*row)?;
+            feldera_sql_opt::project_used_fields(&mut edit, row, used, &mut next)?
+        }
+        ("RemoveUnusedFields/IndexedValue", [row, input]) => {
+            let used = serde_json::from_slice(state)?;
+            let row = edit.type_id(*row)?;
             let input = edit.type_id(*input)?;
-            let projection = edit.expression(*projection)?;
+            let projection = feldera_sql_opt::project_used_fields(&mut edit, row, used, &mut next)?;
             feldera_sql_opt::project_indexed_value(&mut edit, input, projection, &mut next, &mut warnings)?
         }
         ("TrimTopKProjection", [producer, reader]) => {
@@ -1059,7 +1066,8 @@ fn transform(
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
-        | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection" | "RemoveUnusedFields/IndexedValue"
+        | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
+        | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
             return lower_function(pass, input, state, next);
         }

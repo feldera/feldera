@@ -1014,13 +1014,18 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static DBSPClosureExpression projectIndexedValue(DBSPCompiler compiler, DBSPType input,
-            DBSPClosureExpression projection) {
-        String pass = "RemoveUnusedFields/IndexedValue";
-        var result = lowerFunction(compiler, pass, input, projection, DBSPClosureExpression.class);
-        if (compiler.stateObserver != null)
-            compiler.stateObserver.nativeDecision(pass, true);
-        return result;
+    public static DBSPClosureExpression projectUsedFields(DBSPCompiler compiler, DBSPType row,
+            List<Boolean> used, @Nullable DBSPType indexedInput) {
+        String pass = indexedInput == null ? "RemoveUnusedFields/Row" : "RemoveUnusedFields/IndexedValue";
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(used), row, indexedInput);
+            var result = loweredClosure(compiler, reply);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode input column usage", error);
+        }
     }
 
     public static boolean isMapProjection(DBSPCompiler compiler, DBSPClosureExpression closure, boolean allowNestedAndCasts) {

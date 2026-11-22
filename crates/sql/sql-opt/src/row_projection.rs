@@ -118,6 +118,7 @@ impl Component {
                 value
             };
             let field = edit.tuple_field(source, i)?;
+            let field = read_references(edit, field)?;
             let nested_tuple = matches!(
                 edit.type_kind(edit.expression_type(field)?)?,
                 Ty::Tuple | Ty::RawTuple
@@ -147,6 +148,47 @@ impl Component {
             ],
         )
     }
+}
+
+fn read_references(
+    edit: &mut CircuitEditor,
+    mut value: ExpressionId,
+) -> Result<ExpressionId, Error> {
+    while edit.type_kind(edit.expression_type(value)?)? == Ty::Ref {
+        value = edit.dereference(value)?;
+    }
+    Ok(value)
+}
+
+/// Build the depth-one projection used before aggregates, TopK and UNNEST.
+/// A scalar has a single usage bit. A tuple has one per top-level column.
+pub fn project_used_fields(
+    edit: &mut CircuitEditor,
+    input: TypeId,
+    used: Vec<bool>,
+    next: &mut u64,
+) -> Result<ExpressionId, Error> {
+    let parameter = edit.variable(input, next)?;
+    let row = read_references(edit, parameter)?;
+    let ty = edit.expression_type(row)?;
+    let kind = edit.type_kind(ty)?;
+    let tuple = matches!(kind, Ty::Tuple | Ty::RawTuple);
+    let width = if tuple {
+        edit.node(ty.into())?.edges("tupFields")?.len()
+    } else {
+        1
+    };
+    if used.len() != width {
+        return Err(Error::new("field usage count differs from the input arity"));
+    }
+    let component = Component {
+        ty,
+        used,
+        tuple,
+        raw: kind == Ty::RawTuple,
+    };
+    let body = component.project(edit, row)?;
+    edit.closure_from_variables(body, &[parameter])
 }
 
 /// Flatten one level and clone non-Copy fields of the borrowed row.
