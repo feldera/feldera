@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandMetadataCasts;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -2581,6 +2582,10 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             JsonNode result = null;
             switch (this.nativeName) {
+                case "ExpandMetadataCasts" -> {
+                    return new ExpandMetadataCasts(this.compiler, initializer -> lowerFunction(this.compiler,
+                            "ExpandMetadataCasts/Initializer", initializer, null, DBSPExpression.class)).apply(circuit);
+                }
                 case "RemoveDeindexOperators" -> {
                     var edits = this.invoke("Topology/DeindexMaps", OptimizerTopology.encode(circuit), initial, state);
                     return this.applyStreamEdits(circuit, edits);
@@ -2648,13 +2653,12 @@ public final class RustCircuitPass implements CircuitTransform {
                 case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
-                     "ExpandAggregateZero", "ExpandMetadataCasts",
+                     "ExpandAggregateZero",
                      "ExpandHop", "RemoveIdentityOperators", "BuildNestedOperators",
                      "SubstituteLeftJoins", "ImplementChains", "StrayGC", "SeparateIntegrators" -> {
                     var details = switch (this.nativeName) {
                         case "SeparateIntegrators" -> OptimizerTopology.Details.TRACE_INTEGRATORS;
                         case "StrayGC" -> OptimizerTopology.Details.TRACE_RETENTION;
-                        case "ExpandMetadataCasts" -> OptimizerTopology.Details.COLUMN_INITIALIZERS;
                         case "IndexedInputs" -> OptimizerTopology.Details.PRIMARY_KEYS;
                         case "FuseIntoArrayAgg" -> OptimizerTopology.Details.AGGREGATE_RESULTS;
                         case "PropagateEmptySources" -> OptimizerTopology.Details.EMPTY_LITERALS;

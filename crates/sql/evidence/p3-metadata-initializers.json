@@ -1,0 +1,25 @@
+{
+  "scope": "Detached S2 replay compares ordered S4 observations, final S3 and emitted artifacts for the frozen cases with changed column initializers and the classic ATAN2 regression family.",
+  "compiler_jar_sha256": "3707d62e3cc412c97ef69ca1229d9badd2cb36c133c0792d68f89d320770e227",
+  "optimizer_library_sha256": "848335fbc4734663de4e38454f9292d5f108ffd25fe0efcaf1f948e10e62f4a4",
+  "comparisons": {
+    "classic_initializers": {
+      "cases": 8,
+      "mismatches": 0,
+      "input_sha256": "ee11bccc4c1616e65793da21806c0e7ff973e5219d8d0f9902befb76be53f060",
+      "report_sha256": "27beda0c970ed5d697ef2da3860ad4386e3f71e8e5d3b14efc154297739639e1"
+    },
+    "gen2_initializers": {
+      "cases": 8,
+      "mismatches": 0,
+      "input_sha256": "42b792f8e8b00a1d0c42f2a7e0e89c3724cce20da3ae474ecfbdb21013dbae35",
+      "report_sha256": "da3efd3bbb79ce7a45473c44f4bb81eaf44b78c0622cceb2a3e2a42e024ddd80"
+    },
+    "classic_atan2": {
+      "cases": 20,
+      "mismatches": 0,
+      "input_sha256": "542866ae0c11a8221552b45debc972892ade4af514e9597d368e983fdd4f6563",
+      "report_sha256": "d055922282f35a86ea10fcfca0950d48bccefc05bcf02df83a21fe89a9b6eca8"
+    }
+  }
+}

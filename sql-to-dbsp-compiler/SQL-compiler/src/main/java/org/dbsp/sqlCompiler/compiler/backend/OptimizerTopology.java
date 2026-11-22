@@ -23,14 +23,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySources;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -44,7 +42,7 @@ import java.util.Set;
 
 /** Circuit projection for passes that read only operator kinds, edges and annotations. */
 final class OptimizerTopology {
-    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, COLUMN_INITIALIZERS, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, SHARED_INDEXES, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, STATE_BOUNDS, AGGREGATE_RESULTS, CHAIN_FUNCTIONS }
+    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, SHARED_INDEXES, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, STATE_BOUNDS, AGGREGATE_RESULTS, CHAIN_FUNCTIONS }
 
     private OptimizerTopology() {}
 
@@ -221,13 +219,6 @@ final class OptimizerTopology {
                 json.label("metadata").beginObject().label("system").append(sink.metadata.system).endObject();
             if ((details == Details.GC_GROUPS || details == Details.STREAMING) && op instanceof DBSPWindowOperator window)
                 json.label("lowerUnbounded").append(window.lowerUnbounded);
-            if (details == Details.COLUMN_INITIALIZERS) {
-                TableMetadata metadata = op instanceof DBSPSourceTableOperator table ? table.metadata
-                        : op instanceof DBSPInputMapWithWaterlineOperator input ? input.metadata : null;
-                if (metadata != null)
-                    json.label("hasInitializers").append(metadata.getColumns().stream()
-                            .anyMatch(column -> column.defaultValue != null || column.lateness != null));
-            }
             if (details == Details.PRIMARY_KEYS && op instanceof DBSPSourceMultisetOperator source)
                 json.label("hasPrimaryKey").append(source.metadata.getColumns().stream().anyMatch(column -> column.isPrimaryKey));
             if (details == Details.EMPTY_LITERALS) {

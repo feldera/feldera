@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust expands each DEFAULT or LATENESS expression independently. The Java
+metadata visitor attaches the result to its column, so this pass no longer
+serializes the entire circuit. All eight frozen programs with changed
+initializers matched at every S4 boundary and through emission on both
+engines. The 20 classic ATAN2 regressions also passed on this build.
+[Column initializer replay](evidence/p3-metadata-initializers.json)
+
 Rust selects the clock calls that require temporal map and filter rewrites.
 The last matching call supplies the join's source position, including after
 residual predicates have been combined. All 133 frozen RewriteNow invocations

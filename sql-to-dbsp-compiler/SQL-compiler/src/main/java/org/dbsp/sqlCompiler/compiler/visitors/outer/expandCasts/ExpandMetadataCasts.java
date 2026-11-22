@@ -13,18 +13,26 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 /** Expand the casts that may appear in the table metadata, e.g., DEFAULT column values */
 public class ExpandMetadataCasts extends CircuitCloneVisitor {
+    private final UnaryOperator<DBSPExpression> prepare;
+
     public ExpandMetadataCasts(DBSPCompiler compiler) {
+        this(compiler, expression -> CreateRuntimeErrorWrappers.wrapCasts(compiler, expression));
+    }
+
+    public ExpandMetadataCasts(DBSPCompiler compiler, UnaryOperator<DBSPExpression> prepare) {
         super(compiler, false);
+        this.prepare = prepare;
     }
 
     @Nullable
     DBSPExpression expand(@Nullable DBSPExpression expression) {
         if (expression == null)
             return null;
-        return CreateRuntimeErrorWrappers.wrapCasts(this.compiler, expression);
+        return this.prepare.apply(expression);
     }
 
     @Nullable
