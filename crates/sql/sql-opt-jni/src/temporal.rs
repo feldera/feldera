@@ -1,7 +1,44 @@
-use feldera_sql_ir::{Circuit, CircuitEditor, NodeId, OutputPort};
+use super::ExpressionSite;
+use feldera_sql_ir::{Circuit, CircuitEditor, NodeId, OperatorKind, OutputPort};
 use feldera_sql_opt::TemporalPredicate;
 use serde_json::{Value, json};
 use std::collections::HashSet;
+
+/// A local operator sequence has one external port per live input, in call order.
+struct Fragment<const N: usize> {
+    base: Circuit,
+    inputs: [OutputPort; N],
+}
+
+impl<const N: usize> Fragment<N> {
+    fn bind(
+        site: ExpressionSite,
+        kinds: [OperatorKind; N],
+        bytes: &[u8],
+    ) -> Result<(Self, Vec<NodeId>), Box<dyn std::error::Error>> {
+        let inputs = std::array::from_fn(|i| OutputPort {
+            operator: NodeId::Outer(i as u64 + 1),
+            number: 0,
+        });
+        let headers: Vec<_> = kinds.into_iter().zip(inputs).map(|(kind, port)| json!({
+            "class":kind.wire_name(), "id":super::operator_number(port.operator), "inputs":[]
+        })).collect();
+        let (base, roots) = site.arena_with_operators(bytes, &headers)?;
+        Ok((Self { base, inputs }, roots))
+    }
+
+    fn reply(&self, edit: &CircuitEditor, next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+        let order = edit.circuit().root().edges("allOperators")?;
+        let inputs = self.inputs.map(|port| port.operator);
+        let added = order
+            .strip_prefix(inputs.as_slice())
+            .ok_or("temporal rewrite changed an external input")?;
+        let operators = edit.circuit().additional_operators(&self.base, added)?;
+        Ok(
+            json!({"inputs":inputs.map(super::operator_number).as_slice(), "operators":operators, "next_generated_name":next}),
+        )
+    }
+}
 
 /// Bind the clock stream as an external port. Its upstream circuit and
 /// Calcite origin remain live in the calling JVM.
@@ -9,35 +46,30 @@ pub(super) fn scalar_clock(
     input: &[u8],
     mut next: u64,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    let clock = 1;
-    let header = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
-        {"class":"DBSPNowOperator","id":clock,"inputs":[]}
-    ]});
-    let (arena, roots) = Circuit::from_json(header)?.with_inner_roots_bytes(input)?;
+    let site = ExpressionSite {
+        empty: true,
+        position: None,
+    };
+    let (fragment, roots) = Fragment::bind(site, [OperatorKind::Now], input)?;
     let [collection, empty_key, minimum] = roots.as_slice() else {
         return Err(
             "scalar clock needs a clock collection, an empty key and an initial timestamp".into(),
         );
     };
-    let mut edit = CircuitEditor::new(arena.clone());
+    let mut edit = CircuitEditor::new(fragment.base.clone());
     let collection = edit.type_id(*collection)?;
     let empty_key = edit.type_id(*empty_key)?;
     let minimum = edit.expression(*minimum)?;
-    let source = OutputPort {
-        operator: NodeId::Outer(clock),
-        number: 0,
-    };
-    let operators = feldera_sql_opt::scalar_clock_operators(
+    feldera_sql_opt::scalar_clock_operators(
         &mut edit,
-        arena.root_id(),
-        source,
+        fragment.base.root_id(),
+        fragment.inputs[0],
         collection,
         empty_key,
         minimum,
         &mut next,
     )?;
-    let operators = edit.circuit().additional_operators(&arena, &operators)?;
-    Ok(json!({"inputs":[clock], "operators":operators, "next_generated_name":next}))
+    fragment.reply(&edit, next)
 }
 
 pub(super) fn window(
@@ -54,13 +86,11 @@ pub(super) fn window(
         comparisons: Vec<WindowComparison>,
     }
     let request: Request = serde_json::from_slice(state)?;
-    let rows = 1;
-    let clock = 2;
-    let inputs = [
-        json!({"class":"DBSPSourceMultisetOperator","id":rows,"inputs":[]}),
-        json!({"class":"DBSPWaterlineOperator","id":clock,"inputs":[]}),
-    ];
-    let (arena, roots) = request.site.arena_with_operators(input, &inputs)?;
+    let (fragment, roots) = Fragment::bind(
+        request.site,
+        [OperatorKind::SourceMultiset, OperatorKind::Waterline],
+        input,
+    )?;
     let [
         parameter,
         collection,
@@ -78,19 +108,15 @@ pub(super) fn window(
     if request.comparisons.len() != operands.len() {
         return Err("expected one expression for each temporal comparison".into());
     }
-    let mut edit = CircuitEditor::new(arena.clone());
-    let stream = |id| OutputPort {
-        operator: NodeId::Outer(id),
-        number: 0,
-    };
+    let mut edit = CircuitEditor::new(fragment.base.clone());
     let streams = TemporalStreams {
         rows: Stream {
-            port: stream(rows),
+            port: fragment.inputs[0],
             ty: edit.type_id(*collection)?,
             kind: StreamKind::Collection,
         },
         clock: Bound {
-            port: stream(clock),
+            port: fragment.inputs[1],
             ty: edit.type_id(*scalar_type)?,
         },
     };
@@ -118,15 +144,38 @@ pub(super) fn window(
         request.comparisons.into_iter().zip(values),
         &mut next,
     )?;
-    let body = arena.root_id();
+    let body = fragment.base.root_id();
     feldera_sql_opt::append_temporal_window(
         &mut edit, body, body, streams, key_type, functions, &mut next,
     )?;
-    let order = edit.circuit().root().edges("allOperators")?;
-    let operators = edit
-        .circuit()
-        .additional_operators(&arena, &order[inputs.len()..])?;
-    Ok(json!({"inputs":[rows,clock], "operators":operators, "next_generated_name":next}))
+    fragment.reply(&edit, next)
+}
+
+pub(super) fn clock_join(input: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+    let site = ExpressionSite {
+        empty: true,
+        position: None,
+    };
+    let (fragment, roots) = Fragment::bind(
+        site,
+        [OperatorKind::SourceMultiset, OperatorKind::MapIndex],
+        input,
+    )?;
+    let [row, key, timestamp] = roots.as_slice() else {
+        return Err("clock join requires a row, an empty key and a timestamp type".into());
+    };
+    let mut edit = CircuitEditor::new(fragment.base.clone());
+    let body = fragment.base.root_id();
+    let [rows, indexed_clock] = fragment.inputs;
+    let inputs = feldera_sql_opt::ClockJoinInputs {
+        rows,
+        indexed_clock,
+        row_type: edit.type_id(*row)?,
+    };
+    let key = edit.type_id(*key)?;
+    let timestamp = edit.type_id(*timestamp)?;
+    feldera_sql_opt::append_clock_join(&mut edit, body, body, inputs, key, timestamp, &mut next)?;
+    fragment.reply(&edit, next)
 }
 
 /// Encode all predicate roots together so consecutive residuals can share types.

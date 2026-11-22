@@ -192,10 +192,14 @@ public class RewriteNow extends CircuitCloneVisitor {
      * and {@code nowCall} the NOW() call that requires the join. */
     DBSPSimpleOperator createJoin(DBSPSimpleOperator input, DBSPUnaryOperator operator,
                                   DBSPExpression nowCall) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var operators = RustCircuitPass.clockJoin(this.compiler, input, Objects.requireNonNull(this.nowIndexed),
+                    ContainsNow.timestampType(), operator.getRelNode(), nowCall);
+            operators.forEach(this::addOperator);
+            return Utilities.last(operators);
+        }
         DBSPType inputType = input.getOutputZSetElementType();
-        var functions = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.clockJoinFunctions(this.compiler, inputType, ContainsNow.timestampType())
-                : clockJoinFunctions(inputType);
+        var functions = clockJoinFunctions(inputType);
         DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getRelNode(), functions.left,
                 TypeCompiler.makeIndexedZSet(DBSPTypeTuple.EMPTY, inputType), input.outputPort());
         this.addOperator(index);

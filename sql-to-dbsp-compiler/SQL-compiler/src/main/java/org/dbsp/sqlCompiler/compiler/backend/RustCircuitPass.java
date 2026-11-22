@@ -143,6 +143,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.FindWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ImplementWindowGroups;
@@ -153,6 +154,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.LinkedHashMap;
@@ -869,9 +871,14 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static Pair<DBSPClosureExpression, DBSPClosureExpression> clockJoinFunctions(
-            DBSPCompiler compiler, DBSPType row, DBSPType timestamp) {
-        return loweredClosurePair(invokeLowering(compiler, "RewriteNow/Join", row, DBSPTypeTuple.EMPTY, timestamp));
+    public static List<DBSPSimpleOperator> clockJoin(DBSPCompiler compiler, DBSPSimpleOperator rows,
+            DBSPSimpleOperator indexedClock, DBSPType timestamp, CalciteRelNode origin, DBSPExpression call) {
+        var reply = invokeLowering(compiler, "RewriteNow/Join", rows.getOutputZSetElementType(),
+                DBSPTypeTuple.EMPTY, timestamp);
+        var joinOrigin = origin.copy();
+        joinOrigin.addSourcePositions(List.of(call.getSourcePosition()));
+        return temporalOperators(reply, op -> op instanceof DBSPStreamJoinOperator ? joinOrigin : origin,
+                rows, indexedClock);
     }
 
     public static DBSPClosureExpression unmatchedRows(DBSPCompiler compiler, DBSPJoinBaseOperator join) {
@@ -888,8 +895,8 @@ public final class RustCircuitPass implements CircuitTransform {
         return loweredClosurePair(invokeLowering(compiler, "RewriteNow/ClockAggregate", timestamp, weight));
     }
 
-    private static List<DBSPSimpleOperator> temporalOperators(DBSPCompiler compiler, LoweringReply reply,
-            CalciteRelNode origin, DBSPSimpleOperator... inputs) {
+    private static List<DBSPSimpleOperator> temporalOperators(LoweringReply reply,
+            Function<DBSPSimpleOperator, CalciteRelNode> origin, DBSPSimpleOperator... inputs) {
         var decoder = expressionDecoder(reply.writer);
         var ports = reply.value.required("inputs");
         if (ports.size() != inputs.length)
@@ -899,15 +906,7 @@ public final class RustCircuitPass implements CircuitTransform {
         var result = new ArrayList<DBSPSimpleOperator>();
         for (var node : reply.value.required("operators")) {
             var operator = decoder.decodeOuter(node, DBSPSimpleOperator.class);
-            if (operator instanceof DBSPWindowOperator window) {
-                var finder = new FindSourcePositions(compiler, false);
-                finder.apply(window.right().simpleNode().getFunction());
-                var windowOrigin = origin.copy();
-                windowOrigin.addSourcePositions(finder.positions);
-                operator.restoreProvenance(windowOrigin);
-            } else {
-                operator.restoreProvenance(origin);
-            }
+            operator.restoreProvenance(origin.apply(operator));
             result.add(operator);
         }
         DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
@@ -917,7 +916,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public static List<DBSPSimpleOperator> scalarClock(DBSPCompiler compiler, DBSPSimpleOperator clock,
                                                        DBSPExpression minimum) {
         var reply = invokeLowering(compiler, "RewriteNow/ScalarClock", clock.outputType, DBSPTypeRawTuple.EMPTY, minimum);
-        return temporalOperators(compiler, reply, clock.getRelNode(), clock);
+        return temporalOperators(reply, op -> clock.getRelNode(), clock);
     }
 
     public static DBSPClosureExpression rewriteClockClosure(DBSPCompiler compiler, DBSPClosureExpression closure,
@@ -935,6 +934,16 @@ public final class RustCircuitPass implements CircuitTransform {
         return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/DropClock", joinedRow));
     }
 
+    private static CalciteRelNode windowOrigin(DBSPCompiler compiler, CalciteRelNode origin, DBSPSimpleOperator op) {
+        if (!(op instanceof DBSPWindowOperator window))
+            return origin;
+        var finder = new FindSourcePositions(compiler, false);
+        finder.apply(window.right().simpleNode().getFunction());
+        var copy = origin.copy();
+        copy.addSourcePositions(finder.positions);
+        return copy;
+    }
+
     public static List<DBSPSimpleOperator> temporalWindow(DBSPCompiler compiler, CalciteRelNode origin,
             DBSPSimpleOperator rows, DBSPSimpleOperator clock, DBSPParameter parameter,
             DBSPExpression key, DBSPType keyType, DBSPExpression clockMinimum, DBSPExpression lowerInitial,
@@ -947,7 +956,7 @@ public final class RustCircuitPass implements CircuitTransform {
             request.set("comparisons", MAPPER.valueToTree(comparisons.stream().map(Enum::name).toList()));
             var reply = invokeLowering(compiler, "RewriteNow/Window", MAPPER.writeValueAsBytes(request),
                     inputs.toArray(IDBSPInnerNode[]::new));
-            return temporalOperators(compiler, reply, origin, rows, clock);
+            return temporalOperators(reply, op -> windowOrigin(compiler, origin, op), rows, clock);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode temporal window comparisons", error);
         }

@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust indexes rows and joins them to the indexed clock when a map or residual
+filter needs NOW(). All 133 frozen invocations matched Java. Seven programs
+per engine matched through detached replay and emission. The COUNT and
+LATENESS checkpoints restored in both directions.
+[Clock join comparisons](evidence/p3-clock-join-operators.json)
+
 Rust builds the window for each group of compatible clock comparisons. It
 filters nullable keys, indexes rows, differentiates the collection, applies
 the bounds and integrates the result. A final map restores a key column to

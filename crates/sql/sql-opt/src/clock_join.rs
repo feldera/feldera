@@ -1,14 +1,70 @@
 //! Append the clock to a row for NOW expressions that require a stream join.
 use crate::function_calls::{contains_now, function_name, is_clock_call};
-use feldera_sql_expr::{Rewrite, Transformation, Visit, flatten_tuple_fields, parameter_paths};
+use feldera_sql_expr::{flatten_tuple_fields, parameter_paths, Rewrite, Transformation, Visit};
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, NodeId, TypeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,
+    OperatorKind, OutputPort, TypeId,
 };
 use std::collections::HashSet;
 
 fn parameter(edit: &mut CircuitEditor, ty: TypeId, next: &mut u64) -> Result<ExpressionId, Error> {
     let reference = edit.reference_type(ty)?;
     edit.variable(reference, next)
+}
+
+pub struct ClockJoinInputs {
+    pub rows: OutputPort,
+    pub row_type: TypeId,
+    pub indexed_clock: OutputPort,
+}
+
+/// Index the input row on the empty key and join it to the indexed clock.
+/// The result carries the timestamp as the final column.
+pub fn append_clock_join(
+    edit: &mut CircuitEditor,
+    body: NodeId,
+    site: NodeId,
+    inputs: ClockJoinInputs,
+    empty_key: TypeId,
+    timestamp: TypeId,
+    next: &mut u64,
+) -> Result<NodeId, Error> {
+    let row = inputs.row_type;
+    let [index_fn, join_fn] = clock_join_functions(edit, row, empty_key, timestamp, next)?;
+    let indexed_type = edit.indexed_zset_type(row.into(), empty_key, row)?;
+    let index = edit.append_operator(
+        body,
+        site,
+        OperatorKind::MapIndex,
+        &[inputs.rows],
+        [
+            ("outputType", Field::Reference(indexed_type.into())),
+            ("function", Field::Reference(index_fn.into())),
+        ],
+    )?;
+    let signature = edit.expression_type(join_fn)?;
+    let result = edit.node(signature.into())?.edge("resultType")?;
+    let fields = edit.node(result)?.edges("tupFields")?;
+    // The join's declared row is a separate tuple sharing the closure's field types.
+    let joined_row = edit.tuple_type(result, false, fields)?;
+    let output = edit.zset_type(joined_row)?;
+    edit.append_operator(
+        body,
+        site,
+        OperatorKind::StreamJoin,
+        &[
+            OutputPort {
+                operator: index,
+                number: 0,
+            },
+            inputs.indexed_clock,
+        ],
+        [
+            ("outputType", Field::Reference(output.into())),
+            ("function", Field::Reference(join_fn.into())),
+            ("balanced", Field::Data(false.into())),
+        ],
+    )
 }
 
 pub fn clock_join_functions(

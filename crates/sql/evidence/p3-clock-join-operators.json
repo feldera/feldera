@@ -1,0 +1,37 @@
+{
+  "scope": "Indexing input rows on an empty key and joining them to the indexed clock in Rust. Java attaches the relational origin and the selected NOW call position.",
+  "compiler_jar_sha256": "1cf2245cb6f2cf56c4d900d1b97216f2b8cfd69544ecd6a006c973867bb86007",
+  "optimizer_library_sha256": "34ec8c707a5559970bd6c1cd678d48a3748b2984d46fdc7bfe25dbc954c31cd7",
+  "engines": {
+    "classic": {
+      "matched_rewrite_now_invocations": 71,
+      "java_stream_gzip_sha256": "a07dd17a03148544f312efea276074f7a21a95d25d293a6ed2baab0be8a40229",
+      "rust_stream_gzip_sha256": "58f50ab88bb3ba2749627a7a4744682aa3b17c405539967b1a074200116fd284",
+      "detached_cases": 7,
+      "detached_report_sha256": "bb5e7e44325b2ed65a2f95c3b475c2aa9302f3a80b3fa869f1357f29bee41638"
+    },
+    "gen2": {
+      "matched_rewrite_now_invocations": 62,
+      "java_stream_gzip_sha256": "a20040b82d4a2c6dc025885afd8c01cf5a9b3e9a25a868a30b164178692c72df",
+      "rust_stream_gzip_sha256": "292e89c5b047b518f19c16e69a19bc82639cb757a417e41e18929fdf8f2e2a40",
+      "detached_cases": 7,
+      "detached_report_sha256": "423f5b31161151e15227e002040e651dd2ab668a0092a72cc45b6ff6401b0b42"
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "directions": [
+        "java-to-hybrid",
+        "hybrid-to-java"
+      ],
+      "report_sha256": "fd58f707fa7f1f157004e63624a51b9eb29f3176bf8de94e5e46f1ff4f26a765"
+    },
+    "watermark": {
+      "directions": [
+        "java-to-hybrid",
+        "hybrid-to-java"
+      ],
+      "report_sha256": "787f890460c9075417c171d91a0da64d9aff4146bbf594d9a525144a47535947"
+    }
+  }
+}
