@@ -1,6 +1,8 @@
 //! The colors of the animation. This file has the brand palette, detects the
 //! color support of the terminal, and detects if its background is dark or light.
 
+use std::io::{IsTerminal, stdout};
+
 use super::env_var;
 
 pub(super) type Rgb = (u8, u8, u8);
@@ -26,9 +28,15 @@ pub(super) enum ColorMode {
 
 impl ColorMode {
     pub(super) fn detect() -> Self {
-        if env_var("NO_COLOR").is_some() {
+        Self::from_env(stdout().is_terminal(), env_var)
+    }
+
+    /// Returns the color support. `tty` is true if stdout is a terminal, and `env` returns the
+    /// value of an environment variable.
+    fn from_env(tty: bool, env: impl Fn(&str) -> Option<String>) -> Self {
+        if !tty || env("NO_COLOR").is_some() || env("TERM").as_deref() == Some("dumb") {
             ColorMode::Off
-        } else if matches!(env_var("COLORTERM").as_deref(), Some("truecolor" | "24bit")) {
+        } else if matches!(env("COLORTERM").as_deref(), Some("truecolor" | "24bit")) {
             ColorMode::TrueColor
         } else {
             ColorMode::Ansi256
@@ -148,6 +156,20 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::splash::test_util::fake_env;
+
+    #[test]
+    fn color_needs_a_terminal_that_draws_it() {
+        let truecolor = fake_env(&[("COLORTERM", "truecolor")]);
+        assert_eq!(ColorMode::from_env(true, truecolor), ColorMode::TrueColor);
+        assert_eq!(ColorMode::from_env(true, fake_env(&[])), ColorMode::Ansi256);
+        // If stdout is a pipe or a file, the result is `Off` even with `COLORTERM` set.
+        assert_eq!(ColorMode::from_env(false, truecolor), ColorMode::Off);
+        let no_color = fake_env(&[("COLORTERM", "truecolor"), ("NO_COLOR", "1")]);
+        assert_eq!(ColorMode::from_env(true, no_color), ColorMode::Off);
+        let dumb = fake_env(&[("COLORTERM", "truecolor"), ("TERM", "dumb")]);
+        assert_eq!(ColorMode::from_env(true, dumb), ColorMode::Off);
+    }
 
     /// Returns the WCAG contrast ratio between two sRGB colors.
     fn contrast(a: Rgb, b: Rgb) -> f64 {
