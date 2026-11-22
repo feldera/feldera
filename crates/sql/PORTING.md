@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust builds the lower-bound expressions for scalar and temporal binary operations.
+The JVM reconnects the live operands after Rust selects the operation, casts and
+interval units. On `47efb1af2`, Java and Rust produced equal graphs in all 68
+directed cases with a bound and agreed on the eight cases without one. All 550
+selected monotonicity comparisons and all 17,098 frozen programs matched. The
+217 executable classic programs in the selected runtime suite passed 2,076
+commands. COUNT and LATENESS checkpoints restored in both directions.
+[Binary waterline comparisons](evidence/p3-binary-bound-lowering.json)
+
 Rust selects deindex operators from the circuit topology. The JVM builds each
 map from the existing closure, declared output type and remapped input port.
 The Java and hybrid pass matched at entry and exit on all 17,098 frozen programs.
