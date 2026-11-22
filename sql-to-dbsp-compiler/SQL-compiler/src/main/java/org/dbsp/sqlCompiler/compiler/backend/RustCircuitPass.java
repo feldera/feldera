@@ -1058,6 +1058,23 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static DBSPClosureExpression rebindProjectedReader(DBSPCompiler compiler,
+            DBSPClosureExpression closure, List<DBSPParameter> parameters, List<List<Boolean>> usage) {
+        String pass = "RemoveUnusedFields/Reader";
+        var inputs = new ArrayList<IDBSPInnerNode>(1 + parameters.size());
+        inputs.add(closure);
+        inputs.addAll(parameters);
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(usage), inputs.toArray(IDBSPInnerNode[]::new));
+            var result = loweredClosure(compiler, reply);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode projected reader parameters", error);
+        }
+    }
+
     public static List<DBSPType> compressedParameterTypes(DBSPCompiler compiler, int depth,
             List<DBSPType> types, List<List<Boolean>> usage) {
         String pass = "RemoveUnusedFields/ParameterTypes";

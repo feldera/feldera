@@ -7,7 +7,7 @@ mod tree;
 pub use tree::{copy_expression, ensure_expression_tree, flatten_tuple_fields, is_expression_tree};
 mod beta;
 pub use beta::{
-    apply_closure, compose_closures, parameter_paths, parameter_references, reduce_closure_body, reduce_closure_body_with_warnings,
+    apply_closure, compose_closures, parameter_bindings, parameter_paths, parameter_references, reduce_closure_body, reduce_closure_body_with_warnings,
     simplify_closure_expression, simplify_closure_with_warnings,
 };
 mod casts;
@@ -45,6 +45,12 @@ pub trait Transformation {
     /// written test can use its location and its translated operand here.
     fn rebuild_null_test(&mut self, editor: &mut CircuitEditor, node: NodeId) -> Result<NodeId, Error> {
         rebuild_result_type(editor, node, Some(ExpressionKind::IsNull), true)
+    }
+
+    /// A projected row can change the field number as well as the receiver.
+    fn rebuild_field(&mut self, editor: &mut CircuitEditor, _original: NodeId,
+                     rebuilt: NodeId, translating: bool) -> Result<NodeId, Error> {
+        rebuild_result_type(editor, rebuilt, Some(ExpressionKind::Field), translating)
     }
 
     /// Some constructor rules retain a child of the original expression even
@@ -187,6 +193,8 @@ impl<T: Transformation> Rewrite<T> {
                                 ("mutable", Field::Data(false.into())),
                             ],
                         )?
+                    } else if expr == Some(ExpressionKind::Field) {
+                        self.rule.rebuild_field(arena, id, transformed, self.expression_translation)?
                     } else if expr == Some(ExpressionKind::IsNull) {
                         self.rule.rebuild_null_test(arena, transformed)?
                     } else {

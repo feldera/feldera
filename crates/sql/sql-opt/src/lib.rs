@@ -57,6 +57,8 @@ pub use replace_projections::{projection_edits, replace_common_projections, Proj
 mod row_fields;
 mod row_projection;
 pub use row_projection::project_used_fields;
+mod projected_reader;
+pub use projected_reader::rebind_projected_reader;
 mod compressed_fields;
 pub use compressed_fields::compressed_field_type;
 mod map_input;

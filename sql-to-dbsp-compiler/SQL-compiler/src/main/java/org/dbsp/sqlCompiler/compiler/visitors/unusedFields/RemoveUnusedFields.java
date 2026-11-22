@@ -417,8 +417,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPIndexedTopKOperator operator) {
-        // The TopK reads its input row both with 3 functions: the comparator, the equalityComparator,
-        // and the outputProducer
+        // The rank comparator, tie comparator and output producer all read the input row.
         DBSPComparatorExpression comparator = operator.getFunction().as(DBSPComparatorExpression.class);
         DBSPComparatorExpression equality = operator.equalityComparator.comparator;
         if (comparator == null || this.done(operator)) {
@@ -434,9 +433,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         useMap.get(producer.parameters[0]).setUsed();
         FieldUseMap rowUse = useMap.get(producer.parameters[1]);
         FieldUseMap rowFields = rowUse.deref();
-        if (!setComparedFieldsToUsed(comparator, rowFields) || // Marks used fields in rowUse
-            !setComparedFieldsToUsed(equality, rowFields) || // Marks used fields in rowUse
-            !rowUse.hasUnusedFields(1)) {
+        if (!this.markComparedFields(comparator, equality, rowFields) || !rowUse.hasUnusedFields(1)) {
             super.postorder(operator);
             return;
         }

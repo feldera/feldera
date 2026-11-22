@@ -1,11 +1,15 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -16,9 +20,65 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
+import java.util.HashSet;
 import java.util.List;
 
 public class JoinInputProjectionTests {
+    @Test
+    public void sqlTopKUsesRustToDiscoverAndRemapComparedFields() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));
+        var options = new CompilerOptions();
+        options.ioOptions.rustOptimizerPasses = true;
+        var compiler = new DBSPCompiler(options);
+        var answered = new HashSet<String>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void nativeDecision(String operation, boolean success) {
+                if (success)
+                    answered.add(operation);
+            }
+
+            @Override
+            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+
+            @Override
+            public void after(String parent, int index, int iteration, CircuitTransform pass,
+                              DBSPCircuit output, boolean completed) {}
+        };
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t(id INT NOT NULL, ts INT NOT NULL, a INT, b INT, c INT);
+                CREATE VIEW v AS SELECT id, a, FIRST_VALUE(b) OVER (PARTITION BY id ORDER BY ts) AS first_b FROM t;
+                """);
+        compiler.getFinalCircuit(false);
+        compiler.throwIfErrorsOccurred();
+        Assert.assertTrue(answered.contains("RemoveUnusedFields/TopKFields"));
+        Assert.assertTrue(answered.contains("RemoveUnusedFields/TopKComparators"));
+    }
+
+    @Test
+    public void rebindsEachJoinInputAndRetainsTheKeyDeclaration() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var text = DBSPTypeString.varchar(false);
+        var row = new DBSPTypeTuple(text, text, new DBSPTypeTuple(text));
+        var key = new DBSPParameter("key", text.ref());
+        var left = new DBSPParameter("left", row.ref());
+        var right = new DBSPParameter("right", row.ref());
+        var body = new DBSPTupleExpression(left.asVariable().deref().field(2).field(0),
+                right.asVariable().deref().field(1), key.asVariable().deref());
+        var closure = body.closure(key, left, right);
+        var fields = new FindUsedFields(compiler).findUsedFields(closure);
+        var rewriter = fields.getFieldRewriter(compiler, 1);
+        rewriter.parameterFullyUsed(key);
+        var expected = rewriter.rewriteClosure(closure);
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var actual = rewriter.rewriteClosure(closure);
+        Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
+        Assert.assertSame(key, actual.parameters[0]);
+        Assert.assertSame(rewriter.newParam.get(left), actual.parameters[1]);
+        Assert.assertSame(rewriter.newParam.get(right), actual.parameters[2]);
+    }
+
     @Test
     public void topKProjectionPreservesTieBreakersAndNullOrdering() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));

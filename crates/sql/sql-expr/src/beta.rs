@@ -193,17 +193,14 @@ fn substitute(
             "closure argument count differs from its parameter count",
         ));
     }
-    let mut scope = HashMap::new();
+    let uses = parameter_bindings(edit, body, parameters)?;
     let mut arguments = Vec::with_capacity(values.len());
-    for (i, (&parameter, &value)) in parameters.iter().zip(values).enumerate() {
-        scope.insert(name(edit.node(parameter)?, "name")?, i);
+    for &value in values {
         arguments.push(Argument {
             value,
             freshen: has_declaration(edit, value)?,
         });
     }
-    let mut uses = HashMap::new();
-    resolve(edit, body, &scope, &mut uses, 0)?;
     Rewrite::new(Substitute {
         uses,
         arguments,
@@ -227,10 +224,22 @@ pub fn parameter_paths(
     body: NodeId,
     parameter: NodeId,
 ) -> Result<HashSet<NodeId>, Error> {
-    let scope = HashMap::from([(name(edit.node(parameter)?, "name")?, 0)]);
+    Ok(parameter_bindings(edit, body, &[parameter])?.into_keys().collect())
+}
+
+/// Resolve variable occurrences to their parameter positions in one traversal.
+pub fn parameter_bindings(
+    edit: &CircuitEditor,
+    body: NodeId,
+    parameters: &[NodeId],
+) -> Result<HashMap<NodeId, usize>, Error> {
+    let mut scope = HashMap::with_capacity(parameters.len());
+    for (i, &parameter) in parameters.iter().enumerate() {
+        scope.insert(name(edit.node(parameter)?, "name")?, i);
+    }
     let mut uses = HashMap::new();
     resolve(edit, body, &scope, &mut uses, 0)?;
-    Ok(uses.into_keys().collect())
+    Ok(uses)
 }
 
 pub fn substitute_arguments(

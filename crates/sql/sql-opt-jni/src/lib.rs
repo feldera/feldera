@@ -800,6 +800,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             closure
         }
+        ("RemoveUnusedFields/Reader", [closure, parameters @ ..]) => {
+            let used: Vec<Vec<bool>> = serde_json::from_slice(state)?;
+            feldera_sql_opt::rebind_projected_reader(&mut edit, *closure, parameters, &used)?
+        }
         ("RemoveUnusedFields/Row", [row]) => {
             let used = serde_json::from_slice(state)?;
             let row = edit.type_id(*row)?;
@@ -1104,7 +1108,7 @@ fn transform(
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
-        | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators" | "RemoveUnusedFields/AsofInputs"
+        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators" | "RemoveUnusedFields/AsofInputs"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
             return lower_function(pass, input, state, next);
         }

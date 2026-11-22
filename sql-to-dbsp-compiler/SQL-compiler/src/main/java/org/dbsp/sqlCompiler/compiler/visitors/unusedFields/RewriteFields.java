@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
@@ -20,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.List;
 
 /** Rewrite field accesses according to a {@link ParameterFieldUse}.
  * Very similar to the {@link CanonicalForm} visitor. */
@@ -175,6 +177,12 @@ public class RewriteFields extends InnerRewriteVisitor {
     }
 
     public DBSPClosureExpression rewriteClosure(DBSPClosureExpression closure) {
+        if (this.depth == 1 && this.compiler().options.ioOptions.rustOptimizerPasses) {
+            var parameters = List.of(closure.parameters);
+            return RustCircuitPass.rebindProjectedReader(this.compiler(), closure,
+                    parameters.stream().map(this.newParam::get).toList(),
+                    parameters.stream().map(p -> this.fieldRemap.get(p).usageAtDepth(this.depth)).toList());
+        }
         IDBSPInnerNode result = this.apply(closure);
         return result.to(DBSPClosureExpression.class);
     }
