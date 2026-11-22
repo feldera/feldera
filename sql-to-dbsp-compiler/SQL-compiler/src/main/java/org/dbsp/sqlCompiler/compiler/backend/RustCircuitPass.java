@@ -396,9 +396,10 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static DBSPClosureExpression monotoneIdentity(DBSPCompiler compiler, DBSPType row, boolean indexed) {
-        return lowerFunction(compiler, indexed ? "Monotonicity/IndexedIdentity" : "Monotonicity/RowIdentity",
-                row, null, DBSPClosureExpression.class);
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> identityBounds(
+            DBSPCompiler compiler, DBSPType row, DBSPType projected, boolean indexed) {
+        String operation = indexed ? "Monotonicity/IndexedIdentityBounds" : "Monotonicity/RowIdentityBounds";
+        return loweredClosurePair(invokeLowering(compiler, operation, row, projected));
     }
 
     public static DBSPClosureExpression aggregateTransfer(DBSPCompiler compiler, DBSPType input,

@@ -186,7 +186,8 @@ impl CircuitEditor {
         self.primitive_singleton(sample, kind, code, false)
     }
 
-    fn next_variable_name(next: &mut u64) -> Result<String, Error> {
+    /// Reserve a single name shared by related closure bindings.
+    pub fn next_variable_name(next: &mut u64) -> Result<String, Error> {
         let name = format!("t_{next}");
         *next = next
             .checked_add(1)

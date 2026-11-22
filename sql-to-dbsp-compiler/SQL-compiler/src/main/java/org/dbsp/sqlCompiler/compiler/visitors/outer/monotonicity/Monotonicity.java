@@ -209,9 +209,13 @@ public class Monotonicity extends CircuitVisitor {
     MonotoneExpression identity(DBSPSimpleOperator operator, IMaybeMonotoneType projection, boolean pairOfReferences) {
         if (!projection.mayBeMonotone())
             return null;
-        DBSPClosureExpression closure = this.compiler().options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.monotoneIdentity(this.compiler(), projection.getType(), pairOfReferences)
-                : identityClosure(projection.getType(), pairOfReferences);
+        if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+            var pair = RustCircuitPass.identityBounds(this.compiler(), projection.getType(),
+                    Objects.requireNonNull(projection.getProjectedType()), pairOfReferences);
+            var shape = new MonotoneClosureType(projection, pair.left.parameters, pair.right.parameters);
+            return new MonotoneExpression(pair.left, shape, pair.right);
+        }
+        DBSPClosureExpression closure = identityClosure(projection.getType(), pairOfReferences);
         var argumentType = pairOfReferences ? MonotoneTransferFunctions.ArgumentKind.IndexedZSet
                 : MonotoneTransferFunctions.ArgumentKind.ZSet;
         // Invoke inner visitor.

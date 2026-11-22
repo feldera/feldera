@@ -24,7 +24,8 @@ pub use monotonicity::functions::{function_waterline, Argument as WaterlineArgum
 pub use monotonicity::binary::{
     binary_waterline, BinaryOperation, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
 };
-pub use monotonicity::{filter_lower_bounds, filter_transfer, monotone_identity, unary_waterline, FilterBound};
+pub use monotonicity::identity::identity_bounds;
+pub use monotonicity::{filter_lower_bounds, filter_transfer, unary_waterline, FilterBound};
 mod static_candidates;
 mod static_items;
 pub use static_items::{renumber_static_errors, static_initializer, static_item};

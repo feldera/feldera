@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust constructs both the data closure and its reduced waterline for identity
+operators, including indexed rows where only the key or value has a bound.
+The resulting limiter graphs matched Java on 291 classic and 259 Gen-2
+programs. All 25 detached smoke comparisons passed through emission.
+COUNT and LATENESS checkpoints restored in both directions.
+[Identity waterline comparisons](evidence/p3-identity-waterlines.json)
+
 The live Simplify pass sends each selected expression to Rust. All 17,136
 invocations matched Java across the 2,144 classic and 2,140 Gen-2 programs
 with a changed Simplify boundary. On Nexmark, mean main-thread CPU time in

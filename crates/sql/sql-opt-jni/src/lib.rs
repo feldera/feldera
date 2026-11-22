@@ -543,9 +543,13 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let encoded = functions.map(|fs| edit.circuit().additional_expressions(&arena, &fs)).transpose()?;
             return Ok(json!({"functions": encoded, "next_generated_name": next}));
         }
-        ("Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity", [row]) => {
-            let ty = edit.type_id(*row)?;
-            feldera_sql_opt::monotone_identity(&mut edit, ty, pass == "Monotonicity/IndexedIdentity", &mut next)?
+        ("Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds", [row, projected]) => {
+            let row = edit.type_id(*row)?;
+            let projected = edit.type_id(*projected)?;
+            let indexed = pass == "Monotonicity/IndexedIdentityBounds";
+            let pair = feldera_sql_opt::identity_bounds(&mut edit, row, projected, indexed, &mut next)?;
+            let functions = edit.circuit().additional_expressions(&arena, &pair)?;
+            return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
         ("Monotonicity/Filter", [closure, row]) => {
             let closure = edit.expression(*closure)?;
@@ -806,7 +810,8 @@ fn transform(
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
-        | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
+        | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
+        | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/Filter"
         | "Simplify/Root" | "SimplifyWaterline/Root" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"

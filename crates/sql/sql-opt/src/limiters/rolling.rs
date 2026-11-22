@@ -5,8 +5,7 @@ use super::{Bound, Projection, pass::apply_bound, retention::delay, source::link
 use crate::monotonicity::bindings::waterline_bindings;
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, OutputPort,
-    TypeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, OutputPort, TypeId,
 };
 
 struct RollingKey<'a> {
@@ -47,26 +46,7 @@ impl RollingKey<'_> {
             result = edit.tuple_expr(row.into(), true, &fields)?;
         }
         let bindings = waterline_bindings(edit, &[(&self.name, row)])?;
-        let block = edit.empty_origin_node(
-            row.into(),
-            InnerKind::Expression(Expr::Block),
-            [
-                (
-                    "contents",
-                    Field::Array(
-                        bindings
-                            .statements
-                            .into_iter()
-                            .map(Field::Reference)
-                            .collect(),
-                    ),
-                ),
-                ("lastExpression", link(result)),
-                ("type", link(edit.expression_type(result)?)),
-            ],
-        )?;
-        let closure =
-            edit.closure_with_parameters(edit.expression(block)?, &[bindings.parameter])?;
+        let closure = bindings.closure(edit, result)?;
         super::apply_waterlines(edit, closure.into(), &[incoming.ty], next, warnings)
     }
 }

@@ -1,9 +1,33 @@
 //! Adapt the single waterline of an Apply operator to the original closure's inputs.
-use feldera_sql_ir::{CircuitEditor, Error, NodeId, TypeId};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind, Field, InnerKind, NodeId, TypeId,
+};
 
 pub struct WaterlineBindings {
     pub parameter: NodeId,
     pub statements: Vec<NodeId>,
+}
+
+impl WaterlineBindings {
+    pub fn closure(
+        self,
+        edit: &mut CircuitEditor,
+        body: ExpressionId,
+    ) -> Result<ExpressionId, Error> {
+        let block = edit.empty_origin_node(
+            body.into(),
+            InnerKind::Expression(ExpressionKind::Block),
+            [
+                (
+                    "contents",
+                    Field::Array(self.statements.into_iter().map(Field::Reference).collect()),
+                ),
+                ("lastExpression", Field::Reference(body.into())),
+                ("type", Field::Reference(edit.expression_type(body)?.into())),
+            ],
+        )?;
+        edit.closure_with_parameters(edit.expression(block)?, &[self.parameter])
+    }
 }
 
 /// An indexed closure takes one tuple of references to the retained fields.

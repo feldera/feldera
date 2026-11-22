@@ -7,12 +7,13 @@ pub mod casts;
 pub mod chain_minimum;
 pub mod flatmap;
 pub mod functions;
+pub mod identity;
 pub mod lag;
 pub mod schedule;
 mod sort_key;
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,
-    NodeId, TypeId, TypeKind,
+    NodeId, TypeId,
 };
 
 fn unknown(edit: &mut CircuitEditor, ty: NodeId) -> Result<ExpressionId, Error> {
@@ -34,40 +35,6 @@ fn indexed_parameter(
     let value_ref = edit.reference_type(value)?;
     let pair = edit.tuple_type(key.into(), true, [key_ref.into(), value_ref.into()])?;
     edit.variable(pair, next)
-}
-
-/// The transfer function takes a row reference, or a pair of references to an indexed row.
-pub fn monotone_identity(
-    edit: &mut CircuitEditor,
-    row: TypeId,
-    indexed: bool,
-    next: &mut u64,
-) -> Result<ExpressionId, Error> {
-    if !indexed {
-        let borrowed = edit.reference_type(row)?;
-        let var = edit.variable(borrowed, next)?;
-        let body = edit.dereference(var)?;
-        return edit.closure_from_variables(body, &[var]);
-    }
-    let [key, value] = edit
-        .node(row.into())?
-        .edges("tupFields")?
-        .try_into()
-        .map_err(|_| Error::new("indexed monotonicity requires a key and value"))?;
-    let key_ref = edit.reference_type(edit.type_id(key)?)?;
-    let value_ref = edit.reference_type(edit.type_id(value)?)?;
-    let raw = edit.type_kind(row)? == TypeKind::RawTuple;
-    let pair = edit.tuple_type(row.into(), raw, [key_ref.into(), value_ref.into()])?;
-    let pair = edit.with_nullability(pair, !raw && edit.nullable(row)?)?;
-    let var = edit.variable(pair, next)?;
-    let key = edit.tuple_field(var, 0)?;
-    let key = edit.dereference(key)?;
-    // The two reads are distinct expressions with a shared declaration.
-    let second = edit.derive_inner(var.into(), [])?;
-    let value = edit.tuple_field(edit.expression(second)?, 1)?;
-    let value = edit.dereference(value)?;
-    let body = edit.tuple_with_type(row, &[key, value])?;
-    edit.closure_from_variables(body, &[var])
 }
 
 pub struct FilterBound {
