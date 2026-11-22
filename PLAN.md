@@ -41,6 +41,12 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. On `b81436777`, the isolated hybrid compiler met the cold
+  p95 ceiling on all three workloads. Nexmark measured 3.781 s against
+  3.224 s for direct Java (1.173×). All 69 pairs matched through classic
+  source emission. The phase still requires optimizer ownership and field
+  shadow evidence. [Paired compilation results](crates/sql/BENCHMARKS.md#scalar-row-waterlines-2026-11-22)
+
 - 2026-11-22. With C1 compilation in the one-request hybrid JVM, all 69
   cold SQL compilations matched direct Java through classic source emission.
   Hybrid p95 was 0.764× direct Java on the array subquery, 1.225× on Nexmark,

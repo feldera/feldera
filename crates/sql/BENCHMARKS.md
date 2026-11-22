@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Scalar row waterlines, 2026-11-22
+
+On `b81436777`, all 69 cold pairs matched through classic source emission.
+Each workload ran two warmup pairs and 21 measured pairs on CPU 15 with
+the devcontainer replay idle. Direct Java used its deployed JVM flags and
+the hybrid worker used tier 1. The timings end before Cargo compilation.
+
+| Workload | Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.436 | 1.301 | 0.906× |
+| Nexmark suite | 3.224 | 3.781 | 1.173× |
+| Outer join | 1.352 | 1.028 | 0.760× |
+
+[Cold timings and compiler identities](evidence/p3-scalar-row-cold.json)
+
 ## Shared trace edits, 2026-11-22
 
 On classic Nexmark, sending the operator topology to Rust reduced median
