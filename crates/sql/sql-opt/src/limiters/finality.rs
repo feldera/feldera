@@ -86,7 +86,11 @@ impl FinalityColumn {
             return Err(Error::new("missing EMIT FINAL column name").into());
         };
         Err(LimiterError::MissingWaterline {
-            operator, row, view: view.to_owned(), column: name.clone(), next,
+            operator,
+            row,
+            view: view.to_owned(),
+            column: name.clone(),
+            next,
         })
     }
 

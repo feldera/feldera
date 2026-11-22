@@ -1,0 +1,158 @@
+{
+  "source_commit": "bdd647536e5c3c6bb1df905184668a3f275e4886",
+  "build": {
+    "jar_sha256": "529369f04ce0380a9c2399d384461b678f3719856cbb7b9cf0e0e602052f4ef2",
+    "optimizer_library_sha256": "6d12a5508231cea87b75a5808f4c8a33f30b7464a9e706aa88fbb31df76eb8a4",
+    "driver_sha256": "ae73f2d0ee58b422f1a264310ca08ba43063cea8fe3aec4d21e64ac7f007e520",
+    "pass_kinds": 106
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "native_limiter_insertions": 6485
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "native_limiter_insertions": 6471
+    }
+  },
+  "s4": {
+    "classic": {
+      "pass": "InsertLimiters",
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "af616b10efce69f98073891b79fe55f4ff2edd2c3e4523dbbaace5cb38c2517b",
+      "rust_stream_sha256": "eb897f47540a5c4af2e3f4ed6f060490bcfaf083c725f68a875790aa75df6f0c"
+    },
+    "gen2": {
+      "pass": "InsertLimiters",
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "15c2e300cacd880a76b127a9fff20421ee448e9c71ac83b9bb00613b0101340f",
+      "rust_stream_sha256": "3cb81b57f13ff9d1828b429eba4c95ae3db412f7edf236b03c3edc46d27954e5"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "ba85c7a3acfe7c80e1eb4910380cde5ea5b38b139027e3c44248df112eeef186"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "49dbbba8a77dcd82722ea6f247b8f80ddd1ed13316093eab233787cce8c22ad4",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "1d6fe63e8a314a3207b6bb23f35dc5b977b59c14a49999c22acbc4994fc9d09d",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 10.876399,
+    "largest_driver_plus_front_end_rss_bytes": 80142336
+  },
+  "maven": {
+    "tests": 122,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "directed": {
+    "sql_fixture": "sql-opt/tests/fixtures/limiters.json",
+    "fixture_sha256": "3506079bf00cdbb90675263bb6c5028327294bc047264d4da806de1a3c405054",
+    "engine_program_pairs": 44,
+    "expected_sql_refusals": 7,
+    "public_artifact_mismatches": 0,
+    "diagnostic_policy": "Class, range, snippet, warning flag, count and ordering compared. Only the process-local IDs below differed in raw text.",
+    "raw_message_differences": [
+      {
+        "engine": "classic",
+        "name": "emitFinalCollection",
+        "process_local_id_differences": [
+          {
+            "java": "The state of the integrate operator in the code implementing view 'error_view' may grow without bound; integrate 32, unbounded input 0 produced by DBSPControlledKeyFilterOperator 21",
+            "rust": "The state of the integrate operator in the code implementing view 'error_view' may grow without bound; integrate, unbounded input 0 produced by DBSPControlledKeyFilterOperator"
+          }
+        ]
+      },
+      {
+        "engine": "classic",
+        "name": "collectionStream",
+        "process_local_id_differences": [
+          {
+            "java": "The state of the integrate operator in the code implementing view 'error_view' may grow without bound; integrate 24, unbounded input 0 produced by DBSPControlledKeyFilterOperator 21",
+            "rust": "The state of the integrate operator in the code implementing view 'error_view' may grow without bound; integrate, unbounded input 0 produced by DBSPControlledKeyFilterOperator"
+          }
+        ]
+      },
+      {
+        "engine": "gen2",
+        "name": "emitFinalCollection",
+        "process_local_id_differences": [
+          {
+            "java": "The state of the integrate operator in the code implementing view 'error_view' may grow without bound; integrate 32, unbounded input 0 produced by DBSPControlledKeyFilterOperator 21",
+            "rust": "The state of the integrate operator in the code implementing view 'error_view' may grow without bound; integrate, unbounded input 0 produced by DBSPControlledKeyFilterOperator"
+          }
+        ]
+      },
+      {
+        "engine": "gen2",
+        "name": "collectionStream",
+        "process_local_id_differences": [
+          {
+            "java": "The state of the integrate operator in the code implementing view 'error_view' may grow without bound; integrate 24, unbounded input 0 produced by DBSPControlledKeyFilterOperator 21",
+            "rust": "The state of the integrate operator in the code implementing view 'error_view' may grow without bound; integrate, unbounded input 0 produced by DBSPControlledKeyFilterOperator"
+          }
+        ]
+      }
+    ]
+  },
+  "supervised_worker_refusals": {
+    "emit-final": {
+      "status": "sql_error",
+      "attempts": 1,
+      "messages": [
+        {
+          "start_line_number": 2,
+          "start_column": 1,
+          "end_line_number": 2,
+          "end_column": 62,
+          "warning": false,
+          "error_type": "Compilation error",
+          "message": "Could not infer a waterline for column 'v'.'other' which has an 'emit_final' annotation",
+          "snippet": "    1|CREATE TABLE t(ts BIGINT LATENESS 1, other BIGINT);\n    2|CREATE VIEW v WITH ('emit_final' = 'other') AS SELECT * FROM t;\n      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
+        }
+      ]
+    },
+    "key-lateness": {
+      "status": "sql_error",
+      "attempts": 1,
+      "messages": [
+        {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0,
+          "warning": false,
+          "error_type": "Not yet implemented",
+          "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues",
+          "snippet": ""
+        }
+      ]
+    }
+  }
+}

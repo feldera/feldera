@@ -471,6 +471,14 @@ their Java entry and exit circuits. The limiter dumps from both compilers
 also resumed independently with matching warnings and generated names.
 [Limiter-insertion replay and runtime results](evidence/p3-limiter-checkpoints.json)
 
+At `bdd647536`, Rust also handled EMIT FINAL and Gen-2 keyed-source
+diagnostics. The worker returned Java's exact structured errors for a missing
+waterline and unsupported keyed LATENESS. The 44 directed engine/program pairs
+had seven expected refusals and matching emitted artifacts. In four
+snapshot-mode warnings, the ordinary Java CLI included process-local operator
+numbers that the circuit seam omits. Class, location, snippet, and warning
+order matched. [Directed diagnostics and frozen replay](evidence/p3-limiter-diagnostics.json)
+
 Rust builds the lower-bound expressions for scalar and temporal binary operations.
 The JVM reconnects the live operands after Rust selects the operation, casts and
 interval units. On `47efb1af2`, Java and Rust produced equal graphs in all 68

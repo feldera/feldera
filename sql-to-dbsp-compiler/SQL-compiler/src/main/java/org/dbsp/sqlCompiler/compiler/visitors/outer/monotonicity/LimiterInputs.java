@@ -6,15 +6,19 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
@@ -34,16 +38,20 @@ import java.util.Set;
 public final class LimiterInputs {
     private LimiterInputs() {}
 
-    private static final Set<Class<?>> NATIVE_OPERATORS = Set.of(
-            DBSPSourceMultisetOperator.class, DBSPViewOperator.class, DBSPSinkOperator.class,
+    private static final Set<Class<?>> TRANSFER_OPERATORS = Set.of(
             DBSPMapOperator.class, DBSPMapIndexOperator.class, DBSPFilterOperator.class,
-            DBSPHopOperator.class, DBSPFlatMapOperator.class, DBSPSumOperator.class,
+            DBSPHopOperator.class, DBSPFlatMapOperator.class, DBSPNoopOperator.class,
+            DBSPNegateOperator.class, DBSPDeindexOperator.class, DBSPStreamAntiJoinOperator.class);
+
+    private static final Set<Class<?>> OTHER_NATIVE_OPERATORS = Set.of(
+            DBSPSourceMultisetOperator.class, DBSPViewOperator.class, DBSPSinkOperator.class, DBSPSumOperator.class,
             DBSPAtomicSumOperator.class, DBSPSubtractOperator.class, DBSPConstantOperator.class,
             DBSPIncrementalConstantOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
     public static boolean canLowerCircuit(DBSPCircuit circuit) {
-        return circuit.allOperators.stream().allMatch(operator -> NATIVE_OPERATORS.contains(operator.getClass()));
+        return circuit.allOperators.stream().allMatch(operator -> TRANSFER_OPERATORS.contains(operator.getClass())
+                || OTHER_NATIVE_OPERATORS.contains(operator.getClass()));
     }
 
     public static JsonNode projection(IMaybeMonotoneType type) {
@@ -69,9 +77,7 @@ public final class LimiterInputs {
     public static Map<Long, DBSPClosureExpression> transferFunctions(InsertLimiters pass, DBSPCircuit original) {
         var functions = new LinkedHashMap<Long, DBSPClosureExpression>();
         for (var operator : original.allOperators) {
-            if (!(operator instanceof DBSPMapOperator || operator instanceof DBSPMapIndexOperator
-                    || operator instanceof DBSPFilterOperator || operator instanceof DBSPFlatMapOperator
-                    || operator instanceof DBSPHopOperator))
+            if (!TRANSFER_OPERATORS.contains(operator.getClass()))
                 continue;
             var expansion = pass.getReplacement(operator.to(DBSPSimpleOperator.class));
             if (expansion == null)
