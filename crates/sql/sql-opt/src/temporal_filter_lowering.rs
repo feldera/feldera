@@ -29,6 +29,11 @@ pub enum LoweredClockFilter {
     Windows,
     /// The residual predicate supplies the warning and join source positions.
     Joined(ExpressionId),
+    /// Emit the residual warning before reporting the illegal clock use in the lambda.
+    UnsupportedLambda {
+        predicate: ExpressionId,
+        lambda: ExpressionId,
+    },
 }
 
 impl TemporalFilterLowering {
@@ -93,14 +98,13 @@ impl TemporalFilterLowering {
                 let predicate = edit.wrap_bool_if_needed(predicate)?;
                 if matches!(terms[group.first], WindowTerm::Residual(_)) {
                     let function = edit.closure_with_parameters(predicate, &[parameter])?;
-                    return Ok(
-                        match self.append_residual(edit, rows, &filter, function, next)? {
-                            ClockRewrite::Rewritten(_) => {
-                                Some(LoweredClockFilter::Joined(predicate))
-                            }
-                            ClockRewrite::UnsupportedLambda(_) => None,
-                        },
-                    );
+                    let result = self.append_residual(edit, rows, &filter, function, next)?;
+                    return Ok(Some(match result {
+                        ClockRewrite::Rewritten(_) => LoweredClockFilter::Joined(predicate),
+                        ClockRewrite::UnsupportedLambda(lambda) => {
+                            LoweredClockFilter::UnsupportedLambda { predicate, lambda }
+                        }
+                    }));
                 }
                 let closure = edit.closure_with_parameters(predicate, &original_parameters)?;
                 edit.append_operator(

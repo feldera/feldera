@@ -6,7 +6,7 @@ use feldera_sql_opt::limiters::{Stream, StreamKind};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
-impl<const N: usize> Fragment<N> {
+impl<const N: usize> Fragment<[feldera_sql_ir::OutputPort; N]> {
     fn clock_reply(
         &self,
         edit: &CircuitEditor,
@@ -117,6 +117,10 @@ pub(super) fn filter(
     let Some(result) = lowering.lower_filter(&mut edit, rows, filter, &mut next)? else {
         return Ok(Value::Null);
     };
+    if let LoweredClockFilter::UnsupportedLambda { predicate, lambda } = result {
+        let sites = edit.circuit().additional_expressions(&fragment.base, &[predicate, lambda])?;
+        return Ok(json!({"rejected_lambda": sites, "next_generated_name": next}));
+    }
     let mut reply = fragment.reply(&edit, next)?;
     if let LoweredClockFilter::Joined(predicate) = result {
         // This expression is read only for source positions. It carries its own node definitions.

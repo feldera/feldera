@@ -320,9 +320,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let header = json!({"class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]});
         Circuit::from_json(header)?.with_inner_roots_bytes(input)?
     };
-    if pass == "DeltaExpansion/StarJoinTerm" {
-        return star_join::delta_term(arena, &roots, next);
-    }
     if let ("KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns", [closure]) = (pass, roots.as_slice()) {
         #[derive(serde::Deserialize)]
         struct Request {
@@ -780,6 +777,7 @@ fn transform(
     let pass = live.unwrap_or(pass);
     match pass {
         "ExpandStreamAggregates/List" => return expand_stream_aggregate(input, state, next),
+        "DeltaExpansion/StarJoin" => return star_join::delta(input, state, next),
         "DeltaExpansion/Distinct" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Distinct, input, state, next),
         "DeltaExpansion/Positive" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Positive, input, state, next),
         "DeltaExpansion/Aggregate" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Aggregate, input, state, next),
@@ -942,7 +940,7 @@ fn transform(
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
-        | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
+        | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
         | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"

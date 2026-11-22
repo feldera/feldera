@@ -1129,13 +1129,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
         for (var integral: expansion.integrators)
             this.processIntegral(integral);
         for (var star: expansion.joins) {
-            for (var op : star.joins)
+            for (var op : star.joins())
                 this.processJoin(op);
-            MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(star.result);
+            MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(star.result());
             if (monotoneValue == null || !monotoneValue.mayBeMonotone()) {
-                this.nonMonotone(star.result);
+                this.nonMonotone(star.result());
             } else {
-                this.addBounds(null, star.result, 0);
+                this.addBounds(null, star.result(), 0);
             }
         }
         OutputPort limiter = this.processSumOrDiff(expansion.sum);
@@ -1179,13 +1179,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
         for (var integral: expansion.integrators)
             this.processIntegral(integral);
         for (var star: expansion.joins) {
-            for (var op : star.joins)
+            for (var op : star.joins())
                 this.processJoin(op);
-            MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(star.result);
+            MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(star.result());
             if (monotoneValue == null || !monotoneValue.mayBeMonotone()) {
-                this.nonMonotone(star.result);
+                this.nonMonotone(star.result());
             } else {
-                this.addBounds(null, star.result, 0);
+                this.addBounds(null, star.result(), 0);
             }
         }
         this.processSumOrDiff(expansion.sum);

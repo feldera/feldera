@@ -558,6 +558,9 @@ public class RewriteNow extends CircuitCloneVisitor {
                 this.nativeClockFilters++;
                 if (lowered.warningPredicate() != null)
                     this.warnExpensive(lowered.warningPredicate());
+                if (lowered.unsupportedLambda() != null)
+                    throw new CompilationError("NOW() is not supported inside a lambda expression",
+                            lowered.unsupportedLambda().getNode());
                 lowered.operators().forEach(this::addOperator);
                 this.map(operator.outputPort(), Utilities.last(lowered.operators()).outputPort(), false);
                 return;

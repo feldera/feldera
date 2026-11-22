@@ -1,56 +1,98 @@
-use feldera_sql_ir::{Circuit, CircuitEditor, NodeId};
-use serde_json::{json, Value};
+use super::{ExpressionSite, fragment::Fragment, operator_number};
+use feldera_sql_ir::{CircuitEditor, NodeId, OperatorKind, OutputPort};
+use serde::Deserialize;
+use serde_json::{Value, json};
 use std::error::Error;
 
-/// Return the join edges, shared output types and closures for one delta term.
-pub(super) fn delta_term(
-    arena: Circuit,
-    roots: &[NodeId],
-    mut next: u64,
-) -> Result<Value, Box<dyn Error>> {
-    let [function, key, rows @ ..] = roots else {
-        return Err("missing star join function or key".into());
+#[derive(Deserialize)]
+struct Request {
+    #[serde(flatten)]
+    site: ExpressionSite,
+    ports: Vec<usize>,
+}
+
+pub(super) fn delta(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn Error>> {
+    let request: Request = serde_json::from_slice(state)?;
+    let ports: Vec<_> = request
+        .ports
+        .into_iter()
+        .enumerate()
+        .map(|(i, number)| OutputPort {
+            operator: NodeId::Outer(i as u64 + 1),
+            number,
+        })
+        .collect();
+    let (fragment, roots) = Fragment::with_inputs(
+        request.site,
+        ports,
+        std::iter::repeat(OperatorKind::MapIndex),
+        input,
+    )?;
+    let [function, output, operands @ ..] = roots.as_slice() else {
+        return Err("missing star join function or output type".into());
     };
-    let mut edit = CircuitEditor::new(arena.clone());
-    let key = edit.type_id(*key)?;
-    let rows = rows
+    let (collections, tail) = operands
+        .split_at_checked(fragment.inputs.len())
+        .ok_or("missing star join input type")?;
+    let filter_map = match tail {
+        [] => None,
+        [filter] => Some((*filter, None)),
+        [filter, map] => Some((*filter, Some(*map))),
+        _ => return Err("unexpected operands after the star join filter and map".into()),
+    };
+    let mut edit = CircuitEditor::new(fragment.base.clone());
+    let inputs = fragment
+        .inputs
         .iter()
-        .map(|&id| edit.type_id(id))
+        .zip(collections)
+        .map(|(&port, &ty)| edit.type_id(ty).map(|ty| (port, ty)))
         .collect::<Result<Vec<_>, _>>()?;
+    let join = feldera_sql_opt::DeltaStarJoin {
+        function: *function,
+        output_type: edit.type_id(*output)?,
+        filter_map,
+    };
     let mut warnings = Vec::new();
-    let plan = feldera_sql_opt::expand_star_term(
+    let graph = feldera_sql_opt::expand_star_delta(
         &mut edit,
-        *function,
-        key,
-        &rows,
+        fragment.base.root_id(),
+        join,
+        &inputs,
         &mut next,
         &mut warnings,
     )?;
-    let projection = feldera_sql_expr::ensure_expression_tree(&mut edit, plan.projection.into())?;
-    let definitions = plan
-        .joins
-        .iter()
-        .flat_map(|join| [join.output_type.into(), join.function.into()])
-        .chain(std::iter::once(projection));
-    let mut encoded = edit
-        .circuit()
-        .additional_inner_nodes(&arena, definitions)?
-        .into_iter();
-    let joins: Vec<_> = plan
-        .joins
-        .iter()
-        .map(|join| {
-            json!({
-                "inputs": join.inputs,
-                "type": encoded.next().expect("one indexed type per join"),
-                "function": encoded.next().expect("one function per join"),
-            })
-        })
-        .collect();
-    Ok(json!({
-        "joins": joins, "projection": encoded.next().expect("final projection"), "next_generated_name": next,
-        "warnings": warnings.into_iter().map(|w| json!({
-            "range": w.position, "error_type": w.kind, "message": w.message,
-        })).collect::<Vec<_>>()
-    }))
+    let mut reply = fragment.reply(&edit, next)?;
+    reply["integrals"] = json!(
+        graph
+            .integrals
+            .into_iter()
+            .map(operator_number)
+            .collect::<Vec<_>>()
+    );
+    reply["terms"] = json!(
+        graph
+            .terms
+            .into_iter()
+            .map(|term| json!({
+                "joins": term.joins.into_iter().map(operator_number).collect::<Vec<_>>(),
+                "projection": operator_number(term.projection)
+            }))
+            .collect::<Vec<_>>()
+    );
+    reply["sum"] = operator_number(graph.sum).into();
+    if let Some(filter) = graph.filter {
+        reply["filter"] = operator_number(filter).into();
+    }
+    if let Some(map) = graph.map {
+        reply["map"] = operator_number(map).into();
+    }
+    reply["warnings"] = json!(
+        warnings
+            .into_iter()
+            .map(|w| json!({
+                "range": w.position, "error_type": w.kind, "message": w.message,
+            }))
+            .collect::<Vec<_>>()
+    );
+    Ok(reply)
 }

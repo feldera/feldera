@@ -27,12 +27,12 @@ final class StarJoinInputs {
         for (var tree : expansion.joins) {
             var term = trees.addObject();
             var joins = term.putArray("joins");
-            for (var join : tree.joins) {
+            for (var join : tree.joins()) {
                 var binary = joins.addObject();
                 BinaryJoinInputs.captureTerm(pass, join, binary);
                 binary.putArray("inputs").add(join.left().operator.id).add(join.right().operator.id);
             }
-            unary(pass, tree.result, term.putObject("result"));
+            unary(pass, tree.result(), term.putObject("result"));
         }
         var sum = entry.putObject("sum").put("id", expansion.sum.id);
         var order = sum.putArray("inputs");
@@ -49,9 +49,9 @@ final class StarJoinInputs {
     static void recordTransfers(InsertLimiters pass, StarJoinDeltaExpansion expansion,
                                 Map<Long, IDBSPInnerNode> roots) {
         for (var tree : expansion.joins) {
-            for (var join : tree.joins)
+            for (var join : tree.joins())
                 LimiterInputs.recordTransfer(roots, join.id, pass, join);
-            LimiterInputs.recordTransfer(roots, tree.result.id, pass, tree.result);
+            LimiterInputs.recordTransfer(roots, tree.result().id, pass, tree.result());
         }
         if (expansion instanceof StarJoinFilterMapDeltaExpansion filtered) {
             LimiterInputs.recordTransfer(roots, filtered.filter.id, pass, filtered.filter);

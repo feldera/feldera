@@ -369,7 +369,7 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
             this.addOperator(op);
         final var integratorOutputs = Linq.map(integrators, DBSPSimpleOperator::outputPort);
 
-        List<RemoveStarJoins.StarJoinImplementation> joins = new ArrayList<>();
+        List<StarJoinDeltaExpansion.Term> joins = new ArrayList<>();
         for (int i = 0; i < inputs.size(); i++) {
             final List<OutputPort> joinInputs = new ArrayList<>(integratorOutputs);
             // Set the delta
@@ -382,10 +382,10 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
             for (var j: implementation.joins)
                 this.addOperator(j);
             this.addOperator(implementation.result);
-            joins.add(implementation);
+            joins.add(new StarJoinDeltaExpansion.Term(implementation.joins, implementation.result));
         }
 
-        var joinOutputs = Linq.map(joins, j -> j.result.outputPort());
+        var joinOutputs = Linq.map(joins, j -> j.result().outputPort());
         DBSPSumOperator sum = new DBSPSumOperator(operator.getRelNode(), joinOutputs);
         return new StarJoinDeltaExpansion(integrators, joins, sum);
     }

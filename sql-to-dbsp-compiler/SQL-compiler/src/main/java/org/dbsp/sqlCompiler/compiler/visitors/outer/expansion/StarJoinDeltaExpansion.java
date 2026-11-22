@@ -2,7 +2,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.expansion;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveStarJoins;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 
 import java.util.List;
 
@@ -12,15 +13,17 @@ import java.util.List;
  * omitted: they are at least as monotone as the terms kept, so the monotonicity of the sum is the
  * same. */
 public class StarJoinDeltaExpansion extends OperatorDeltaExpansion {
+    public record Term(List<DBSPJoinBaseOperator> joins, DBSPSimpleOperator result) {}
+
     /** z⁻¹A₁ ... z⁻¹Aₙ */
     public final List<DBSPDelayedIntegralOperator> integrators;
     /** The n terms, each a tree of binary joins */
-    public final List<RemoveStarJoins.StarJoinImplementation> joins;
+    public final List<Term> joins;
     /** The sum of the n terms */
     public final DBSPSumOperator sum;
 
     public StarJoinDeltaExpansion(List<DBSPDelayedIntegralOperator> integrators,
-                                  List<RemoveStarJoins.StarJoinImplementation> joins,
+                                  List<Term> joins,
                                   DBSPSumOperator sum) {
         this.integrators = integrators;
         this.joins = joins;

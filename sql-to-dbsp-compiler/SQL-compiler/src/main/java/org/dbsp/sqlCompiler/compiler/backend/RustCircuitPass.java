@@ -129,6 +129,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.RustDeltaExpandOpe
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorDeltaExpansion;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinFilterMapDeltaExpansion;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinDeltaExpansion;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
@@ -529,9 +535,6 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public record BinaryJoin(int left, int right, DBSPTypeIndexedZSet type, DBSPClosureExpression function) {}
-    public record StarJoinTerm(List<BinaryJoin> joins, DBSPClosureExpression projection) {}
-
     public record ExpandedUnaryDelta(List<DBSPSimpleOperator> operators, DBSPSimpleOperator output,
                                      OperatorDeltaExpansion correspondence) {}
 
@@ -575,25 +578,56 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static StarJoinTerm deltaStarJoinTerm(DBSPCompiler compiler, DBSPClosureExpression closure,
-                                                DBSPType key, List<OutputPort> inputs) {
+    public record ExpandedStarDelta(List<DBSPSimpleOperator> operators, DBSPSimpleOperator output,
+                                    StarJoinDeltaExpansion correspondence) {}
+
+    public static ExpandedStarDelta starDelta(DBSPCompiler compiler, DBSPStarJoinBaseOperator operator,
+                                                   List<OutputPort> inputs) {
+        var site = expressionSite(operator.getRelNode());
+        var ports = site.putArray("ports");
         var roots = new ArrayList<IDBSPInnerNode>(inputs.size() + 2);
-        roots.add(closure);
-        roots.add(key);
-        for (var input : inputs)
-            roots.add(input.getOutputIndexedZSetType().elementType);
-        var reply = invokeLowering(compiler, "DeltaExpansion/StarJoinTerm", roots.toArray(IDBSPInnerNode[]::new));
-        var decoder = expressionDecoder(reply.writer);
-        var joins = new ArrayList<BinaryJoin>();
-        for (var join : reply.value.required("joins")) {
-            var edges = join.required("inputs");
-            var type = decoder.decodeInner(join.required("type"), DBSPTypeIndexedZSet.class);
-            var function = decoder.decodeInner(join.required("function"), DBSPClosureExpression.class);
-            joins.add(new BinaryJoin(edges.required(0).intValue(), edges.required(1).intValue(), type, function));
+        roots.add(operator.getClosureFunction());
+        roots.add(operator.outputType);
+        for (var port : inputs) {
+            ports.add(port.outputNumber);
+            roots.add(port.outputType());
         }
-        var projection = decoder.decodeInner(reply.value.required("projection"), DBSPClosureExpression.class);
-        finishLowering(compiler, reply.value);
-        return new StarJoinTerm(joins, projection);
+        if (operator instanceof DBSPStarJoinFilterMapOperator filtered) {
+            roots.add(Objects.requireNonNull(filtered.filter));
+            if (filtered.map != null)
+                roots.add(filtered.map);
+        }
+        try {
+            var reply = invokeLowering(compiler, "DeltaExpansion/StarJoin",
+                    MAPPER.writeValueAsBytes(site), roots.toArray(IDBSPInnerNode[]::new));
+            var decoder = expressionDecoder(reply.writer);
+            var operators = decodeOperatorFragment(decoder, reply, op -> operator.getRelNode(),
+                    inputs.stream().map(OutputPort::node).toArray(DBSPOperator[]::new));
+            var integrals = new ArrayList<DBSPDelayedIntegralOperator>();
+            for (var id : reply.value.required("integrals"))
+                integrals.add(decoder.outer.lookup(id.longValue(), DBSPDelayedIntegralOperator.class));
+            var terms = new ArrayList<StarJoinDeltaExpansion.Term>();
+            for (var term : reply.value.required("terms")) {
+                var joins = new ArrayList<DBSPJoinBaseOperator>();
+                for (var id : term.required("joins"))
+                    joins.add(decoder.outer.lookup(id.longValue(), DBSPJoinBaseOperator.class));
+                var projection = decoder.outer.lookup(term.required("projection").longValue(), DBSPSimpleOperator.class);
+                terms.add(new StarJoinDeltaExpansion.Term(joins, projection));
+            }
+            finishLowering(compiler, reply.value);
+            var sum = decoder.outer.lookup(reply.value.required("sum").longValue(), DBSPSumOperator.class);
+            var expansion = new StarJoinDeltaExpansion(integrals, terms, sum);
+            if (!reply.value.has("filter"))
+                return new ExpandedStarDelta(operators, sum, expansion);
+            var filter = decoder.outer.lookup(reply.value.required("filter").longValue(), DBSPFilterOperator.class);
+            var map = reply.value.has("map")
+                    ? decoder.outer.lookup(reply.value.required("map").longValue(), DBSPSimpleOperator.class)
+                    : null;
+            var filtered = new StarJoinFilterMapDeltaExpansion(expansion, filter, map);
+            return new ExpandedStarDelta(operators, filtered.last(), filtered);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode star join inputs", error);
+        }
     }
 
     public static DBSPClosureExpression applyWaterlines(DBSPCompiler compiler,
@@ -1119,7 +1153,8 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public record ClockFilter(List<DBSPSimpleOperator> operators, @Nullable DBSPExpression warningPredicate) {}
+    public record ClockFilter(List<DBSPSimpleOperator> operators, @Nullable DBSPExpression warningPredicate,
+                              @Nullable DBSPClosureExpression unsupportedLambda) {}
 
     /** Lower the windows and residual clock join of one predicate in their original order. */
     @Nullable
@@ -1132,6 +1167,14 @@ public final class RustCircuitPass implements CircuitTransform {
                     filter.getOutputZSetType(), filter.getClosureFunction());
             if (reply.value.isNull())
                 return null;
+            var rejection = reply.value.get("rejected_lambda");
+            if (rejection != null) {
+                var decoder = expressionDecoder(reply.writer);
+                var predicate = decoder.decodeInner(rejection.required(0), DBSPExpression.class);
+                var lambda = decoder.decodeInner(rejection.required(1), DBSPClosureExpression.class);
+                DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+                return new ClockFilter(List.of(), predicate, lambda);
+            }
             var warning = reply.value.get("warning_predicate");
             DBSPExpression predicate = warning == null ? null :
                     expressionDecoder(reply.writer).decodeInner(warning, DBSPExpression.class);
@@ -1139,7 +1182,7 @@ public final class RustCircuitPass implements CircuitTransform {
                     Objects.requireNonNull(temporalClockSites(compiler, List.of(predicate)).get(predicate.getId())));
             return new ClockFilter(decodeOperatorFragment(reply,
                     op -> op instanceof DBSPStreamJoinOperator ? join : windowOrigin(compiler, origin, clock, op),
-                    rows, clock, indexedClock), predicate);
+                    rows, clock, indexedClock), predicate, null);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode temporal filter origin", error);
         }

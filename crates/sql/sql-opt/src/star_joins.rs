@@ -3,7 +3,7 @@ mod analysis;
 mod expand;
 mod tree;
 pub use tree::{expand_star_term, BinaryJoin, StarJoinExpansion};
-pub use expand::{expand_star_join_layer, remove_star_joins};
+pub use expand::{expand_star_delta, DeltaStarJoin, expand_star_join_layer, remove_star_joins};
 use crate::{
     rebuild::{input_type, rebuild_input_closures},
     stream_rewrites::body_members,

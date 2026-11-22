@@ -18,6 +18,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -51,6 +55,29 @@ public final class RustDeltaExpandOperators extends DeltaExpandOperators {
     @Override
     public String getName() {
         return "DeltaExpandOperators";
+    }
+
+    private void expandStar(DBSPStarJoinBaseOperator original) {
+        var inputs = original.inputs.stream().map(this::mapped).toList();
+        var expanded = RustCircuitPass.starDelta(this.compiler, original, inputs);
+        expanded.operators().forEach(this::addOperator);
+        this.map(original, expanded.output(), false);
+        this.addExpansion(original, expanded.correspondence());
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinOperator operator) {
+        this.expandStar(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinIndexOperator operator) {
+        this.expandStar(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinFilterMapOperator operator) {
+        this.expandStar(operator);
     }
 
     private void expandUnary(DBSPUnaryOperator original) {

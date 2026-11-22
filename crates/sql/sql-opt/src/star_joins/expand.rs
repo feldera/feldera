@@ -1,7 +1,7 @@
 //! Expand a multiway join into a balanced tree of binary indexed joins.
 use super::output;
 use crate::{
-    rebuild::{input_type, ProjectionNames},
+    rebuild::{ProjectionNames, input_type},
     stream_rewrites::body_members,
 };
 use feldera_sql_expr::SimplifyWarning;
@@ -32,7 +32,7 @@ impl Expansion<'_> {
             ("outputType", Field::Reference(result.into())),
             ("function", Field::Reference(function)),
         ];
-        if kind == Op::JoinIndex {
+        if matches!(kind, Op::JoinIndex | Op::StreamJoinIndex) {
             fields.push(("balanced", Field::Data(false.into())));
         }
         let op = self
@@ -57,6 +57,22 @@ impl Expansion<'_> {
             self.edit.zset_type(row)?
         };
         self.append(kind, &[input], output, function)
+    }
+
+    fn join_tree(
+        &mut self,
+        streams: &mut Vec<OutputPort>,
+        kind: Op,
+        joins: Vec<super::BinaryJoin>,
+    ) -> Result<OutputPort, Error> {
+        for join in joins {
+            let pair = join.inputs.map(|i| streams[i]);
+            streams.push(self.append(kind, &pair, join.output_type, join.function.into())?);
+        }
+        streams
+            .last()
+            .copied()
+            .ok_or_else(|| Error::new("star join requires inputs"))
     }
 
     fn split_filter(
@@ -93,7 +109,7 @@ impl Expansion<'_> {
     ) -> Result<OutputPort, Error> {
         let node = self.edit.node(self.site)?;
         let function = node.edge("function")?;
-        let inputs = node
+        let mut inputs = node
             .inputs()
             .map(|p| mapped.get(&p.operator).copied().unwrap_or(p))
             .collect::<Vec<_>>();
@@ -115,17 +131,7 @@ impl Expansion<'_> {
                 .collect::<Result<Vec<_>, _>>()?;
             let plan =
                 super::expand_star_term(self.edit, function, key, &rows, self.next, self.warnings)?;
-            let mut streams = inputs;
-            for join in plan.joins {
-                let pair = join.inputs.map(|index| streams[index]);
-                streams.push(self.append(
-                    Op::JoinIndex,
-                    &pair,
-                    join.output_type,
-                    join.function.into(),
-                )?);
-            }
-            let joined = *streams.last().expect("nonempty star join");
+            let joined = self.join_tree(&mut inputs, Op::JoinIndex, plan.joins)?;
             let map = if kind == Op::StarJoinIndex {
                 Op::MapIndex
             } else {
@@ -140,6 +146,125 @@ impl Expansion<'_> {
         )?;
         Ok(result)
     }
+}
+
+/// Operators retained by the limiter analysis for a single term of the derivative.
+pub struct DeltaTerm {
+    pub joins: Vec<NodeId>,
+    pub projection: NodeId,
+}
+
+pub struct StarDelta {
+    pub integrals: Vec<NodeId>,
+    pub terms: Vec<DeltaTerm>,
+    pub sum: NodeId,
+    pub filter: Option<NodeId>,
+    pub map: Option<NodeId>,
+}
+
+pub struct DeltaStarJoin {
+    pub function: NodeId,
+    pub output_type: TypeId,
+    /// A fused filter and its optional projection run after the sum.
+    pub filter_map: Option<(NodeId, Option<NodeId>)>,
+}
+
+/// Expand the star join on the monotonicity graph. In term i, input i contributes
+/// its changes and the other inputs contribute their delayed integrals.
+pub fn expand_star_delta(
+    edit: &mut CircuitEditor,
+    body: NodeId,
+    join: DeltaStarJoin,
+    inputs: &[(OutputPort, TypeId)],
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<StarDelta, Error> {
+    let &(_, first) = inputs
+        .first()
+        .ok_or_else(|| Error::new("star join requires inputs"))?;
+    let key = edit.type_id(edit.node(first.into())?.edge("keyType")?)?;
+    let output_map = if edit.type_kind(join.output_type)? == Ty::IndexedZSet {
+        Op::MapIndex
+    } else {
+        Op::Map
+    };
+    // A fused map can change the collection kind after filtering.
+    let term_map = if join.filter_map.is_some() {
+        let body = edit.expression(edit.node(join.function)?.edge("body")?)?;
+        if edit.type_kind(edit.expression_type(body)?)? == Ty::RawTuple {
+            Op::MapIndex
+        } else {
+            Op::Map
+        }
+    } else {
+        output_map
+    };
+    let mut rows = Vec::with_capacity(inputs.len());
+    let mut integrals = Vec::with_capacity(inputs.len());
+    for &(port, ty) in inputs {
+        rows.push(edit.type_id(edit.node(ty.into())?.edge("elementType")?)?);
+        integrals.push(edit.append_operator(
+            body,
+            body,
+            Op::DelayedIntegral,
+            &[port],
+            [("outputType", Field::Reference(ty.into()))],
+        )?);
+    }
+    let mut graph = Expansion {
+        edit,
+        body,
+        site: body,
+        next,
+        warnings,
+        first: None,
+    };
+    let mut terms = Vec::with_capacity(inputs.len());
+    for (i, &(delta, _)) in inputs.iter().enumerate() {
+        let mut streams: Vec<_> = integrals.iter().copied().map(output).collect();
+        streams[i] = delta;
+        let plan = super::expand_star_term(
+            graph.edit,
+            join.function,
+            key,
+            &rows,
+            graph.next,
+            graph.warnings,
+        )?;
+        let joined = graph.join_tree(&mut streams, Op::StreamJoinIndex, plan.joins)?;
+        let project = feldera_sql_expr::ensure_expression_tree(graph.edit, plan.projection.into())?;
+        let projected = graph.map(term_map, project, joined)?;
+        terms.push(DeltaTerm {
+            joins: streams[inputs.len()..].iter().map(|p| p.operator).collect(),
+            projection: projected.operator,
+        });
+    }
+    let outputs: Vec<_> = terms.iter().map(|term| output(term.projection)).collect();
+    let ty = input_type(graph.edit, outputs[0])?;
+    let sum = graph.edit.append_operator(
+        body,
+        body,
+        Op::Sum,
+        &outputs,
+        [("outputType", Field::Reference(ty.into()))],
+    )?;
+    let (filter, map) = match join.filter_map {
+        Some((predicate, projection)) => {
+            let filtered = graph.append(Op::Filter, &[output(sum)], ty, predicate)?;
+            let mapped = projection
+                .map(|f| graph.map(output_map, f, filtered))
+                .transpose()?;
+            (Some(filtered.operator), mapped.map(|p| p.operator))
+        }
+        None => (None, None),
+    };
+    Ok(StarDelta {
+        integrals,
+        terms,
+        sum,
+        filter,
+        map,
+    })
 }
 
 /// One original visitor iteration. Filtered joins become a star join followed by

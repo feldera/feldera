@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DeltaExpandOperators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.RustDeltaExpandOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinFilterMapDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -87,29 +88,38 @@ public class RemoveStarJoinsTests {
 
     @Test
     public void deltaTermsUseOneChangingInputEach() {
+        checkDeltaTerms(false);
+        checkDeltaTerms(true);
+    }
+
+    private static void checkDeltaTerms(boolean withMap) {
         var options = new CompilerOptions();
         options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.rustPasses");
         var compiler = new DBSPCompiler(options);
         var circuit = new DBSPCircuit(new ProgramMetadata(), true);
-        var star = addFilteredJoin(circuit, true);
-        var expand = new DeltaExpandOperators(compiler);
+        var star = addFilteredJoin(circuit, withMap);
+        var expand = options.ioOptions.rustOptimizerPasses
+                ? new RustDeltaExpandOperators(compiler) : new DeltaExpandOperators(compiler);
         expand.apply(circuit);
         var expansion = (StarJoinFilterMapDeltaExpansion) expand.expansion.get(star);
         Assert.assertEquals(5, expansion.joins.size());
         for (int i = 0; i < expansion.joins.size(); i++) {
             var term = expansion.joins.get(i);
-            Assert.assertEquals(4, term.joins.size());
-            Assert.assertTrue(term.joins.stream().allMatch(DBSPStreamJoinIndexOperator.class::isInstance));
-            var leaves = List.of(term.joins.get(0).left(), term.joins.get(0).right(),
-                    term.joins.get(1).left(), term.joins.get(1).right(), term.joins.get(3).right());
+            Assert.assertEquals(4, term.joins().size());
+            Assert.assertTrue(term.joins().stream().allMatch(DBSPStreamJoinIndexOperator.class::isInstance));
+            var leaves = List.of(term.joins().get(0).left(), term.joins().get(0).right(),
+                    term.joins().get(1).left(), term.joins().get(1).right(), term.joins().get(3).right());
             for (int j = 0; j < leaves.size(); j++) {
                 var integral = expansion.integrators.get(j);
                 Assert.assertEquals(j == i ? integral.input() : integral.outputPort(), leaves.get(j));
             }
-            Assert.assertEquals(term.result.outputPort(), expansion.sum.inputs.get(i));
+            Assert.assertEquals(term.result().outputPort(), expansion.sum.inputs.get(i));
         }
         Assert.assertEquals(expansion.sum.outputPort(), expansion.filter.input());
-        Assert.assertEquals(expansion.filter.outputPort(), expansion.last().inputs.getFirst());
+        if (withMap)
+            Assert.assertEquals(expansion.filter.outputPort(), expansion.last().inputs.getFirst());
+        else
+            Assert.assertSame(expansion.filter, expansion.last());
     }
 
     private static DBSPStarJoinFilterMapOperator addFilteredJoin(ICircuit body, boolean withMap) {
