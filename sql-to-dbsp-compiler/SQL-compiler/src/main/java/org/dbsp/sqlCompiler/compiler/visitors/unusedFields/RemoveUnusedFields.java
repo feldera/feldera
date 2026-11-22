@@ -200,23 +200,30 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         return true;
     }
 
+    private ParameterFieldUse asofReferenceFields(DBSPAsofJoinOperator join) {
+        var function = join.getClosureFunction();
+        DBSPTupleExpression tuple = function.body.to(DBSPTupleExpression.class);
+        Utilities.enforce(tuple.fields != null);
+        DBSPExpression[] extra = new DBSPExpression[tuple.size() + 2];
+        System.arraycopy(tuple.fields, 0, extra, 0, tuple.size());
+        extra[tuple.size()] = function.parameters[1].asVariable().deref().field(join.leftTimestampIndex);
+        extra[tuple.size() + 1] = function.parameters[2].asVariable().deref().field(join.rightTimestampIndex);
+        DBSPClosureExpression fakeFunction = new DBSPTupleExpression(extra).closure(function.parameters);
+        return this.find.findUsedFields(fakeFunction);
+    }
+
     @Override
     public void postorder(DBSPAsofJoinOperator join) {
         boolean done = false;
         DBSPClosureExpression joinFunction = join.getClosureFunction();
         if (!this.done(join)) {
-            // Make up a new function which always uses the timestamp fields
             Utilities.enforce(joinFunction.parameters.length == 3);
             DBSPParameter left = joinFunction.parameters[1];
             DBSPParameter right = joinFunction.parameters[2];
-            DBSPTupleExpression tuple = joinFunction.body.to(DBSPTupleExpression.class);
-            Utilities.enforce(tuple.fields != null);
-            DBSPExpression[] extra = new DBSPExpression[tuple.size() + 2];
-            System.arraycopy(tuple.fields, 0, extra, 0, tuple.size());
-            extra[tuple.size()] = left.asVariable().deref().field(join.leftTimestampIndex);
-            extra[tuple.size() + 1] = right.asVariable().deref().field(join.rightTimestampIndex);
-            DBSPClosureExpression fakeFunction = new DBSPTupleExpression(extra).closure(joinFunction.parameters);
-            var useMap = this.find.findUsedFields(fakeFunction);
+            var nativeFields = this.compiler.options.ioOptions.rustOptimizerPasses
+                    ? RustCircuitPass.asofInputFields(this.compiler, join) : null;
+            var useMap = nativeFields == null ? this.asofReferenceFields(join)
+                    : FindUsedFields.fromPaths(joinFunction, nativeFields.paths());
             RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
             FieldUseMap leftRemap = rw.getUseMap(left);
             FieldUseMap rightRemap = rw.getUseMap(right);
@@ -226,8 +233,10 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 OutputPort leftMap = getProjection(join.getRelNode(), leftRemap, join.left());
                 OutputPort rightMap = getProjection(join.getRelNode(), rightRemap, join.right());
                 DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
-                int leftTimestampIndex = leftRemap.deref().getNewIndex(join.leftTimestampIndex);
-                int rightTimestampIndex = rightRemap.deref().getNewIndex(join.rightTimestampIndex);
+                int leftTimestampIndex = nativeFields == null
+                        ? leftRemap.deref().getNewIndex(join.leftTimestampIndex) : nativeFields.timestamps().get(0);
+                int rightTimestampIndex = nativeFields == null
+                        ? rightRemap.deref().getNewIndex(join.rightTimestampIndex) : nativeFields.timestamps().get(1);
                 DBSPSimpleOperator replacement =
                         new DBSPAsofJoinOperator(join.getRelNode(), join.getOutputZSetType(),
                                 newJoinFunction, leftTimestampIndex, rightTimestampIndex,

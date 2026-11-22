@@ -3104,6 +3104,20 @@ public final class RustCircuitPass implements CircuitTransform {
                 ? MAPPER.convertValue(result, new TypeReference<>() {}) : null;
     }
 
+    public record AsofInputFields(List<List<List<Integer>>> paths, List<Integer> timestamps) {}
+
+    @Nullable
+    public static AsofInputFields asofInputFields(DBSPCompiler compiler, DBSPAsofJoinOperator join) {
+        String pass = "RemoveUnusedFields/AsofInputs";
+        try {
+            var timestamps = MAPPER.writeValueAsBytes(List.of(join.leftTimestampIndex, join.rightTimestampIndex));
+            var reply = invokeLowering(compiler, pass, timestamps, join.getClosureFunction());
+            return answered(compiler, pass, reply.value) ? MAPPER.treeToValue(reply.value, AsofInputFields.class) : null;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid ASOF input fields from Rust", error);
+        }
+    }
+
     /** Analyze each distinct reader closure once per unused-field iteration. */
     public static Map<Long, List<List<Integer>>> mapFieldDependencies(DBSPCompiler compiler, DBSPCircuit circuit,
                                                                        Predicate<DBSPUnaryOperator> eligible) {

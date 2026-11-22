@@ -422,16 +422,7 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
             var paths = RustCircuitPass.parameterFieldDependencies(this.compiler, expression);
             if (paths != null) {
-                Utilities.enforce(paths.size() == expression.parameters.length);
-                var uses = new ParameterFieldUse();
-                for (int i = 0; i < expression.parameters.length; i++) {
-                    var parameter = expression.parameters[i];
-                    var fields = paths.get(i);
-                    if (fields.isEmpty())
-                        uses.set(parameter, new FieldUseMap(parameter.getType(), false));
-                    for (var field : fields)
-                        new ParameterField(parameter, field).markParameterUse(uses);
-                }
+                var uses = fromPaths(expression, paths);
                 if (Boolean.getBoolean("feldera.optimizer.compareRustFieldUses")) {
                     var reference = this.interpret(expression);
                     for (var parameter : expression.parameters)
@@ -443,6 +434,20 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
             }
         }
         return this.interpret(expression);
+    }
+
+    static ParameterFieldUse fromPaths(DBSPClosureExpression expression, List<List<List<Integer>>> paths) {
+        Utilities.enforce(paths.size() == expression.parameters.length);
+        var uses = new ParameterFieldUse();
+        for (int i = 0; i < expression.parameters.length; i++) {
+            var parameter = expression.parameters[i];
+            var fields = paths.get(i);
+            if (fields.isEmpty())
+                uses.set(parameter, new FieldUseMap(parameter.getType(), false));
+            for (var field : fields)
+                new ParameterField(parameter, field).markParameterUse(uses);
+        }
+        return uses;
     }
 
     private ParameterFieldUse interpret(DBSPClosureExpression expression) {

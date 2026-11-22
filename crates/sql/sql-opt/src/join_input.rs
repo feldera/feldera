@@ -1,8 +1,69 @@
 //! Narrow an indexed join input while retaining its key and the nullability of its value.
-use feldera_sql_expr::copy_expression;
+use crate::row_fields::RowFields;
+use feldera_sql_expr::{copy_expression, live_parameter_field_paths};
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId, TypeKind,
 };
+
+use std::collections::BTreeSet;
+
+#[derive(serde::Serialize)]
+pub struct AsofInputFields {
+    paths: Vec<BTreeSet<Vec<usize>>>,
+    timestamps: [usize; 2],
+}
+
+/// An ASOF join compares its timestamps even if neither appears in the result.
+/// Return the parameter dependencies and both timestamp positions after projection.
+pub fn asof_input_fields(
+    edit: &CircuitEditor,
+    closure: NodeId,
+    timestamps: [usize; 2],
+) -> Result<Option<AsofInputFields>, Error> {
+    let function = edit.node(closure)?;
+    let body = edit.expression(function.edge("body")?)?;
+    if edit.expr_kind(body)? != Expr::Tuple || edit.node(body.into())?.field("fields").is_none() {
+        return Ok(None);
+    }
+    let Some(mut paths) = live_parameter_field_paths(edit.circuit(), closure)? else {
+        return Ok(None);
+    };
+    let [_, left, right] = function
+        .edges("parameters")?
+        .try_into()
+        .map_err(|_| Error::new("ASOF output requires key, left and right parameters"))?;
+    let mut projected = [0; 2];
+    for (side, param) in [left, right].into_iter().enumerate() {
+        let reference = edit.type_id(edit.node(param)?.edge("type")?)?;
+        if edit.type_kind(reference)? != TypeKind::Ref {
+            return Ok(None);
+        }
+        let row = edit.type_id(edit.node(reference.into())?.edge("type")?)?;
+        let fields = edit.node(row.into())?.edges("tupFields")?;
+        let ts = timestamps[side];
+        if ts >= fields.len() {
+            return Err(Error::new(
+                "ASOF timestamp index exceeds the input row width",
+            ));
+        }
+        let uses = &mut paths[side + 1];
+        uses.insert(vec![ts]);
+        if uses.contains(&Vec::new()) || edit.type_kind(row)? == TypeKind::RawTuple {
+            projected[side] = ts;
+            continue;
+        }
+        let mut shape = RowFields::new(edit.circuit());
+        for (i, &ty) in fields[..ts].iter().enumerate() {
+            if !shape.unused(ty, &mut vec![i], uses, 0, 0)? {
+                projected[side] += 1;
+            }
+        }
+    }
+    Ok(Some(AsofInputFields {
+        paths,
+        timestamps: projected,
+    }))
+}
 
 pub fn project_join_input(
     edit: &mut CircuitEditor,
@@ -74,4 +135,46 @@ pub fn project_join_input(
     let key_tuple = edit.tuple_expr(key.into(), false, &key_fields)?;
     let result = edit.tuple_expr(join, true, &[key_tuple, narrowed])?;
     edit.closure_from_variables(result, &[pair])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_sql_ir::Circuit;
+
+    #[test]
+    fn asof_keeps_hidden_timestamps_and_empty_fields_before_them() -> Result<(), Error> {
+        let circuit = Circuit::from_json(serde_json::json!({
+            "class": "DBSPCircuit", "id": 0, "allOperators": [], "declarations": []
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let scalar = edit.bool_type(site, false)?;
+        let empty = edit.tuple_type(site, false, [])?;
+        let row = edit.tuple_type(
+            site,
+            false,
+            [empty.into(), scalar.into(), scalar.into(), scalar.into()],
+        )?;
+        let reference = edit.reference_type(row)?;
+        let key = edit.named_variable(reference, "key")?;
+        let left = edit.named_variable(reference, "left")?;
+        let right = edit.named_variable(reference, "right")?;
+        let value = edit.dereference(right)?;
+        let second = edit.tuple_field(value, 1)?;
+        let result = edit.tuple_expr(site, false, &[second])?;
+        let closure = edit.closure_from_variables(result, &[key, left, right])?;
+
+        let fields = asof_input_fields(&edit, closure.into(), [2, 3])?.unwrap();
+        assert_eq!(fields.timestamps, [1, 2]);
+        assert_eq!(
+            fields.paths,
+            [
+                BTreeSet::new(),
+                BTreeSet::from([vec![2]]),
+                BTreeSet::from([vec![1], vec![3]])
+            ]
+        );
+        Ok(())
+    }
 }

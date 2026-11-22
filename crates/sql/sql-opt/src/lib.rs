@@ -62,7 +62,7 @@ pub use compressed_fields::compressed_field_type;
 mod map_input;
 pub use map_input::{split_map_input, MapOutput};
 mod join_input;
-pub use join_input::project_join_input;
+pub use join_input::{asof_input_fields, project_join_input, AsofInputFields};
 mod common_projections;
 pub use common_projections::{common_projection_payloads, common_projections, shared_projection_closures, CommonProjection, SharedProjectionClosure};
 mod conditionals;

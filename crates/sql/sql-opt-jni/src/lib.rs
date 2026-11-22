@@ -381,6 +381,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         }
         return Ok(serde_json::to_value(copies)?);
     }
+    if let ("RemoveUnusedFields/AsofInputs", [closure]) = (pass, roots.as_slice()) {
+        let edit = CircuitEditor::new(arena);
+        let fields = feldera_sql_opt::asof_input_fields(&edit, *closure, serde_json::from_slice(state)?)?;
+        return Ok(serde_json::to_value(fields)?);
+    }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_expr::live_parameter_field_paths(&arena, *closure)?)?);
     }
@@ -1099,7 +1104,7 @@ fn transform(
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
-        | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
+        | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators" | "RemoveUnusedFields/AsofInputs"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
             return lower_function(pass, input, state, next);
         }
