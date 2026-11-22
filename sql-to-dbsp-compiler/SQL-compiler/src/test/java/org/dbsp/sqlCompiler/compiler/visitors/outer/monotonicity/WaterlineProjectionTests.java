@@ -348,6 +348,7 @@ public class WaterlineProjectionTests {
             body = i % 2 == 0
                     ? new DBSPBinaryExpression(site, integer, DBSPOpcode.SUB, body, literal)
                     : new DBSPBinaryExpression(site, integer, DBSPOpcode.ADD, literal, body);
+            body = new DBSPUnaryExpression(site, integer, DBSPOpcode.UNARY_PLUS, body);
         }
         var closure = body.closure(input);
         var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));

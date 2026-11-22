@@ -155,7 +155,9 @@ fn operand(
 }
 
 impl Row {
-    pub(super) fn binary(
+    /// Evaluate scalar operations in expression order. Casts and unary
+    /// operations can alternate with arithmetic at every level of a SQL projection.
+    pub(super) fn scalar_operation(
         &mut self,
         edit: &mut CircuitEditor,
         expression: ExpressionId,
@@ -163,45 +165,85 @@ impl Row {
     ) -> Result<Option<ProjectedValue>, Error> {
         enum Step {
             Read(ExpressionId),
-            Combine(ExpressionId, [ExpressionId; 2]),
+            Unary(ExpressionId),
+            Binary(ExpressionId, [ExpressionId; 2]),
         }
-
         let mut pending = vec![Step::Read(expression)];
         let mut values = Vec::new();
         let mut active = std::collections::HashSet::new();
         while let Some(step) = pending.pop() {
-            let value = match step {
-                Step::Read(id)
-                    if matches!(edit.expr_kind(id)?, Expr::Binary | Expr::TimeAddSub) =>
-                {
-                    if !active.insert(id) {
-                        return Err(Error::new("cycle in a binary waterline expression"));
-                    }
+            let (id, value) = match step {
+                Step::Read(id) => {
                     let node = edit.node(id.into())?;
-                    let left = edit.expression(node.edge("left")?)?;
-                    let right = edit.expression(node.edge("right")?)?;
-                    pending.extend([
-                        Step::Combine(id, [left, right]),
-                        Step::Read(right),
-                        Step::Read(left),
-                    ]);
+                    match edit.expr_kind(id)? {
+                        Expr::Binary | Expr::TimeAddSub => {
+                            let left = edit.expression(node.edge("left")?)?;
+                            let right = edit.expression(node.edge("right")?)?;
+                            pending.extend([
+                                Step::Binary(id, [left, right]),
+                                Step::Read(right),
+                                Step::Read(left),
+                            ]);
+                        }
+                        Expr::Cast | Expr::Unary | Expr::UnsignedWrap | Expr::UnsignedUnwrap => {
+                            let source = edit.expression(node.edge("source")?)?;
+                            pending.extend([Step::Unary(id), Step::Read(source)]);
+                        }
+                        _ => {
+                            let Some(value) = self.visit(edit, id, depth + 1)? else {
+                                return Ok(None);
+                            };
+                            values.push(value);
+                            continue;
+                        }
+                    }
+                    if !active.insert(id) {
+                        return Err(Error::new("cycle in a scalar waterline expression"));
+                    }
                     continue;
                 }
-                Step::Read(id) => self.visit(edit, id, depth + 1)?,
-                Step::Combine(id, operands) => {
-                    active.remove(&id);
-                    let rhs = values.pop().expect("visited right operand");
-                    let lhs = values.pop().expect("visited left operand");
-                    let value = binary_bound(edit, id, operands, [lhs, rhs])?;
-                    self.record_clock(id, value.as_ref());
-                    value
+                Step::Unary(id) => {
+                    let source = values.pop().expect("visited unary operand");
+                    (id, unary_bound(edit, id, source)?)
+                }
+                Step::Binary(id, operands) => {
+                    let right = values.pop().expect("visited right operand");
+                    let left = values.pop().expect("visited left operand");
+                    (id, binary_bound(edit, id, operands, [left, right])?)
                 }
             };
             let Some(value) = value else { return Ok(None) };
+            active.remove(&id);
+            self.record_clock(id, Some(&value));
             values.push(value);
         }
         Ok(values.pop())
     }
+}
+
+fn unary_bound(
+    edit: &mut CircuitEditor,
+    expression: ExpressionId,
+    source: ProjectedValue,
+) -> Result<Option<ProjectedValue>, Error> {
+    if !matches!(source.shape, Shape::Scalar(_)) {
+        return Ok(None);
+    }
+    let reduced = match source.reduced {
+        None => None,
+        Some(bound) if edit.expr_kind(expression)? == Expr::Cast => {
+            super::super::casts::cast_bound(edit, expression, bound)?
+        }
+        Some(bound) => super::super::unary_waterline(edit, expression, bound)?,
+    };
+    if let Some(bound) = reduced {
+        return ProjectedValue::bounded(edit, expression, bound, source.constant).map(Some);
+    }
+    let mut projected = super::unbounded(edit, expression)?;
+    if let Some(value) = &mut projected {
+        value.constant = source.constant;
+    }
+    Ok(projected)
 }
 
 fn binary_bound(
@@ -263,7 +305,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn deep_binary_clock_bounds_include_each_intermediate_expression() -> Result<(), Error> {
+    fn deep_arithmetic_and_unary_clock_bounds_include_each_intermediate_expression()
+    -> Result<(), Error> {
         let arena = Circuit::from_json(json!({
             "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
         }))?;
@@ -286,6 +329,16 @@ mod tests {
             )?;
             expr =
                 edit.binary_expression(site, ty, feldera_sql_ir::BinaryOp::Max, expr, literal)?;
+            bounded.push(expr);
+            expr = edit.make_expr(
+                site,
+                Expr::Unary,
+                ty,
+                [
+                    ("source", Field::Reference(expr.into())),
+                    ("opcode", Field::Data("UNARY_PLUS".into())),
+                ],
+            )?;
             bounded.push(expr);
         }
         let clocks =

@@ -182,7 +182,14 @@ impl Row {
                 return scalar::literal_bound(edit, expression);
             }
             Expr::Apply => return self.call(edit, expression, depth),
-            Expr::Binary | Expr::TimeAddSub => return self.binary(edit, expression, depth),
+            Expr::Binary
+            | Expr::TimeAddSub
+            | Expr::Cast
+            | Expr::Unary
+            | Expr::UnsignedWrap
+            | Expr::UnsignedUnwrap => {
+                return self.scalar_operation(edit, expression, depth);
+            }
             // A nested lambda has its own binding scope. The monotonicity
             // visitor assigns it an opaque function type without entering it.
             Expr::Closure
@@ -226,30 +233,6 @@ impl Row {
             | Expr::ZSet
             | Expr::IndexedZSet => {
                 return self.opaque(edit, expression, depth);
-            }
-            Expr::Cast | Expr::Unary | Expr::UnsignedWrap | Expr::UnsignedUnwrap => {
-                let source = edit.expression(node.edge("source")?)?;
-                let Some(value) = self.visit(edit, source, depth + 1)? else {
-                    return Ok(None);
-                };
-                if !matches!(value.shape, Shape::Scalar(_)) {
-                    return Ok(None);
-                }
-                let reduced = match value.reduced {
-                    None => None,
-                    Some(bound) if kind == Expr::Cast => {
-                        super::casts::cast_bound(edit, expression, bound)?
-                    }
-                    Some(bound) => super::unary_waterline(edit, expression, bound)?,
-                };
-                let Some(bound) = reduced else {
-                    let Some(mut unknown) = unbounded(edit, expression)? else {
-                        return Ok(None);
-                    };
-                    unknown.constant = value.constant;
-                    return Ok(Some(unknown));
-                };
-                ProjectedValue::bounded(edit, expression, bound, value.constant)?
             }
             Expr::Borrow | Expr::Deref => {
                 let base = edit.expression(node.edge("expression")?)?;
@@ -639,9 +622,11 @@ mod tests {
         let dropped = edit.tuple_field(pair, 0)?;
         let bounds = clock_operands(&mut edit, parameter, kept)?.unwrap();
         assert!(bounds.contains(&kept));
-        assert!(!clock_operands(&mut edit, parameter, dropped)?
-            .unwrap()
-            .contains(&dropped));
+        assert!(
+            !clock_operands(&mut edit, parameter, dropped)?
+                .unwrap()
+                .contains(&dropped)
+        );
         let projected = UnorderedRow::from_type(&mut edit, row)?
             .unwrap()
             .projected
