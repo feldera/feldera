@@ -41,6 +41,14 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. On `bf609aab1`, both engines compiled all 17,098 frozen SQL
+  programs with coverage recording enabled. Rust answered all 8,937 measured
+  waterline and temporal-classification requests. The 16 selected detached
+  replays matched Java through emission. Cold hybrid p95 ranged from 0.758×
+  to 1.175× direct Java across three workloads on the shared verification VM.
+  The 30-day field-shadow gate remains open.
+  [Coverage and replay](crates/sql/evidence/p3-empty-row-clock-inputs.json) · [Timings](crates/sql/BENCHMARKS.md#nested-empty-rows-2026-11-22)
+
 - 2026-11-22. On `b81436777`, the isolated hybrid compiler met the cold
   p95 ceiling on all three workloads. Nexmark measured 3.781 s against
   3.224 s for direct Java (1.173×). All 69 pairs matched through classic
