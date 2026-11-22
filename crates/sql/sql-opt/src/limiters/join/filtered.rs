@@ -1,12 +1,12 @@
 //! Retain values in one input trace using the filtered delta from the other.
 use super::{Bound, JoinInputs, Projection};
-use crate::limiters::filter::{arg, tuple_compare};
+use crate::limiters::filter::arg;
 use crate::limiters::pass::apply_bound;
-use crate::limiters::{apply_waterlines, retention::delay};
+use crate::limiters::{apply_waterlines, retention::ValueRetention};
 use crate::projection::join_projection;
 use crate::rebuild::input_type;
 use feldera_sql_expr::SimplifyWarning;
-use feldera_sql_ir::{CircuitEditor, Error, Field, OperatorKind};
+use feldera_sql_ir::{CircuitEditor, Error};
 
 pub(super) fn retain_values(
     edit: &mut CircuitEditor,
@@ -73,32 +73,12 @@ pub(super) fn retain_values(
         let extract = edit.closure_from_variables(tuple, &[parameter])?;
         let extract = apply_waterlines(edit, extract.into(), &[bound.ty], next, warnings)?;
         let waterline = apply_bound(edit, body, bound, extract)?;
-        let (_, control) = delay(edit, body, waterline, next)?;
-        let control_var = arg(edit, control.ty, next)?;
-        let row_var = arg(edit, row, next)?;
-        let read = edit.dereference(row_var)?;
         let shape = Projection::Tuple {
             fields: selected,
             raw: false,
             nullable: false,
         };
-        let value = shape.project_data(edit, read)?;
-        let limit = edit.dereference(control_var)?;
-        let predicate = tuple_compare(edit, value, limit)?;
-        let row_param = edit.parameter_at(edit.expression_type(row_var)?.into(), row_var)?;
-        let control_param = edit.parameter_at(control_var.into(), control_var)?;
-        let function = edit.closure_with_parameters(predicate, &[row_param, control_param])?;
-        let retainer = edit.append_operator(
-            body,
-            join.owner,
-            OperatorKind::IntegrateTraceRetainValues,
-            &[data, control.port],
-            [
-                ("outputType", Field::Reference(stream.into())),
-                ("function", Field::Reference(function.into())),
-            ],
-        )?;
-        edit.move_origin_definition(join.owner, retainer)?;
+        ValueRetention::Matching.insert(edit, join.owner, data, &shape, waterline, next)?;
         edit.place_before(body, waterline.port.operator, join.owner)?;
     }
     Ok(())

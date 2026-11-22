@@ -147,3 +147,48 @@ pub(super) fn retain_keys(
     )?);
     Ok(retention)
 }
+
+/// A preceding ASOF match can still be needed below the right trace's waterline.
+pub(super) enum ValueRetention {
+    Matching,
+    MatchingAndLast,
+}
+
+impl ValueRetention {
+    pub(super) fn insert(
+        self,
+        edit: &mut CircuitEditor,
+        owner: NodeId,
+        data: OutputPort,
+        projection: &Projection,
+        bound: Bound,
+        next: &mut u64,
+    ) -> Result<(), Error> {
+        let body = edit.circuit().root_id();
+        let (_, control) = delay(edit, body, bound, next)?;
+        let stream = input_type(edit, data)?;
+        let row = edit.type_id(edit.node(stream.into())?.edge("elementType")?)?;
+        let control_var = arg(edit, control.ty, next)?;
+        let row_var = arg(edit, row, next)?;
+        let read = edit.dereference(row_var)?;
+        let value = projection.project_data(edit, read)?;
+        let limit = edit.dereference(control_var)?;
+        let predicate = tuple_compare(edit, value, limit)?;
+        let row_param = edit.parameter_at(edit.expression_type(row_var)?.into(), row_var)?;
+        let control_param = edit.parameter_at(control_var.into(), control_var)?;
+        let function = edit.closure_with_parameters(predicate, &[row_param, control_param])?;
+        let mut fields = vec![("outputType", link(stream)), ("function", link(function))];
+        let kind = match self {
+            Self::Matching => Op::IntegrateTraceRetainValues,
+            Self::MatchingAndLast => {
+                fields.extend([
+                    ("which", Field::Data("LastN".into())),
+                    ("n", Field::Data(1.into())),
+                ]);
+                Op::IntegrateTraceRetainNValues
+            }
+        };
+        let retainer = edit.append_operator(body, owner, kind, &[data, control.port], fields)?;
+        edit.move_origin_definition(owner, retainer)
+    }
+}

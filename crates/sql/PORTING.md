@@ -479,6 +479,12 @@ snapshot cases and 25 filtered left joins. A snapshot DISTINCT and GROUP BY
 over a table with LATENESS matched at all 446 classic and 448 Gen-2 observations.
 [Snapshot and filtered left join replay](evidence/p3-snapshot-filtered-left-limiters.json)
 
+For a preceding ASOF match, the right timestamp waterline bounds the left
+trace. The right trace keeps values above the minimum of both waterlines and
+the latest value below it. All 46 newly eligible ASOF cases matched Java
+at limiter entry and exit. The bounded streaming regression matched all 491
+classic and 493 Gen-2 observations. [ASOF join bounds](evidence/p3-asof-join-bounds.json)
+
 Rust walks the binary trees of a star join in delta order and takes the minimum
 waterline across the resulting terms. All 61 eligible cases per engine matched
 at limiter entry and exit. A grouped aggregate with LATENESS, HAVING and EMIT

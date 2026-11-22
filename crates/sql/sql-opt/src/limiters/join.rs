@@ -1,4 +1,5 @@
 //! Combine compacted bounds from the two indexed inputs of a join.
+mod asof;
 mod filtered;
 mod star;
 pub(super) use star::StarJoinExpansion;

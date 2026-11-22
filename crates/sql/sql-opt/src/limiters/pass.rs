@@ -18,7 +18,8 @@ struct OperatorFacts {
     input_projection: Option<Projection>,
     aggregate: Option<super::aggregate::AggregateFacts>,
     join: Option<super::join::JoinFacts>,
-    snapshot_join: Option<super::join::JoinTerm>,
+    #[serde(alias = "snapshot_join")]
+    replacement_join: Option<super::join::JoinTerm>,
     star_join: Option<super::join::StarJoinExpansion>,
     distinct: Option<DistinctFacts>,
 }
@@ -494,7 +495,8 @@ pub fn insert_limiters_with_warnings(
                 }
             }
             Some(
-                Op::StreamJoin
+                Op::AsofJoin
+                | Op::StreamJoin
                 | Op::StreamJoinIndex
                 | Op::Join
                 | Op::JoinIndex
@@ -514,8 +516,16 @@ pub fn insert_limiters_with_warnings(
                     expanded_bounds: ports.map(|p| expanded_bound(&p).map(|(b, _)| *b)),
                     functions: &functions,
                 };
-                if matches!(kind, Some(Op::StreamJoin | Op::StreamJoinIndex)) {
-                    if let Some(term) = &facts.snapshot_join {
+                if kind == Some(Op::AsofJoin) {
+                    if let Some(term) = &facts.replacement_join {
+                        if let Some(result) =
+                            term.insert_asof(&mut edit, &join, &mut next, warnings)?
+                        {
+                            expanded_only.insert(output, result);
+                        }
+                    }
+                } else if matches!(kind, Some(Op::StreamJoin | Op::StreamJoinIndex)) {
+                    if let Some(term) = &facts.replacement_join {
                         if let Some(result) = term.insert(
                             &mut edit,
                             id,
@@ -757,7 +767,7 @@ mod tests {
                         distinct: None,
                         aggregate: None,
                         join: None,
-                        snapshot_join: None,
+                        replacement_join: None,
                         star_join: None,
                         input_projection: None,
                     },

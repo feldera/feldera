@@ -1,0 +1,41 @@
+{
+  "scope": "Frozen programs containing ASOF joins eligible for whole-pass Rust limiter insertion. Both sides of the comparison start with the same S2.",
+  "shards": [
+    {
+      "engine": "classic",
+      "cases": 9,
+      "input_sha256": "83d6f8647873d725f076d4d973ca7adf0ecdb551e0cfd85bdaccc28aefa21412",
+      "java_stream_sha256": "30853db73c3681c7c786123cb4f927bb452d64853559f9c4ceba8e92fa7df571",
+      "hybrid_stream_sha256": "523156cdf5df6bac9ce96f2ca920cb1cecbd99598bb9eec8b6a5f8b7c0d02317"
+    },
+    {
+      "engine": "classic",
+      "cases": 15,
+      "input_sha256": "5ab657714fa7b22bd4acc08045c8cf40c7f4e506fbad765b9467ad7929144595",
+      "java_stream_sha256": "b8c0c8919ddac47547578741282adf14ad7e6647f10bc2916b1ef533e779f1d7",
+      "hybrid_stream_sha256": "d2e4a13f789ee8f64b0725b9b1b199ab618e51885b99d15ea2bc0dadb5be682b"
+    },
+    {
+      "engine": "gen2",
+      "cases": 12,
+      "input_sha256": "639171e1d3ac7196886c13d8ebf893ebce7de950e1b845d4993b59b6d51d5432",
+      "java_stream_sha256": "b7d9e95bcfa13bbefa592d0e0d5b01aa49d3c16c3c2d6b5ea5917057e05aa29c",
+      "hybrid_stream_sha256": "744d8c16b9882674215092938ffd7ee35005875d12b4ab76a89d3462f8169861"
+    },
+    {
+      "engine": "gen2",
+      "cases": 10,
+      "input_sha256": "f36e96c40534a5eb512c4b232d0185f0852aee1806d3191bf0137c01a4db55fb",
+      "java_stream_sha256": "2edbc596e6051d506bac713598abf6a472b9e249bd4b022e99b6105c1fb9b717",
+      "hybrid_stream_sha256": "cc889f4c0fbebef5a310d69d289d3fb24034d22516742ffdc301b88f9b5dedf8"
+    }
+  ],
+  "directed": {
+    "fixture": "StreamingTests#issue6829Asof/0",
+    "equal_observations": {
+      "classic": 491,
+      "gen2": 493
+    }
+  },
+  "optimizer_library_sha256": "368a27d5e40cc9527a502d0fe1d485853a0c4c373f7b779d567a00ad178a9e19"
+}

@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
@@ -83,7 +84,7 @@ public final class LimiterInputs {
             DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class,
             DBSPAntiJoinOperator.class, DBSPNowOperator.class, DBSPPartitionedRollingAggregateOperator.class,
             DBSPStreamAggregateOperator.class, DBSPStreamDistinctOperator.class,
-            DBSPStreamJoinOperator.class, DBSPStreamJoinIndexOperator.class, DBSPStarJoinOperator.class,
+            DBSPStreamJoinOperator.class, DBSPStreamJoinIndexOperator.class, DBSPAsofJoinOperator.class, DBSPStarJoinOperator.class,
             DBSPStarJoinIndexOperator.class, DBSPStarJoinFilterMapOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
@@ -150,7 +151,8 @@ public final class LimiterInputs {
                 }
                 continue;
             }
-            if (operator instanceof DBSPStreamJoinOperator || operator instanceof DBSPStreamJoinIndexOperator) {
+            if (operator instanceof DBSPStreamJoinOperator || operator instanceof DBSPStreamJoinIndexOperator
+                    || operator instanceof DBSPAsofJoinOperator) {
                 var expansion = pass.getReplacement(operator.to(DBSPSimpleOperator.class));
                 if (expansion != null)
                     recordTransfer(functions, expansion.replacement.id, pass, expansion.replacement);
@@ -201,8 +203,9 @@ public final class LimiterInputs {
                 if (value != null)
                     entry.set("projection", projection(Monotonicity.getBodyType(value)));
                 entry.put("expanded_id", replacement.getId());
-                if (operator instanceof DBSPStreamJoinOperator || operator instanceof DBSPStreamJoinIndexOperator)
-                    BinaryJoinInputs.captureTerm(pass, replacement.to(DBSPJoinBaseOperator.class), entry.putObject("snapshot_join"));
+                if (operator instanceof DBSPStreamJoinOperator || operator instanceof DBSPStreamJoinIndexOperator
+                    || operator instanceof DBSPAsofJoinOperator)
+                    BinaryJoinInputs.captureTerm(pass, replacement.to(DBSPJoinBaseOperator.class), entry.putObject("replacement_join"));
                 if (operator instanceof DBSPLagOperator || operator instanceof DBSPPartitionedRollingAggregateOperator) {
                     var input = pass.expansionMonotoneValues.get(replacement.inputs.get(0));
                     if (input != null)
