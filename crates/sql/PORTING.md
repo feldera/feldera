@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust infers which side of a time comparison can supply a window bound for
+scalar row columns, NOW() and interval arithmetic. At RewriteNow entry, it
+handled 149 of 163 classic filters and 141 of 151 Gen-2 filters. The other
+24 used the general closure analysis. All 532 entry/exit comparisons for
+Scan, Reorder, MergeFilters and RewriteNow matched Java. Fourteen detached
+programs matched through emission, and both checkpoint types restored in
+both directions. [Clock predicate bounds](evidence/p3-clock-predicate-bounds.json)
+
 The live waterline simplifier sends Rust each selected expression or
 aggregate list. The entry and exit circuits matched Java on Nexmark and on
 typed and raw tuple closures, including the annotated cases that specialize

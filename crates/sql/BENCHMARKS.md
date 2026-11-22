@@ -22,6 +22,12 @@ All three ratios exceeded 1.2×. A separate run on the same build measured
 The largest combined driver and waiting JVM high-water RSS was 72.4 MiB.
 [Timing and resource evidence](evidence/p3-metadata-latency.json)
 
+The later clock-source build at `4bfcbf28b` ran the same 69 pairs while
+frozen-corpus and runtime verification shared the VM. All diagnostics and
+artifacts matched. Java/hybrid p95 was 3.793/4.516 s for the array subquery
+(1.191×), 7.429/18.016 s for Nexmark (2.425×), and 3.072/3.733 s for the
+outer join (1.215×). [Paired measurements](evidence/p3-clock-source-cold-latency.json)
+
 ## Packaged mixed optimizer, 2026-11-21
 
 The opt-in compiler ran 106 Rust pass kinds. Each timing starts a fresh

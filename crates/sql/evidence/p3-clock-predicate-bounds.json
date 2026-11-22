@@ -1,0 +1,73 @@
+{
+  "scope": "Rust infers clock monotonicity for scalar row fields, NOW, interval offsets and comparisons. Both engines compared the same S2 checkpoints in Java and Rust.",
+  "compiler_jar_sha256": "8dff6d04b60e62ad0f0dfda4bdefdd04eb50e01b6594b39d570a3250b7709fee",
+  "optimizer_library_sha256": "815a26ab6345b7fe39fcdac89497efacb0d295388b389c76459f0ad9c2a0200a",
+  "engines": {
+    "classic": {
+      "programs": 71,
+      "rewrite_now_top_level_clock_filters": {
+        "inferred_in_rust": 149,
+        "used_general_analysis": 14,
+        "counts_sha256": "03ef60a0591ca3dcc38db7e9423d35b95232f5c65dfefa18d0191e7c87051f8f"
+      },
+      "matched_passes": {
+        "RewriteNow": {
+          "invocations": 71,
+          "java_sha256": "114e4d5749b7790f5c2455fb53f03025362a208d75ea2831f7117f855a0ac34f",
+          "rust_sha256": "a59264dfbf7f59322f710cf6f637d89ca8ccc5a406e39b9bd1ed48701a24dbc8"
+        },
+        "Scan": {
+          "invocations": 71,
+          "java_sha256": "253b2bc45df4a392dad95196641ef7446afacf6fb63c18bb98813d18d44a11b8",
+          "rust_sha256": "7fc9ce885650874445432a3ac582b38541d046bd415620bfad6e8e65b11e6476"
+        },
+        "MergeFilters": {
+          "invocations": 71,
+          "java_sha256": "29c5848446d7f21d9421eb6d0641f7ad84f359da0d8d422a57be6db6ef6f4825",
+          "rust_sha256": "795ab6568118714766e455c4eee6509f0ea60d05ce1a5e0a05cee571feb4745a"
+        },
+        "Reorder": {
+          "invocations": 71,
+          "java_sha256": "18b8f9a2dde60ffe0503bb2e9155227c0643c4153036ccde8daef44b0fbd026e",
+          "rust_sha256": "ff1ab61708a9b0ca6243ab467adcbf58b6bca8e1c128e1679fd74572f2503c5e"
+        }
+      },
+      "detached_cases": 7,
+      "trace_sha256": "3dff84cfb44ca916578bc169b9cc756207e32d1c82bee14a7ed2efb87935c703"
+    },
+    "gen2": {
+      "programs": 62,
+      "rewrite_now_top_level_clock_filters": {
+        "inferred_in_rust": 141,
+        "used_general_analysis": 10,
+        "counts_sha256": "f05e826bdcb96318993631caf49dcd0bf6a59b7a8d84a9131b2fbc611ac9875a"
+      },
+      "matched_passes": {
+        "RewriteNow": {
+          "invocations": 62,
+          "java_sha256": "ec52e27b01f35daf4e6f8089b4409156beeae5d2b6f53319e579e59352a28ea3",
+          "rust_sha256": "99dddd90bae37c38f3dcfb18f7fab8d6687ead84d538dc4a115747d160a72c98"
+        },
+        "Scan": {
+          "invocations": 62,
+          "java_sha256": "d8392c82b40194e1bf1c9d54344b4be12564de341fd58922a165f41ec9241ccf",
+          "rust_sha256": "6f5b941b357f360c34e8dc58cf09624fc5281cbea869b5655bd5c33a73e271ba"
+        },
+        "MergeFilters": {
+          "invocations": 62,
+          "java_sha256": "074e40a4cd03a1962f333a50faa31a66a2c42ca05872fb9f8f2c48f7cb5f470e",
+          "rust_sha256": "46a477d35423bb785ca337f13548ee2d05306127ef5837cdab00a5cce02cd13d"
+        },
+        "Reorder": {
+          "invocations": 62,
+          "java_sha256": "f0d6b56c7a749372288f1125cda85bc3a820690b58b67824079f76cc828f94f8",
+          "rust_sha256": "1c5007c3b02f65b79025fa5c0ece7dc32b660c17e4921d2b4de0efbf780f251c"
+        }
+      },
+      "detached_cases": 7,
+      "trace_sha256": "efac2d56503433eb8182bd5a04865bf951f9f548f3ba29cacc320e185a663b60"
+    }
+  },
+  "count_bidirectional_restore_sha256": "558c4641327d6ededf97e5ef6d2d7195d91b9b9a543740b12fa1a2493994fe43",
+  "watermark_bidirectional_restore_sha256": "87ed2a6617d5670f36dfd1f3aaa7ea8194b8db8f7417b42fc19130f367e94a4e"
+}

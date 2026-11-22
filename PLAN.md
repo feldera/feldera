@@ -64,6 +64,14 @@ Path prefixes used in this document:
   remains opt-in. Java still runs part of the optimizer, the latency ceiling
   was exceeded on all three workloads, and the field-shadow gate is open.
   [Paired timings and worker measurements](crates/sql/BENCHMARKS.md#column-initializer-build-2026-11-22)
+- 2026-11-22. Rust builds the system and table-backed clock streams, their
+  windows and joins, and the maps and filters that consume those joins.
+  Rust inferred monotonicity for 290 of the 314 clock filters observed at
+  RewriteNow entry across both engines. All 532 comparisons across four
+  temporal passes matched Java. The clock-source build also matched all
+  69 cold SQL-to-artifact pairs. With corpus verification sharing the VM,
+  Nexmark measured 2.425× direct Java p95.
+  [Temporal comparisons](crates/sql/evidence/p3-clock-predicate-bounds.json) · [Cold compilation](crates/sql/evidence/p3-clock-source-cold-latency.json)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across
   17,098 classic and Gen-2 cases. CSE, ARRAY_AGG fusion and the representative
   limiter slice matched 296 Java S4 results and four Gen-2 refusals. The

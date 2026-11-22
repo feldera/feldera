@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -89,12 +90,16 @@ final class NativeTemporalComparisons {
             }
         }
         var parts = RustCircuitPass.classifyTemporalPredicates(this.monotonicity.compiler, body, monotone);
+        return bind(closure.parameters[0], parts);
+    }
+
+    static List<BooleanExpression> bind(DBSPParameter parameter, List<RustCircuitPass.TemporalComparison> parts) {
         var result = new ArrayList<BooleanExpression>(parts.size());
         for (var part : parts) {
             result.add(switch (part.kind()) {
                 case NoNow -> new NoNow(part.expression());
                 case Residual -> new NonTemporalFilter(part.expression());
-                case LT, LTE, GT, GTE -> new TemporalFilter(closure.parameters[0], part.expression(),
+                case LT, LTE, GT, GTE -> new TemporalFilter(parameter, part.expression(),
                         Objects.requireNonNull(part.clock()), DBSPOpcode.valueOf(part.kind().name()));
             });
         }

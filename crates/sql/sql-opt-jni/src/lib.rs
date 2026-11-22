@@ -358,7 +358,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let timestamp = edit.expression(*timestamp)?;
             feldera_sql_opt::compose_timestamp(&mut edit, timestamp, maps, &mut warnings)?
         }
-        ("TemporalComparisons", [body]) => return temporal::classify(&arena, &mut edit, *body, state),
+        ("TemporalComparisons", roots) => return temporal::classify(&arena, &mut edit, roots, state),
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;
             let filter = edit.expression(*filter)?;

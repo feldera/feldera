@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
@@ -61,6 +62,11 @@ class FindComparisons {
             DBSPCompiler compiler, DBSPFilterOperator operator, DBSPClosureExpression function) {
         Utilities.enforce(function.parameters.length == 1);
         DBSPParameter param = function.parameters[0];
+        if (compiler.options.ioOptions.rustOptimizerPasses) {
+            var parts = RustCircuitPass.inferTemporalPredicates(compiler, param, function.body.stripWrapBool());
+            if (parts != null)
+                return NativeTemporalComparisons.bind(param, parts);
+        }
         IMaybeMonotoneType nonMonotone = NonMonotoneType.nonMonotone(param.getType().deref());
         MonotoneTransferFunctions mono = new MonotoneTransferFunctions(
                 compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, nonMonotone);

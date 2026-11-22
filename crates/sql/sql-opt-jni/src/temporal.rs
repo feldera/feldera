@@ -266,16 +266,33 @@ pub(super) fn clock_join(
 pub(super) fn classify(
     input: &Circuit,
     edit: &mut CircuitEditor,
-    body: NodeId,
+    roots: &[NodeId],
     state: &[u8],
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    let ids: Vec<u64> = serde_json::from_slice(state)?;
-    let monotone = ids
-        .into_iter()
-        .map(|id| edit.expression(NodeId::Inner(id)))
-        .collect::<Result<HashSet<_>, _>>()?;
-    let body = edit.expression(body)?;
-    let parts = feldera_sql_opt::classify_temporal_predicates(edit, body, &monotone)?;
+    let parts = match *roots {
+        [parameter, body] => {
+            let body = edit.expression(body)?;
+            let Some(parts) = feldera_sql_opt::infer_temporal_predicates(edit, parameter, body)?
+            else {
+                return Ok(Value::Null);
+            };
+            parts
+        }
+        [body] => {
+            let ids: Vec<u64> = serde_json::from_slice(state)?;
+            let monotone = ids
+                .into_iter()
+                .map(|id| edit.expression(NodeId::Inner(id)))
+                .collect::<Result<HashSet<_>, _>>()?;
+            let body = edit.expression(body)?;
+            feldera_sql_opt::classify_temporal_predicates(edit, body, &monotone)?
+        }
+        _ => {
+            return Err(
+                "expected a temporal predicate with its row parameter or monotonicity facts".into(),
+            );
+        }
+    };
     let mut roots = Vec::new();
     let mut headers = Vec::with_capacity(parts.len());
     for part in parts {

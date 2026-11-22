@@ -1169,22 +1169,33 @@ public final class RustCircuitPass implements CircuitTransform {
     public enum PredicateKind { NoNow, Residual, LT, LTE, GT, GTE }
     public record TemporalComparison(PredicateKind kind, DBSPExpression expression, @Nullable DBSPExpression clock) {}
 
+    @Nullable
+    public static List<TemporalComparison> inferTemporalPredicates(DBSPCompiler compiler,
+            DBSPParameter parameter, DBSPExpression body) {
+        var reply = invokeLowering(compiler, "TemporalComparisons", parameter, body);
+        return reply.value.isNull() ? null : temporalComparisons(reply);
+    }
+
     public static List<TemporalComparison> classifyTemporalPredicates(DBSPCompiler compiler,
             DBSPExpression body, Set<Long> monotoneOperands) {
         try {
             var reply = invokeLowering(compiler, "TemporalComparisons", MAPPER.writeValueAsBytes(monotoneOperands), body);
-            var decoder = expressionDecoder(reply.writer);
-            var parts = new ArrayList<TemporalComparison>();
-            for (var part : reply.value) {
-                var kind = PredicateKind.valueOf(part.required("kind").textValue());
-                var expression = decoder.decodeInner(part.required("expression"), DBSPExpression.class);
-                var clock = part.has("clock") ? decoder.decodeInner(part.required("clock"), DBSPExpression.class) : null;
-                parts.add(new TemporalComparison(kind, expression, clock));
-            }
-            return parts;
+            return temporalComparisons(reply);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode temporal monotonicity facts", error);
         }
+    }
+
+    private static List<TemporalComparison> temporalComparisons(LoweringReply reply) {
+        var decoder = expressionDecoder(reply.writer);
+        var parts = new ArrayList<TemporalComparison>(reply.value.size());
+        for (var part : reply.value) {
+            var kind = PredicateKind.valueOf(part.required("kind").textValue());
+            var expression = decoder.decodeInner(part.required("expression"), DBSPExpression.class);
+            var clock = part.has("clock") ? decoder.decodeInner(part.required("clock"), DBSPExpression.class) : null;
+            parts.add(new TemporalComparison(kind, expression, clock));
+        }
+        return parts;
     }
 
     public record TemporalGroup(int first, int count, @Nullable DBSPExpression expression) {}

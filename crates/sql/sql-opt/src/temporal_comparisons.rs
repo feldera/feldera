@@ -1,6 +1,7 @@
 //! Split a filter into a prefix of window bounds and the predicates evaluated after it.
+mod clock_bounds;
 use crate::{function_calls::contains_now, WindowComparison};
-use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind};
+use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, NodeId};
 use std::collections::HashSet;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -12,6 +13,18 @@ pub enum TemporalPredicate {
         clock: ExpressionId,
         comparison: WindowComparison,
     },
+}
+
+/// Classify a temporal filter without constructing a general projected waterline closure.
+pub fn infer_temporal_predicates(
+    edit: &mut CircuitEditor,
+    parameter: NodeId,
+    body: ExpressionId,
+) -> Result<Option<Vec<TemporalPredicate>>, Error> {
+    let Some(monotone) = clock_bounds::monotone_operands(edit, parameter, body)? else {
+        return Ok(None);
+    };
+    classify_temporal_predicates(edit, body, &monotone).map(Some)
 }
 
 fn comparison(opcode: &str, clock_on_left: bool) -> Option<WindowComparison> {
