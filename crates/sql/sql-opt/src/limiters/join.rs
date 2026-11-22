@@ -99,6 +99,16 @@ pub(super) struct BinaryJoinExpansion {
     /// The sum preserves its own input order when projecting each term.
     sum_inputs: Vec<u64>,
     unmatched: Option<UnmatchedRows>,
+    /// A fused predicate filters each term before the sum reads it.
+    #[serde(default)]
+    filters: Vec<FilteredTerm>,
+}
+
+#[derive(Deserialize)]
+struct FilteredTerm {
+    input: u64,
+    id: u64,
+    output: Option<Projection>,
 }
 
 /// The antijoin and null-padding map supply the fourth term of a left join.
@@ -245,6 +255,19 @@ impl BinaryJoinExpansion {
             if let Some(result) = unmatched.insert(edit, join, &self.inputs, next, warnings)? {
                 results.insert(unmatched.pad_id, result);
             }
+        }
+        for filter in &self.filters {
+            let Some(projection) = &filter.output else {
+                continue;
+            };
+            let (input, _) = results.get(&filter.input)
+                .ok_or_else(|| Error::new("bounded join filter needs an input waterline"))?;
+            let transfer = join.functions.get(&filter.id)
+                .ok_or_else(|| Error::new("missing waterline transfer for join filter"))?;
+            let function = apply_waterlines(edit, *transfer, &[input.ty], next, warnings)?;
+            let bound = apply_bound(edit, body, *input, function)?;
+            edit.place_before(body, bound.port.operator, join.owner)?;
+            results.insert(filter.id, (bound, projection));
         }
         let Some(dst) = output else {
             return Ok(None);

@@ -1120,17 +1120,7 @@ impl CircuitEditor {
         output: crate::TypeId,
     ) -> Result<(), Error> {
         let op = self.node(id)?;
-        if !matches!(
-            op.operator_kind(),
-            Some(
-                crate::OperatorKind::View
-                    | crate::OperatorKind::Filter
-                    | crate::OperatorKind::Sink
-                    | crate::OperatorKind::Sum
-                    | crate::OperatorKind::AtomicSum
-                    | crate::OperatorKind::Subtract
-            )
-        ) {
+        if !op.operator_kind().is_some_and(crate::OperatorKind::supports_stream_input_replacement) {
             return Err(Error::new("expected a stream-preserving input replacement"));
         }
         if inputs.is_empty()

@@ -1,0 +1,58 @@
+{
+  "scope": "Programs in which snapshot DISTINCT and aggregate operators, or a filtered left join, previously prevented a complete Rust InsertLimiters pass. Direct Java and the live hybrid ran on the same detached S2 inputs. The comparator checks entry, exit, diagnostics, and generated names.",
+  "shards": [
+    {
+      "operators": "snapshot",
+      "engine": "classic",
+      "cases": 122,
+      "population_sha256": "96bfe1e881504fd7e37d9fcc0360127bcfc1b72eebb39685f4f815526ecd88b7",
+      "java_stream_sha256": "95d6652da4261dc256242a7b73fd18058a09203d5e719fef5b561712336b8d7c",
+      "hybrid_stream_sha256": "7bbf93808fc1c3b6d7b0fe36760fa644a71b6eec2f08bf2136ac84ae619782b8"
+    },
+    {
+      "operators": "snapshot",
+      "engine": "classic",
+      "cases": 121,
+      "population_sha256": "f0e097dd3711806c28f6ec8988a2c2c8de260bc4b5f20550abf659901a587533",
+      "java_stream_sha256": "5e2b64ab46c38e13637bac508e121067c6bec049dad8fc83a09046632470b94c",
+      "hybrid_stream_sha256": "764d1e55eb7975062a8e7c70128767792e73dda32172dee78fb89578b8886126"
+    },
+    {
+      "operators": "filtered left join",
+      "engine": "classic",
+      "cases": 5,
+      "population_sha256": "0a08cc995a63a95ce29c9d734723a2e0af5d8697fe0fc3612782678f8cfcbfc4",
+      "java_stream_sha256": "87743c9a4439c3c18adc80b2becfebb8049769c5bb5603bb381cc87efcd3568b",
+      "hybrid_stream_sha256": "470097ac978cc69ccc7f3e20844269b2126279792bf3c0b30b5953a080ae77c2"
+    },
+    {
+      "operators": "filtered left join",
+      "engine": "classic",
+      "cases": 5,
+      "population_sha256": "effa39104ccacd7f952e7c2f72454342e02e04918f7bbeb17d0270b9efb37ded",
+      "java_stream_sha256": "f13882b8f9084de3b87e64a355b7f05f6758d4cb40aaaf2abe0eb4cfae5f0693",
+      "hybrid_stream_sha256": "924f44206d4a1186aac1e31f9858c1e090171a10f429121498abfda6247908c1"
+    },
+    {
+      "operators": "filtered left join",
+      "engine": "gen2",
+      "cases": 8,
+      "population_sha256": "355ff9101f84e10e026f385aa5d2d80ef63df97551757017974a794e5d967069",
+      "java_stream_sha256": "c53efa7b7674dd5d9eb7c1de9177eacf528a320b9cc83fa81cdee5a1884e3bfe",
+      "hybrid_stream_sha256": "d3e7354f7ecc952f0dcc2c44a142b3f8f176ce1f784a4cc4153881349fe2e5e0"
+    },
+    {
+      "operators": "filtered left join",
+      "engine": "gen2",
+      "cases": 7,
+      "population_sha256": "cc1c47e79a40e51f61699a0c3a45c5638e844a640ad9178c3788f61086630129",
+      "java_stream_sha256": "dbcd2a7cb07a4a22899344eba4a9c612455023b3e7cd432bf32e40ff8bdc73da",
+      "hybrid_stream_sha256": "4136847ba1a11a6d3a4c67b8f39676381dd073b89b0c76a6ec3a565fa86a022a"
+    }
+  ],
+  "directed_snapshot": {
+    "fixture": "snapshotDistinctAndAggregate",
+    "classic_equal_observations": 446,
+    "gen2_equal_observations": 448
+  }
+}

@@ -97,6 +97,17 @@ operator_kinds! {
 }
 
 impl OperatorKind {
+    /// These constructors take their output collection type from their first input.
+    /// The circuit editor can reconnect them without rebuilding a projection.
+    pub fn supports_stream_input_replacement(self) -> bool {
+        matches!(
+            self,
+            Self::View | Self::Filter | Self::Sink | Self::Sum | Self::AtomicSum
+                | Self::Subtract | Self::Window | Self::Differentiate | Self::Integrate
+                | Self::StreamDistinct
+        )
+    }
+
     /// Whether the operator owns state across steps of its circuit.
     pub fn is_stateful(self) -> bool {
         matches!(

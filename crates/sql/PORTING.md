@@ -472,6 +472,13 @@ observations through detached S2 replay. Fifteen sampled engine/program cases
 matched through emitted artifacts. COUNT and LATENESS restored in both
 directions. [Nested optimizer comparisons](evidence/p3-nested-optimizer-traces.json)
 
+Rust also runs limiter insertion for snapshot DISTINCT and aggregates, and
+applies the fused predicate to each of the four terms of a filtered left join.
+The limiter entries, exits, diagnostics and generated names matched Java on 243
+snapshot cases and 25 filtered left joins. A snapshot DISTINCT and GROUP BY
+over a table with LATENESS matched at all 446 classic and 448 Gen-2 observations.
+[Snapshot and filtered left join replay](evidence/p3-snapshot-filtered-left-limiters.json)
+
 At `2a2398a2a`, Rust lowered trace-key retention for DISTINCT, positive
 weights and linear aggregates. Each trace receives the preceding step's
 waterline. Raw tuple and scalar bounds pass through a typed tuple so DBSP

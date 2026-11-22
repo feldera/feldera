@@ -5,6 +5,10 @@
   "source": {
     "sql": "CREATE TABLE t(x INT NOT NULL LATENESS 5, y TIMESTAMP LATENESS INTERVAL '3' MINUTE); CREATE VIEW v AS SELECT * FROM t;"
   },
+  "snapshotDistinctAndAggregate": {
+    "incremental": false,
+    "sql": "CREATE TABLE t(k INTEGER NOT NULL LATENESS 2, v INTEGER); CREATE VIEW pairs AS SELECT DISTINCT k, v FROM t; CREATE VIEW counts AS SELECT k, COUNT(*) AS n FROM t GROUP BY k;"
+  },
   "sum": {
     "sql": "CREATE TABLE a(x INT NOT NULL LATENESS 2); CREATE TABLE b(x INT NOT NULL LATENESS 4); CREATE VIEW v AS SELECT * FROM a UNION ALL SELECT * FROM b;"
   },

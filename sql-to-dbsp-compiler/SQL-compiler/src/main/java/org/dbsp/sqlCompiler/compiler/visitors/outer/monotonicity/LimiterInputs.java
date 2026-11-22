@@ -34,7 +34,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
@@ -72,7 +74,8 @@ public final class LimiterInputs {
             DBSPApplyOperator.class, DBSPWaterlineOperator.class, DBSPWindowOperator.class,
             DBSPDifferentiateOperator.class, DBSPIntegrateOperator.class, DBSPIndexedTopKOperator.class,
             DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class,
-            DBSPAntiJoinOperator.class, DBSPNowOperator.class, DBSPPartitionedRollingAggregateOperator.class);
+            DBSPAntiJoinOperator.class, DBSPNowOperator.class, DBSPPartitionedRollingAggregateOperator.class,
+            DBSPStreamAggregateOperator.class, DBSPStreamDistinctOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
     public static boolean canLowerCircuit(DBSPCircuit circuit) {

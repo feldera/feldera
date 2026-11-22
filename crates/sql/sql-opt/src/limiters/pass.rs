@@ -482,7 +482,7 @@ pub fn insert_limiters_with_warnings(
                     );
                 }
             }
-            Some(Op::Join | Op::JoinIndex | Op::LeftJoin | Op::LeftJoinIndex) => {
+            Some(Op::Join | Op::JoinIndex | Op::LeftJoin | Op::LeftJoinIndex | Op::LeftJoinFilterMap) => {
                 let [left, right] = inputs.as_slice() else {
                     return Err(Error::new("incremental join requires two inputs").into());
                 };
@@ -629,6 +629,8 @@ pub fn insert_limiters_with_warnings(
                 Op::Now
                 | Op::Constant
                 | Op::IncrementalConstant
+                | Op::StreamAggregate
+                | Op::StreamDistinct
                 | Op::Waterline
                 | Op::Apply
                 | Op::Differentiate
@@ -652,20 +654,7 @@ pub fn insert_limiters_with_warnings(
                 .iter()
                 .map(|p| data.get(p).map_or(*p, |s| s.port))
                 .collect::<Vec<_>>();
-            if matches!(
-                kind,
-                Some(
-                    Op::Filter
-                        | Op::View
-                        | Op::Sink
-                        | Op::Sum
-                        | Op::AtomicSum
-                        | Op::Subtract
-                        | Op::Window
-                        | Op::Differentiate
-                        | Op::Integrate
-                )
-            ) {
+            if kind.is_some_and(Op::supports_stream_input_replacement) {
                 let output_type = match data.get(&inputs[0]) {
                     Some(input) => input.ty,
                     None => edit.type_id(edit.node(id)?.edge("outputType")?)?,

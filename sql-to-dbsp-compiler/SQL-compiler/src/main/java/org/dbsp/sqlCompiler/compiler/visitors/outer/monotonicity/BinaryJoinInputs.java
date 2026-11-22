@@ -4,15 +4,18 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinIndexDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.LeftJoinDeltaExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.LeftJoinFilterMapExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorDeltaExpansion;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 
@@ -26,7 +29,8 @@ record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOpe
                         @Nullable LeftJoinDeltaExpansion outer) {
     static boolean supports(Class<?> operator) {
         return operator == DBSPJoinOperator.class || operator == DBSPJoinIndexOperator.class
-                || operator == DBSPLeftJoinOperator.class || operator == DBSPLeftJoinIndexOperator.class;
+                || operator == DBSPLeftJoinOperator.class || operator == DBSPLeftJoinIndexOperator.class
+                || operator == DBSPLeftJoinFilterMapOperator.class;
     }
     @Nullable
     static BinaryJoinInputs from(@Nullable OperatorDeltaExpansion expansion) {
@@ -46,6 +50,12 @@ record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOpe
         var value = pass.expansionMonotoneValues.get(port);
         if (value != null && value.mayBeMonotone())
             record.set(name, LimiterInputs.projection(Monotonicity.getBodyType(value)));
+    }
+
+    private List<DBSPFilterOperator> filters() {
+        if (this.outer instanceof LeftJoinFilterMapExpansion filtered)
+            return List.of(filtered.leftFilter, filtered.rightFilter, filtered.filter, filtered.mapFilter);
+        return List.of();
     }
 
     void capture(InsertLimiters pass, ObjectNode join, ObjectNode owner) {
@@ -72,6 +82,14 @@ record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOpe
             unmatched.put("pad_id", this.outer.map.id);
             projection(pass, this.outer.map.outputPort(), unmatched, "padded");
         }
+        var filters = this.filters();
+        if (!filters.isEmpty()) {
+            var serialized = join.putArray("filters");
+            for (var filter : filters) {
+                var entry = serialized.addObject().put("id", filter.id).put("input", filter.input().operator.id);
+                projection(pass, filter.outputPort(), entry, "output");
+            }
+        }
     }
 
     void recordTransfers(InsertLimiters pass, Map<Long, ? super DBSPClosureExpression> functions) {
@@ -84,6 +102,11 @@ record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOpe
             var value = pass.expansionMonotoneValues.get(this.outer.map);
             if (value != null)
                 functions.put(this.outer.map.id, value.getReducedExpression().to(DBSPClosureExpression.class));
+        }
+        for (var filter : this.filters()) {
+            var value = pass.expansionMonotoneValues.get(filter);
+            if (value != null && value.mayBeMonotone())
+                functions.put(filter.id, value.getReducedExpression().to(DBSPClosureExpression.class));
         }
     }
 }
