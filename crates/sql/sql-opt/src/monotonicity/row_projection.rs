@@ -1,8 +1,9 @@
 //! Reduce the structural part of a row closure to its projected waterline.
 mod function;
 mod scalar;
+mod scope;
 mod shape;
-use self::shape::Shape;
+use self::{scope::Local, shape::Shape};
 use crate::limiters::Projection;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
@@ -26,7 +27,7 @@ pub enum RowType {
         index: usize,
     },
     Scope {
-        initializers: Vec<Self>,
+        initializers: Vec<Option<Self>>,
         result: Box<Self>,
     },
     Parameter {
@@ -64,13 +65,6 @@ struct Binding {
     name: String,
     variable: ExpressionId,
     shape: Shape,
-}
-
-struct Local {
-    name: String,
-    ty: TypeId,
-    shape: Shape,
-    reduced: Option<ExpressionId>,
 }
 
 struct Row {
@@ -150,88 +144,6 @@ fn type_number(ty: TypeId) -> u64 {
 }
 
 impl Row {
-    fn local(&self, name: &str) -> Option<(usize, &Local)> {
-        self.locals
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, local)| local.name == name)
-    }
-
-    /// Visit each initializer before it shadows the previous binding, just as
-    /// the declaration resolver does. A second read reuses the original bound.
-    fn scoped(
-        &mut self,
-        edit: &mut CircuitEditor,
-        declarations: &[(String, ExpressionId)],
-        body: ExpressionId,
-        depth: usize,
-    ) -> Result<Option<ProjectedValue>, Error> {
-        let outer = self.locals.len();
-        let mut initializers = Vec::with_capacity(declarations.len());
-        for (name, expression) in declarations {
-            let Some(value) = self.visit(edit, *expression, depth + 1)? else {
-                self.locals.truncate(outer);
-                return Ok(None);
-            };
-            initializers.push(value.row_type);
-            self.locals.push(Local {
-                name: name.clone(),
-                ty: edit.expression_type(*expression)?,
-                shape: value.shape,
-                reduced: value.reduced,
-            });
-        }
-        let result = self.visit(edit, body, depth + 1);
-        self.locals.truncate(outer);
-        let Some(mut value) = result? else {
-            return Ok(None);
-        };
-        if !initializers.is_empty() {
-            value.row_type = RowType::Scope {
-                initializers,
-                result: Box::new(value.row_type),
-            };
-        }
-        Ok(Some(value))
-    }
-
-    fn variable(
-        &self,
-        edit: &CircuitEditor,
-        expression: ExpressionId,
-    ) -> Result<Option<ProjectedValue>, Error> {
-        let node = edit.node(expression.into())?;
-        let Some(name) = node.data("variable").and_then(|v| v.as_str()) else {
-            return Ok(None);
-        };
-        let (shape, row_type, reduced) = if let Some((index, local)) = self.local(name) {
-            if !edit.same_type(edit.expression_type(expression)?, local.ty)? {
-                return Ok(None);
-            }
-            (&local.shape, RowType::Local { index }, local.reduced)
-        } else if let Some((index, parameter)) = self
-            .bindings
-            .iter()
-            .enumerate()
-            .find(|(_, p)| p.name == name)
-        {
-            (
-                &parameter.shape,
-                RowType::Parameter { index },
-                parameter.shape.monotone().then_some(parameter.variable),
-            )
-        } else {
-            return Ok(None);
-        };
-        Ok(Some(ProjectedValue {
-            shape: shape.clone(),
-            row_type,
-            reduced,
-            constant: false,
-        }))
-    }
-
     /// Java visits the operands of these expressions, then assigns an unbounded
     /// result regardless of their bounds. Visit them here as well so an
     /// unsupported operand can still take the normal diagnostic path.
@@ -290,40 +202,7 @@ impl Row {
         let node = edit.node(id)?;
         let kind = edit.expr_kind(expression)?;
         let value = match kind {
-            Expr::Let => {
-                let variable = edit.node(node.edge("variable")?)?;
-                let Some(name) = variable.data("variable").and_then(|v| v.as_str()) else {
-                    return Ok(None);
-                };
-                let binding = (name.to_owned(), edit.expression(node.edge("initializer")?)?);
-                let body = edit.expression(node.edge("consumer")?)?;
-                return self.scoped(edit, &[binding], body, depth);
-            }
-            Expr::Block => {
-                let Some(body) = node.field("lastExpression").and_then(Field::node_id) else {
-                    return Ok(None);
-                };
-                let body = edit.expression(body)?;
-                let mut declarations = Vec::new();
-                for id in node.edges("contents")? {
-                    let statement = edit.node(id)?;
-                    if statement.class() != "DBSPLetStatement"
-                        || statement.data("mutable").and_then(|v| v.as_bool()) != Some(false)
-                    {
-                        return Ok(None);
-                    }
-                    let Some(initializer) = statement.field("initializer").and_then(Field::node_id)
-                    else {
-                        return Ok(None);
-                    };
-                    let name = statement
-                        .data("variable")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| Error::new("expected a name for a row waterline binding"))?;
-                    declarations.push((name.to_owned(), edit.expression(initializer)?));
-                }
-                return self.scoped(edit, &declarations, body, depth);
-            }
+            Expr::Let | Expr::Block => return self.scope(edit, expression, depth),
             Expr::VariablePath => return self.variable(edit, expression),
             kind if scalar::literal(kind) => {
                 return scalar::literal_bound(edit, expression).map(Some);
@@ -355,7 +234,23 @@ impl Row {
             | Expr::GeoPointConstructor
             | Expr::UnwrapCustomOrd
             | Expr::CustomOrd
-            | Expr::HandleError => {
+            | Expr::HandleError
+            | Expr::Assignment
+            | Expr::ConditionalIncrement
+            | Expr::Return
+            | Expr::QualifyType
+            | Expr::CustomOrdField
+            | Expr::DirectComparator
+            | Expr::FieldComparator
+            | Expr::EqualityComparator
+            | Expr::AsymmetricFieldComparator
+            | Expr::NoComparator
+            | Expr::WindowBound
+            | Expr::Sort
+            | Expr::Static
+            | Expr::EnumValue
+            | Expr::ZSet
+            | Expr::IndexedZSet => {
                 return self.opaque(edit, expression, depth);
             }
             Expr::Cast | Expr::Unary | Expr::UnsignedWrap | Expr::UnsignedUnwrap => {

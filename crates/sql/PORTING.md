@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust tracks block-local waterlines through mutable declarations, discarded
+statements and indirect calls. All 6,600 row projections in the frozen
+monotonicity selection completed in Rust. The 550 monotonicity comparisons,
+133 clock-rewrite comparisons and 11 detached compilations matched Java.
+A directed test checks the same compiler error for an uninitialized local
+through both entry points. [Block waterline results](evidence/p3-block-waterlines.json)
+
 Rust derives ASOF waterline projections from the join closure. All 24 classic
 and 22 Gen-2 frozen ASOF programs matched direct Java through detached replay
 and emission. The key-equivalence visitor resolves nested declarations in

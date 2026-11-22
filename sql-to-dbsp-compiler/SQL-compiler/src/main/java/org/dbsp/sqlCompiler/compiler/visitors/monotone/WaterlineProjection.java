@@ -53,7 +53,7 @@ public final class WaterlineProjection {
             case "scope" -> {
                 int outer = locals.size();
                 for (var initializer : projection.required("initializers"))
-                    locals.add(resolveType(initializer, declaredType, parameters, locals));
+                    locals.add(initializer.isNull() ? null : resolveType(initializer, declaredType, parameters, locals));
                 var result = resolveType(projection.required("result"), declaredType, parameters, locals);
                 locals.subList(outer, locals.size()).clear();
                 yield result;

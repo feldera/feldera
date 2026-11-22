@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -32,6 +33,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -183,6 +186,63 @@ public class WaterlineProjectionTests {
             Assert.assertSame(inner.fields[0], inner.fields[1]);
             Assert.assertSame(inner.fields[0], inner.fields[2]);
             Assert.assertTrue(types.getFieldType(0).to(PartiallyMonotoneTuple.class).getFieldType(2).getType().mayBeNull);
+        }
+    }
+
+    @Test
+    public void blockWaterlineComesFromItsTail() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var node = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(node, 32, true, false);
+        var row = new PartiallyMonotoneTuple(List.of(new MonotoneType(integer)), false, false);
+        var input = new DBSPVariablePath("row", row.getType().ref());
+        var local = new DBSPLetStatement("value", input.deref().field(0));
+        var scratch = new DBSPLetStatement("scratch", new DBSPI32Literal(0), true);
+        var empty = new DBSPBlockExpression(List.of(new DBSPComment("empty block")), null);
+        var ignored = new DBSPAssignmentExpression(scratch.getVarReference(), new DBSPI32Literal(2));
+        var arg = new DBSPVariablePath("n", integer);
+        var indirect = new DBSPApplyExpression(arg.closure(arg), new DBSPI32Literal(1));
+        var body = new DBSPBlockExpression(List.of(
+                new DBSPLetStatement("unused", integer, false), local, scratch,
+                new DBSPExpressionStatement(empty), new DBSPExpressionStatement(ignored)),
+                new DBSPTupleExpression(local.getVarReference(), indirect));
+        var operator = new DBSPConstantOperator(node, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row)
+                .applyAnalysis(body.closure(input)).getReducedExpression().to(DBSPClosureExpression.class);
+        Assert.assertEquals(1, direct.body.to(DBSPTupleExpression.class).size());
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var bound = new DBSPVariablePath("row", row.getProjectedType().ref());
+            var projected = RustCircuitPass.projectRow(compiler, body, bound, row);
+            Assert.assertNotNull(projected);
+            Assert.assertTrue(direct.equivalent(projected.getReducedExpression().closure(bound)));
+            var fields = projected.getMonotoneType().to(PartiallyMonotoneTuple.class);
+            Assert.assertSame(row.getFieldType(0), fields.getFieldType(0));
+            Assert.assertFalse(fields.getFieldType(1).mayBeMonotone());
+        }
+    }
+
+    @Test
+    public void readingAnUninitializedBlockLocalPreservesTheCompilerError() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var node = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(node, 32, true, false);
+        var row = new MonotoneType(integer);
+        var input = new DBSPVariablePath("input", integer.ref());
+        var unused = new DBSPLetStatement("uninitialized", integer, false);
+        var read = unused.getVarReference();
+        var body = new DBSPBlockExpression(List.of(unused), read);
+        var closure = body.closure(input);
+        var operator = new DBSPConstantOperator(node, DBSPZSetExpression.emptyWithElementType(integer));
+        var analyzer = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+        var direct = Assert.assertThrows(RuntimeException.class, () -> analyzer.applyAnalysis(closure));
+        Assert.assertTrue(direct.getMessage(), direct.getMessage().contains(Long.toString(read.getId())));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            Assert.assertNull(RustCircuitPass.projectRow(compiler, body, input, row));
+            var hybrid = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+            var error = Assert.assertThrows(RuntimeException.class, () -> hybrid.applyAnalysis(closure));
+            Assert.assertEquals(direct.getClass(), error.getClass());
+            Assert.assertEquals(direct.getMessage(), error.getMessage());
         }
     }
 

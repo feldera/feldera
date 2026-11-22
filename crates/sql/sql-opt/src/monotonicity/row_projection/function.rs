@@ -16,25 +16,22 @@ impl Row {
     ) -> Result<Option<ProjectedValue>, Error> {
         let site = expression.into();
         let call = edit.node(site)?;
-        let Some(name) = function_name(edit.circuit(), call)?.map(|s| s.into_owned()) else {
-            // A callable expression may contain a lambda with its own captures.
-            return Ok(None);
-        };
+        let name = function_name(edit.circuit(), call)?.map(|s| s.into_owned());
+        let callee = edit.expression(call.edge("function")?)?;
         let ty = edit.expression_type(expression)?;
         let arguments = call.edges("arguments")?;
-        if name == "now" {
+        if name.as_deref() == Some("now") {
             if !arguments.is_empty() {
                 return Ok(None);
             }
             // replaceArguments() retains the live callee and SQL type, using
             // the constructor with an empty source location.
-            let callee = call.edge("function")?;
             let clock = edit.empty_origin_node(
                 site,
                 InnerKind::Expression(Expr::Apply),
                 [
                     ("type", Field::Reference(ty.into())),
-                    ("function", Field::Reference(callee)),
+                    ("function", Field::Reference(callee.into())),
                     ("arguments", Field::Array(vec![])),
                 ],
             )?;
@@ -42,6 +39,11 @@ impl Row {
                 .map(Some);
         }
 
+        // An indirect call has no named transfer rule. Visit the callee and its
+        // arguments so nested expressions still contribute their clock facts.
+        if name.is_none() && self.visit(edit, callee, depth + 1)?.is_none() {
+            return Ok(None);
+        }
         let mut facts = Vec::with_capacity(arguments.len());
         let mut bounds = Vec::with_capacity(arguments.len());
         for &argument in &arguments {
@@ -57,7 +59,10 @@ impl Row {
             bounds.push(value.reduced);
         }
         let constant = facts.iter().all(|fact| fact.constant);
-        let Some(target) = function_waterline(&name, &facts) else {
+        let Some(target) = name
+            .as_deref()
+            .and_then(|name| function_waterline(name, &facts))
+        else {
             let Some(mut result) = unbounded(edit, expression, depth)? else {
                 return Ok(None);
             };

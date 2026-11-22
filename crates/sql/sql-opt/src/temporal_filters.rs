@@ -361,8 +361,7 @@ mod tests {
             Some(port(cloned_filter))
         );
 
-        // A mutable block still needs the general visitor. Earlier successful
-        // merges must not publish their generated names or warnings.
+        // A mutable declaration with a clock initializer still supplies a bound.
         let mut edit = CircuitEditor::new(circuit);
         let binding = edit.let_statement("t", clock)?;
         let binding = edit.derive_inner(binding, [("mutable", Field::Data(true.into()))])?;
@@ -378,7 +377,42 @@ mod tests {
         )?;
         let predicate = edit.binary_expression(site, boolean, BinaryOp::Gt, key, block)?;
         let closure = edit.closure_from_variables(predicate, &[variable])?;
-        filter(&mut edit, cloned_filter, closure.into())?;
+        let mutable = filter(&mut edit, cloned_filter, closure.into())?;
+        let circuit = edit.finish()?;
+        let mut next = 10;
+        let merged = merge_temporal_filters(circuit.clone(), &mut next, &mut warnings)?.unwrap();
+        assert_eq!(
+            merged.node(mutable).unwrap().inputs().next(),
+            Some(port(source))
+        );
+
+        // An uninitialized read needs the general visitor's diagnostic. Discard
+        // names and warnings from earlier merges when handing the pass back.
+        let mut edit = CircuitEditor::new(circuit);
+        let missing = edit.inner_at(
+            site,
+            feldera_sql_ir::InnerKind::Other("DBSPLetStatement".into()),
+            [
+                ("variable", Field::Data("u".into())),
+                ("mutable", Field::Data(true.into())),
+                ("type", Field::Reference(timestamp.into())),
+            ],
+        )?;
+        let read = edit.named_variable(timestamp, "u")?;
+        let block = edit.derive_inner(
+            block.into(),
+            [
+                (
+                    "contents",
+                    Field::Array(vec![Field::Reference(binding), Field::Reference(missing)]),
+                ),
+                ("lastExpression", Field::Reference(read.into())),
+            ],
+        )?;
+        let block = edit.expression(block)?;
+        let predicate = edit.binary_expression(site, boolean, BinaryOp::Gt, key, block)?;
+        let closure = edit.closure_from_variables(predicate, &[variable])?;
+        filter(&mut edit, mutable, closure.into())?;
         let mut next = 10;
         assert!(merge_temporal_filters(edit.finish()?, &mut next, &mut warnings)?.is_none());
         assert_eq!(next, 10);

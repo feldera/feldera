@@ -1,0 +1,48 @@
+{
+  "base_commit": "7c4a473fb",
+  "scope": "Project block locals and indirect calls in Rust. An uninitialized read is left to the existing compiler diagnostic.",
+  "engines": {
+    "classic": {
+      "detached_programs": 6,
+      "detached_receipt_sha256": "27a57d83d4267d425aa293dfd7f5bb46665e60e3a251abd8b5bce1b73ca4c247",
+      "pass_comparisons": {
+        "MonotoneAnalyzer": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+        "RewriteNow": "RewriteNow matched at 71 invocations across 71 cases"
+      },
+      "row_projection_calls": {
+        "Monotonicity/ProjectRow": 1452,
+        "Monotonicity/ProjectIndexedRow": 1041,
+        "Monotonicity/ProjectJoinRow": 824
+      },
+      "row_projection_fallbacks": 0,
+      "row_probe_log_sha256": "a1e152b8bdc8992962ff2aac0f3a04f6a765fc6492d49aac59a1739ca199d191"
+    },
+    "gen2": {
+      "detached_programs": 5,
+      "detached_receipt_sha256": "853eaea8df67c1ef4d33df09891fd85a001a08c2f63ba6d4dd644fd9b73e38cc",
+      "pass_comparisons": {
+        "MonotoneAnalyzer": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+        "RewriteNow": "RewriteNow matched at 62 invocations across 62 cases"
+      },
+      "row_projection_calls": {
+        "Monotonicity/ProjectRow": 1413,
+        "Monotonicity/ProjectIndexedRow": 1042,
+        "Monotonicity/ProjectJoinRow": 828
+      },
+      "row_projection_fallbacks": 0,
+      "row_probe_log_sha256": "273f25f3b0b5b0a244c13fad629a0540577422e1923054c85f4c29f260bbe10a"
+    }
+  },
+  "optimizer_sha256": "d5a5efd5271c3eef6a266a29e9e176920604c2a2a4cdf39b0211fbd80d078229",
+  "tests": {
+    "rust": 222,
+    "waterline_direct_and_jni": {
+      "false": 15,
+      "true": 15
+    },
+    "tests_log_sha256": "554b2b5be362e0aa390fb53c9900fe690c8382c85646a09b5b9f943e012b3b60",
+    "clippy_log_sha256": "7b8932174c15fe09d475c9fd6d8438ec305e59d4120d836fa8aaa249b1f02f1c",
+    "uninitialized-true_log_sha256": "ec75e8abc28a21f838f0838e4474e1205d0f0aa91ab71a75d145b189da5e2a70",
+    "uninitialized-false_log_sha256": "107fa752133871529680abcd93eb91ad003731e96d8b8c59fc9443fd79c1377a"
+  }
+}
