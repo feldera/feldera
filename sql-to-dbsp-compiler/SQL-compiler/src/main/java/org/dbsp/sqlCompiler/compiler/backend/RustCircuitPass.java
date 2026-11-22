@@ -427,6 +427,36 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public record ProjectedWaterline(IMaybeMonotoneType bodyType, @Nullable DBSPClosureExpression closure) {}
+
+    @Nullable
+    public static ProjectedWaterline projectWaterlineClosure(DBSPCompiler compiler, DBSPExpression body,
+            DBSPParameter[] parameters, DBSPType[] projectedTypes, IMaybeMonotoneType[] argumentShapes, boolean indexed) {
+        var roots = new ArrayList<IDBSPInnerNode>();
+        roots.add(body);
+        for (int i = 0; i < parameters.length; i++) {
+            roots.add(parameters[i]);
+            roots.add(projectedTypes[i]);
+        }
+        var request = MAPPER.createObjectNode();
+        request.put("indexed", indexed);
+        request.set("shapes", MAPPER.valueToTree(WaterlineProjection.inputShapes(argumentShapes, indexed)));
+        try {
+            var reply = invokeLowering(compiler, "Monotonicity/ProjectClosure",
+                    MAPPER.writeValueAsBytes(request), roots.toArray(IDBSPInnerNode[]::new));
+            if (reply.value.isNull())
+                return null;
+            var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+            var type = WaterlineProjection.resolveType(reply.value.required("row_type"),
+                    id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes);
+            var closure = reply.value.required("closure");
+            return new ProjectedWaterline(type, closure.isNull() ? null :
+                    expressionDecoder(reply.writer).decodeInner(closure, DBSPClosureExpression.class));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode a waterline closure", error);
+        }
+    }
+
     public static DBSPExpression nullLiteralWaterline(DBSPCompiler compiler, DBSPType type) {
         return lowerFunction(compiler, "Monotonicity/NullLiteral", type, null, DBSPExpression.class);
     }

@@ -217,64 +217,45 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPType[] projectedTypes = Linq.map(
                 Objects.requireNonNull(this.parameterTypes), IMaybeMonotoneType::getProjectedType, DBSPType.class);
 
-        DBSPParameter[] projectedParameters;
-        switch (this.argumentKind) {
-            case IndexedZSet: {
-                // Functions that iterate over IndexedZSets have the signature: |t: (&key, &value)| body.
-                Utilities.enforce(this.parameterTypes.length == 1);
-                PartiallyMonotoneTuple tuple = this.parameterTypes[0].to(PartiallyMonotoneTuple.class);
-                List<IMaybeMonotoneType> fields = Linq.map(tuple.fields, MonotoneRefType::new);
-                this.parameterTypes = new IMaybeMonotoneType[]{new PartiallyMonotoneTuple(fields, tuple.raw, tuple.mayBeNull)};
-                DBSPType paramType;
-                DBSPType[] tupleFields = Linq.map(projectedTypes[0].to(DBSPTypeTupleBase.class).tupFields,
-                        DBSPType::ref, DBSPType.class);
-                if (tuple.raw) {
-                    paramType = new DBSPTypeRawTuple(tupleFields);
-                } else {
-                    paramType = new DBSPTypeTuple(tupleFields);
-                }
-                projectedParameters = new DBSPParameter[]{
-                        new DBSPParameter(expression.parameters[0].getName(), paramType)
-                };
-                break;
-            }
-            case Join:
-            case ZSet: {
-                // Functions with one on or more parameters that iterate over ZSets have the
-                // signature |p0: &type0, p1: &type1| body.
-                this.parameterTypes = Linq.map(this.parameterTypes, MonotoneRefType::new, IMaybeMonotoneType.class);
-                projectedParameters = new DBSPParameter[projectedTypes.length];
-                for (int i = 0; i < projectedTypes.length; i++)
-                    projectedParameters[i] = new DBSPParameter(
-                            expression.parameters[i].getName(), projectedTypes[i].ref());
-                break;
-            }
-            default: {
-                throw new InternalCompilerError("Unreachable");
+        boolean indexed = this.argumentKind == ArgumentKind.IndexedZSet;
+        PartiallyMonotoneTuple pair = indexed ? this.parameterTypes[0].to(PartiallyMonotoneTuple.class) : null;
+        if (pair != null) {
+            List<IMaybeMonotoneType> fields = Linq.map(pair.fields, MonotoneRefType::new);
+            this.parameterTypes = new IMaybeMonotoneType[]{new PartiallyMonotoneTuple(fields, pair.raw, pair.mayBeNull)};
+        } else {
+            this.parameterTypes = Linq.map(this.parameterTypes, MonotoneRefType::new, IMaybeMonotoneType.class);
+        }
+
+        // The analysis keys its facts by expression identity, so every occurrence must be unique.
+        new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
+        if (this.closureResultOnly && this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var projected = RustCircuitPass.projectWaterlineClosure(this.compiler, expression.body, expression.parameters,
+                    projectedTypes, this.parameterTypes, indexed);
+            if (projected != null) {
+                if (projected.bodyType().mayBeMonotone())
+                    this.recordClosure(expression, projected.bodyType(), Objects.requireNonNull(projected.closure()));
+                return VisitDecision.STOP;
             }
         }
 
+        DBSPParameter[] projectedParameters = new DBSPParameter[projectedTypes.length];
+        if (pair != null) {
+            DBSPType[] fields = Linq.map(projectedTypes[0].to(DBSPTypeTupleBase.class).tupFields,
+                    DBSPType::ref, DBSPType.class);
+            var type = pair.raw ? new DBSPTypeRawTuple(fields) : new DBSPTypeTuple(fields);
+            projectedParameters[0] = new DBSPParameter(expression.parameters[0].getName(), type);
+        } else {
+            for (int i = 0; i < projectedTypes.length; i++)
+                projectedParameters[i] = new DBSPParameter(expression.parameters[i].getName(), projectedTypes[i].ref());
+        }
         for (int i = 0; i < projectedTypes.length; i++) {
-            MonotoneExpression parameterValue =
-                    new MonotoneExpression(expression.parameters[i].asVariable(),
-                            this.parameterTypes[i],
-                            projectedParameters[i].asVariable());
-            this.variables.put(expression.parameters[i], parameterValue);
+            var parameter = new MonotoneExpression(expression.parameters[i].asVariable(), this.parameterTypes[i],
+                    projectedParameters[i].asVariable());
+            this.variables.put(expression.parameters[i], parameter);
         }
         this.push(expression);
-        // Check that the expression is a pure tree; this is required by the dataflow analysis,
-        // which represents monotonicity information as a key-value map indexed by expressions.
-        new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
-        MonotoneExpression bodyValue = null;
-        if (this.closureResultOnly && this.compiler.options.ioOptions.rustOptimizerPasses) {
-            boolean indexed = this.argumentKind == ArgumentKind.IndexedZSet;
-            bodyValue = RustCircuitPass.projectClosureBody(this.compiler, expression.body,
-                    Linq.map(projectedParameters, DBSPParameter::asVariable, DBSPVariablePath.class), this.parameterTypes, indexed);
-        }
-        if (bodyValue == null) {
-            expression.body.accept(this);
-            bodyValue = this.get(expression.body);
-        }
+        expression.body.accept(this);
+        MonotoneExpression bodyValue = this.get(expression.body);
         this.pop(expression);
         if (bodyValue.mayBeMonotone()) {
             DBSPClosureExpression closure = this.compiler.options.ioOptions.rustOptimizerPasses
@@ -282,16 +263,19 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     ? RustCircuitPass.bindWaterlineInputs(this.compiler, expression.parameters, projectedTypes,
                             bodyValue.getReducedExpression())
                     : this.applyClosure(expression, projectedParameters, projectedTypes, bodyValue.getReducedExpression());
-            MonotoneClosureType cloType = new MonotoneClosureType(bodyValue.type,
-                    expression.parameters,
-                    closure.parameters);
-            MonotoneExpression result = new MonotoneExpression(expression, cloType, closure);
-            this.set(expression, result);
-            Logger.INSTANCE.belowLevel(this, 1)
-                    .appendSupplier(() -> "MonotoneExpression for " + expression + " is " + result)
-                    .newline();
+            this.recordClosure(expression, bodyValue.type, closure);
         }
         return VisitDecision.STOP;
+    }
+
+    private void recordClosure(DBSPClosureExpression expression, IMaybeMonotoneType bodyType,
+                               DBSPClosureExpression reduced) {
+        var type = new MonotoneClosureType(bodyType, expression.parameters, reduced.parameters);
+        var result = new MonotoneExpression(expression, type, reduced);
+        this.set(expression, result);
+        Logger.INSTANCE.belowLevel(this, 1)
+                .appendSupplier(() -> "MonotoneExpression for " + expression + " is " + result)
+                .newline();
     }
 
     private DBSPClosureExpression applyClosure(DBSPClosureExpression expression, DBSPParameter[] projectedParameters,

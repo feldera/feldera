@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust builds each supported waterline closure in one call. Its row, indexed and
+join bindings use the same expression arena as the projected body.
+All 550 selected monotonicity pass comparisons and 16 detached compilations
+matched Java. The COUNT and LATENESS checkpoints restored in both directions.
+[Waterline closures](evidence/p3-waterline-closures.json)
+
 Rust builds binary and multiway join derivatives, including filtered joins and
 null padding for left joins. All 550 binary and 30 multiway pass comparisons
 matched Java. The multiway cases covered three to fourteen inputs. Both engines

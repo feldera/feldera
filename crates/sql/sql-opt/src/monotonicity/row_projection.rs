@@ -529,6 +529,64 @@ pub fn project_rows(
     .visit(edit, body, 0)
 }
 
+/// The bound of a whole closure and the SQL type recipe used by its consumers.
+/// A supported closure can have no bounded output fields.
+pub struct ProjectedClosure {
+    pub row_type: RowType,
+    pub closure: Option<ExpressionId>,
+}
+
+/// Project the body and bind its reduced reads to the Apply operator's input.
+/// Keep both operations in the same arena so repeated reads share the same variable.
+pub fn project_closure(
+    edit: &mut CircuitEditor,
+    body: ExpressionId,
+    parameters: &[(NodeId, TypeId)],
+    projections: &[Projection],
+    indexed: bool,
+) -> Result<Option<ProjectedClosure>, Error> {
+    let mut variables = Vec::with_capacity(parameters.len());
+    let mut names = Vec::with_capacity(parameters.len());
+    for &(parameter, projected) in parameters {
+        let node = edit.node(parameter)?;
+        let name = node
+            .data("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::new("waterline parameter has no name"))?
+            .to_owned();
+        let ty = if indexed {
+            super::identity::tuple_of_references(edit, projected)?
+        } else {
+            edit.reference_type(projected)?
+        };
+        variables.push(edit.named_variable(ty, &name)?);
+        names.push(name);
+    }
+    let Some(value) = project_rows(edit, body, &variables, projections, indexed)? else {
+        return Ok(None);
+    };
+    let closure = match (value.reduced, parameters) {
+        (None, _) => None,
+        (Some(body), [_]) if !indexed => {
+            let path = variables[0];
+            let parameter = edit.parameter_at(edit.expression_type(path)?.into(), path)?;
+            Some(edit.closure_with_parameters(body, &[parameter])?)
+        }
+        (Some(body), _) => {
+            let inputs: Vec<_> = names
+                .iter()
+                .zip(parameters)
+                .map(|(name, &(_, ty))| (name.as_str(), ty))
+                .collect();
+            Some(super::bindings::waterline_bindings(edit, &inputs)?.closure(edit, body)?)
+        }
+    };
+    Ok(Some(ProjectedClosure {
+        row_type: value.row_type,
+        closure,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

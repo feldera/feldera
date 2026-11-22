@@ -63,7 +63,7 @@ fn indexed_bounds(
     Ok([original, reduced])
 }
 
-fn tuple_of_references(edit: &mut CircuitEditor, row: TypeId) -> Result<TypeId, Error> {
+pub(super) fn tuple_of_references(edit: &mut CircuitEditor, row: TypeId) -> Result<TypeId, Error> {
     let mut references = Vec::new();
     for field in edit.node(row.into())?.edges("tupFields")? {
         references.push(edit.reference_type(edit.type_id(field)?)?.into());

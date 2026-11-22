@@ -1,0 +1,41 @@
+{
+  "base_commit": "9c8c58df0",
+  "scope": "Project the entire waterline closure in one Rust call, including argument types and the final bindings of row, indexed, and join inputs. Unsupported bodies use the existing general transfer visitor.",
+  "build": {
+    "bin/libfeldera_sql_opt_jni.so": "6170254ff0ac0de82f24a51c884914f5b5d3ad7a2ab247c9866fef28c4644d98",
+    "compiler.jar": "4de51f4ed9c47ebbaf9a67861a5fc9820e9c65ad90e1146dbf8d39e0aea82a47",
+    "maven/sql-compiler.jar": "dd2165449383918e04051fe677b01d3ecb3eb1d905936726c00b846282b11a88",
+    "maven/tests.jar": "dfa9a49655b078788eb90448c768ebd490ea4ec06a5784acd61730c64355833d"
+  },
+  "rust_tests": 132,
+  "maven_tests": 103,
+  "waterline_junit_native_comparisons": 15,
+  "engines": {
+    "classic": {
+      "comparison": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+      "detached_cases": 8,
+      "receipt_sha256": "e61dff0950976162023a308fa4bf659336e1461a013595ed51e870082105fffa"
+    },
+    "gen2": {
+      "comparison": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+      "detached_cases": 8,
+      "receipt_sha256": "d4d7c915d356ded956bd14877b120fc3849bcd46cd5dd0126b285ed5df947b9f"
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ],
+      "receipt_sha256": "e2a40854aa30cad33a31d8ad5072ee9b7e1e73be6d700b762ae9890f364adafe"
+    },
+    "watermark": {
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ],
+      "receipt_sha256": "49920de54411e9f6e884fc74d7db049de560610a1cb7c13c971432e0b3ea84da"
+    }
+  }
+}
