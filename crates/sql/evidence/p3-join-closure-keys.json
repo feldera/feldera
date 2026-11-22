@@ -1,0 +1,122 @@
+{
+  "commit": "aaccfae302a44851514f3c541bceab94462a44b1",
+  "scope": "Derive join candidate keys and output lineage together in Rust. Compare ordered keys at every port for ordinary analysis and analysis allowing lossless casts.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "6c7703ba35d1433a477822b94980128e6881e8550360e164d40a73d9f74e45c7",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "bf8b4b0937f71f5c348cdb15dcfaaa321a99dbdcaa676b8d28e49f7ccabd9e23",
+    "maven/tests.jar": "20b07cf402a98428b9dd30b5294dac51d5a4ea6fd5a23ecf9c2d61e70a5017b1"
+  },
+  "engines": {
+    "classic": {
+      "frozen_sql": {
+        "programs": 8571,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "observations_sha256": "e7ea02805665b0bc67862dab61825d7fef6c64eca6230ab491fd4706807c8e20",
+        "key_requests": {
+          "KeyAnalysis/Row": {
+            "calls": 64091,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/JoinColumns": {
+            "calls": 5907,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/FilterKeys": {
+            "calls": 6206,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/Ranked": {
+            "calls": 827,
+            "fallbacks": 0
+          }
+        },
+        "actual_engine_modes": {
+          "classic": 8571
+        },
+        "cases_overriding_population_mode": [],
+        "candidate_key_comparisons": {
+          "ordinary": 8571,
+          "lossless": 8571,
+          "ports": 187573,
+          "keyed": 23924,
+          "exercised_cases": 8571,
+          "mismatches": 0,
+          "oracle_output_sha256": "dbe16a619975e687ce52a5123ac48770c0d4f89b0c033332b1399ba548fe1515"
+        }
+      },
+      "detached": {
+        "programs": 114,
+        "population_sha256": "d5ed5d30899ddb41c68b7940524b478f1305076083cb2816e281e42ff4ceaa0b",
+        "ordered_s4_observations": 52154,
+        "mismatches": 0,
+        "shard_receipts_sha256": [
+          "e37656b3f1abb17d38fbbce65dcd324cf3f8f48b9c0e1eb9c38fd9f6dbe9db97",
+          "a5870a38ae95afa785ecf58fbd2cfb1957a483d035749dfaf54685ffe380be12",
+          "1ff36d33ab1556dcf7357fedbfcce6c25c4f06014ab14fcd22b485fa95ccc006",
+          "003a40b2c2710bf85668dcb19cc0ddf4d01b7b359e0e5552ce4a7dee1ac56a55"
+        ]
+      }
+    },
+    "gen2": {
+      "frozen_sql": {
+        "programs": 8527,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "observations_sha256": "463935754ad0d2d9d405bdb10c05b720d232f1d1746900bfaf155bdf14738d93",
+        "key_requests": {
+          "KeyAnalysis/Row": {
+            "calls": 67596,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/JoinColumns": {
+            "calls": 5758,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/FilterKeys": {
+            "calls": 5989,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/Ranked": {
+            "calls": 824,
+            "fallbacks": 0
+          }
+        },
+        "actual_engine_modes": {
+          "gen2": 8526,
+          "classic": 1
+        },
+        "cases_overriding_population_mode": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+        ],
+        "candidate_key_comparisons": {
+          "ordinary": 8527,
+          "lossless": 8527,
+          "ports": 187278,
+          "keyed": 22799,
+          "exercised_cases": 8527,
+          "mismatches": 0,
+          "oracle_output_sha256": "c7c0b5e0f6609cc35320f3104ea6f398056055a12cbb9b16296d28243317b58a"
+        }
+      },
+      "detached": {
+        "programs": 114,
+        "population_sha256": "0bf91baf6aaea98a00b53ae68e8ad905412586df9432d516199f6074730113c2",
+        "ordered_s4_observations": 53299,
+        "mismatches": 0,
+        "shard_receipts_sha256": [
+          "fc000dee07e92bc2325f3d2ace593974de322f2a991c372dc63227385139a2bd",
+          "000ab05d9d9e14174bfa7f845e67b801532e6df146f64de152846a7d4ba37861",
+          "f9bc4762917ef65373626a01d2d324dd84cb4afeaf3533550cc62cee35eb9caf",
+          "88da60ae4fe2ebb5663d38ff1c58d9bcde08d7f397c00d5b0f5bfe6531859a24"
+        ]
+      }
+    }
+  },
+  "tests": {
+    "rust": 181,
+    "maven": 48,
+    "packaged_junit": 34,
+    "clippy": "passed"
+  }
+}

@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `aaccfae30`, Rust analyzed each join closure once for both column lineage
+and candidate keys. The 11,665 join requests needed no Java fallback.
+Across the two frozen populations, direct and hybrid candidate keys matched
+at all 374,851 compared ports. The 228 selected detached replays matched
+through all 105,453 S4 observations and artifact emission.
+[Join key comparisons](evidence/p3-join-closure-keys.json)
+
 On `63dbe7a9f`, direct Java and the hybrid compiler agreed on the ordered
 candidate keys of all 374,851 ports visited by ordinary and lossless-cast
 analysis across both frozen populations. Rust answered all 145,533 recorded
