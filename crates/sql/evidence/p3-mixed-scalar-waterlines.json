@@ -1,0 +1,52 @@
+{
+  "commit": "b46957434e24e47476e02639b1b82b2e05e23ac5",
+  "scope": "Alternating arithmetic and unary operations in JNI waterline projection, followed by detached SQL replay on both engines.",
+  "rust_tests_passed": 145,
+  "packaged_junit_tests": 64,
+  "maven": {
+    "passed": 25,
+    "skipped": 2
+  },
+  "clippy": "passed",
+  "build_sha256": {
+    "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+    "bin/libfeldera_sql_opt_jni.so": "33c7400f6cdb8cc92724abdd66e8507f7a8781e0279e414e4929a683701940e6",
+    "bin/sql2dbsp": "434d2658fbd5ae2b72133fd562c11ef1532bd33b907c8815e4cce83dfabd67ef",
+    "maven/tests.jar": "f20849d563bd34e8eae5ebb71fccb3753e1bb8289c7392709e892dca588abeeb",
+    "maven/sql-compiler.jar": "f47d495e0c5f4f80880cb82d20b1d97912eeefe47f44ba5a9195c7471c94221a"
+  },
+  "detached": {
+    "classic": {
+      "population_sha256": "a80aed3c7e7ecc031d525bea67bed6ad84972dd43cf9a9e9d1b92a3615327bb6",
+      "receipt_sha256": "017992c4743706cd1b998e28731d20e9421614b6761459aea0285de8acb39893",
+      "observations": {
+        "directed/arithmetic-16": {
+          "count": 378,
+          "bytes": 13995442,
+          "sha256": "cb0c322cfc4e50d38fc0df613648b779bf3effd5cbf19a8b62b9d44831963afb"
+        },
+        "directed/arithmetic-160": {
+          "count": 378,
+          "bytes": 56599362,
+          "sha256": "1e9da38a7596ae5c8b3321156553631bf5bb1d1e55cc92090a227e0f511c7411"
+        }
+      }
+    },
+    "gen2": {
+      "population_sha256": "4f7d174f64fbbb428d1dd3cb9344452e858e170f97bba5eb74c9a241b120212e",
+      "receipt_sha256": "aefc1a4b0166e3a2bc6fcac3197d600195dcb4971b38aaf52fb8223a0364436b",
+      "observations": {
+        "directed/arithmetic-16": {
+          "count": 380,
+          "bytes": 14049445,
+          "sha256": "b13de717415a7095bdfc5b19af2dc8db0fc4d72094c5219ceb5d879dcfef0811"
+        },
+        "directed/arithmetic-160": {
+          "count": 380,
+          "bytes": 56824245,
+          "sha256": "8c6226bfd506da103945887234d46851b6afe24c6ca89115cb7bc016dc2bec72"
+        }
+      }
+    }
+  }
+}

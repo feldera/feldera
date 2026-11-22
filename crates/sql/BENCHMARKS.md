@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Deep checkpoint expressions, 2026-11-22
+
+All 69 pairs on `0c136c3eb` matched through classic artifact emission.
+Each workload used two warmup pairs and 21 measured pairs in fresh JVMs on
+CPU 15, alternating compiler order. The frozen-corpus replay ran concurrently
+on the same ARM64 VM. The timer stopped before Cargo built the pipeline.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.080 | 1.771 | 0.852× |
+| Nexmark suite | 4.847 | 5.758 | 1.188× |
+| Outer join | 1.944 | 1.601 | 0.824× |
+
+[Workload timings and build identities](evidence/p3-deep-checkpoint-cold.json)
+
 ## Weigh limiter inputs, 2026-11-22
 
 Build `b1cc5637e` met the 1.2× ceiling on all three workloads. Each

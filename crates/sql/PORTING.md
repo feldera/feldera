@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `b46957434`, the Rust visitor projected a chain of 180 arithmetic and 180
+unary operations and matched Java's reduced expression through JNI. Detached
+replay matched all 1,516 ordered observations for the two arithmetic SQL cases
+on classic and Gen-2. The preceding checkpoint build met the cold compilation
+ceiling on all three workloads during concurrent corpus replay.
+[Mixed scalar comparisons](evidence/p3-mixed-scalar-waterlines.json) · [Cold timings](evidence/p3-deep-checkpoint-cold.json)
+
 On `0c136c3eb`, a LATENESS query with 160 alternating additions and
 subtractions completed through the supervised worker on classic and Gen-2.
 The 16-operation control and the deep query matched direct Java on schema,
