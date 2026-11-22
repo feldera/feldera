@@ -327,7 +327,7 @@ impl Circuit {
     /// Decode additional expression roots written in this circuit's identity space.
     /// A root can refer to the snapshot or to another expression in the same batch.
     pub fn with_inner_roots(
-        mut self,
+        self,
         expressions: impl IntoIterator<Item = Value>,
     ) -> Result<(Self, Vec<NodeId>), Error> {
         let mut extra = BTreeMap::new();
@@ -338,6 +338,14 @@ impl Circuit {
                 .ok_or_else(|| Error::new("expected a serialized inner node"))?;
             roots.push(root);
         }
+        self.attach_inner_roots(extra, roots)
+    }
+
+    fn attach_inner_roots(
+        mut self,
+        extra: BTreeMap<NodeId, Node>,
+        roots: Vec<NodeId>,
+    ) -> Result<(Self, Vec<NodeId>), Error> {
         let ids: Vec<_> = extra.keys().copied().collect();
         for (id, node) in extra {
             if !matches!(id, NodeId::Inner(_)) || self.nodes.contains_key(&id) {

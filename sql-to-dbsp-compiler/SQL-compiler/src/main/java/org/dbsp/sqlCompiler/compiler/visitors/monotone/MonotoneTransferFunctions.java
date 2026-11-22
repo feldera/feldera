@@ -268,80 +268,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.pop(expression);
         MonotoneExpression bodyValue = this.get(expression.body);
         if (bodyValue.mayBeMonotone()) {
-            // Synthesize function for apply operator which will
-            // compute the associated monotone value.
-            DBSPParameter[] applyParameters;
-            DBSPExpression applyBody = bodyValue.getReducedExpression();
-            switch (this.argumentKind) {
-                case IndexedZSet: {
-                    // The "apply" DBSP node that computes the limit values does not have the type (&K, &V),
-                    // but &(K, V).  So we generate this code:
-                    // |a: &(K, V)| -> R {
-                    //    let t = (&(*a).0, &(*a).1);  // t has type (&K, &V), as expected by the previous body
-                    //    <previous body using t>
-                    // }
-                    PartiallyMonotoneTuple tuple = this.parameterTypes[0].to(PartiallyMonotoneTuple.class);
-                    DBSPParameter applyParameter = new DBSPParameter("a", projectedTypes[0].ref());
-                    List<DBSPExpression> parameterFieldsToKeep = new ArrayList<>();
-                    int index = 0;
-                    // However, not all fields of the "a" parameter may be monotone, so we only
-                    // include the ones that are.
-                    if (tuple.getFieldType(0).mayBeMonotone()) {
-                        parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
-                        index++;
-                    }
-                    if (tuple.getFieldType(1).mayBeMonotone()) {
-                        parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
-                    }
-                    Utilities.enforce(!parameterFieldsToKeep.isEmpty());
-                    applyBody = new DBSPBlockExpression(
-                            Linq.list(
-                                    new DBSPLetStatement(expression.parameters[0].getName(),
-                                            new DBSPRawTupleExpression(parameterFieldsToKeep))
-                            ),
-                            applyBody
-                    );
-                    applyParameters = new DBSPParameter[]{applyParameter};
-                    break;
-                }
-                case Join: {
-                    // The "apply" DBSP node that computes the limit values
-                    // will have type a: &(K, L, R).  But the function generated so
-                    // far has type |k: &K, l: &L, r: &R|.
-                    //
-                    // So we generate this code:
-                    // |a: &(K, L, R)| -> R {
-                    //    let k = &(*a).0;
-                    //    let l = &(*a).1;
-                    //    let r = &(*a).2;
-                    //    <previous body using k, l, r>
-                    // }
-                    Utilities.enforce(this.parameterTypes.length == 3);
-                    DBSPParameter applyParameter = new DBSPParameter("a",
-                            new DBSPTypeRawTuple(projectedTypes[0], projectedTypes[1], projectedTypes[2]).ref());
-                    List<DBSPStatement> statements = new ArrayList<>();
-                    for (int i = 0; i < 3; i++)
-                        statements.add(new DBSPLetStatement(expression.parameters[i].getName(),
-                                applyParameter.asVariable().deref().field(i).borrow()));
-                    applyBody = new DBSPBlockExpression(
-                            statements,
-                            applyBody
-                    );
-                    applyParameters = new DBSPParameter[]{applyParameter};
-                    break;
-                }
-                case ZSet: {
-                    applyParameters = projectedParameters;
-                    break;
-                }
-                default: {
-                    throw new InternalCompilerError("unreachable");
-                }
-            }
-            DBSPClosureExpression closure = applyBody.closure(applyParameters);
+            DBSPClosureExpression closure = this.compiler.options.ioOptions.rustOptimizerPasses
+                    && this.argumentKind != ArgumentKind.ZSet
+                    ? RustCircuitPass.bindWaterlineInputs(this.compiler, expression.parameters, projectedTypes,
+                            bodyValue.getReducedExpression())
+                    : this.applyClosure(expression, projectedParameters, projectedTypes, bodyValue.getReducedExpression());
             MonotoneClosureType cloType = new MonotoneClosureType(bodyValue.type,
                     expression.parameters,
-                    applyParameters);
+                    closure.parameters);
             MonotoneExpression result = new MonotoneExpression(expression, cloType, closure);
             this.set(expression, result);
             Logger.INSTANCE.belowLevel(this, 1)
@@ -349,6 +283,78 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     .newline();
         }
         return VisitDecision.STOP;
+    }
+
+    private DBSPClosureExpression applyClosure(DBSPClosureExpression expression, DBSPParameter[] projectedParameters,
+            DBSPType[] projectedTypes, DBSPExpression applyBody) {
+        DBSPParameter[] applyParameters;
+        switch (this.argumentKind) {
+            case IndexedZSet: {
+                // The "apply" DBSP node that computes the limit values does not have the type (&K, &V),
+                // but &(K, V).  So we generate this code:
+                // |a: &(K, V)| -> R {
+                //    let t = (&(*a).0, &(*a).1);  // t has type (&K, &V), as expected by the previous body
+                //    <previous body using t>
+                // }
+                PartiallyMonotoneTuple tuple = this.parameterTypes[0].to(PartiallyMonotoneTuple.class);
+                DBSPParameter applyParameter = new DBSPParameter("a", projectedTypes[0].ref());
+                List<DBSPExpression> parameterFieldsToKeep = new ArrayList<>();
+                int index = 0;
+                // However, not all fields of the "a" parameter may be monotone, so we only
+                // include the ones that are.
+                if (tuple.getFieldType(0).mayBeMonotone()) {
+                    parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
+                    index++;
+                }
+                if (tuple.getFieldType(1).mayBeMonotone()) {
+                    parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
+                }
+                Utilities.enforce(!parameterFieldsToKeep.isEmpty());
+                applyBody = new DBSPBlockExpression(
+                        Linq.list(
+                                new DBSPLetStatement(expression.parameters[0].getName(),
+                                        new DBSPRawTupleExpression(parameterFieldsToKeep))
+                        ),
+                        applyBody
+                );
+                applyParameters = new DBSPParameter[]{applyParameter};
+                break;
+            }
+            case Join: {
+                // The "apply" DBSP node that computes the limit values
+                // will have type a: &(K, L, R).  But the function generated so
+                // far has type |k: &K, l: &L, r: &R|.
+                //
+                // So we generate this code:
+                // |a: &(K, L, R)| -> R {
+                //    let k = &(*a).0;
+                //    let l = &(*a).1;
+                //    let r = &(*a).2;
+                //    <previous body using k, l, r>
+                // }
+                Utilities.enforce(this.parameterTypes.length == 3);
+                DBSPParameter applyParameter = new DBSPParameter("a",
+                        new DBSPTypeRawTuple(projectedTypes[0], projectedTypes[1], projectedTypes[2]).ref());
+                List<DBSPStatement> statements = new ArrayList<>();
+                for (int i = 0; i < 3; i++)
+                    statements.add(new DBSPLetStatement(expression.parameters[i].getName(),
+                            applyParameter.asVariable().deref().field(i).borrow()));
+                applyBody = new DBSPBlockExpression(
+                        statements,
+                        applyBody
+                );
+                applyParameters = new DBSPParameter[]{applyParameter};
+                break;
+            }
+            case ZSet: {
+                applyParameters = projectedParameters;
+                break;
+            }
+            default: {
+                throw new InternalCompilerError("unreachable");
+            }
+        }
+        return applyBody.closure(applyParameters);
     }
 
     @Override

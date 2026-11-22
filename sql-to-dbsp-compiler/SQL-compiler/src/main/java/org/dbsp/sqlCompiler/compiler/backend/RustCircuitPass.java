@@ -98,6 +98,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -112,11 +113,13 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
@@ -330,6 +333,23 @@ public final class RustCircuitPass implements CircuitTransform {
                     inputRow, hop.getOutputZSetElementType(), hop.interval, hop.size, hop.start));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode HOP timestamp position", error);
+        }
+    }
+
+    /** Bind the projected inputs without serializing the already analyzed closure body. */
+    public static DBSPClosureExpression bindWaterlineInputs(DBSPCompiler compiler, DBSPParameter[] parameters,
+            DBSPType[] types, DBSPExpression body) {
+        try {
+            var names = Linq.map(parameters, DBSPParameter::getName, String.class);
+            var reply = invokeLowering(compiler, "Monotonicity/WaterlineBindings", MAPPER.writeValueAsBytes(names), types);
+            var decoder = expressionDecoder(reply.writer);
+            var nodes = reply.value.elements();
+            var input = decoder.decodeInner(nodes.next(), DBSPParameter.class);
+            var statements = new ArrayList<DBSPStatement>();
+            nodes.forEachRemaining(node -> statements.add(decoder.decodeInner(node, DBSPLetStatement.class)));
+            return new DBSPBlockExpression(statements, body).closure(input);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode waterline parameter names", error);
         }
     }
 

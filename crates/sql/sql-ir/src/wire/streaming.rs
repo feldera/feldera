@@ -108,6 +108,29 @@ impl Fragments {
 }
 
 impl Circuit {
+    /// Decode a batch of expression roots into this arena. Definitions can be
+    /// shared across roots or refer to nodes already present in the circuit.
+    pub fn with_inner_roots_bytes(self, bytes: &[u8]) -> Result<(Self, Vec<NodeId>), Error> {
+        let mut input = serde_json::Deserializer::from_slice(bytes);
+        let needs_codec = Cell::new(false);
+        let mut nodes = Arena::new();
+        let roots = (&mut input).deserialize_seq(InnerRoots {
+            nodes: &mut nodes,
+            needs_codec: &needs_codec,
+        });
+        if let Ok(roots) = roots {
+            if !needs_codec.get() && input.end().is_ok() {
+                return self.attach_inner_roots(nodes, roots);
+            }
+        }
+        let Value::Array(roots) =
+            crate::parse_json(bytes).map_err(|e| Error::new(e.to_string()))?
+        else {
+            return Err(Error::new("expected an array of inner roots"));
+        };
+        self.with_inner_roots(roots)
+    }
+
     /// Decode a graph for a single in-process optimizer call. Relational origins
     /// may refer to snapshots retained by that call's Java writer.
     pub fn from_live_json_bytes(bytes: &[u8]) -> Result<Self, Error> {
@@ -147,6 +170,36 @@ fn decode_ordered(bytes: &[u8], fragments: Option<&mut Fragments>) -> Result<Cir
         return Err(Error::new("expected a circuit in writer order"));
     }
     validated(root, nodes)
+}
+
+struct InnerRoots<'a> {
+    nodes: &'a mut Arena,
+    needs_codec: &'a Cell<bool>,
+}
+
+impl<'de> Visitor<'de> for InnerRoots<'_> {
+    type Value = Vec<NodeId>;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("an array of inner nodes")
+    }
+
+    fn visit_seq<S: SeqAccess<'de>>(self, mut seq: S) -> Result<Vec<NodeId>, S::Error> {
+        let mut roots = Vec::new();
+        while let Some(root) = seq.next_element_seed(ReadField {
+            nodes: self.nodes,
+            outer: false,
+            depth: 0,
+            needs_codec: self.needs_codec,
+            fragments: None,
+        })? {
+            roots.push(
+                root.node_id()
+                    .ok_or_else(|| de::Error::custom("expected an inner node"))?,
+            );
+        }
+        Ok(roots)
+    }
 }
 
 struct ReadField<'a> {
@@ -302,6 +355,45 @@ impl<'de> Visitor<'de> for ReadField<'_> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn inner_batches_share_types_and_resolve_forward_references() {
+        let base = Circuit::from_json(
+            json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}),
+        )
+        .unwrap();
+        let (base, _) = base
+            .with_inner_roots([json!({"class":"DBSPTypeInteger","id":1})])
+            .unwrap();
+        // Both writer order and arbitrary producer order must retain the original type identity.
+        for bytes in [
+            br#"[{"node":2},{"class":"DBSPI32Literal","id":2,"type":{"node":1},"value":42}]"#
+                .as_slice(),
+            br#"[{"node":2},{"value":42,"id":2,"type":{"node":1},"class":"DBSPI32Literal"}]"#,
+        ] {
+            let Value::Array(values) = crate::parse_json(bytes).unwrap() else {
+                unreachable!()
+            };
+            let (expected, ids) = base.clone().with_inner_roots(values).unwrap();
+            let (actual, roots) = base.clone().with_inner_roots_bytes(bytes).unwrap();
+            assert_eq!(ids, roots);
+            assert_eq!(
+                actual.nodes.keys().collect::<Vec<_>>(),
+                expected.nodes.keys().collect::<Vec<_>>()
+            );
+            let literal = actual.node(roots[0]).unwrap();
+            assert_eq!(literal.edge("type").unwrap(), NodeId::Inner(1));
+            assert_eq!(literal.fields, expected.node(ids[0]).unwrap().fields);
+        }
+        for invalid in [
+            br#"[{"class":"DBSPTypeInteger","id":1}]"#.as_slice(),
+            br#"[{"node":2}]"#,
+            br#"[{"class":"DBSPTypeInteger","id":2,"id":3}]"#,
+            br#"[{"node":1}] []"#,
+        ] {
+            assert!(base.clone().with_inner_roots_bytes(invalid).is_err());
+        }
+    }
 
     #[test]
     fn live_fragments_preserve_the_document_nesting_limit() {
