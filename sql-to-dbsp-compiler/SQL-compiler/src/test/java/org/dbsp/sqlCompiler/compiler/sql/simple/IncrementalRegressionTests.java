@@ -1558,6 +1558,23 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void unnestNullableRowsWithOrdinalityAndLateness() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
+                               items ROW(i INT, label VARCHAR) ARRAY);
+                CREATE VIEW V AS SELECT x.ord, T.ts, x.label, x.i
+                FROM T CROSS JOIN UNNEST(T.items) WITH ORDINALITY AS x(i, label, ord);""")
+                .withStringTrim();
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES ('2024-01-01 10:00:00',
+                    ARRAY[ROW(4, 'x'), CAST(NULL AS ROW(i INT, label VARCHAR))]);""", """
+                 ord | ts                  | label | i
+                ----------------------------------------
+                 1   | 2024-01-01 10:00:00 | x     | 4
+                 2   | 2024-01-01 10:00:00 |NULL   | NULL""");
+    }
+
+    @Test
     public void unnestOrdinalityLateness() {
         // Monotonicity analysis of UNNEST WITH ORDINALITY whose element type differs from the ordinality type
         var ccs = this.getCCS("""
