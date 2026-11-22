@@ -275,16 +275,12 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
 
     /** A join of {@code left} and {@code right} with the function of {@code operator}: a join that
      * produces an indexed collection when {@code operator} does, a plain join otherwise. */
-    DBSPJoinBaseOperator streamJoin(DBSPJoinBaseOperator operator, OutputPort left, OutputPort right) {
-        DBSPJoinBaseOperator result;
+    static DBSPJoinBaseOperator streamJoin(DBSPJoinBaseOperator operator, OutputPort left, OutputPort right) {
         if (operator.outputType.is(DBSPTypeIndexedZSet.class))
-            result = new DBSPStreamJoinIndexOperator(operator.getRelNode(), operator.getOutputIndexedZSetType(),
+            return new DBSPStreamJoinIndexOperator(operator.getRelNode(), operator.getOutputIndexedZSetType(),
                     operator.getFunction(), left, right, operator.balanced);
-        else
-            result = new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                    operator.getFunction(), left, right, operator.balanced);
-        this.addOperator(result);
-        return result;
+        return new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
+                operator.getFunction(), left, right, operator.balanced);
     }
 
     /** Expand a left join into ΔL ⋈ z⁻¹R + z⁻¹L ⋈ ΔR + ΔL ⋈ ΔR + pad(Δ(L ▷ R)).
@@ -298,12 +294,15 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         DBSPDelayedIntegralOperator leftIntegrator = new DBSPDelayedIntegralOperator(node, inputs.get(0));
         leftIntegrator.copyAnnotations(operator.left().node());
         this.addOperator(leftIntegrator);
-        DBSPJoinBaseOperator rightJoin = this.streamJoin(operator, leftIntegrator.outputPort(), inputs.get(1));
+        DBSPJoinBaseOperator rightJoin = streamJoin(operator, leftIntegrator.outputPort(), inputs.get(1));
+        this.addOperator(rightJoin);
         DBSPDelayedIntegralOperator rightIntegrator = new DBSPDelayedIntegralOperator(node, inputs.get(1));
         rightIntegrator.copyAnnotations(operator.right().node());
         this.addOperator(rightIntegrator);
-        DBSPJoinBaseOperator leftJoin = this.streamJoin(operator, inputs.get(0), rightIntegrator.outputPort());
-        DBSPJoinBaseOperator deltaJoin = this.streamJoin(operator, inputs.get(0), inputs.get(1));
+        DBSPJoinBaseOperator leftJoin = streamJoin(operator, inputs.get(0), rightIntegrator.outputPort());
+        this.addOperator(leftJoin);
+        DBSPJoinBaseOperator deltaJoin = streamJoin(operator, inputs.get(0), inputs.get(1));
+        this.addOperator(deltaJoin);
 
         DBSPAntiJoinOperator antiJoin = new DBSPAntiJoinOperator(node, inputs.get(0), inputs.get(1));
         this.addOperator(antiJoin);

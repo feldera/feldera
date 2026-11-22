@@ -59,6 +59,8 @@ mod cse;
 mod operator_inputs;
 pub use operator_inputs::OperatorInputs;
 mod dead_code;
+mod delta_join;
+pub use delta_join::JoinForm;
 mod dependency_order;
 pub use dependency_order::dependency_order;
 mod distinct_outputs;

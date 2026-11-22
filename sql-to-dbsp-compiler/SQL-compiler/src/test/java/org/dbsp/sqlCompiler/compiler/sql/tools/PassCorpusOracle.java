@@ -93,6 +93,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     }
 
     private boolean selected(CircuitTransform pass) {
+        if (this.passClass.equals("DeltaExpandOperators"))
+            return pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DeltaExpandOperators;
         if (pass instanceof RustCircuitPass rust)
             return pass.getName().equals(this.passClass) || (rust.wrapsGraphOptimization
                     && this.passClass.equals("OptimizeWithGraph(" + pass.getName() + ")"));

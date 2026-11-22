@@ -906,6 +906,12 @@ fn transform(
             let inputs = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::combine_bounds(inputs, mode))?);
         }
+        "DeltaExpansion/BinaryJoins" => {
+            use feldera_sql_opt::JoinForm::{Inner, FilteredInner, LeftOuter, FilteredLeftOuter};
+            let formulas = [Inner, FilteredInner, LeftOuter, FilteredLeftOuter]
+                .map(|form| (form, form.steps()));
+            return Ok(serde_json::to_value(BTreeMap::from(formulas))?);
+        }
         "Monotonicity/Function" => {
             let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::function_waterline(&name, &arguments))?);

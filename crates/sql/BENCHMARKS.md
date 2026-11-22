@@ -4,6 +4,20 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Shared row types, 2026-11-22
+
+On `19f82bffc`, CPU 15 ran the cold compiler benchmark in its own container.
+Concurrent verification used CPUs 0–14 on the same VM. Each workload had two
+warmup pairs and 21 measured pairs. All 69 pairs matched through artifact publication.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 4.370 | 3.538 | 0.810× |
+| Nexmark suite | 9.974 | 11.529 | 1.156× |
+| Outer join | 4.214 | 3.278 | 0.778× |
+
+[Compilation timings and build identities](evidence/p3-shared-row-cold.json)
+
 ## Expression value numbering, 2026-11-22
 
 Each cell is hybrid p95 divided by direct Java p95 for 21 cold pairs on CPU 15.

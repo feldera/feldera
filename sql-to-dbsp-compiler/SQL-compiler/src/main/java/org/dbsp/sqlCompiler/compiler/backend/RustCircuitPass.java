@@ -125,6 +125,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Lineage;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.RustDeltaExpandOperators;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -521,6 +522,15 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public record BinaryJoin(int left, int right, DBSPTypeIndexedZSet type, DBSPClosureExpression function) {}
     public record StarJoinTerm(List<BinaryJoin> joins, DBSPClosureExpression projection) {}
+
+    public static Map<RustDeltaExpandOperators.JoinForm, List<RustDeltaExpandOperators.Step>> deltaJoinFormulas() {
+        try {
+            var reply = transformWithContext("DeltaExpansion/BinaryJoins", EMPTY_CONTEXT, 0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, new TypeReference<>() {});
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not read binary join expansions from Rust", error);
+        }
+    }
 
     public static StarJoinTerm deltaStarJoinTerm(DBSPCompiler compiler, DBSPClosureExpression closure,
                                                 DBSPType key, List<OutputPort> inputs) {

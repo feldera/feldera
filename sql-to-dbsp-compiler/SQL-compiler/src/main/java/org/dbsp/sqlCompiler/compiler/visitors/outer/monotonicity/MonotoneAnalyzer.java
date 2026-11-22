@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DeltaExpandOperators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.RustDeltaExpandOperators;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IWritesLogs;
@@ -134,7 +135,8 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
     }
 
     protected DeltaExpandOperators deltaExpander() {
-        return new DeltaExpandOperators(this.compiler);
+        return this.compiler.options.ioOptions.rustOptimizerPasses
+                ? new RustDeltaExpandOperators(this.compiler) : new DeltaExpandOperators(this.compiler);
     }
 
     protected CircuitTransform insertLimiters(CircuitTransform original) {

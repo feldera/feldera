@@ -1,0 +1,91 @@
+{
+  "base_commit": "19f82bffca13c79b298721753b267a7bb1adca58",
+  "scope": "Bind Rust binary join delta formulas to live Java operators at DeltaExpandOperators. Both input snapshot integrals keep source annotations. Java retains the expansion map for the limiter pass.",
+  "build": {
+    "bin/libfeldera_sql_opt_jni.so": "7db0cfc53c43b93fcf1dd45d4123eb23d0cffa47d62b89ed5cc6024344bd89cb",
+    "maven/sql-compiler.jar": "6b0847166ae13e9aa75feb851fcbaf92b5284525d47262ea00199158421fd648",
+    "maven/tests.jar": "5144ffc8b94d154942dd970d581964d9322932ab12dad44f4f7e86eba9d19531",
+    "compiler.jar": "ce1df7913cc3bc238928698b41b1bbf371f5e72fe5ac95207e6c1aa89c921dcb",
+    "clippy.log": "0f6f65c3df00b83189ebac591e2149fe1a077ddb1ab1207244569873240abdf3",
+    "tests.log": "8b2852359d880de900557da4f9c2e457886cca25cc074fc6cf9da9ffc053bf20",
+    "maven/build.log": "01eb8a4b13dc282f1ff0d1fd79eca2d5236ae6435bd1ddd1980797a2c305e35a"
+  },
+  "rust_tests": 125,
+  "maven_tests": 99,
+  "engines": {
+    "classic": {
+      "pass_comparison": "DeltaExpandOperators matched at 291 invocations across 291 cases",
+      "binary_join_occurrences": {
+        "DBSPJoinFilterMapOperator": 65,
+        "DBSPJoinIndexOperator": 103,
+        "DBSPJoinOperator": 175,
+        "DBSPLeftJoinFilterMapOperator": 40,
+        "DBSPLeftJoinIndexOperator": 16,
+        "DBSPLeftJoinOperator": 58
+      },
+      "java_observations_sha256": "1668ce338b1a55a69c88537ee2e9a4dedaacabd3bfe5913af3d71126c5d8ff3c",
+      "hybrid_observations_sha256": "1bf98163f2ce787c0952599ab72363436196e5e927468f9a10c738c7dde7fc9e",
+      "detached": {
+        "programs": 8,
+        "ordered_s4_observations": 5292,
+        "receipt_sha256": "defb7a3ee7eccec28dfd4bd8eacb009352745f54a6b3b38a6317ea31580d5006"
+      },
+      "packaged_detached": {
+        "programs": 8,
+        "ordered_s4_observations": 5292,
+        "receipt_sha256": "b336362ccf835055f06c62d03d0159eccae5c5f8590c16b16962936ad4f5f9ef"
+      }
+    },
+    "gen2": {
+      "pass_comparison": "DeltaExpandOperators matched at 259 invocations across 259 cases",
+      "binary_join_occurrences": {
+        "DBSPJoinFilterMapOperator": 64,
+        "DBSPJoinIndexOperator": 102,
+        "DBSPJoinOperator": 173,
+        "DBSPLeftJoinFilterMapOperator": 40,
+        "DBSPLeftJoinIndexOperator": 16,
+        "DBSPLeftJoinOperator": 56
+      },
+      "java_observations_sha256": "bf391d1a4c62c790671bae890e90489fe484166584b639bf752e0f49ba7d61dd",
+      "hybrid_observations_sha256": "ae52b12e3c3a043131e505550eec3761a9ffd4a40ee48b191e0a8cc5cb46f1c9",
+      "detached": {
+        "programs": 8,
+        "ordered_s4_observations": 5886,
+        "receipt_sha256": "5dd1a9fd1bc6ea6e461875860b4ca53ef60725209e98e9ad3dfb8af279e2373b"
+      },
+      "packaged_detached": {
+        "programs": 8,
+        "ordered_s4_observations": 5886,
+        "receipt_sha256": "e1b800ce0e5a74058bb12e0a439f188ada75727cbd98043cc5d8d5c913e26415"
+      }
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "restores": [
+        [
+          "java",
+          "hybrid"
+        ],
+        [
+          "hybrid",
+          "java"
+        ]
+      ],
+      "receipt_sha256": "ef4e237e66ccfc5be7e73f01d938a392d9132645d7aa3a44861240d2b21d0bb7"
+    },
+    "watermark": {
+      "restores": [
+        [
+          "java",
+          "hybrid"
+        ],
+        [
+          "hybrid",
+          "java"
+        ]
+      ],
+      "receipt_sha256": "d8a664ada48e68d7e7393a42ea6109e2b44320a761144b9293f1a897e9bde06a"
+    }
+  }
+}

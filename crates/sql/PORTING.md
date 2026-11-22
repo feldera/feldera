@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust supplies the ordered terms of the binary join derivative, including
+the null-padded term for a left join and the filter on each term of a fused
+join. The hybrid compiler binds those terms to the original ports and keeps
+their correspondence for limiter insertion. All 550 selected delta graphs
+matched Java across 908 binary joins. The packaged compiler also matched on
+16 detached programs. COUNT and LATENESS restored in both directions.
+[Delta expansion and restart results](evidence/p3-delta-join-formulas.json)
+
 Rust computes the waterline shape of a nested SQL row once per type and
 shares it across repeated fields. The regression uses 160 nested row types.
 All 550 selected monotonicity invocations and 16 detached compilations matched
