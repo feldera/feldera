@@ -462,6 +462,19 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `bf609aab1`, the Rust clock classifier retains nested nonnullable empty
+rows even when the surrounding row has unbounded fields. All 8,571 classic
+and 8,527 Gen-2 SQL programs compiled with the coverage observer. Rust
+answered all 8,937 requests recorded for the five exercised decisions. The
+16 selected detached compilations matched direct Java at all 11,178 ordered
+optimizer observations and through emission. COUNT and LATENESS checkpoints
+restored in both directions. The coverage counters measure the instrumented
+decisions only. [Clock projections and compiler coverage](evidence/p3-empty-row-clock-inputs.json)
+
+To verify the per-program counts, run
+`python3 crates/sql/scripts/summarize_optimizer_coverage.py POPULATION OBSERVATIONS`.
+For observations read from S2, also pass `--checkpoints S2_DIRECTORY`.
+
 The Rust transfer schedule selects the common fields of sums and differences,
 the shared key of an antijoin, and the minimum or grouping-key bound of an
 aggregate. Across 550 monotonicity comparisons, Rust answered all 85 antijoin
