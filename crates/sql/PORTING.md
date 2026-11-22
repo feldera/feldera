@@ -570,6 +570,12 @@ same field. All 550 selected monotonicity comparisons and 40 detached
 replays matched Java, and both checkpoint programs restored in both directions.
 [Indexed and join waterlines](evidence/p3-indexed-join-waterlines.json)
 
+Rust preserves the declared types of unknown row fields when another field has
+a waterline. The monotonicity pass matched all 550 selected frozen programs and
+12 directed LATENESS and UNNEST compilations, including WITH ORDINALITY. All
+40 detached replays matched through emission. COUNT and LATENESS checkpoints
+restored in both directions. [Row field comparisons](evidence/p3-unbounded-row-fields.json)
+
 The output-projection pass sends Rust the producer and reader functions and
 reattaches the result to the live operator. This preserves chains of projections
 rewritten earlier in the same pass. All 580 pass observations and 310 selected

@@ -1,12 +1,19 @@
 //! Reduce the structural part of a row closure to its projected waterline.
 use crate::limiters::Projection;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId, TypeId,
+    TypeKind,
+};
 
 /// Rebuild the analyzed type using the original input's field objects. Equal SQL
 /// types from the closure body can have different source positions and sharing.
 #[derive(serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RowType {
+    /// Use the declared SQL type of an unbounded expression in the original closure.
+    Unbounded {
+        type_id: u64,
+    },
     Input {
         index: usize,
     },
@@ -49,6 +56,79 @@ fn field_number(node: &Node) -> Result<usize, Error> {
         .and_then(|n| n.as_u64())
         .and_then(|n| usize::try_from(n).ok())
         .ok_or_else(|| Error::new("expected row field index"))
+}
+
+/// Unknown tuple fields can still be read by a subsequent field expression.
+/// Retain their layout, including the nullability of each nested tuple.
+fn unbounded_shape(
+    edit: &CircuitEditor,
+    ty: TypeId,
+    depth: usize,
+) -> Result<Option<Projection>, Error> {
+    if depth > 128 {
+        return Ok(None);
+    }
+    let kind = edit.type_kind(ty)?;
+    Ok(Some(match kind {
+        TypeKind::RawTuple | TypeKind::Tuple => {
+            let mut fields = Vec::new();
+            for member in edit.node(ty.into())?.edges("tupFields")? {
+                let Some(field) = unbounded_shape(edit, edit.type_id(member)?, depth + 1)? else {
+                    return Ok(None);
+                };
+                fields.push(field);
+            }
+            Projection::Tuple {
+                fields,
+                raw: kind == TypeKind::RawTuple,
+                nullable: edit.nullable(ty)?,
+            }
+        }
+        TypeKind::Array
+        | TypeKind::Binary
+        | TypeKind::Bool
+        | TypeKind::Date
+        | TypeKind::Decimal
+        | TypeKind::Double
+        | TypeKind::GeoPoint
+        | TypeKind::Integer
+        | TypeKind::LongInterval
+        | TypeKind::Map
+        | TypeKind::Null
+        | TypeKind::Real
+        | TypeKind::ShortInterval
+        | TypeKind::String
+        | TypeKind::Time
+        | TypeKind::Timestamp
+        | TypeKind::TimestampTz
+        | TypeKind::Uuid
+        | TypeKind::Variant => Projection::Scalar { monotone: false },
+        _ => return Ok(None),
+    }))
+}
+
+fn unbounded(
+    edit: &CircuitEditor,
+    expression: ExpressionId,
+    depth: usize,
+) -> Result<Option<ProjectedValue>, Error> {
+    let ty = edit.expression_type(expression)?;
+    let Some(shape) = unbounded_shape(edit, ty, depth)? else {
+        return Ok(None);
+    };
+    // A nonnullable empty tuple has a bound even when it occurs inside an
+    // otherwise unknown row. Its construction belongs to the general visitor.
+    if shape.monotone() {
+        return Ok(None);
+    }
+    let NodeId::Inner(type_id) = NodeId::from(ty) else {
+        unreachable!("type has an inner identity")
+    };
+    Ok(Some(ProjectedValue {
+        shape,
+        row_type: RowType::Unbounded { type_id },
+        reduced: None,
+    }))
 }
 
 impl Row<'_> {
@@ -106,6 +186,11 @@ impl Row<'_> {
         let node = edit.node(id)?;
         let kind = edit.expr_kind(expression)?;
         let value = match kind {
+            Expr::NoExpression
+            | Expr::StringLiteral
+            | Expr::BinaryLiteral
+            | Expr::UuidLiteral
+            | Expr::VariantNullLiteral => return unbounded(edit, expression, depth),
             Expr::Deref => {
                 let base = edit.expression(node.edge("expression")?)?;
                 return self.dereference(edit, base);
@@ -155,7 +240,7 @@ impl Row<'_> {
             }
             Expr::RawTuple | Expr::Tuple => {
                 if node.field("fields").is_none() {
-                    return Ok(None);
+                    return unbounded(edit, expression, depth);
                 }
                 let mut fields = Vec::new();
                 let mut types = Vec::new();

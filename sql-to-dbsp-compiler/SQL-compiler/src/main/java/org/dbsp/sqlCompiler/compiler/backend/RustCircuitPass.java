@@ -379,7 +379,9 @@ public final class RustCircuitPass implements CircuitTransform {
             var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(inputs.length == 1 ? shapes.get(0) : shapes), roots);
             if (reply.value.isNull())
                 return null;
-            var result = WaterlineProjection.resolveType(reply.value.required("row_type"), inputs);
+            var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+            var result = WaterlineProjection.resolveType(reply.value.required("row_type"),
+                    id -> Utilities.getExists(nodes, id).to(DBSPType.class), inputs);
             var reduced = reply.value.required("bound");
             return new MonotoneExpression(body, result, reduced.isNull() ? null
                     : expressionDecoder(reply.writer).decodeInner(reduced, DBSPExpression.class));

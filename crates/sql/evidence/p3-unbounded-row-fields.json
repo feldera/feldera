@@ -1,0 +1,58 @@
+{
+  "base_commit": "cb669537e",
+  "scope": "Rust reduces rows with typed unknown fields, text, binary, UUID, variant null, and absent tuple values. The JVM resolves original type IDs in the transmitted closure. Nonnullable empty tuple bounds continue through the general visitor.",
+  "java_jar_sha256": "bd29c31ee33dac715aa2b599a609fe569dd2b64ef66d7b1239fe86be4098b48c",
+  "optimizer_sha256": "c59be8fe46fb6ecf86f28eeded902fb6b66fe89b9e51f5608214f949c5fbf1a8",
+  "engines": {
+    "classic": {
+      "frozen": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+      "lateness_unnest": "MonotoneAnalyzer matched at 6 invocations across 6 cases",
+      "detached": 20,
+      "detached_receipts_sha256": [
+        "a39ec90139904cf9411ff39fc0d97785f501e31a51171225528e728fa8d8e764",
+        "ca5f60361f6267458eb4b9b073701077e2d1b9bdaa91fc60d7a2e36a7eeb87de",
+        "103861c7f445d688aba4c2e9f839c678cd36ed14a70590c2491a33d8192105f7",
+        "8da9297379dc0aeb7b5b03d7b8d98692727aa6882517e63df8c00502ad1528b6"
+      ],
+      "frozen_pass_sha256": {
+        "true": "006c109d9ff7953d0ec76bdef22dfbba01d6c036d109b0cced0aa3c7c7e376b2",
+        "false": "3c0b844c17d5527f65a096267779c05db13b2c3bd56a1b82be5f297016569ae4"
+      },
+      "lateness_unnest_sha256": {
+        "false": "10ae98424f633e15a8cf8a918e2be45e6089336c24b788366dcae07350a42687",
+        "true": "0bfbec3619ea75477f1fdd7988b51747ea08b976e921b4bc1c4b1e93c7bdae39"
+      }
+    },
+    "gen2": {
+      "frozen": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+      "lateness_unnest": "MonotoneAnalyzer matched at 6 invocations across 6 cases",
+      "detached": 20,
+      "detached_receipts_sha256": [
+        "0a4a0a781f6e9e89a03d15546748a769a2b93bf73201b85cb98ef00ffd1cf46d",
+        "cd66995a145fbe784953a1f683834694e72fd67ea4d5284317c2f83ffbe9ee83",
+        "352f3593bfbde27f1f6c6a08da5c190f42e208925afcc569f6bec0dbdfcc5b19",
+        "443bbc0a7cf7ee7dc7031ce42db4e3cc661833c9486064d17fe669e44350fada"
+      ],
+      "frozen_pass_sha256": {
+        "true": "7b99405ce035689b64cb00e6431c4b151a7f6ddbf586a63913ad49ee7dab721b",
+        "false": "0768f35deb58f0cf38f12cac45ff610582454b11c3f76aa0ec1a5b1737d69408"
+      },
+      "lateness_unnest_sha256": {
+        "false": "6e5dbf7dac75c9bcda924edf6d28d20affa963e93d28e52e1523f78873777ba1",
+        "true": "f6a10ff68d1702e47eac7c8fcb50552aae2b5f0964fa0222a974ec8ed1a550cd"
+      }
+    }
+  },
+  "tests": {
+    "rust_passed": 216,
+    "maven_passed": 45,
+    "jni_enabled_passed": 5,
+    "rust_tests_sha256": "ba4333b2d64d94e6b144e808cd5e5daa8b9fcf085eb37facf27e0ef95ce51b03",
+    "maven_sha256": "81531917c4ccbe58acfa9e975b2569a6299844d67abad05e918b5053ed6b6644",
+    "clippy_sha256": "73855916e53993fda36cd11e835351da694cbd0031c290e9809e543802f3bf00"
+  },
+  "checkpoint_restores": {
+    "count": "666af6bbe1df4dab55c6ff4ced9d57c5d48247d5b850ac1610f2a3af238fba4f",
+    "watermark": "044c12625ce33faf8d411ce1e64a07cc67664eba27cb89c6eacfefabf1dc3177"
+  }
+}

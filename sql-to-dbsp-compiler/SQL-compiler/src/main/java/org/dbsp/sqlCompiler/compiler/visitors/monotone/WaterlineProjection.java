@@ -3,8 +3,10 @@ package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import java.util.ArrayList;
+import java.util.function.LongFunction;
 
 /** Exchange field monotonicity with Rust while retaining the original SQL types. */
 public final class WaterlineProjection {
@@ -30,17 +32,19 @@ public final class WaterlineProjection {
     }
 
     /** Resolve the Rust projection against the same analyzed types that fed the closure. */
-    public static IMaybeMonotoneType resolveType(JsonNode projection, IMaybeMonotoneType... inputs) {
+    public static IMaybeMonotoneType resolveType(JsonNode projection, LongFunction<DBSPType> declaredType,
+                                                 IMaybeMonotoneType... inputs) {
         return switch (projection.required("kind").textValue()) {
+            case "unbounded" -> NonMonotoneType.nonMonotone(declaredType.apply(projection.required("type_id").longValue()));
             case "input" -> inputs[projection.required("index").intValue()];
-            case "field" -> resolveType(projection.required("row"), inputs).to(PartiallyMonotoneTuple.class)
+            case "field" -> resolveType(projection.required("row"), declaredType, inputs).to(PartiallyMonotoneTuple.class)
                     .getFieldExpressionType(projection.required("index").intValue());
-            case "with_nullability" -> resolveType(projection.required("value"), inputs)
+            case "with_nullability" -> resolveType(projection.required("value"), declaredType, inputs)
                     .withMaybeNull(projection.required("nullable").booleanValue());
             case "tuple" -> {
                 var members = new ArrayList<IMaybeMonotoneType>();
                 for (var field : projection.required("fields"))
-                    members.add(resolveType(field, inputs));
+                    members.add(resolveType(field, declaredType, inputs));
                 yield new PartiallyMonotoneTuple(members, projection.required("raw").booleanValue(),
                         projection.required("nullable").booleanValue());
             }
