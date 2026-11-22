@@ -800,6 +800,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             closure
         }
+        ("RemoveUnusedFields/AggregateReader", [aggregate, rows @ ..]) => {
+            let used: Vec<bool> = serde_json::from_slice(state)?;
+            let aggregate = feldera_sql_opt::rebind_projected_aggregate(&mut edit, *aggregate, rows, &used)?;
+            return Ok(Value::Array(edit.circuit().additional_expressions(&arena, &[aggregate])?));
+        }
         ("RemoveUnusedFields/Reader", [closure, parameters @ ..]) => {
             let used: Vec<Vec<bool>> = serde_json::from_slice(state)?;
             feldera_sql_opt::rebind_projected_reader(&mut edit, *closure, parameters, &used)?
@@ -1108,7 +1113,7 @@ fn transform(
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
-        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators" | "RemoveUnusedFields/AsofInputs"
+        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators" | "RemoveUnusedFields/AsofInputs"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
             return lower_function(pass, input, state, next);
         }

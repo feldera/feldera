@@ -98,12 +98,7 @@ fn aggregate_list(
     let mut parts = Vec::new();
     for part in edit.node(list)?.edges("aggregates")? {
         let node = edit.node(part)?;
-        let bindings: &[(&str, usize)] = match node.class() {
-            "LinearAggregate" => &[("map", 0)],
-            "NonLinearAggregate" => &[("increment", 1)],
-            "MinMaxAggregate" => &[("increment", 1), ("comparedValue", 0)],
-            _ => return Err(Error::new("unknown aggregate in shared index")),
-        };
+        let bindings = crate::aggregate_groups::row_parameters(node)?;
         let parameters = bindings
             .iter()
             .map(|&(name, slot)| {

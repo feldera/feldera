@@ -1075,6 +1075,24 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static IAggregate rebindProjectedAggregate(DBSPCompiler compiler, IAggregate aggregate,
+            List<DBSPParameter> rows, List<Boolean> usage) {
+        String pass = "RemoveUnusedFields/AggregateReader";
+        var inputs = new ArrayList<IDBSPInnerNode>(1 + rows.size());
+        inputs.add(aggregate);
+        inputs.addAll(rows);
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(usage),
+                    inputs.toArray(IDBSPInnerNode[]::new));
+            var result = expressionDecoder(reply.writer).decodeInner(reply.value.required(0), IAggregate.class);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode aggregate input fields", error);
+        }
+    }
+
     public static List<DBSPType> compressedParameterTypes(DBSPCompiler compiler, int depth,
             List<DBSPType> types, List<List<Boolean>> usage) {
         String pass = "RemoveUnusedFields/ParameterTypes";

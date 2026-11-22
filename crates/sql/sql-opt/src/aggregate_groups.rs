@@ -1,4 +1,5 @@
 //! Group compatible aggregate implementations while preserving SQL output order.
+use feldera_sql_ir::{Error, ExpressionKind, InnerKind, Node};
 use serde::Deserialize;
 
 #[derive(Clone, Copy, Deserialize)]
@@ -9,6 +10,20 @@ pub enum AggregateKind {
     MinMax,
     #[serde(rename = "NonLinearAggregate")]
     NonLinear,
+}
+
+/// Closures that read the input row, in the order of getRowVariableReferences.
+pub(super) fn row_parameters(aggregate: &Node) -> Result<&'static [(&'static str, usize)], Error> {
+    match aggregate.inner_kind() {
+        Some(InnerKind::Expression(ExpressionKind::LinearAggregate)) => Ok(&[("map", 0)]),
+        Some(InnerKind::Expression(ExpressionKind::NonLinearAggregate)) => Ok(&[("increment", 1)]),
+        Some(InnerKind::Expression(ExpressionKind::MinMaxAggregate)) => {
+            Ok(&[("increment", 1), ("comparedValue", 0)])
+        }
+        _ => Err(Error::new(
+            "expected a linear, nonlinear or min/max aggregate",
+        )),
+    }
 }
 
 /// Indexes refer to the original aggregate list. Concatenating the groups

@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Substitution;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
@@ -185,6 +186,16 @@ public class RewriteFields extends InnerRewriteVisitor {
         }
         IDBSPInnerNode result = this.apply(closure);
         return result.to(DBSPClosureExpression.class);
+    }
+
+    public IAggregate rewriteAggregate(IAggregate aggregate) {
+        if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+            var rows = aggregate.getRowVariableReferences();
+            return RustCircuitPass.rebindProjectedAggregate(this.compiler(), aggregate,
+                    rows.stream().map(this.newParam::get).toList(),
+                    this.fieldRemap.get(rows.get(0)).usageAtDepth(1));
+        }
+        return this.apply(aggregate).to(IAggregate.class);
     }
 
     @Override

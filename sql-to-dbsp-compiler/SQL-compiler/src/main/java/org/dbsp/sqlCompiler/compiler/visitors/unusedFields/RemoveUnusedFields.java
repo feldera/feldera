@@ -541,9 +541,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 useMap.updateParameterValue(param, fum);
             }
             RewriteFields fieldRewriter = useMap.getFieldRewriter(this.compiler, 1);
-            IAggregate rewritten = fieldRewriter.apply(aggregate)
-                    .to(IAggregate.class);
-            results.add(rewritten);
+            results.add(fieldRewriter.rewriteAggregate(aggregate));
         }
 
         DBSPVariablePath rowVar = new DBSPVariablePath(list.rowVar.variable,
