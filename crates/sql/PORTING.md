@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust expands each HOP into a map of window starts and a flat-map of output
+rows using the input port, row types, interval, size and offset. All 20 classic
+and 20 Gen-2 frozen programs with HOP calls matched at this pass.
+Seven per engine matched Java at every boundary through emission.
+[HOP graph comparisons](evidence/p3-hop-window-fragments.json)
+
 Rust selects common-expression candidates and traces live output ports for dead-code
 elimination from ordered graph edges. Both analyses matched Java through emission
 on 30 classic and 29 Gen-2 recursive programs, 25 smoke cases and Nexmark. On

@@ -1016,6 +1016,29 @@ public final class RustCircuitPass implements CircuitTransform {
         return lowerFunction(compiler, "MergeFilters/Predicate", source, filter, DBSPClosureExpression.class);
     }
 
+    private DBSPCircuit expandHop(DBSPCircuit circuit) {
+        return new CircuitCloneVisitor(this.compiler, false) {
+            @Override
+            public void postorder(DBSPHopOperator operator) {
+                var input = this.mapped(operator.input());
+                var origin = operator.getRelNode();
+                var site = expressionSite(origin);
+                site.put("timestamp_index", operator.timestampIndex).put("input_port", input.outputNumber);
+                try {
+                    var reply = invokeLowering(this.compiler, "ExpandHop/Window", MAPPER.writeValueAsBytes(site),
+                            input.getOutputZSetElementType(), operator.getOutputZSetElementType(),
+                            operator.interval, operator.size, operator.start);
+                    var operators = decodeOperatorFragment(reply,
+                            op -> op instanceof DBSPMapOperator ? origin.intermediate() : origin, input.node());
+                    this.addOperator(operators.get(0));
+                    this.map(operator, operators.get(1));
+                } catch (IOException error) {
+                    throw new UncheckedIOException("Could not encode HOP window inputs", error);
+                }
+            }
+        }.apply(circuit);
+    }
+
     private DBSPCircuit expandStreamAggregates(DBSPCircuit circuit, ExpandStreamAggregates pass) {
         return new CircuitCloneVisitor(this.compiler, false) {
             @Override
@@ -2759,6 +2782,7 @@ public final class RustCircuitPass implements CircuitTransform {
                     if (!probe.required("needs_full_snapshot").booleanValue())
                         return circuit;
                 }
+                case "ExpandHop" -> { return this.expandHop(circuit); }
                 case "DecomposeExpensiveFilters" -> {
                     var predicates = OptimizerExpressions.encode(this.compiler, circuit, OptimizerExpressions.Roots.FILTER_PREDICATES);
                     if (!this.invoke("DecomposeExpensiveFilters/Predicates", predicates, initial, state)
@@ -2792,7 +2816,7 @@ public final class RustCircuitPass implements CircuitTransform {
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero",
-                     "ExpandHop", "RemoveIdentityOperators", "BuildNestedOperators",
+                     "RemoveIdentityOperators", "BuildNestedOperators",
                      "SubstituteLeftJoins", "ImplementChains", "StrayGC", "SeparateIntegrators" -> {
                     var details = switch (this.nativeName) {
                         case "SeparateIntegrators" -> OptimizerTopology.Details.TRACE_INTEGRATORS;

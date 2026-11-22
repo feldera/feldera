@@ -120,7 +120,8 @@ fn bind(
     Ok((statement, edit.named_variable(ty, name)?))
 }
 
-struct Hop {
+/// The row types, timestamp column and intervals of a HOP window.
+pub struct Hop {
     site: NodeId,
     width: usize,
     timestamp: usize,
@@ -137,21 +138,39 @@ impl Hop {
         let node = edit.node(site)?;
         let stream = input_type(edit, input)?;
         let row_type = edit.type_id(edit.node(stream.into())?.edge("elementType")?)?;
-        let width = edit.node(row_type.into())?.edges("tupFields")?.len();
         let output = edit.node(node.edge("outputType")?)?;
         let output_row = edit.type_id(output.edge("elementType")?)?;
+        let timestamp = node
+            .data("timestampIndex")
+            .and_then(|v| v.as_u64())
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or_else(|| Error::new("HOP requires a timestamp column in its input"))?;
+        let intervals = [
+            edit.expression(node.edge("interval")?)?,
+            edit.expression(node.edge("size")?)?,
+            edit.expression(node.edge("start")?)?,
+        ];
+        Self::new(edit, site, row_type, output_row, timestamp, intervals)
+    }
+
+    pub fn new(
+        edit: &CircuitEditor,
+        site: NodeId,
+        row_type: TypeId,
+        output_row: TypeId,
+        timestamp: usize,
+        [interval, size, offset]: [ExpressionId; 3],
+    ) -> Result<Self, Error> {
+        let width = edit.node(row_type.into())?.edges("tupFields")?.len();
         let fields = edit.node(output_row.into())?.edges("tupFields")?;
         if fields.len() != width + 2 {
             return Err(Error::new(
                 "HOP output requires the input row and two window bounds",
             ));
         }
-        let timestamp = node
-            .data("timestampIndex")
-            .and_then(|v| v.as_u64())
-            .and_then(|n| usize::try_from(n).ok())
-            .filter(|&n| n < width)
-            .ok_or_else(|| Error::new("HOP requires a timestamp column in its input"))?;
+        if timestamp >= width {
+            return Err(Error::new("HOP requires a timestamp column in its input"));
+        }
         Ok(Self {
             site,
             width,
@@ -159,9 +178,9 @@ impl Hop {
             row_type,
             output_row,
             start_type: edit.type_id(fields[width])?,
-            interval: edit.expression(node.edge("interval")?)?,
-            size: edit.expression(node.edge("size")?)?,
-            offset: edit.expression(node.edge("start")?)?,
+            interval,
+            size,
+            offset,
         })
     }
 
@@ -285,6 +304,38 @@ impl Hop {
         )?;
         edit.closure_from_variables(edit.expression(block)?, &[data])
     }
+
+    /// Append the map of window starts and the flat-map that emits one row per start.
+    pub fn append(
+        &self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        input: OutputPort,
+        next: &mut u64,
+    ) -> Result<[NodeId; 2], Error> {
+        let (map_fn, row) = self.map(edit, next)?;
+        let output = edit.zset_type(row)?;
+        let map = edit.append_operator(
+            body,
+            self.site,
+            Op::Map,
+            &[input],
+            [("outputType", edge(output)), ("function", edge(map_fn))],
+        )?;
+        let flat_fn = self.flat_map(edit, row, next)?;
+        let output = edit.zset_type(self.output_row)?;
+        let flat = edit.append_operator(
+            body,
+            self.site,
+            Op::FlatMap,
+            &[OutputPort {
+                operator: map,
+                number: 0,
+            }],
+            [("outputType", edge(output)), ("function", edge(flat_fn))],
+        )?;
+        Ok([map, flat])
+    }
 }
 
 pub fn expand_hop(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
@@ -311,28 +362,8 @@ pub fn expand_hop(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
             .next()
             .ok_or_else(|| Error::new("HOP requires an input"))?;
         let hop = Hop::read(&edit, site, input)?;
-        let (map_fn, row) = hop.map(&mut edit, &mut counter)?;
-        let output = edit.zset_type(row)?;
-        let map = edit.append_operator(
-            body,
-            site,
-            Op::Map,
-            &[input],
-            [("outputType", edge(output)), ("function", edge(map_fn))],
-        )?;
+        let [map, flat] = hop.append(&mut edit, body, input, &mut counter)?;
         edit.set_intermediate_origin(map, origin)?;
-        let flat_fn = hop.flat_map(&mut edit, row, &mut counter)?;
-        let output = edit.zset_type(hop.output_row)?;
-        let flat = edit.append_operator(
-            body,
-            site,
-            Op::FlatMap,
-            &[OutputPort {
-                operator: map,
-                number: 0,
-            }],
-            [("outputType", edge(output)), ("function", edge(flat_fn))],
-        )?;
         placements.push((body, map, site));
         replacements.insert(
             site,

@@ -276,6 +276,32 @@ fn expand_stream_aggregate(input: &[u8], state: &[u8], mut next: u64) -> Result<
     Ok(reply)
 }
 
+fn expand_hop(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Request {
+        timestamp_index: usize,
+        input_port: usize,
+        #[serde(flatten)]
+        site: ExpressionSite,
+    }
+    let request: Request = serde_json::from_slice(state)?;
+    let (fragment, roots) = fragment::Fragment::bind(
+        request.site, [feldera_sql_ir::OperatorKind::SourceMultiset], input,
+    )?;
+    let &[row, output, interval, size, offset] = roots.as_slice() else {
+        return Err("expected HOP input and output rows, interval, size and offset".into());
+    };
+    let mut edit = CircuitEditor::new(fragment.base.clone());
+    let site = fragment.base.root_id();
+    let hop = feldera_sql_opt::Hop::new(
+        &edit, site, edit.type_id(row)?, edit.type_id(output)?, request.timestamp_index,
+        [edit.expression(interval)?, edit.expression(size)?, edit.expression(offset)?],
+    )?;
+    let source = OutputPort { number: request.input_port, ..fragment.inputs[0] };
+    hop.append(&mut edit, site, source, &mut next)?;
+    fragment.reply(&edit, next)
+}
+
 fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
     let (pairs, rest) = roots.as_chunks::<2>();
     if rest.is_empty() {
@@ -812,6 +838,7 @@ fn transform(
         }
         "Monotonicity/Asof" => return asof_waterline(input, state, next),
         "Monotonicity/Hop" => return hop_waterline(input, state, next),
+        "ExpandHop/Window" => return expand_hop(input, state, next),
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields"

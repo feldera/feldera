@@ -1,0 +1,36 @@
+{
+  "scope": "Expand each HOP from its live input port, row types and interval expressions. Rust builds the map and flat-map and the JVM reattaches source provenance. SQL population selected by HOP, HOP_START or HOP_END call spelling.",
+  "library_sha256": "2e625f91fb9b12b03ab0bac21714e104dd0feada6f1f514d1f4d3f08d5f22b42",
+  "compiler_jar_sha256": "54d222b015fc03d47504c34f1cb8fdb49fd846117d5d1292763a8bc2600a9371",
+  "engines": {
+    "classic": {
+      "matched_pass_calls": 20,
+      "population_sha256": "fc75f4b84bd1b56547b2386f85a945a908cd5d179c401c30f6a8c4fbb433809d",
+      "java_sha256": "95a4e18f06069c9b1b4a0996d5d3f62a3e581de2d6818004200136083dab3d1f",
+      "hybrid_sha256": "01278c3a6e09d87c2bd9a261e1a1a9ad63d839908ed93b4353829ca74aa64c7f",
+      "detached_cases": 7,
+      "detached_report_sha256": "d93c2ef490689744da1cde6c00c3d4e4d7200bca300188c316f42d0f371c357b"
+    },
+    "gen2": {
+      "matched_pass_calls": 20,
+      "population_sha256": "7e6d7f0f540692393d77769cd0ca30c8ab85f27957d84935ef3b6cdc0e4ae347",
+      "java_sha256": "4d5055ec89cc574ef6d25716f161769583d9eb5416ce7e848e863f10f779637c",
+      "hybrid_sha256": "0a5bc05a8ca27238187d04d78df34d3c17b51a53cf1d3b71821f24eaabaff68a",
+      "detached_cases": 7,
+      "detached_report_sha256": "7cbfc0a9f25c77fc326eb0914f9cf4a203b4954f33fb7914c313bc90febbe131"
+    }
+  },
+  "nexmark_detached_report_sha256": "e3c848bb9d04abcb67b40493f44bb531a8c7f94ff3316e78ab5562c832fb3ee7",
+  "prechange_nexmark_profile": {
+    "scope": "Median exclusive main-thread CPU across three fresh JVMs per mode on CPU 12. Optimizer observer subtracts time in nested passes. Other verification shared the VM.",
+    "library_sha256": "e01a25eafaf6e6eb9613d90851d681efe2fe8d33d935a6ec4726099d6be77c01",
+    "hybrid": {
+      "report_sha256": "6e231a4e08f7fc3688a32e76fa60d3f7d6550e626325e863eb52abae6cd95788",
+      "expand_hop_median_cpu_ms": 47.913748
+    },
+    "java": {
+      "report_sha256": "99a9b4fd87683d14651a6cc9cf081ab05aace121878ad79aa53752a1e8bcdf72",
+      "expand_hop_median_cpu_ms": 0.546208
+    }
+  }
+}
