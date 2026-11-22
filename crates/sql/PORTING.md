@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust validates trace sharing against the operator topology and returns the
+stream substitutions and retention policies to discard. All 63 classic and
+215 Gen-2 frozen programs where the pass had changed the graph matched Java
+at this pass and through detached replay and emission. COUNT and LATENESS
+checkpoints restored in both directions.
+[Trace-sharing comparisons](evidence/p3-shared-trace-edits.json)
+
 The classic hybrid driver limits JIT compilation to tier 1 in the JVM that
 serves a single compilation request. The cold Nexmark p95 measured 3.893 s
 against 3.177 s for direct Java, exceeding the 1.2× ceiling. The array and

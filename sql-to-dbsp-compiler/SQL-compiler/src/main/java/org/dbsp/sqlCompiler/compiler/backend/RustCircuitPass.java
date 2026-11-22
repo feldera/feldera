@@ -1866,6 +1866,7 @@ public final class RustCircuitPass implements CircuitTransform {
                     case "Delta" -> this.map(op, PropagateEmptySources.emptyStream(op, StreamKind.DELTA));
                     case "Collection" -> this.map(op, PropagateEmptySources.emptyStream(op, StreamKind.COLLECTION));
                     case "Forward" -> this.map(op.outputPort(), this.input(edit.required("inputs").required(0)), false);
+                    case "Discard" -> { /* The shared integral no longer needs this retention policy. */ }
                     case "LeftJoin" -> {
                         var left = this.input(edit.required("inputs").required(0));
                         var function = lowerFunction(RustCircuitPass.this.compiler, "EmptyRightJoin",
@@ -2813,7 +2814,9 @@ public final class RustCircuitPass implements CircuitTransform {
                 var inputs = this.mergeNoops.sharedInputs();
                 if (inputs.aliases().isEmpty() && inputs.removed().isEmpty())
                     return circuit;
-                state = MAPPER.writeValueAsBytes(inputs);
+                var edits = this.invoke("Topology/MergeNoops", OptimizerTopology.encode(circuit),
+                        initial, MAPPER.writeValueAsBytes(inputs));
+                return this.applyStreamEdits(circuit, edits);
             }
             if (this.replaceSharedIndexes != null) {
                 var groups = this.replaceSharedIndexes.candidateIds();

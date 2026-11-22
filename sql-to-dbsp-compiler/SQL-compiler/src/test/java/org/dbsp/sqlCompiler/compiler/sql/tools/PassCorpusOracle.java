@@ -151,6 +151,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
                 && Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes")) {
             this.replaceObservedPass(sharing);
         }
+        if (pass instanceof MergeGC merge && this.passClass.equals("MergeNoops")
+                && Boolean.getBoolean("feldera.optimizer.compareRustMergeNoops"))
+            this.replaceObservedPass(merge);
         if (this.passClass.equals("ReplaceCommonProjections")
                 && Boolean.getBoolean("feldera.optimizer.compareRustProjectionEdits")) {
             // Both the unused-field loop and ExpandIndexedInputs run this consumer.

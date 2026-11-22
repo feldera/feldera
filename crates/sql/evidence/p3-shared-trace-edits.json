@@ -1,0 +1,75 @@
+{
+  "base_commit": "109698d82",
+  "scope": "Rust validates shared trace aliases and discarded retention policies against the operator topology. The JVM applies forward and discard edits to live operators.",
+  "artifacts_sha256": {
+    "compiler.jar": "35bf9d27fa0cbba74b817d5093fe210baa00f584daa23ccf1802f28bb6dbbbe8",
+    "test.jar": "693a2b32322d1706ab0c7894a9a3d3afc86e74542297bd68977329e7ca48a0bb",
+    "bin/libfeldera_sql_opt_jni.so": "fe19cd6f599781b2b0e22f4144c406bfe31789fe2eb373ca36548186df8d76c2",
+    "bin/sql2dbsp": "f70c22c501f53aae1ca29e807dd58d18dc270482cd3957be23772b374ee97318",
+    "bin/sql-difftest": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d",
+    "pass_comparator": "19be5c666bf99385735876fffaaa4a57714f94e021f63aab35fa6d0b36d6264e"
+  },
+  "engines": {
+    "classic": {
+      "frozen_pass": "MergeNoops matched at 63 invocations across 63 cases",
+      "frozen_pass_sha256": {
+        "false": "9f5b2d32219f4f3c9ad53118138d9feab1bc659fc433afc0d2571cef23c42744",
+        "true": "45011450899e7bf2c7800bad23e2742b3cf727ade97735bb1deb957f12483116"
+      },
+      "detached": 63,
+      "detached_receipts_sha256": [
+        "a00300aa407e15d01d1b7ef83f3214e9cf990ad182dfcab949815785906b9351",
+        "519a0a3aaa644f7f696f4fc5db9cf1e612b9b0096517c6029fb71b86ba9f86fa",
+        "1e3b9fbc58daeca4d17b07d170f252ab7f9745542a50c9db80179d20b7052f3f",
+        "c4c90208b78cd1db312cac73a425af2c6c8af8c528ee758137a3487a0acbcb7c"
+      ]
+    },
+    "gen2": {
+      "frozen_pass": "MergeNoops matched at 215 invocations across 215 cases",
+      "frozen_pass_sha256": {
+        "false": "31081181cf8e123ba8cbe73f8174e0d55bccb91261c1d178980804296f076d33",
+        "true": "80b3d56f646d4af412d98604ffedee68f95960cd5d427e16cb84273f27e8a464"
+      },
+      "detached": 215,
+      "detached_receipts_sha256": [
+        "126119c273228e1aede1a151994cd997bda223d7db872c1322c442359ccb6821",
+        "20a01677a06507a53eb2b6efb356ca8fc638acd651399eedf368588cdc76c6dc",
+        "48844bc27907fee7e4be9c465828f0d0ee9f01e0a7627407d00c7b1205b55cbc",
+        "2e06dddb862c4124e7e14fc42780b7c53f533e7cbcf5f517d9305f9db31348ff"
+      ]
+    }
+  },
+  "tests": {
+    "rust_passed": 216,
+    "maven_passed": 45,
+    "logs_sha256": {
+      "tests.log": "b45c6e87ed4da07dd4b7573d220df30bc5ed65b7554f0a0a1afab52389696acd",
+      "maven.log": "f2ad49541f63a031adcc47f5ad638eeead5a18fcc2d19cd43083925b78bd6c55",
+      "clippy.log": "8123cda0af9ad82e7f1357b743910f1aa435f494411e11c45eca157515ae3b61"
+    },
+    "comparator_tests_sha256": "ea121e755e8942ef102689732745261efba7c63f9c3c5fafbbc73012129ac7f4"
+  },
+  "checkpoint_restores": {
+    "count": "3ae4c235032937ab27711946045e901d8165068ff753ad9a25b7cc3463adeaee",
+    "watermark": "1fb2dbc009de6eacdb37f0715f131097cee67c6fbdf6ad4c5c041bc05c2ce243"
+  },
+  "pass_comparison": "The finder returns a set of discarded retainer IDs. Compare membership, reject duplicates, and check alias mappings exactly.",
+  "cpu_profile": {
+    "workload": "classic Nexmark",
+    "cpu": 13,
+    "concurrent_corpus_replay": true,
+    "warmup_pairs": 1,
+    "measured_pairs": 8,
+    "statistic": "median calling-thread CPU milliseconds",
+    "results": {
+      "unbounded-row-fields": {
+        "milliseconds": 57.9803315,
+        "raw_sha256": "c9494e650b1f6ee70387047c32c67156750e9ebfab7b028b015497bf664ed08e"
+      },
+      "shared-trace-edits": {
+        "milliseconds": 7.3249155,
+        "raw_sha256": "3eecbd273db0bd11692241a3cda53c8f2510bc157b1eea9c58231eca9da8cae7"
+      }
+    }
+  }
+}

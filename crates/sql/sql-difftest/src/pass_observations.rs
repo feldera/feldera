@@ -4,7 +4,7 @@ use feldera_sql_difftest::{compare_circuits, parse_json};
 use feldera_sql_ir::{BodyOrder, Circuit, NodeId};
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -47,6 +47,25 @@ impl<'a> Records<'a> {
 }
 
 #[derive(Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct SharedTraces {
+    aliases: BTreeMap<String, u64>,
+    #[serde(deserialize_with = "removed_policies")]
+    removed: BTreeSet<u64>,
+}
+
+// The finder publishes a Java Set. Iteration order can vary across JVMs.
+fn removed_policies<'de, D: serde::Deserializer<'de>>(input: D) -> Result<BTreeSet<u64>, D::Error> {
+    let items = Vec::<u64>::deserialize(input)?;
+    let count = items.len();
+    let ids: BTreeSet<_> = items.into_iter().collect();
+    if ids.len() != count {
+        return Err(serde::de::Error::custom("duplicate discarded retention policy"));
+    }
+    Ok(ids)
+}
+
+#[derive(Deserialize, PartialEq)]
 struct Placement {
     container: String,
     index: u64,
@@ -55,6 +74,7 @@ struct Placement {
     names_before: u64,
     names_after: u64,
     diagnostics: Vec<Value>,
+    shared_traces: Option<SharedTraces>,
     #[serde(flatten)]
     state: BTreeMap<String, Value>,
 }
@@ -388,6 +408,17 @@ pub fn compare(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn discarded_policies_compare_by_membership() {
+        let traces = |removed| serde_json::from_value::<SharedTraces>(json!({
+            "aliases": {"8": 3}, "removed": removed,
+        }));
+        let left = traces(vec![4, 7]).unwrap();
+        assert!(left == traces(vec![7, 4]).unwrap());
+        assert!(left != traces(vec![7, 5]).unwrap());
+        assert!(traces(vec![4, 7, 7]).is_err());
+    }
 
     #[test]
     fn aggregate_state_tracks_the_selected_input_and_the_first_weight_use() {

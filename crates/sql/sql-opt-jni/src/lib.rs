@@ -1193,6 +1193,18 @@ fn transform(
         if name == "BypassNoops" {
             return Ok(json!(operator_numbers(feldera_sql_opt::bypassed_noops(&circuit)?)));
         }
+        if name == "MergeNoops" {
+            let inputs: feldera_sql_opt::SharedTraceInputs = serde_json::from_slice(state)?;
+            inputs.coalesce(circuit)?;
+            let mut edits = BTreeMap::new();
+            for (from, to) in inputs.aliases {
+                edits.insert(from, json!({"kind": "Forward", "inputs": [[to, 0]]}));
+            }
+            for discarded in inputs.removed {
+                edits.insert(discarded, json!({"kind": "Discard"}));
+            }
+            return Ok(serde_json::to_value(edits)?);
+        }
         if name == "DeindexMaps" {
             let edits: BTreeMap<_, _> = feldera_sql_opt::deindex_operators(&circuit)?
                 .into_iter()

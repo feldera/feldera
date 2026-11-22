@@ -4,6 +4,14 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Shared trace edits, 2026-11-22
+
+On classic Nexmark, sending the operator topology to Rust reduced median
+calling-thread CPU time for `MergeNoops` from 57.98 ms to 7.32 ms. Nine
+alternating pairs ran in fresh JVMs on CPU 13 during corpus replay. The
+medians use the final eight pairs.
+[Pass timings and verification](evidence/p3-shared-trace-edits.json)
+
 ## Single-request JVM, 2026-11-22
 
 The classic hybrid worker now limits its one-request JVM to tier 1 of the

@@ -11,7 +11,7 @@ use crate::{
     trace_integrators::integrates_input,
     trace_retention::{retention_slot, Retained},
 };
-use feldera_sql_ir::{BodyOrder, Circuit, Error, Node, NodeId, OperatorKind as Op, OutputPort};
+use feldera_sql_ir::{BodyOrder, Circuit, CircuitRewrite, Error, Node, NodeId, OperatorKind as Op, OutputPort};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -24,10 +24,9 @@ pub struct SharedTraceInputs {
 }
 
 impl SharedTraceInputs {
-    pub fn apply(&self, circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
-        if self.aliases.is_empty() && self.removed.is_empty() {
-            return Ok(circuit);
-        }
+    /// Apply the finder decisions to the topology. A live caller reconnects its
+    /// original functions and types after this validates substitutions and readers.
+    pub fn coalesce(&self, circuit: Circuit) -> Result<CircuitRewrite, Error> {
         let mut aliases = BTreeMap::new();
         for (&from, &to) in &self.aliases {
             let (from, to) = (NodeId::Outer(from), NodeId::Outer(to));
@@ -49,7 +48,14 @@ impl SharedTraceInputs {
                 return Err(Error::new("can only discard an unused retention policy"));
             }
         }
-        rebuild_input_closures(circuit.coalesce_pruning(&aliases, &removed)?, next)
+        circuit.coalesce_pruning(&aliases, &removed)
+    }
+
+    pub fn apply(&self, circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
+        if self.aliases.is_empty() && self.removed.is_empty() {
+            return Ok(circuit);
+        }
+        rebuild_input_closures(self.coalesce(circuit)?, next)
     }
 }
 
