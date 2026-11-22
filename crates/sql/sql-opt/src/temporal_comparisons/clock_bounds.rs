@@ -1,5 +1,6 @@
 //! Bounds for temporal predicates over an unordered input row and the system clock.
 use crate::function_calls::function_name;
+use crate::lexical_scope::predicate_references;
 use crate::monotonicity::binary::{BinaryWaterline, Domain, Operand, binary_waterline};
 use crate::monotonicity::casts::{CastWaterline, cast_waterline};
 use crate::monotonicity::functions::{Argument, function_waterline};
@@ -26,14 +27,14 @@ fn double_literal(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<f64>,
 }
 
 /// Return the monotone operands when the entire predicate uses scalar columns,
-/// clock calls, constants and supported scalar operations. Expressions with
-/// lexical bindings require the general closure analysis.
+/// clock calls, immutable scalar bindings and supported scalar operations.
 pub(super) fn monotone_operands(
     edit: &CircuitEditor,
     parameter: NodeId,
     body: ExpressionId,
 ) -> Result<Option<HashSet<ExpressionId>>, Error> {
-    let parameter = edit.node(parameter)?;
+    let row = edit.node(parameter)?;
+    let mut references = None;
     let mut facts = HashMap::<ExpressionId, Operand>::new();
     let mut pending = vec![(body, false)];
     while let Some((id, visited_children)) = pending.pop() {
@@ -45,7 +46,71 @@ pub(super) fn monotone_operands(
         let child = |name| edit.expression(node.edge(name)?);
         let opcode = node.data("opcode").and_then(|v| v.as_str());
         let mut value = Operand::default();
+        if matches!(kind, Expr::Let | Expr::Block) && references.is_none() {
+            references = predicate_references(edit.circuit(), parameter, body.into())?;
+            if references.is_none() {
+                return Ok(None);
+            }
+        }
         match kind {
+            Expr::Let | Expr::Block => {
+                let result = if kind == Expr::Let {
+                    child("consumer")?
+                } else if node
+                    .field("lastExpression")
+                    .and_then(|field| field.node_id())
+                    .is_some()
+                {
+                    child("lastExpression")?
+                } else {
+                    return Ok(None);
+                };
+                if !visited_children {
+                    pending.extend([(id, true), (result, false)]);
+                    if kind == Expr::Let {
+                        pending.push((child("initializer")?, false));
+                    } else {
+                        for statement in node.edges("contents")?.into_iter().rev() {
+                            let binding = edit.node(statement)?;
+                            if binding.class() != "DBSPLetStatement"
+                                || binding.data("mutable").and_then(|v| v.as_bool()) == Some(true)
+                            {
+                                return Ok(None);
+                            }
+                            let Some(init) = binding.field("initializer").and_then(|f| f.node_id())
+                            else {
+                                return Ok(None);
+                            };
+                            pending.push((edit.expression(init)?, false));
+                        }
+                    }
+                    continue;
+                }
+                value.monotone = facts[&result].monotone;
+                value.constant = facts[&result].constant;
+            }
+            Expr::VariablePath => {
+                let Some(declaration) = references.as_ref().and_then(|refs| refs.get(&id.into()))
+                else {
+                    return Ok(None);
+                };
+                if *declaration == parameter {
+                    return Ok(None);
+                }
+                let initializer = edit.expression(edit.node(*declaration)?.edge("initializer")?)?;
+                let Some(initial) = facts.get(&initializer) else {
+                    return Ok(None);
+                };
+                if !edit.same_type(
+                    edit.expression_type(id)?,
+                    edit.expression_type(initializer)?,
+                )? {
+                    return Ok(None);
+                }
+                // The closure analysis tracks constants by expression identity. Reading a
+                // bound variable inherits its waterline but does not make the read a literal.
+                value.monotone = initial.monotone;
+            }
             Expr::Field => {
                 let source = child("expression")?;
                 if edit.expr_kind(source)? != Expr::Deref {
@@ -54,11 +119,12 @@ pub(super) fn monotone_operands(
                 let var = edit.expression(edit.node(source.into())?.edge("expression")?)?;
                 let path = edit.node(var.into())?;
                 if edit.expr_kind(var)? != Expr::VariablePath
-                    || path.data("variable") != parameter.data("name")
-                    || !edit.same_type(
-                        edit.expression_type(var)?,
-                        edit.type_id(parameter.edge("type")?)?,
-                    )?
+                    || path.data("variable") != row.data("name")
+                    || references
+                        .as_ref()
+                        .is_some_and(|refs| refs.get(&var.into()) != Some(&parameter))
+                    || !edit
+                        .same_type(edit.expression_type(var)?, edit.type_id(row.edge("type")?)?)?
                     || matches!(
                         edit.type_kind(edit.expression_type(id)?)?,
                         TypeKind::Tuple | TypeKind::RawTuple | TypeKind::Ref
@@ -422,6 +488,51 @@ mod tests {
                 Some(vec![expected])
             );
         }
+        // Shadowing the same name resolves an initializer in the enclosing
+        // scope and its consumer in the new scope.
+        let first = edit.let_statement("t", clock)?;
+        let read_clock = edit.named_variable(timestamp, "t")?;
+        let inner = edit.named_variable(timestamp, "t")?;
+        let read_inner = edit.named_variable(timestamp, "t")?;
+        let shadow = edit.let_expression(inner, read_clock, read_inner)?;
+        let block = edit.make_expr(
+            roots[0],
+            Expr::Block,
+            timestamp,
+            [
+                ("contents", Field::Array(vec![Field::Reference(first)])),
+                ("lastExpression", Field::Reference(shadow.into())),
+            ],
+        )?;
+        let comparison = edit.binary_expression(roots[0], boolean, BinaryOp::Gt, key, block)?;
+        assert_eq!(
+            infer_temporal_predicates(&mut edit, parameter, comparison)?,
+            Some(vec![TemporalPredicate::Bound {
+                key,
+                clock: block,
+                comparison: WindowComparison::Greater
+            }])
+        );
+        let interval = edit.expression(roots[1])?;
+        let interval_type = edit.expression_type(interval)?;
+        let local = edit.named_variable(interval_type, "offset")?;
+        let offset = edit.named_variable(interval_type, "offset")?;
+        let difference = edit.make_expr(
+            roots[0],
+            Expr::TimeAddSub,
+            timestamp,
+            [
+                ("left", Field::Reference(clock.into())),
+                ("right", Field::Reference(offset.into())),
+                ("opcode", Field::Data("SUB".into())),
+            ],
+        )?;
+        let expr = edit.let_expression(local, interval, difference)?;
+        assert!(
+            !monotone_operands(&edit, parameter, expr)?
+                .unwrap()
+                .contains(&expr)
+        );
         // A reference outside the filter's binding needs lexical resolution.
         let other = edit.named_variable(reference, "other")?;
         let other_parameter = edit.parameter_at(roots[0], other)?;

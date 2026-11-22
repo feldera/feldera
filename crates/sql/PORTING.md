@@ -485,6 +485,10 @@ checkpoints restored in both directions. [Relation waterlines](evidence/p3-relat
 The Rust clock classifier handles calls with several arguments, including
 DATEDIFF, LOG and POWER. All 133 frozen RewriteNow invocations and five
 directed argument-order and constant-base cases on each engine matched Java.
+Rust also resolves immutable local clock bindings. Across both engines, 12
+directed comparisons produced a window bound and eight retained a residual
+filter, matching Java for both LET expressions and shadowed block variables.
+[Lexical clock bounds](evidence/p3-lexical-clock-bounds.json)
 
 Rust constructs both the data closure and its reduced waterline for identity
 operators, including indexed rows where only the key or value has a bound.

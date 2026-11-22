@@ -331,11 +331,10 @@ mod tests {
         // A predicate needing general closure analysis occurs after two successful merges.
         let mut edit = CircuitEditor::new(circuit);
         let variable = edit.named_variable(reference, "row")?;
-        let local = edit.named_variable(timestamp, "bound")?;
         let row = edit.dereference(variable)?;
         let key = edit.tuple_field(row, 0)?;
-        let comparison = edit.binary_expression(site, boolean, BinaryOp::Gt, key, local)?;
-        let predicate = edit.let_expression(local, clock, comparison)?;
+        let cloned = edit.clone_value(clock)?;
+        let predicate = edit.binary_expression(site, boolean, BinaryOp::Gt, key, cloned)?;
         let closure = edit.closure_from_variables(predicate, &[variable])?;
         filter(&mut edit, compatible, closure.into())?;
         let mut next = 10;

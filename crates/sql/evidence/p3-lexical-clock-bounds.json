@@ -1,0 +1,24 @@
+{
+  "scope": "Temporal predicates containing immutable LET expressions or blocks, resolved against the original row and scopes. The directed oracle wraps the five compiled clock expressions with a LET and a block that shadows its outer variable. Each native classification must succeed before comparison with the unmodified Java analysis.",
+  "optimizer_library_sha256": "d77d07a93d249b97bbb57d00d2c63407e9002d6293b868d4c0f4e208e720bbfd",
+  "compiler_jar_sha256": "925a7d2f74897662e9cd1310baaf6ec34ffb3f2f105771ab1ceb3e5c95cadc80",
+  "directed_harness_sha256": "09e0b873437b8d5a57580c93b1a0e03a6d5f1252760c6582d1158707e7caaa88",
+  "engines": {
+    "classic": {
+      "frozen_rewrite_now_calls": 71,
+      "java_stream_sha256": "19b005cfd85656bae9d639d9901d3cb294f8c121716792ed1f03a34cfc7bbeca",
+      "hybrid_stream_sha256": "75fc92f344c29e92133586944f09dbb69659cb3e8592577fbe980cc44eb25ae0",
+      "bound_comparisons": 6,
+      "residual_comparisons": 4,
+      "directed_report_sha256": "f863500ea3b70a418ebedda7359663253e3e0039b2e1caece84ff360397afd26"
+    },
+    "gen2": {
+      "frozen_rewrite_now_calls": 62,
+      "java_stream_sha256": "b324db4b8653b9d808b263420b9827389662882bd197eaeeb3fa234a69cab72e",
+      "hybrid_stream_sha256": "cb4030cee9204d42d0c89cd73fd6b5648bcf289642fa1373e5b2632d1d4b2eb8",
+      "bound_comparisons": 6,
+      "residual_comparisons": 4,
+      "directed_report_sha256": "dfed5ee5eb8a3a5d5969379274dcda195c1e2fe93a6842724c9e7b73bb069faf"
+    }
+  }
+}

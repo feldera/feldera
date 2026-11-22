@@ -30,7 +30,7 @@ enum Visit<'a> {
 }
 
 pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, Error> {
-    match resolve_variables(circuit, closure)? {
+    match resolve_variables(circuit, closure, Vec::new())? {
         Resolution::Bound(references) => Ok(references),
         Resolution::Free(name) => Err(Error::new(format!("unbound variable {name} in closure"))),
     }
@@ -38,9 +38,25 @@ pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, 
 
 pub(crate) fn has_free_variables(circuit: &Circuit, closure: NodeId) -> Result<bool, Error> {
     Ok(matches!(
-        resolve_variables(circuit, closure)?,
+        resolve_variables(circuit, closure, Vec::new())?,
         Resolution::Free(_)
     ))
+}
+
+/// Resolve a predicate detached from its closure, keeping its row parameter in scope.
+pub(crate) fn predicate_references(
+    circuit: &Circuit,
+    parameter: NodeId,
+    body: NodeId,
+) -> Result<Option<References>, Error> {
+    let node = circuit
+        .node(parameter)
+        .ok_or_else(|| Error::new("missing predicate parameter"))?;
+    let binding = (name(node, "name")?, parameter);
+    Ok(match resolve_variables(circuit, body, vec![binding])? {
+        Resolution::Bound(references) => Some(references),
+        Resolution::Free(_) => None,
+    })
 }
 
 enum Resolution<'a> {
@@ -49,9 +65,12 @@ enum Resolution<'a> {
 }
 
 /// An unbound name is a normal outcome when testing a partially projected closure.
-fn resolve_variables(circuit: &Circuit, closure: NodeId) -> Result<Resolution<'_>, Error> {
+fn resolve_variables<'a>(
+    circuit: &'a Circuit,
+    closure: NodeId,
+    mut bindings: Vec<(&'a str, NodeId)>,
+) -> Result<Resolution<'a>, Error> {
     let mut references = HashMap::new();
-    let mut bindings = Vec::new();
     let mut path = HashSet::new();
     let mut pending = vec![Visit::Enter(closure)];
     while let Some(visit) = pending.pop() {
@@ -105,10 +124,14 @@ fn resolve_variables(circuit: &Circuit, closure: NodeId) -> Result<Resolution<'_
                 pending.push(Visit::Bind(name(path, "variable")?, id));
                 pending.push(Visit::Enter(node.edge("initializer")?));
             }
-            _ => {
-                if matches!(node.inner_kind(), Some(InnerKind::Expression(Expr::Block))) {
-                    pending.push(Visit::Restore(bindings.len()));
+            Some(InnerKind::Expression(Expr::Block)) => {
+                pending.push(Visit::Restore(bindings.len()));
+                if let Some(last) = node.field("lastExpression").and_then(|f| f.node_id()) {
+                    pending.push(Visit::Enter(last));
                 }
+                pending.extend(node.edges("contents")?.into_iter().rev().map(Visit::Enter));
+            }
+            _ => {
                 if node.class() == "DBSPLetStatement" {
                     pending.push(Visit::Bind(name(node, "variable")?, id));
                 }
