@@ -95,7 +95,7 @@ def graph_cleanup_counts(case, record):
 
 def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCHEDULE, *,
                       validate_weights=False, cast_iterations=None, unused_field_iterations=None,
-                      graph_cleanups=None, clock_scans=None, temporal_splits=None, now_stream=None,
+                      graph_cleanups=None, clock_scans=None, temporal_splits=None, temporal_merge_fallbacks=None, now_stream=None,
                       outputs_are_sets=False, trim_inputs=False, asof_retention_moves=0, star_joins_enabled=True,
                       window_sharing_enabled=True, linear_retention_graphs=None, noop_iterations=None,
                       native_limiter_placements=None, require_native_limiters=False):
@@ -161,6 +161,12 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
             raise ValueError(f"{case}: invalid temporal filter iteration count {temporal_splits}")
         if temporal_splits:
             expected["BreakFilters"] = temporal_splits
+    if temporal_merge_fallbacks is not None:
+        merges = int(clock_scans == 2)
+        if type(temporal_merge_fallbacks) is not int or not 0 <= temporal_merge_fallbacks <= merges:
+            raise ValueError(f"{case}: invalid temporal merge fallback count {temporal_merge_fallbacks}")
+        if merges > temporal_merge_fallbacks:
+            expected["MergeFilters"] = 1
     if cast_iterations is not None:
         if (set(cast_iterations) != {"ExpandSafeCasts", "ExpandUnsafeCasts"}
                 or any(type(n) is not int or n < 1 for n in cast_iterations.values())):
@@ -254,6 +260,8 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
     if controls.keys() != expected.keys():
         raise ValueError("Java reference does not cover the frozen population")
     invocations = Counter()
+    merge_fallbacks = 0
+    merge_records = 0
     for directory in candidates:
         for row in read_run(directory, "S2", full_trace):
             key = row["id"]
@@ -286,6 +294,12 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
             splits = control.get("temporal_filter_iterations")
             if "ContainsNow" in schedule and (splits is None or splits != row.get("temporal_filter_iterations")):
                 raise ValueError(f"{key}: candidate and Java temporal filter iterations differ")
+            fallbacks = row.get("temporal_merge_fallbacks")
+            if "temporal_merge_fallbacks" in control or "temporal_merge_fallbacks" in row:
+                if control.get("temporal_merge_fallbacks") != 0 or type(fallbacks) is not int:
+                    raise ValueError(f"{key}: missing or incompatible temporal merge fallback evidence")
+                merge_fallbacks += fallbacks
+                merge_records += 1
             star_joins = control.get("star_joins_enabled")
             if "ReplaceStarJoins" in schedule and (type(star_joins) is not bool
                     or row.get("star_joins_enabled") is not star_joins):
@@ -314,7 +328,8 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
             verify_placements(key, scheduled_counts, expected[key][1], expected[key][2], schedule,
                               validate_weights=weights, cast_iterations=control["cast_iterations"],
                               unused_field_iterations=unused_fields, graph_cleanups=graph_cleanups,
-                              clock_scans=clock_scans, temporal_splits=splits, now_stream=expected[key][3],
+                              clock_scans=clock_scans, temporal_splits=splits, temporal_merge_fallbacks=fallbacks,
+                              now_stream=expected[key][3],
                               outputs_are_sets=expected[key][4], trim_inputs=expected[key][5],
                               native_limiter_placements=limiter_placements, require_native_limiters=require_native_limiters,
                               noop_iterations=noop_iterations, linear_retention_graphs=linear_graphs,
@@ -324,6 +339,7 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
         raise ValueError(f"{len(controls)} cases missing from S2 replay")
     return {"cases": len(expected), "mismatches": 0, "population_sha256": file_digest(population),
             "rust_pass_invocations": dict(sorted(invocations.items())),
+            **({"temporal_merge_fallbacks": merge_fallbacks} if merge_records == len(expected) else {}),
             "shards": [{"manifest_sha256": file_digest(d / "complete.json"),
                         "records_sha256": file_digest(d / json.loads((d / "complete.json").read_bytes())["records_file"])}
                        for d in [*references, *candidates]]}

@@ -51,6 +51,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.MergeFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ChainVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
@@ -181,6 +182,13 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final FindMapChains mapChains;
     @Nullable private final FindSharedIndexes sharedIndexes;
     @Nullable private final ReplaceSharedIndexes replaceSharedIndexes;
+    @Nullable private final MergeFilters mergeFilters;
+    private boolean usedGeneralTemporalAnalysis;
+
+    public boolean usedGeneralTemporalAnalysis() {
+        return this.usedGeneralTemporalAnalysis;
+    }
+
     @Nullable private final FindUnboundedState.DetectStreamingOperations streaming;
     @Nullable private final FindUnboundedState.FindGCedStreams garbageCollected;
     @Nullable private final FindUnboundedState.FindBounded bounded;
@@ -287,6 +295,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.windowImplementation = original instanceof ImplementWindowGroups windows ? windows : null;
         this.collapseChains = original instanceof CollapseSharedChains collapse ? collapse : null;
         this.sharedIndexes = original instanceof FindSharedIndexes find ? find : null;
+        this.mergeFilters = original instanceof MergeFilters merge ? merge : null;
         this.replaceSharedIndexes = original instanceof ReplaceSharedIndexes replace ? replace : null;
         this.mapChains = original instanceof FindMapChains find ? find : null;
         this.errorOrder = original instanceof OrderErrorConsumers order ? order : null;
@@ -1410,7 +1419,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private record AsofRetention(long retainer, long join, boolean rebuilt) {}
 
     private boolean reusesOperators() {
-        return this.nativeName.equals("TrimWindows") || this.insertLimiters != null;
+        return this.nativeName.equals("TrimWindows") || this.insertLimiters != null || this.mergeFilters != null;
     }
 
     private DBSPCircuit readGraph(DBSPCircuit input, JsonNode result, ToJsonOuterVisitor writer) throws IOException {
@@ -1418,7 +1427,7 @@ public final class RustCircuitPass implements CircuitTransform {
         if (graph.isNull())
             return input;
         var shuffles = Objects.requireNonNull(writer.innerVisitor.liveShuffles);
-        // Both clone passes preserve unchanged operators. Later projection passes
+        // The clone passes preserve unchanged operators. Later projection passes
         // use their object identity to recognize maps they have already analyzed.
         // A keyed source can keep its wire ID when it becomes a waterline operator.
         var originalOperators = this.reusesOperators()
@@ -2383,6 +2392,7 @@ public final class RustCircuitPass implements CircuitTransform {
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
+        this.usedGeneralTemporalAnalysis = false;
         long initial = DBSPVariablePath.nextGeneratedName();
         try {
             byte[] state = EMPTY_CONTEXT;
@@ -2747,7 +2757,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         OptimizerTopology.encode(circuit, OptimizerTopology.Details.VIEW_NAMES), initial, state);
                 case "CheckRetain", "ValidateRecursiveOperators", "NoIntegralVisitor", "CheckHints", "CompactNames", "TagRegions" ->
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
-                case "LowerCircuitVisitor", "TrimWindows", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
+                case "LowerCircuitVisitor", "TrimWindows", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "MergeFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero",
@@ -2788,6 +2798,10 @@ public final class RustCircuitPass implements CircuitTransform {
                     state = this.passState(circuit, writer);
                 result = this.invoke("Live/" + this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                         initial, state);
+            }
+            if (this.mergeFilters != null && result.isNull()) {
+                this.usedGeneralTemporalAnalysis = true;
+                return this.mergeFilters.apply(circuit);
             }
             if (this.replaceSharedIndexes != null && result.isNull())
                 return this.replaceSharedIndexes.apply(circuit);

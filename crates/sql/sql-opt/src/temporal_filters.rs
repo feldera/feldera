@@ -1,10 +1,136 @@
-//! Split temporal conjunctions and disjunctions before implementing NOW windows.
-use crate::{filters::rewrite_filters, function_calls::contains_now};
-use feldera_sql_expr::{SimplifyWarning, simplify_closure_with_warnings};
+//! Split temporal predicates and merge bounds that share a NOW window.
+use crate::{
+    TemporalBoundKey, TemporalPredicate, WindowTerm, accepts_temporal_bound,
+    filters::rewrite_filters, function_calls::contains_now, infer_temporal_predicates,
+};
+use feldera_sql_expr::{SimplifyWarning, ensure_expression_tree, simplify_closure_with_warnings};
 use feldera_sql_ir::{
     BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
     OperatorKind as Op, OutputPort,
 };
+
+/// Decide if adjacent filters can use a single window. An unknown result asks
+/// the caller for its general closure analysis. A known rejection preserves
+/// both original predicates and consumes no generated names.
+fn can_merge_temporal_filters(
+    edit: &mut CircuitEditor,
+    source: ExpressionId,
+    filter: ExpressionId,
+) -> Result<Option<bool>, Error> {
+    if !contains_now(edit.circuit(), &[filter.into()])?
+        || !contains_now(edit.circuit(), &[source.into()])?
+    {
+        return Ok(Some(false));
+    }
+    let Some(upstream) = window_terms(edit, source)? else {
+        return Ok(None);
+    };
+    let Some(downstream) = window_terms(edit, filter)? else {
+        return Ok(None);
+    };
+    match downstream.as_slice() {
+        [term] => accepts_temporal_bound(edit, &upstream, *term),
+        _ => Ok(Some(false)),
+    }
+}
+
+/// Merge adjacent bounds in producer order. An intermediate filter remains
+/// available to its other readers. Later filters see its rewritten predicate
+/// and input. An unsupported expression leaves the caller's pass state intact.
+pub fn merge_temporal_filters(
+    circuit: Circuit,
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<Option<Circuit>, Error> {
+    let order = circuit.operator_order(feldera_sql_ir::BodyOrder::Postorder)?;
+    let mut edit = CircuitEditor::new(circuit);
+    let mut projections = crate::rebuild::ProjectionNames::default();
+    let mut names = *next;
+    let mut diagnostics = Vec::new();
+    for id in order {
+        let filter = edit.node(id)?;
+        projections.visit(id, filter, &mut names)?;
+        if filter.operator_kind() != Some(Op::Filter) {
+            continue;
+        }
+        let input = filter
+            .inputs()
+            .next()
+            .ok_or_else(|| Error::new("filter requires an input"))?;
+        let source = edit.node(input.operator)?;
+        if source.operator_kind() != Some(Op::Filter)
+            || edit.type_kind(edit.type_id(filter.edge("outputType")?)?)?
+                == feldera_sql_ir::TypeKind::IndexedZSet
+        {
+            continue;
+        }
+        let upstream = edit.expression(source.edge("function")?)?;
+        let downstream = edit.expression(filter.edge("function")?)?;
+        let rows = source
+            .inputs()
+            .next()
+            .ok_or_else(|| Error::new("upstream filter requires an input"))?;
+        match can_merge_temporal_filters(&mut edit, upstream, downstream)? {
+            None => return Ok(None),
+            Some(false) => continue,
+            Some(true) => {}
+        }
+        let function = merge_temporal_predicates(
+            &mut edit,
+            upstream,
+            downstream,
+            &mut names,
+            &mut diagnostics,
+        )?;
+        edit.rewire_inputs(id, &[rows])?;
+        edit.set_operator_field(id, "function", Field::Reference(function.into()))?;
+        edit.clear_annotations(id)?;
+        projections.replaced(id);
+    }
+    let circuit = projections.finish(edit.finish_with_rewrites()?)?;
+    *next = names;
+    warnings.extend(diagnostics);
+    Ok(Some(circuit))
+}
+
+fn window_terms(
+    edit: &mut CircuitEditor,
+    closure: ExpressionId,
+) -> Result<Option<Vec<WindowTerm>>, Error> {
+    let tree = ensure_expression_tree(edit, closure.into())?;
+    let node = edit.node(tree)?;
+    let [parameter] = node.edges("parameters")?[..] else {
+        return Err(Error::new("a temporal filter requires one row parameter"));
+    };
+    let body = strip_wrap_bool(edit, node.edge("body")?)?;
+    Ok(
+        infer_temporal_predicates(edit, parameter, body)?.map(|predicates| {
+            predicates
+                .into_iter()
+                .map(|p| match p {
+                    TemporalPredicate::NoNow(id) => WindowTerm::NoNow(id),
+                    TemporalPredicate::Residual(id) => WindowTerm::Residual(id),
+                    TemporalPredicate::Bound {
+                        key, comparison, ..
+                    } => WindowTerm::Bound(TemporalBoundKey {
+                        parameter,
+                        key,
+                        comparison,
+                    }),
+                })
+                .collect()
+        }),
+    )
+}
+
+fn strip_wrap_bool(edit: &CircuitEditor, mut id: NodeId) -> Result<ExpressionId, Error> {
+    while edit.expr_kind(edit.expression(id)?)? == Expr::Unary
+        && edit.node(id)?.data("opcode").and_then(|v| v.as_str()) == Some("WRAP_BOOL")
+    {
+        id = edit.node(id)?.edge("source")?;
+    }
+    edit.expression(id)
+}
 
 /// Combine two compatible temporal bounds on a single row. Both calls use the
 /// same parameter. Reducing the completed closure preserves shared expressions.
@@ -64,18 +190,9 @@ fn split_filter(
     let output_type = node.edge("outputType")?;
     let function = simplify_closure_with_warnings(edit, function, Some(warnings))?;
     let parameters = edit.node(function)?.edges("parameters")?;
-    let mut predicate = edit.node(function)?.edge("body")?;
-    while edit.expr_kind(edit.expression(predicate)?)? == Expr::Unary
-        && edit
-            .node(predicate)?
-            .data("opcode")
-            .and_then(|v| v.as_str())
-            == Some("WRAP_BOOL")
-    {
-        predicate = edit.node(predicate)?.edge("source")?;
-    }
-    let binary = edit.node(predicate)?;
-    if edit.expr_kind(edit.expression(predicate)?)? != Expr::Binary {
+    let predicate = strip_wrap_bool(edit, edit.node(function)?.edge("body")?)?;
+    let binary = edit.node(predicate.into())?;
+    if edit.expr_kind(predicate)? != Expr::Binary {
         return Ok(None);
     }
     let disjunction = match binary.data("opcode").and_then(|v| v.as_str()) {
@@ -134,4 +251,108 @@ fn split_filter(
         [collection()],
     )?;
     Ok(Some((first.operator, port(result))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_chain_merges_compatible_bounds_and_preserves_other_readers() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let (circuit, roots) = circuit.with_inner_roots([json!({
+            "class":"DBSPTypeTimestamp","id":1,"code":"TIMESTAMP","mayBeNull":false
+        })])?;
+        let body = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let site = roots[0];
+        let timestamp = edit.type_id(site)?;
+        let row = edit.tuple_type(site, false, [site, site])?;
+        let reference = edit.reference_type(row)?;
+        let collection = edit.zset_type(row)?;
+        let output = || ("outputType", Field::Reference(collection.into()));
+        let source = edit.append_operator(body, body, Op::Constant, &[], [output()])?;
+        let now = edit.function_path(site, "now")?;
+        let clock = edit.make_expr(
+            site,
+            Expr::Apply,
+            timestamp,
+            [
+                ("function", Field::Reference(now.into())),
+                ("arguments", Field::Array(vec![])),
+            ],
+        )?;
+        let boolean = edit.bool_type(site, false)?;
+        let port = |operator| OutputPort {
+            operator,
+            number: 0,
+        };
+        let filter = |edit: &mut CircuitEditor, input, predicate| {
+            edit.append_operator(
+                body,
+                body,
+                Op::Filter,
+                &[port(input)],
+                [output(), ("function", Field::Reference(predicate))],
+            )
+        };
+        let bound = |edit: &mut CircuitEditor, input, column, comparison| {
+            let variable = edit.named_variable(reference, "row")?;
+            let value = edit.dereference(variable)?;
+            let key = edit.tuple_field(value, column)?;
+            let predicate = edit.binary_expression(site, boolean, comparison, key, clock)?;
+            let closure = edit.closure_from_variables(predicate, &[variable])?;
+            filter(edit, input, closure.into())
+        };
+        let lower = bound(&mut edit, source, 0, BinaryOp::Gt)?;
+        let upper = bound(&mut edit, lower, 0, BinaryOp::Lte)?;
+        let compatible = bound(&mut edit, upper, 0, BinaryOp::Gt)?;
+        let different_key = bound(&mut edit, upper, 1, BinaryOp::Gt)?;
+        let different_inclusivity = bound(&mut edit, lower, 0, BinaryOp::Gte)?;
+        let circuit = edit.finish()?;
+        let mut next = 10;
+        let mut warnings = Vec::new();
+        let merged = merge_temporal_filters(circuit.clone(), &mut next, &mut warnings)?.unwrap();
+        for (filter, input) in [
+            (lower, source),
+            (upper, source),
+            (compatible, source),
+            (different_key, upper),
+            (different_inclusivity, lower),
+        ] {
+            assert_eq!(
+                merged.node(filter).unwrap().inputs().next(),
+                Some(port(input))
+            );
+        }
+        assert_eq!(next, 12);
+        assert!(warnings.is_empty());
+
+        // A predicate needing general closure analysis occurs after two successful merges.
+        let mut edit = CircuitEditor::new(circuit);
+        let function = edit.function_path(site, "two_timestamps")?;
+        let call = edit.make_expr(
+            site,
+            Expr::Apply,
+            boolean,
+            [
+                ("function", Field::Reference(function.into())),
+                (
+                    "arguments",
+                    Field::Array(vec![Field::Reference(clock.into()); 2]),
+                ),
+            ],
+        )?;
+        let variable = edit.named_variable(reference, "row")?;
+        let closure = edit.closure_from_variables(call, &[variable])?;
+        filter(&mut edit, compatible, closure.into())?;
+        let mut next = 10;
+        assert!(merge_temporal_filters(edit.finish()?, &mut next, &mut warnings)?.is_none());
+        assert_eq!(next, 10);
+        assert!(warnings.is_empty());
+        Ok(())
+    }
 }

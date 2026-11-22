@@ -336,6 +336,7 @@ public final class CorpusDeterminism {
         var linearRetentionGraphs = new java.util.concurrent.atomic.AtomicInteger();
         var asofMoves = new java.util.concurrent.atomic.AtomicInteger();
         var temporalSplits = new java.util.concurrent.atomic.AtomicInteger();
+        var temporalMergeFallbacks = new java.util.concurrent.atomic.AtomicInteger();
         if (liveFinal) {
             compiler.stateObserver = new DBSPCompiler.StateObserver() {
                 public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {
@@ -364,8 +365,12 @@ public final class CorpusDeterminism {
                         linearRetentionGraphs.incrementAndGet();
                     if (completed && container.equals("LowerAsof") && pass.getName().equals("MoveGC"))
                         asofMoves.incrementAndGet();
-                    if (completed && pass instanceof RustCircuitPass)
-                        rustPasses.merge(pass.getName(), 1, Integer::sum);
+                    if (completed && pass instanceof RustCircuitPass rust) {
+                        if (rust.usedGeneralTemporalAnalysis())
+                            temporalMergeFallbacks.incrementAndGet();
+                        else
+                            rustPasses.merge(pass.getName(), 1, Integer::sum);
+                    }
                 }
             };
         }
@@ -435,6 +440,7 @@ public final class CorpusDeterminism {
             result.put("linear_retention_graphs", linearRetentionGraphs.get());
             result.put("asof_retention_moves", asofMoves.get());
             result.put("temporal_filter_iterations", temporalSplits.get());
+            result.put("temporal_merge_fallbacks", temporalMergeFallbacks.get());
             result.set("dead_code_by_container", MAPPER.valueToTree(graphCleanups));
             result.put("star_joins_enabled", !compiler.metadata.noStarJoins()
                     && !compiler.metadata.disabledOptimizations().contains("CreateStarJoins"));

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ImplementNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.CheckPersistentIds;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.HashPrefixPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.SetOperatorHashes;
@@ -167,12 +168,13 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
                 && Boolean.getBoolean("feldera.optimizer.compareRustTrimFilters")) {
             this.replaceObservedPass(steps);
         }
-        if (pass instanceof ReorderTemporalFilters ordering
-                && (this.passClass.equals("Scan") || this.passClass.equals("Reorder"))
+        if (pass instanceof Passes group
+                && ((group instanceof ReorderTemporalFilters && (this.passClass.equals("Scan") || this.passClass.equals("Reorder")))
+                    || (group instanceof ImplementNow && this.passClass.equals("MergeFilters")))
                 && Boolean.getBoolean("feldera.optimizer.compareRustTemporalPolicy")) {
-            ordering.passes.replaceAll(step -> {
+            group.passes.replaceAll(step -> {
                 if (!(step instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.Conditional guard)
-                        || !this.selected(guard.transform))
+                        || guard.transform instanceof RustCircuitPass || !this.selected(guard.transform))
                     return step;
                 var snapshots = new org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots(this.compiler);
                 var rust = new RustCircuitPass(this.compiler, guard.transform, snapshots);
@@ -399,6 +401,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     @Override
     public void after(String container, int index, int iteration, CircuitTransform pass,
                       DBSPCircuit circuit, boolean completed) {
+        if (completed && this.selected(pass) && pass instanceof RustCircuitPass rust && rust.usedGeneralTemporalAnalysis())
+            throw new IllegalStateException("The observed MergeFilters invocation required Java temporal analysis");
         pass = this.originalPasses.getOrDefault(pass, pass);
         if (this.compareMonotonicity(pass))
             this.compiler.options.ioOptions.rustOptimizerPasses = this.previousRustPasses;

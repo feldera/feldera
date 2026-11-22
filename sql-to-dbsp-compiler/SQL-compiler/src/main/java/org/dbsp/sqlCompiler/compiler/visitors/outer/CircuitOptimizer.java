@@ -71,6 +71,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ImplementNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.BreakFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.DesugarNowEquality;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.MergeFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ShareWindowIntegrals;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.FindWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ImplementWindowGroups;
@@ -157,7 +158,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof ShareOutputIntegrators || pass instanceof FilterJoinVisitor || pass instanceof AppendOnly
                     || pass instanceof DecomposeExpensiveFilters || pass instanceof CircuitContainsNow || pass instanceof BreakFilters
                     || pass instanceof ReorderTemporalFilters.Scan || pass instanceof ReorderTemporalFilters.Reorder
-                    || pass instanceof DesugarNowEquality
+                    || pass instanceof MergeFilters || pass instanceof DesugarNowEquality
                     || pass instanceof FuseIntoArrayAgg || pass instanceof ComparatorDeclarations
                     || pass instanceof CompactNames || pass instanceof TagRegions
                     || pass instanceof RemoveDeindexOperators || pass instanceof RemoveNoops || pass instanceof DeadCode

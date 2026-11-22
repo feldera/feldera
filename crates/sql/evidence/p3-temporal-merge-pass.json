@@ -1,0 +1,122 @@
+{
+  "scope": "Whole-pass MergeFilters against the direct Java pass on the frozen clock programs. Isolated comparisons reject Java fallback. Detached replay compares all optimizer boundaries, persistent ID inputs and emitted artifacts.",
+  "optimizer_library_sha256": "ff854ea84dfdded691f151295ccd46854ee1dfc89bb24629ba531012b7f4ef24",
+  "compiler_jar_sha256": "4c3001d4c15fa155567b4d3292df3c14bff294768bff77162366873d3b4766ad",
+  "test_jar_sha256": "927dc7a5eee332e6634ed34645c8291c2ce03fc30a6990ef95b5580a0c29e732",
+  "engines": {
+    "classic": {
+      "cases": 71,
+      "matching_native_invocations": 71,
+      "input_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_stream_sha256": "29c5848446d7f21d9421eb6d0641f7ad84f359da0d8d422a57be6db6ef6f4825",
+      "rust_stream_sha256": "6f36590e48b239b573fa02ffff34732962ffc0b5ec57ea0facf096e53e0da450",
+      "detached_full_trace_cases": 7,
+      "detached_report_sha256": "4d0cff08419f602e40a4b62d2f725985d1300e51ca6ee719844d96ec04871053",
+      "detached_java_fallbacks": 0
+    },
+    "gen2": {
+      "cases": 62,
+      "matching_native_invocations": 62,
+      "input_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_stream_sha256": "074e40a4cd03a1962f333a50faa31a66a2c42ca05872fb9f8f2c48f7cb5f470e",
+      "rust_stream_sha256": "f217e9dd04ae0889a5d0742f719ca9c1980e0c68dcb90069c32ae453a93ddca8",
+      "detached_full_trace_cases": 7,
+      "detached_report_sha256": "8c917844d7d4523357e01f80730be65bc93f2c0d3adc0e2172fc63e6dbaddaff",
+      "detached_java_fallbacks": 0
+    }
+  },
+  "count_checkpoint": {
+    "report_sha256": "6c20e40678b7d291a389c475a776430b5d3fc9cd62e64ded55fe5758e6e4968e",
+    "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+    "binary_sha256": {
+      "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+      "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+    },
+    "generated_rust_sha256": {
+      "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+      "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+    },
+    "restores": [
+      {
+        "writer": "java",
+        "reader": "hybrid",
+        "bootstrap": false,
+        "checkpoint_id": "01a2029f-fa5f-7bd1-aca5-262aa677b05c",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ]
+      },
+      {
+        "writer": "hybrid",
+        "reader": "java",
+        "bootstrap": false,
+        "checkpoint_id": "01a2029f-fa83-7d31-a926-8e05b29d9fb5",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ]
+      }
+    ]
+  },
+  "watermark_checkpoint": {
+    "report_sha256": "813e7bf41cfcd9352bc507c8fe3b7e69038e9ab3a16072f48bc61fac3a6e6bc2",
+    "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+    "binary_sha256": {
+      "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+      "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+    },
+    "generated_rust_sha256": {
+      "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+      "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+    },
+    "restores": [
+      {
+        "writer": "java",
+        "reader": "hybrid",
+        "bootstrap": false,
+        "checkpoint_id": "01a202a0-d9eb-7ea0-aa4e-6fbca9ac3cd4",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ],
+        "late_input_dropped_after_restore": true
+      },
+      {
+        "writer": "hybrid",
+        "reader": "java",
+        "bootstrap": false,
+        "checkpoint_id": "01a202a0-da06-7210-93c8-e550e22e1d98",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ],
+        "late_input_dropped_after_restore": true
+      }
+    ]
+  }
+}

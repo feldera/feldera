@@ -1381,7 +1381,7 @@ fn transform(
         | "Simplify"
         | "DecomposeExpensiveFilters"
         | "ReplaceSharedIndexes"
-        | "BreakFilters" => {
+        | "MergeFilters" | "BreakFilters" => {
             let mut weight = None;
             let mut retention = None;
             let (output, warnings) = match pass {
@@ -1449,6 +1449,13 @@ fn transform(
                 "PullFilterVisitor" => feldera_sql_opt::pull_filters(circuit, &mut next)?,
                 "PropagateConstants" => feldera_sql_opt::propagate_constants(circuit, &mut next)?,
                 "Simplify" => feldera_sql_opt::simplify_expressions(circuit, &mut next)?,
+                "MergeFilters" => {
+                    let mut warnings = Vec::new();
+                    let Some(output) = feldera_sql_opt::merge_temporal_filters(circuit, &mut next, &mut warnings)? else {
+                        return Ok(Value::Null);
+                    };
+                    (output, warnings)
+                }
                 "BreakFilters" => feldera_sql_opt::break_temporal_filters(circuit, &mut next)?,
                 _ => feldera_sql_opt::decompose_expensive_filters(circuit, &mut next)?,
             };

@@ -77,6 +77,16 @@ class FrozenPlacements(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Rust placements"):
             verify_placements("missing temporal order", with_clock, False, clock_scans=2)
 
+    def test_java_temporal_merge_fallback_does_not_count_as_a_rust_pass(self):
+        clock = {**BASE_COUNTS, "ContainsNow": 2, "DesugarNowEquality": 1, "Graph": BASE_COUNTS["Graph"] + 1,
+                 "Scan": 1, "Reorder": 1}
+        verify_placements("native merge", {**clock, "MergeFilters": 1}, False, clock_scans=2, temporal_merge_fallbacks=0)
+        verify_placements("fallback", clock, False, clock_scans=2, temporal_merge_fallbacks=1)
+        with self.assertRaisesRegex(ValueError, "Rust placements"):
+            verify_placements("misattributed", {**clock, "MergeFilters": 1}, False, clock_scans=2, temporal_merge_fallbacks=1)
+        with self.assertRaisesRegex(ValueError, "fallback count"):
+            verify_placements("no clock", BASE_COUNTS, False, clock_scans=1, temporal_merge_fallbacks=1)
+
     def test_trim_inputs_runs_only_for_programs_with_the_option(self):
         enabled = {**BASE_COUNTS, "TrimInputs": 1}
         verify_placements("trim enabled", enabled, False, trim_inputs=True)

@@ -1223,6 +1223,14 @@ of comparison operands. All 532 `Scan`, `Reorder`, `MergeFilters` and
 `RewriteNow` invocations matched the saved Java reference.
 [Typed temporal comparison results](evidence/p3-typed-temporal-comparisons.json)
 
+Rust now traverses adjacent filters in producer order, merges compatible clock
+bounds and preserves other readers of the upstream filter. All 71 classic and
+62 Gen-2 clock programs matched Java at the pass boundary. Fourteen detached
+replays matched through emission, and COUNT and LATENESS checkpoints restored
+in both directions. The replay records a Java fallback separately when Rust
+cannot classify a predicate. None of these cases required one.
+[Temporal filter merge results](evidence/p3-temporal-merge-pass.json)
+
 Rust builds the row and indexed identity closures used by monotonicity analysis.
 For an unindexed filter it extracts lower bounds from comparisons, including
 columns offset by numeric or temporal literals. The Java transfer functions

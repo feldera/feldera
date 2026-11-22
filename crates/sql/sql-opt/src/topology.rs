@@ -155,6 +155,7 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
         ),
         "ImplementJoins" => has(&[Op::StreamAntiJoin, Op::StreamJoinIndex]),
         "FilterJoinVisitor" => reads(Op::Filter, &[Op::Join, Op::LeftJoin, Op::StarJoin]),
+        "MergeFilters" => reads(Op::Filter, &[Op::Filter]),
         "DecomposeExpensiveFilters" | "BreakFilters" | "DesugarNowEquality" => has(&[Op::Filter]),
         // CircuitRewriter also visits aggregate lists regardless of the
         // annotation predicate applied to ordinary function fields.

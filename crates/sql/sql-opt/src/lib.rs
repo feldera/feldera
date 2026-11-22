@@ -238,7 +238,7 @@ pub use sums::merge_sums;
 pub use temporal_groups::{accepts_temporal_bound, group_temporal_filters, TemporalBoundKey, TemporalGroup, WindowTerm};
 pub use temporal_comparisons::{classify_temporal_predicates, infer_temporal_predicates, TemporalPredicate};
 pub use temporal_equality::desugar_now_equality;
-pub use temporal_filters::{break_temporal_filters, merge_temporal_predicates};
+pub use temporal_filters::{break_temporal_filters, merge_temporal_filters, merge_temporal_predicates};
 pub use topology::needs_full_snapshot;
 pub use trace_integrators::{separate_integrators, separate_trace_inputs, snapshot_aggregate};
 pub use trace_retention::{
