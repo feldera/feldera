@@ -4,6 +4,28 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Compact snapshot strings, 2026-11-22
+
+On `29f71e8ea`, all three workloads met the 1.2× ceiling. The ARM64
+devcontainer ran two warmup and 21 measured pairs per workload in fresh
+JVMs on CPU 15 with no concurrent verification, alternating which
+compiler ran first. All 69 pairs matched through classic artifact emission.
+Timing ends before Cargo builds the generated pipeline.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.408 | 1.102 | 0.783× |
+| Nexmark suite | 3.171 | 3.586 | 1.131× |
+| Outer join | 1.321 | 1.043 | 0.790× |
+
+Three Nexmark JFR captures identified string escaping in the optimizer
+snapshot writer. In ten alternating pairs, median optimizer CPU time
+fell from 1,650.597 ms to 1,552.712 ms when the writer copied ordinary
+strings directly. Jackson still escapes quotes, backslashes and control
+characters.
+
+[Paired timings and build identities](evidence/p3-compact-snapshot-strings-cold.json) · [Optimizer CPU measurements](evidence/p3-compact-snapshot-strings.json)
+
 ## Unchanged simplifications, 2026-11-22
 
 On `a98a0ce96`, the ARM64 devcontainer ran two warmup and 21 measured
