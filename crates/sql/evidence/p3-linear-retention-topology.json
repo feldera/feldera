@@ -1,0 +1,119 @@
+{
+  "source_commit": "9455f0b55501eb451ab79e3a49b044a9db6b0b34",
+  "build": {
+    "jar_sha256": "fe4780fb8393a418d45e664475245561d3ed5376a4ba88bb63b8dff474a1a594",
+    "optimizer_library_sha256": "5591a65f82f0fc0c54a2720c626b4400531daa4f9e68a948ffd529aecc9efd1c",
+    "driver_sha256": "9b983aa5576062360aebedbe9ecd6104df472a028b79cb313893f326945cd413",
+    "pass_kinds": 105
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "s4": {
+    "classic": {
+      "pass": "LinearPostprocessRetainKeys",
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "6cb5ec10b36aee6d75703ca5f1b569a3338b8839d10ed520820326d41b4fc95c",
+      "rust_stream_sha256": "6cb5ec10b36aee6d75703ca5f1b569a3338b8839d10ed520820326d41b4fc95c",
+      "invocations": 291,
+      "reordered": 52
+    },
+    "gen2": {
+      "pass": "LinearPostprocessRetainKeys",
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "fcadd883af045d7881827027a6dad40ea09f60522523e5d8f126f17a26857b78",
+      "rust_stream_sha256": "fcadd883af045d7881827027a6dad40ea09f60522523e5d8f126f17a26857b78",
+      "invocations": 259,
+      "reordered": 51
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "f4a69d4ceed1910e648dcbbfd62194f8ab6e188ba53cf257f26fcca130c66aaa"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "acef3ae68090aeebfecb7a4a332364daaa7012d1ff08d6b7c8d05123c949170d",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "aa830b769d9636861c81442c1045f44558930354d243cc7c176c80bffdf3f9f4",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 6.432251,
+    "largest_driver_plus_front_end_rss_bytes": 79880192
+  },
+  "maven": {
+    "tests": 122,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "jni_transfer": {
+    "workload": "nexmark-suite.sql",
+    "scope": "All JNI requests and replies in LinearPostprocessRetainKeys, including nested graph construction",
+    "artifact_equal_pairs": 2,
+    "baseline": {
+      "request_bytes": 2679666,
+      "reply_bytes": 337864,
+      "calls": [
+        {
+          "operation": "Topology/LinearPostprocessRetainKeys",
+          "request_bytes": 122934,
+          "reply_bytes": 28
+        },
+        {
+          "operation": "Live/LinearPostprocessRetainKeys",
+          "request_bytes": 2556732,
+          "reply_bytes": 337836
+        }
+      ]
+    },
+    "candidate": {
+      "request_bytes": 150815,
+      "reply_bytes": 26283,
+      "calls": [
+        {
+          "operation": "Graph/Inputs",
+          "request_bytes": 13924,
+          "reply_bytes": 10669
+        },
+        {
+          "operation": "Topology/LinearPostprocessRetainKeys",
+          "request_bytes": 122967,
+          "reply_bytes": 4937
+        },
+        {
+          "operation": "Graph/Inputs",
+          "request_bytes": 13924,
+          "reply_bytes": 10677
+        }
+      ]
+    },
+    "workload_sha256": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64"
+  }
+}

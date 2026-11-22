@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust orders linear aggregates after their retention waterlines and selects the
+first matching retainer in the resulting order. The JVM reconnects the selected
+live predicate and waterline. On the Nexmark suite the pass sent 150,815 bytes
+to Rust, down from 2,679,666 bytes, including both graph builds. Artifacts matched
+in both paired runs. All 103 active reorderings and 447 inactive placements
+matched Java in the selected S4 replay. The full 17,098-program replay, selected
+runtime commands and both checkpoint workloads passed.
+[Linear aggregate retention evidence](evidence/p3-linear-retention-topology.json)
+
 Rust derives lower bounds for the unsigned sort keys used by rolling windows.
 The directed matrix covered 88 encodings and 88 decodings across integer and
 temporal types, sort direction, nullability and null placement. All 55 cases
