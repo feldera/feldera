@@ -373,14 +373,14 @@ impl Row {
                     }
                     Some(bound) => super::unary_waterline(edit, expression, bound)?,
                 };
-                if reduced.is_none() {
+                let Some(bound) = reduced else {
                     let Some(mut unknown) = unbounded(edit, expression, depth)? else {
                         return Ok(None);
                     };
                     unknown.constant = value.constant;
                     return Ok(Some(unknown));
-                }
-                ProjectedValue::scalar(edit, expression, reduced, value.constant)?
+                };
+                ProjectedValue::bounded(edit, expression, bound, value.constant)?
             }
             Expr::Borrow | Expr::Deref => {
                 let base = edit.expression(node.edge("expression")?)?;

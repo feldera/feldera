@@ -1,6 +1,8 @@
 //! Scalar literals and arithmetic inside a projected waterline closure.
 use super::{ProjectedValue, Row, RowType, Shape, type_number};
-use crate::monotonicity::binary::{BinaryOperation, Domain, Operand};
+use crate::monotonicity::binary::{
+    BinaryOperation, BinaryWaterline, Domain, Operand, binary_waterline,
+};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, TypeKind as Ty,
 };
@@ -32,21 +34,17 @@ pub(super) fn literal(kind: Expr) -> bool {
 }
 
 impl ProjectedValue {
-    pub(super) fn scalar(
+    pub(super) fn bounded(
         edit: &CircuitEditor,
         expression: ExpressionId,
-        reduced: Option<ExpressionId>,
+        bound: ExpressionId,
         constant: bool,
     ) -> Result<Self, Error> {
         let type_id = type_number(edit.expression_type(expression)?);
         Ok(Self {
-            shape: Shape::Scalar(reduced.is_some()),
-            row_type: if reduced.is_some() {
-                RowType::BoundedScalar { type_id }
-            } else {
-                RowType::Unbounded { type_id }
-            },
-            reduced,
+            shape: Shape::Scalar(true),
+            row_type: RowType::BoundedScalar { type_id },
+            reduced: Some(bound),
             constant,
         })
     }
@@ -69,7 +67,7 @@ pub(super) fn literal_bound(
     else {
         let required = edit.with_nullability(ty, false)?;
         let maximum = edit.scalar_maximum(required)?;
-        return ProjectedValue::scalar(edit, expression, Some(maximum), false);
+        return ProjectedValue::bounded(edit, expression, maximum, false);
     };
     let sql_type = edit.type_kind(ty)?;
     let bound = match sql_type {
@@ -86,7 +84,6 @@ pub(super) fn literal_bound(
                     let fields = [
                         ("width", property("width")?),
                         ("signed", property("signed")?),
-                        ("code", property("code")?),
                         ("code", property("code")?),
                         ("mayBeNull", Field::Data(false.into())),
                     ];
@@ -117,7 +114,7 @@ pub(super) fn literal_bound(
             edit.make_expr(site, kind, required, [("value", Field::Data(value))])?
         }
     };
-    ProjectedValue::scalar(edit, expression, Some(bound), true)
+    ProjectedValue::bounded(edit, expression, bound, true)
 }
 
 fn never_null(edit: &CircuitEditor, mut expression: ExpressionId) -> Result<bool, Error> {
@@ -170,20 +167,9 @@ impl Row {
         let Some(rhs) = self.visit(edit, right, depth + 1)? else {
             return Ok(None);
         };
-        if !matches!(
-            (&lhs.shape, &rhs.shape),
-            (Shape::Scalar(_), Shape::Scalar(_))
-        ) {
-            return Ok(None);
-        }
         let ty = edit.expression_type(expression)?;
-        if !matches!(
-            super::unbounded_shape(edit, ty, depth)?,
-            Some(Shape::Scalar(_))
-        ) {
-            return Ok(None);
-        }
-        let domain = match (edit.expr_kind(expression)?, edit.type_kind(ty)?) {
+        let result_kind = edit.type_kind(ty)?;
+        let domain = match (edit.expr_kind(expression)?, result_kind) {
             (Expr::TimeAddSub, Ty::Time) => Domain::TimeOfDay,
             (Expr::TimeAddSub, _) => Domain::Temporal,
             _ => Domain::Scalar,
@@ -194,9 +180,32 @@ impl Row {
             left: operand(edit, left, &lhs, &opcode)?,
             right: operand(edit, right, &rhs, &opcode)?,
         };
+        let scalar_operands = matches!(
+            (&lhs.shape, &rhs.shape),
+            (Shape::Scalar(_), Shape::Scalar(_))
+        );
+        let scalar_result = !matches!(
+            result_kind,
+            Ty::RawTuple | Ty::Tuple | Ty::Ref | Ty::Stream | Ty::Struct
+        );
+        if !(scalar_operands && scalar_result)
+            && binary_waterline(domain, &opcode, operation.left, operation.right)
+                != BinaryWaterline::None
+        {
+            return Ok(None);
+        }
+        let constant = lhs.constant && rhs.constant;
         let (_, bound) =
             operation.lower(edit, expression.into(), ty, [lhs.reduced, rhs.reduced])?;
-        ProjectedValue::scalar(edit, expression, bound, lhs.constant && rhs.constant).map(Some)
+        if let Some(bound) = bound {
+            return ProjectedValue::bounded(edit, expression, bound, constant).map(Some);
+        }
+        // Retain the layout of an unbounded ROW for subsequent field reads.
+        let mut value = super::unbounded(edit, expression, depth)?;
+        if let Some(value) = &mut value {
+            value.constant = constant;
+        }
+        Ok(value)
     }
 }
 

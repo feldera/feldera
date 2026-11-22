@@ -38,7 +38,7 @@ impl Row {
                     ("arguments", Field::Array(vec![])),
                 ],
             )?;
-            return ProjectedValue::scalar(edit, expression, Some(edit.expression(clock)?), false)
+            return ProjectedValue::bounded(edit, expression, edit.expression(clock)?, false)
                 .map(Some);
         }
 
@@ -88,6 +88,6 @@ impl Row {
                 ("arguments", Field::Array(arguments)),
             ],
         )?;
-        ProjectedValue::scalar(edit, expression, Some(reduced), constant).map(Some)
+        ProjectedValue::bounded(edit, expression, reduced, constant).map(Some)
     }
 }

@@ -102,10 +102,19 @@ pub fn monotonicity_transfers(
             Some(Op::StreamJoin | Op::StreamJoinIndex | Op::AsofJoin) => {
                 (first || inputs.next().unwrap_or(false)).then_some(Analyze)
             }
-            // The enclosing recursive operator publishes no monotonicity facts.
-            // Its individual children already occurred in body order.
-            Some(Op::Nested) => None,
-            _ => first.then_some(Analyze),
+            Some(
+                Op::Deindex
+                | Op::Filter
+                | Op::Hop
+                | Op::Lag
+                | Op::PrimitiveAggregate
+                | Op::AggregateLinearPostprocess
+                | Op::PartitionedRollingAggregate,
+            ) => first.then_some(Analyze),
+            // The other operators have no transfer in the expanded graph.
+            // Visiting an input with a bound does not give them a bound.
+            // Nested circuits have already contributed their children in postorder.
+            _ => None,
         };
         if let Some(transfer) = transfer {
             transfers.push((id, transfer));
@@ -154,6 +163,36 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn an_operator_without_a_transfer_stops_propagation_on_its_branch() -> Result<(), Error> {
+        let port = |id| json!({"outputNumber": 0, "operator": {"node": id}});
+        let graph = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": [
+                {"class": "DBSPSourceMultisetOperator", "id": 1, "inputs": [],
+                 "metadata": {"columnMetadata": [{"lateness": true}]}},
+                {"class": "DBSPLagOperator", "id": 2, "inputs": [port(1)]},
+                {"class": "DBSPIntegrateOperator", "id": 3, "inputs": [port(1)]},
+                {"class": "DBSPMapOperator", "id": 4, "inputs": [port(3)]},
+                {"class": "DBSPStreamJoinOperator", "id": 5, "inputs": [port(4), port(2)]},
+                {"class": "DBSPAtomicSumOperator", "id": 6, "inputs": [port(4), port(2)]}
+            ]
+        }))?;
+        assert_eq!(
+            monotonicity_transfers(&graph)?,
+            [
+                (
+                    NodeId::Outer(1),
+                    MonotonicityTransfer::DeclaredColumns {
+                        lateness: vec![true]
+                    }
+                ),
+                (NodeId::Outer(2), MonotonicityTransfer::Analyze),
+                (NodeId::Outer(5), MonotonicityTransfer::Analyze),
+            ]
+        );
+        Ok(())
     }
 
     #[test]

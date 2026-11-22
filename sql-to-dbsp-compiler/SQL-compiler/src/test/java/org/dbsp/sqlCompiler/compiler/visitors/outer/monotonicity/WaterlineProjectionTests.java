@@ -187,6 +187,38 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void unknownCoalescedRowsRetainTheirFieldTypes() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var node = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(node, 32, true, false);
+        var fieldType = new MonotoneType(integer);
+        var row = new PartiallyMonotoneTuple(List.of(fieldType), false, false);
+        var input = new DBSPVariablePath("row", row.getType().ref());
+        var known = new DBSPTupleExpression(input.deref().field(0));
+        var fallback = new DBSPTupleExpression(new DBSPI32Literal(0));
+        var unknown = new NoExpression(known.getType().withMayBeNull(true));
+        var one = new DBSPBinaryExpression(node, known.getType(), DBSPOpcode.COALESCE, unknown, fallback);
+        var body = new DBSPTupleExpression(known, one, one.deepCopy().field(0));
+        var operator = new DBSPConstantOperator(node, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row)
+                .applyAnalysis(body.closure(input));
+        var closure = direct.getReducedExpression().to(DBSPClosureExpression.class);
+        Assert.assertEquals(1, closure.body.to(DBSPTupleExpression.class).size());
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var bound = new DBSPVariablePath("row", row.getProjectedType().ref());
+            var projected = RustCircuitPass.projectRow(compiler, body, bound, row);
+            Assert.assertNotNull(projected);
+            Assert.assertTrue(closure.equivalent(projected.getReducedExpression().closure(bound)));
+            var fields = projected.getMonotoneType().to(PartiallyMonotoneTuple.class);
+            var directFields = Monotonicity.getBodyType(direct).to(PartiallyMonotoneTuple.class);
+            for (int i = 0; i < directFields.size(); i++)
+                Assert.assertEquals(directFields.getFieldType(i).getClass(), fields.getFieldType(i).getClass());
+            Assert.assertFalse(fields.getFieldType(1).to(PartiallyMonotoneTuple.class).getFieldType(0).mayBeMonotone());
+            Assert.assertFalse(fields.getFieldType(2).mayBeMonotone());
+        }
+    }
+
+    @Test
     public void temporalFiltersKeepTheClockBoundInsideAnUnboundedComparison() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         compiler.options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply");
