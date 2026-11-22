@@ -1627,8 +1627,7 @@ public final class RustCircuitPass implements CircuitTransform {
                 inputs.toArray(DBSPClosureExpression[]::new)));
     }
 
-    private static Map<DBSPFilterOperator, ReorderTemporalFilters.SourceAndMaps> temporalFilterSources(
-            DBSPCompiler compiler, DBSPCircuit circuit) {
+    private static void scanTemporalWindows(DBSPCompiler compiler, DBSPCircuit circuit, ReorderTemporalFilters.Scan scan) {
         var operators = operatorsById(circuit);
         var payloads = new HashSet<Long>();
         for (var op : operators.values())
@@ -1636,9 +1635,24 @@ public final class RustCircuitPass implements CircuitTransform {
                 payloads.add(op.id);
         var writer = OptimizerTopology.selectedExpressions(compiler, circuit, payloads, OptimizerTopology.Details.NONE);
         try {
-            byte[] result = transformWithContext("WindowGroups/FilterSources",
-                    writer.getJsonString().getBytes(StandardCharsets.UTF_8), 0, "", EMPTY_CONTEXT);
-            List<TemporalPath> paths = MAPPER.readValue(result, new TypeReference<>() {});
+            byte[] result = transformWithContext("WindowGroups/Scan",
+                    writer.getJsonString().getBytes(StandardCharsets.UTF_8), 0, "",
+                    MAPPER.writeValueAsBytes(compiler.metadata.windowSharingThreshold()));
+            var reply = MAPPER.readTree(result);
+            var groups = reply.get("groups");
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision("WindowGroups/Scan", groups != null);
+            if (groups != null) {
+                var chosen = new LinkedHashMap<DBSPFilterOperator, Integer>();
+                for (var group : groups)
+                    for (var member : group) {
+                        var filter = Utilities.getExists(operators, member.required(0).longValue()).to(DBSPFilterOperator.class);
+                        Utilities.putNew(chosen, filter, member.required(1).intValue());
+                    }
+                scan.useSharedInputs(chosen, groups.size());
+                return;
+            }
+            List<TemporalPath> paths = MAPPER.convertValue(reply.required("paths"), new TypeReference<>() {});
             var sources = new LinkedHashMap<DBSPFilterOperator, ReorderTemporalFilters.SourceAndMaps>();
             for (var path : paths) {
                 var source = Utilities.getExists(operators, path.source()).getOutput(path.port());
@@ -1647,7 +1661,7 @@ public final class RustCircuitPass implements CircuitTransform {
                 var filter = Utilities.getExists(operators, path.filter()).to(DBSPFilterOperator.class);
                 Utilities.putNew(sources, filter, new ReorderTemporalFilters.SourceAndMaps(source, maps));
             }
-            return sources;
+            scan.chooseFromPaths(sources);
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid temporal filter source paths", error);
         }
@@ -3014,7 +3028,7 @@ public final class RustCircuitPass implements CircuitTransform {
                 return circuit;
             }
             if (this.temporalScan != null) {
-                this.temporalScan.chooseFromPaths(temporalFilterSources(this.compiler, circuit));
+                scanTemporalWindows(this.compiler, circuit, this.temporalScan);
                 return circuit;
             }
             if (this.temporalOrder != null) {

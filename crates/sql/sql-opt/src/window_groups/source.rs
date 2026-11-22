@@ -87,15 +87,19 @@ fn source_path(
 }
 
 pub fn temporal_filter_sources(circuit: Circuit) -> Result<Vec<TemporalFilterSource>, Error> {
-    let readers = reader_counts(&circuit, &body_members(&circuit)?);
+    filter_sources(&CircuitEditor::new(circuit))
+}
+
+pub(super) fn filter_sources(edit: &CircuitEditor) -> Result<Vec<TemporalFilterSource>, Error> {
+    let circuit = edit.circuit();
+    let readers = reader_counts(circuit, &body_members(circuit)?);
     let order = circuit.operator_order(BodyOrder::Postorder)?;
-    let edit = CircuitEditor::new(circuit);
     let mut sources = Vec::new();
     for id in order {
         if edit.node(id)?.operator_kind() != Some(OperatorKind::Filter) {
             continue;
         }
-        if let Some(path) = source_path(&edit, id, &readers)? {
+        if let Some(path) = source_path(edit, id, &readers)? {
             sources.push(path);
         }
     }

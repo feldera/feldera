@@ -3,10 +3,11 @@
 use indexmap::IndexMap;
 use serde::Deserialize;
 use std::cmp::Reverse;
+use std::hash::Hash;
 
 #[derive(Deserialize)]
-pub struct TemporalCandidate {
-    pub fingerprint: String,
+pub struct TemporalCandidate<K = String> {
+    pub fingerprint: K,
     pub conjunct: usize,
 }
 
@@ -68,14 +69,14 @@ pub(super) fn temporal_filter_order<'a>(
 /// Each group lists (filter ordinal, conjunct ordinal) in circuit order.
 /// Choose the largest remaining group, breaking ties by the fingerprint's
 /// first occurrence across all filters.
-pub fn shared_temporal_inputs(
-    filters: &[Vec<TemporalCandidate>],
+pub fn shared_temporal_inputs<K: Eq + Hash>(
+    filters: &[Vec<TemporalCandidate<K>>],
     threshold: usize,
 ) -> Vec<Vec<(usize, usize)>> {
     if threshold == 0 {
         return Vec::new();
     }
-    let mut groups = IndexMap::<&str, IndexMap<usize, usize>>::new();
+    let mut groups = IndexMap::<&K, IndexMap<usize, usize>>::new();
     for (filter, candidates) in filters.iter().enumerate() {
         for candidate in candidates {
             groups
@@ -97,7 +98,7 @@ pub fn shared_temporal_inputs(
         let (_, members) = groups.shift_remove_index(index).expect("selected group");
         for filter in members.keys() {
             for candidate in &filters[*filter] {
-                if let Some(other) = groups.get_mut(candidate.fingerprint.as_str()) {
+                if let Some(other) = groups.get_mut(&candidate.fingerprint) {
                     other.shift_remove(filter);
                 }
             }
@@ -164,7 +165,7 @@ mod tests {
             pairs
                 .iter()
                 .map(|&(fingerprint, conjunct)| TemporalCandidate {
-                    fingerprint: fingerprint.into(),
+                    fingerprint: fingerprint.to_owned(),
                     conjunct,
                 })
                 .collect()

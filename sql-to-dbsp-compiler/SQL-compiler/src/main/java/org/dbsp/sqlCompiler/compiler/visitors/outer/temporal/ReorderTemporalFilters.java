@@ -460,6 +460,14 @@ public class ReorderTemporalFilters extends Passes {
                     .newline();
         }
 
+        /** Publish the native scan in group order for the following Reorder pass. */
+        public void useSharedInputs(Map<DBSPFilterOperator, Integer> chosen, int groups) {
+            this.candidates.clear();
+            this.chosenConjunct.clear();
+            this.chosenConjunct.putAll(chosen);
+            this.logGroups(groups);
+        }
+
         private int chooseWithRust(int threshold) {
             if (this.candidates.isEmpty())
                 return 0;

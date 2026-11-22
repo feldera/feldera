@@ -7,7 +7,7 @@ pub struct TemporalWindowProjection {
     pub restore: Option<ExpressionId>,
 }
 
-fn key_column(edit: &CircuitEditor, key: ExpressionId, name: &str) -> Result<Option<usize>, Error> {
+pub(crate) fn key_column(edit: &CircuitEditor, key: ExpressionId, name: &str) -> Result<Option<usize>, Error> {
     if edit.expr_kind(key)? != Expr::Field {
         return Ok(None);
     }

@@ -1,0 +1,210 @@
+{
+  "scope": "Compare Rust classifications for each conjunct at the Scan and Reorder boundaries.",
+  "build_sha256": {
+    "maven/sql-compiler.jar": "52987ff7ec5a0992230875f662cce044ae2a3a1bed68e9f466997ea33f159599",
+    "maven/tests.jar": "41293981cd50bed294cdd3cef2ecf5fe71dc830d93fafb7c2fbc605d920206b9",
+    "bin/libfeldera_sql_opt_jni.so": "328bb0607563386e816ef05d7ce74e2651914e6bc3b9093c5b6ce5c122e0128b",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36"
+  },
+  "engines": {
+    "classic": {
+      "temporal_population": {
+        "programs": 71,
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "observations_sha256": "b4c4ac7ee13ec5af7f055ed6b02deb4b7e65c197c37e7e184185b9deb390bbf4",
+        "requests": {
+          "MergeFilters": {
+            "calls": 35,
+            "fallbacks": 0
+          },
+          "Monotonicity/ProjectClosure": {
+            "calls": 291,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 163,
+            "fallbacks": 0
+          },
+          "WindowGroups/Conjuncts": {
+            "calls": 116,
+            "fallbacks": 0
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 14,
+            "fallbacks": 0
+          }
+        },
+        "programs_with_fallbacks": {}
+      },
+      "pass_comparisons": {
+        "Scan": {
+          "matched": 71,
+          "changed_graphs": 0,
+          "direct_sha256": "253b2bc45df4a392dad95196641ef7446afacf6fb63c18bb98813d18d44a11b8",
+          "hybrid_sha256": "f946aed1108a05d9428bfeea23cd595fcf3704c7b542a6b9f7cfe063b28e240d",
+          "chosen_filters": 8
+        },
+        "Reorder": {
+          "matched": 71,
+          "changed_graphs": 10,
+          "direct_sha256": "18b8f9a2dde60ffe0503bb2e9155227c0643c4153036ccde8daef44b0fbd026e",
+          "hybrid_sha256": "f3f42a4636772223947a4f215054447a60db78424efbda12c89ff355d7c10b62"
+        }
+      },
+      "detached_replay": {
+        "selected_programs": 8,
+        "ordered_observations": 5292,
+        "mismatches": 0,
+        "receipt_sha256": "268575bcc8f02401871ff7961255b04aec2ac4f32a9a47a3a7b97d06b7bde435",
+        "previous_direct_records_sha256": "1c99d5766d236904968dd975063536535486ad7a2c97c562c2ca0d190224c4a9"
+      },
+      "frozen_sql_population": {
+        "programs": 8571,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "observations_sha256": "91355c5ba0dc9f7f5e803eee266b16d95f107e4ca17cc530ff20f262c79646d1",
+        "requests": {
+          "Monotonicity/JoinArguments": {
+            "calls": 824,
+            "fallbacks": 0
+          },
+          "Monotonicity/ProjectClosure": {
+            "calls": 3317,
+            "fallbacks": 0
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 202,
+            "fallbacks": 0
+          },
+          "MergeFilters": {
+            "calls": 35,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 163,
+            "fallbacks": 0
+          },
+          "WindowGroups/Conjuncts": {
+            "calls": 116,
+            "fallbacks": 0
+          },
+          "Monotonicity/IsMinimumChain": {
+            "calls": 74,
+            "fallbacks": 0
+          },
+          "Monotonicity/AntiJoinProjection": {
+            "calls": 43,
+            "fallbacks": 0
+          }
+        },
+        "programs_with_fallbacks": {}
+      }
+    },
+    "gen2": {
+      "temporal_population": {
+        "programs": 62,
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "observations_sha256": "cc32578dc8873d7eb0f41ef899a77df2e3fca36919cdcbd7aebc2019703b9126",
+        "requests": {
+          "Monotonicity/ProjectClosure": {
+            "calls": 274,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 151,
+            "fallbacks": 0
+          },
+          "WindowGroups/Conjuncts": {
+            "calls": 104,
+            "fallbacks": 0
+          },
+          "MergeFilters": {
+            "calls": 32,
+            "fallbacks": 0
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 14,
+            "fallbacks": 0
+          }
+        },
+        "programs_with_fallbacks": {}
+      },
+      "pass_comparisons": {
+        "Scan": {
+          "matched": 62,
+          "changed_graphs": 0,
+          "direct_sha256": "d8392c82b40194e1bf1c9d54344b4be12564de341fd58922a165f41ec9241ccf",
+          "hybrid_sha256": "a0e2fa0d221f8623b561140c2c4799a08da6502fb5342137d1b9801260022eda",
+          "chosen_filters": 8
+        },
+        "Reorder": {
+          "matched": 62,
+          "changed_graphs": 9,
+          "direct_sha256": "f0d6b56c7a749372288f1125cda85bc3a820690b58b67824079f76cc828f94f8",
+          "hybrid_sha256": "6ed2df0b27f89c7b6bd7a1d945d9e7a44d695afb63de571fa81630717e31c780"
+        }
+      },
+      "detached_replay": {
+        "selected_programs": 8,
+        "ordered_observations": 5886,
+        "mismatches": 0,
+        "receipt_sha256": "dca7b1c9dbf20fa34fcd6b171f93b4a67efe4aab98dbdbd62bd037b96475cf4b",
+        "previous_direct_records_sha256": "cf194d1e879a4ab9e35c86da75b69e83a000851871f8345fda67298e92a70626"
+      },
+      "frozen_sql_population": {
+        "programs": 8527,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "observations_sha256": "e37a0885d2f188cddcc8e56e5f30bb01bbbe9c2d90ce94ce6e30b3590f92df88",
+        "requests": {
+          "Monotonicity/JoinArguments": {
+            "calls": 828,
+            "fallbacks": 0
+          },
+          "Monotonicity/ProjectClosure": {
+            "calls": 3283,
+            "fallbacks": 0
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 243,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 151,
+            "fallbacks": 0
+          },
+          "WindowGroups/Conjuncts": {
+            "calls": 104,
+            "fallbacks": 0
+          },
+          "MergeFilters": {
+            "calls": 32,
+            "fallbacks": 0
+          },
+          "Monotonicity/IsMinimumChain": {
+            "calls": 74,
+            "fallbacks": 0
+          },
+          "Monotonicity/AntiJoinProjection": {
+            "calls": 42,
+            "fallbacks": 0
+          }
+        },
+        "programs_with_fallbacks": {}
+      }
+    }
+  },
+  "verification": {
+    "rust_tests_in_build_log": 177,
+    "clippy": "passed",
+    "maven_passed": 114,
+    "maven_skipped": 4,
+    "jni_enabled_junit_passed": 33
+  }
+}

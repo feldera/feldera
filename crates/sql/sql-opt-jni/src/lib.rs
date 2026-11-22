@@ -1219,14 +1219,11 @@ fn transform(
         let streams = feldera_sql_opt::append_only_streams(&circuit)?;
         return Ok(json!(operator_numbers(streams)));
     }
+    if pass == "WindowGroups/Scan" {
+        return temporal::scan(circuit, serde_json::from_slice(state)?);
+    }
     if pass == "WindowGroups/FilterSources" {
-        let paths = feldera_sql_opt::temporal_filter_sources(circuit)?;
-        return Ok(Value::Array(paths.into_iter().map(|path| json!({
-            "filter": operator_number(path.filter),
-            "source": operator_number(path.source.operator),
-            "port": path.source.number,
-            "maps": operator_numbers(path.maps)
-        })).collect()));
+        return Ok(temporal::source_paths(feldera_sql_opt::temporal_filter_sources(circuit)?));
     }
     if pass == "FindWindowGroups" {
         let candidates = feldera_sql_opt::window_candidates(&circuit)?;

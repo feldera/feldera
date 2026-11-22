@@ -1,0 +1,158 @@
+{
+  "scope": "Select shared source columns in the Rust Scan pass and compare the choices with Java.",
+  "build_sha256": {
+    "maven/sql-compiler.jar": "9128918e652d12337802a6253386d54f132cca5dcaaee2150cfc02e048b29912",
+    "maven/tests.jar": "fe9fb3feb3906b5f05fd506bcc9b0d96253188e33f12cadf74998d964ef9d75e",
+    "bin/libfeldera_sql_opt_jni.so": "53ab9dda1027c34c37f5e49cfc1219105b741ca51e19e632173be0eff14427e6",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36"
+  },
+  "engines": {
+    "classic": {
+      "temporal_population": {
+        "programs": 71,
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "observations_sha256": "e9d77161e706f7101e053a1f3771c02f4eeec8f4af57bae4a8115f8afa16aee3",
+        "requests": {
+          "MergeFilters": {
+            "calls": 35,
+            "fallbacks": 0
+          },
+          "Monotonicity/ProjectClosure": {
+            "calls": 291,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 163,
+            "fallbacks": 0
+          },
+          "WindowGroups/Conjuncts": {
+            "calls": 61,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 71,
+            "fallbacks": 11
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 14,
+            "fallbacks": 0
+          }
+        },
+        "programs_with_fallbacks": {
+          "WindowGroups/Scan": [
+            "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#spreadsheetReduced/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.ReorderTemporalFiltersTests#resultsSurviveSplittingTheTemporalConjuncts/0",
+            "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testDelayedOutput/0",
+            "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue6655c/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests#rowValuesSurviveSharing/0",
+            "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue4904_alternate/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.ReorderTemporalFiltersTests#resultsSurviveTheMove/0",
+            "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue6655a/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.DecomposeExpensiveFiltersTests#testDecomposition/0",
+            "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#windowBoundsNotMerged/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests#resultsSurviveSharing/0"
+          ]
+        }
+      },
+      "pass_comparisons": {
+        "Scan": {
+          "matched": 71,
+          "changed_graphs": 0,
+          "direct_sha256": "253b2bc45df4a392dad95196641ef7446afacf6fb63c18bb98813d18d44a11b8",
+          "hybrid_sha256": "f541008e6f87887576cbca5863c03f61c42b009be20cd0b295ae171ce1cbd597",
+          "chosen_filters": 8
+        }
+      },
+      "detached_replay": {
+        "selected_programs": 4,
+        "ordered_observations": 2276,
+        "mismatches": 0,
+        "receipt_sha256": "35a0ca0b1dcce3edfbc6862869352f07f23ab06df7b54a153cad3ac7114d77db"
+      }
+    },
+    "gen2": {
+      "temporal_population": {
+        "programs": 62,
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "observations_sha256": "51f5e1fdc2d7ccc489afd941aa05c9231d335c6bb4c8f4734cd9d6aa2f3b9e59",
+        "requests": {
+          "Monotonicity/ProjectClosure": {
+            "calls": 274,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 151,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 62,
+            "fallbacks": 11
+          },
+          "MergeFilters": {
+            "calls": 32,
+            "fallbacks": 0
+          },
+          "WindowGroups/Conjuncts": {
+            "calls": 58,
+            "fallbacks": 0
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 14,
+            "fallbacks": 0
+          }
+        },
+        "programs_with_fallbacks": {
+          "WindowGroups/Scan": [
+            "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#spreadsheetReduced/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.ReorderTemporalFiltersTests#resultsSurviveSplittingTheTemporalConjuncts/0",
+            "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testDelayedOutput/0",
+            "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue6655c/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests#rowValuesSurviveSharing/0",
+            "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue4904_alternate/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.ReorderTemporalFiltersTests#resultsSurviveTheMove/0",
+            "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue6655a/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.DecomposeExpensiveFiltersTests#testDecomposition/0",
+            "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#windowBoundsNotMerged/0",
+            "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests#resultsSurviveSharing/0"
+          ]
+        }
+      },
+      "pass_comparisons": {
+        "Scan": {
+          "matched": 62,
+          "changed_graphs": 0,
+          "direct_sha256": "d8392c82b40194e1bf1c9d54344b4be12564de341fd58922a165f41ec9241ccf",
+          "hybrid_sha256": "dddb667085bb6d1ca08a8b2ff358d197ceb7d912297cb27b6c4d62c7c8e2337d",
+          "chosen_filters": 8
+        }
+      },
+      "detached_replay": {
+        "selected_programs": 4,
+        "ordered_observations": 2278,
+        "mismatches": 0,
+        "receipt_sha256": "e21421d4526a9042e06d9f93dc11871e1e6f0beb2a11b2d375cc4adb0faf6bae"
+      }
+    }
+  },
+  "verification": {
+    "rust_tests_in_build_log": 177,
+    "clippy": "passed",
+    "maven_passed": 29,
+    "maven_skipped": 1,
+    "jni_enabled_junit_passed": 33
+  },
+  "classic_runtime": {
+    "executed": 3,
+    "compile_only": 1,
+    "input_commands": 4,
+    "batch_receipts_sha256": "eebd4998fa560ca0840e286c00ebca86ee404c57581603ca94b95ae7042c699b"
+  }
+}

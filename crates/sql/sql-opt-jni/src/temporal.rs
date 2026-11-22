@@ -6,6 +6,46 @@ use feldera_sql_opt::limiters::{Stream, StreamKind};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
+pub(super) fn source_paths(paths: Vec<feldera_sql_opt::TemporalFilterSource>) -> Value {
+    Value::Array(
+        paths
+            .into_iter()
+            .map(|path| {
+                json!({
+                    "filter": super::operator_number(path.filter),
+                    "source": super::operator_number(path.source.operator),
+                    "port": path.source.number,
+                    "maps": super::operator_numbers(path.maps),
+                })
+            })
+            .collect(),
+    )
+}
+
+pub(super) fn scan(
+    circuit: Circuit,
+    threshold: usize,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    use feldera_sql_opt::TemporalScan;
+    Ok(
+        match feldera_sql_opt::scan_temporal_windows(circuit, threshold)? {
+            TemporalScan::Groups(groups) => {
+                let groups: Vec<Vec<_>> = groups
+                    .into_iter()
+                    .map(|group| {
+                        group
+                            .into_iter()
+                            .map(|(filter, conjunct)| (super::operator_number(filter), conjunct))
+                            .collect()
+                    })
+                    .collect();
+                json!({ "groups": groups })
+            }
+            TemporalScan::Paths(paths) => json!({ "paths": source_paths(paths) }),
+        },
+    )
+}
+
 impl<const N: usize> Fragment<[feldera_sql_ir::OutputPort; N]> {
     fn clock_reply(
         &self,
@@ -118,7 +158,9 @@ pub(super) fn filter(
         return Ok(Value::Null);
     };
     if let LoweredClockFilter::UnsupportedLambda { predicate, lambda } = result {
-        let sites = edit.circuit().additional_expressions(&fragment.base, &[predicate, lambda])?;
+        let sites = edit
+            .circuit()
+            .additional_expressions(&fragment.base, &[predicate, lambda])?;
         return Ok(json!({"rejected_lambda": sites, "next_generated_name": next}));
     }
     let mut reply = fragment.reply(&edit, next)?;
