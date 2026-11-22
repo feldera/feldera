@@ -22,9 +22,8 @@ pub fn flatten_tuple_fields(
         .collect()
 }
 
-/// A filter closure that is already a tree must retain its original identity.
-/// In a copied tree, separate uses of a nested closure need distinct parameters.
-pub fn ensure_expression_tree(edit: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
+/// SQL types may be shared. Each expression in a tree has exactly one occurrence.
+pub fn is_expression_tree(edit: &CircuitEditor, root: NodeId) -> Result<bool, Error> {
     let mut pending = vec![root];
     let mut seen = HashSet::new();
     while let Some(id) = pending.pop() {
@@ -33,7 +32,7 @@ pub fn ensure_expression_tree(edit: &mut CircuitEditor, root: NodeId) -> Result<
             continue;
         }
         if matches!(node.inner_kind(), Some(InnerKind::Expression(_))) && !seen.insert(id) {
-            return copy(edit, root, Parameters::KeepRoot(root));
+            return Ok(false);
         }
         for (key, field) in node.fields() {
             if !matches!(key, "type" | "originalStruct") {
@@ -41,7 +40,17 @@ pub fn ensure_expression_tree(edit: &mut CircuitEditor, root: NodeId) -> Result<
             }
         }
     }
-    Ok(root)
+    Ok(true)
+}
+
+/// A filter closure that is already a tree must retain its original identity.
+/// In a copied tree, separate uses of a nested closure need distinct parameters.
+pub fn ensure_expression_tree(edit: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
+    if is_expression_tree(edit, root)? {
+        Ok(root)
+    } else {
+        copy(edit, root, Parameters::KeepRoot(root))
+    }
 }
 
 /// Each use gets a fresh expression. Parameters belong to the closure that

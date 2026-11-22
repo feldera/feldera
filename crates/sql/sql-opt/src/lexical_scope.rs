@@ -49,11 +49,23 @@ pub(crate) fn predicate_references(
     parameter: NodeId,
     body: NodeId,
 ) -> Result<Option<References>, Error> {
-    let node = circuit
-        .node(parameter)
-        .ok_or_else(|| Error::new("missing predicate parameter"))?;
-    let binding = (name(node, "name")?, parameter);
-    Ok(match resolve_variables(circuit, body, vec![binding])? {
+    body_references(circuit, [parameter], body)
+}
+
+/// A detached closure body may have separate key, left and right parameters.
+pub(crate) fn body_references(
+    circuit: &Circuit,
+    parameters: impl IntoIterator<Item = NodeId>,
+    body: NodeId,
+) -> Result<Option<References>, Error> {
+    let mut bindings = Vec::new();
+    for id in parameters {
+        let parameter = circuit
+            .node(id)
+            .ok_or_else(|| Error::new("missing closure parameter"))?;
+        bindings.push((name(parameter, "name")?, id));
+    }
+    Ok(match resolve_variables(circuit, body, bindings)? {
         Resolution::Bound(references) => Some(references),
         Resolution::Free(_) => None,
     })

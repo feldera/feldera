@@ -171,7 +171,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         Utilities.enforce(computed.sameType(resultType),
                 () -> "Flatmap result type " + resultType + " does not match computed type " + computed);
         // This is the same as this.apply(closure)
-        this.resolver.apply(closure);
+        if (!this.projectsClosure())
+            this.resolver.apply(closure);
         this.preorder(closure);
         // The result applies to the original expression
         MonotoneExpression result = this.maybeGet(closure);
@@ -226,9 +227,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             this.parameterTypes = Linq.map(this.parameterTypes, MonotoneRefType::new, IMaybeMonotoneType.class);
         }
 
-        // The analysis keys its facts by expression identity, so every occurrence must be unique.
-        new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
-        if (this.closureResultOnly && this.compiler.options.ioOptions.rustOptimizerPasses) {
+        if (this.projectsClosure()) {
             var projected = RustCircuitPass.projectWaterlineClosure(this.compiler, expression.body, expression.parameters,
                     projectedTypes, this.parameterTypes, indexed);
             if (projected != null) {
@@ -236,7 +235,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     this.recordClosure(expression, projected.bodyType(), Objects.requireNonNull(projected.closure()));
                 return VisitDecision.STOP;
             }
+            // Resolve the live nodes for the visitor, including its original diagnostics.
+            this.resolver.apply(expression);
         }
+        new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
 
         DBSPParameter[] projectedParameters = new DBSPParameter[projectedTypes.length];
         if (pair != null) {
@@ -1011,8 +1013,13 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
     @Override
     public IDBSPInnerNode apply(IDBSPInnerNode node) {
-        this.resolver.apply(node);
+        if (!(this.projectsClosure() && node instanceof DBSPClosureExpression))
+            this.resolver.apply(node);
         return super.apply(node);
+    }
+
+    private boolean projectsClosure() {
+        return this.closureResultOnly && this.compiler.options.ioOptions.rustOptimizerPasses;
     }
 
     @Override

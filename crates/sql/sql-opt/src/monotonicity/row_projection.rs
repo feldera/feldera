@@ -543,6 +543,27 @@ pub fn project_closure(
     projections: &[Projection],
     indexed: bool,
 ) -> Result<Option<ProjectedClosure>, Error> {
+    // Projection skips the bodies of nested lambdas, but their references
+    // and expression occurrences must still be valid before accepting the closure.
+    let body_id = body.into();
+    if !feldera_sql_expr::is_expression_tree(edit, body_id)? {
+        return Ok(None);
+    }
+    let declared = parameters.iter().map(|&(parameter, _)| parameter);
+    let Some(references) =
+        crate::lexical_scope::body_references(edit.circuit(), declared, body_id)?
+    else {
+        return Ok(None);
+    };
+    for (read, binding) in references {
+        let declaration = edit.node(binding)?;
+        if matches!(declaration.inner_kind(), Some(InnerKind::Parameter)) {
+            let expected = edit.type_id(declaration.edge("type")?)?;
+            if !edit.same_type(edit.expression_type(edit.expression(read)?)?, expected)? {
+                return Ok(None);
+            }
+        }
+    }
     let mut variables = Vec::with_capacity(parameters.len());
     let mut names = Vec::with_capacity(parameters.len());
     for &(parameter, projected) in parameters {

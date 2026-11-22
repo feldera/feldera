@@ -155,6 +155,7 @@ impl Row {
             .bindings
             .iter()
             .enumerate()
+            .rev()
             .find(|(_, p)| p.name == name)
         {
             (

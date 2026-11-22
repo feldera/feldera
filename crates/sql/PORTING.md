@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust validates expression occurrences and variable bindings before projecting a
+whole waterline closure. The compiler preserved Java's diagnostics for shared
+expressions, unresolved lambda captures, and mistyped parameter reads. All 550
+monotonicity comparisons and 16 detached compilations matched. COUNT and LATENESS
+checkpoints restored in both directions. [Closure validation](evidence/p3-closure-validation.json)
+
 Rust compares loop bindings and flatmap shuffle identity when grouping temporal
 filters. All 17,098 frozen column-lineage reports matched the corrected baseline.
 Across 16 detached compilations, all 11,178 ordered optimizer observations and

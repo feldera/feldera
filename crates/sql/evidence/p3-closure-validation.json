@@ -1,0 +1,134 @@
+{
+  "scope": "Validate lexical bindings, parameter read types and distinct expression occurrences before accepting a whole waterline closure, including inside opaque lambdas.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "11fad48ecf0e0936f85727e33bc11eed43bc5e5da71ab93dbc3412024b12d94e",
+    "maven/sql-compiler.jar": "9567e14ad047bf6ad1c9dfdbffb2d4ce67ba3d733a028da717d5ac039271d24c",
+    "tests.log": "6ef3501ae60abdcd8b61a0241a26b7ca51ce6838f03886ab4d92d516e1683b75",
+    "clippy.log": "998af5e4b4580ba2cf37946df6b829f0bd0754b4f2ab1f95a5f7122df1cdc18e",
+    "build.log": "bcaee0af3b0bc8b8fb64507e81349d9c9978aebeaf6a523378e69a420195ec02",
+    "packaged-junit.log": "0bf977cbc92b3bed48978ba4e575424bc47b850bb34b7b70b2924e4ceecd98ef",
+    "maven/tests.jar": "10161817eb15c032cc67ffb79e8c04329eccd5ce34a30af6d4d71959a68c628a",
+    "maven/build.log": "f2e77dbbcd7a47aef316dbd05ea440e53f05b40938a2cd8f0db107ac7269fb8c",
+    "before.log": "1e720f65b3c240d3126040341c16f22bb1b4fab6ee2afae6d4503bfe6ec878b8",
+    "validation.log": "89d7bd388517d9321ed0ecaf0e12952311dea7e9799efa778284aec2dd634cff"
+  },
+  "rust_tests": 172,
+  "junit_tests": 31,
+  "engines": {
+    "classic": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "mismatches": 0,
+      "receipt_sha256": "a685c719314e342f0241df78809c35c46215780f77c808569da4567c0096b1f8",
+      "monotonicity": "MonotoneAnalyzer matched at 291 invocations across 291 cases"
+    },
+    "gen2": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "mismatches": 0,
+      "receipt_sha256": "87d90cb807356186d2940f8cadf020c985e7b117ea233347172e2b951ca6fc11",
+      "monotonicity": "MonotoneAnalyzer matched at 259 invocations across 259 cases"
+    }
+  },
+  "maven": {
+    "passed": 113,
+    "skipped": 3,
+    "jni_enabled_junit_tests": 31
+  },
+  "checkpoints": {
+    "count": {
+      "restore_receipt_sha256": "edaba3514d5931ac15fcca06c9bf0fa2dba8188b12a4aa9ad101271168bb870a",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20401-0a81-7510-9978-34b5365268c7",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20401-0aa0-7480-94a0-d5ca06ee5f1d",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "restore_receipt_sha256": "6fdb93566701f12854eac75d8531f9c8da4cf7f675be9e6218d8862174317090",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20402-4559-7b93-a2ae-c031760272f6",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20402-4587-7f02-a4bb-043f19d20982",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}

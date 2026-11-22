@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -54,6 +55,45 @@ import java.util.Map;
 import java.util.Set;
 
 public class WaterlineProjectionTests {
+    @Test
+    public void wholeClosureProjectionPreservesBindingAndOccurrenceDiagnostics() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(site, 32, true, false);
+        var row = new PartiallyMonotoneTuple(List.of(new MonotoneType(integer)), false, false);
+        var input = new DBSPVariablePath("row", row.getType().ref());
+        var inner = new DBSPVariablePath("inner", integer);
+        var value = input.deref().field(0);
+        var missing = new DBSPVariablePath("missing", integer);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        for (var body : List.of(new DBSPTupleExpression(value, value),
+                new DBSPTupleExpression(value, missing.closure(inner)),
+                new DBSPTupleExpression(new DBSPVariablePath("row", integer)))) {
+            var closure = body.closure(input);
+            RuntimeException direct = null;
+            for (boolean hybrid : new boolean[]{false, true}) {
+                if (hybrid && !Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
+                    break;
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                if (hybrid)
+                    Assert.assertNull(RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                            new DBSPType[]{row.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(row)}, false));
+                // The type diagnostic includes the caller's stack. Exercise both modes at the same site.
+                var failure = Assert.assertThrows(RuntimeException.class, () ->
+                        new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet,
+                                row).applyAnalysis(closure));
+                if (direct == null) {
+                    direct = failure;
+                } else {
+                    Assert.assertEquals(direct.getClass(), failure.getClass());
+                    // The projected parameter is fresh on each invocation.
+                    Assert.assertEquals(direct.getMessage().replaceAll("\\(\\d+\\) with type", "(id) with type"),
+                            failure.getMessage().replaceAll("\\(\\d+\\) with type", "(id) with type"));
+                }
+            }
+        }
+    }
+
     @Test
     public void projectThroughAReferenceToAPartiallyBoundRow() {
         var compiler = new DBSPCompiler(new CompilerOptions());
