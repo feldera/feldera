@@ -169,6 +169,20 @@ public class Monotonicity extends CircuitVisitor {
         this.info = new MonotonicityInformation();
     }
 
+    @Override
+    public DBSPCircuit apply(DBSPCircuit circuit) {
+        if (!this.compiler().options.ioOptions.rustOptimizerPasses)
+            return super.apply(circuit);
+        this.startVisit(circuit);
+        try {
+            for (var operator : RustCircuitPass.monotonicityTransfers(circuit))
+                operator.accept(this);
+            return circuit;
+        } finally {
+            this.endVisit();
+        }
+    }
+
     void set(DBSPSimpleOperator operator, @Nullable MonotoneExpression value) {
         if (value == null || !value.mayBeMonotone())
             return;

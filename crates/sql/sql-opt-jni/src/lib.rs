@@ -933,6 +933,9 @@ fn transform(
             &circuit
         )?));
     }
+    if pass == "Topology/Monotonicity" {
+        return Ok(json!(operator_numbers(feldera_sql_opt::monotonicity_transfers(&circuit)?)));
+    }
     if pass == "Topology/MultisetAnalysis" {
         use feldera_sql_opt::MultiplicityPlan;
         let plan = feldera_sql_opt::plan_multiplicities(&circuit)?;

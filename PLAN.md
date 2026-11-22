@@ -53,7 +53,9 @@ Path prefixes used in this document:
   LATENESS and NOW() programs passed 2,076 runtime commands, and COUNT and
   LATENESS checkpoints restored in both directions. The nested-scheduling build
   (`e81272b2e`) passed all 8,256 executable classic cases across 11,407 input
-  commands, including 232 expected runtime errors. On `45ffbdba0`, with no concurrent compiler verification,
+  commands, including 232 expected runtime errors. On `0cb5bb67e`, all 59
+  frozen recursive cases ran Rust limiter insertion and matched Java at every
+  optimizer boundary and through the generated artifacts. On `45ffbdba0`, with no concurrent compiler verification,
   hybrid p95 was 1.211× direct Java on the array subquery, 2.202× on Nexmark
   and 1.179× on the outer join. P3 remains opt-in. Java still runs part of the
   optimizer, the array and Nexmark workloads exceeded the 1.2× ceiling, and the field-shadow

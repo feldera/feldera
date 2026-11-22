@@ -37,5 +37,95 @@
       "gen2": 493
     }
   },
-  "optimizer_library_sha256": "368a27d5e40cc9527a502d0fe1d485853a0c4c373f7b779d567a00ad178a9e19"
+  "optimizer_library_sha256": "368a27d5e40cc9527a502d0fe1d485853a0c4c373f7b779d567a00ad178a9e19",
+  "classic_join_runtime": {
+    "total_frozen_cases": 654,
+    "executed": 592,
+    "compile_only": 62,
+    "input_commands": 1492,
+    "expected_runtime_errors": 1,
+    "batch_receipts_sha256": "01e3a276435d1b32e6ace9505dcaec35ff4663a1048b74f5f6ea9ec5652d1730",
+    "population_sha256": "bddee24b493f34d6d250fa4f4ea0430d1edcb40bf3a7fc972d4c964000dfdfbd",
+    "report_sha256": "6659a4f0a36f4394441b8945ed7ca103f16aa6cee91fea1883eb7d38918568b9"
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "report_sha256": "6b4eb37f267789592e5ca18fdeeb1d94bdd280921f6a5202393e1942f0957f46",
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20215-50e5-7391-809d-01439fc16761",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20215-5103-78f0-ad1a-b4edc450727b",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "report_sha256": "6cb8cbdc676123e6b2bbcbf97119e9cb67badd600e8447834f6ae3aab424222f",
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20216-30b8-7360-be04-1184b3521023",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20216-30d7-7c60-ae76-0180fe38f048",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
 }

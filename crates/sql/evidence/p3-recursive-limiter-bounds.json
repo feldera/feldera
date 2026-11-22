@@ -50,5 +50,21 @@
       "gen2-0-false.gz": "009228fccff459dda483c9a672b401b1f59cd02101b6d3fa799db11e10858f4d",
       "gen2-1-false.gz": "676a4cce572b870826c98f0dc8c9fa1781d1cf0f94d00033b81ad23e8fd8d8f5"
     }
+  },
+  "detached_replay": {
+    "classic": {
+      "cases": 30,
+      "input_sha256": "77b39a13dd5d918755f1840a619062ec329afaa5910cb4c75043e8f6384195c8",
+      "mismatches": 0,
+      "native_limiter_invocations": 30,
+      "report_sha256": "411dc12c6217659a407945abb305e6539baae3a1fafa1101e88a00dfe01431e2"
+    },
+    "gen2": {
+      "cases": 29,
+      "input_sha256": "cc0c80d9eba3ef317db0738bc6ac8acc44c974f529fff87e5eec8db7613b9670",
+      "mismatches": 0,
+      "native_limiter_invocations": 29,
+      "report_sha256": "d59b96d05de075108db78880adc1d063e688367847ed3c324377cea2fab9bfb5"
+    }
   }
 }

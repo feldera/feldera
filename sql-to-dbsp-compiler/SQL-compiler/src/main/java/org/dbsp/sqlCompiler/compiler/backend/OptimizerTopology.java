@@ -219,7 +219,7 @@ final class OptimizerTopology {
                 json.label("accumulate").append(retainer.accumulate);
             if (details == Details.PERSISTENT_IDS && op instanceof DBSPSinkOperator sink)
                 json.label("metadata").beginObject().label("system").append(sink.metadata.system).endObject();
-            if (details == Details.GC_GROUPS && op instanceof DBSPWindowOperator window)
+            if ((details == Details.GC_GROUPS || details == Details.STREAMING) && op instanceof DBSPWindowOperator window)
                 json.label("lowerUnbounded").append(window.lowerUnbounded);
             if (details == Details.COLUMN_INITIALIZERS) {
                 TableMetadata metadata = op instanceof DBSPSourceTableOperator table ? table.metadata

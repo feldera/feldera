@@ -482,15 +482,28 @@ over a table with LATENESS matched at all 446 classic and 448 Gen-2 observations
 Rust inserts recursive limiters in the body that owns the operator. The 30
 classic and 29 Gen-2 recursive cases matched Java at limiter entry and exit.
 A transitive closure over a table with LATENESS matched at all 380 classic
-and 382 Gen-2 observations. The native selector covers every operator class
+and 382 Gen-2 observations. All 59 recursive cases also selected Rust and
+matched at every boundary through emitted artifacts in detached S2 replay.
+The native selector covers every operator class
 in the archived limiter inputs for all 17,098 programs, including nested bodies.
+The population verifier's `--require-native-limiters` option checks that Rust
+actually ran the pass once per case.
 [Recursive limiter comparisons](evidence/p3-recursive-limiter-bounds.json)
+
+Rust schedules monotonicity transfers in expanded circuit order. LATENESS
+on a table or view, a bounded window and the clock aggregate can introduce
+a waterline. Joins and aggregates then propagate it according to their inputs.
+The enclosing analysis and limiter output matched Java on 291 classic and
+259 Gen-2 cases. Twenty-five directed cases also matched at every optimizer
+boundary and through the emitted artifacts. [Monotonicity schedule](evidence/p3-monotonicity-schedule.json)
 
 For a preceding ASOF match, the right timestamp waterline bounds the left
 trace. The right trace keeps values above the minimum of both waterlines and
 the latest value below it. All 46 newly eligible ASOF cases matched Java
 at limiter entry and exit. The bounded streaming regression matched all 491
-classic and 493 Gen-2 observations. [ASOF join bounds](evidence/p3-asof-join-bounds.json)
+classic and 493 Gen-2 observations. The same build passed 1,492 runtime input
+commands on 592 executable cases across the four join families. COUNT and
+LATENESS restored in both directions. [ASOF join bounds](evidence/p3-asof-join-bounds.json)
 
 Rust walks the binary trees of a star join in delta order and takes the minimum
 waterline across the resulting terms. All 61 eligible cases per engine matched

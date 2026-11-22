@@ -1,0 +1,35 @@
+{
+  "scope": "Rust schedules potentially monotone operators on the expanded circuit. The selected Java transfer visitors and their native expression builders compute field bounds. The isolated comparison observes the enclosing MonotoneAnalyzer output including the limiters that consume these facts.",
+  "optimizer_library_sha256": "2c919ec9e1e88e8d218cf4c6c5e8f04ed76127a24bb1f6ab968c72fef3a4bc50",
+  "compiler_jar_sha256": "0bccf855a830a562de63110cab8acc02c742cae774c2283d5bd0d540fffd0030",
+  "monotone_analyzer": {
+    "classic": {
+      "cases": 291,
+      "input_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "394084a76fd20b7cfdcbe7ef54b3cfe8b21f22b36f8fcfefb276a39bb6b194e7",
+      "hybrid_stream_sha256": "300c5d9d178681ed16028b4bbf5a22c4a39598d0e33b86f324638f9de4a5fca9"
+    },
+    "gen2": {
+      "cases": 259,
+      "input_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "12b2c06d99729cabe4a32e0989378a73a1a21a0181a6f5a5daf9b4a3bba2d167",
+      "hybrid_stream_sha256": "8d6a31490c4dccbd898b30b092fafc1f3023096c72beb7d1b7e33b2caf370b0e"
+    }
+  },
+  "detached_replay": {
+    "classic": {
+      "cases": 13,
+      "input_sha256": "a71512f00ea6e49f91dc1b78021120e6eaa9135af4f1a31d75757748ff0888b8",
+      "mismatches": 0,
+      "native_limiter_invocations": 13,
+      "report_sha256": "ac934a6f75016160eaca1ac2b32ec5d353399e5e0d33d4269b546b10846ba53a"
+    },
+    "gen2": {
+      "cases": 12,
+      "input_sha256": "26f705156c7a6f0a8b7d7c3bc188f3675c0fa8af4d3819724fc474327fc97dac",
+      "mismatches": 0,
+      "native_limiter_invocations": 12,
+      "report_sha256": "13726b9eeea01bfde7e4be6351e25e3c25aac9e0ede401084d4675384182c3a1"
+    }
+  }
+}

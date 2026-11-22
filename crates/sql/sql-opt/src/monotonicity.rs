@@ -8,6 +8,7 @@ pub mod chain_minimum;
 pub mod flatmap;
 pub mod functions;
 pub mod lag;
+pub mod schedule;
 mod sort_key;
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,

@@ -18,6 +18,7 @@ pub use monotonicity::bindings::{waterline_bindings, WaterlineBindings};
 pub use monotonicity::chain_minimum::is_minimum_chain;
 pub use monotonicity::flatmap::flatmap_waterline;
 pub use monotonicity::lag::lag_transfer;
+pub use monotonicity::schedule::monotonicity_transfers;
 pub use monotonicity::casts::{cast_waterline, CastWaterline};
 pub use monotonicity::functions::{function_waterline, Argument as WaterlineArgument};
 pub use monotonicity::binary::{

@@ -11,7 +11,7 @@ use feldera_sql_ir::{CircuitEditor, NodeId, OutputClocks, StreamKind, TypeId, Ty
 use serde::Serialize;
 use std::collections::HashMap;
 
-fn has_lateness(node: &Node, column_field: &str) -> Result<bool, Error> {
+pub(super) fn has_lateness(node: &Node, column_field: &str) -> Result<bool, Error> {
     let Some(Field::Object(metadata)) = node.field("metadata") else {
         return Err(Error::new("missing relation metadata"));
     };

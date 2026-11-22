@@ -1988,6 +1988,24 @@ public final class RustCircuitPass implements CircuitTransform {
         return operators;
     }
 
+    /** Operators whose transfer functions can produce waterlines, in expanded circuit order. */
+    public static List<DBSPOperator> monotonicityTransfers(DBSPCircuit circuit) {
+        byte[] topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.STREAMING);
+        byte[] result = transformWithContext("Topology/Monotonicity", topology, 0, "", EMPTY_CONTEXT);
+        try {
+            long[] ids = MAPPER.readValue(result, long[].class);
+            if (ids.length == 0)
+                return List.of();
+            var operators = operatorsById(circuit);
+            var transfers = new ArrayList<DBSPOperator>(ids.length);
+            for (long id : ids)
+                transfers.add(Utilities.getExists(operators, id));
+            return transfers;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid monotonicity transfer schedule", error);
+        }
+    }
+
     /** Row renderings are inputs to the stable names of ASOF comparator declarations. */
     public static Map<Long, List<String>> asofRowTypes(DBSPCircuit circuit) {
         Map<Long, List<String>> rows = new HashMap<>();

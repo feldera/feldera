@@ -38,6 +38,12 @@ class FrozenPlacements(unittest.TestCase):
             verify_placements("skipped native insertion", BASE_COUNTS, False, native_limiter_placements=1)
         with self.assertRaisesRegex(ValueError, "Rust placements"):
             verify_placements("unexpected native insertion", native, False, native_limiter_placements=0)
+        for missing in (0, None):
+            with self.assertRaisesRegex(ValueError, "expected one native limiter placement"):
+                verify_placements("frozen qualification", BASE_COUNTS, False,
+                                  native_limiter_placements=missing, require_native_limiters=True)
+        verify_placements("frozen qualification", native, False,
+                          native_limiter_placements=1, require_native_limiters=True)
 
     def test_asof_retention_rebuilds_the_graph_before_moving_predicates(self):
         counts = {**BASE_COUNTS, "Graph": BASE_COUNTS["Graph"] + 1, "OrderGcDependencies": 1, "MoveGC": 1}

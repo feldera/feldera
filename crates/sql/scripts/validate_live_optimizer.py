@@ -98,8 +98,10 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
                       graph_cleanups=None, clock_scans=None, temporal_splits=None, now_stream=None,
                       outputs_are_sets=False, trim_inputs=False, asof_retention_moves=0, star_joins_enabled=True,
                       window_sharing_enabled=True, linear_retention_graphs=None, noop_iterations=None,
-                      native_limiter_placements=None):
+                      native_limiter_placements=None, require_native_limiters=False):
     expected = dict(schedule)
+    if require_native_limiters and native_limiter_placements != 1:
+        raise ValueError(f"{case}: expected one native limiter placement, got {native_limiter_placements}")
     if native_limiter_placements is not None:
         if type(native_limiter_placements) is not int or native_limiter_placements not in (0, 1):
             raise ValueError(f"{case}: invalid native limiter placement {native_limiter_placements}")
@@ -231,7 +233,8 @@ def compare_observations(case, reference, candidate):
             raise ValueError(f"{case}: {stage} observations differ from direct Java")
 
 
-def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, full_trace=False):
+def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, full_trace=False,
+            require_native_limiters=False):
     expected = {}
     for row in records(population):
         key = row["id"]
@@ -313,7 +316,9 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
                               unused_field_iterations=unused_fields, graph_cleanups=graph_cleanups,
                               clock_scans=clock_scans, temporal_splits=splits, now_stream=expected[key][3],
                               outputs_are_sets=expected[key][4], trim_inputs=expected[key][5],
-                              native_limiter_placements=limiter_placements, noop_iterations=noop_iterations, linear_retention_graphs=linear_graphs, asof_retention_moves=asof_moves, star_joins_enabled=star_joins, window_sharing_enabled=sharing)
+                              native_limiter_placements=limiter_placements, require_native_limiters=require_native_limiters,
+                              noop_iterations=noop_iterations, linear_retention_graphs=linear_graphs,
+                              asof_retention_moves=asof_moves, star_joins_enabled=star_joins, window_sharing_enabled=sharing)
             invocations.update(counts)
     if controls:
         raise ValueError(f"{len(controls)} cases missing from S2 replay")
@@ -328,7 +333,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("population", type=Path)
     parser.add_argument("--full-optimizer-trace", action="store_true")
+    parser.add_argument("--require-native-limiters", action="store_true",
+                        help="Require Rust limiter insertion for every frozen input")
     parser.add_argument("--reference", type=Path, required=True, action="append", help="direct Java SQL shard")
     parser.add_argument("candidates", nargs="+", type=Path)
     args = parser.parse_args()
-    print(json.dumps(compare(args.population, args.reference, args.candidates, full_trace=args.full_optimizer_trace), indent=2))
+    print(json.dumps(compare(args.population, args.reference, args.candidates, full_trace=args.full_optimizer_trace,
+                             require_native_limiters=args.require_native_limiters), indent=2))
