@@ -56,7 +56,7 @@ record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOpe
         return null;
     }
 
-    private static void projection(InsertLimiters pass, OutputPort port, ObjectNode record, String name) {
+    static void projection(InsertLimiters pass, OutputPort port, ObjectNode record, String name) {
         var value = pass.expansionMonotoneValues.get(port);
         if (value != null && value.mayBeMonotone())
             record.set(name, LimiterInputs.projection(Monotonicity.getBodyType(value)));

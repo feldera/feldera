@@ -1,5 +1,7 @@
 //! Combine compacted bounds from the two indexed inputs of a join.
 mod filtered;
+mod star;
+pub(super) use star::StarJoinExpansion;
 
 use super::pass::{apply_bound, apply_bound_pair, projected_bound, projected_minimum};
 use super::{Bound, Projection, apply_waterlines, retention::retain_keys};
@@ -102,11 +104,11 @@ pub(super) struct BinaryJoinExpansion {
     unmatched: Option<UnmatchedRows>,
     /// A fused predicate filters each term before the sum reads it.
     #[serde(default)]
-    filters: Vec<FilteredTerm>,
+    filters: Vec<UnaryTerm>,
 }
 
 #[derive(Deserialize)]
-struct FilteredTerm {
+struct UnaryTerm {
     input: u64,
     id: u64,
     output: Option<Projection>,
@@ -147,7 +149,8 @@ impl JoinTerm {
     pub(super) fn insert(
         &self,
         edit: &mut CircuitEditor,
-        join: &JoinInputs<'_>,
+        owner: NodeId,
+        functions: &BTreeMap<u64, NodeId>,
         bounds: [Option<Bound>; 2],
         next: &mut u64,
         warnings: &mut Vec<SimplifyWarning>,
@@ -180,14 +183,41 @@ impl JoinTerm {
             [Some(bound), None] | [None, Some(bound)] => apply_bound(edit, body, bound, function)?,
             _ => unreachable!("checked above"),
         };
-        let transfer = join
-            .functions
+        let transfer = functions
             .get(&self.id)
             .ok_or_else(|| Error::new("missing transfer for expanded join term"))?;
         let transfer = apply_waterlines(edit, *transfer, &[merged.ty], next, warnings)?;
         let bound = apply_bound(edit, body, merged, transfer)?;
-        edit.place_before(body, merged.port.operator, join.owner)?;
+        edit.place_before(body, merged.port.operator, owner)?;
         Ok(Some((bound, output)))
+    }
+}
+
+impl UnaryTerm {
+    fn apply<'a>(
+        &'a self,
+        edit: &mut CircuitEditor,
+        owner: NodeId,
+        functions: &BTreeMap<u64, NodeId>,
+        bounds: &mut BTreeMap<u64, (Bound, &'a Projection)>,
+        next: &mut u64,
+        warnings: &mut Vec<SimplifyWarning>,
+    ) -> Result<(), Error> {
+        let Some(projection) = &self.output else {
+            return Ok(());
+        };
+        let (input, _) = bounds
+            .get(&self.input)
+            .ok_or_else(|| Error::new("bounded join projection needs an input waterline"))?;
+        let transfer = functions
+            .get(&self.id)
+            .ok_or_else(|| Error::new("missing waterline transfer for join projection"))?;
+        let function = apply_waterlines(edit, *transfer, &[input.ty], next, warnings)?;
+        let body = edit.circuit().root_id();
+        let bound = apply_bound(edit, body, *input, function)?;
+        edit.place_before(body, bound.port.operator, owner)?;
+        bounds.insert(self.id, (bound, projection));
+        Ok(())
     }
 }
 
@@ -250,7 +280,9 @@ impl BinaryJoinExpansion {
         ];
         let mut results = BTreeMap::new();
         for (term, sides) in self.terms.iter().zip(term_inputs) {
-            if let Some(result) = term.insert(edit, join, sides, next, warnings)? {
+            if let Some(result) =
+                term.insert(edit, join.owner, join.functions, sides, next, warnings)?
+            {
                 results.insert(term.id, result);
             }
         }
@@ -260,20 +292,14 @@ impl BinaryJoinExpansion {
             }
         }
         for filter in &self.filters {
-            let Some(projection) = &filter.output else {
-                continue;
-            };
-            let (input, _) = results
-                .get(&filter.input)
-                .ok_or_else(|| Error::new("bounded join filter needs an input waterline"))?;
-            let transfer = join
-                .functions
-                .get(&filter.id)
-                .ok_or_else(|| Error::new("missing waterline transfer for join filter"))?;
-            let function = apply_waterlines(edit, *transfer, &[input.ty], next, warnings)?;
-            let bound = apply_bound(edit, body, *input, function)?;
-            edit.place_before(body, bound.port.operator, join.owner)?;
-            results.insert(filter.id, (bound, projection));
+            filter.apply(
+                edit,
+                join.owner,
+                join.functions,
+                &mut results,
+                next,
+                warnings,
+            )?;
         }
         let inputs = self
             .sum_inputs

@@ -1,0 +1,41 @@
+{
+  "scope": "All frozen programs containing star joins for which Rust can execute the complete limiter pass. Each run compares the entry and exit circuits, diagnostics and generated names.",
+  "shards": [
+    {
+      "engine": "classic",
+      "cases": 27,
+      "input_sha256": "1fd03eb0dc734269569a8684ebb6ff79d4cb373893a0c7b4765aa180ec10e997",
+      "java_stream_sha256": "e12a9663425fb981bd88efb0bdd530bcaeb8f7524cc0adb4793dca05f0d5e0ea",
+      "hybrid_stream_sha256": "12e679384197aa5f10d798f9d2000d040e93f6efab591b68d13bcb3ee351e928"
+    },
+    {
+      "engine": "classic",
+      "cases": 34,
+      "input_sha256": "68324e6a75ed2b170bcaba6e1ce1fd92a63fbc0dd4f2f71a9d0595f0b735ed09",
+      "java_stream_sha256": "45691a27c4ec926d1756fff84212c3dedd83c5a09ad3462b275b39a7f8a78b91",
+      "hybrid_stream_sha256": "8da472fcd3f0048e7eabba3f46da47a821ac080a80a77b898fd5f2bf22d9b246"
+    },
+    {
+      "engine": "gen2",
+      "cases": 31,
+      "input_sha256": "8ae60eabed6ac95865472da63b2d8cd4850b7cdd9fca97a01add58307330a1bc",
+      "java_stream_sha256": "bc6f8e885cf4fc7cb02de6720616c9e28f0f7359ad3e7f992d1e8a331edbc57d",
+      "hybrid_stream_sha256": "ff4aa99f1f49f8258d809ddd70cbed18be490160259ef1752f1844be2e2bb84c"
+    },
+    {
+      "engine": "gen2",
+      "cases": 30,
+      "input_sha256": "6c0b2252d382858152e9b7faafd90e3e7fc08e27c4f781818055c6276eaf3591",
+      "java_stream_sha256": "1ddb201db7abe370b0948d5c42fe4756afb45f64345d08d5b36e5e41d0fc6365",
+      "hybrid_stream_sha256": "999af300016b4aa432bff5916fc242ead4d907b7dabd09cacb17b7513f101217"
+    }
+  ],
+  "directed": {
+    "fixture": "IncrementalRegressionTests#starJoinFlatmapTest/0",
+    "equal_observations": {
+      "classic": 442,
+      "gen2": 444
+    }
+  },
+  "optimizer_library_sha256": "a71a205b4939a34fb25d7201432b0b00f70eb5fa15776e319408cd43161bdf51"
+}

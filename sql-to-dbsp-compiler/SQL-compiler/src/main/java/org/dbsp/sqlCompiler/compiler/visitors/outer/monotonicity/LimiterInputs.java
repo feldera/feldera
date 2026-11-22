@@ -35,6 +35,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
@@ -52,6 +55,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinDeltaExpansion;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.util.Utilities;
@@ -79,7 +83,8 @@ public final class LimiterInputs {
             DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class,
             DBSPAntiJoinOperator.class, DBSPNowOperator.class, DBSPPartitionedRollingAggregateOperator.class,
             DBSPStreamAggregateOperator.class, DBSPStreamDistinctOperator.class,
-            DBSPStreamJoinOperator.class, DBSPStreamJoinIndexOperator.class);
+            DBSPStreamJoinOperator.class, DBSPStreamJoinIndexOperator.class, DBSPStarJoinOperator.class,
+            DBSPStarJoinIndexOperator.class, DBSPStarJoinFilterMapOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
     public static boolean canLowerCircuit(DBSPCircuit circuit) {
@@ -106,7 +111,7 @@ public final class LimiterInputs {
         return node;
     }
 
-    private static void recordTransfer(Map<Long, IDBSPInnerNode> functions, long id,
+    static void recordTransfer(Map<Long, IDBSPInnerNode> functions, long id,
                                        InsertLimiters pass, DBSPSimpleOperator source) {
         var value = pass.expansionMonotoneValues.get(source);
         if (value != null)
@@ -119,6 +124,11 @@ public final class LimiterInputs {
     public static Map<Long, IDBSPInnerNode> transferRoots(InsertLimiters pass, DBSPCircuit original) {
         var functions = new LinkedHashMap<Long, IDBSPInnerNode>();
         for (var operator : original.allOperators) {
+            if (operator instanceof DBSPSimpleOperator simple
+                    && pass.expandedInto.get(simple) instanceof StarJoinDeltaExpansion star) {
+                StarJoinInputs.recordTransfers(pass, star, functions);
+                continue;
+            }
             if (BinaryJoinInputs.supports(operator.getClass())) {
                 var join = BinaryJoinInputs.from(pass.expandedInto.get(operator.to(DBSPSimpleOperator.class)));
                 if (join != null)
@@ -175,6 +185,9 @@ public final class LimiterInputs {
             var entry = facts.putObject(Long.toString(operator.getId()));
             entry.set("position",operator.getNode().getPositionRange().asJson());
             entry.put("reachable_from_error", pass.reachableFromError.contains(operator));
+            if (operator instanceof DBSPSimpleOperator simple
+                    && pass.expandedInto.get(simple) instanceof StarJoinDeltaExpansion star)
+                StarJoinInputs.capture(pass, star, entry.putObject("star_join"));
             if (BinaryJoinInputs.supports(operator.getClass())) {
                 var state = entry.putObject("join");
                 var join = BinaryJoinInputs.from(pass.expandedInto.get(operator.to(DBSPSimpleOperator.class)));

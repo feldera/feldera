@@ -479,6 +479,12 @@ snapshot cases and 25 filtered left joins. A snapshot DISTINCT and GROUP BY
 over a table with LATENESS matched at all 446 classic and 448 Gen-2 observations.
 [Snapshot and filtered left join replay](evidence/p3-snapshot-filtered-left-limiters.json)
 
+Rust walks the binary trees of a star join in delta order and takes the minimum
+waterline across the resulting terms. All 61 eligible cases per engine matched
+at limiter entry and exit. A grouped aggregate with LATENESS, HAVING and EMIT
+FINAL matched through 442 classic and 444 Gen-2 observations.
+[Star join bounds](evidence/p3-star-join-bounds.json)
+
 Snapshot joins and indexed snapshot joins propagate waterlines on their expanded
 output ports. The original ports still determine whether a downstream stateful
 operator can retain its trace. All 533 selected classic limiter comparisons
@@ -487,8 +493,8 @@ observations. [Snapshot join bounds](evidence/p3-snapshot-join-bounds.json)
 
 For filtered inner joins, Rust uses the bound from each filtered delta to retain
 values on the opposite input. All 36 classic and 130 Gen-2 cases that this
-change enabled matched Java at limiter entry and exit. Seven Gen-2 programs
-including bounded self-joins also matched through all optimizer observations
+change enabled matched Java at limiter entry and exit. Seven programs per engine,
+including bounded self-joins, also matched through all optimizer observations
 and emitted artifacts. [Filtered inner join replay](evidence/p3-filtered-inner-joins.json)
 
 Cast expansion preserves a written IS NULL when a nullable cast becomes a

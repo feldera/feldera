@@ -39,5 +39,58 @@
         }
       ]
     }
+  ],
+  "followup": [
+    {
+      "sample": "classic-4019a",
+      "cases": 1,
+      "input_sha256": "a5b1a047e57fa67a423642002162b13ab47ecffbb7278ef4019064f9e5dfab00",
+      "mismatches": 0,
+      "optimizer_library_sha256": "5ab493f8bf9b8e530ceb8f900ece8264efc6b34ea18408c5e3630b2794e6afd1",
+      "shards": [
+        {
+          "manifest_sha256": "b79540e6c51e8a63419e21eed8f14928265f2162ba0ffbed5a800955a0e58dcf",
+          "records_sha256": "eadd7d8df4d649aa7c626ac1747b9eab49e297bd73f6c405330cc651142aa57d"
+        },
+        {
+          "manifest_sha256": "8bde4de9481c3f696881cbc49c4b75b2ea5c3087672cedee70f4c3ad5a9d7100",
+          "records_sha256": "41677ad21147384ba6957885320ba904b262f60fd85ad3b0318dbeb498643c79"
+        }
+      ]
+    },
+    {
+      "sample": "unpivot-classic",
+      "cases": 22,
+      "input_sha256": "bba4792f827af509709efef21065279854a9b16933f29d79181fb394fecfd695",
+      "mismatches": 0,
+      "optimizer_library_sha256": "a2a33c6dd7fc6d5b29da55ddc8be0d294c317f5ab84181d43aa67c122596b5b4",
+      "shards": [
+        {
+          "manifest_sha256": "8ead5a21e6a59dfc6e092158fac1634a1d03e1b860ac04875b4f2825e8144662",
+          "records_sha256": "23e318dfd0b6cfef526547bef60f7aacf560e5c18cb130ac358d5f038a201477"
+        },
+        {
+          "manifest_sha256": "21f4f6778a9bf63e422eedbcc49a6232307e749fd2d9c56ec25c106850837fbf",
+          "records_sha256": "3bee5ce836d7225e9adecac4e42b26951e57926cfbc52e89c708eb60731c0ffa"
+        }
+      ]
+    },
+    {
+      "sample": "unpivot-gen2",
+      "cases": 22,
+      "input_sha256": "f9680179227fb277a76c652984889231ad10e3f279d434097c57c9f11393f4c6",
+      "mismatches": 0,
+      "optimizer_library_sha256": "a2a33c6dd7fc6d5b29da55ddc8be0d294c317f5ab84181d43aa67c122596b5b4",
+      "shards": [
+        {
+          "manifest_sha256": "f0c67d0431c6f62ec720da1d8d1a5f8b21853274f714660b4615a99144918889",
+          "records_sha256": "b2fdd39d79f477831257dda50d519841b7c49b9e3a02114b11ee1ee93db1332f"
+        },
+        {
+          "manifest_sha256": "5cb5dcd8c5da8af2916aa7d77b7bb7667d671a8dfe4e4081af69d75f9adf9872",
+          "records_sha256": "46644555c67da4a78255b14575ecc2ed3a3d1d5c98f1aa11395733955c8ab880"
+        }
+      ]
+    }
   ]
 }

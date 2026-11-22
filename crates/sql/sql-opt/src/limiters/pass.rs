@@ -19,6 +19,7 @@ struct OperatorFacts {
     aggregate: Option<super::aggregate::AggregateFacts>,
     join: Option<super::join::JoinFacts>,
     snapshot_join: Option<super::join::JoinTerm>,
+    star_join: Option<super::join::StarJoinExpansion>,
     distinct: Option<DistinctFacts>,
 }
 
@@ -517,7 +518,8 @@ pub fn insert_limiters_with_warnings(
                     if let Some(term) = &facts.snapshot_join {
                         if let Some(result) = term.insert(
                             &mut edit,
-                            &join,
+                            id,
+                            &functions,
                             join.expanded_bounds,
                             &mut next,
                             warnings,
@@ -537,6 +539,22 @@ pub fn insert_limiters_with_warnings(
                             expansion.insert(&mut edit, &join, projection, &mut next, warnings)?
                         {
                             bounds.insert(output, result);
+                        }
+                    }
+                }
+            }
+            Some(Op::StarJoin | Op::StarJoinIndex | Op::StarJoinFilterMap) => {
+                if let Some(star) = &facts.star_join {
+                    if inputs.iter().any(|p| bounds.contains_key(p)) {
+                        let incoming = inputs.iter().map(|p| expanded_bound(p).copied());
+                        if let Some(result) =
+                            star.insert(&mut edit, id, &functions, incoming, &mut next, warnings)?
+                        {
+                            if star.has_original_bound() {
+                                bounds.insert(output, result);
+                            } else {
+                                expanded_only.insert(output, result);
+                            }
                         }
                     }
                 }
@@ -740,6 +758,7 @@ mod tests {
                         aggregate: None,
                         join: None,
                         snapshot_join: None,
+                        star_join: None,
                         input_projection: None,
                     },
                 )

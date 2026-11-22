@@ -45,5 +45,21 @@
         "records_sha256": "d49c8d1432aa24ca6bc86c203ddf8e4ddf5146bbec72ddde4451b35dc3d53007"
       }
     ]
+  },
+  "classic_bounded_join_trace": {
+    "cases": 7,
+    "input_sha256": "582f96b3dda42ba6b4259558fcd052d1bca080614304627fefa7947ee79d730e",
+    "mismatches": 0,
+    "optimizer_library_sha256": "5ab493f8bf9b8e530ceb8f900ece8264efc6b34ea18408c5e3630b2794e6afd1",
+    "shards": [
+      {
+        "manifest_sha256": "cb093918aaee102f4cf1ce943a0ddcfa639bfd5ddbbbe42f3633e4cc8cfa9ef9",
+        "records_sha256": "6ff75bdbccb1f40ff1be2273f1722a3ccf6ae47533281630a3f4461405109dfb"
+      },
+      {
+        "manifest_sha256": "416dc1a50459aa26b45b32e43b98d6ca8016ea0d1a0adc53dc694d129259ac59",
+        "records_sha256": "212f8d382675a8aa61d8a1a2fe69003ab12c9602aaa8e0532f9eb37dd6d780a2"
+      }
+    ]
   }
 }
