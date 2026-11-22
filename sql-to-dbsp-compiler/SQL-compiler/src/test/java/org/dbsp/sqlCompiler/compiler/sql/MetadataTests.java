@@ -1537,6 +1537,25 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue8025() throws IOException, SQLException {
+        String sql = """
+                CREATE TABLE "🐍t"(s VARCHAR);
+                CREATE VIEW V AS SELECT s || '🐍x' FROM "🐍t";""";
+        File file = createInputScript(sql);
+        File json = this.createTempJsonFile();
+        CompilerMessages messages = CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file.getPath());
+        Assert.assertEquals(0, messages.exitCode);
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        Assert.assertEquals(mapper.valueToTree(Arrays.asList(sql.split("\n"))), parsed.get("sources"));
+        Set<String> tables = new HashSet<>();
+        for (JsonNode operator : parsed.get("mir"))
+            if (operator.has("table"))
+                tables.add(operator.get("table").asText());
+        Assert.assertTrue(tables.toString(), tables.contains("🐍t"));
+    }
+
+    @Test
     public void generateDFTest() throws IOException, SQLException {
         String sql = """
             CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);

@@ -174,7 +174,8 @@ public class Utilities {
     }
 
     /** Escape special characters in a string.
-     * @param unicodeBraces If true write Unicode characters as \\u{}, otherwise just \\u */
+     * @param unicodeBraces If true write each Unicode character as one Rust \\u{} escape,
+     *                      otherwise write each UTF-16 code unit as one JSON \\u escape */
     public static String escape(String value, boolean unicodeBraces) {
         StringBuilder builder = new StringBuilder();
         final int length = value.length();
@@ -188,12 +189,13 @@ public class Utilities {
             else if (c == '\n' ) builder.append("\\n");
             else if (c == '\t' ) builder.append("\\t");
             else if (c < 32 || c >= 127) {
-                builder.append("\\u");
-                if (unicodeBraces)
-                    builder.append("{");
-                builder.append(String.format("%04x", c));
-                if (unicodeBraces)
-                    builder.append("}");
+                if (unicodeBraces) {
+                    builder.append(String.format("\\u{%04x}", c));
+                } else {
+                    // JSON writes a character above U+FFFF as a surrogate pair
+                    for (char unit: Character.toChars(c))
+                        builder.append(String.format("\\u%04x", (int) unit));
+                }
             } else
                 builder.append((char)c);
             offset += Character.charCount(c);
