@@ -1,0 +1,70 @@
+{
+  "commit": "0c136c3ebe72eace0274ce59e73cc62dd60f2a0f",
+  "scope": "Direct Java and supervised hybrid compilation of alternating BIGINT addition and subtraction on a column with LATENESS 10, plus detached S2 replay through ordered observations and artifact emission.",
+  "build_sha256": {
+    "verified-bin/libfeldera_sql_opt_jni.so": "092a7251c5864953ad54a8fddcc23e1f7b08efe644639111a28cb1494624e4b0",
+    "verified-bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+    "verified-bin/sql2dbsp": "936852f270c0d890becd161da59bf63a596edcbd2e92a4c725f0b5f22cdcb478",
+    "maven/sql-compiler.jar": "2abc7c64a71bca924659f4b6c80a5ddb4e47de6eef976087cb4daa0d12ac17bb",
+    "maven/tests.jar": "8159f8d970692ad625e6a5381a062fcfaab3c933fe7161df46c3c2046d28c399"
+  },
+  "rust_tests_passed": 266,
+  "packaged_junit_tests": 64,
+  "maven": {
+    "passed": 49,
+    "skipped": 29
+  },
+  "clippy": "passed",
+  "cases": [
+    {
+      "engine": "classic",
+      "arithmetic_operations": 16,
+      "sql_sha256": "96c2fc18ec3578f42d991075b809d96fb495ad9fc4b030448babbbcaf22bd34f",
+      "ordered_s4_observations": 378,
+      "detached_receipt_sha256": "643d59c30444ec563bf6f0447cf9a2fa43cc82e848f77a9f77e6eed90f1695e6",
+      "public_artifacts_sha256": {
+        "circuit.rs": "47a25237a5ce642c27d5ff576ae6d1614afe7489589eadfa5a2fa0eb773926a8",
+        "schema.json": "2bb255e7ed8e26f0e9b0a0d95fcd2827abed69a9a4de566762d7f9f7561547cf",
+        "dataflow.json": "7ee7a7d6d5b75a6180b06eebd48aa2e1e823b703f473105498d4433340165b1d",
+        "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+      }
+    },
+    {
+      "engine": "classic",
+      "arithmetic_operations": 160,
+      "sql_sha256": "753fcf9db59e46f8707b0ad6ba14c75b2ed475dd6f43fc06ca2d53d582e7b9d3",
+      "ordered_s4_observations": 378,
+      "detached_receipt_sha256": "643d59c30444ec563bf6f0447cf9a2fa43cc82e848f77a9f77e6eed90f1695e6",
+      "public_artifacts_sha256": {
+        "circuit.rs": "3788f2bec3265fad82cb3de9f56c7236eb1963840b2e61f336952041c8e62c72",
+        "schema.json": "2bb255e7ed8e26f0e9b0a0d95fcd2827abed69a9a4de566762d7f9f7561547cf",
+        "dataflow.json": "366bd0f13be4b5792326574ec7a26b5cf6ddaae5c225b0b8145f9a05625d78c4",
+        "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+      }
+    },
+    {
+      "engine": "gen2",
+      "arithmetic_operations": 16,
+      "sql_sha256": "96c2fc18ec3578f42d991075b809d96fb495ad9fc4b030448babbbcaf22bd34f",
+      "ordered_s4_observations": 380,
+      "detached_receipt_sha256": "6f1928cd7d343c0a083c13679b76c5090dfc0a408608b621df7f85ccd16c5d3e",
+      "public_artifacts_sha256": {
+        "schema.json": "2bb255e7ed8e26f0e9b0a0d95fcd2827abed69a9a4de566762d7f9f7561547cf",
+        "circuit.json": "a696976c1efc74d3bb6518186967816ed8eaebd0de0d2a50c2c6b1627ab3f4f1",
+        "dataflow.json": "bf708837fefb40104f95f9d1dc7769780390ff553971d232d2f2d7739acf637d"
+      }
+    },
+    {
+      "engine": "gen2",
+      "arithmetic_operations": 160,
+      "sql_sha256": "753fcf9db59e46f8707b0ad6ba14c75b2ed475dd6f43fc06ca2d53d582e7b9d3",
+      "ordered_s4_observations": 380,
+      "detached_receipt_sha256": "6f1928cd7d343c0a083c13679b76c5090dfc0a408608b621df7f85ccd16c5d3e",
+      "public_artifacts_sha256": {
+        "schema.json": "2bb255e7ed8e26f0e9b0a0d95fcd2827abed69a9a4de566762d7f9f7561547cf",
+        "circuit.json": "06ab0372edf7800291fdfa3e8a7a3d1f2ec7f8e541c54adaa84305be9faea5dc",
+        "dataflow.json": "58899d24614c7c66b2f26c34369828c25ffe9c151033da48fed8900a6bfd3cdc"
+      }
+    }
+  ]
+}

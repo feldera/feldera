@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `0c136c3eb`, a LATENESS query with 160 alternating additions and
+subtractions completed through the supervised worker on classic and Gen-2.
+The 16-operation control and the deep query matched direct Java on schema,
+dataflow, diagnostics, classic source and stubs, and canonical Gen-2 circuits.
+Detached S2 replay matched all 1,516 ordered S4 observations across the four
+compilations and preserved persistent-ID hash inputs.
+[Inputs, artifacts and replay receipts](evidence/p3-deep-checkpoint-expressions.json)
+
 On `1215a23f5`, the Rust field-use analysis checked expression statements
 before using the final value of a block. It preserved tuple and borrow
 structure when comparing the two sides of an assignment. All 26,102 live
