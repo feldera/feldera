@@ -81,7 +81,7 @@ pub fn map_field_dependencies(circuit: &Circuit) -> Result<MapInputLayouts, Erro
                 Some(InnerKind::Type(TypeKind::Ref))
             );
             let depth = if borrowed { 1 } else { 2 };
-            let unused = fields.unused(ty, &mut Vec::new(), &paths, depth, 0)?;
+            let unused = fields.unused(ty, &[], &paths, depth)?;
             Ok((number, unused.then_some(paths)))
         })
         .collect()

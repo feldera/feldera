@@ -78,7 +78,7 @@ pub fn narrow_join_inputs(
         let whole_row = paths.contains(&Vec::new());
         let mut fields = Vec::with_capacity(columns.len());
         for (index, column) in columns.into_iter().enumerate() {
-            fields.push(whole_row || !shapes.unused(column, &mut vec![index], paths, 0, 0)?);
+            fields.push(whole_row || !shapes.unused(column, &[index], paths, 0)?);
         }
         if let Some(indices) = &mut timestamps {
             // Raw tuples retain field positions even when a field becomes empty.
@@ -86,7 +86,7 @@ pub fn narrow_join_inputs(
                 indices[side] = fields[..indices[side]].iter().filter(|&&used| used).count();
             }
         }
-        let has_unused_leaf = shapes.unused(row.into(), &mut vec![], paths, usize::MAX, 0)?;
+        let has_unused_leaf = shapes.unused(row.into(), &[], paths, usize::MAX)?;
         values.push(JoinValue {
             fields,
             has_unused_leaf,

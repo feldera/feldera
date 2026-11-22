@@ -158,7 +158,7 @@ pub fn common_projections(circuit: &Circuit) -> Result<Vec<CommonProjection>, Er
             if parameter_type.is_none() {
                 first_reader_uses_input = !used.is_empty();
             }
-            if !shape.unused(ty, &mut Vec::new(), &used, depth, 0)? {
+            if !shape.unused(ty, &[], &used, depth)? {
                 parameter_type = None;
                 break;
             }
@@ -166,7 +166,7 @@ pub fn common_projections(circuit: &Circuit) -> Result<Vec<CommonProjection>, Er
             paths.extend(used);
         }
         if let Some(ty) = parameter_type {
-            if shape.unused(ty, &mut Vec::new(), &paths, depth, 0)? {
+            if shape.unused(ty, &[], &paths, depth)? {
                 result.push(CommonProjection {
                     producer: outer(producer),
                     readers: readers.into_iter().map(outer).collect(),

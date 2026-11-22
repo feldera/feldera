@@ -42,7 +42,7 @@ impl Component {
             {
                 let mut path = prefix.to_vec();
                 path.push(i);
-                used.push(whole || !shape.unused(field, &mut path, paths, 0, 0)?);
+                used.push(whole || !shape.unused(field, &path, paths, 0)?);
             }
             used
         } else {
