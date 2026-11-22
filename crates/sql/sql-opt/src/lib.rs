@@ -88,7 +88,7 @@ mod input_fields;
 pub use input_fields::{input_field_uses, input_projections, map_field_dependencies, InputFieldUse};
 mod integrate;
 mod lineage;
-pub use lineage::{column_copies, OutputShape};
+pub use lineage::{column_copies, fixed_columns, Column, OutputShape};
 mod join_keys;
 pub use join_keys::JoinKeys;
 mod join_filter_map;

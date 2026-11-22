@@ -116,17 +116,8 @@ pub(super) fn classify_closure(
     let [parameter] = node.edges("parameters")?[..] else {
         return Err(Error::new("a temporal filter requires one row parameter"));
     };
-    let body = strip_wrap_bool(edit, node.edge("body")?)?;
+    let body = crate::filters::strip_wrap_bool(edit, edit.expression(node.edge("body")?)?)?;
     Ok(infer_temporal_predicates(edit, parameter, body)?.map(|predicates| (parameter, predicates)))
-}
-
-fn strip_wrap_bool(edit: &CircuitEditor, mut id: NodeId) -> Result<ExpressionId, Error> {
-    while edit.expr_kind(edit.expression(id)?)? == Expr::Unary
-        && edit.node(id)?.data("opcode").and_then(|v| v.as_str()) == Some("WRAP_BOOL")
-    {
-        id = edit.node(id)?.edge("source")?;
-    }
-    edit.expression(id)
 }
 
 /// Combine two compatible temporal bounds on a single row. Both calls use the
@@ -187,7 +178,7 @@ fn split_filter(
     let output_type = node.edge("outputType")?;
     let function = simplify_closure_with_warnings(edit, function, Some(warnings))?;
     let parameters = edit.node(function)?.edges("parameters")?;
-    let predicate = strip_wrap_bool(edit, edit.node(function)?.edge("body")?)?;
+    let predicate = crate::filters::strip_wrap_bool(edit, edit.expression(edit.node(function)?.edge("body")?)?)?;
     let binary = edit.node(predicate.into())?;
     if edit.expr_kind(predicate)? != Expr::Binary {
         return Ok(None);

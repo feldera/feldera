@@ -2201,6 +2201,18 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static List<KeyColumnCopy> columnCopies(DBSPCompiler compiler, DBSPClosureExpression closure,
                                                    CollectionShape shape, boolean lossless) {
+        return analyzeKeyClosure(compiler, "KeyAnalysis/ColumnCopies", closure, shape, lossless, new TypeReference<>() {});
+    }
+
+    @Nullable
+    public static Set<Column> fixedColumns(DBSPCompiler compiler, DBSPClosureExpression closure,
+                                           CollectionShape shape, boolean lossless) {
+        return analyzeKeyClosure(compiler, "KeyAnalysis/FixedColumns", closure, shape, lossless, new TypeReference<>() {});
+    }
+
+    @Nullable
+    private static <T> T analyzeKeyClosure(DBSPCompiler compiler, String pass, DBSPClosureExpression closure,
+                                           CollectionShape shape, boolean lossless, TypeReference<T> type) {
         record Request(int width, @Nullable Integer indexFields, boolean lossless) {}
         var request = new Request(shape.width(), shape instanceof IndexedShape i ? i.indexFields() : null, lossless);
         var json = JsonStream.compactCircuit();
@@ -2208,8 +2220,8 @@ public final class RustCircuitPass implements CircuitTransform {
         closure.accept(new ToJsonInnerVisitor(compiler, json, 0));
         try {
             var graph = json.endArray().toString().getBytes(StandardCharsets.UTF_8);
-            var reply = transformWithContext("KeyAnalysis/ColumnCopies", graph, 0, "", MAPPER.writeValueAsBytes(request));
-            return MAPPER.readValue(reply, new TypeReference<List<KeyColumnCopy>>() {});
+            var reply = transformWithContext(pass, graph, 0, "", MAPPER.writeValueAsBytes(request));
+            return MAPPER.readValue(reply, type);
         } catch (IOException error) {
             throw new UncheckedIOException("Could not exchange column provenance with Rust", error);
         }

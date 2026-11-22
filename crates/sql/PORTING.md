@@ -532,6 +532,14 @@ ports. All 188 programs matched on detached replay. Assignments, returns and
 expressions beyond the interpreter's nesting limit still use the Java visitor.
 [Column provenance](evidence/p3-column-provenance.json)
 
+Rust removes a column from a candidate key when a top-level filter conjunct
+fixes its value. It tracks literal values through the closure, including
+whether both branches of a COALESCE carry the same literal. Direct Java and
+Rust agreed on 38 fixed columns across 203 filter visits and on the keys at
+all 9,262 output ports. The 114 classic and 114 Gen-2 detached replays matched
+through emission. COUNT and LATENESS checkpoints restored in both directions.
+[Filter key comparisons](evidence/p3-fixed-filter-keys.json)
+
 The JNI expression reader validates new references against both arenas and
 inserts the smaller map into the larger one. Across 41 paired sweeps of
 554 Nexmark batches, this saved a median 2.04 ms per sweep (bootstrap 95%

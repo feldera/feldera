@@ -1,0 +1,72 @@
+{
+  "base_commit": "03b1ef95a",
+  "scope": "Compare fixed columns at each filter in strict and lossless-cast analyses. Require a Rust result for every observed filter and closure, compare column provenance, then compare keys on all output ports against direct Java. Replay the same programs from detached S2 through ordered S4 and emission.",
+  "compiler_jar_sha256": "30249b8f95d5324fc7546890a41c6077c5f3f22b6f054396c7878ca3ad580fda",
+  "optimizer_library_sha256": "17e63e2d47cfb0a072fd80bf751a440dd22ab2da33d6c0484a6e1d7a61d6c5f1",
+  "compiler_sha256": "f877cbe39565d6adf858e2e044afb948aee6ee0133058a52012b36955105d14b",
+  "comparator_sha256": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d",
+  "oracle_sources_sha256": {
+    "ColumnCopyOracle.java": "0fbb9f0440ef748498ed1629e19b232b933ec1ff99f564e6264477b9541287b2",
+    "ProvenanceCheck.java": "9733eb1da5590c941ef1383a09def05785779caa5c6eba27c5fd44e200dca6cb"
+  },
+  "engines": {
+    "classic": {
+      "cases": 114,
+      "input_sha256": "d5ed5d30899ddb41c68b7940524b478f1305076083cb2816e281e42ff4ceaa0b",
+      "direct_oracle": {
+        "visits": 228,
+        "ports": 4681,
+        "keyed": 1591,
+        "joins": 237,
+        "filters": 104,
+        "fixed": 17,
+        "closures": 1396,
+        "copies": 5496,
+        "indexed": 713,
+        "zero_index_width": 128,
+        "multi_parameter": 252
+      },
+      "oracle_report_sha256": "c58ecc961142a9a8eb5f1aeedc222a184c19719dd1b6a22806b4744dd13d6979",
+      "equal_detached_cases": 114,
+      "detached_reports_sha256": [
+        "406f6fac09ffb62d15d25fdee90e8707c7e680e84d51a4a0d3eed0d64481985c",
+        "17dd50fce2d76f351fd9e5f571e2b6000dcc20103d8382815c4188fce590f85c",
+        "b368781d0c917fb39165954d8c421297ba24cfec3b16f644aa6bcf16e1ce5b9d",
+        "33d49055a592393b62e3aef5616e020a6838bed95b8be1ffe45a8c677ea3affe"
+      ]
+    },
+    "gen2": {
+      "cases": 114,
+      "input_sha256": "0bf91baf6aaea98a00b53ae68e8ad905412586df9432d516199f6074730113c2",
+      "direct_oracle": {
+        "visits": 228,
+        "ports": 4581,
+        "keyed": 1565,
+        "joins": 263,
+        "filters": 99,
+        "fixed": 21,
+        "closures": 1454,
+        "copies": 5802,
+        "indexed": 738,
+        "zero_index_width": 130,
+        "multi_parameter": 271
+      },
+      "oracle_report_sha256": "e633487187bf03fbbc67b9c0d833ea9112b6a0895411dbce215f98801e96e5ed",
+      "equal_detached_cases": 114,
+      "detached_reports_sha256": [
+        "6eec084fcb5ee08717333e841744d2a5cd19b25a522cea28faf2418d6526bcdc",
+        "b290ea847e872b86507cd3d31c77edeee62de80c12fb451187e4fd33a654ab76",
+        "918fe98b0350823fb87ea2d87104375472ae004c2b3b32f6e9c42fe2fd6ea5ee",
+        "44a5a804d4da9ca8859e6b793c459bb303e30d9115dee411f963dc4c70e3a7aa"
+      ]
+    }
+  },
+  "checkpoint_restores_both_directions_sha256": {
+    "count": "70c8d995c52e688791259ef69cfbdcb8130ca017128ae68b135cca0117019167",
+    "watermark": "d279a0e2317368f5b7340b76768c2e1ca6c6a46e8af8c7977cfb737b2b78a5ff"
+  },
+  "rust_test_log_sha256": "f3b6cc0576e317049b85e765dd6b8fea4e0a59234600c1d193a46c9628a073eb",
+  "clippy_log_sha256": "ce2ea2d8c2f83b25c741a40392a27b2c3f1e43e35305c5945fafc554d1fd063a",
+  "maven_tests": 40,
+  "maven_log_sha256": "5c18f2b5b7c1d9ccdf93d40485d8f9a69c23b1ff15709d9b1bec1bb710586997"
+}

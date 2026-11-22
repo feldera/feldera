@@ -2,9 +2,49 @@
 use crate::{rebuild::ProjectionNames, stream_rewrites::body_members};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{
-    BodyOrder, Circuit, CircuitEditor, Error, NodeId, OperatorKind as Op, OutputPort,
+    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind, NodeId,
+    OperatorKind as Op, OutputPort,
 };
 use std::collections::{BTreeMap, HashMap};
+
+pub(super) fn is_boolean_wrapper(edit: &CircuitEditor, expr: ExpressionId) -> Result<bool, Error> {
+    Ok(edit.expr_kind(expr)? == ExpressionKind::Unary
+        && edit
+            .node(expr.into())?
+            .data("opcode")
+            .and_then(|v| v.as_str())
+            == Some("WRAP_BOOL"))
+}
+
+pub(super) fn strip_wrap_bool(
+    edit: &CircuitEditor,
+    mut expr: ExpressionId,
+) -> Result<ExpressionId, Error> {
+    while is_boolean_wrapper(edit, expr)? {
+        expr = edit.expression(edit.node(expr.into())?.edge("source")?)?;
+    }
+    Ok(expr)
+}
+
+pub(super) fn conjuncts(
+    edit: &CircuitEditor,
+    body: ExpressionId,
+) -> Result<Vec<ExpressionId>, Error> {
+    let mut pending = vec![strip_wrap_bool(edit, body)?];
+    let mut terms = Vec::new();
+    while let Some(term) = pending.pop() {
+        let node = edit.node(term.into())?;
+        if edit.expr_kind(term)? == ExpressionKind::Binary
+            && node.data("opcode").and_then(|v| v.as_str()) == Some("AND")
+        {
+            pending.push(edit.expression(node.edge("right")?)?);
+            pending.push(edit.expression(node.edge("left")?)?);
+        } else {
+            terms.push(term);
+        }
+    }
+    Ok(terms)
+}
 
 pub(super) fn rewrite_filters(
     circuit: Circuit,

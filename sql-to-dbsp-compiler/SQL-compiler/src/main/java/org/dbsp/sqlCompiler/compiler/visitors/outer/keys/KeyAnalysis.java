@@ -431,6 +431,11 @@ public class KeyAnalysis extends CircuitVisitor {
         DBSPClosureExpression closure = closureOf(node);
         if (input == null || closure == null)
             return result;
+        if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+            var fixed = RustCircuitPass.fixedColumns(this.compiler(), closure, input, this.losslessCasts);
+            if (fixed != null)
+                return fixed;
+        }
         Lineage.InnerLineage inner = this.interpreter();
         inner.analyze(closure, initialValues(closure));
         for (DBSPExpression conjunct : closure.body.conjuncts()) {

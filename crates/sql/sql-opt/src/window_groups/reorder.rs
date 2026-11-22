@@ -1,42 +1,13 @@
 //! Rebuild a filter's conjunction in the order chosen for its temporal windows.
 use super::temporal::{temporal_filter_order, TemporalBound};
-use crate::filters::rewrite_filters;
+use crate::filters::{conjuncts, is_boolean_wrapper, rewrite_filters};
 use feldera_sql_expr::ensure_expression_tree;
 use feldera_sql_ir::{
-    BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId,
+    BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId,
     OperatorKind, OutputPort,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
-
-fn is_wrapper(edit: &CircuitEditor, expr: ExpressionId) -> Result<bool, Error> {
-    Ok(edit.expr_kind(expr)? == ExpressionKind::Unary
-        && edit
-            .node(expr.into())?
-            .data("opcode")
-            .and_then(|v| v.as_str())
-            == Some("WRAP_BOOL"))
-}
-
-fn conjuncts(edit: &CircuitEditor, mut body: ExpressionId) -> Result<Vec<ExpressionId>, Error> {
-    while is_wrapper(edit, body)? {
-        body = edit.expression(edit.node(body.into())?.edge("source")?)?;
-    }
-    let mut pending = vec![body];
-    let mut terms = Vec::new();
-    while let Some(term) = pending.pop() {
-        let node = edit.node(term.into())?;
-        if edit.expr_kind(term)? == ExpressionKind::Binary
-            && node.data("opcode").and_then(|v| v.as_str()) == Some("AND")
-        {
-            pending.push(edit.expression(node.edge("right")?)?);
-            pending.push(edit.expression(node.edge("left")?)?);
-        } else {
-            terms.push(term);
-        }
-    }
-    Ok(terms)
-}
 
 /// The timestamp classification belongs to each original comparison. An implicit
 /// cast around a rebuilt subtree is an opaque conjunct in subsequent partitions.
@@ -85,7 +56,7 @@ pub fn reorder_temporal_predicate(
         let origin = ordered[0].into();
         let ty = edit.bool_type(origin, nullable)?;
         let predicate = edit.binary_expressions(origin, ty, BinaryOp::And, &ordered)?;
-        body = if is_wrapper(edit, body)? {
+        body = if is_boolean_wrapper(edit, body)? {
             let wrapper = edit.derive_inner(
                 body.into(),
                 [("source", Field::Reference(predicate.into()))],

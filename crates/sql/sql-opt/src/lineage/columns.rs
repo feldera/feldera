@@ -1,0 +1,246 @@
+//! Interpret a closure result using the row layout of its collection.
+use super::{text, Column, ColumnCopy, Interpreter, Part, Source};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, NodeId, TypeKind as Ty};
+use serde::Deserialize;
+use std::collections::BTreeSet;
+
+/// Map flat result positions to the columns of the declared output collection.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputShape {
+    width: usize,
+    index_fields: Option<usize>,
+}
+
+impl OutputShape {
+    fn contains(&self, column: Column) -> bool {
+        match (self.index_fields, column.part) {
+            (None, Part::None) => column.field < self.width,
+            (Some(n), Part::Index) => column.field < n,
+            (Some(n), Part::Value) => column.field < self.width.saturating_sub(n),
+            _ => false,
+        }
+    }
+
+    fn column(&self, position: usize) -> Column {
+        match self.index_fields {
+            None => Column {
+                part: Part::None,
+                field: position,
+            },
+            Some(n) if position < n => Column {
+                part: Part::Index,
+                field: position,
+            },
+            Some(n) => Column {
+                part: Part::Value,
+                field: position - n,
+            },
+        }
+    }
+}
+
+impl Source {
+    fn deref_once(&self) -> &Self {
+        match self {
+            Source::Ref(value) => value,
+            value => value,
+        }
+    }
+
+    fn tuple_fields(&self, width: usize) -> &[Self] {
+        match self.deref_once() {
+            Source::Tuple(fields) if fields.len() == width => fields,
+            _ => &[],
+        }
+    }
+}
+
+/// A raw pair represents an indexed output. Its key and value may be known
+/// independently. A plain tuple can also supply just the values of a ranked output.
+fn copies(result: &Source, raw_pair: bool, shape: &OutputShape) -> Result<Vec<ColumnCopy>, Error> {
+    let mut output = Vec::new();
+    let mut append = |fields: &[Source], offset| {
+        for (position, value) in fields.iter().enumerate() {
+            if let Source::Column(source) = value.deref_once() {
+                output.push(ColumnCopy {
+                    parameter: source.parameter,
+                    source: source.column,
+                    output: shape.column(offset + position),
+                });
+            }
+        }
+    };
+    if raw_pair {
+        let index = shape
+            .index_fields
+            .filter(|&i| i <= shape.width)
+            .ok_or_else(|| Error::new("raw tuple result requires an indexed output shape"))?;
+        if let [key, value] = result.tuple_fields(2) {
+            append(key.tuple_fields(index), 0);
+            append(value.tuple_fields(shape.width - index), index);
+        }
+    } else {
+        append(result.tuple_fields(shape.width), 0);
+    }
+    Ok(output)
+}
+
+/// The reference visitor handles unusually deep closures and reports diagnostics for assignments and returns.
+pub fn column_copies(
+    edit: &CircuitEditor,
+    id: NodeId,
+    shape: &OutputShape,
+    lossless_casts: bool,
+) -> Result<Option<Vec<ColumnCopy>>, Error> {
+    let mut interpreter = Interpreter::new(edit, lossless_casts);
+    let Some(value) = interpreter.analyze(id)? else {
+        return Ok(None);
+    };
+    let body = edit.node(id)?.edge("body")?;
+    let ty = edit.expression_type(edit.expression(body)?)?;
+    copies(&value, edit.type_kind(ty)? == Ty::RawTuple, shape).map(Some)
+}
+
+/// Columns equated with a constant by a top-level conjunct no longer contribute to a key.
+pub fn fixed_columns(
+    edit: &CircuitEditor,
+    closure: NodeId,
+    shape: &OutputShape,
+    lossless_casts: bool,
+) -> Result<Option<BTreeSet<Column>>, Error> {
+    let mut interpreter = Interpreter::new(edit, lossless_casts);
+    interpreter.track_constants = true;
+    if interpreter.analyze(closure)?.is_none() {
+        return Ok(None);
+    }
+    let body = edit.expression(edit.node(closure)?.edge("body")?)?;
+    let mut fixed = BTreeSet::new();
+    for term in crate::filters::conjuncts(edit, body)? {
+        let comparison = crate::filters::strip_wrap_bool(edit, term)?;
+        let node = edit.node(comparison.into())?;
+        if edit.expr_kind(comparison)? != Expr::Binary || text(node, "opcode")? != "EQ" {
+            continue;
+        }
+        let left = interpreter.values.get(&node.edge("left")?);
+        let right = interpreter.values.get(&node.edge("right")?);
+        let column = match (left, right) {
+            (Some(source), Some(Source::Constant(_)))
+            | (Some(Source::Constant(_)), Some(source)) => source,
+            _ => continue,
+        };
+        if let Source::Column(source) = column.deref_once() {
+            if source.parameter == 0 && shape.contains(source.column) {
+                fixed.insert(source.column);
+            }
+        }
+    }
+    Ok(Some(fixed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lineage::ParameterColumn;
+    use std::rc::Rc;
+
+    #[test]
+    fn indexed_result_preserves_a_known_half_and_maps_ranked_columns() {
+        let source = Column {
+            part: Part::None,
+            field: 3,
+        };
+        let field = Source::Column(ParameterColumn {
+            parameter: 1,
+            column: source,
+        });
+        let values = Source::Ref(Rc::new(Source::Tuple([field].into())));
+        let output = Column {
+            part: Part::Value,
+            field: 0,
+        };
+        let expected = ColumnCopy {
+            parameter: 1,
+            source,
+            output,
+        };
+        let indexed = OutputShape {
+            width: 3,
+            index_fields: Some(2),
+        };
+        let pair = Source::Tuple([Source::Unknown, values.clone()].into());
+        assert_eq!(copies(&pair, true, &indexed).unwrap(), [expected]);
+
+        let ranked = OutputShape {
+            width: 1,
+            index_fields: Some(0),
+        };
+        let outputs = copies(&values, false, &ranked).unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].output, output);
+        assert_eq!(outputs[0].source, source);
+        assert!(copies(&values, false, &indexed).unwrap().is_empty());
+    }
+
+    #[test]
+    fn filter_fixes_only_columns_equated_with_a_constant_in_every_row() -> Result<(), Error> {
+        use feldera_sql_ir::{BinaryOp, Circuit, Field};
+        use serde_json::json;
+
+        let circuit = Circuit::from_json(
+            json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}),
+        )?;
+        let (circuit, types) = circuit.with_inner_roots([
+            json!({"class":"DBSPTypeBool","id":1,"code":"BOOL","mayBeNull":false}),
+        ])?;
+        let mut edit = CircuitEditor::new(circuit);
+        let site = types[0];
+        let boolean = edit.type_id(site)?;
+        let ty = edit.tuple_type(site, false, [site, site])?;
+        let reference = edit.reference_type(ty)?;
+        let row = edit.named_variable(reference, "row")?;
+        let value = edit.dereference(row)?;
+        let x = edit.tuple_field(value, 0)?;
+        let y = edit.tuple_field(value, 1)?;
+        let literal = |edit: &mut CircuitEditor, b: bool| {
+            edit.make_expr(
+                site,
+                Expr::BoolLiteral,
+                boolean,
+                [("value", Field::Data(b.into()))],
+            )
+        };
+        let a = literal(&mut edit, true)?;
+        let b = literal(&mut edit, true)?;
+        let other = literal(&mut edit, false)?;
+        let equal = edit.binary_expression(site, boolean, BinaryOp::Coalesce, a, b)?;
+        let different = edit.binary_expression(site, boolean, BinaryOp::Coalesce, a, other)?;
+        let fixed_x = edit.binary_expression(site, boolean, BinaryOp::Eq, equal, x)?;
+        let uncertain_y = edit.binary_expression(site, boolean, BinaryOp::Eq, y, different)?;
+        let fixed_y = edit.binary_expression(site, boolean, BinaryOp::Eq, y, a)?;
+        let shape = OutputShape {
+            width: 2,
+            index_fields: None,
+        };
+        for (op, right, expected) in [
+            (BinaryOp::And, uncertain_y, vec![0]),
+            (BinaryOp::And, fixed_y, vec![0, 1]),
+            (BinaryOp::Or, fixed_y, vec![]),
+        ] {
+            let test = edit.binary_expression(site, boolean, op, fixed_x, right)?;
+            let closure = edit.closure_from_variables(test, &[row])?;
+            let fixed = fixed_columns(&edit, closure.into(), &shape, false)?.unwrap();
+            assert_eq!(
+                fixed,
+                expected
+                    .into_iter()
+                    .map(|field| Column {
+                        part: Part::None,
+                        field
+                    })
+                    .collect()
+            );
+        }
+        Ok(())
+    }
+}
