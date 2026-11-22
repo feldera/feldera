@@ -115,7 +115,7 @@ fn pace(start: Instant, i: usize) {
 /// | `ESC [ n E` | Moves the cursor down n rows, to the first column |
 /// | `ESC [ n C` | Moves the cursor right n columns |
 /// | `ESC [ 2 K` | Erases the row |
-fn animate(film: &Film, window: &Window, keys: &Keys, out: &mut StdoutLock) -> Option<Stop> {
+fn animate(film: &Film, window: &Window, keys: &mut Keys, out: &mut StdoutLock) -> Option<Stop> {
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(5, |d| d.as_nanos() as u64);
@@ -234,7 +234,7 @@ pub fn play(host: &str) {
     // `keys` and `_cursor` restore the terminal at the end of this block. The
     // block ends before `exit`, because `exit` runs no destructors.
     let stop = {
-        let keys = Keys::new();
+        let mut keys = Keys::new();
         // If `COLORFGBG` is not set, ask the terminal for its background color.
         // Assume a dark background if the terminal does not answer.
         let theme = env_theme
@@ -243,7 +243,7 @@ pub fn play(host: &str) {
         film.muted = theme.muted();
         window.muted = theme.muted();
         let _cursor = Cursor::hide(&mut out);
-        animate(&film, &window, &keys, &mut out)
+        animate(&film, &window, &mut keys, &mut out)
     };
     let _ = out.flush();
     if stop == Some(Stop::Interrupt) {
