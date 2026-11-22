@@ -1,0 +1,72 @@
+{
+  "commit": "59f09c271edf31a9c87aeb3a5a6406c82253f036",
+  "scope": "Select shared window indexes and value fields from the live closures. Compare against the Java finder, preserving source ports, field references and group order.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "5ef9c3fa9f51c3393bfe5026b4e73bf1c3e2f4d39b86bb8afe2f64634043983a",
+    "bin/sql-difftest": "0eaf642dc4a874d489180f870cf04fb4cde438bd405b46c5942c6c0f47c62b20",
+    "bin/check_pass_corpus": "0bea93aea29527deb1c091c6342becd7f2e90c439a647cdd76669f97dc8a0e1f",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "45ba06ba8564c90550ea79f322f173ff8f3777b77e66c2c8bf99f5349df3661a",
+    "maven/tests.jar": "0d8506bd53d0c487802cc9d243f9abee0ac3f2a09e2659cba23c4621992cdc08"
+  },
+  "engines": {
+    "classic": {
+      "archived_finder_comparisons": 8571,
+      "archive_observations_sha256": "6f371d56cdc29035c9e4a69c582556a606063eb28ceea850e12c43f8d4b4f451",
+      "archive_population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "clock_programs": 71,
+      "groups": 3,
+      "group_members": 4,
+      "index_requests": {
+        "calls": 64,
+        "fallbacks": 0
+      },
+      "pass_comparison_sha256": {
+        "java": "9b25b9fbc8d25e09c91545684aa1935ca81d3d0820a87b60fae2fa9bad3312dd",
+        "hybrid": "e3a8d22d7593d5f737f1ca6d1baa0888c6406262654c0f42da033eb4c23cce57"
+      },
+      "coverage_sha256": "fb4fdbec9e7db94b4fa9c87d86e223cae4a5f567bd19d148780c270bf11dd05f",
+      "detached_replay": {
+        "cases": 11,
+        "ordered_s4_observations": 6837,
+        "mismatches": 0,
+        "receipt_sha256": "b57c4d6309d6b81b3bc37b67b0e298f3330839e1bac72d82200db3e96273f5a2"
+      }
+    },
+    "gen2": {
+      "archived_finder_comparisons": 8527,
+      "archive_observations_sha256": "90aaf320155675fe412f342dcd8ed1a91a7239e4aea22b25c8a9c3dd5e92e6fe",
+      "archive_population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "clock_programs": 62,
+      "groups": 6,
+      "group_members": 10,
+      "index_requests": {
+        "calls": 55,
+        "fallbacks": 0
+      },
+      "pass_comparison_sha256": {
+        "java": "16a303f141882a7891f789a75730ec6159199fac9f7e84bbb139bb8110bac270",
+        "hybrid": "87ca88675a82d60fd6b1af12750f6f4eed42793da2e2be84c579e8df0308b0a5"
+      },
+      "coverage_sha256": "c00a1cb422fda68c84251e0ff4e634a8c7e1cce9cd06a082ae0a4ef332e1ecc3",
+      "detached_replay": {
+        "cases": 11,
+        "ordered_s4_observations": 6861,
+        "mismatches": 0,
+        "receipt_sha256": "3d931e3b1f5a9678fd7000537df68322ba5ce07e70ea677b1c039f08372ca8b7"
+      }
+    }
+  },
+  "classic_runtime": {
+    "executed": 8,
+    "compile_only": 3,
+    "input_commands": 15,
+    "batch_receipts_sha256": "742599e6fb586d802632fc9f4c277e576fac025f703114489680999c8dcc10a4"
+  },
+  "tests": {
+    "rust": 178,
+    "rust_comparator": 8,
+    "packaged_junit": 34,
+    "clippy": "passed"
+  }
+}

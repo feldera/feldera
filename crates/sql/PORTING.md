@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The Rust window finder groups indexes by source port and timestamp expression,
+then selects the shared columns in first-use order. On `59f09c271`, it
+answered all 119 requests in 133 frozen clock programs. The direct Java and
+hybrid finders agreed on all nine groups and their 14 members. All 22
+selected programs matched through artifact emission. The pass comparator
+checks each selected expression against its owning circuit across separate
+JVMs. [Window index comparisons](evidence/p3-indexed-row-window-keys.json)
+
 On `bf609aab1`, the Rust clock classifier retains nested nonnullable empty
 rows even when the surrounding row has unbounded fields. All 8,571 classic
 and 8,527 Gen-2 SQL programs compiled with the coverage observer. Rust
