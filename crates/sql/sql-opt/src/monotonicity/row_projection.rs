@@ -1,4 +1,6 @@
 //! Reduce the structural part of a row closure to its projected waterline.
+mod shape;
+use self::shape::Shape;
 use crate::limiters::Projection;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId, TypeId,
@@ -16,6 +18,13 @@ pub enum RowType {
     },
     BoundedScalar {
         type_id: u64,
+    },
+    Local {
+        index: usize,
+    },
+    Scope {
+        initializers: Vec<Self>,
+        result: Box<Self>,
     },
     Input {
         index: usize,
@@ -36,22 +45,30 @@ pub enum RowType {
 }
 
 pub struct ProjectedValue {
-    shape: Projection,
+    shape: Shape,
     pub row_type: RowType,
     pub reduced: Option<ExpressionId>,
 }
 
-struct Binding<'a> {
+struct Binding {
     name: String,
     variable: ExpressionId,
-    shape: &'a Projection,
+    shape: Shape,
     /// Indexed closures receive a pair of references. A missing bound moves
     /// the other reference to field zero of the compacted pair.
     field: Option<(usize, usize)>,
 }
 
-struct Row<'a> {
-    bindings: Vec<Binding<'a>>,
+struct Local {
+    name: String,
+    ty: TypeId,
+    shape: Shape,
+    reduced: Option<ExpressionId>,
+}
+
+struct Row {
+    bindings: Vec<Binding>,
+    locals: Vec<Local>,
 }
 
 fn field_number(node: &Node) -> Result<usize, Error> {
@@ -63,11 +80,7 @@ fn field_number(node: &Node) -> Result<usize, Error> {
 
 /// Unknown tuple fields can still be read by a subsequent field expression.
 /// Retain their layout, including the nullability of each nested tuple.
-fn unbounded_shape(
-    edit: &CircuitEditor,
-    ty: TypeId,
-    depth: usize,
-) -> Result<Option<Projection>, Error> {
+fn unbounded_shape(edit: &CircuitEditor, ty: TypeId, depth: usize) -> Result<Option<Shape>, Error> {
     if depth > 128 {
         return Ok(None);
     }
@@ -81,11 +94,7 @@ fn unbounded_shape(
                 };
                 fields.push(field);
             }
-            Projection::Tuple {
-                fields,
-                raw: kind == TypeKind::RawTuple,
-                nullable: edit.nullable(ty)?,
-            }
+            Shape::tuple(fields, edit.nullable(ty)?)
         }
         TypeKind::Array
         | TypeKind::Binary
@@ -105,7 +114,7 @@ fn unbounded_shape(
         | TypeKind::Timestamp
         | TypeKind::TimestampTz
         | TypeKind::Uuid
-        | TypeKind::Variant => Projection::Scalar { monotone: false },
+        | TypeKind::Variant => Shape::Scalar(false),
         _ => return Ok(None),
     }))
 }
@@ -140,7 +149,53 @@ fn type_number(ty: TypeId) -> u64 {
     number
 }
 
-impl Row<'_> {
+impl Row {
+    fn local(&self, name: &str) -> Option<(usize, &Local)> {
+        self.locals
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, local)| local.name == name)
+    }
+
+    /// Visit each initializer before it shadows the previous binding, just as
+    /// the declaration resolver does. A second read reuses the original bound.
+    fn scoped(
+        &mut self,
+        edit: &mut CircuitEditor,
+        declarations: &[(String, ExpressionId)],
+        body: ExpressionId,
+        depth: usize,
+    ) -> Result<Option<ProjectedValue>, Error> {
+        let outer = self.locals.len();
+        let mut initializers = Vec::with_capacity(declarations.len());
+        for (name, expression) in declarations {
+            let Some(value) = self.visit(edit, *expression, depth + 1)? else {
+                self.locals.truncate(outer);
+                return Ok(None);
+            };
+            initializers.push(value.row_type);
+            self.locals.push(Local {
+                name: name.clone(),
+                ty: edit.expression_type(*expression)?,
+                shape: value.shape,
+                reduced: value.reduced,
+            });
+        }
+        let result = self.visit(edit, body, depth + 1);
+        self.locals.truncate(outer);
+        let Some(mut value) = result? else {
+            return Ok(None);
+        };
+        if !initializers.is_empty() {
+            value.row_type = RowType::Scope {
+                initializers,
+                result: Box::new(value.row_type),
+            };
+        }
+        Ok(Some(value))
+    }
+
     fn dereference(
         &self,
         edit: &mut CircuitEditor,
@@ -158,6 +213,9 @@ impl Row<'_> {
         let Some(name) = variable.data("variable").and_then(|n| n.as_str()) else {
             return Ok(None);
         };
+        if self.local(name).is_some() {
+            return Ok(None);
+        }
         let Some((index, binding)) = self
             .bindings
             .iter()
@@ -183,7 +241,7 @@ impl Row<'_> {
     }
 
     fn visit(
-        &self,
+        &mut self,
         edit: &mut CircuitEditor,
         expression: ExpressionId,
         depth: usize,
@@ -195,6 +253,57 @@ impl Row<'_> {
         let node = edit.node(id)?;
         let kind = edit.expr_kind(expression)?;
         let value = match kind {
+            Expr::Let => {
+                let variable = edit.node(node.edge("variable")?)?;
+                let Some(name) = variable.data("variable").and_then(|v| v.as_str()) else {
+                    return Ok(None);
+                };
+                let binding = (name.to_owned(), edit.expression(node.edge("initializer")?)?);
+                let body = edit.expression(node.edge("consumer")?)?;
+                return self.scoped(edit, &[binding], body, depth);
+            }
+            Expr::Block => {
+                let Some(body) = node.field("lastExpression").and_then(Field::node_id) else {
+                    return Ok(None);
+                };
+                let body = edit.expression(body)?;
+                let mut declarations = Vec::new();
+                for id in node.edges("contents")? {
+                    let statement = edit.node(id)?;
+                    if statement.class() != "DBSPLetStatement"
+                        || statement.data("mutable").and_then(|v| v.as_bool()) != Some(false)
+                    {
+                        return Ok(None);
+                    }
+                    let Some(initializer) = statement.field("initializer").and_then(Field::node_id)
+                    else {
+                        return Ok(None);
+                    };
+                    let name = statement
+                        .data("variable")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| Error::new("expected a name for a row waterline binding"))?;
+                    declarations.push((name.to_owned(), edit.expression(initializer)?));
+                }
+                return self.scoped(edit, &declarations, body, depth);
+            }
+            Expr::VariablePath => {
+                let Some((index, local)) = node
+                    .data("variable")
+                    .and_then(|v| v.as_str())
+                    .and_then(|name| self.local(name))
+                else {
+                    return Ok(None);
+                };
+                if !edit.same_type(edit.expression_type(expression)?, local.ty)? {
+                    return Ok(None);
+                }
+                ProjectedValue {
+                    shape: local.shape.clone(),
+                    row_type: RowType::Local { index },
+                    reduced: local.reduced,
+                }
+            }
             Expr::NoExpression
             | Expr::StringLiteral
             | Expr::BinaryLiteral
@@ -205,7 +314,7 @@ impl Row<'_> {
                 let Some(value) = self.visit(edit, source, depth + 1)? else {
                     return Ok(None);
                 };
-                if !matches!(value.shape, Projection::Scalar { .. }) {
+                if !matches!(value.shape, Shape::Scalar(_)) {
                     return Ok(None);
                 }
                 let reduced = match value.reduced {
@@ -219,7 +328,7 @@ impl Row<'_> {
                     return unbounded(edit, expression, depth);
                 };
                 ProjectedValue {
-                    shape: Projection::Scalar { monotone: true },
+                    shape: Shape::Scalar(true),
                     row_type: RowType::BoundedScalar {
                         type_id: type_number(edit.expression_type(expression)?),
                     },
@@ -236,7 +345,7 @@ impl Row<'_> {
                 let Some(base) = self.visit(edit, base, depth + 1)? else {
                     return Ok(None);
                 };
-                let Projection::Tuple {
+                let Shape::Tuple {
                     fields, nullable, ..
                 } = base.shape
                 else {
@@ -246,7 +355,7 @@ impl Row<'_> {
                     return Ok(None);
                 };
                 let mut shape = field.clone();
-                if let Projection::Tuple {
+                if let Shape::Tuple {
                     nullable: inner, ..
                 } = &mut shape
                 {
@@ -290,11 +399,7 @@ impl Row<'_> {
                 }
                 let raw = kind == Expr::RawTuple;
                 let nullable = edit.nullable(edit.expression_type(expression)?)?;
-                let shape = Projection::Tuple {
-                    fields,
-                    raw,
-                    nullable,
-                };
+                let shape = Shape::tuple(fields, nullable);
                 let reduced = if !shape.monotone() {
                     None
                 } else if raw {
@@ -338,7 +443,7 @@ impl Row<'_> {
                         value: Box::new(value.row_type),
                         nullable,
                     };
-                    if let Projection::Tuple {
+                    if let Shape::Tuple {
                         nullable: tuple_nullable,
                         ..
                     } = &mut value.shape
@@ -385,16 +490,6 @@ pub fn project_rows(
 ) -> Result<Option<ProjectedValue>, Error> {
     // This visitor handles data rows. References and closure-typed columns need
     // their original binding information in the general monotonicity visitor.
-    fn data_row(shape: &Projection) -> bool {
-        match shape {
-            Projection::Other { .. } => false,
-            Projection::Scalar { .. } => true,
-            Projection::Tuple { fields, .. } => fields.iter().all(data_row),
-        }
-    }
-    if !projections.iter().all(data_row) {
-        return Ok(None);
-    }
     if (indexed && (projections.len() != 2 || bounds.len() != 1))
         || (!indexed && projections.len() != bounds.len())
     {
@@ -405,6 +500,9 @@ pub fn project_rows(
     let mut bindings = Vec::with_capacity(projections.len());
     let mut compact = 0;
     for (index, shape) in projections.iter().enumerate() {
+        let Some(shape) = Shape::from_input(shape) else {
+            return Ok(None);
+        };
         let variable = bounds[if indexed { 0 } else { index }];
         let name = edit
             .node(variable.into())?
@@ -412,15 +510,20 @@ pub fn project_rows(
             .and_then(|n| n.as_str())
             .ok_or_else(|| Error::new("expected a projected row variable"))?
             .to_owned();
+        let monotone = shape.monotone();
         bindings.push(Binding {
             name,
             variable,
             shape,
             field: indexed.then_some((index, compact)),
         });
-        compact += usize::from(shape.monotone());
+        compact += usize::from(monotone);
     }
-    Row { bindings }.visit(edit, body, 0)
+    Row {
+        bindings,
+        locals: Vec::new(),
+    }
+    .visit(edit, body, 0)
 }
 
 #[cfg(test)]
@@ -428,6 +531,63 @@ mod tests {
     use super::*;
     use feldera_sql_ir::Circuit;
     use serde_json::json;
+
+    #[test]
+    fn repeated_row_aliases_keep_a_linear_type_recipe() -> Result<(), Error> {
+        let arena = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
+        }))?;
+        let mut edit = CircuitEditor::new(arena);
+        let site = edit.circuit().root_id();
+        let boolean = edit.bool_type(site, false)?;
+        let reference = edit.reference_type(boolean)?;
+        let parameter = edit.named_variable(reference, "input")?;
+        let mut value = edit.dereference(parameter)?;
+        let mut declarations = Vec::new();
+        for n in 0..24 {
+            let name = format!("v{n}");
+            declarations.push(Field::Reference(edit.let_statement(&name, value)?));
+            let ty = edit.expression_type(value)?;
+            let first = edit.named_variable(ty, &name)?;
+            let second = edit.named_variable(ty, &name)?;
+            value = edit.tuple_expr(site, false, &[first, second])?;
+        }
+        let body = edit.make_expr(
+            site,
+            Expr::Block,
+            edit.expression_type(value)?,
+            [
+                ("contents", Field::Array(declarations)),
+                ("lastExpression", Field::Reference(value.into())),
+            ],
+        )?;
+        let shape = Projection::Scalar { monotone: true };
+        let projected = project_row(&mut edit, body, parameter, &shape)?.unwrap();
+        let recipe = serde_json::to_value(projected.row_type).unwrap();
+        assert_eq!(recipe["initializers"].as_array().unwrap().len(), 24);
+        for (index, pair) in recipe["initializers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .skip(1)
+            .enumerate()
+        {
+            assert_eq!(
+                pair["fields"],
+                json!([
+                    {"kind": "local", "index": index}, {"kind": "local", "index": index}
+                ])
+            );
+        }
+        let mut row = projected.reduced.unwrap();
+        for _ in 0..24 {
+            let fields = edit.node(row.into())?.edges("fields")?;
+            assert_eq!(fields[0], fields[1]);
+            row = edit.expression(fields[0])?;
+        }
+        assert_eq!(edit.expr_kind(row)?, Expr::Deref);
+        Ok(())
+    }
 
     #[test]
     fn nested_field_reads_use_compressed_row_indexes() -> Result<(), Error> {
@@ -463,11 +623,11 @@ mod tests {
             tuple(vec![scalar(false), scalar(true)]),
         ]);
         let result = project_row(&mut edit, output, bound, &shape)?.unwrap();
-        let Projection::Tuple { fields, .. } = result.shape else {
+        let Shape::Tuple { fields, .. } = result.shape else {
             panic!("expected a tuple")
         };
         assert_eq!(
-            fields.iter().map(Projection::monotone).collect::<Vec<_>>(),
+            fields.iter().map(Shape::monotone).collect::<Vec<_>>(),
             [true, false, true]
         );
         let reads = edit.node(result.reduced.unwrap().into())?.edges("fields")?;
