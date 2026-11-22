@@ -24,6 +24,15 @@ class FrozenPlacements(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Rust placements"):
             verify_placements("missing conditional pass", BASE_COUNTS, True)
 
+    def test_limiter_insertion_follows_the_direct_compilers_input_graph(self):
+        native = {**BASE_COUNTS, "InsertLimiters": 1}
+        verify_placements("supported operators", native, False, native_limiter_placements=1)
+        verify_placements("mixed operators", BASE_COUNTS, False, native_limiter_placements=0)
+        with self.assertRaisesRegex(ValueError, "Rust placements"):
+            verify_placements("skipped native insertion", BASE_COUNTS, False, native_limiter_placements=1)
+        with self.assertRaisesRegex(ValueError, "Rust placements"):
+            verify_placements("unexpected native insertion", native, False, native_limiter_placements=0)
+
     def test_asof_retention_rebuilds_the_graph_before_moving_predicates(self):
         counts = {**BASE_COUNTS, "Graph": BASE_COUNTS["Graph"] + 1, "OrderGcDependencies": 1, "MoveGC": 1}
         verify_placements("asof retention", counts, False, asof_retention_moves=1)

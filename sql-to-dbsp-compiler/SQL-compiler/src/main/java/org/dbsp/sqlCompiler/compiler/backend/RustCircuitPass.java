@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.util.RawValue;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -180,6 +181,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final AppendOnly appendOnly;
     @Nullable private final ExpandStreamAggregates streamAggregates;
     @Nullable private final FindUnusedInputFields inputFields;
+    @Nullable private final InsertLimiters insertLimiters;
     @Nullable private final TrimInputs trimInputs;
     @Nullable private final TrimFilters trimFilters;
     @Nullable private final DeferCarriedColumns deferCarried;
@@ -204,6 +206,11 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final ProgramIdentifier tableToRemove;
     @Nullable private final Set<DBSPOperator> seenConstants;
     private static final byte[] EMPTY_CONTEXT = new byte[0];
+
+    /** Expansion facts for an InsertLimiters checkpoint, including when Rust runs the pass. */
+    @Nullable InsertLimiters limiterInputs() {
+        return this.insertLimiters;
+    }
 
     public RustCircuitPass(DBSPCompiler compiler, CircuitTransform original, OptimizerSnapshots snapshots) {
         this.compiler = compiler;
@@ -240,6 +247,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.commonProjections = original instanceof FindCommonProjections common ? common : null;
         this.deferCarried = original instanceof DeferCarriedColumns defer ? defer : null;
         this.trimFilters = original instanceof TrimFilters trim ? trim : null;
+        this.insertLimiters = original instanceof InsertLimiters limiters ? limiters : null;
         this.trimInputs = original instanceof TrimInputs trim ? trim : null;
         this.inputFields = original instanceof FindUnusedInputFields fields ? fields : null;
         this.streamAggregates = original instanceof ExpandStreamAggregates expand ? expand : null;
@@ -1217,6 +1225,18 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     private byte[] passState(DBSPCircuit circuit, ToJsonOuterVisitor writer) throws IOException {
+        if (this.insertLimiters != null) {
+            var state = MAPPER.createObjectNode();
+            state.put("next_generated_name", DBSPVariablePath.nextGeneratedName());
+            state.put("gen2", this.compiler.options.ioOptions.gen2);
+            state.putArray("singletons");
+            state.set("operators", LimiterInputs.capture(this.insertLimiters, circuit));
+            var functions = LimiterInputs.transferFunctions(this.insertLimiters, circuit);
+            if (!functions.isEmpty())
+                state.putObject("transfer_functions").putRawValue("checkpoint",
+                        new RawValue(LimiterInputs.encodeTransfers(writer, functions)));
+            return MAPPER.writeValueAsBytes(state);
+        }
         if (this.asofRetention != null)
             return MAPPER.writeValueAsBytes(this.asofRetention.retentionJoins());
         if (this.streamAggregates != null)

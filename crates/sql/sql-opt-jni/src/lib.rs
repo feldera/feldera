@@ -1326,6 +1326,7 @@ fn transform(
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(circuit, &mut next)?,
         "LowerCircuitVisitor"
         | "LowerAsofInner"
+        | "InsertLimiters"
         | "ExpandStreamAggregates"
         | "Fuse"
         | "RemoveStarJoins"
@@ -1339,6 +1340,14 @@ fn transform(
             let mut weight = None;
             let mut retention = None;
             let (output, warnings) = match pass {
+                "InsertLimiters" => {
+                    let mut warnings = Vec::new();
+                    let (output, counter) = feldera_sql_opt::limiters::insert_limiters_with_warnings(
+                        circuit, serde_json::from_slice(state)?, &mut warnings,
+                    )?;
+                    next = counter;
+                    (output, warnings)
+                }
                 "ReplaceSharedIndexes" => {
                     let groups = serde_json::from_slice::<Vec<Vec<feldera_sql_opt::IndexReader>>>(state)?;
                     let mut warnings = Vec::new();

@@ -94,8 +94,14 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
                       validate_weights=False, cast_iterations=None, unused_field_iterations=None,
                       graph_cleanups=None, clock_scans=None, temporal_splits=None, now_stream=None,
                       outputs_are_sets=False, trim_inputs=False, asof_retention_moves=0, star_joins_enabled=True,
-                      window_sharing_enabled=True, linear_retention_graphs=None, noop_iterations=None):
+                      window_sharing_enabled=True, linear_retention_graphs=None, noop_iterations=None,
+                      native_limiter_placements=None):
     expected = dict(schedule)
+    if native_limiter_placements is not None:
+        if type(native_limiter_placements) is not int or native_limiter_placements not in (0, 1):
+            raise ValueError(f"{case}: invalid native limiter placement {native_limiter_placements}")
+        if native_limiter_placements:
+            expected["InsertLimiters"] = 1
     if noop_iterations is not None:
         if type(noop_iterations) is not int or noop_iterations < schedule["RemoveNoops"]:
             raise ValueError(f"{case}: invalid no-op removal iteration count {noop_iterations}")
@@ -241,6 +247,9 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
             if "ReplaceStarJoins" in schedule and (type(star_joins) is not bool
                     or row.get("star_joins_enabled") is not star_joins):
                 raise ValueError(f"{key}: star join policy differs from direct Java")
+            limiter_placements = control.get("native_limiter_placements")
+            if limiter_placements != row.get("native_limiter_placements"):
+                raise ValueError(f"{key}: candidate and Java limiter inputs select different implementations")
             noop_iterations = control.get("noop_iterations")
             if noop_iterations != row.get("noop_iterations"):
                 raise ValueError(f"{key}: no-op cleanup iterations differ from Java")
@@ -255,7 +264,7 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
                               unused_field_iterations=unused_fields, graph_cleanups=graph_cleanups,
                               clock_scans=clock_scans, temporal_splits=splits, now_stream=expected[key][3],
                               outputs_are_sets=expected[key][4], trim_inputs=expected[key][5],
-                              noop_iterations=noop_iterations, linear_retention_graphs=linear_graphs, asof_retention_moves=asof_moves, star_joins_enabled=star_joins, window_sharing_enabled=sharing)
+                              native_limiter_placements=limiter_placements, noop_iterations=noop_iterations, linear_retention_graphs=linear_graphs, asof_retention_moves=asof_moves, star_joins_enabled=star_joins, window_sharing_enabled=sharing)
             invocations.update(counts)
     if controls:
         raise ValueError(f"{len(controls)} cases missing from S2 replay")

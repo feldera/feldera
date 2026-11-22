@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -168,7 +169,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof ExpandAggregateZero || pass instanceof DeterministicFunctions
                     || pass instanceof ConstantViews || pass instanceof CircuitStatistics || pass instanceof ExpandMetadataCasts
                     || pass instanceof LinearPostprocessRetainKeys || pass instanceof ExpandHop
-                    || pass instanceof CheckRetain || pass instanceof SeparateIntegrators || pass instanceof OrderErrorConsumers
+                    || pass instanceof InsertLimiters || pass instanceof CheckRetain || pass instanceof SeparateIntegrators || pass instanceof OrderErrorConsumers
                     || pass instanceof RemoveIdentityOperators || pass instanceof FixupViewReferences || pass instanceof BuildNestedOperators
                     || pass instanceof SubstituteLeftJoins || pass instanceof EnsureDistinctOutputs || pass instanceof MultisetAnalysis
                     || pass instanceof FindUnboundedState.DetectStreamingOperations || pass instanceof FindUnboundedState.FindGCedStreams

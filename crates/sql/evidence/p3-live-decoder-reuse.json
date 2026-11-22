@@ -1,0 +1,30 @@
+{
+  "decoder_source_commit": "442b8d509408d3cd756de1c233306e8e19efcc03",
+  "capture_compiler_commit": "11fefc9af456542ed472eefa5945319346e1c3d5",
+  "input": "nexmark-suite.sql",
+  "snapshots": 34,
+  "total_bytes": 62619942,
+  "immediate_repeats": 4,
+  "repeated_bytes": 7020116,
+  "equal_reencoded_graphs": 34,
+  "warmup_pairs": 2,
+  "measured_pairs": 21,
+  "cpu": 15,
+  "concurrent_work": "A compiler build and directed compiler verification overlapped part of the run.",
+  "median_ms": {
+    "baseline": 432.346,
+    "candidate": 390.186
+  },
+  "median_paired_reduction_ms": 47.56,
+  "paired_reduction_bootstrap_95pct_ms": [
+    35.363,
+    54.279
+  ],
+  "peak_rss_kib_including_inputs": {
+    "baseline": 105548,
+    "candidate": 107572
+  },
+  "raw_pairs_sha256": "a26a4c6d92612cc239e46518aa11e2689e0aa908f156025581b3ecdc23cc8265",
+  "ordered_snapshot_digests_sha256": "99bf223237c0a02f1d07940509301aa16edaacf17f22f645abb46e25e963049d",
+  "workspace_archive": ".bench-results/p3-live-decoder/2026-22-11-05-17-442b8"
+}

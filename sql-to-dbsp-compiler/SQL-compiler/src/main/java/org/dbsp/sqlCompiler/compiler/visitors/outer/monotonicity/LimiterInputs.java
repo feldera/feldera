@@ -4,12 +4,20 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
@@ -20,10 +28,33 @@ import org.dbsp.util.Utilities;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /** Entry facts from the expanded circuit, keyed by their corresponding original operators. */
 public final class LimiterInputs {
     private LimiterInputs() {}
+
+    private static final Set<Class<?>> NATIVE_OPERATORS = Set.of(
+            DBSPSourceMultisetOperator.class, DBSPViewOperator.class, DBSPSinkOperator.class,
+            DBSPMapOperator.class, DBSPMapIndexOperator.class, DBSPFilterOperator.class,
+            DBSPHopOperator.class, DBSPFlatMapOperator.class, DBSPSumOperator.class,
+            DBSPAtomicSumOperator.class, DBSPSubtractOperator.class, DBSPConstantOperator.class,
+            DBSPIncrementalConstantOperator.class);
+
+    /** Whole-pass lowering uses the expansion facts for these operators. Keep
+     * the Java diagnostic sites for EMIT FINAL and Gen-2 primary-key tables. */
+    public static boolean canLowerCircuit(DBSPCircuit circuit, boolean gen2) {
+        for (var operator : circuit.allOperators) {
+            if (!NATIVE_OPERATORS.contains(operator.getClass()))
+                return false;
+            if (operator instanceof DBSPSinkOperator sink && sink.metadata.emitFinalColumn >= 0)
+                return false;
+            if (gen2 && operator instanceof DBSPSourceMultisetOperator table
+                    && table.metadata.getColumns().stream().anyMatch(column -> column.isPrimaryKey))
+                return false;
+        }
+        return true;
+    }
 
     public static JsonNode projection(IMaybeMonotoneType type) {
         ObjectNode node = JsonNodeFactory.instance.objectNode();

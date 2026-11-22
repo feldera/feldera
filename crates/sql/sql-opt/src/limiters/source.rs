@@ -361,10 +361,12 @@ pub(super) fn source_bounds(
         Op::ControlledKeyFilter,
         &[port(site), port(delay)],
         [
-            ("outputType", link(collection)),
-            ("function", link(filter.function)),
+            // Java decodes the error closure first. It can define parameter
+            // types that the predicate subsequently references.
             ("errorType", link(error_type)),
             ("error", link(filter.error)),
+            ("outputType", link(collection)),
+            ("function", link(filter.function)),
         ],
     )?;
     Ok(SourceOutputs {

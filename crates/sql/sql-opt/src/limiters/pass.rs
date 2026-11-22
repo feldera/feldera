@@ -19,6 +19,8 @@ struct OperatorFacts {
 #[derive(Default, Deserialize)]
 struct TransferFunctions {
     checkpoint: BTreeMap<u64, serde_json::Value>,
+    // A live compiler sends only the closures in its checkpoint's identity space.
+    #[serde(default)]
     observation: BTreeMap<u64, serde_json::Value>,
 }
 

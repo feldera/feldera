@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.CircuitReplay;
 import org.dbsp.sqlCompiler.compiler.backend.CircuitDumps;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.LimiterInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
@@ -330,12 +331,16 @@ public final class CorpusDeterminism {
         Map<String, Integer> graphCleanups = new TreeMap<>();
         var unusedFieldIterations = new java.util.concurrent.atomic.AtomicInteger();
         var clockScans = new java.util.concurrent.atomic.AtomicInteger();
+        var nativeLimiterPlacements = new java.util.concurrent.atomic.AtomicInteger();
         var linearRetentionGraphs = new java.util.concurrent.atomic.AtomicInteger();
         var asofMoves = new java.util.concurrent.atomic.AtomicInteger();
         var temporalSplits = new java.util.concurrent.atomic.AtomicInteger();
         if (liveFinal) {
             compiler.stateObserver = new DBSPCompiler.StateObserver() {
-                public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit input) { }
+                public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {
+                    if (pass.getName().equals("InsertLimiters") && LimiterInputs.canLowerCircuit(input, options.ioOptions.gen2))
+                        nativeLimiterPlacements.incrementAndGet();
+                }
 
                 public void after(String container, int index, int iteration, CircuitTransform pass,
                                   DBSPCircuit output, boolean completed) {
@@ -419,6 +424,7 @@ public final class CorpusDeterminism {
             result.put("clock_scans", clockScans.get());
             result.put("window_sharing_enabled", !compiler.metadata.windowSharingDisabled());
             result.put("noop_iterations", graphCleanups.getOrDefault("RemoveNoops", 0));
+            result.put("native_limiter_placements", nativeLimiterPlacements.get());
             result.put("linear_retention_graphs", linearRetentionGraphs.get());
             result.put("asof_retention_moves", asofMoves.get());
             result.put("temporal_filter_iterations", temporalSplits.get());

@@ -27,6 +27,15 @@ replayed the 554 projection requests captured from one Nexmark compile. Across
 with the tree reader and 25.604 ms with the streaming reader. Both readers
 produced identical root identities and expression graphs. [Projection benchmark](evidence/p3-expression-batch-reader.json)
 
+A Nexmark compile sent 34 full circuit snapshots totaling 62.6 MB. Four
+consecutive repeats accounted for 7.0 MB. Reusing the validated arena on
+byte-identical input reduced median sequence decode time from 432.346 to
+390.186 ms over 21 paired runs. All 34 graphs re-encoded identically. The
+median paired reduction was 47.560 ms (95% bootstrap interval 35.363–54.279
+ms). Peak RSS including buffered input rose from 105,548 to 107,572 KiB.
+A compiler build and verification overlapped part of this microbenchmark.
+[Decoder measurements and sample digests](evidence/p3-live-decoder-reuse.json)
+
 On the preceding deindex build (`3baee479d`), the p95 ratios were 1.418×,
 2.262× and 1.376× in workload order.
 On the preceding typed NULL waterline build at `c03c4fcee`, the p95 ratios

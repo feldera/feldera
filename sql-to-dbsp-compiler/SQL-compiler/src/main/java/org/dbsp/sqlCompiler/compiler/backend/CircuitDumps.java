@@ -149,11 +149,13 @@ public final class CircuitDumps {
                              CircuitTransform pass, DBSPCircuit circuit) {
         this.push(container, pass.getName(), index, iteration);
         try {
+            InsertLimiters limiters = pass instanceof InsertLimiters insertion ? insertion
+                    : pass instanceof RustCircuitPass rust ? rust.limiterInputs() : null;
             boolean captureState = this.directory != null
                     && ((pass.getName().equals("FuseIntoArrayAgg") && Boolean.getBoolean("feldera.dump.passState"))
-                    || (pass instanceof InsertLimiters && Boolean.getBoolean("feldera.dump.limiterState")));
+                    || (limiters != null && Boolean.getBoolean("feldera.dump.limiterState")));
             ObjectNode state = captureState ? this.mapper.createObjectNode() : null;
-            if (state != null && pass instanceof InsertLimiters limiters) {
+            if (state != null && limiters != null) {
                 state.set("warnings_before", this.limiterWarnings());
                 state.set("operators", LimiterInputs.capture(limiters, circuit));
                 state.put("gen2", this.compiler.options.ioOptions.gen2);
@@ -170,7 +172,7 @@ public final class CircuitDumps {
             }
             int entrySequence = this.sequence;
             long nextName = captureState ? DBSPVariablePath.nextGeneratedName() : 0;
-            if (state != null && pass instanceof InsertLimiters) {
+            if (state != null && limiters != null) {
                 state.put("next_generated_name", nextName);
                 this.writeLimiterFile("entry", state.toString());
             }
@@ -181,7 +183,7 @@ public final class CircuitDumps {
                 state.set("path", this.passPath);
                 state.put("next_generated_name", nextName);
                 state.put("next_generated_name_after", DBSPVariablePath.nextGeneratedName());
-                if (pass instanceof InsertLimiters) {
+                if (limiters != null) {
                     state.set("warnings_after", this.limiterWarnings());
                     this.writeLimiterCheckpoint("result", result);
                 }
