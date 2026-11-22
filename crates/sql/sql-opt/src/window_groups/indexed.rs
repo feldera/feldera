@@ -71,15 +71,16 @@ pub fn indexed_window_groups(circuit: Circuit, threshold: usize) -> Result<Index
     let mut indexes = Vec::with_capacity(candidates.len());
     for &window in &candidates {
         let index = WindowIndex::read(&edit, window)?;
-        let (ty, name) = row_parameter(&edit, index.parameter)?;
-        if !same_row_spelling(&edit, *inputs.entry(index.source).or_insert(ty), ty)? {
+        let parameter = row_parameter(&edit, index.parameter)?;
+        let common = *inputs.entry(index.source).or_insert(parameter.ty);
+        if !same_row_spelling(&edit, common, parameter.ty)? {
             return Ok(IndexedWindows::Candidates(candidates));
         }
-        let Some(key) = TimestampKey::read(&edit, edit.expression(index.key)?, name)? else {
+        let Some(key) = TimestampKey::read(&edit, edit.expression(index.key)?, parameter)? else {
             return Ok(IndexedWindows::Candidates(candidates));
         };
         keys.push((index.source, key));
-        indexes.push((index, name));
+        indexes.push((index, parameter));
     }
 
     let mut groups = Vec::new();
@@ -87,10 +88,11 @@ pub fn indexed_window_groups(circuit: Circuit, threshold: usize) -> Result<Index
         let mut fields = Vec::with_capacity(members.len());
         let mut windows = Vec::with_capacity(members.len());
         for member in members {
-            let (index, name) = &indexes[member];
+            let (index, parameter) = &indexes[member];
             let mut projections = Vec::with_capacity(index.fields.len());
             for &field in &index.fields {
-                let Some(field) = TimestampKey::read(&edit, edit.expression(field)?, name)? else {
+                let Some(field) = TimestampKey::read(&edit, edit.expression(field)?, *parameter)?
+                else {
                     return Ok(IndexedWindows::Candidates(candidates));
                 };
                 projections.push(field);

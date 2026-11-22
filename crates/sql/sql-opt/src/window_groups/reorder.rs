@@ -1,5 +1,5 @@
 //! Rebuild a filter's conjunction in the order chosen for its temporal windows.
-use super::key::TimestampKey;
+use super::key::{TimestampKey, row_parameter};
 use super::temporal::{temporal_filter_order, TemporalBound};
 use crate::filters::{conjuncts, is_boolean_wrapper, rewrite_filters, strip_wrap_bool};
 use crate::{conjunct_windows, function_calls::contains_now};
@@ -126,16 +126,12 @@ pub fn reorder_shared_windows(
         if windows.iter().all(Option::is_none) {
             continue;
         }
-        let name = edit
-            .node(parameter)?
-            .data("name")
-            .and_then(|n| n.as_str())
-            .ok_or_else(|| Error::new("missing filter parameter name"))?;
+        let parameter = row_parameter(&edit, parameter)?;
         let mut bounds = Vec::with_capacity(windows.len());
         for window in windows {
             bounds.push(match window {
                 Some(window) => {
-                    let Some(fingerprint) = TimestampKey::read(&edit, window.key, name)? else {
+                    let Some(fingerprint) = TimestampKey::read(&edit, window.key, parameter)? else {
                         return Ok(None);
                     };
                     Some(TemporalBound {

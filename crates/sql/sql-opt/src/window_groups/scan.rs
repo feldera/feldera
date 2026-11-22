@@ -97,8 +97,8 @@ fn source_key(
         parameter = input;
         key = edit.expression(closure.edge("body")?)?;
     }
-    let (input, name) = row_parameter(edit, parameter)?;
-    Ok(TimestampKey::read(edit, key, name)?.map(|key| (input, key)))
+    let parameter = row_parameter(edit, parameter)?;
+    Ok(TimestampKey::read(edit, key, parameter)?.map(|key| (parameter.ty, key)))
 }
 
 #[cfg(test)]
