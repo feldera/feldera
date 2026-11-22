@@ -55,5 +55,32 @@
     },
     "source_commit": "4f84a9cf6",
     "report_sha256": "3a0bdaa54752331bc7c16d0b81939b1280c2031b090df36b384fff6915b9ed53"
+  },
+  "full_corpus": {
+    "source_commit": "4f84a9cf617595ed5cb40b260d375c124801358d",
+    "entry": "detached S2 against direct Java from SQL",
+    "observation_contract": "full-prefix-v1",
+    "comparison": "ordered S4, final S3, schema, diagnostics, persistent-ID inputs and engine artifacts",
+    "validated_summary_sha256": "bb4a9d57c03b6e472f94ef99667ff3fdc2ada9e81c13d02e7b1a2519ead46fbf",
+    "engines": {
+      "classic": {
+        "frozen_population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "shards": 32,
+        "cases": 8571,
+        "matched_S4_observations": 3486078,
+        "rust_pass_kinds": 112,
+        "native_limiter_invocations": 8571,
+        "ordered_shard_report_pairs_sha256": "624583db2128fff83081a9be79fb457229c24648d3973c289fc4c20a34a96e12"
+      },
+      "gen2": {
+        "frozen_population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "shards": 32,
+        "cases": 8527,
+        "matched_S4_observations": 3510660,
+        "rust_pass_kinds": 115,
+        "native_limiter_invocations": 8527,
+        "ordered_shard_report_pairs_sha256": "f2dd6eb7bf9738362a54e0a1e2c63a68d4ee417141aadcf4b3b38f45fff8c492"
+      }
+    }
   }
 }

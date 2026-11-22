@@ -41,6 +41,12 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. On `4f84a9cf6`, all 17,098 frozen programs matched direct
+  Java through detached S2 replay, 6,996,738 ordered S4 observations and
+  final emission. Rust ran limiter insertion on every program. The same
+  build passed all 8,256 executable classic cases. P3 still requires the
+  complete Rust optimizer, the 1.2× latency ceiling and the field-shadow sample.
+  [Full corpus and runtime results](crates/sql/evidence/p3-metadata-initializers.json)
 - 2026-11-20. P2 passed its local engineering gates. Both engine populations
   matched across S3 and the optimizer tail. All 8,256 executable classic cases
   passed, including 232 expected runtime errors. The checkpoint and decoder
