@@ -754,9 +754,9 @@ macro_rules! some_nullable_function4 {
 /// optimized for the implementation of arithmetic operators.
 /// Assuming there exists a function is f__(x: T, y: T) -> U, this creates
 /// three functions:
-/// - f_tN_t(x: T, y: Option<T>) -> Option<U>
-/// - f_t_tN(x: Option<T>, y: T) -> Option<U>
-/// - f_tN_tN(x: Option<T>, y: Option<T>) -> Option<U>
+/// - `f_tN_t(x: T, y: Option<T>) -> Option<U>`
+/// - `f_t_tN(x: Option<T>, y: T) -> Option<U>`
+/// - `f_tN_tN(x: Option<T>, y: Option<T>) -> Option<U>`
 ///
 /// The resulting functions return Some only if all arguments are 'Some'.
 macro_rules! some_existing_operator {
@@ -793,10 +793,10 @@ pub(crate) use some_existing_operator;
 /// optimized for the implementation of arithmetic operators.
 /// Assuming there exists a function is f(x: T, y: T) -> U, this creates
 /// four functions:
-/// - f_t_t(x: T, y: T) -> U
-/// - f_tN_t(x: T, y: Option<T>) -> Option<U>
-/// - f_t_tN(x: Option<T>, y: T) -> Option<U>
-/// - f_tN_tN(x: Option<T>, y: Option<T>) -> Option<U>
+/// - `f_t_t(x: T, y: T) -> U`
+/// - `f_tN_t(x: T, y: Option<T>) -> Option<U>`
+/// - `f_t_tN(x: Option<T>, y: T) -> Option<U>`
+/// - `f_tN_tN(x: Option<T>, y: Option<T>) -> Option<U>`
 ///
 /// The resulting functions return Some only if all arguments are 'Some'.
 ///

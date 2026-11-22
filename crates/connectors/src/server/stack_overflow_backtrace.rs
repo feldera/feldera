@@ -109,7 +109,7 @@ pub unsafe fn enable_stack_overflow_backtrace() {
 
 static mut COUNT: usize = 10;
 
-/// Like [`enable`], but only print the first `count` frames of the backtrace.
+/// Like [`enable_stack_overflow_backtrace`], but only print the first `count` frames of the backtrace.
 pub unsafe fn enable_stack_overflow_backtrace_with_limit(count: usize) {
     unsafe {
         COUNT = count;

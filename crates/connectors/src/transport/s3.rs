@@ -906,7 +906,7 @@ async fn wait_running(receiver: &mut WatchReceiver<PipelineState>) -> Result<(),
         .map(|_| ())
 }
 
-/// Wraps [UnboundedReceiver] with a one-message buffer, to allow received messages to be
+/// Wraps [Receiver] with a one-message buffer, to allow received messages to be
 /// put back and received again later.
 struct BufferedReceiver<T> {
     receiver: Receiver<T>,

@@ -147,7 +147,7 @@ fn save_pem_file(pem: &str, suffix: &str) -> AnyResult<PathBuf> {
     Ok(path)
 }
 
-/// A workaround against https://github.com/confluentinc/librdkafka/issues/3225
+/// A workaround against <https://github.com/confluentinc/librdkafka/issues/3225>
 pub(crate) trait PemToLocation {
     fn pem_to_location(&mut self, endpoint_name: &str) -> AnyResult<()>;
 }

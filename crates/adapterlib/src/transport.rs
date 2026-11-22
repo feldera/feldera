@@ -392,7 +392,7 @@ thread_local! {
     static FAKE_NOW: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
 }
 
-/// Returns the current time, which a test can replace with [FAKE_NOW] so that
+/// Returns the current time, which a test can replace with `FAKE_NOW` so that
 /// it does not depend on how fast it runs.
 fn now() -> Instant {
     #[cfg(test)]

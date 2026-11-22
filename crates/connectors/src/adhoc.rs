@@ -29,7 +29,7 @@ pub(crate) mod table;
 /// Helper for for closing the websocket session
 ///
 /// Note that adding a `description` to the `CloseReason` is currently
-/// buggy https://github.com/actix/actix-extras/issues/508
+/// buggy <https://github.com/actix/actix-extras/issues/508>
 ///
 /// (It's actually very bad to add it because
 /// websocket packets will be corrupted, don't.)

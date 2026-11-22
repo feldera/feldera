@@ -91,7 +91,7 @@ struct UrlStream<'a> {
 /// - If its status code is 2xx, it will return zero offset.
 ///   An error will be returned if it still has a `Content-Range` header
 ///   because the header only has a meaning for status code 206 and 416:
-///   https://datatracker.ietf.org/doc/html/rfc9110#name-content-range
+///   <https://datatracker.ietf.org/doc/html/rfc9110#name-content-range>
 ///
 /// - If its status code is 206 PARTIAL CONTENT, the first byte position of
 ///   the single `Content-Range` will be returned. An error will be returned

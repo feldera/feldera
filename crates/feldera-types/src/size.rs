@@ -26,7 +26,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
 pub struct ConfigSize(u64);
 
-/// The unit list quoted in error messages. [`units_are_listed_in_messages`]
+/// The unit list quoted in error messages. The `units_are_listed_in_messages` test
 /// keeps it in step with [`UNITS`].
 const EXPECTED_UNITS: &str = "expected one of 'k', 'M', 'G', 'T', 'P', 'E', 'Ki', 'Mi', 'Gi', \
                               'Ti', 'Pi', 'Ei', each with or without a trailing 'B'";

@@ -1,7 +1,7 @@
 //! An input adapter that generates Nexmark event input data.
 //!
 //! The adapter needs the static engine's crates, so it registers an
-//! [`InputTransportFactory`](dbsp_connectors::transport::InputTransportFactory), through which
+//! [`InputTransportFactory`], through which
 //! the shared transport factory builds its endpoints.
 
 use chrono::{DateTime, Utc};

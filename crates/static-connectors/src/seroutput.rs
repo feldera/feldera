@@ -369,7 +369,7 @@ const SERDE_JSON_NUMBER_TOKEN: &str = "$serde_json::private::Number";
 /// `serde_json::Value::Number` (used by `VARIANT`) serialize using the same internal struct
 /// format that `serde_json` uses for arbitrary-precision numbers.
 ///
-/// `serde_dynamo` does not handle this case (see https://github.com/zenlist/serde_dynamo/issues/90);
+/// `serde_dynamo` does not handle this case (see <https://github.com/zenlist/serde_dynamo/issues/90>);
 /// remove this function if that is ever fixed.
 #[cfg(feature = "with-dynamodb")]
 fn fix_number_attribute(value: AttributeValue) -> AnyResult<AttributeValue> {

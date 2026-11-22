@@ -26,7 +26,7 @@ impl U256 {
 
     /// Returns `x * y`.
     ///
-    /// This could use [u128::widening_mul] if that's ever stabilized.
+    /// This could use `u128::widening_mul` if that's ever stabilized.
     pub const fn from_product(x: u128, y: u128) -> Self {
         // Grade-school multiplication:
         //

@@ -714,7 +714,7 @@ where
     ///     and flush them to disk. In this case, we will initiate a merge of
     ///     in-memory batches only.
     ///   - A spine with a key or value filter can accumulate garbage. For such spines
-    ///     we initiate a merge with at least MERGE_COUNTS[level].start
+    ///     we initiate a merge with at least `MERGE_COUNTS[level].start`
     ///     batches, so as not to hinder GC.
     ///     TODO: a more subtle heuristic may sample the level first to measure
     ///     how much it's likely to shrink with GC.
@@ -835,7 +835,7 @@ impl BackpressureWait {
     ///
     /// The future carries the declaration that the park hook reads, so that a
     /// caller outside this module charges `circuit_wait_by_reason_seconds` the
-    /// same way [`SpineInner::backpressure_wait`] does, without having to know
+    /// same way [`AsyncMerger::backpressure_wait`] does, without having to know
     /// that it must.
     fn split(
         self,
@@ -1162,7 +1162,7 @@ where
     }
 
     /// Starts merging again with `batches`, which are presumably what
-    /// [Self::pause] or [Self::pause_new_merges] returned.
+    /// [Self::pause] returned.
     fn resume(&self, batches: impl IntoIterator<Item = Arc<B>>) {
         self.add_batches(batches.into_iter().map(|batch| {
             let level =

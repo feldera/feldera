@@ -255,7 +255,7 @@ impl From<&CheckpointInputEndpointMetrics> for InputEndpointMetrics {
 
 /// Checkpoint for the statistics for an output endpoint.
 ///
-/// This is the checkpointed form of [OutputEndpointMetrics] and of the
+/// This is the checkpointed form of [`super::stats::OutputEndpointMetrics`] and of the
 /// recent error messages associated with the endpoint.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CheckpointOutputEndpointMetrics {
@@ -292,7 +292,7 @@ pub struct CheckpointOutputEndpointMetrics {
 
 impl CheckpointOutputEndpointMetrics {
     /// Build the checkpoint form from the live endpoint status. `snapshot_sent`
-    /// is read from the controller's [`OutputEndpointControl`] (which lives
+    /// is read from the controller's [`super::OutputEndpointControl`] (which lives
     /// alongside the endpoint rather than in [`OutputEndpointStatus`]) and
     /// passed in explicitly.
     pub fn from_endpoint_status(status: &OutputEndpointStatus, snapshot_sent: bool) -> Self {

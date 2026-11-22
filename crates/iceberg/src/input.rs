@@ -1749,7 +1749,7 @@ impl IcebergInputEndpointInner {
     }
 
     /// Load the entire table snapshot as a single
-    /// "select <used_columns> where <filter>" query.
+    /// `select <used_columns> where <filter>` query.
     async fn read_unordered_snapshot(
         &self,
         used_columns: &[String],
@@ -3702,8 +3702,8 @@ impl IcebergInputEndpointInner {
     /// Parse a record-batch stream with `num_parsers` jobs at a time and push the
     /// resulting buffers to the input queue in enqueue order.
     ///
-    /// Shared by the snapshot read path ([`execute_df_inner`]) and the follow
-    /// read path ([`push_changed_files`]). Blocks while the pipeline is paused.
+    /// Shared by the snapshot read path ([`Self::execute_df_inner`]) and the follow
+    /// read path ([`Self::push_changed_files`]). Blocks while the pipeline is paused.
     async fn drain_batch_stream(
         &self,
         mut stream: stream::BoxStream<'static, AnyResult<FileBatch>>,

@@ -2615,7 +2615,7 @@ pub struct InputEndpointStatus {
     removal_requested: AtomicBool,
 
     /// Connector-specific metrics for Prometheus export, registered via
-    /// [`InputConsumer::set_custom_metrics`].
+    /// [`crate::InputConsumer::set_custom_metrics`].
     pub custom_metrics: Option<Arc<dyn ConnectorMetrics>>,
 
     /// Completion tokens associated with the endpoint.
