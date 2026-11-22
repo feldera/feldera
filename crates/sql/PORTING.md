@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `5c6c0cd5b`, Rust answered all 33,587 field-use requests across the two
+frozen populations. Java agreed on the fields read from each parameter,
+including the accumulator of a filtered ARG_MIN or ARG_MAX. All 228 selected
+detached compilations matched through 105,453 ordered S4 observations and
+emission. All 106 executable classic selections passed. COUNT and LATENESS
+checkpoints restored in both directions.
+[Field-use, runtime and checkpoint results](evidence/p3-aggregate-field-uses.json)
+
 On `a9387c693`, Rust answered all 51,294 circuit-wide candidate-key
 requests from the two frozen populations. Direct Java agreed on ordered keys
 at 374,851 ports and on all 108,044 predecessor transforms, including which
