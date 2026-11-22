@@ -745,6 +745,16 @@ fn transform(
         return Ok(json!({"needs_full_snapshot":required}));
     }
     match pass {
+        "CSE/Candidates" => {
+            let operators = serde_json::from_slice(input)?;
+            return Ok(json!(operator_numbers(feldera_sql_opt::projected_cse_payloads(operators))));
+        }
+        "Prune/AllTables" | "Prune/UsedTables" => {
+            let operators: Vec<feldera_sql_opt::OperatorInputs> = serde_json::from_slice(input)?;
+            let pruning = feldera_sql_opt::projected_pruning(&operators, pass == "Prune/AllTables")?;
+            return Ok(json!({"pruned_operators": operator_numbers(pruning.removed),
+                             "unused_sources": operator_numbers(pruning.unused_sources)}));
+        }
         "SharedProjections/Edits" => {
             #[derive(serde::Deserialize)]
             struct Site {

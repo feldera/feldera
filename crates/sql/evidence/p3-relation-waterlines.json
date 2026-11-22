@@ -154,5 +154,101 @@
     "p95_ms": 26.950242,
     "largest_driver_plus_front_end_rss_bytes": 76136448,
     "compiler_sha256": "9573c8b10ffba16bb4d25b356da5f685c519d9db0024bbb520bc37974740b8b4"
+  },
+  "worker_limits_isolated": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      4.574554,
+      4.530471,
+      4.666679,
+      4.714013,
+      5.772516,
+      3.818552,
+      4.101262,
+      3.995386,
+      5.206514,
+      3.396217,
+      3.387092,
+      3.810885,
+      4.511887,
+      4.563929,
+      4.666346,
+      6.239684,
+      3.532009,
+      3.971511,
+      4.099386,
+      3.660552
+    ],
+    "p95_ms": 5.772516,
+    "largest_driver_plus_front_end_rss_bytes": 75767808,
+    "compiler_sha256": "9573c8b10ffba16bb4d25b356da5f685c519d9db0024bbb520bc37974740b8b4"
+  },
+  "cold_classic_compilation": {
+    "scope": "SQL through classic Rust emission, dataflow and schema on CPU 15. Two warmup pairs and 21 measured pairs per workload in alternating order. All diagnostics and artifacts matched.",
+    "inputs": {
+      "array-subquery.sql": "42e09a2b580b083bb2653efdb4e32f8b79c1d1d6ca13796cb13e0eedaa93b33d",
+      "nexmark-suite.sql": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+      "outer-join.sql": "1a475a4c0d4e68f13d124dc2a7c30100baecf86a640ac8ac787ca0bb12d0435d"
+    },
+    "pairs_sha256": "6ea9640fdcdc25573b3715be5d379a809aa84a38aedf3f29abd8f0c1a81e7738",
+    "environment_sha256": "28a6d424cf97f276f9f0cd8cea8eeb820326f629342027576e921283e10e1b57",
+    "p95_ratio_ceiling": 1.2,
+    "passed": false,
+    "workloads": {
+      "array-subquery.sql": {
+        "hybrid": {
+          "samples": 21,
+          "p50_seconds": 1.700366679,
+          "empirical_p95_seconds": 1.758853963
+        },
+        "direct": {
+          "samples": 21,
+          "p50_seconds": 1.402664408,
+          "empirical_p95_seconds": 1.443382185
+        },
+        "p95_ratio": 1.2185642730514927,
+        "mean_ratio_paired_95pct_interval": [
+          1.1852722383847243,
+          1.219901299449942
+        ]
+      },
+      "nexmark-suite.sql": {
+        "hybrid": {
+          "samples": 21,
+          "p50_seconds": 6.802665883,
+          "empirical_p95_seconds": 7.604891487
+        },
+        "direct": {
+          "samples": 21,
+          "p50_seconds": 3.142020943,
+          "empirical_p95_seconds": 3.176399744
+        },
+        "p95_ratio": 2.394185902251477,
+        "mean_ratio_paired_95pct_interval": [
+          2.1628591004288977,
+          2.2382351174093276
+        ]
+      },
+      "outer-join.sql": {
+        "hybrid": {
+          "samples": 21,
+          "p50_seconds": 1.562975761,
+          "empirical_p95_seconds": 1.60764655
+        },
+        "direct": {
+          "samples": 21,
+          "p50_seconds": 1.326880576,
+          "empirical_p95_seconds": 1.350786558
+        },
+        "p95_ratio": 1.1901558691702645,
+        "mean_ratio_paired_95pct_interval": [
+          1.1755992549999925,
+          1.2519105524135061
+        ]
+      }
+    }
   }
 }

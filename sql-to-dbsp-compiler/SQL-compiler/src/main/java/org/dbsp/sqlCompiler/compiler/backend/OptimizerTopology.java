@@ -48,6 +48,43 @@ final class OptimizerTopology {
 
     private OptimizerTopology() {}
 
+    /** Ordered ports for sibling comparisons and backwards reachability through nested outputs. */
+    static byte[] operatorInputs(DBSPCircuit circuit) {
+        var json = JsonStream.compactCircuit();
+        json.beginArray();
+        writeOperatorInputs(json, circuit);
+        json.endArray();
+        return json.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static void writeInput(JsonStream json, OutputPort port) {
+        json.beginArray();
+        json.append(port.operator.id).append(port.outputNumber).endArray();
+    }
+
+    private static void writeOperatorInputs(JsonStream json, ICircuit body) {
+        for (var op : body.getAllOperators()) {
+            json.beginArray();
+            json.append(body.getId()).append(op.id).append(op.getClass().getSimpleName()).beginArray();
+            for (var input : op.inputs)
+                writeInput(json, input);
+            json.endArray();
+            if (op instanceof DBSPNestedOperator nested) {
+                json.beginArray();
+                for (var port : nested.internalOutputs) {
+                    if (port == null)
+                        json.appendNull();
+                    else
+                        writeInput(json, port);
+                }
+                json.endArray();
+            }
+            json.endArray();
+            if (op instanceof DBSPNestedOperator nested)
+                writeOperatorInputs(json, nested);
+        }
+    }
+
     /** Each body contains its ID and its ordered operators. An operator carries its ID,
      * ordered producer IDs, and an optional role for recursive feedback. */
     static byte[] consumerInputs(DBSPCircuit circuit) {

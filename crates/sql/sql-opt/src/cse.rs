@@ -1,11 +1,12 @@
 //! Eliminate equivalent operators within each circuit body. A trace can be
 //! shared only when the collectors attached to each output agree as well.
 
+use crate::operator_inputs::{OperatorInputs, output_port};
 use crate::terms::Terms;
 use feldera_sql_ir::{
     BodyOrder, Circuit, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort,
 };
-use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, hash_map::Entry};
 
 #[derive(Hash, Eq, Ord, PartialEq, PartialOrd)]
 struct Payload(Vec<(&'static str, usize)>);
@@ -118,67 +119,94 @@ impl Candidates {
     }
 }
 
-fn candidate_key(node: &Node) -> Option<(Op, Vec<OutputPort>)> {
-    let kind = node.operator_kind()?;
-    let inputs: Vec<_> = node.inputs().collect();
-    if !matches!(kind, Op::Constant | Op::IncrementalConstant)
-        && (inputs.is_empty()
-            || matches!(
-                kind,
-                Op::Nested
-                    | Op::View
-                    | Op::Sink
-                    | Op::ViewDeclaration
-                    | Op::InputMapWithWaterline
-                    | Op::SourceMultiset
-                    | Op::SourceLazyMap
-                    | Op::SourceMap
-            ))
-    {
-        return None;
+fn can_have_sibling(kind: Op, inputs: &[OutputPort]) -> bool {
+    match kind {
+        Op::Constant | Op::IncrementalConstant => true,
+        Op::Nested
+        | Op::View
+        | Op::Sink
+        | Op::ViewDeclaration
+        | Op::InputMapWithWaterline
+        | Op::SourceMultiset
+        | Op::SourceLazyMap
+        | Op::SourceMap => false,
+        _ => !inputs.is_empty(),
     }
-    Some((kind, inputs))
 }
 
-/// Expression payloads needed to decide one round of CSE. Operators in
-/// different bodies cannot merge. A candidate's trace policies also take
-/// part in the comparison, even if the retainer itself has no sibling.
-pub fn cse_payloads(circuit: &Circuit) -> Result<BTreeSet<NodeId>, Error> {
-    let mut first = HashMap::new();
-    let mut needed = BTreeSet::new();
-    let members = crate::stream_rewrites::body_members(circuit)?;
-    for &(body, id) in &members {
-        let node = circuit.node(id).expect("validated body member");
-        if let Some((kind, inputs)) = candidate_key(node) {
-            match first.entry((body, kind.cse_family(), inputs)) {
+/// Select the operators whose expressions CSE needs from their ordered input ports.
+#[derive(Default)]
+struct CseCandidates {
+    first: HashMap<(NodeId, Op, Vec<OutputPort>), NodeId>,
+    needed: BTreeSet<NodeId>,
+    retainers: Vec<(NodeId, NodeId)>,
+}
+
+impl CseCandidates {
+    fn observe(&mut self, body: NodeId, id: NodeId, kind: Op, inputs: Vec<OutputPort>) {
+        if is_retainer(kind) {
+            if let Some(data) = inputs.first() {
+                self.retainers.push((id, data.operator));
+            }
+        }
+        if can_have_sibling(kind, &inputs) {
+            match self.first.entry((body, kind.cse_family(), inputs)) {
                 Entry::Vacant(slot) => {
                     slot.insert(id);
                 }
                 Entry::Occupied(slot) => {
-                    needed.extend([*slot.get(), id]);
+                    self.needed.extend([*slot.get(), id]);
                 }
             }
         }
     }
-    let policies: Vec<_> = members
-        .into_iter()
-        .filter_map(|(_, id)| {
-            let node = circuit.node(id)?;
-            (is_retainer(node) && needed.contains(&node.inputs().next()?.operator)).then_some(id)
-        })
-        .collect();
-    needed.extend(policies);
-    Ok(needed)
+
+    fn payloads(mut self) -> BTreeSet<NodeId> {
+        // A candidate's trace policy participates even when the retainer has no sibling.
+        let policies = self
+            .retainers
+            .into_iter()
+            .filter_map(|(id, data)| self.needed.contains(&data).then_some(id))
+            .collect::<Vec<_>>();
+        self.needed.extend(policies);
+        self.needed
+    }
 }
 
-fn is_retainer(node: &Node) -> bool {
+pub fn projected_cse_payloads(operators: Vec<OperatorInputs>) -> BTreeSet<NodeId> {
+    let mut candidates = CseCandidates::default();
+    for op in operators {
+        let inputs = op.inputs.into_iter().map(output_port).collect();
+        candidates.observe(
+            NodeId::Outer(op.body),
+            NodeId::Outer(op.id),
+            op.kind,
+            inputs,
+        );
+    }
+    candidates.payloads()
+}
+
+pub fn cse_payloads(circuit: &Circuit) -> Result<BTreeSet<NodeId>, Error> {
+    let mut candidates = CseCandidates::default();
+    for (body, id) in crate::stream_rewrites::body_members(circuit)? {
+        let node = circuit.node(id).expect("validated body member");
+        candidates.observe(
+            body,
+            id,
+            node.operator_kind().expect("operator"),
+            node.inputs().collect(),
+        );
+    }
+    Ok(candidates.payloads())
+}
+
+fn is_retainer(kind: Op) -> bool {
     matches!(
-        node.operator_kind(),
-        Some(
-            Op::IntegrateTraceRetainNValues
-                | Op::IntegrateTraceRetainKeys
-                | Op::IntegrateTraceRetainValues
-        )
+        kind,
+        Op::IntegrateTraceRetainNValues
+            | Op::IntegrateTraceRetainKeys
+            | Op::IntegrateTraceRetainValues
     )
 }
 
@@ -200,7 +228,7 @@ fn aliases_in_body(
     };
     let mut collectors = BTreeMap::<NodeId, Vec<(usize, Collector)>>::new();
     for (_, node) in operators() {
-        if is_retainer(node) {
+        if is_retainer(node.operator_kind().expect("validated operator")) {
             let mut inputs = node.inputs();
             if let Some(data) = inputs.next() {
                 collectors.entry(data.operator).or_default().push((
@@ -219,9 +247,11 @@ fn aliases_in_body(
     }
     let mut candidates = HashMap::new();
     for (id, node) in operators() {
-        let Some((kind, inputs)) = candidate_key(node) else {
+        let kind = node.operator_kind().expect("validated operator");
+        let inputs: Vec<_> = node.inputs().collect();
+        if !can_have_sibling(kind, &inputs) {
             continue;
-        };
+        }
         let constant = matches!(kind, Op::Constant | Op::IncrementalConstant);
         // FindCSE compares a producer's successors when it visits that producer.
         // Its special Delta visitor only compares delta inputs. A constant seen
@@ -376,7 +406,7 @@ impl CseState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     fn operator(kind: Op, id: u64, inputs: &[u64]) -> Value {
         let inputs: Vec<_> = inputs

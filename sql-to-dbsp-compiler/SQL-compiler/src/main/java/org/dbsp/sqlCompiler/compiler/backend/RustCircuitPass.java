@@ -1892,9 +1892,8 @@ public final class RustCircuitPass implements CircuitTransform {
 
     /** Populate the alias map shared with RemoveCSE for this iteration. */
     private void findCommonExpressions(DBSPCircuit circuit, CSE.FindCSE finder, long next) throws IOException {
-        var probe = this.invoke("Topology/CSE", OptimizerTopology.encode(circuit), next, EMPTY_CONTEXT);
-        var payloads = new HashSet<Long>();
-        probe.required("payloads").forEach(id -> payloads.add(id.longValue()));
+        var probe = this.invoke("CSE/Candidates", OptimizerTopology.operatorInputs(circuit), next, EMPTY_CONTEXT);
+        Set<Long> payloads = MAPPER.convertValue(probe, new TypeReference<Set<Long>>() {});
         var seen = Objects.requireNonNull(this.seenConstants);
         if (!payloads.isEmpty()) {
             var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, payloads, OptimizerTopology.Details.NONE);
@@ -2463,8 +2462,8 @@ public final class RustCircuitPass implements CircuitTransform {
                 return circuit;
             }
             if (this.deadCode != null) {
-                var mode = this.deadCode.keepAllSources ? "DeadCodeKeepSources" : "DeadCode";
-                var plan = this.invoke("Topology/" + mode, OptimizerTopology.encode(circuit), initial, state);
+                var mode = this.deadCode.keepAllSources ? "Prune/AllTables" : "Prune/UsedTables";
+                var plan = this.invoke(mode, OptimizerTopology.operatorInputs(circuit), initial, state);
                 this.deadCode.toKeep.clear();
                 this.collectKeptOperators(circuit, plan, this.deadCode.toKeep);
                 return circuit;

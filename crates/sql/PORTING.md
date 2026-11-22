@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selects common-expression candidates and traces live output ports for dead-code
+elimination from ordered graph edges. Both analyses matched Java through emission
+on 30 classic and 29 Gen-2 recursive programs, 25 smoke cases and Nexmark. On
+Nexmark, the compact CSE input reduced traffic across its 24 calls from
+1,104,939 to 423,497 bytes. Median calling-thread CPU time for the candidate
+query fell from 15.7 to 6.9 ms across 12 paired compilations.
+[Replay and CSE timings](evidence/p3-compact-operator-inputs.json)
+
 The integral-pushing pass imports closure signatures and reuses the live
 closures when it returns the edited circuit. Both invocations matched Java
 on all 1,287 classic and 8,526 Gen-2 frozen cases where this pass changed

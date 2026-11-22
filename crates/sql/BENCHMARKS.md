@@ -4,6 +4,22 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Relation waterline build, 2026-11-22
+
+After the frozen-corpus replay finished, all 69 cold pairs matched through
+classic Rust source emission, schema, dataflow and diagnostics. Each workload
+ran two warmup pairs and 21 measured pairs in alternating order on CPU 15.
+
+| Workload | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.443 | 1.759 | 1.219× |
+| Nexmark suite | 3.176 | 7.605 | 2.394× |
+| Outer join | 1.351 | 1.608 | 1.190× |
+
+Four concurrent waiting workers took 5.77 ms at p95 to cancel in isolation,
+below the approved 25 ms. The largest combined driver and JVM RSS was
+72.3 MiB. [Timing and worker measurements](evidence/p3-relation-waterlines.json)
+
 ## Column initializer build, 2026-11-22
 
 On `4f84a9cf6`, each workload ran two warmup pairs and 21 measured pairs

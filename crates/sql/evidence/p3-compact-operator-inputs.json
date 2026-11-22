@@ -1,0 +1,58 @@
+{
+  "scope": "Live Rust common-expression candidate selection and dead-code reachability from ordered operator inputs and sparse recursive exports. Detached replay compares all ordered S4 observations, final S3, schema, diagnostic and persistent-ID inputs, and emitted artifacts.",
+  "compiler_jar_sha256": "e7ecb059cfc4d4f62b5c16dda7e1b64e1d4b865bf1913c1c3151cc4608ddabe4",
+  "optimizer_library_sha256": "e01a25eafaf6e6eb9613d90851d681efe2fe8d33d935a6ec4726099d6be77c01",
+  "replays": {
+    "classic-smoke": {
+      "cases": 13,
+      "input_sha256": "a71512f00ea6e49f91dc1b78021120e6eaa9135af4f1a31d75757748ff0888b8",
+      "mismatches": 0,
+      "report_sha256": "c17cb79a67e480012e973ca1656a4bb4b8f975993cc2abb64da4d1655222f5ae",
+      "find_cse_calls": 77,
+      "find_dead_code_calls": 489
+    },
+    "gen2-smoke": {
+      "cases": 12,
+      "input_sha256": "26f705156c7a6f0a8b7d7c3bc188f3675c0fa8af4d3819724fc474327fc97dac",
+      "mismatches": 0,
+      "report_sha256": "e74afd8fa75dcb18017619177dd6ac3aa886ec3ee5ccadb79b1cbd3df2278f5c",
+      "find_cse_calls": 71,
+      "find_dead_code_calls": 449
+    },
+    "nested-classic-detached": {
+      "cases": 30,
+      "input_sha256": "77b39a13dd5d918755f1840a619062ec329afaa5910cb4c75043e8f6384195c8",
+      "mismatches": 0,
+      "report_sha256": "4c83b8842fd4359ad802f6d2387f25f3dbf47abcb2d309b6af4c4c9209f13e72",
+      "find_cse_calls": 263,
+      "find_dead_code_calls": 1384
+    },
+    "nested-gen2-detached": {
+      "cases": 29,
+      "input_sha256": "cc0c80d9eba3ef317db0738bc6ac8acc44c974f529fff87e5eec8db7613b9670",
+      "mismatches": 0,
+      "report_sha256": "89e669a20796108a2a95ed967f2930602c62fe164291980362afa707965df521",
+      "find_cse_calls": 251,
+      "find_dead_code_calls": 1336
+    },
+    "nexmark": {
+      "cases": 1,
+      "input_sha256": "00a774ded7d5607ba0fda8fb439289f9f9010fe105e8bea3b5dcb879e10d2a6d",
+      "mismatches": 0,
+      "report_sha256": "41d8091d28d3fe8961a5b818d1031a0fd0c1edd6f06983e82f3e34f81c9a809d",
+      "find_cse_calls": 24,
+      "find_dead_code_calls": 69
+    }
+  },
+  "cse_candidate_microbenchmark": {
+    "scope": "Intermediate CSE-only build, 12 fresh JVMs, 24 live FindCSE calls per Nexmark compilation. Each call compared both candidate ID lists and timed the main thread for encoding, JNI and reply parsing, alternating order by JVM. Other compiler verification shared the VM.",
+    "compiler_jar_sha256": "0f48f41389ff1c01162c14269f80c25541e4eeca17e2e4794304331977542768",
+    "library_sha256": "07334c7e7b229b918a8fe8006e7b689d85bc235e82dda07776996a6acba4d373",
+    "results_sha256": "8099243192afd1d36035e0f04b57f43c6c521847cf64438588902436d37a6f50",
+    "input_sha256": "b1ff20e921649d466f9b103f27387cdff75f3783e26c2870314ce92edd4bfe11",
+    "full_input_bytes": 1104939,
+    "compact_input_bytes": 423497,
+    "median_full_cpu_ms": 15.7417285,
+    "median_compact_cpu_ms": 6.937291
+  }
+}
