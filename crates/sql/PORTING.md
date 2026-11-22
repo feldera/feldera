@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+At both `RemoveNoops` placements, Rust selects which no-ops have no retention
+consumer. Each iteration forwards their original input ports and removes dead
+operators. The selected replay matched Java at 648 classic and 587 Gen-2
+iterations. Both full frozen populations matched through the engine artifacts.
+On Nexmark the two placements sent 624,207 bytes across JNI, compared with
+2,711,557 bytes on the preceding build, including graph construction and cleanup.
+[No-op removal replay and transfer measurements](evidence/p3-noop-bypass-topology.json)
+
 Rust orders linear aggregates after their retention waterlines and selects the
 first matching retainer in the resulting order. The JVM reconnects the selected
 live predicate and waterline. On the Nexmark suite the pass sent 150,815 bytes

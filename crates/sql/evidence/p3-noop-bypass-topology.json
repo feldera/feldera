@@ -1,0 +1,152 @@
+{
+  "source_commit": "78e5867097b0075d4697fc8f5d38b5c4dc775eb0",
+  "build": {
+    "jar_sha256": "dcbf14d0f8040693f9646b0d9071d3da8e2ff733f66c9cd7d1d6fe9200351c88",
+    "optimizer_library_sha256": "68e7b9ce80f7f4723b4945ff1071a6d8ccb4862eba223f520a7fd2e9271e172b",
+    "driver_sha256": "20f0a4bdd3518519b0533bac605b1005418afc20736474257872ab40e6fe7275",
+    "pass_kinds": 105
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "s4": {
+    "classic": {
+      "pass": "RemoveNoops",
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "69a764c4bd37c2d8cd2f868ca147a54ac44ff9daad9420e0ac6be4d14f092005",
+      "rust_stream_sha256": "f2c34a35feee6d8f37e115740ab04eaac3af3fec081f6266835cf269beee40ad",
+      "invocations": 648
+    },
+    "gen2": {
+      "pass": "RemoveNoops",
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "32b276a1e30793205117be24c5362330c2add0452052f311f0d2890ee7fa6fc6",
+      "rust_stream_sha256": "153546b8995734d59b0ca551f15d94bc95ae80a7fd7f72f38b5d335e0727a894",
+      "invocations": 587
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "4e626cb6f5ad1c15881dc7a77cc7c81dbea937bc614ceb313966a0dd6954e084"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "68a056b0784bc83c66e156291899b0679e31bf1081c629051ebc852eab42ecff",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "d84c0696d39fb2b68b0ac08c3e4833c37a9f94b115226a446d75c6ee833fa7c3",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 6.709126,
+    "largest_driver_plus_front_end_rss_bytes": 80097280
+  },
+  "maven": {
+    "tests": 122,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "jni_transfer": {
+    "workload": "nexmark-suite.sql",
+    "scope": "Request and reply bytes for all iterations of both RemoveNoops placements, including their Graph and DeadCode calls",
+    "artifact_equal_pairs": 2,
+    "baseline": {
+      "request_bytes": 2711557,
+      "reply_bytes": 306965,
+      "calls": [
+        {
+          "operation": "Topology/RemoveNoops",
+          "request_bytes": 42239,
+          "reply_bytes": 29
+        },
+        {
+          "operation": "Topology/RemoveNoops",
+          "request_bytes": 126234,
+          "reply_bytes": 28
+        },
+        {
+          "operation": "Live/RemoveNoops",
+          "request_bytes": 2543084,
+          "reply_bytes": 306908
+        }
+      ]
+    },
+    "candidate": {
+      "request_bytes": 624207,
+      "reply_bytes": 25615,
+      "calls": [
+        {
+          "operation": "Graph/Inputs",
+          "request_bytes": 4725,
+          "reply_bytes": 3793
+        },
+        {
+          "operation": "Topology/BypassNoops",
+          "request_bytes": 42239,
+          "reply_bytes": 2
+        },
+        {
+          "operation": "Topology/DeadCodeKeepSources",
+          "request_bytes": 42239,
+          "reply_bytes": 43
+        },
+        {
+          "operation": "Graph/Inputs",
+          "request_bytes": 16099,
+          "reply_bytes": 10856
+        },
+        {
+          "operation": "Topology/BypassNoops",
+          "request_bytes": 126234,
+          "reply_bytes": 37
+        },
+        {
+          "operation": "Topology/DeadCodeKeepSources",
+          "request_bytes": 125556,
+          "reply_bytes": 43
+        },
+        {
+          "operation": "Graph/Inputs",
+          "request_bytes": 16003,
+          "reply_bytes": 10796
+        },
+        {
+          "operation": "Topology/BypassNoops",
+          "request_bytes": 125556,
+          "reply_bytes": 2
+        },
+        {
+          "operation": "Topology/DeadCodeKeepSources",
+          "request_bytes": 125556,
+          "reply_bytes": 43
+        }
+      ]
+    },
+    "workload_sha256": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64"
+  }
+}
