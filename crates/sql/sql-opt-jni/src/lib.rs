@@ -851,6 +851,12 @@ fn transform(
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
     match pass {
+        "OptimizeProjections/Producer" => {
+            let classes = serde_json::from_slice::<Vec<&str>>(input)?;
+            let rules = classes.into_iter().find_map(feldera_sql_ir::OperatorKind::from_wire)
+                .map(feldera_sql_opt::ProjectionRules::for_producer).unwrap_or_default();
+            return Ok(serde_json::to_value(rules)?);
+        }
         "OptimizerOrder" => {
             let options = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::optimizer_order(options).collect::<Vec<_>>())?);

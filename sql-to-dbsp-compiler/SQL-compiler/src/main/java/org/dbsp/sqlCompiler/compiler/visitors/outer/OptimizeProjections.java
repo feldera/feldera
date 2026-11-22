@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass.ProjectionRule;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -163,6 +164,54 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         return proj.outputSize > size;
     }
 
+    private ProjectionRule producerRule(DBSPOperator source, boolean indexed, int fanout) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.projectionRule(this.compiler, source, indexed, fanout);
+
+        if (source instanceof DBSPDifferentiateOperator || source instanceof DBSPDelayOperator
+                || source instanceof DBSPNegateOperator || source instanceof DBSPNoopOperator)
+            return ProjectionRule.PUSH_THROUGH;
+        if (!indexed && (source instanceof DBSPSumOperator || source instanceof DBSPSubtractOperator
+                || source instanceof DBSPAtomicSumOperator))
+            return ProjectionRule.PROJECT_SUM;
+        if (source instanceof DBSPAntiJoinOperator || source instanceof DBSPStreamAntiJoinOperator)
+            return ProjectionRule.PROJECT_ANTI_JOIN;
+        if (fanout != 1)
+            return ProjectionRule.KEEP;
+        if (source instanceof DBSPIntegrateOperator)
+            return ProjectionRule.PUSH_THROUGH;
+        if (source instanceof DBSPMapOperator)
+            return ProjectionRule.COMPOSE_MAP;
+        if (source instanceof DBSPJoinOperator || source instanceof DBSPLeftJoinOperator
+                || source instanceof DBSPStreamJoinOperator || source instanceof DBSPStarJoinOperator)
+            return ProjectionRule.PROJECT_JOIN;
+        if (source instanceof DBSPJoinIndexOperator || source instanceof DBSPLeftJoinIndexOperator
+                || source instanceof DBSPStreamJoinIndexOperator || source instanceof DBSPStarJoinIndexOperator)
+            return ProjectionRule.PROJECT_INDEXED_JOIN;
+        if (indexed) {
+            if (source instanceof DBSPMapIndexOperator)
+                return ProjectionRule.COMPOSE_INDEX;
+            if (source instanceof DBSPStreamAggregateOperator)
+                return ProjectionRule.TRIM_AGGREGATE;
+            if (source instanceof DBSPIndexedTopKOperator)
+                return ProjectionRule.TRIM_TOP_K;
+        } else {
+            if (source instanceof DBSPJoinFilterMapOperator)
+                return ProjectionRule.PROJECT_FILTERED_JOIN;
+            if (source instanceof DBSPStarJoinFilterMapOperator)
+                return ProjectionRule.PROJECT_FILTERED_STAR;
+            if (source instanceof DBSPAsofJoinOperator)
+                return ProjectionRule.PROJECT_ASOF;
+            if (source instanceof DBSPFlatMapOperator)
+                return ProjectionRule.PROJECT_FLAT_MAP;
+            if (source instanceof DBSPDeindexOperator)
+                return ProjectionRule.PROJECT_DEINDEX;
+            if (source instanceof DBSPAggregateZeroOperator)
+                return ProjectionRule.PROJECT_AGGREGATE_ZERO;
+        }
+        return ProjectionRule.KEEP;
+    }
+
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         int inputFanout = this.getGraph().getFanout(operator.input().node());
@@ -171,8 +220,9 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             return;
         }
         OutputPort source = this.mapped(operator.input());
+        var rule = this.producerRule(source.node(), true, inputFanout);
         int size = operator.outputType().getToplevelFieldCount();
-        if (source.node().is(DBSPMapOperator.class) && this.canMergeSource(source, size)) {
+        if (rule == ProjectionRule.COMPOSE_MAP && this.canMergeSource(source, size)) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append("Map -> MapIndex")
                     .newline();
@@ -188,7 +238,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if (source.node().is(DBSPMapIndexOperator.class) && this.canMergeSource(source, size)) {
+        } else if (rule == ProjectionRule.COMPOSE_INDEX && this.canMergeSource(source, size)) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append("MapIndex -> MapIndex")
                     .newline();
@@ -209,11 +259,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     .copyAnnotations(operator).copyAnnotations(source.simpleNode());
             this.map(operator, result);
             return;
-        } else if ((source.node().is(DBSPIntegrateOperator.class)) ||
-                source.node().is(DBSPDifferentiateOperator.class) ||
-                source.node().is(DBSPDelayOperator.class) ||
-                source.node().is(DBSPNegateOperator.class) ||
-                source.node().is(DBSPNoopOperator.class)) {
+        } else if (rule == ProjectionRule.PUSH_THROUGH) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
                     .newline();
@@ -232,7 +278,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     .to(DBSPSimpleOperator.class);
             this.map(operator, result, operator != result);
             return;
-        } else if (source.node().is(DBSPStreamAggregateOperator.class)) {
+        } else if (rule == ProjectionRule.TRIM_AGGREGATE) {
             DBSPStreamAggregateOperator aggregate = source.node().to(DBSPStreamAggregateOperator.class);
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
@@ -245,7 +291,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             if (!replaced)
                 super.postorder(operator);
             return;
-        } else if (source.node().is(DBSPIndexedTopKOperator.class)) {
+        } else if (rule == ProjectionRule.TRIM_TOP_K) {
             DBSPIndexedTopKOperator topK = source.node().to(DBSPIndexedTopKOperator.class);
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
@@ -259,11 +305,12 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 super.postorder(operator);
             return;
         } else {
-            if (!this.onlyProjections || this.isProjection(operator, false)) {
-                if (source.node().is(DBSPJoinOperator.class)
-                        || source.node().is(DBSPLeftJoinOperator.class)
-                        || source.node().is(DBSPStreamJoinOperator.class)
-                        || source.node().is(DBSPStarJoinOperator.class)) {
+            // The Java visitor examines every remaining reader. Rust requests its
+            // closure only for producers that can use a join projection.
+            boolean probeJoin = !this.compiler.options.ioOptions.rustOptimizerPasses
+                    || rule == ProjectionRule.PROJECT_JOIN || rule == ProjectionRule.PROJECT_INDEXED_JOIN;
+            if (probeJoin && (!this.onlyProjections || this.isProjection(operator, false))) {
+                if (rule == ProjectionRule.PROJECT_JOIN) {
                     Logger.INSTANCE.belowLevel(this, 2)
                             .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
                             .newline();
@@ -271,10 +318,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                             this.compiler(), source.simpleNode(), operator);
                     this.map(operator, result);
                     return;
-                } else if (source.node().is(DBSPJoinIndexOperator.class)
-                        || source.node().is(DBSPLeftJoinIndexOperator.class)
-                        || source.node().is(DBSPStreamJoinIndexOperator.class)
-                        || source.node().is(DBSPStarJoinIndexOperator.class)) {
+                } else if (rule == ProjectionRule.PROJECT_INDEXED_JOIN) {
                     Logger.INSTANCE.belowLevel(this, 2)
                             .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
                             .newline();
@@ -284,7 +328,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     return;
                 }
             }
-            if ((source.node().is(DBSPAntiJoinOperator.class) || source.node().is(DBSPStreamAntiJoinOperator.class))
+            if (rule == ProjectionRule.PROJECT_ANTI_JOIN
                     && this.isProjection(operator, false)) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
@@ -587,8 +631,9 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         OutputPort source = this.mapped(operator.input());
         int inputFanout = this.getGraph().getFanout(operator.input().node());
 
+        var rule = this.producerRule(source.node(), false, inputFanout);
         int size = operator.outputType().getToplevelFieldCount();
-        if (source.node().is(DBSPJoinFilterMapOperator.class) && inputFanout == 1) {
+        if (rule == ProjectionRule.PROJECT_FILTERED_JOIN) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
@@ -606,7 +651,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if (source.node().is(DBSPStarJoinFilterMapOperator.class) && inputFanout == 1) {
+        } else if (rule == ProjectionRule.PROJECT_FILTERED_STAR) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
@@ -624,11 +669,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if ((source.node().is(DBSPStreamJoinOperator.class)
-                || source.node().is(DBSPLeftJoinOperator.class)
-                || source.node().is(DBSPJoinOperator.class)
-                || source.node().is(DBSPStarJoinOperator.class)) &&
-                inputFanout == 1) {
+        } else if (rule == ProjectionRule.PROJECT_JOIN) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
@@ -638,7 +679,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if (source.node().is(DBSPAsofJoinOperator.class) && inputFanout == 1) {
+        } else if (rule == ProjectionRule.PROJECT_ASOF) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
@@ -649,11 +690,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if ((source.node().is(DBSPJoinIndexOperator.class)
-                || source.node().is(DBSPStreamJoinIndexOperator.class)
-                || source.node().is(DBSPLeftJoinIndexOperator.class)
-                || source.node().is(DBSPStarJoinIndexOperator.class)) &&
-                        inputFanout == 1) {
+        } else if (rule == ProjectionRule.PROJECT_INDEXED_JOIN) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
@@ -663,8 +700,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if (source.node().is(DBSPFlatMapOperator.class)
-                && operator.getFunction().is(DBSPClosureExpression.class) && inputFanout == 1) {
+        } else if (rule == ProjectionRule.PROJECT_FLAT_MAP && operator.getFunction().is(DBSPClosureExpression.class)) {
             DBSPFlatmap sourceFlatmap = source.simpleNode().getFunction().as(DBSPFlatmap.class);
             var newFunction = sourceFlatmap == null ? null : this.projectUnnest(sourceFlatmap, operator.getClosureFunction());
             if (newFunction != null) {
@@ -677,7 +713,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if (source.node().is(DBSPMapOperator.class) && inputFanout == 1 &&
+        } else if (rule == ProjectionRule.COMPOSE_MAP &&
                 this.canMergeSource(source, size) &&
                 source.simpleNode().getFunction().is(DBSPClosureExpression.class)) {
             Logger.INSTANCE.belowLevel(this, 2)
@@ -693,7 +729,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 this.map(operator, result);
                 return;
             }
-        } else if (source.node().is(DBSPDeindexOperator.class) && inputFanout == 1) {
+        } else if (rule == ProjectionRule.PROJECT_DEINDEX) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
@@ -704,20 +740,11 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     new DBSPMapOperator(source.node().getRelNode(), newFunction, input);
             this.map(operator, result);
             return;
-        } else if ((source.node().is(DBSPIntegrateOperator.class) && (inputFanout == 1)) ||
-                source.node().is(DBSPDifferentiateOperator.class) ||
-                source.node().is(DBSPDelayOperator.class) ||
-                source.node().is(DBSPNegateOperator.class) ||
-                source.node().is(DBSPSumOperator.class) ||
-                source.node().is(DBSPAtomicSumOperator.class) ||
-                source.node().is(DBSPSubtractOperator.class) ||
-                source.node().is(DBSPNoopOperator.class)) {
+        } else if (rule == ProjectionRule.PUSH_THROUGH || rule == ProjectionRule.PROJECT_SUM) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            if (source.node().is(DBSPSumOperator.class)
-                    || source.node().is(DBSPSubtractOperator.class)
-                    || source.node().is(DBSPAtomicSumOperator.class)) {
+            if (rule == ProjectionRule.PROJECT_SUM) {
                 if (!this.isProjection(operator, true)) {
                     // swapping arbitrary maps with sum is not sound
                     // since it may apply operations like div by 0 to tuples that may never appear
@@ -740,7 +767,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     .to(DBSPSimpleOperator.class);
             this.map(operator, result, operator != result);
             return;
-        } else if (source.node().is(DBSPAggregateZeroOperator.class) && inputFanout == 1) {
+        } else if (rule == ProjectionRule.PROJECT_AGGREGATE_ZERO) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
@@ -761,7 +788,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             return;
         }
 
-        if (source.node().is(DBSPAntiJoinOperator.class) || source.node().is(DBSPStreamAntiJoinOperator.class)) {
+        if (rule == ProjectionRule.PROJECT_ANTI_JOIN) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();

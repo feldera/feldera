@@ -121,6 +121,8 @@ mod output_integrators;
 mod project_outputs;
 mod projection;
 pub use projection::is_map_projection;
+mod projection_rules;
+pub use projection_rules::ProjectionRules;
 mod projection_composition;
 pub use projection_composition::{compose_indexed_projection, compose_projection};
 mod propagate_constants;

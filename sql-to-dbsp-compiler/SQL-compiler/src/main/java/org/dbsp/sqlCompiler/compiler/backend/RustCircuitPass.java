@@ -362,6 +362,43 @@ public final class RustCircuitPass implements CircuitTransform {
      * A positive result is the number of iterations that exhausted the convergence limit. */
     public static native int repeat(int largestComponent, int requested, IntPredicate step);
 
+    public enum ProjectionRule {
+        KEEP, COMPOSE_MAP, COMPOSE_INDEX, PUSH_THROUGH, PROJECT_SUM, PROJECT_JOIN,
+        PROJECT_ASOF, PROJECT_INDEXED_JOIN, PROJECT_FILTERED_JOIN, PROJECT_FILTERED_STAR,
+        PROJECT_FLAT_MAP, PROJECT_DEINDEX, PROJECT_AGGREGATE_ZERO, TRIM_AGGREGATE,
+        TRIM_TOP_K, PROJECT_ANTI_JOIN
+    }
+
+    private record ProjectionRules(ProjectionRule row, ProjectionRule sharedRow, ProjectionRule index) {}
+
+    // Rules depend only on the mapped producer's class. Never cache the fanout
+    // or the producer of a particular input across optimizer iterations.
+    private static final ClassValue<ProjectionRules> PROJECTION_RULES = new ClassValue<>() {
+        @Override
+        protected ProjectionRules computeValue(Class<?> producer) {
+            try {
+                var classes = new ArrayList<String>();
+                for (Class<?> type = producer; DBSPOperator.class.isAssignableFrom(type); type = type.getSuperclass())
+                    classes.add(type.getSimpleName());
+                var reply = transformWithContext("OptimizeProjections/Producer",
+                        MAPPER.writeValueAsBytes(classes), 0, "", EMPTY_CONTEXT);
+                return MAPPER.readValue(reply, ProjectionRules.class);
+            } catch (IOException error) {
+                throw new UncheckedIOException("Could not read projection rules for " + producer.getName(), error);
+            }
+        }
+    };
+
+    /** MapIndex readers reach this point only when the original producer has one reader. */
+    public static ProjectionRule projectionRule(DBSPCompiler compiler, DBSPOperator producer, boolean indexed, int fanout) {
+        var rules = PROJECTION_RULES.get(producer.getClass());
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision("OptimizeProjections/Producer", true);
+        if (indexed)
+            return rules.index;
+        return fanout == 1 ? rules.row : rules.sharedRow;
+    }
+
     public static List<OptimizerStep> optimizerOrder(boolean outputsAreSets, boolean incrementalize) {
         try {
             byte[] options = MAPPER.writeValueAsBytes(Map.of(
