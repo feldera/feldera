@@ -33,7 +33,7 @@ pub fn ensure_expression_tree(edit: &mut CircuitEditor, root: NodeId) -> Result<
             continue;
         }
         if matches!(node.inner_kind(), Some(InnerKind::Expression(_))) && !seen.insert(id) {
-            return copy(edit, root, Parameters::KeepRoot(root), 0);
+            return copy(edit, root, Parameters::KeepRoot(root));
         }
         for (key, field) in node.fields() {
             if !matches!(key, "type" | "originalStruct") {
@@ -47,12 +47,12 @@ pub fn ensure_expression_tree(edit: &mut CircuitEditor, root: NodeId) -> Result<
 /// Each use gets a fresh expression. Parameters belong to the closure that
 /// binds them and types retain the identities chosen by their constructors.
 pub fn copy_expression(edit: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
-    copy(edit, root, Parameters::KeepAll, 0)
+    copy(edit, root, Parameters::KeepAll)
 }
 
 /// Substituting an argument into multiple sites gives each copy its own declarations.
 pub(super) fn copy_argument(edit: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
-    copy(edit, root, Parameters::Fresh, 0)
+    copy(edit, root, Parameters::Fresh)
 }
 
 #[derive(Clone, Copy)]
@@ -62,61 +62,94 @@ enum Parameters {
     Fresh,
 }
 
-fn copy(
-    edit: &mut CircuitEditor,
-    id: NodeId,
-    parameters: Parameters,
-    depth: usize,
-) -> Result<NodeId, Error> {
-    if depth > 128 {
-        return Err(Error::new("expression exceeds the circuit nesting limit"));
-    }
-    let node = edit.node(id)?;
-    let kind = match node.inner_kind() {
-        Some(InnerKind::Expression(kind)) => Some(*kind),
-        Some(InnerKind::Other(name)) if name.ends_with("Statement") => None,
-        _ => return Ok(id),
-    };
-    if matches!(kind, Some(Expr::NullLiteral | Expr::VariantNullLiteral))
-        || (kind == Some(Expr::Variant)
-            && node.data("isSqlNull").and_then(|v| v.as_bool()) == Some(true))
-    {
-        return Ok(id);
-    }
-    if node.class() == "DBSPExpressionStatement" {
-        let expression = copy(edit, node.edge("expression")?, parameters, depth + 1)?;
-        return edit.inner_at(
-            expression,
-            InnerKind::Other("DBSPExpressionStatement".into()),
-            [("expression", Field::Reference(expression))],
-        );
-    }
-    if node.class() == "DBSPLetStatement" {
-        if let Some(initializer) = node.field("initializer").and_then(Field::node_id) {
-            let variable = node
-                .data("variable")
-                .cloned()
-                .ok_or_else(|| Error::new("let statement requires a variable"))?;
-            let mutable = node
-                .data("mutable")
-                .cloned()
-                .ok_or_else(|| Error::new("let statement requires mutability"))?;
-            let initializer = copy(edit, initializer, parameters, depth + 1)?;
-            let ty = edit.node(initializer)?.edge("type")?;
-            return edit.inner_at(
-                initializer,
-                InnerKind::Other("DBSPLetStatement".into()),
-                [
-                    ("variable", Field::Data(variable)),
-                    ("mutable", Field::Data(mutable)),
-                    ("type", Field::Reference(ty)),
-                    ("initializer", Field::Reference(initializer)),
-                ],
-            );
+/// A shared child is copied separately at each use. Only ancestors are active,
+/// so two siblings can refer to the same expression without forming a cycle.
+enum CopyStep {
+    Visit(NodeId),
+    Rebuild {
+        id: NodeId,
+        kind: Option<Expr>,
+        fields: Vec<(String, Field)>,
+        first_child: usize,
+    },
+}
+
+fn copy(edit: &mut CircuitEditor, root: NodeId, parameters: Parameters) -> Result<NodeId, Error> {
+    let mut stack = vec![CopyStep::Visit(root)];
+    let mut copies = Vec::new();
+    let mut active = HashSet::new();
+    let mut children = Vec::new();
+    while let Some(step) = stack.pop() {
+        match step {
+            CopyStep::Visit(id) => {
+                let node = edit.node(id)?;
+                let kind = match node.inner_kind() {
+                    Some(InnerKind::Expression(kind)) => Some(*kind),
+                    Some(InnerKind::Other(name)) if name.ends_with("Statement") => None,
+                    _ => {
+                        copies.push(id);
+                        continue;
+                    }
+                };
+                if matches!(kind, Some(Expr::NullLiteral | Expr::VariantNullLiteral))
+                    || (kind == Some(Expr::Variant)
+                        && node.data("isSqlNull").and_then(|v| v.as_bool()) == Some(true))
+                {
+                    copies.push(id);
+                    continue;
+                }
+                if !active.insert(id) {
+                    return Err(Error::new("cycle while copying an expression"));
+                }
+                let fields = copy_fields(node, kind);
+                children.clear();
+                for (_, field) in &fields {
+                    field.collect_inner_edges(&mut children);
+                }
+                stack.push(CopyStep::Rebuild {
+                    id,
+                    kind,
+                    fields,
+                    first_child: copies.len(),
+                });
+                stack.extend(children.iter().rev().copied().map(CopyStep::Visit));
+            }
+            CopyStep::Rebuild {
+                id,
+                kind,
+                mut fields,
+                first_child,
+            } => {
+                let mut children = copies.drain(first_child..);
+                for (_, field) in &mut fields {
+                    field.map_inner_edges(&mut |_| {
+                        children
+                            .next()
+                            .ok_or_else(|| Error::new("missing copied child"))
+                    })?;
+                }
+                debug_assert!(children.next().is_none());
+                drop(children);
+                let result = finish_copy(edit, id, kind, fields, parameters)?;
+                active.remove(&id);
+                copies.push(result);
+            }
         }
     }
-    let mut fields: Vec<_> = node
-        .fields()
+    copies
+        .pop()
+        .ok_or_else(|| Error::new("missing copied expression"))
+}
+
+fn copy_fields(node: &feldera_sql_ir::Node, kind: Option<Expr>) -> Vec<(String, Field)> {
+    node.fields()
+        .filter(|(key, _)| match node.class() {
+            "DBSPExpressionStatement" => *key == "expression",
+            "DBSPLetStatement" if node.field("initializer").and_then(Field::node_id).is_some() => {
+                *key == "initializer"
+            }
+            _ => true,
+        })
         .filter(|(key, _)| !matches!(*key, "type" | "originalStruct" | "parameters"))
         .filter(|(key, _)| {
             !matches!(
@@ -128,9 +161,54 @@ fn copy(
             )
         })
         .map(|(key, field)| (key.to_owned(), field.clone()))
-        .collect();
-    for (_, field) in &mut fields {
-        field.map_inner_edges(&mut |child| copy(edit, child, parameters, depth + 1))?;
+        .collect()
+}
+
+fn finish_copy(
+    edit: &mut CircuitEditor,
+    id: NodeId,
+    kind: Option<Expr>,
+    mut fields: Vec<(String, Field)>,
+    parameters: Parameters,
+) -> Result<NodeId, Error> {
+    let node = edit.node(id)?;
+    if node.class() == "DBSPExpressionStatement" {
+        let expression = fields
+            .first()
+            .and_then(|(_, f)| f.node_id())
+            .ok_or_else(|| Error::new("expression statement requires a value"))?;
+        return edit.inner_at(
+            expression,
+            InnerKind::Other("DBSPExpressionStatement".into()),
+            [("expression", Field::Reference(expression))],
+        );
+    }
+    if node.class() == "DBSPLetStatement"
+        && node.field("initializer").and_then(Field::node_id).is_some()
+    {
+        let initializer = fields
+            .first()
+            .and_then(|(_, f)| f.node_id())
+            .ok_or_else(|| Error::new("missing let initializer"))?;
+        let variable = node
+            .data("variable")
+            .cloned()
+            .ok_or_else(|| Error::new("let statement requires a variable"))?;
+        let mutable = node
+            .data("mutable")
+            .cloned()
+            .ok_or_else(|| Error::new("let statement requires mutability"))?;
+        let ty = edit.node(initializer)?.edge("type")?;
+        return edit.inner_at(
+            initializer,
+            InnerKind::Other("DBSPLetStatement".into()),
+            [
+                ("variable", Field::Data(variable)),
+                ("mutable", Field::Data(mutable)),
+                ("type", Field::Reference(ty)),
+                ("initializer", Field::Reference(initializer)),
+            ],
+        );
     }
     if kind == Some(Expr::Closure)
         && match parameters {
@@ -222,4 +300,48 @@ fn copy(
         return Ok(copied);
     }
     rebuild_result_type(edit, copied, kind, false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_sql_ir::Circuit;
+
+    #[test]
+    fn deep_shared_operands_become_independent_trees() -> Result<(), Error> {
+        let circuit = Circuit::from_json(serde_json::json!({
+            "class": "DBSPCircuit", "id": 0, "allOperators": [], "declarations": []
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let ty = edit.bool_type(site, false)?;
+        let leaf = edit.named_variable(ty, "value")?;
+        let mut value = leaf;
+        for _ in 0..512 {
+            value = edit.make_expr(
+                site,
+                Expr::Clone,
+                ty,
+                [("expression", Field::Reference(value.into()))],
+            )?;
+        }
+        let tuple = edit.tuple_expr(site, false, &[value, value])?;
+        let copied = ensure_expression_tree(&mut edit, tuple.into())?;
+        let fields = edit.node(copied)?.edges("fields")?;
+        let (mut left, mut right, mut original) = (fields[0], fields[1], NodeId::from(value));
+        for _ in 0..512 {
+            assert_ne!(left, right);
+            assert_ne!(left, original);
+            assert_ne!(right, original);
+            left = edit.node(left)?.edge("expression")?;
+            right = edit.node(right)?.edge("expression")?;
+            original = edit.node(original)?.edge("expression")?;
+        }
+        assert_eq!(original, leaf.into());
+        assert_ne!(left, right);
+        assert_eq!(edit.expression_type(edit.expression(left)?)?, ty);
+        assert_eq!(edit.expression_type(edit.expression(right)?)?, ty);
+        assert_eq!(ensure_expression_tree(&mut edit, copied)?, copied);
+        Ok(())
+    }
 }
