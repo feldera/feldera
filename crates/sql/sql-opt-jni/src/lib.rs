@@ -688,6 +688,10 @@ fn transform(
 ) -> Result<Value, Box<dyn std::error::Error>> {
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
+    if pass == "RewriteNow/ClockSites" {
+        let calls = serde_json::from_slice(input)?;
+        return Ok(serde_json::to_value(feldera_sql_opt::temporal_clock_sites(calls))?);
+    }
     if pass == "ContainsNow" {
         let calls: Vec<(String, usize)> = serde_json::from_slice(input)?;
         return Ok(json!(calls.iter().any(|(name, arity)| {

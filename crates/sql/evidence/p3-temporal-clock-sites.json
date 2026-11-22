@@ -1,0 +1,35 @@
+{
+  "scope": "The hybrid temporal rewriter selects map and filter functions by named calls in expression visitation order. The last zero-argument clock call in each function supplies the join position. Residual predicates are checked again after decomposition.",
+  "compiler_jar_sha256": "60748d32b25e712481a57088a8a755bbb81e03a6fbde51f8aab8b7d6b99ff8de",
+  "optimizer_library_sha256": "b8dd16197a5d21db28f131c4961904c96e3d47d215e08f47b0379a6908860738",
+  "engines": {
+    "classic": {
+      "cases": 71,
+      "matched_rewrite_now_invocations": 71,
+      "input_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_stream_sha256": "a07dd17a03148544f312efea276074f7a21a95d25d293a6ed2baab0be8a40229",
+      "hybrid_stream_sha256": "d91136042075926c0183506d95f64a0ed5ac7542fbc404d57708e19feaece2a9",
+      "detached_full_trace_cases": 7,
+      "detached_report_sha256": "4f01927841d28cbddf999d9d7a35fc520f70f63294536de1698c0b07374fa778"
+    },
+    "gen2": {
+      "cases": 62,
+      "matched_rewrite_now_invocations": 62,
+      "input_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_stream_sha256": "a20040b82d4a2c6dc025885afd8c01cf5a9b3e9a25a868a30b164178692c72df",
+      "hybrid_stream_sha256": "cbc3051662faa53e86267fa45e625d0498fce97fab85212ad43ca4121afcda19",
+      "detached_full_trace_cases": 7,
+      "detached_report_sha256": "4d44cb2809c3bfcaa1ceabb8933206948e1429e5ccc2a49619ec6a0b2775ec2d"
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "directions": 2,
+      "report_sha256": "b1deb8b8f680b4e36a3d74ff05c4efda8b59c45738e60dab9f979e609c44af71"
+    },
+    "watermark": {
+      "directions": 2,
+      "report_sha256": "3fef54bb831d6c080658935bbe711fa8b2f29bbbe707d72faf2836bac2527a52"
+    }
+  }
+}

@@ -60,6 +60,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -79,6 +80,7 @@ public class RewriteNow extends CircuitCloneVisitor {
     DBSPSimpleOperator nowIndexed = null;
     @Nullable
     DBSPSimpleOperator now = null;
+    @Nullable private Map<Long, DBSPExpression> clockSites;
 
     /** Rewrites a closure of the form |t: &T| ... now() ...
      * to a closure of the form |t: &T1| ... (*t).last,
@@ -242,16 +244,23 @@ public class RewriteNow extends CircuitCloneVisitor {
                         + NOW_DOCUMENTATION.citation());
     }
 
+    @Nullable
+    private DBSPExpression clockCall(DBSPExpression function) {
+        if (this.clockSites != null)
+            return this.clockSites.get(function.getId());
+        ContainsNow cn = new ContainsNow(this.compiler(), true);
+        cn.apply(function);
+        return cn.nowExpression;
+    }
+
     @Override
     public void postorder(DBSPMapOperator operator) {
-        ContainsNow cn = new ContainsNow(this.compiler(), true);
         DBSPExpression function = operator.getFunction();
-        cn.apply(function);
-        if (cn.found()) {
+        DBSPExpression call = this.clockCall(function);
+        if (call != null) {
             OutputPort input = this.mapped(operator.input());
-            this.warnExpensive(cn.nowExpression);
-            DBSPSimpleOperator join = this.createJoin(
-                    input.simpleNode(), operator, Objects.requireNonNull(cn.nowExpression));
+            this.warnExpensive(call);
+            DBSPSimpleOperator join = this.createJoin(input.simpleNode(), operator, call);
             function = this.rewriteClockClosure(function.to(DBSPClosureExpression.class));
             DBSPSimpleOperator result = new DBSPMapOperator(
                     operator.getRelNode(), function, operator.getOutputZSetType(), join.outputPort());
@@ -520,7 +529,7 @@ public class RewriteNow extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPFilterOperator operator) {
         DBSPClosureExpression function = operator.getClosureFunction();
-        if (!ContainsNow.find(this.compiler, function)) {
+        if (this.clockCall(function) == null) {
             // Filter does not involve 'now'
             super.postorder(operator);
             return;
@@ -538,10 +547,10 @@ public class RewriteNow extends CircuitCloneVisitor {
         if (leftOver.is(NonTemporalFilter.class)) {
             // Implement leftover as a join
             DBSPExpression filterBody = leftOver.to(NonTemporalFilter.class).expression().wrapBoolIfNeeded();
-            ContainsNow cn = new ContainsNow(this.compiler(), true);
-            cn.apply(filterBody);
-            DBSPSimpleOperator join = this.createJoin(
-                    result, operator, Objects.requireNonNull(cn.nowExpression));
+            // Decomposition can combine several residual terms into a fresh expression.
+            var call = this.clockSites == null ? this.clockCall(filterBody) :
+                    RustCircuitPass.temporalClockSites(this.compiler, List.of(filterBody)).get(filterBody.getId());
+            DBSPSimpleOperator join = this.createJoin(result, operator, Objects.requireNonNull(call));
             this.warnExpensive(filterBody);
             function = this.rewriteClockClosure(filterBody.closure(function.parameters));
             DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getRelNode(), function, join.outputPort());
@@ -581,6 +590,8 @@ public class RewriteNow extends CircuitCloneVisitor {
         // after nodes that should depend on it
         // (but don't yet have an explicit edge, because they think they are calling a function).
         super.preorder(circuit);
+        this.clockSites = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.temporalClockSites(this.compiler, circuit) : null;
         DBSPType timestamp = ContainsNow.timestampType();
         CalciteRelNode node = CalciteEmptyRel.INSTANCE;
 

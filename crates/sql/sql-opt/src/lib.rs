@@ -186,7 +186,8 @@ pub use feldera_sql_expr::CastSafety;
 pub use filter_joins::filter_joins;
 pub use function_calls::{
     circuit_contains_now, connector_metadata_call, is_clock_call, is_connector_metadata,
-    nondeterministic_initializers, ConnectorMetadataCall, NondeterministicInitializer,
+    nondeterministic_initializers, temporal_clock_sites, ConnectorMetadataCall, NamedCallSite,
+    NondeterministicInitializer,
 };
 pub use gen2::{gen2_passes, remove_clones, remove_typed_boxes};
 pub use hints::{check_hints, HintDiagnostic};

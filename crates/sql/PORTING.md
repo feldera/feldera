@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selects the clock calls that require temporal map and filter rewrites.
+The last matching call supplies the join's source position, including after
+residual predicates have been combined. All 133 frozen RewriteNow invocations
+matched Java. Fourteen detached programs matched through emission, and COUNT
+and LATENESS checkpoints restored in both directions.
+[Temporal clock selection](evidence/p3-temporal-clock-sites.json)
+
 Limiter insertion preserves the live identities of unaffected operators. This
 matters when projection optimization revisits a map it already analyzed. All
 20 classic ATAN2 cases matched direct Java through ordered S4, final S3 and

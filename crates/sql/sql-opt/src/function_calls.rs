@@ -1,11 +1,14 @@
 //! Inspect named function calls in the executable part of a circuit. Table
 //! column defaults live in source metadata and have separate validation rules.
 use feldera_sql_ir::{
-    provenance::SourceRange, BodyOrder, Circuit, Error, ExpressionKind as Expr, Field, InnerKind,
-    Node, NodeId, OperatorKind,
+    BodyOrder, Circuit, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
+    OperatorKind, provenance::SourceRange,
 };
 use serde::Serialize;
-use std::{borrow::Cow, collections::HashSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashSet},
+};
 
 pub struct ConnectorMetadataCall<'a> {
     pub name: Cow<'a, str>,
@@ -53,6 +56,23 @@ pub(super) fn function_name<'a>(
 
 pub fn is_clock_call(name: &str, arity: usize) -> bool {
     arity == 0 && name.eq_ignore_ascii_case("now")
+}
+
+#[derive(serde::Deserialize)]
+pub struct NamedCallSite {
+    root: u64,
+    id: u64,
+    name: String,
+    arity: usize,
+}
+
+/// The last clock call in visitor order supplies the source position for the join.
+pub fn temporal_clock_sites(calls: Vec<NamedCallSite>) -> BTreeMap<u64, u64> {
+    calls
+        .into_iter()
+        .filter(|call| is_clock_call(&call.name, call.arity))
+        .map(|call| (call.root, call.id))
+        .collect()
 }
 
 pub(super) fn contains_now(circuit: &Circuit, roots: &[NodeId]) -> Result<bool, Error> {
@@ -247,7 +267,28 @@ pub fn nondeterministic_initializers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
+
+    #[test]
+    fn the_last_zero_argument_clock_call_supplies_each_rewrite_site() {
+        let site = |root, id, name: &str, arity| NamedCallSite {
+            root,
+            id,
+            name: name.into(),
+            arity,
+        };
+        let calls = vec![
+            site(1, 10, "now", 0),
+            site(2, 11, "NOW", 0),
+            site(1, 12, "Now", 0),
+            site(1, 13, "now", 1),
+            site(3, 14, "clock::now", 0),
+        ];
+        assert_eq!(
+            temporal_clock_sites(calls),
+            BTreeMap::from([(1, 12), (2, 11)])
+        );
+    }
 
     fn call(id: u64, name: &str) -> Value {
         json!({"class":"DBSPApplyExpression","id":id,"arguments":[],

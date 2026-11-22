@@ -838,6 +838,35 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    /** Clock calls that require a map or filter to be rewritten, keyed by its function ID. */
+    public static Map<Long, DBSPExpression> temporalClockSites(DBSPCompiler compiler, DBSPCircuit circuit) {
+        var functions = new LinkedHashMap<Long, DBSPExpression>();
+        visitOperators(circuit.allOperators, operator -> {
+            if (operator instanceof DBSPMapOperator || operator instanceof DBSPFilterOperator) {
+                var function = operator.to(DBSPSimpleOperator.class).getFunction();
+                functions.putIfAbsent(function.getId(), function);
+            }
+        });
+        return temporalClockSites(compiler, functions.values());
+    }
+
+    public static Map<Long, DBSPExpression> temporalClockSites(DBSPCompiler compiler,
+                                                               Iterable<DBSPExpression> expressions) {
+        var calls = OptimizerExpressions.callSites(compiler, expressions);
+        if (calls.sites().isEmpty())
+            return Map.of();
+        try {
+            byte[] reply = transformWithContext("RewriteNow/ClockSites", MAPPER.writeValueAsBytes(calls.sites()),
+                    0, "", EMPTY_CONTEXT);
+            Map<Long, Long> selected = MAPPER.readValue(reply, new TypeReference<>() {});
+            var sites = new HashMap<Long, DBSPExpression>();
+            selected.forEach((root, call) -> sites.put(root, Utilities.getExists(calls.expressions(), call)));
+            return sites;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid clock call sites from the Rust optimizer", error);
+        }
+    }
+
     public static Pair<DBSPClosureExpression, DBSPClosureExpression> clockJoinFunctions(
             DBSPCompiler compiler, DBSPType row, DBSPType timestamp) {
         return loweredClosurePair(invokeLowering(compiler, "RewriteNow/Join", row, DBSPTypeTuple.EMPTY, timestamp));
