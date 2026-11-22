@@ -46,16 +46,16 @@ Path prefixes used in this document:
   passed, including 232 expected runtime errors. The checkpoint and decoder
   results and the outstanding independent reviews are recorded in the
   [phase status](crates/sql/PORTING.md#local-compiler-and-phase-status).
-- 2026-11-21. The limiter-insertion build at `5cbda903a` ran 106 Rust pass
-  kinds, including 12,748 whole limiter insertions. All 17,098 frozen programs matched direct
+- 2026-11-21. The limiter-insertion build at `45ffbdba0` ran 106 Rust pass
+  kinds, including 12,971 whole limiter insertions. All 17,098 frozen programs matched direct
   Java through S3, persistent-ID inputs and emitted artifacts. The selected
   LATENESS and NOW() programs passed 2,076 runtime commands, and COUNT and
   LATENESS checkpoints restored in both directions. The last full classic
   runtime run passed all 8,256 executable cases on the filter-bound build
-  (`c5c800f7f`). On `11fefc9af`, with no concurrent compiler verification,
-  hybrid p95 was 1.215× direct Java on the array subquery, 2.191× on Nexmark
-  and 1.325× on the outer join. P3 remains opt-in. Java still runs part of the
-  optimizer, all three workloads exceeded the 1.2× ceiling, and the field-shadow
+  (`c5c800f7f`). On `45ffbdba0`, with no concurrent compiler verification,
+  hybrid p95 was 1.211× direct Java on the array subquery, 2.202× on Nexmark
+  and 1.179× on the outer join. P3 remains opt-in. Java still runs part of the
+  optimizer, the array and Nexmark workloads exceeded the 1.2× ceiling, and the field-shadow
   gate is open.
   [P3 implementation](crates/sql/PORTING.md#p3-optimizer-replay) · [Paired timings](crates/sql/BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across

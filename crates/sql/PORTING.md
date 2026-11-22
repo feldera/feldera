@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+At `45ffbdba0`, Rust also propagated waterlines through no-op, negation,
+deindex and snapshot antijoin operators. Four directed circuits exercised
+projection reconstruction with and without LATENESS. The exit graphs and
+generated-name counters matched Java in all four. Rust performed 6,492
+whole limiter insertions on classic and 6,479 on Gen-2. All 17,098 frozen
+programs matched through S3, persistent-ID inputs and engine artifacts.
+[Projection and antijoin replay, runtime and restores](evidence/p3-limiter-transfer-operators.json)
+
 At `5cbda903a`, Rust ran the entire `InsertLimiters` pass 6,484 times on
 classic and 6,264 times on Gen-2. The selector covers circuits built from
 sources, views, sinks, constants, maps, filters, HOP, flat maps and sums or

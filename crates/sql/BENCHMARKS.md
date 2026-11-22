@@ -6,7 +6,7 @@ Java p95 on representative workloads.
 
 ## Packaged mixed optimizer, 2026-11-21
 
-The opt-in compiler ran 105 Rust pass kinds. Each timing starts a fresh
+The opt-in compiler ran 106 Rust pass kinds. Each timing starts a fresh
 process and ends when it publishes the classic Rust source, UDF stubs,
 schema and dataflow. The hybrid starts one JVM and an isolated Rust worker.
 The baseline runs direct Java from the same Maven JAR. Cargo compilation of
@@ -14,14 +14,18 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.426 | 1.722 | 1.479 | 1.797 | 1.215× |
-| Nexmark suite | 3.220 | 7.195 | 3.950 | 8.653 | 2.191× |
-| Outer join | 1.343 | 1.571 | 1.418 | 1.879 | 1.325× |
+| Correlated array subquery | 1.413 | 1.705 | 1.438 | 1.740 | 1.211× |
+| Nexmark suite | 3.161 | 7.055 | 3.296 | 7.256 | 2.202× |
+| Outer join | 1.327 | 1.561 | 1.353 | 1.595 | 1.179× |
 
-The table measures the streaming expression reader at `11fefc9af` with no concurrent
-compiler verification. Each workload ran two warmup pairs and 21 measured
-pairs on CPU 15. All 69 pairs matched on diagnostics and emitted artifacts.
-All three workloads exceeded the 1.2× ceiling. A separate decoder benchmark
+The table measures the limiter projection and stream antijoin build at
+`45ffbdba0` with no concurrent compiler verification. Each workload ran two
+warmup pairs and 21 measured pairs on CPU 15. All 69 pairs matched on
+diagnostics and emitted artifacts. Only the outer join met the 1.2× ceiling.
+The preceding expression-reader build at `11fefc9af` measured 1.215×, 2.191×
+and 1.325× in workload order. [Raw pair digests and results](evidence/p3-hybrid-latency.json)
+
+A separate decoder benchmark
 replayed the 554 projection requests captured from one Nexmark compile. Across
 21 alternating pairs, median decode time for the full sequence was 53.035 ms
 with the tree reader and 25.604 ms with the streaming reader. Both readers
