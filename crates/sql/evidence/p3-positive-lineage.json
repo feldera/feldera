@@ -21,7 +21,22 @@
       "previous_java_exceptions_resolved": 62,
       "report_lines": 1666,
       "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
-      "report_sha256": "33113370cc31c7094f538bb52f80ea3049ee2ddae17c8458e9a7cd607e80ab60"
+      "report_sha256": "33113370cc31c7094f538bb52f80ea3049ee2ddae17c8458e9a7cd607e80ab60",
+      "repaired_detached_replays": {
+        "cases": 62,
+        "ordered_s4_observations": 27774,
+        "mismatches": 0,
+        "shard_receipts_sha256": {
+          "0": "5f7bb0c80c7bfced2e4e2a99b48568e8d8bdb7026da3ec31350e190b80d4c501",
+          "8": "6a4536d8af106702238f05f28ee2ce6b99eae59b51cc616ef387a0ea72a04091",
+          "16": "8af7763f27fe92e2e34b406de257707248082641734522ce8d3181d60540889c",
+          "24": "36ed47b7511a40516f167227ce6a5e56d89d361be08220b7ef2070fac4162219",
+          "32": "138b20c39864080ca1ee9f616fdcfb7572c741acb6894f1eae336028fcf7120c",
+          "40": "545e2a6de15eb554bde8b2373acd20911c2f2c99e998d8f65a91391db959d2ef",
+          "48": "923a8922068ffefc048e402532406a622e4201eb6fdbcf5004fa912c8eab39bd",
+          "56": "6c1901b7b4869253e0a6fe5b4c5210b14780b0577541a7fa2ebd9b1614ee47e5"
+        }
+      }
     },
     "gen2": {
       "programs": 8527,
@@ -29,7 +44,22 @@
       "previous_java_exceptions_resolved": 62,
       "report_lines": 1645,
       "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
-      "report_sha256": "f80a4db34063b65722454dcee99c5058898f78d9f53aa69e5074ca959654394a"
+      "report_sha256": "f80a4db34063b65722454dcee99c5058898f78d9f53aa69e5074ca959654394a",
+      "repaired_detached_replays": {
+        "cases": 62,
+        "ordered_s4_observations": 27990,
+        "mismatches": 0,
+        "shard_receipts_sha256": {
+          "0": "fa99b569e9725d81b93efced2a5c4e2fdece8963d17d3fc54052ce6346d0ff5c",
+          "8": "10a1a037682e647608a89d4c1e1f753a66ff9a934672bd99c0022345bda7741b",
+          "16": "09a38b9570c0809cb7c7c0a8a421ba6df03ee58d650dc66a3d8910a61fe9bbeb",
+          "24": "4abd13869a959233ce4a7cf203a03bceb0cab54218fb17191e72b95327abf69c",
+          "32": "f673f1317db88bc797082551a485e3fc096a78e58f670d307de453a1440229d9",
+          "40": "708a59d963ae2bd251773aca7bc3e600174a2ca6e1d220656fed6d70583bd023",
+          "48": "49e9b9944ddebfc3dd86f765cbc03970869ad61ed51540de1e8f6ef1c150b96d",
+          "56": "dcef01ea225e18ec5586927a2523546f587d1c51f3c5a74860ace46797879df1"
+        }
+      }
     }
   }
 }

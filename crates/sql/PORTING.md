@@ -548,8 +548,11 @@ With `--correlatedColumns`, Rust traces comparisons to their source columns and
 reports columns that joins equate. Both compilers now preserve the input columns
 when a Positive operator changes row weights. All 8,571 classic and 8,527 Gen-2
 reports completed in Rust and matched Java on stdout, including the 62 cases per
-engine that previously failed. The directed EXCEPT ALL regression checks the
-reported join keys. [Corrected baseline](evidence/p3-positive-lineage.json) ·
+engine that previously failed. With the report enabled, all 124 repaired cases
+also matched direct Java through detached compilation and artifact emission,
+including 27,774 ordered optimizer observations on classic and 27,990 on Gen-2.
+The directed EXCEPT ALL regression checks the reported join keys.
+[Corrected baseline](evidence/p3-positive-lineage.json) ·
 [Upstream fix](https://github.com/feldera/feldera/pull/8044)
 
 With the report enabled on the earlier build, all 16 selected detached
