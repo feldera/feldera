@@ -102,6 +102,8 @@ public class IndentStream implements IIndentStream {
 
     @Override
     public IIndentStream increase() {
+        if (this.amount == 0)
+            return this;
         this.spaces += Math.max(this.amount, 0);
         if (this.indentStringCache.containsKey(this.spaces)) {
             this.indentString = this.indentStringCache.get(this.spaces);
@@ -115,6 +117,8 @@ public class IndentStream implements IIndentStream {
 
     @Override
     public IIndentStream decrease() {
+        if (this.amount == 0)
+            return this;
         this.spaces -= Math.max(this.amount, 0);
         if (this.spaces < 0)
             throw new RuntimeException("Negative indent");

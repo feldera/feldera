@@ -69,6 +69,13 @@ workload order, with concurrent corpus verification.
 The EMIT FINAL window build at `88ee907de` measured 1.223×, 2.306× and 1.118×
 in workload order. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
 
+Skipping indentation work for compact JSON and writing fixed punctuation directly
+reduced mean thread CPU time from 17.08 to 14.42 ms for two Nexmark optimizer
+snapshots. Both writers produced the original bytes. Across 31 alternating
+pairs, the 95% bootstrap interval for the candidate-to-baseline CPU ratio was
+0.822–0.866. This timing covers serialization through UTF-8 encoding.
+[Writer trials and detached replay](evidence/p3-compact-json-writer.json)
+
 A chain-topology run at `72183b58e` overlapped ASOF corpus and runtime verification.
 All 69 pairs agreed on artifacts and diagnostics. Direct/hybrid p95 was
 6.752/12.263 s on the array subquery, 22.529/46.318 s on Nexmark and

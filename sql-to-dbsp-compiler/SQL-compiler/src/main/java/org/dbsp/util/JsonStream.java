@@ -90,7 +90,7 @@ public class JsonStream {
     @SuppressWarnings("UnusedReturnValue")
     public JsonStream appendNull() {
         this.value();
-        this.stream.append("null");
+        this.stream.appendFast("null");
         return this;
     }
 
@@ -105,7 +105,7 @@ public class JsonStream {
         Context last = Utilities.last(this.context);
         if (last.is(InArray.class)) {
             if (last.index != 0) {
-                this.stream.append(",").newline();
+                this.stream.appendFast(",").newline();
             } else {
                 this.stream.increase();
             }
@@ -148,7 +148,7 @@ public class JsonStream {
         if (io.index == 0)
             this.stream.increase();
         else
-            this.stream.append(",");
+            this.stream.appendFast(",");
         this.writeLabel(label);
         return this;
     }
@@ -160,7 +160,7 @@ public class JsonStream {
     public void beginArray() {
         this.value();
         this.context.add(new InArray());
-        this.stream.append("[");
+        this.stream.appendFast("[");
     }
 
     public JsonStream endArray() {
@@ -168,14 +168,14 @@ public class JsonStream {
         Utilities.enforce(last.is(InArray.class));
         if (last.index != 0)
             this.stream.newline().decrease();
-        this.stream.append("]");
+        this.stream.appendFast("]");
         return this;
     }
 
     public JsonStream beginObject() {
         this.value();
         this.context.add(new InObject());
-        this.stream.append("{");
+        this.stream.appendFast("{");
         return this;
     }
 
@@ -184,7 +184,7 @@ public class JsonStream {
         Utilities.enforce(last.is(InObject.class));
         if (last.index != 0)
             this.stream.newline().decrease();
-        this.stream.append("}");
+        this.stream.appendFast("}");
     }
 
     @Override

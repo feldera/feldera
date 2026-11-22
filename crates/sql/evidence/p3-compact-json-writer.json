@@ -1,0 +1,28 @@
+{
+  "inputs": {
+    "001-OptimizeDistinctVisitor.json": "7600fdc770075c00e5abdd8b9174ab6f4ca34abf6c9e1e720165563cfae0d858",
+    "021-SimplifyWaterline.json": "01cf57d7b3cf95085da5e488ba411034c2c2e9c49afb90a42d73f9f079fa75e0"
+  },
+  "pairs": 31,
+  "mean_cpu_ms": {
+    "baseline": 17.083588419354836,
+    "candidate": 14.415265096774194
+  },
+  "paired_mean_cpu_ratio": 0.8438077962849088,
+  "bootstrap_95": [
+    0.8215814302257907,
+    0.8660139920164065
+  ],
+  "scope": "Serialize two captured Nexmark token streams to UTF-8. Checked byte equality before timing. Alternating pinned JVMs, thread CPU time, 31 measured pairs.",
+  "pairs_sha256": "f6db7dd0439fadbac814fc3a5fbd645dc304e4005483554350f3492e2150ff6d",
+  "compiler_jar_sha256": "83d6c15fce6c39a472c331a4f3753cec336732067f7f3516c8e0afd8d06730ae",
+  "optimizer_library_sha256": "34ec8c707a5559970bd6c1cd678d48a3748b2984d46fdc7bfe25dbc954c31cd7",
+  "classic": {
+    "detached_cases": 13,
+    "report_sha256": "dff854ba6c8448ca1c9d21f4ff3b66ab633495121f32bd0c7f4077a80bcafcc2"
+  },
+  "gen2": {
+    "detached_cases": 12,
+    "report_sha256": "03e5db8cdc358b4fa53d1479bcdad750c92599460eb8bb2d6b92a7fe0547643e"
+  }
+}
