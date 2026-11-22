@@ -1,0 +1,79 @@
+{
+  "source_commit": "037db9e7b5fc421b88bfc07578ebc82395e488c9",
+  "build": {
+    "jar_sha256": "3db337cf7bc570296ad363a2320c1444f2093f374422ce9a9635defbc97760b5",
+    "optimizer_library_sha256": "37afc6fa832b65b2d9fbd8cebecbf9faaf89de6c240af66c894c2e9ea4a4f641",
+    "driver_sha256": "b05ee37930d128fd4bd971c622287eb2fc4ce8867f2e410e9755c8a1d7a1a53f",
+    "pass_kinds": 105
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "s4": {
+    "classic": {
+      "pass": "MonotoneAnalyzer",
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "394084a76fd20b7cfdcbe7ef54b3cfe8b21f22b36f8fcfefb276a39bb6b194e7",
+      "rust_stream_sha256": "e4011b4091684f75d56146aa582b822d768a195895d47a2461d877c583b5a535"
+    },
+    "gen2": {
+      "pass": "MonotoneAnalyzer",
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "12b2c06d99729cabe4a32e0989378a73a1a21a0181a6f5a5daf9b4a3bba2d167",
+      "rust_stream_sha256": "7e3a64a6641964fbcf6f280ca83945a7e83ec723ef637738e1ef32b1d5846563"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "e3789295a4083041b38772dbe1ffc47a230a250bbc5aab4d464fe5c3f3827831"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "9e164088aaad2493037cf213d881bed0f63821239c7831403b133f5127f058de",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "d763be749479c0abdd58c5bc71c3644d08210c176275b22d3b9786b685a6ccad",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 8.193636,
+    "largest_driver_plus_front_end_rss_bytes": 80076800
+  },
+  "maven": {
+    "tests": 122,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "sort_key_matrix": {
+    "encoding_cases": 88,
+    "encoding_without_bound": 55,
+    "decoding_cases": 88,
+    "matched_expression_graphs": 121,
+    "source_sha256": "024d871773cd4aaf8ff03c913c014ce98968063d8b649e1271258370ee418676"
+  }
+}

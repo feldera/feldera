@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust derives lower bounds for the unsigned sort keys used by rolling windows.
+The directed matrix covered 88 encodings and 88 decodings across integer and
+temporal types, sort direction, nullability and null placement. All 55 cases
+without an encoding bound agreed with Java, as did the 121 expression graphs
+for cases with a bound. Both frozen engine populations and the 550 selected
+monotonicity placements matched. Four-worker cancellation p95 was 8.19 ms in
+isolation. [Sort-key replay and runtime evidence](evidence/p3-sort-key-waterline.json)
+
 Rust computes the UNNEST waterline before applying the output shuffle. Each
 copied input column keeps its bound. Array elements, map keys and values,
 postprocessing results and ordinals receive unknown bounds of their own types.
