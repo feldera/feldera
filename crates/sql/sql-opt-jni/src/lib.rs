@@ -1,6 +1,7 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
 mod fragment;
+mod delta_expansion;
 mod shared_indexes;
 mod star_join;
 mod temporal;
@@ -779,6 +780,9 @@ fn transform(
     let pass = live.unwrap_or(pass);
     match pass {
         "ExpandStreamAggregates/List" => return expand_stream_aggregate(input, state, next),
+        "DeltaExpansion/Distinct" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Distinct, input, state, next),
+        "DeltaExpansion/Positive" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Positive, input, state, next),
+        "DeltaExpansion/Aggregate" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Aggregate, input, state, next),
         "RewriteNow/BuiltinClock" => return temporal::builtin_clock(input, next),
         "RewriteNow/TableClock" => return temporal::table_clock(input, next),
         "RewriteNow/Filter" => return temporal::filter(input, state, next),

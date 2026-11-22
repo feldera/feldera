@@ -462,6 +462,11 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust expands aggregates, DISTINCT, and positive weights into their delta graphs.
+All 550 selected pass comparisons and 16 detached compilations matched Java.
+COUNT and LATENESS checkpoints restored in both directions.
+[Unary delta expansion results](evidence/p3-unary-delta-expansion.json)
+
 Rust supplies the ordered terms of the binary join derivative, including
 the null-padded term for a left join and the filter on each term of a fused
 join. The hybrid compiler binds those terms to the original ports and keeps

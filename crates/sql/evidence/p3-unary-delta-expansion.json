@@ -1,0 +1,51 @@
+{
+  "base_commit": "33e5184df",
+  "scope": "Rust constructs integral, binary distinct, primitive aggregate, and upsert feedback operators for delta analysis. Java binds their live ports and passes the correspondence to limiter insertion.",
+  "build": {
+    "bin/libfeldera_sql_opt_jni.so": "408cfb58aa05ea256ec6f718cbca566216058b7081f3d2179af148987a495166",
+    "maven/sql-compiler.jar": "7558e399d478dea1b7442d8f11c6326d08237fd4951eeeb9cb59feef8b509d86",
+    "maven/tests.jar": "e915ac01a7a539899adf7fe7837f43e227cc5cdd682f6b4dff7d4b03e1061502"
+  },
+  "rust_tests": 125,
+  "maven_tests": 99,
+  "engines": {
+    "classic": {
+      "comparison": "DeltaExpandOperators matched at 291 invocations across 291 cases",
+      "detached_programs": 8,
+      "receipt_sha256": "c008107b8d17275b2a73eb560128b480ab7768a139f87db248234fd1e88c13d3"
+    },
+    "gen2": {
+      "comparison": "DeltaExpandOperators matched at 259 invocations across 259 cases",
+      "detached_programs": 8,
+      "receipt_sha256": "90651c225dd1bb29c7e18e7aaa81cb0c2d4153c85b2c6ed9e3da2e7e114e82ec"
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "directions": [
+        [
+          "java",
+          "hybrid"
+        ],
+        [
+          "hybrid",
+          "java"
+        ]
+      ],
+      "receipt_sha256": "01211559c1ed993b78377dd8cadad8da0dd33c9df46b65629cd816a9f4b2e8fe"
+    },
+    "watermark": {
+      "directions": [
+        [
+          "java",
+          "hybrid"
+        ],
+        [
+          "hybrid",
+          "java"
+        ]
+      ],
+      "receipt_sha256": "4936ff9df80e7eb1f05b0ca592761976477c86044cc07a3a30615dff4a3ef538"
+    }
+  }
+}

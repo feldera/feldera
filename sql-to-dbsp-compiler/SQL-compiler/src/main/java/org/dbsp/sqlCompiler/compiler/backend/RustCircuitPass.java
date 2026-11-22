@@ -126,6 +126,15 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Lineage;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.RustDeltaExpandOperators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateDeltaExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctDeltaExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorDeltaExpansion;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -522,6 +531,40 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public record BinaryJoin(int left, int right, DBSPTypeIndexedZSet type, DBSPClosureExpression function) {}
     public record StarJoinTerm(List<BinaryJoin> joins, DBSPClosureExpression projection) {}
+
+    public record ExpandedUnaryDelta(List<DBSPSimpleOperator> operators, DBSPSimpleOperator output,
+                                     OperatorDeltaExpansion correspondence) {}
+
+    public static ExpandedUnaryDelta unaryDelta(DBSPCompiler compiler, DBSPUnaryOperator original, OutputPort input) {
+        var operands = new ArrayList<IDBSPInnerNode>();
+        operands.add(input.outputType());
+        String pass;
+        if (original instanceof DBSPAggregateOperator) {
+            pass = "DeltaExpansion/Aggregate";
+            operands.add(original.outputType);
+            if (original.function != null)
+                operands.add(original.function);
+        } else {
+            pass = original instanceof DBSPPositiveOperator ? "DeltaExpansion/Positive" : "DeltaExpansion/Distinct";
+        }
+        var site = expressionSite(original.getRelNode());
+        site.put("input_port", input.outputNumber);
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site), operands.toArray(IDBSPInnerNode[]::new));
+            var decoder = expressionDecoder(reply.writer);
+            var operators = decodeOperatorFragment(decoder, reply, op -> original.getRelNode(), input.node());
+            var integral = decoder.outer.lookup(reply.value.required("integral").longValue(), DBSPIntegrateOperator.class);
+            var output = decoder.outer.lookup(reply.value.required("output").longValue(), DBSPSimpleOperator.class);
+            var aggregate = reply.value.get("aggregate");
+            var correspondence = aggregate == null
+                    ? new DistinctDeltaExpansion(integral, output.to(DBSPBinaryDistinctOperator.class))
+                    : new AggregateDeltaExpansion(integral, decoder.outer.lookup(aggregate.longValue(), DBSPPrimitiveAggregateOperator.class),
+                            output.to(DBSPUpsertFeedbackOperator.class));
+            return new ExpandedUnaryDelta(operators, output, correspondence);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode unary delta inputs", error);
+        }
+    }
 
     public static Map<RustDeltaExpandOperators.JoinForm, List<RustDeltaExpandOperators.Step>> deltaJoinFormulas() {
         try {

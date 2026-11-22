@@ -1,6 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.expansion;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -47,6 +51,28 @@ public final class RustDeltaExpandOperators extends DeltaExpandOperators {
     @Override
     public String getName() {
         return "DeltaExpandOperators";
+    }
+
+    private void expandUnary(DBSPUnaryOperator original) {
+        var expanded = RustCircuitPass.unaryDelta(this.compiler, original, this.mapped(original.input()));
+        expanded.operators().forEach(this::addOperator);
+        this.map(original, expanded.output(), false);
+        this.addExpansion(original, expanded.correspondence());
+    }
+
+    @Override
+    public void postorder(DBSPAggregateOperator operator) {
+        this.expandUnary(operator);
+    }
+
+    @Override
+    public void postorder(DBSPDistinctOperator operator) {
+        this.expandUnary(operator);
+    }
+
+    @Override
+    public void postorder(DBSPPositiveOperator operator) {
+        this.expandUnary(operator);
     }
 
     @Override
