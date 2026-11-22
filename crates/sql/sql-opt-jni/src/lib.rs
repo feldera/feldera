@@ -328,6 +328,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             shape: feldera_sql_opt::OutputShape,
             lossless: bool,
             keys: Option<Vec<feldera_sql_opt::KeyColumns>>,
+            projection: Option<feldera_sql_opt::KeyProjection>,
         }
         let request: Request = serde_json::from_slice(state)?;
         let edit = CircuitEditor::new(arena);
@@ -342,7 +343,12 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let copies = feldera_sql_opt::column_copies(&edit, *closure, &request.shape, request.lossless)?;
         if pass == "KeyAnalysis/OutputColumns" {
             let groups = feldera_sql_opt::equal_computations(&edit, *closure, &request.shape)?;
-            return Ok(json!({"copies": copies, "groups": groups}));
+            let keys = match (request.projection, request.keys) {
+                (Some(projection), Some(keys)) => copies.as_ref().map(|copies| projection.keys(&keys, copies)),
+                (None, None) => None,
+                _ => return Err("column projection requires a row layout and input keys".into()),
+            };
+            return Ok(json!({"copies": copies, "groups": groups, "keys": keys}));
         }
         return Ok(serde_json::to_value(copies)?);
     }

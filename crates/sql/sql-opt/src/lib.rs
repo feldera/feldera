@@ -102,8 +102,8 @@ pub use input_fields::{input_field_uses, input_projections, map_field_dependenci
 mod integrate;
 mod lineage;
 pub use lineage::{correlated_columns, column_copies, equal_computations, fixed_columns, Column, OutputShape};
-mod join_keys;
-pub use join_keys::{JoinKeys, KeyColumns, filter_keys};
+mod collection_keys;
+pub use collection_keys::{JoinKeys, KeyColumns, KeyProjection, filter_keys};
 mod join_filter_map;
 pub use join_filter_map::lower_join_filter_map;
 mod left_joins;

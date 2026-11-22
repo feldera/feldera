@@ -2498,35 +2498,56 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static List<KeyColumnCopy> columnCopies(DBSPCompiler compiler, DBSPClosureExpression closure,
                                                    CollectionShape shape, boolean lossless) {
-        return analyzeKeyClosure(compiler, "KeyAnalysis/ColumnCopies", closure, shape, lossless, null, new TypeReference<>() {});
+        return analyzeKeyClosure(compiler, "KeyAnalysis/ColumnCopies", closure, shape, lossless,
+                null, null, new TypeReference<>() {});
     }
 
-    /** Independent answers for column copies and repeated computations in the same closure. */
-    public record OutputColumns(@Nullable List<KeyColumnCopy> copies, @Nullable List<List<Column>> groups) {}
+    public enum KeyProjection { Row, Ranked }
+
+    /** Analyses of one closure can succeed independently. Projected keys require known column copies. */
+    public record OutputColumns(@Nullable List<KeyColumnCopy> copies, @Nullable List<List<Column>> groups,
+                                @Nullable List<KeyColumns> keys) {}
 
     public static OutputColumns outputColumns(DBSPCompiler compiler, DBSPClosureExpression closure,
                                               CollectionShape shape, boolean lossless) {
-        return analyzeKeyClosure(compiler, "KeyAnalysis/OutputColumns", closure, shape, lossless, null, new TypeReference<>() {});
+        return outputColumns(compiler, closure, shape, lossless, null, null);
+    }
+
+    public static OutputColumns outputColumns(DBSPCompiler compiler, DBSPClosureExpression closure,
+                                              CollectionShape shape, boolean lossless,
+                                              @Nullable KeyProjection projection, @Nullable List<KeyColumns> keys) {
+        OutputColumns result = analyzeKeyClosure(compiler, "KeyAnalysis/OutputColumns", closure, shape, lossless,
+                projection, keys, new TypeReference<>() {});
+        if (projection != null && compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision("KeyAnalysis/" + projection, result.keys() != null);
+        return result;
     }
 
     @Nullable
     public static Set<Column> fixedColumns(DBSPCompiler compiler, DBSPClosureExpression closure,
                                            CollectionShape shape, boolean lossless) {
-        return analyzeKeyClosure(compiler, "KeyAnalysis/FixedColumns", closure, shape, lossless, null, new TypeReference<>() {});
+        return analyzeKeyClosure(compiler, "KeyAnalysis/FixedColumns", closure, shape, lossless,
+                null, null, new TypeReference<>() {});
     }
 
     @Nullable
     public static List<KeyColumns> filterKeys(DBSPCompiler compiler, DBSPClosureExpression closure,
                                               CollectionShape shape, boolean lossless, List<KeyColumns> keys) {
-        return analyzeKeyClosure(compiler, "KeyAnalysis/FilterKeys", closure, shape, lossless, keys, new TypeReference<>() {});
+        List<KeyColumns> result = analyzeKeyClosure(compiler, "KeyAnalysis/FilterKeys", closure, shape, lossless,
+                null, keys, new TypeReference<>() {});
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision("KeyAnalysis/FilterKeys", result != null);
+        return result;
     }
 
     @Nullable
     private static <T> T analyzeKeyClosure(DBSPCompiler compiler, String pass, DBSPClosureExpression closure,
-                                           CollectionShape shape, boolean lossless, @Nullable List<KeyColumns> keys,
-                                           TypeReference<T> type) {
-        record Request(int width, @Nullable Integer indexFields, boolean lossless, @Nullable List<KeyColumns> keys) {}
-        var request = new Request(shape.width(), shape instanceof IndexedShape i ? i.indexFields() : null, lossless, keys);
+                                           CollectionShape shape, boolean lossless, @Nullable KeyProjection projection,
+                                           @Nullable List<KeyColumns> keys, TypeReference<T> type) {
+        record Request(int width, @Nullable Integer indexFields, boolean lossless,
+                       @Nullable KeyProjection projection, @Nullable List<KeyColumns> keys) {}
+        var request = new Request(shape.width(), shape instanceof IndexedShape i ? i.indexFields() : null, lossless,
+                projection, keys);
         var json = JsonStream.compactCircuit();
         json.beginArray();
         closure.accept(new ToJsonInnerVisitor(compiler, json, 0));

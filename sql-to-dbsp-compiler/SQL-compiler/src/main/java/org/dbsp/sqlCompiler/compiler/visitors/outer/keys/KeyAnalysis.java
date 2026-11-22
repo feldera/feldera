@@ -309,18 +309,30 @@ public class KeyAnalysis extends CircuitVisitor {
         return ColumnEquivalence.of(groups);
     }
 
-    record ClosureColumns(Provenance provenance, ColumnEquivalence equivalence) {}
+    record ClosureColumns(Provenance provenance, ColumnEquivalence equivalence, @Nullable Keys projectedKeys) {
+        Keys mapKeys(Keys input, ColumnCopyTransform transform) {
+            return this.projectedKeys != null ? this.projectedKeys : input.map(transform);
+        }
+    }
 
     /** Inspect a closure once for both analyses. A comparison that needs a
      * specialized Java equivalence rule can still use the Rust column copies. */
     ClosureColumns outputColumns(CollectionShape shape, DBSPClosureExpression closure) {
+        return this.outputColumns(shape, closure, null, null);
+    }
+
+    private ClosureColumns outputColumns(CollectionShape shape, DBSPClosureExpression closure,
+                                         @Nullable RustCircuitPass.KeyProjection projection, @Nullable Keys input) {
         var nativeColumns = this.compiler().options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.outputColumns(this.compiler(), closure, shape, this.losslessCasts) : null;
+                ? RustCircuitPass.outputColumns(this.compiler(), closure, shape, this.losslessCasts,
+                        projection, input == null ? null : input.keys) : null;
         Provenance provenance = nativeColumns != null && nativeColumns.copies() != null
                 ? fromCopies(nativeColumns.copies()) : this.referenceProvenance(shape, closure);
         ColumnEquivalence computations = nativeColumns != null && nativeColumns.groups() != null
                 ? ColumnEquivalence.of(nativeColumns.groups()) : equalComputations(shape, closure);
-        return new ClosureColumns(provenance, provenance.equivalence().merge(computations));
+        Keys projected = nativeColumns != null && nativeColumns.keys() != null
+                ? Keys.fromMinimized(nativeColumns.keys()) : null;
+        return new ClosureColumns(provenance, provenance.equivalence().merge(computations), projected);
     }
 
     /** Record the keys of an operator's output, no two columns of which hold the same data. */
@@ -386,10 +398,11 @@ public class KeyAnalysis extends CircuitVisitor {
         CollectionShape output = operator.outputPort().getShape();
         if (input == null || output == null)
             return;
-        var columns = this.outputColumns(output, closure);
+        Keys inputKeys = this.getKeys(operator.input());
+        var columns = this.outputColumns(output, closure, RustCircuitPass.KeyProjection.Row, inputKeys);
         Provenance provenance = columns.provenance();
         ColumnCopyTransform transform = column -> provenance.columnsReading(Provenance.Source.reading(column));
-        Keys keys = this.getKeys(operator.input()).map(transform);
+        Keys keys = columns.mapKeys(inputKeys, transform);
         ColumnEquivalence inputEquivalence = this.getEquivalence(operator.input()).after(transform);
         ColumnEquivalence equivalence = columns.equivalence().merge(inputEquivalence);
         this.set(operator, keys, equivalence);
@@ -667,7 +680,8 @@ public class KeyAnalysis extends CircuitVisitor {
             return;
         // The producer computes the value tuple from (rank, input value)
         CollectionShape produced = new IndexedShape(0, shape.valueFields());
-        var columns = this.outputColumns(produced, node.outputProducer);
+        Keys inputKeys = this.getKeys(node.input());
+        var columns = this.outputColumns(produced, node.outputProducer, RustCircuitPass.KeyProjection.Ranked, inputKeys);
         Provenance provenance = columns.provenance();
         // The operator keeps the index; a value column becomes what the producer copies it to
         ColumnCopyTransform transform = column -> column.part() == Part.INDEX ?
@@ -676,7 +690,7 @@ public class KeyAnalysis extends CircuitVisitor {
         ColumnEquivalence inputEquivalence = this.getEquivalence(node.input()).after(transform);
         ColumnEquivalence equivalence =
                 columns.equivalence().merge(inputEquivalence);
-        Keys result = this.getKeys(node.input()).map(transform);
+        Keys result = columns.mapKeys(inputKeys, transform);
         boolean rowNumber = node.numbering == DBSPIndexedTopKOperator.Numbering.ROW_NUMBER;
         boolean limitOne = node.limit.is(DBSPUSizeLiteral.class) &&
                 node.limit.to(DBSPUSizeLiteral.class).value.equals(BigInteger.ONE);

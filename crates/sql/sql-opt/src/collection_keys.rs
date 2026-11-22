@@ -1,5 +1,5 @@
-//! Derive collection keys for filters and joins. Multiple columns can name
-//! the same value of a key.
+//! Derive keys through filters, projections and joins. Multiple columns can
+//! name the same value of a key.
 use crate::lineage::{Column, ColumnCopy, Part};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,36 +21,83 @@ impl KeyColumns {
             .all(|set| set.columns.iter().any(|c| c.part == Part::Index))
     }
 
-    fn project(
-        &self,
+    fn project(&self, mut copy_to: impl FnMut(Column, &mut BTreeSet<Column>)) -> Option<Self> {
+        let mut sets = BTreeSet::new();
+        for set in &self.sets {
+            let mut columns = BTreeSet::new();
+            for &alias in &set.columns {
+                copy_to(alias, &mut columns);
+            }
+            if columns.is_empty() {
+                return None;
+            }
+            sets.insert(EquivalentColumns { columns });
+        }
+        Some(Self { sets })
+    }
+}
+
+/// The join closure receives a shared index followed by the value of each input.
+/// A ranked output keeps the index and computes new value fields from parameter one.
+#[derive(Clone, Copy, Deserialize)]
+pub enum KeyProjection {
+    Row,
+    Ranked,
+    #[serde(skip)]
+    Join {
         value_parameter: usize,
-        copies: &BTreeMap<(usize, Column), BTreeSet<Column>>,
-    ) -> Option<Self> {
-        let sets = self
-            .sets
-            .iter()
-            .map(|set| {
-                let mut output = BTreeSet::new();
-                for column in &set.columns {
-                    // Parameter zero is the shared join index. Each other
-                    // parameter supplies the value tuple of one input.
-                    let parameter = if column.part == Part::Index {
+    },
+}
+
+type Copies = BTreeMap<(usize, Column), BTreeSet<Column>>;
+
+fn copies_by_source(copies: &[ColumnCopy]) -> Copies {
+    let mut result = Copies::new();
+    for copy in copies {
+        result
+            .entry((copy.parameter, copy.source))
+            .or_default()
+            .insert(copy.output);
+    }
+    result
+}
+
+impl KeyProjection {
+    fn map(self, keys: &[KeyColumns], copies: &Copies) -> Vec<KeyColumns> {
+        let copy_to = |column: Column, output: &mut BTreeSet<Column>| {
+            let field = Column {
+                part: Part::None,
+                field: column.field,
+            };
+            let source = match self {
+                Self::Row => (0, column),
+                Self::Ranked if column.part == Part::Index => {
+                    output.insert(column);
+                    return;
+                }
+                Self::Ranked => (1, field),
+                Self::Join { value_parameter } => (
+                    if column.part == Part::Index {
                         0
                     } else {
                         value_parameter
-                    };
-                    let source = Column {
-                        part: Part::None,
-                        field: column.field,
-                    };
-                    if let Some(columns) = copies.get(&(parameter, source)) {
-                        output.extend(columns);
-                    }
-                }
-                (!output.is_empty()).then_some(EquivalentColumns { columns: output })
-            })
-            .collect::<Option<_>>()?;
-        Some(Self { sets })
+                    },
+                    field,
+                ),
+            };
+            if let Some(columns) = copies.get(&source) {
+                output.extend(columns);
+            }
+        };
+        minimal(keys.iter().filter_map(|key| key.project(copy_to)).collect())
+    }
+
+    /// Keep keys for which every value reaches at least one output column.
+    pub fn keys(self, input: &[KeyColumns], copies: &[ColumnCopy]) -> Vec<KeyColumns> {
+        if input.is_empty() {
+            return Vec::new();
+        }
+        self.map(input, &copies_by_source(copies))
     }
 }
 
@@ -97,13 +144,7 @@ pub struct JoinKeys {
 
 impl JoinKeys {
     pub fn derive(self) -> Vec<KeyColumns> {
-        let mut copies: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
-        for copy in self.copies {
-            copies
-                .entry((copy.parameter, copy.source))
-                .or_default()
-                .insert(copy.output);
-        }
+        let copies = copies_by_source(&self.copies);
         let unique: Vec<_> = self
             .inputs
             .iter()
@@ -112,11 +153,10 @@ impl JoinKeys {
         let mut result = Vec::new();
         let mut combinations = vec![KeyColumns::default()];
         for (input, keys) in self.inputs.iter().enumerate() {
-            let projected = minimal(
-                keys.iter()
-                    .filter_map(|key| key.project(input + 1, &copies))
-                    .collect(),
-            );
+            let projected = KeyProjection::Join {
+                value_parameter: input + 1,
+            }
+            .map(keys, &copies);
             // A side's key alone survives when every other input matches at
             // most once. An unmatched left row has NULLs on the right.
             if (!self.left_join || input == 0)
@@ -193,6 +233,40 @@ mod tests {
             [KeyColumns::default()]
         );
         assert!(filter_keys(Vec::new(), &fixed).is_empty());
+    }
+
+    #[test]
+    fn ranked_values_and_row_fields_read_different_parameters() {
+        let index = column(Part::Index, 0);
+        let value = column(Part::Value, 0);
+        let moved = column(Part::Value, 2);
+        let plain = column(Part::None, 0);
+        let copies = [
+            ColumnCopy {
+                parameter: 0,
+                source: value,
+                output: plain,
+            },
+            ColumnCopy {
+                parameter: 1,
+                source: plain,
+                output: moved,
+            },
+        ];
+        let keys = [key(&[index, value]), key(&[column(Part::Value, 1)])];
+        assert_eq!(
+            KeyProjection::Ranked.keys(&keys, &copies),
+            [key(&[index, moved])]
+        );
+        assert!(KeyProjection::Row.keys(&keys, &copies).is_empty());
+        assert_eq!(
+            KeyProjection::Row.keys(&[key(&[value])], &copies),
+            [key(&[plain])]
+        );
+        assert_eq!(
+            KeyProjection::Row.keys(&[KeyColumns::default()], &[]),
+            [KeyColumns::default()]
+        );
     }
 
     #[test]
