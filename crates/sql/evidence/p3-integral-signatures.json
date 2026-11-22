@@ -1,0 +1,196 @@
+{
+  "scope": "Integral pushing with live closure signatures. Compare both OptimizeIncrementalVisitor invocations on every frozen program where a previous full-circuit oracle observed a graph change.",
+  "compiler_jar_sha256": "becbe1099d61830e24a6364036d7c3cbe2b23f19edb65a51bde647fcb51770cf",
+  "test_jar_sha256": "aaa081154c4ed6f003ab1b2d99dae0b8b76bc57c76dd2526e19357b30459eb41",
+  "optimizer_library_sha256": "23e93fd1ae1753d4686f913bc3ec3f8c6944c609bf0b9ac3385525e46dc65221",
+  "comparator_sha256": "187d997c2562ede1c029e45e380218517238f4b2d961f7e8e330e5dd8e926f54",
+  "engines": {
+    "classic": {
+      "changed_cases": 1287,
+      "pass_invocations": 2574,
+      "shards": 13,
+      "input_and_stream_receipts_sha256": "8532dd86ccb4d35e96f8278d757d3f86d2bb88129a082659aa15d439beda3274",
+      "detached_replay": {
+        "cases": 7,
+        "report_sha256": "a3caa7f379e2adc80d7d338da41bba09d1356b02bc526640c44e1bdc940b00b0",
+        "input_sha256": "5bbc6f6d165962754eed0c8bf0d89b2552645a353a56301a234603d591125dcd"
+      }
+    },
+    "gen2": {
+      "changed_cases": 8526,
+      "pass_invocations": 17052,
+      "shards": 86,
+      "input_and_stream_receipts_sha256": "bc5ace407acc33ea8c601841063911ee07b5579f856696f6e08bac2a4be07421",
+      "detached_replay": {
+        "cases": 7,
+        "report_sha256": "47d24c631cb326b057bb465c30bd4b22e031a88767a866aa982d66265400028e",
+        "input_sha256": "336e26d19e9d85f01e60261671e02b1e39e84498d455a4d3313ab4b5124a7240"
+      }
+    }
+  },
+  "nexmark_profile": {
+    "baseline_commit": "32d585d40",
+    "pairs": 3,
+    "exclusive_mean_cpu_ms": {
+      "OptimizeIncrementalVisitor": {
+        "hybrid": 270.399,
+        "java": 3.207
+      },
+      "OptimizeProjections": {
+        "hybrid": 263.552,
+        "java": 61.829
+      },
+      "Simplify": {
+        "hybrid": 227.794,
+        "java": 26.829
+      },
+      "InsertLimiters": {
+        "hybrid": 218.045,
+        "java": 25.862
+      },
+      "FindCSE": {
+        "hybrid": 200.14,
+        "java": 12.533
+      }
+    },
+    "raw_sha256": {
+      "true": "11de8cac607248f1f1f4371891d1068bd2ecff812fe7e25f9ec6e68b7403e40a",
+      "false": "1695f53a52f089bb082e4a093178300706612b46ca6bb0500ec9570af8e92aa8"
+    }
+  },
+  "nexmark_snapshot_bytes": {
+    "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#testCompile/0",
+    "input_sha256": "b1ff20e921649d466f9b103f27387cdff75f3783e26c2870314ce92edd4bfe11",
+    "gen2": false,
+    "payloads": [
+      {
+        "signature_bytes": 919501,
+        "full_bytes": 1474875,
+        "retry": false,
+        "reply_bytes": 166447,
+        "retained": 714
+      },
+      {
+        "signature_bytes": 923887,
+        "full_bytes": 1479265,
+        "retry": false,
+        "reply_bytes": 204683,
+        "retained": 717
+      }
+    ]
+  },
+  "nexmark_pass_timing": {
+    "workload": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#testCompile/0",
+    "input_sha256": "b1ff20e921649d466f9b103f27387cdff75f3783e26c2870314ce92edd4bfe11",
+    "paired_iterations": 12,
+    "scope": "Two OptimizeIncrementalVisitor calls in a fresh hybrid JVM per sample, pinned to CPU 13. Other compiler verification shared the VM.",
+    "modes": {
+      "baseline": {
+        "raw_sha256": "f255d2c833f2699ed22a2c9b9dbc3789fe24cdd15e09c88b2606f7f78309246e",
+        "cpu_median_ms": 284.277496,
+        "wall_median_ms": 1303.6779805
+      },
+      "candidate": {
+        "raw_sha256": "f41de3f6c161524f58e65a3c7f1e3ef8f055bf5135ed2ddb120f2cdb957a5a62",
+        "cpu_median_ms": 252.9917005,
+        "wall_median_ms": 1200.7531535
+      }
+    }
+  },
+  "checkpoints": {
+    "count": {
+      "report_sha256": "6778286f9d64432980ec42aa2cdac233adb5b2cc991880157f4c5ce1be574d03",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a202b6-35e2-7d52-aeb7-f5ce0000efba",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a202b6-365a-7a73-91eb-4ad2872eda80",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "report_sha256": "b9ba4b88e1716c089eb13eb04370be3f74f915edda338585bce5e1ae2d664b1d",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a202b7-b27a-70d3-9cca-ae66ae6f95ec",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a202b7-b2cc-7ad2-b200-f35ba466a272",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}

@@ -462,6 +462,22 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The integral-pushing pass imports closure signatures and reuses the live
+closures when it returns the edited circuit. Both invocations matched Java
+on all 1,287 classic and 8,526 Gen-2 frozen cases where this pass changed
+the graph. Across 12 paired Nexmark compilations, median CPU time for the
+two invocations fell from 284 ms to 253 ms during concurrent verification.
+[Integral-pushing replay](evidence/p3-integral-signatures.json)
+
+Rust selects the table and view columns with declared LATENESS and determines
+which tuple views inherit input bounds. All 550 selected monotonicity pass
+comparisons and 25 detached replays matched Java. COUNT and LATENESS
+checkpoints restored in both directions. [Relation waterlines](evidence/p3-relation-waterlines.json)
+
+The Rust clock classifier handles calls with several arguments, including
+DATEDIFF, LOG and POWER. All 133 frozen RewriteNow invocations and five
+directed argument-order and constant-base cases on each engine matched Java.
+
 Rust constructs both the data closure and its reduced waterline for identity
 operators, including indexed rows where only the key or value has a bound.
 The resulting limiter graphs matched Java on 291 classic and 259 Gen-2

@@ -2157,13 +2157,14 @@ public final class RustCircuitPass implements CircuitTransform {
         return operators;
     }
 
-    public enum TransferRule { Identity, ApplyClosure, Analyze }
-    public record MonotonicityTransfer(DBSPOperator operator, TransferRule rule, int input) {}
+    public enum TransferRule { Identity, DeclaredColumns, ApplyClosure, Analyze }
+    public record MonotonicityTransfer(DBSPOperator operator, TransferRule rule, int input,
+                                       @Nullable List<Boolean> lateness) {}
 
     /** Reconnect the transfer schedule to the live expressions of the expanded circuit. */
     public static List<MonotonicityTransfer> monotonicityTransfers(DBSPCircuit circuit) {
-        record Step(long operator, TransferRule rule, int input) {}
-        byte[] topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.STREAMING);
+        record Step(long operator, TransferRule rule, int input, @Nullable List<Boolean> lateness) {}
+        byte[] topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.MONOTONICITY);
         byte[] result = transformWithContext("Topology/Monotonicity", topology, 0, "", EMPTY_CONTEXT);
         try {
             var steps = MAPPER.readValue(result, Step[].class);
@@ -2173,7 +2174,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var transfers = new ArrayList<MonotonicityTransfer>(steps.length);
             for (var step : steps)
                 transfers.add(new MonotonicityTransfer(Utilities.getExists(operators, step.operator()),
-                        step.rule(), step.input()));
+                        step.rule(), step.input(), step.lateness()));
             return transfers;
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid monotonicity transfer schedule", error);
@@ -2817,6 +2818,14 @@ public final class RustCircuitPass implements CircuitTransform {
                         throw retentionError(circuit, probe.required("retention_violation"));
                     if (!probe.required("needs_full_snapshot").booleanValue())
                         return circuit;
+                    if (this.nativeName.equals("OptimizeIncrementalVisitor")) {
+                        writer = this.snapshots.integralPushWriter();
+                        writer.apply(circuit);
+                        var edits = this.invoke("Live/OptimizeIncrementalVisitor/Signatures",
+                                writer.getJsonString().getBytes(StandardCharsets.UTF_8), initial, state);
+                        if (!edits.has("needs_full_snapshot"))
+                            result = edits;
+                    }
                 }
             }
             if (result == null) {

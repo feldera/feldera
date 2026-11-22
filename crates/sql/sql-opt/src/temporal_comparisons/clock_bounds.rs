@@ -8,6 +8,23 @@ use feldera_sql_ir::{
 };
 use std::collections::{HashMap, HashSet};
 
+/// Java writes a DOUBLE literal's raw IEEE 754 bits as a signed long.
+fn double_literal(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<f64>, Error> {
+    if edit.expr_kind(id)? != Expr::DoubleLiteral {
+        return Ok(None);
+    }
+    edit.node(id.into())?
+        .data("value")
+        .filter(|value| !value.is_null())
+        .map(|value| {
+            value
+                .as_i64()
+                .map(|bits| f64::from_bits(bits as u64))
+                .ok_or_else(|| Error::new("invalid DOUBLE literal bits in clock predicate"))
+        })
+        .transpose()
+}
+
 /// Return the monotone operands when the entire predicate uses scalar columns,
 /// clock calls, constants and supported scalar operations. Expressions with
 /// lexical bindings require the general closure analysis.
@@ -54,27 +71,33 @@ pub(super) fn monotone_operands(
                 let Some(name) = function_name(edit.circuit(), node)? else {
                     return Ok(None);
                 };
-                match node.edges("arguments")?.as_slice() {
-                    [] if name == "now" => value.monotone = true,
-                    [arg] if name != "now" => {
-                        let arg = edit.expression(*arg)?;
-                        if !visited_children {
-                            pending.extend([(id, true), (arg, false)]);
-                            continue;
-                        }
-                        let arg = facts[&arg];
-                        value.constant = arg.constant;
-                        value.monotone = function_waterline(
-                            &name,
-                            &[Argument {
-                                monotone: arg.monotone,
-                                constant: arg.constant,
-                                ..Default::default()
-                            }],
-                        )
-                        .is_some();
+                let args = node.edges("arguments")?;
+                if name == "now" {
+                    if !args.is_empty() {
+                        return Ok(None);
                     }
-                    _ => return Ok(None),
+                    value.monotone = true;
+                } else {
+                    if !visited_children && !args.is_empty() {
+                        pending.push((id, true));
+                        for arg in args.into_iter().rev() {
+                            pending.push((edit.expression(arg)?, false));
+                        }
+                        continue;
+                    }
+                    let mut arguments = Vec::with_capacity(args.len());
+                    for arg in args {
+                        let arg = edit.expression(arg)?;
+                        let operand = facts[&arg];
+                        arguments.push(Argument {
+                            monotone: operand.monotone,
+                            constant: operand.constant,
+                            double_literal_above_one: double_literal(edit, arg)?
+                                .is_some_and(|base| base > 1.0),
+                        });
+                    }
+                    value.constant = arguments.iter().all(|arg| arg.constant);
+                    value.monotone = function_waterline(&name, &arguments).is_some();
                 }
             }
             Expr::Cast => {
@@ -99,7 +122,9 @@ pub(super) fn monotone_operands(
                 }
             }
             Expr::DateLiteral
+            | Expr::TimeLiteral
             | Expr::TimestampLiteral
+            | Expr::TimestampTzLiteral
             | Expr::ShortIntervalLiteral
             | Expr::LongIntervalLiteral
             | Expr::I32Literal
@@ -126,6 +151,12 @@ pub(super) fn monotone_operands(
                         })?;
                     value.positive_literal = number > 0;
                 }
+            }
+            Expr::DoubleLiteral => {
+                let literal = double_literal(edit, id)?;
+                value.monotone = true;
+                value.constant = literal.is_some();
+                value.positive_literal = literal.is_some_and(|n| n > 0.0);
             }
             Expr::Binary | Expr::TimeAddSub => {
                 let left = child("left")?;
@@ -274,6 +305,67 @@ mod tests {
                     .unwrap()
                     .contains(&call),
                 bounded
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn logarithm_clock_bound_requires_a_constant_double_base_above_one() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let (circuit, roots) = circuit.with_inner_roots([
+            json!({"class":"DBSPTypeDouble","id":1,"code":"DOUBLE","mayBeNull":false}),
+            json!({"class":"DBSPTypeTimestamp","id":2,"code":"TIMESTAMP","mayBeNull":false}),
+        ])?;
+        let mut edit = CircuitEditor::new(circuit);
+        let site = roots[0];
+        let double = edit.type_id(site)?;
+        let timestamp = edit.type_id(roots[1])?;
+        let row = edit.named_variable(timestamp, "row")?;
+        let parameter = edit.parameter_at(site, row)?;
+        let now = edit.function_path(site, "now")?;
+        let clock = edit.make_expr(
+            site,
+            Expr::Apply,
+            timestamp,
+            [
+                ("function", Field::Reference(now.into())),
+                ("arguments", Field::Array(vec![])),
+            ],
+        )?;
+        let seconds = edit.integer_type(timestamp, 64, true, false)?;
+        let epoch = edit.cast(site, clock, seconds)?;
+        let value = edit.cast(site, epoch, double)?;
+        let log = edit.function_path(site, "log_d_d")?;
+        for base in [2.0_f64, 1.0, 0.5, -2.0, f64::NAN] {
+            let literal = edit.make_expr(
+                site,
+                Expr::DoubleLiteral,
+                double,
+                [("value", Field::Data((base.to_bits() as i64).into()))],
+            )?;
+            let call = edit.make_expr(
+                site,
+                Expr::Apply,
+                double,
+                [
+                    ("function", Field::Reference(log.into())),
+                    (
+                        "arguments",
+                        Field::Array(vec![
+                            Field::Reference(value.into()),
+                            Field::Reference(literal.into()),
+                        ]),
+                    ),
+                ],
+            )?;
+            assert_eq!(
+                monotone_operands(&edit, parameter, call)?
+                    .unwrap()
+                    .contains(&call),
+                base > 1.0
             );
         }
         Ok(())

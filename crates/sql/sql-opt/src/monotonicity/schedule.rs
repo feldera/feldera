@@ -1,17 +1,49 @@
 //! Schedule transfer functions on the delta-expanded circuit. A transfer can
 //! only propagate an existing waterline, except where the operator establishes
 //! a bound itself. Expression analysis determines which fields retain it.
-use crate::state_bounds::has_lateness;
-use feldera_sql_ir::{BodyOrder, Circuit, Error, NodeId, OperatorKind as Op};
+use crate::state_bounds::column_lateness;
+use feldera_sql_ir::{BodyOrder, Circuit, Error, Node, NodeId, OperatorKind as Op};
 use serde::Serialize;
 use std::collections::HashSet;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "rule")]
 pub enum MonotonicityTransfer {
-    Identity { input: usize },
+    Identity {
+        input: usize,
+    },
+    /// Declared fields get new bounds. A view inherits the remaining fields
+    /// from its input, and a source leaves the remaining fields unbounded.
+    DeclaredColumns {
+        lateness: Vec<bool>,
+    },
     ApplyClosure,
     Analyze,
+}
+
+fn relation_transfer(
+    node: &Node,
+    field: &str,
+    inherit: bool,
+) -> Result<Option<MonotonicityTransfer>, Error> {
+    let lateness = column_lateness(node, field)?.collect::<Result<Vec<_>, _>>()?;
+    Ok(if lateness.contains(&true) {
+        Some(MonotonicityTransfer::DeclaredColumns { lateness })
+    } else {
+        inherit.then_some(MonotonicityTransfer::Identity { input: 0 })
+    })
+}
+
+fn tuple_view(circuit: &Circuit, view: &Node) -> Result<bool, Error> {
+    if let Some(tuple) = view.data("tupleRows").and_then(|value| value.as_bool()) {
+        return Ok(tuple);
+    }
+    let stream = circuit
+        .node(view.edge("outputType")?)
+        .expect("validated stream");
+    Ok(circuit
+        .node(stream.edge("elementType")?)
+        .is_some_and(|ty| ty.class() == "DBSPTypeTuple"))
 }
 
 pub fn monotonicity_transfers(
@@ -32,8 +64,11 @@ pub fn monotonicity_transfers(
         let transfer = match node.operator_kind() {
             // The expression visitor reports indexed sources as invalid at this stage.
             Some(Op::SourceMap | Op::SourceLazyMap) => Some(Analyze),
-            Some(Op::SourceMultiset) => has_lateness(node, "columnMetadata")?.then_some(Analyze),
-            Some(Op::View) => (first || has_lateness(node, "columns")?).then_some(Analyze),
+            Some(Op::SourceMultiset) => relation_transfer(node, "columnMetadata", false)?,
+            Some(Op::View) if tuple_view(circuit, node)? => {
+                relation_transfer(node, "columns", first)?
+            }
+            Some(Op::View) => None, // ORDER BY returns a collection inside each row.
             Some(Op::Window) => {
                 let unbounded = node
                     .data("lowerUnbounded")
@@ -92,8 +127,8 @@ mod tests {
             "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": [
                 {"class": "DBSPSourceMultisetOperator", "id": 1, "inputs": [],
                  "metadata": {"columnMetadata": []}},
-                {"class": "DBSPViewOperator", "id": 2, "inputs": [port(1)],
-                 "metadata": {"columns": [{"lateness": true}]}},
+                {"class": "DBSPViewOperator", "id": 2, "inputs": [port(1)], "tupleRows": true,
+                 "metadata": {"columns": [{}, {"lateness": true}, {}]}},
                 {"class": "DBSPWindowOperator", "id": 3, "lowerUnbounded": true,
                  "inputs": [port(1), port(2)]},
                 {"class": "DBSPWindowOperator", "id": 4, "lowerUnbounded": false,
@@ -106,7 +141,12 @@ mod tests {
         assert_eq!(
             monotonicity_transfers(&graph).unwrap(),
             [
-                (NodeId::Outer(2), MonotonicityTransfer::Analyze),
+                (
+                    NodeId::Outer(2),
+                    MonotonicityTransfer::DeclaredColumns {
+                        lateness: vec![false, true, false]
+                    }
+                ),
                 (NodeId::Outer(4), MonotonicityTransfer::Analyze),
                 (
                     NodeId::Outer(5),
@@ -114,5 +154,37 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn plain_views_inherit_lateness_only_for_tuple_rows() -> Result<(), Error> {
+        let port = |id| json!({"outputNumber": 0, "operator": {"node": id}});
+        let graph = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": [
+                {"class": "DBSPSourceMultisetOperator", "id": 1, "inputs": [],
+                 "metadata": {"columnMetadata": [{"lateness": true}, {}, {"lateness": true}]}},
+                {"class": "DBSPViewOperator", "id": 2, "inputs": [port(1)], "tupleRows": true,
+                 "metadata": {"columns": [{}, {}, {}]}},
+                {"class": "DBSPViewOperator", "id": 3, "inputs": [port(2)], "tupleRows": false,
+                 "metadata": {"columns": [{"lateness": true}]}},
+                {"class": "DBSPSinkOperator", "id": 4, "inputs": [port(3)]}
+            ]
+        }))?;
+        assert_eq!(
+            monotonicity_transfers(&graph)?,
+            [
+                (
+                    NodeId::Outer(1),
+                    MonotonicityTransfer::DeclaredColumns {
+                        lateness: vec![true, false, true]
+                    }
+                ),
+                (
+                    NodeId::Outer(2),
+                    MonotonicityTransfer::Identity { input: 0 }
+                ),
+            ]
+        );
+        Ok(())
     }
 }

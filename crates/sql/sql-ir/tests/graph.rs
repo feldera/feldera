@@ -108,6 +108,7 @@ fn live_graph_replays_shared_inner_fields_that_refer_to_an_operator() {
     let original = Circuit::from_json(raw).unwrap();
     let mut changed = original.clone();
     changed.annotations_mut(NodeId::Outer(2)).unwrap().clear();
+    assert!(changed.retained_live_graph(&original).is_err());
     assert_eq!(
         changed.changed_live_graph(&original),
         Some(changed.to_json())
@@ -123,6 +124,7 @@ fn live_graph_detects_a_changed_descendant_with_the_same_identity() {
     let original = Circuit::from_json(before.clone()).unwrap();
     before["allOperators"][2]["inputs"][1]["operator"]["outputType"]["mayBeNull"] = json!(true);
     let changed = Circuit::from_json(before.clone()).unwrap();
+    assert!(changed.retained_live_graph(&original).is_err());
     assert_eq!(changed.changed_live_graph(&original), Some(before));
 }
 

@@ -875,6 +875,17 @@ fn transform(
     } else {
         Circuit::from_json_bytes(input)?
     };
+    if live == Some("OptimizeIncrementalVisitor/Signatures") {
+        let output = feldera_sql_opt::push_integrals(circuit.clone(), &mut next)?;
+        return Ok(match output.retained_live_graph(&circuit) {
+            Ok(graph) => {
+                let mut reply = json!({"unused_sources": [], "next_generated_name": next});
+                reply["circuit"] = graph.unwrap_or(Value::Null);
+                reply
+            }
+            Err(_) => json!({"needs_full_snapshot": true}),
+        });
+    }
     if pass == "LowerJoinFilterMap" {
         let [id] = circuit.root().edges("allOperators")?.try_into()
             .map_err(|_| "join lowering requires one operator")?;

@@ -5,6 +5,10 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+/// A surviving inner object must be decoded again from its complete definition.
+#[derive(Debug)]
+pub struct FullSnapshotRequired;
+
 fn has_outer_edge(field: &Field) -> bool {
     match field {
         Field::Reference(NodeId::Outer(_)) | Field::Definition(NodeId::Outer(_)) => true,
@@ -35,8 +39,19 @@ impl Circuit {
     /// Return an in-process reply. A standalone checkpoint still needs the
     /// definitions of every object reachable from its root.
     pub fn changed_live_graph(&self, previous: &Self) -> Option<Value> {
+        self.retained_live_graph(previous)
+            .unwrap_or_else(|FullSnapshotRequired| self.changed_graph(previous))
+    }
+
+    /// Encode edits only if surviving input objects can be borrowed from the JVM.
+    /// A caller which supplied only closure signatures must retry with complete
+    /// definitions when any of those objects needs reconstruction.
+    pub fn retained_live_graph(
+        &self,
+        previous: &Self,
+    ) -> Result<Option<Value>, FullSnapshotRequired> {
         if Arc::ptr_eq(&self.nodes.0, &previous.nodes.0) {
-            return None;
+            return Ok(None);
         }
         // Check every surviving input object before retaining any of them.
         // Checking just the root of a shared subtree would miss a changed
@@ -56,7 +71,7 @@ impl Circuit {
             })
         });
         if !can_share {
-            return self.changed_graph(previous);
+            return Err(FullSnapshotRequired);
         }
         // Unused expressions allocated while testing a rewrite are invisible
         // to the next pass. The original wire root reaches each input definition.
@@ -66,7 +81,7 @@ impl Circuit {
                     .is_some_and(|new| old.class() == new.class() && old.fields == new.fields)
             })
         {
-            return None;
+            return Ok(None);
         }
         let mut retained = BTreeSet::new();
         let graph = crate::wire::encode_with(self.root, &self.nodes, &mut |id| {
@@ -78,14 +93,14 @@ impl Circuit {
             }
             false
         });
-        Some(Value::Object(
+        Ok(Some(Value::Object(
             [
                 ("graph".into(), graph),
                 ("retained_inner".into(), retained.into_iter().collect()),
             ]
             .into_iter()
             .collect(),
-        ))
+        )))
     }
 }
 

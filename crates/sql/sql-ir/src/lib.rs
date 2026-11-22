@@ -16,6 +16,7 @@ mod gen2;
 mod inner;
 mod json;
 mod live;
+pub use live::FullSnapshotRequired;
 mod mir;
 mod operator;
 pub mod provenance;

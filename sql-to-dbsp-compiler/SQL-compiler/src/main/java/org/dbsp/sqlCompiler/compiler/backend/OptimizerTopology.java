@@ -29,9 +29,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySources;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.JsonStream;
 
@@ -42,7 +44,7 @@ import java.util.Set;
 
 /** Circuit projection for passes that read only operator kinds, edges and annotations. */
 final class OptimizerTopology {
-    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, SHARED_INDEXES, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, STATE_BOUNDS, AGGREGATE_RESULTS, CHAIN_FUNCTIONS }
+    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, SHARED_INDEXES, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, MONOTONICITY, STATE_BOUNDS, AGGREGATE_RESULTS, CHAIN_FUNCTIONS }
 
     private OptimizerTopology() {}
 
@@ -217,7 +219,16 @@ final class OptimizerTopology {
                 json.label("accumulate").append(retainer.accumulate);
             if (details == Details.PERSISTENT_IDS && op instanceof DBSPSinkOperator sink)
                 json.label("metadata").beginObject().label("system").append(sink.metadata.system).endObject();
-            if ((details == Details.GC_GROUPS || details == Details.STREAMING) && op instanceof DBSPWindowOperator window)
+            if (details == Details.MONOTONICITY) {
+                if (op instanceof DBSPSourceMultisetOperator table) {
+                    writeColumnLateness(json, "columnMetadata", table);
+                } else if (op instanceof DBSPViewOperator view) {
+                    json.label("tupleRows").append(view.getOutputZSetElementType() instanceof DBSPTypeTuple);
+                    writeColumnLateness(json, "columns", view);
+                }
+            }
+            if ((details == Details.GC_GROUPS || details == Details.STREAMING || details == Details.MONOTONICITY)
+                    && op instanceof DBSPWindowOperator window)
                 json.label("lowerUnbounded").append(window.lowerUnbounded);
             if (details == Details.PRIMARY_KEYS && op instanceof DBSPSourceMultisetOperator source)
                 json.label("hasPrimaryKey").append(source.metadata.getColumns().stream().anyMatch(column -> column.isPrimaryKey));
@@ -277,6 +288,17 @@ final class OptimizerTopology {
             json.endObject();
         }
         json.endArray();
+    }
+
+    private static void writeColumnLateness(JsonStream json, String field, IHasColumnsMetadata relation) {
+        json.label("metadata").beginObject().label(field).beginArray();
+        for (var column : relation.getColumnsMetadata()) {
+            json.beginObject();
+            if (column.getLateness() != null)
+                json.label("lateness").append(true);
+            json.endObject();
+        }
+        json.endArray().endObject();
     }
 
     private static void writePort(JsonStream json, @Nullable OutputPort port) {

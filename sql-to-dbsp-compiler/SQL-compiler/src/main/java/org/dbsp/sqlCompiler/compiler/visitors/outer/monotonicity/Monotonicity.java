@@ -40,7 +40,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
-import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
@@ -178,6 +177,8 @@ public class Monotonicity extends CircuitVisitor {
             for (var transfer : RustCircuitPass.monotonicityTransfers(circuit)) {
                 switch (transfer.rule()) {
                     case Identity -> this.identity(transfer.operator().to(DBSPSimpleOperator.class), transfer.input());
+                    case DeclaredColumns -> this.declaredColumns(transfer.operator().to(DBSPSimpleOperator.class),
+                            Objects.requireNonNull(transfer.lateness()));
                     case ApplyClosure -> this.analyzeClosure(transfer.operator().to(DBSPUnaryOperator.class));
                     case Analyze -> transfer.operator().accept(this);
                 }
@@ -291,16 +292,7 @@ public class Monotonicity extends CircuitVisitor {
         // Only LATENESS supplies a source waterline, even when trimming leaves a constant empty tuple.
         if (!Linq.any(node.metadata.getColumns(), column -> column.lateness != null))
             return;
-        List<IMaybeMonotoneType> fields = new ArrayList<>();
-        for (InputColumnMetadata metadata: node.metadata.getColumns()) {
-            IMaybeMonotoneType columnType = NonMonotoneType.nonMonotone(metadata.type);
-            if (metadata.lateness != null)
-                columnType = new MonotoneType(metadata.type);
-            fields.add(columnType);
-        }
-        IMaybeMonotoneType projection = new PartiallyMonotoneTuple(fields, false, false);
-        MonotoneExpression result = this.identity(node, projection, false);
-        this.set(node, result);
+        this.declaredColumns(node, node.metadata.getColumns().stream().map(column -> column.lateness != null).toList());
     }
 
     @Override
@@ -323,15 +315,27 @@ public class Monotonicity extends CircuitVisitor {
         // A column with a LATENESS declaration is monotone; every other column keeps
         // the monotonicity of the view's input.  InsertLimiters assembles the matching
         // waterline from the declarations and from the input's waterline.
-        Utilities.enforce(node.metadata.columns.size() == tuple.size());
-        MonotoneExpression input = this.getMonotoneExpression(node.input());
+        this.declaredColumns(node, Linq.map(node.metadata.columns, column -> column.lateness != null));
+    }
+
+    private void declaredColumns(DBSPSimpleOperator node, List<Boolean> lateness) {
+        List<DBSPType> types;
+        MonotoneExpression input = null;
+        if (node instanceof DBSPSourceMultisetOperator table) {
+            types = table.metadata.getColumns().stream().map(column -> column.type).toList();
+        } else {
+            DBSPViewOperator view = node.to(DBSPViewOperator.class);
+            types = List.of(view.getOutputZSetElementType().to(DBSPTypeTuple.class).tupFields);
+            input = this.getMonotoneExpression(view.input());
+        }
+        Utilities.enforce(lateness.size() == types.size());
         PartiallyMonotoneTuple inherited = (input == null) ? null :
                 getBodyType(input).to(PartiallyMonotoneTuple.class);
         List<IMaybeMonotoneType> fields = new ArrayList<>();
-        for (int index = 0; index < tuple.size(); index++) {
-            DBSPType columnType = tuple.getFieldType(index);
+        for (int index = 0; index < types.size(); index++) {
+            DBSPType columnType = types.get(index);
             IMaybeMonotoneType fieldType;
-            if (node.metadata.columns.get(index).lateness != null)
+            if (lateness.get(index))
                 fieldType = new MonotoneType(columnType);
             else if (inherited != null)
                 fieldType = inherited.getFieldType(index);

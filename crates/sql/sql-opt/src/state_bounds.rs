@@ -11,18 +11,25 @@ use feldera_sql_ir::{CircuitEditor, NodeId, OutputClocks, StreamKind, TypeId, Ty
 use serde::Serialize;
 use std::collections::HashMap;
 
-pub(super) fn has_lateness(node: &Node, column_field: &str) -> Result<bool, Error> {
+pub(super) fn column_lateness<'a>(
+    node: &'a Node,
+    column_field: &str,
+) -> Result<impl Iterator<Item = Result<bool, Error>> + 'a, Error> {
     let Some(Field::Object(metadata)) = node.field("metadata") else {
         return Err(Error::new("missing relation metadata"));
     };
     let Some(Field::Array(columns)) = metadata.get(column_field) else {
         return Err(Error::new("missing relation columns"));
     };
-    for column in columns {
-        let Field::Object(fields) = column else {
-            return Err(Error::new("expected column metadata"));
-        };
-        if fields.contains_key("lateness") {
+    Ok(columns.iter().map(|column| match column {
+        Field::Object(fields) => Ok(fields.contains_key("lateness")),
+        _ => Err(Error::new("expected column metadata")),
+    }))
+}
+
+pub(super) fn has_lateness(node: &Node, column_field: &str) -> Result<bool, Error> {
+    for declared in column_lateness(node, column_field)? {
+        if declared? {
             return Ok(true);
         }
     }

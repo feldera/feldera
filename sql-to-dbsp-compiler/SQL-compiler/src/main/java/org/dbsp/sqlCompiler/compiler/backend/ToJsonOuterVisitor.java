@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.util.IJson;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.JsonStream;
@@ -120,9 +121,32 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         }
 
         public ToJsonOuterVisitor writer(boolean retainOriginIdentities) {
+            return this.configure(compactWriter(this.compiler), retainOriginIdentities);
+        }
+
+        /** Integral pushing inspects function types and source positions. The
+         * caller keeps the original closures alive until it imports the edits. */
+        ToJsonOuterVisitor integralPushWriter() {
+            var inner = new ToJsonInnerVisitor(this.compiler, JsonStream.compactCircuit(), 1, true) {
+                @Override
+                public VisitDecision preorder(DBSPClosureExpression closure) {
+                    if (!super.preorder(closure).stop()) {
+                        this.push(closure);
+                        this.property("type");
+                        closure.getType().accept(this);
+                        this.pop(closure);
+                        this.postorder(closure);
+                    }
+                    return VisitDecision.STOP;
+                }
+            };
+            inner.liveNodes = new HashMap<>();
+            return this.configure(new ToJsonOuterVisitor(this.compiler, 1, inner), false);
+        }
+
+        private ToJsonOuterVisitor configure(ToJsonOuterVisitor writer, boolean retainOriginIdentities) {
             if (this.plans == null)
                 this.plans = this.compiler.getPlans(new NullIndentStream());
-            var writer = compactWriter(this.compiler);
             writer.retainProgramMetadata = true;
             writer.innerVisitor.liveShuffles = new HashMap<>();
             writer.provenance = new ProvenanceCodec.Encoder(this.compiler, this.plans, this.renderedSql, new ArrayList<>());
