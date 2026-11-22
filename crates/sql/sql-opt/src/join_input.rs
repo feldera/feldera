@@ -65,6 +65,103 @@ pub fn asof_input_fields(
     }))
 }
 
+/// The join key is never narrowed. Each changed value input gets its own
+/// projection before the join; unchanged inputs keep their original ports.
+pub enum JoinInputRewrite {
+    Unsupported,
+    Unchanged,
+    Narrowed {
+        inputs: Vec<Option<ExpressionId>>,
+        reader: ExpressionId,
+    },
+}
+
+struct JoinValue {
+    fields: Vec<bool>,
+    has_unused_leaf: bool,
+}
+
+/// Narrow all value inputs together, including the outer rows of star joins.
+/// A partially-read nested value still occupies its full top-level column.
+pub fn narrow_join_inputs(
+    edit: &mut CircuitEditor,
+    site: NodeId,
+    reader: NodeId,
+    input_pairs: &[NodeId],
+    next: &mut u64,
+) -> Result<JoinInputRewrite, Error> {
+    let Some(paths) = live_parameter_field_paths(edit.circuit(), reader)? else {
+        return Ok(JoinInputRewrite::Unsupported);
+    };
+    let parameters = edit.node(reader)?.edges("parameters")?;
+    if parameters.len() != input_pairs.len() + 1 || parameters.len() != paths.len() {
+        return Err(Error::new(
+            "join closure needs a key and one row parameter per input",
+        ));
+    }
+    let mut shapes = RowFields::new(edit.circuit());
+    let mut values = Vec::with_capacity(input_pairs.len());
+    for (&parameter, paths) in parameters[1..].iter().zip(&paths[1..]) {
+        let ty = edit.type_id(edit.node(parameter)?.edge("type")?)?;
+        if edit.type_kind(ty)? != TypeKind::Ref {
+            return Ok(JoinInputRewrite::Unsupported);
+        }
+        let row = edit.type_id(edit.node(ty.into())?.edge("type")?)?;
+        if !matches!(edit.type_kind(row)?, TypeKind::Tuple | TypeKind::RawTuple) {
+            return Ok(JoinInputRewrite::Unsupported);
+        }
+        let columns = edit.node(row.into())?.edges("tupFields")?;
+        let mut fields = Vec::with_capacity(columns.len());
+        for (index, column) in columns.into_iter().enumerate() {
+            fields.push(
+                paths.contains(&Vec::new())
+                    || !shapes.unused(column, &mut vec![index], paths, 0, 0)?,
+            );
+        }
+        let has_unused_leaf = shapes.unused(row.into(), &mut vec![], paths, usize::MAX, 0)?;
+        values.push(JoinValue {
+            fields,
+            has_unused_leaf,
+        });
+    }
+    if values.iter().all(|row| !row.fields.contains(&false)) {
+        return Ok(JoinInputRewrite::Unchanged);
+    }
+
+    let mut inputs = Vec::with_capacity(values.len());
+    let mut replacements = Vec::with_capacity(values.len());
+    for ((&pair, &param), row) in input_pairs.iter().zip(&parameters[1..]).zip(&values) {
+        let reference = edit.type_id(edit.node(param)?.edge("type")?)?;
+        let ty = crate::compressed_field_type(edit, reference, 1, &row.fields)?;
+        replacements.push(edit.derive_inner(param, [("type", Field::Reference(ty.into()))])?);
+        let projection = if row.has_unused_leaf {
+            let columns = row
+                .fields
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &used)| used.then_some(i))
+                .collect::<Vec<_>>();
+            Some(project_join_input(
+                edit,
+                site,
+                edit.type_id(pair)?,
+                &columns,
+                next,
+            )?)
+        } else {
+            None
+        };
+        inputs.push(projection);
+    }
+    let projected = replacements
+        .into_iter()
+        .zip(&values)
+        .enumerate()
+        .map(|(i, (decl, value))| (i + 1, decl, value.fields.as_slice()));
+    let reader = crate::projected_reader::rebind_parameters(edit, reader, projected)?;
+    Ok(JoinInputRewrite::Narrowed { inputs, reader })
+}
+
 pub fn project_join_input(
     edit: &mut CircuitEditor,
     join: NodeId,

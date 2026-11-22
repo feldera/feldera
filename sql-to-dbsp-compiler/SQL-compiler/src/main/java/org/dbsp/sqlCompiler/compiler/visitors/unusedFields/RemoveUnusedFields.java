@@ -9,7 +9,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -20,7 +19,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -135,68 +133,49 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         this.fullyUsedFunctions.done(function);
     }
 
-    boolean processStarJoin(DBSPStarJoinBaseOperator join) {
-        DBSPClosureExpression joinFunction = join.getClosureFunction();
-        if (this.done(join, joinFunction))
+    boolean processJoin(DBSPSimpleOperator join) {
+        var function = join.getClosureFunction();
+        if (this.done(join, function))
             return false;
-        var useMap = this.find.findUsedFields(joinFunction);
-
-        RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
-        List<FieldUseMap> useMaps = new ArrayList<>();
-        boolean anyUnused = false;
-        for (int i = 1; i < joinFunction.parameters.length; i++) {
-            FieldUseMap map = rw.getUseMap(joinFunction.parameters[i]);
-            if (map.hasUnusedFields(1))
-                anyUnused = true;
-            useMaps.add(map);
-        }
-        if (!anyUnused) {
-            this.noUnusedFields(joinFunction);
-            return false;
-        }
-
-        List<OutputPort> narrow = new ArrayList<>();
-        for (int i = 0; i < join.inputs.size(); i++) {
-            OutputPort port = getProjection(join.getRelNode(), useMaps.get(i), join.inputs.get(i));
-            narrow.add(port);
-        }
-
-        // Parameter 0 does not emit fields in the body of the function, leave it unchanged
-        rw.parameterFullyUsed(joinFunction.parameters[0]);
-        DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
-        DBSPSimpleOperator replacement =
-                join.withFunctionAndInputs(newJoinFunction, narrow);
-        this.map(join, replacement);
-        return true;
-    }
-
-    boolean processJoin(DBSPJoinBaseOperator join) {
-        DBSPClosureExpression joinFunction = join.getClosureFunction();
-        if (this.done(join, joinFunction))
-            return false;
-        var useMap = this.find.findUsedFields(joinFunction);
-
-        Utilities.enforce(joinFunction.parameters.length == 3);
-        DBSPParameter left = joinFunction.parameters[1];
-        DBSPParameter right = joinFunction.parameters[2];
-
-        RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
-        FieldUseMap leftRemap = rw.getUseMap(left);
-        FieldUseMap rightRemap = rw.getUseMap(right);
-        if (!leftRemap.hasUnusedFields(1) && !rightRemap.hasUnusedFields(1)) {
-            this.noUnusedFields(joinFunction);
-            return false;
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var plan = RustCircuitPass.narrowJoinInputs(this.compiler, join);
+            if (plan != null) {
+                if (plan.reader() == null) {
+                    this.noUnusedFields(function);
+                    return false;
+                }
+                var inputs = new ArrayList<OutputPort>(join.inputs.size());
+                for (int i = 0; i < join.inputs.size(); i++) {
+                    var input = this.mapped(join.inputs.get(i));
+                    var projection = plan.inputs().get(i);
+                    if (projection != null) {
+                        var map = new DBSPMapIndexOperator(join.getRelNode(), projection, input);
+                        this.addOperator(map);
+                        input = map.outputPort();
+                    }
+                    inputs.add(input);
+                }
+                this.map(join, join.with(plan.reader(), join.outputType, inputs, false).to(DBSPSimpleOperator.class));
+                return true;
+            }
         }
 
-        OutputPort leftMap = getProjection(join.getRelNode(), leftRemap, join.left());
-        OutputPort rightMap = getProjection(join.getRelNode(), rightRemap, join.right());
-
-        // Parameter 0 does not emit fields in the body of the function, leave it unchanged
-        rw.parameterFullyUsed(joinFunction.parameters[0]);
-        DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
-        DBSPSimpleOperator replacement =
-                join.withFunctionAndInputs(newJoinFunction, leftMap, rightMap);
-        this.map(join, replacement);
+        var uses = this.find.findUsedFields(function);
+        var rewriter = uses.getFieldRewriter(this.compiler, 1);
+        var rows = new ArrayList<FieldUseMap>(join.inputs.size());
+        for (int i = 1; i < function.parameters.length; i++)
+            rows.add(rewriter.getUseMap(function.parameters[i]));
+        Utilities.enforce(rows.size() == join.inputs.size());
+        if (rows.stream().noneMatch(row -> row.hasUnusedFields(1))) {
+            this.noUnusedFields(function);
+            return false;
+        }
+        var inputs = new ArrayList<OutputPort>(rows.size());
+        for (int i = 0; i < rows.size(); i++)
+            inputs.add(this.getProjection(join.getRelNode(), rows.get(i), join.inputs.get(i)));
+        rewriter.parameterFullyUsed(function.parameters[0]);
+        this.map(join, join.with(rewriter.rewriteClosure(function), join.outputType, inputs, false)
+                .to(DBSPSimpleOperator.class));
         return true;
     }
 
@@ -259,14 +238,14 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPStarJoinOperator join) {
-        boolean done = this.processStarJoin(join);
+        boolean done = this.processJoin(join);
         if (!done)
             super.postorder(join);
     }
 
     @Override
     public void postorder(DBSPStarJoinIndexOperator join) {
-        boolean done = this.processStarJoin(join);
+        boolean done = this.processJoin(join);
         if (!done)
             super.postorder(join);
     }

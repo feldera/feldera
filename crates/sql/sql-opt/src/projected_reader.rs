@@ -96,7 +96,7 @@ pub fn rebind_projected_reader(
     rebind_parameters(edit, closure, projected)
 }
 
-fn rebind_parameters<'a>(
+pub(super) fn rebind_parameters<'a>(
     edit: &mut CircuitEditor,
     closure: NodeId,
     projected: impl IntoIterator<Item = (usize, NodeId, &'a [bool])>,

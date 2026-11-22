@@ -999,6 +999,39 @@ public final class RustCircuitPass implements CircuitTransform {
         return lowerFunction(compiler, "AntijoinProjection", input, projection, DBSPClosureExpression.class);
     }
 
+    public record JoinInputProjection(List<DBSPClosureExpression> inputs, @Nullable DBSPClosureExpression reader) {}
+
+    /** A null projection for an input keeps its port. A null reader keeps the entire join. */
+    @Nullable
+    public static JoinInputProjection narrowJoinInputs(DBSPCompiler compiler, DBSPSimpleOperator join) {
+        String pass = "RemoveUnusedFields/NarrowJoin";
+        var roots = new ArrayList<IDBSPInnerNode>();
+        roots.add(join.getClosureFunction());
+        for (var port : join.inputs)
+            roots.add(port.getOutputIndexedZSetType().getKVRefType());
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(expressionSite(join.getRelNode())),
+                    roots.toArray(IDBSPInnerNode[]::new));
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, !reply.value.isNull());
+            if (reply.value.isNull())
+                return null;
+            if (!reply.value.required("narrowed").booleanValue())
+                return new JoinInputProjection(List.of(), null);
+            var decoder = expressionDecoder(reply.writer);
+            var functions = reply.value.required("functions").elements();
+            var projections = new ArrayList<DBSPClosureExpression>();
+            for (var changed : reply.value.required("changed"))
+                projections.add(changed.booleanValue() ? decoder.decodeInner(functions.next(), DBSPClosureExpression.class) : null);
+            var reader = decoder.decodeInner(functions.next(), DBSPClosureExpression.class);
+            Utilities.enforce(projections.size() == join.inputs.size() && !functions.hasNext());
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            return new JoinInputProjection(projections, reader);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode join input projections", error);
+        }
+    }
+
     public static DBSPClosureExpression projectJoinInput(DBSPCompiler compiler, CalciteObject origin,
             DBSPType input, List<Integer> columns) {
         var site = expressionSite(origin);
