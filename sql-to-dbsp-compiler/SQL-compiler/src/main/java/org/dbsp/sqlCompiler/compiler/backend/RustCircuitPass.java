@@ -895,18 +895,29 @@ public final class RustCircuitPass implements CircuitTransform {
                 join.left().outputType(), DBSPClosureExpression.class);
     }
 
-    public static DBSPClosureExpression clockIndex(DBSPCompiler compiler, DBSPType timestamp) {
-        return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/ClockIndex", timestamp));
-    }
+    public record ClockSource(List<DBSPSimpleOperator> operators, DBSPSimpleOperator collection,
+                              DBSPSimpleOperator indexed) {}
 
-    public static Pair<DBSPClosureExpression, DBSPClosureExpression> clockAggregate(DBSPCompiler compiler,
-            DBSPType timestamp, DBSPVariablePath weight) {
-        return loweredClosurePair(invokeLowering(compiler, "RewriteNow/ClockAggregate", timestamp, weight));
+    public static ClockSource clockSource(DBSPCompiler compiler, CalciteRelNode origin, DBSPType timestamp,
+                                          @Nullable DBSPSimpleOperator table) {
+        var reply = table == null
+                ? invokeLowering(compiler, "RewriteNow/BuiltinClock", timestamp, DBSPTypeTuple.EMPTY)
+                : invokeLowering(compiler, "RewriteNow/TableClock", timestamp, compiler.weightVar);
+        var decoder = expressionDecoder(reply.writer);
+        var inputs = table == null ? new DBSPSimpleOperator[0] : new DBSPSimpleOperator[]{table};
+        var operators = temporalOperators(decoder, reply, op -> origin, inputs);
+        return new ClockSource(operators,
+                decoder.outer.lookup(reply.value.required("collection").longValue(), DBSPSimpleOperator.class),
+                decoder.outer.lookup(reply.value.required("indexed").longValue(), DBSPSimpleOperator.class));
     }
 
     private static List<DBSPSimpleOperator> temporalOperators(LoweringReply reply,
             Function<DBSPSimpleOperator, CalciteRelNode> origin, DBSPSimpleOperator... inputs) {
-        var decoder = expressionDecoder(reply.writer);
+        return temporalOperators(expressionDecoder(reply.writer), reply, origin, inputs);
+    }
+
+    private static List<DBSPSimpleOperator> temporalOperators(JsonDecoder decoder, LoweringReply reply,
+            Function<DBSPSimpleOperator, CalciteRelNode> origin, DBSPSimpleOperator... inputs) {
         var ports = reply.value.required("inputs");
         if (ports.size() != inputs.length)
             throw new IllegalStateException("Temporal fragment has the wrong number of inputs");

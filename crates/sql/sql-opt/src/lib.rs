@@ -125,7 +125,7 @@ mod temporal_comparisons;
 mod temporal_groups;
 mod temporal_equality;
 mod clock_source;
-pub use clock_source::{clock_aggregate, clock_index, scalar_clock, scalar_clock_operators};
+pub use clock_source::{ClockStreams, builtin_clock, scalar_clock, scalar_clock_operators, table_clock};
 mod clock_join;
 pub use clock_join::{ClockConsumer, ClockJoinInputs, ClockProjection, ClockRewrite, append_clock_join, apply_joined_clock};
 mod temporal_window;

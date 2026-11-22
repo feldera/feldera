@@ -25,7 +25,6 @@ import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -573,9 +572,7 @@ public class RewriteNow extends CircuitCloneVisitor {
         this.map(operator.outputPort(), result.outputPort(), false);
     }
 
-    private DBSPClosureExpression clockIndex(DBSPType timestamp) {
-        if (this.compiler.options.ioOptions.rustOptimizerPasses)
-            return RustCircuitPass.clockIndex(this.compiler, timestamp);
+    private static DBSPClosureExpression clockIndex(DBSPType timestamp) {
         DBSPVariablePath var = new DBSPTypeTuple(timestamp).ref().var();
         return new DBSPRawTupleExpression(new DBSPTupleExpression(),
                 new DBSPTupleExpression(var.deref().field(0))).closure(var);
@@ -603,27 +600,30 @@ public class RewriteNow extends CircuitCloneVisitor {
         DBSPType timestamp = ContainsNow.timestampType();
         CalciteRelNode node = CalciteEmptyRel.INSTANCE;
 
-        boolean useSource = !this.compiler.compiler().options.ioOptions.nowStream;
-        if (useSource) {
+        DBSPSimpleOperator table = null;
+        if (this.compiler.options.ioOptions.nowStream) {
+            IInputOperator nowInput = circuit.getInput(DBSPCompiler.NOW_TABLE_NAME);
+            if (nowInput == null)
+                throw new CompilationError("Declaration for table 'NOW' not found in program");
+            table = nowInput.asOperator().to(DBSPSimpleOperator.class);
+            this.visited.add(table);
+            this.addOperator(table);
+        }
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var clock = RustCircuitPass.clockSource(this.compiler, node, timestamp, table);
+            clock.operators().forEach(this::addOperator);
+            this.now = clock.collection();
+            this.nowIndexed = clock.indexed();
+            this.map(this.now.outputPort(), this.now.outputPort(), false);
+            return VisitDecision.CONTINUE;
+        }
+        if (table == null) {
             this.now = new DBSPNowOperator(node);
         } else {
-            // table -> map_index -> chain_aggregate(max) -> deindex
-            ProgramIdentifier tableName = DBSPCompiler.NOW_TABLE_NAME;
-            IInputOperator nowInput = circuit.getInput(tableName);
-            if (nowInput == null) {
-                throw new CompilationError("Declaration for table 'NOW' not found in program");
-            }
-            this.now = nowInput.asOperator().to(DBSPSimpleOperator.class);
-            // Prevent processing it again by this visitor
-            this.visited.add(this.now);
-            this.addOperator(this.now);
-
-            DBSPMapIndexOperator index = new DBSPMapIndexOperator(node, this.clockIndex(timestamp), this.now.outputPort());
+            DBSPMapIndexOperator index = new DBSPMapIndexOperator(node, clockIndex(timestamp), table.outputPort());
             this.addOperator(index);
 
-            var aggregateFunctions = this.compiler.options.ioOptions.rustOptimizerPasses
-                    ? RustCircuitPass.clockAggregate(this.compiler, timestamp, this.compiler.weightVar)
-                    : clockAggregate(node, timestamp, this.compiler.weightVar);
+            var aggregateFunctions = clockAggregate(node, timestamp, this.compiler.weightVar);
             DBSPChainAggregateOperator aggregate = new DBSPChainAggregateOperator(
                     node, aggregateFunctions.left, aggregateFunctions.right, index.outputType, index.outputPort());
             this.addOperator(aggregate);
@@ -636,7 +636,7 @@ public class RewriteNow extends CircuitCloneVisitor {
 
         if (this.nowIndexed == null) {
             this.nowIndexed = new DBSPMapIndexOperator(
-                    node, this.clockIndex(timestamp),
+                    node, clockIndex(timestamp),
                     TypeCompiler.makeIndexedZSet(DBSPTypeTuple.EMPTY, new DBSPTypeTuple(timestamp)), now.outputPort());
             this.addOperator(this.nowIndexed);
         }

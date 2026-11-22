@@ -27,6 +27,32 @@ impl<const N: usize> Fragment<N> {
         Ok((Self { base, inputs }, roots))
     }
 
+    fn at_empty_site(
+        kinds: [OperatorKind; N],
+        input: &[u8],
+    ) -> Result<(Self, Vec<NodeId>), Box<dyn std::error::Error>> {
+        Self::bind(
+            ExpressionSite {
+                empty: true,
+                position: None,
+            },
+            kinds,
+            input,
+        )
+    }
+
+    fn clock_reply(
+        &self,
+        edit: &CircuitEditor,
+        clock: feldera_sql_opt::ClockStreams,
+        next: u64,
+    ) -> Result<Value, Box<dyn std::error::Error>> {
+        let mut reply = self.reply(edit, next)?;
+        reply["collection"] = super::operator_number(clock.collection).into();
+        reply["indexed"] = super::operator_number(clock.indexed).into();
+        Ok(reply)
+    }
+
     fn reply(&self, edit: &CircuitEditor, next: u64) -> Result<Value, Box<dyn std::error::Error>> {
         let order = edit.circuit().root().edges("allOperators")?;
         let inputs = self.inputs.map(|port| port.operator);
@@ -40,17 +66,56 @@ impl<const N: usize> Fragment<N> {
     }
 }
 
+pub(super) fn builtin_clock(
+    input: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let (fragment, roots) = Fragment::at_empty_site([], input)?;
+    let [timestamp, empty_key] = roots.as_slice() else {
+        return Err("system clock requires a timestamp and an empty key".into());
+    };
+    let mut edit = CircuitEditor::new(fragment.base.clone());
+    let timestamp = edit.type_id(*timestamp)?;
+    let key = edit.type_id(*empty_key)?;
+    let clock = feldera_sql_opt::builtin_clock(
+        &mut edit,
+        fragment.base.root_id(),
+        timestamp,
+        key,
+        &mut next,
+    )?;
+    fragment.clock_reply(&edit, clock, next)
+}
+
+pub(super) fn table_clock(
+    input: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let (fragment, roots) = Fragment::at_empty_site([OperatorKind::SourceMultiset], input)?;
+    let [timestamp, weight] = roots.as_slice() else {
+        return Err("clock table requires a timestamp and a weight variable".into());
+    };
+    let mut edit = CircuitEditor::new(fragment.base.clone());
+    let timestamp = edit.type_id(*timestamp)?;
+    let weight = edit.expression(*weight)?;
+    let clock = feldera_sql_opt::table_clock(
+        &mut edit,
+        fragment.base.root_id(),
+        fragment.inputs[0],
+        timestamp,
+        weight,
+        &mut next,
+    )?;
+    fragment.clock_reply(&edit, clock, next)
+}
+
 /// Bind the clock stream as an external port. Its upstream circuit and
 /// Calcite origin remain live in the calling JVM.
 pub(super) fn scalar_clock(
     input: &[u8],
     mut next: u64,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    let site = ExpressionSite {
-        empty: true,
-        position: None,
-    };
-    let (fragment, roots) = Fragment::bind(site, [OperatorKind::Now], input)?;
+    let (fragment, roots) = Fragment::at_empty_site([OperatorKind::Now], input)?;
     let [collection, empty_key, minimum] = roots.as_slice() else {
         return Err(
             "scalar clock needs a clock collection, an empty key and an initial timestamp".into(),
@@ -156,12 +221,7 @@ pub(super) fn clock_join(
     mut next: u64,
     consumer: feldera_sql_opt::ClockConsumer,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    let site = ExpressionSite {
-        empty: true,
-        position: None,
-    };
-    let (fragment, roots) = Fragment::bind(
-        site,
+    let (fragment, roots) = Fragment::at_empty_site(
         [OperatorKind::SourceMultiset, OperatorKind::MapIndex],
         input,
     )?;

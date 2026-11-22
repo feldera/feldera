@@ -346,17 +346,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                     "range":w.position, "error_type":w.kind, "message":w.message,
                 })).collect::<Vec<_>>()}));
         }
-        ("RewriteNow/ClockIndex", [timestamp]) => {
-            let timestamp = edit.type_id(*timestamp)?;
-            feldera_sql_opt::clock_index(&mut edit, timestamp, &mut next)?
-        }
-        ("RewriteNow/ClockAggregate", [timestamp, weight]) => {
-            let timestamp = edit.type_id(*timestamp)?;
-            let weight = edit.expression(*weight)?;
-            let roots = feldera_sql_opt::clock_aggregate(&mut edit, timestamp, weight, &mut next)?;
-            let functions = edit.circuit().additional_expressions(&arena, &roots)?;
-            return Ok(json!({"functions": functions, "next_generated_name": next}));
-        }
         ("TemporalGroups" | "MergeTemporalBounds", roots) => {
             return temporal::groups(&arena, &mut edit, roots, state, pass == "MergeTemporalBounds");
         }
@@ -648,6 +637,8 @@ fn transform(
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
     match pass {
+        "RewriteNow/BuiltinClock" => return temporal::builtin_clock(input, next),
+        "RewriteNow/TableClock" => return temporal::table_clock(input, next),
         "RewriteNow/JoinedMap" => return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Map),
         "RewriteNow/JoinedFilter" => return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Filter),
         _ => {}
@@ -769,7 +760,7 @@ fn transform(
         "Monotonicity/Hop" => return hop_waterline(input, state, next),
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate"
+        "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"

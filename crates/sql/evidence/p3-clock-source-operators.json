@@ -1,0 +1,31 @@
+{
+  "scope": "Rust constructs the built-in and table-backed clock sources and returns their collection and indexed outputs.",
+  "compiler_jar_sha256": "d58514bbec649491a20eb91497f245bd642db3a55e1567194409379a51c34305",
+  "optimizer_library_sha256": "ec82c99aa4606498723da2af14f48337b7e371c9ef66618e7ac877b75a107bd6",
+  "engines": {
+    "classic": {
+      "matched_rewrite_now_invocations": 71,
+      "previous_java_gzip_sha256": "a07dd17a03148544f312efea276074f7a21a95d25d293a6ed2baab0be8a40229",
+      "rust_gzip_sha256": "d22045bdc03b5f291a3f4a87cb001a84dc5e877f7486c17972a3d328656935e2",
+      "detached_cases": 7,
+      "detached_report_sha256": "a9b2fd7807bc9669fb4566b9cd05887a8876d874786321891e1625014ca28713"
+    },
+    "gen2": {
+      "matched_rewrite_now_invocations": 62,
+      "previous_java_gzip_sha256": "a20040b82d4a2c6dc025885afd8c01cf5a9b3e9a25a868a30b164178692c72df",
+      "rust_gzip_sha256": "7c32922272312940af6557a7a60ac7fbdcca94a244bdd27b1b57840129b7f300",
+      "detached_cases": 7,
+      "detached_report_sha256": "8eeeb3dda468cd82c10a15d1a88b7342a31a41ab94c100c9e457bbf69149fd71"
+    }
+  },
+  "count_restore": {
+    "bidirectional": true,
+    "generated_rust_sha256": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+    "report_sha256": "3dff4aa88e6603694c07c91f8bea98e76883dc614bfbc47c27e0f1033027e0b0"
+  },
+  "watermark_restore": {
+    "bidirectional": true,
+    "generated_rust_sha256": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+    "report_sha256": "1c9a89e603a59d0b4b6c766e226df052d276888b9c1b73525c35cbea05dbc7c2"
+  }
+}

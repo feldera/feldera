@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust builds both clock sources used by NOW(). The system clock emits a
+timestamp singleton and an index. The table-backed clock takes the maximum
+timestamp and exposes both the indexed and collection outputs. All 133
+frozen RewriteNow comparisons and 14 detached programs matched Java.
+COUNT and LATENESS checkpoints restored in both directions, and each
+LATENESS reader rejected late input after restore.
+[Clock source comparisons](evidence/p3-clock-source-operators.json)
+
 Rust now builds the map or residual filter with its clock join in one call.
 After a residual filter runs, a projection removes the timestamp. All 133
 frozen invocations matched the preceding Java build. Fourteen detached
