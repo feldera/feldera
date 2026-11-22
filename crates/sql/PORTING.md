@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Limiter insertion preserves the live identities of unaffected operators. This
+matters when projection optimization revisits a map it already analyzed. All
+20 classic ATAN2 cases matched direct Java through ordered S4, final S3 and
+emission. The same build passed detached replay of all 15 case/engine pairs
+flagged in the earlier partial population scan.
+[Limiter operator identity](evidence/p3-limiter-operator-identity.json)
+
 Rust selects the individual consumer inputs that need private traces. It also
 chooses which input supplies an identity waterline and which operators need
 closure analysis. Java applies these decisions to the live circuit. All 524

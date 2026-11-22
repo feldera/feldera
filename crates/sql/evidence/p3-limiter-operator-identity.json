@@ -1,0 +1,37 @@
+{
+  "scope": "Detached S2 replay with full ordered optimizer traces. The later OptimizeProjections pass uses an analyzed-operator set shared with its earlier invocations. Replacing an unaffected map during limiter insertion caused the classic optimizer to fuse it into a left join on the later visit.",
+  "populations": {
+    "atan2-classic": {
+      "cases": 20,
+      "mismatches": 0,
+      "input_sha256": "542866ae0c11a8221552b45debc972892ade4af514e9597d368e983fdd4f6563",
+      "report_sha256": "770b48fedca6f9494f34ad086f98e871d80c9c7ee2d5b130ff9c09fdbe10157b"
+    },
+    "classic-smoke": {
+      "cases": 13,
+      "mismatches": 0,
+      "input_sha256": "a71512f00ea6e49f91dc1b78021120e6eaa9135af4f1a31d75757748ff0888b8",
+      "report_sha256": "e60860813edd646ebb5bca901e40a18bd824ad748d71aae078c57e5d67584437"
+    },
+    "gen2-smoke": {
+      "cases": 12,
+      "mismatches": 0,
+      "input_sha256": "26f705156c7a6f0a8b7d7c3bc188f3675c0fa8af4d3819724fc474327fc97dac",
+      "report_sha256": "c04c105a5507bdcf8a9e6712d8361954de80abde3a7743e44f598bd69d79d0fa"
+    },
+    "previous-differences-classic": {
+      "cases": 6,
+      "mismatches": 0,
+      "input_sha256": "be26e3c845af7f2e31f451d46043ac6a01c28a7c59b40bce76319a46e6083ca9",
+      "report_sha256": "702bb21b7960f436998740fa9bd68589c67d561ff6b8f4a29956d1d1dea319f6"
+    },
+    "previous-differences-gen2": {
+      "cases": 9,
+      "mismatches": 0,
+      "input_sha256": "1bfcf0d5df1cb1b89e97295f1b9d9d1e83092becc7927bc34a68098df68168f5",
+      "report_sha256": "70672e2b9f756b4dfe36e5aa3ef59b8a4144325b7df3583f5513f73ef1d084cf"
+    }
+  },
+  "optimizer_library_sha256": "845d82516d966f933fe783ca396ea02f1eed745bef56d5f0b65fe65a1b6622d6",
+  "compiler_jar_sha256": "ff3adddd3f6b5dc03bc0b5d6bf82e91f75efc3538adbc7c07bf60012aa9848fd"
+}

@@ -1311,7 +1311,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private record AsofRetention(long retainer, long join, boolean rebuilt) {}
 
     private boolean reusesOperators() {
-        return this.nativeName.equals("TrimWindows");
+        return this.nativeName.equals("TrimWindows") || this.insertLimiters != null;
     }
 
     private DBSPCircuit readGraph(DBSPCircuit input, JsonNode result, ToJsonOuterVisitor writer) throws IOException {
@@ -1319,19 +1319,21 @@ public final class RustCircuitPass implements CircuitTransform {
         if (graph.isNull())
             return input;
         var shuffles = Objects.requireNonNull(writer.innerVisitor.liveShuffles);
-        // Window trimming gives inserted operators fresh IDs. The clone visitor
-        // preserves other operators with unchanged inputs, including the identities
-        // recorded by earlier iterations of unused-field removal.
+        // Both clone passes preserve unchanged operators. Later projection passes
+        // use their object identity to recognize maps they have already analyzed.
+        // A keyed source can keep its wire ID when it becomes a waterline operator.
         var originalOperators = this.reusesOperators()
                 ? operatorsById(input) : Map.<Long, DBSPOperator>of();
         var decoder = new JsonDecoder(null, writer.liveProvenanceDecoder()) {
             @Override
             DBSPOperator decodedOperator(long id, DBSPOperator decoded) {
                 var original = originalOperators.get(id);
-                if (original == null || !original.inputs.equals(decoded.inputs))
+                if (original == null || original.getClass() != decoded.getClass()
+                        || !original.inputs.equals(decoded.inputs))
                     return decoded;
                 if (original instanceof DBSPNestedOperator nested &&
-                        !nested.sameCircuit(decoded.to(DBSPNestedOperator.class)))
+                        (!nested.sameCircuit(decoded.to(DBSPNestedOperator.class))
+                                || !nested.internalOutputs.equals(decoded.to(DBSPNestedOperator.class).internalOutputs)))
                     return decoded;
                 return original;
             }
