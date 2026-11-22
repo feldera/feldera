@@ -479,6 +479,13 @@ snapshot cases and 25 filtered left joins. A snapshot DISTINCT and GROUP BY
 over a table with LATENESS matched at all 446 classic and 448 Gen-2 observations.
 [Snapshot and filtered left join replay](evidence/p3-snapshot-filtered-left-limiters.json)
 
+Rust inserts recursive limiters in the body that owns the operator. The 30
+classic and 29 Gen-2 recursive cases matched Java at limiter entry and exit.
+A transitive closure over a table with LATENESS matched at all 380 classic
+and 382 Gen-2 observations. The native selector covers every operator class
+in the archived limiter inputs for all 17,098 programs, including nested bodies.
+[Recursive limiter comparisons](evidence/p3-recursive-limiter-bounds.json)
+
 For a preceding ASOF match, the right timestamp waterline bounds the left
 trace. The right trace keeps values above the minimum of both waterlines and
 the latest value below it. All 46 newly eligible ASOF cases matched Java

@@ -15,11 +15,11 @@ pub(super) fn retain_values(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<(), Error> {
-    let closure = edit.node(join.owner)?.edge("function")?;
+    let closure = edit.node(join.site.operator)?.edge("function")?;
     let columns = join_projection(edit, closure)?;
     let signature = edit.node(closure)?.edge("type")?;
     let joined_row = edit.type_id(edit.node(signature)?.edge("resultType")?)?;
-    let body = edit.circuit().root_id();
+    let body = join.site.body;
     let mut retained_left = false;
     for (side, bound) in opposite.into_iter().enumerate() {
         let Some((bound, projection)) = bound else {
@@ -78,8 +78,8 @@ pub(super) fn retain_values(
             raw: false,
             nullable: false,
         };
-        ValueRetention::Matching.insert(edit, join.owner, data, &shape, waterline, next)?;
-        edit.place_before(body, waterline.port.operator, join.owner)?;
+        ValueRetention::Matching.insert(edit, join.site, data, &shape, waterline, next)?;
+        edit.place_before(body, waterline.port.operator, join.site.operator)?;
     }
     Ok(())
 }

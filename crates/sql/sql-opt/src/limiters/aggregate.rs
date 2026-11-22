@@ -21,6 +21,7 @@ pub(super) struct AggregateFacts {
 
 pub(super) struct AggregateInput<'a> {
     pub site: NodeId,
+    pub body: NodeId,
     pub data: OutputPort,
     pub waterline: Bound,
     pub following: Option<NodeId>,
@@ -38,7 +39,7 @@ impl AggregateInput<'_> {
         let Some(primitive) = facts.primitive else {
             return Ok(None);
         };
-        let body = edit.circuit().root_id();
+        let body = self.body;
         if let Some(projection) = &facts.input_projection {
             self.retain_extremum(edit, projection, next, warnings)?;
         }
@@ -140,7 +141,7 @@ impl AggregateInput<'_> {
         let tuple = edit.tuple_expr(var.into(), false, &[field])?;
         let extract = edit.closure_from_variables(tuple, &[var])?;
         let extract = apply_waterlines(edit, extract.into(), &[self.waterline.ty], next, warnings)?;
-        let body = edit.circuit().root_id();
+        let body = self.body;
         let bound = apply_bound(edit, body, self.waterline, extract)?;
         let (_, control) = delay(edit, body, bound, next)?;
 

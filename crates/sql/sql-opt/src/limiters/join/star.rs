@@ -1,6 +1,6 @@
 //! Each delta of a star join traverses a tree of binary joins and a row projection.
 //! The minimum over the trees bounds the sum before the optional filter and map.
-use super::{Bound, JoinTerm, Projection, UnaryTerm, projected_minimum};
+use super::{Bound, InsertionSite, JoinTerm, Projection, UnaryTerm, projected_minimum};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{CircuitEditor, Error, NodeId};
 use serde::Deserialize;
@@ -51,7 +51,7 @@ impl StarJoinExpansion {
     pub(in crate::limiters) fn insert<'a>(
         &'a self,
         edit: &mut CircuitEditor,
-        owner: NodeId,
+        site: InsertionSite,
         functions: &BTreeMap<u64, NodeId>,
         inputs: impl ExactSizeIterator<Item = Option<(Bound, &'a Projection)>>,
         next: &mut u64,
@@ -78,13 +78,13 @@ impl StarJoinExpansion {
                     .map(|id| bounds.get(&id).map(|(bound, _)| *bound));
                 if let Some(result) = binary
                     .term
-                    .insert(edit, owner, functions, sides, next, warnings)?
+                    .insert(edit, site, functions, sides, next, warnings)?
                 {
                     bounds.insert(binary.term.id, result);
                 }
             }
             tree.result
-                .apply(edit, owner, functions, &mut bounds, next, warnings)?;
+                .apply(edit, site, functions, &mut bounds, next, warnings)?;
         }
         if let Some(output) = &self.sum.output {
             let terms = self
@@ -94,13 +94,13 @@ impl StarJoinExpansion {
                 .map(|id| bounds.get(id).copied())
                 .collect::<Option<Vec<_>>>();
             if let Some(terms) = terms {
-                let result = projected_minimum(edit, owner, terms, output, next)?;
+                let result = projected_minimum(edit, site, terms, output, next)?;
                 bounds.insert(self.sum.id, (result, output));
             }
         }
         let mut last = self.sum.id;
         for unary in self.filter.iter().chain(&self.map) {
-            unary.apply(edit, owner, functions, &mut bounds, next, warnings)?;
+            unary.apply(edit, site, functions, &mut bounds, next, warnings)?;
             last = unary.id;
         }
         Ok(bounds.get(&last).copied())

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
@@ -14,6 +15,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -28,7 +30,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
@@ -46,6 +50,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
@@ -76,6 +81,7 @@ public final class LimiterInputs {
             DBSPAggregateLinearPostprocessOperator.class, DBSPChainAggregateOperator.class, DBSPLagOperator.class);
 
     private static final Set<Class<?>> OTHER_NATIVE_OPERATORS = Set.of(
+            DBSPDeltaOperator.class, DBSPViewDeclarationOperator.class, DBSPNestedOperator.class,
             DBSPSourceMultisetOperator.class, DBSPViewOperator.class, DBSPSinkOperator.class, DBSPSumOperator.class,
             DBSPAtomicSumOperator.class, DBSPSubtractOperator.class, DBSPConstantOperator.class,
             DBSPIncrementalConstantOperator.class, DBSPDistinctOperator.class, DBSPPositiveOperator.class,
@@ -88,9 +94,15 @@ public final class LimiterInputs {
             DBSPStarJoinIndexOperator.class, DBSPStarJoinFilterMapOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
-    public static boolean canLowerCircuit(DBSPCircuit circuit) {
-        return circuit.allOperators.stream().allMatch(operator -> TRANSFER_OPERATORS.contains(operator.getClass())
-                || OTHER_NATIVE_OPERATORS.contains(operator.getClass()) || BinaryJoinInputs.supports(operator.getClass()));
+    public static boolean canLowerCircuit(ICircuit circuit) {
+        for (var operator : circuit.getAllOperators()) {
+            if (!TRANSFER_OPERATORS.contains(operator.getClass()) && !OTHER_NATIVE_OPERATORS.contains(operator.getClass())
+                    && !BinaryJoinInputs.supports(operator.getClass()))
+                return false;
+            if (operator instanceof DBSPNestedOperator nested && !canLowerCircuit(nested))
+                return false;
+        }
+        return true;
     }
 
     public static JsonNode projection(IMaybeMonotoneType type) {
@@ -124,7 +136,16 @@ public final class LimiterInputs {
      * Preserve identities shared by those roots and the circuit. */
     public static Map<Long, IDBSPInnerNode> transferRoots(InsertLimiters pass, DBSPCircuit original) {
         var functions = new LinkedHashMap<Long, IDBSPInnerNode>();
-        for (var operator : original.allOperators) {
+        recordTransferRoots(pass, original, functions);
+        return functions;
+    }
+
+    private static void recordTransferRoots(InsertLimiters pass, ICircuit circuit, Map<Long, IDBSPInnerNode> functions) {
+        for (var operator : circuit.getAllOperators()) {
+            if (operator instanceof DBSPNestedOperator nested) {
+                recordTransferRoots(pass, nested, functions);
+                continue;
+            }
             if (operator instanceof DBSPSimpleOperator simple
                     && pass.expandedInto.get(simple) instanceof StarJoinDeltaExpansion star) {
                 StarJoinInputs.recordTransfers(pass, star, functions);
@@ -167,7 +188,6 @@ public final class LimiterInputs {
                 continue;
             recordTransfer(functions, operator.id, pass, expansion.replacement);
         }
-        return functions;
     }
 
     public static String encodeTransferRoots(ToJsonOuterVisitor circuit, Map<Long, IDBSPInnerNode> functions) {
@@ -183,7 +203,14 @@ public final class LimiterInputs {
 
     public static ObjectNode capture(InsertLimiters pass, DBSPCircuit original) {
         ObjectNode facts = Utilities.deterministicObjectMapper().createObjectNode();
-        for (var operator : original.allOperators) {
+        capture(pass, original, facts);
+        return facts;
+    }
+
+    private static void capture(InsertLimiters pass, ICircuit circuit, ObjectNode facts) {
+        for (DBSPOperator operator : circuit.getAllOperators()) {
+            if (operator instanceof DBSPNestedOperator nested)
+                capture(pass, nested, facts);
             var entry = facts.putObject(Long.toString(operator.getId()));
             entry.set("position",operator.getNode().getPositionRange().asJson());
             entry.put("reachable_from_error", pass.reachableFromError.contains(operator));
@@ -237,6 +264,5 @@ public final class LimiterInputs {
                 }
             }
         }
-        return facts;
     }
 }

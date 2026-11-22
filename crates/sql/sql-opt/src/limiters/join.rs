@@ -4,7 +4,9 @@ mod filtered;
 mod star;
 pub(super) use star::StarJoinExpansion;
 
-use super::pass::{apply_bound, apply_bound_pair, projected_bound, projected_minimum};
+use super::pass::{
+    InsertionSite, apply_bound, apply_bound_pair, projected_bound, projected_minimum,
+};
 use super::{Bound, Projection, apply_waterlines, retention::retain_keys};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
@@ -138,7 +140,7 @@ pub(super) struct JoinTerm {
 }
 
 pub(super) struct JoinInputs<'a> {
-    pub owner: NodeId,
+    pub site: InsertionSite,
     pub data: [OutputPort; 2],
     /// Trace retention tests the original ports. Delta terms read the expanded ports.
     pub original_bounds: [Option<Bound>; 2],
@@ -150,7 +152,7 @@ impl JoinTerm {
     pub(super) fn insert(
         &self,
         edit: &mut CircuitEditor,
-        owner: NodeId,
+        site: InsertionSite,
         functions: &BTreeMap<u64, NodeId>,
         bounds: [Option<Bound>; 2],
         next: &mut u64,
@@ -178,9 +180,12 @@ impl JoinTerm {
             side(bounds[1], self.right.as_ref())?,
         ];
         let function = join_waterline(edit, projections, next, warnings)?;
-        let body = edit.circuit().root_id();
+        let InsertionSite {
+            body,
+            operator: owner,
+        } = site;
         let merged = match bounds {
-            [Some(left), Some(right)] => apply_bound_pair(edit, [left, right], function)?,
+            [Some(left), Some(right)] => apply_bound_pair(edit, body, [left, right], function)?,
             [Some(bound), None] | [None, Some(bound)] => apply_bound(edit, body, bound, function)?,
             _ => unreachable!("checked above"),
         };
@@ -198,7 +203,7 @@ impl UnaryTerm {
     fn apply<'a>(
         &'a self,
         edit: &mut CircuitEditor,
-        owner: NodeId,
+        site: InsertionSite,
         functions: &BTreeMap<u64, NodeId>,
         bounds: &mut BTreeMap<u64, (Bound, &'a Projection)>,
         next: &mut u64,
@@ -214,7 +219,10 @@ impl UnaryTerm {
             .get(&self.id)
             .ok_or_else(|| Error::new("missing waterline transfer for join projection"))?;
         let function = apply_waterlines(edit, *transfer, &[input.ty], next, warnings)?;
-        let body = edit.circuit().root_id();
+        let InsertionSite {
+            body,
+            operator: owner,
+        } = site;
         let bound = apply_bound(edit, body, *input, function)?;
         edit.place_before(body, bound.port.operator, owner)?;
         bounds.insert(self.id, (bound, projection));
@@ -240,7 +248,7 @@ impl BinaryJoinExpansion {
                 "unexpected number of terms in incremental join sum",
             ));
         }
-        let body = edit.circuit().root_id();
+        let body = join.site.body;
         for (side, opposite) in [(0, 1), (1, 0)] {
             // For a left join, an unmatched left row can be retracted. Its
             // antijoin key bound determines when the right trace can discard it.
@@ -263,13 +271,13 @@ impl BinaryJoinExpansion {
                 retain_keys(
                     edit,
                     body,
-                    join.owner,
+                    join.site.operator,
                     join.data[opposite],
                     projection,
                     bound,
                     next,
                 )?
-                .place_before_owner(edit, body, join.owner)?;
+                .place_before_owner(edit, body, join.site.operator)?;
             }
         }
 
@@ -282,7 +290,7 @@ impl BinaryJoinExpansion {
         let mut results = BTreeMap::new();
         for (term, sides) in self.terms.iter().zip(term_inputs) {
             if let Some(result) =
-                term.insert(edit, join.owner, join.functions, sides, next, warnings)?
+                term.insert(edit, join.site, join.functions, sides, next, warnings)?
             {
                 results.insert(term.id, result);
             }
@@ -295,7 +303,7 @@ impl BinaryJoinExpansion {
         for filter in &self.filters {
             filter.apply(
                 edit,
-                join.owner,
+                join.site,
                 join.functions,
                 &mut results,
                 next,
@@ -309,11 +317,11 @@ impl BinaryJoinExpansion {
             .collect::<Option<Vec<_>>>();
         let result = match (output, inputs) {
             (Some(dst), Some(inputs)) => {
-                Some((projected_minimum(edit, join.owner, inputs, dst, next)?, dst))
+                Some((projected_minimum(edit, join.site, inputs, dst, next)?, dst))
             }
             _ => None,
         };
-        if edit.node(join.owner)?.operator_kind()
+        if edit.node(join.site.operator)?.operator_kind()
             == Some(feldera_sql_ir::OperatorKind::JoinFilterMap)
         {
             let [both, left, right] = self.filters.as_slice() else {
@@ -363,16 +371,24 @@ impl UnmatchedRows {
                 "bounded left antijoin needs two input projections",
             ));
         };
-        let bound = projected_minimum(edit, join.owner, [(left, l), (right, r)], output, next)?;
+        let bound = projected_minimum(edit, join.site, [(left, l), (right, r)], output, next)?;
 
         // Both traces use the intersection of their key projections. The value
         // portion must have the shape of the right trace, including empty tuples.
         let target = output.with_unbounded_value_from(r)?;
-        let body = edit.circuit().root_id();
+        let body = join.site.body;
         let control = projected_bound(edit, body, bound, output, &target, next)?;
-        edit.place_before(body, control.port.operator, join.owner)?;
-        retain_keys(edit, body, join.owner, join.data[1], &target, control, next)?
-            .place_before_owner(edit, body, join.owner)?;
+        edit.place_before(body, control.port.operator, join.site.operator)?;
+        retain_keys(
+            edit,
+            body,
+            join.site.operator,
+            join.data[1],
+            &target,
+            control,
+            next,
+        )?
+        .place_before_owner(edit, body, join.site.operator)?;
 
         let Some(padded) = &self.padded else {
             return Ok(None);
@@ -383,7 +399,7 @@ impl UnmatchedRows {
             .ok_or_else(|| Error::new("missing null-padding transfer for left join"))?;
         let function = apply_waterlines(edit, *function, &[bound.ty], next, warnings)?;
         let padded_bound = apply_bound(edit, body, bound, function)?;
-        edit.place_before(body, padded_bound.port.operator, join.owner)?;
+        edit.place_before(body, padded_bound.port.operator, join.site.operator)?;
         Ok(Some((padded_bound, padded)))
     }
 }

@@ -6,10 +6,11 @@ use super::{
 use crate::limiters::{filter::arg, minimum_pair, retention::ValueRetention};
 use crate::rebuild::input_type;
 use feldera_sql_expr::SimplifyWarning;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind, OutputPort};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind, NodeId, OutputPort};
 
 fn timestamp_bound(
     edit: &mut CircuitEditor,
+    body: NodeId,
     source: Option<Bound>,
     projection: Option<&Projection>,
     index: usize,
@@ -38,12 +39,7 @@ fn timestamp_bound(
     let timestamp = edit.tuple_field(values, compressed)?;
     let closure = edit.closure_from_variables(timestamp, &[parameter])?;
     let closure = apply_waterlines(edit, closure.into(), &[source.ty], next, warnings)?;
-    Ok(Some(apply_bound(
-        edit,
-        edit.circuit().root_id(),
-        source,
-        closure,
-    )?))
+    Ok(Some(apply_bound(edit, body, source, closure)?))
 }
 
 fn timestamp_projection(
@@ -76,7 +72,8 @@ impl JoinTerm {
         next: &mut u64,
         warnings: &mut Vec<SimplifyWarning>,
     ) -> Result<Option<(Bound, &Projection)>, Error> {
-        let node = edit.node(join.owner)?;
+        let body = join.site.body;
+        let node = edit.node(join.site.operator)?;
         let comparator = edit.expression(node.edge("comparator")?)?;
         if edit.expr_kind(comparator)? != ExpressionKind::DirectComparator
             || edit
@@ -99,7 +96,7 @@ impl JoinTerm {
         );
         let result = self.insert(
             edit,
-            join.owner,
+            join.site,
             join.functions,
             join.expanded_bounds,
             next,
@@ -107,6 +104,7 @@ impl JoinTerm {
         )?;
         let Some(right) = timestamp_bound(
             edit,
+            body,
             join.original_bounds[1],
             self.right.as_ref(),
             right_index,
@@ -116,7 +114,6 @@ impl JoinTerm {
         else {
             return Ok(result);
         };
-        let body = edit.circuit().root_id();
 
         let parameter = arg(edit, right.ty, next)?;
         let read = edit.dereference(parameter)?;
@@ -127,16 +124,17 @@ impl JoinTerm {
         let left_projection = timestamp_projection(edit, join.data[0], left_index)?;
         ValueRetention::Matching.insert(
             edit,
-            join.owner,
+            join.site,
             join.data[0],
             &left_projection,
             bound,
             next,
         )?;
-        edit.place_before(body, right.port.operator, join.owner)?;
+        edit.place_before(body, right.port.operator, join.site.operator)?;
 
         if let Some(left) = timestamp_bound(
             edit,
+            body,
             join.original_bounds[0],
             self.left.as_ref(),
             left_index,
@@ -152,17 +150,17 @@ impl JoinTerm {
             let closure = edit.closure_from_variables(tuple, &[l, r])?;
             let project =
                 apply_waterlines(edit, closure.into(), &[left.ty, right.ty], next, warnings)?;
-            let bound = apply_bound_pair(edit, [left, right], project)?;
+            let bound = apply_bound_pair(edit, body, [left, right], project)?;
             let right_projection = timestamp_projection(edit, join.data[1], right_index)?;
             ValueRetention::MatchingAndLast.insert(
                 edit,
-                join.owner,
+                join.site,
                 join.data[1],
                 &right_projection,
                 bound,
                 next,
             )?;
-            edit.place_before(body, left.port.operator, join.owner)?;
+            edit.place_before(body, left.port.operator, join.site.operator)?;
         }
         Ok(result)
     }

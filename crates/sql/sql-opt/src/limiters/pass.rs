@@ -100,6 +100,41 @@ fn identifier<'a>(op: &'a Node, slot: &str) -> Option<&'a str> {
     value.as_str()
 }
 
+/// The original operator and the circuit body where its waterlines must be inserted.
+#[derive(Clone, Copy)]
+pub(super) struct InsertionSite {
+    pub body: NodeId,
+    pub operator: NodeId,
+}
+
+/// The clone visitor finishes a nested body before rebuilding the enclosing operator.
+/// Keep the following sibling so generated operators cannot cross a body boundary.
+fn insertion_order(circuit: &Circuit) -> Result<Vec<(InsertionSite, Option<NodeId>)>, Error> {
+    fn visit(
+        circuit: &Circuit,
+        body: NodeId,
+        order: &mut Vec<(InsertionSite, Option<NodeId>)>,
+    ) -> Result<(), Error> {
+        let members = circuit
+            .node(body)
+            .expect("validated circuit body")
+            .edges("allOperators")?;
+        for (index, &operator) in members.iter().enumerate() {
+            if circuit.node(operator).and_then(Node::operator_kind) == Some(Op::Nested) {
+                visit(circuit, operator, order)?;
+            }
+            order.push((
+                InsertionSite { body, operator },
+                members.get(index + 1).copied(),
+            ));
+        }
+        Ok(())
+    }
+    let mut order = Vec::new();
+    visit(circuit, circuit.root_id(), &mut order)?;
+    Ok(order)
+}
+
 pub(super) fn projected_bound(
     edit: &mut CircuitEditor,
     body: NodeId,
@@ -116,12 +151,15 @@ pub(super) fn projected_bound(
 /// group belongs immediately before the original operator.
 pub(super) fn projected_minimum<'a>(
     edit: &mut CircuitEditor,
-    owner: NodeId,
+    site: InsertionSite,
     inputs: impl IntoIterator<Item = (Bound, &'a Projection)>,
     dst: &Projection,
     next: &mut u64,
 ) -> Result<Bound, Error> {
-    let body = edit.circuit().root_id();
+    let InsertionSite {
+        body,
+        operator: owner,
+    } = site;
     let projected = inputs
         .into_iter()
         .map(|(bound, src)| projected_bound(edit, body, bound, src, dst, next))
@@ -136,10 +174,10 @@ pub(super) fn projected_minimum<'a>(
 
 pub(super) fn apply_bound_pair(
     edit: &mut CircuitEditor,
+    body: NodeId,
     inputs: [Bound; 2],
     function: feldera_sql_ir::ExpressionId,
 ) -> Result<Bound, Error> {
-    let body = edit.circuit().root_id();
     let result = edit.node(function.into())?.edge("body")?;
     let ty = edit.expression_type(edit.expression(result)?)?;
     let operator = edit.append_operator(
@@ -196,6 +234,7 @@ pub(super) fn apply_bound(
 fn relation_clocks(
     circuit: &Circuit,
     facts: &BTreeMap<u64, OperatorFacts>,
+    order: &[(InsertionSite, Option<NodeId>)],
 ) -> Result<BTreeMap<NodeId, StreamKind>, Error> {
     let mut clocks = circuit
         .root()
@@ -203,7 +242,9 @@ fn relation_clocks(
         .map(|_| OutputClocks::new(circuit))
         .transpose()?;
     let mut recorded = BTreeMap::new();
-    for (id, node) in circuit.operators() {
+    for &(site, _) in order {
+        let id = site.operator;
+        let node = circuit.node(id).expect("validated operator");
         let NodeId::Outer(number) = id else {
             unreachable!("validated circuit member")
         };
@@ -234,7 +275,9 @@ fn relation_clocks(
         }
     }
     let mut relations = BTreeMap::new();
-    for (id, node) in circuit.operators() {
+    for &(site, _) in order {
+        let id = site.operator;
+        let node = circuit.node(id).expect("validated operator");
         if !matches!(
             node.operator_kind(),
             Some(Op::SourceMultiset | Op::View | Op::Sink)
@@ -271,12 +314,11 @@ pub fn insert_limiters_with_warnings(
     state: LimiterInputs,
     warnings: &mut Vec<feldera_sql_expr::SimplifyWarning>,
 ) -> Result<(Circuit, u64), LimiterError> {
-    let body = circuit.root_id();
-    let original = circuit.root().edges("allOperators")?;
+    let original = insertion_order(&circuit)?;
     if original.len() != state.operators.len() {
         return Err(Error::new("limiter facts and circuit have different populations").into());
     }
-    let clocks = relation_clocks(&circuit, &state.operators)?;
+    let clocks = relation_clocks(&circuit, &state.operators, &original)?;
     let (circuit, functions) = state.transfer_roots.attach(circuit)?;
     let mut edit = CircuitEditor::new(circuit);
     for number in state.singletons {
@@ -293,7 +335,8 @@ pub fn insert_limiters_with_warnings(
     // Stream joins and rolling aggregates publish bounds only for their expanded
     // output. Their original port cannot authorize trace retention downstream.
     let mut expanded_only = BTreeMap::new();
-    for (index, &id) in original.iter().enumerate() {
+    for (site, following) in original {
+        let InsertionSite { body, operator: id } = site;
         let expanded_bound = |p: &OutputPort| expanded_only.get(p).or_else(|| bounds.get(p));
         let NodeId::Outer(number) = id else {
             return Err(Error::new("expected outer operator").into());
@@ -351,7 +394,7 @@ pub fn insert_limiters_with_warnings(
                     data.insert(output, result.data);
                     names.replaced(id);
                     bounds.insert(output, (result.bound, projection));
-                    if let Some(&before) = original.get(index + 1) {
+                    if let Some(before) = following {
                         edit.place_before(body, result.first_inserted, before)?;
                     }
                     continue;
@@ -382,7 +425,7 @@ pub fn insert_limiters_with_warnings(
                         .map(|p| expanded_bound(p).copied())
                         .collect::<Option<Vec<_>>>();
                     if let Some(upstream) = upstream {
-                        let bound = projected_minimum(&mut edit, id, upstream, dst, &mut next)?;
+                        let bound = projected_minimum(&mut edit, site, upstream, dst, &mut next)?;
                         bounds.insert(output, (bound, dst));
                     } else if kind == Some(Op::AntiJoin) {
                         return Err(
@@ -403,7 +446,7 @@ pub fn insert_limiters_with_warnings(
                     let (first, bound) =
                         super::chain::chain_waterline(&mut edit, body, id, &mut next)?;
                     bounds.insert(output, (bound, projection));
-                    if let Some(&before) = original.get(index + 1) {
+                    if let Some(before) = following {
                         edit.place_before(body, first, before)?;
                     }
                 }
@@ -484,7 +527,7 @@ pub fn insert_limiters_with_warnings(
                         let retention = super::retention::retain_keys(
                             &mut edit, body, id, output, projection, bound, &mut next,
                         )?;
-                        if let Some(&before) = original.get(index + 1) {
+                        if let Some(before) = following {
                             edit.place_before(body, retention.first, before)?;
                         }
                     }
@@ -510,7 +553,7 @@ pub fn insert_limiters_with_warnings(
                     .try_into()
                     .map_err(|_| Error::new("join requires two inputs"))?;
                 let join = super::join::JoinInputs {
-                    owner: id,
+                    site,
                     data: ports.map(|p| data.get(&p).map_or(p, |s| s.port)),
                     original_bounds: ports.map(|p| bounds.get(&p).map(|(b, _)| *b)),
                     expanded_bounds: ports.map(|p| expanded_bound(&p).map(|(b, _)| *b)),
@@ -528,7 +571,7 @@ pub fn insert_limiters_with_warnings(
                     if let Some(term) = &facts.replacement_join {
                         if let Some(result) = term.insert(
                             &mut edit,
-                            id,
+                            site,
                             &functions,
                             join.expanded_bounds,
                             &mut next,
@@ -558,7 +601,7 @@ pub fn insert_limiters_with_warnings(
                     if inputs.iter().any(|p| bounds.contains_key(p)) {
                         let incoming = inputs.iter().map(|p| expanded_bound(p).copied());
                         if let Some(result) =
-                            star.insert(&mut edit, id, &functions, incoming, &mut next, warnings)?
+                            star.insert(&mut edit, site, &functions, incoming, &mut next, warnings)?
                         {
                             if star.has_original_bound() {
                                 bounds.insert(output, result);
@@ -587,7 +630,7 @@ pub fn insert_limiters_with_warnings(
                         };
                         if let Some(dst) = super::rolling::insert(
                             &mut edit,
-                            id,
+                            site,
                             input,
                             projection.is_some(),
                             &mut next,
@@ -615,7 +658,8 @@ pub fn insert_limiters_with_warnings(
                         site: id,
                         data: data.get(source).map_or(*source, |s| s.port),
                         waterline,
-                        following: original.get(index + 1).copied(),
+                        following,
+                        body,
                         functions: &functions,
                     };
                     if let Some(bound) = input.insert(&mut edit, expansion, &mut next, warnings)? {
@@ -653,7 +697,7 @@ pub fn insert_limiters_with_warnings(
                         .map(|(bound, _)| *bound);
                     let bound = super::window::insert_window_bound(
                         &mut edit,
-                        id,
+                        site,
                         projection,
                         input,
                         |port| data.get(&port).map_or(port, |stream| stream.port),
@@ -688,9 +732,23 @@ pub fn insert_limiters_with_warnings(
                     continue;
                 }
             }
+            Some(Op::Nested) => {
+                let Some(Field::Array(slots)) = op.field("internalOutputs") else {
+                    return Err(Error::new("nested circuit requires output slots").into());
+                };
+                let mapped = slots
+                    .iter()
+                    .map(|slot| {
+                        OutputPort::from_field(slot).map(|p| data.get(&p).map_or(p, |s| s.port))
+                    })
+                    .collect::<Vec<_>>();
+                edit.remap_nested_outputs(id, &mapped)?;
+            }
             // The Java visitor clones these operators without deriving output bounds.
             Some(
-                Op::Now
+                Op::Delta
+                | Op::ViewDeclaration
+                | Op::Now
                 | Op::Constant
                 | Op::IncrementalConstant
                 | Op::StreamAggregate
@@ -743,6 +801,39 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn recursive_insertions_use_the_next_sibling_in_the_same_body() {
+        let port = |id| json!({"operator": {"node": id}, "outputNumber": 0});
+        let circuit = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": [
+                {"class": "DBSPConstantOperator", "id": 1, "inputs": []},
+                {"class": "DBSPNestedOperator", "id": 2, "inputs": [port(1)],
+                 "internalOutputs": [port(4)], "allOperators": [
+                    {"class": "DBSPViewDeclarationOperator", "id": 3, "inputs": []},
+                    {"class": "DBSPNoopOperator", "id": 4, "inputs": [port(3)]}
+                 ]},
+                {"class": "DBSPNoopOperator", "id": 5, "inputs": [port(2)]}
+            ]
+        }))
+        .unwrap();
+        let actual: Vec<_> = insertion_order(&circuit)
+            .unwrap()
+            .into_iter()
+            .map(|(site, next)| (site.body, site.operator, next))
+            .collect();
+        let outer = NodeId::Outer;
+        assert_eq!(
+            actual,
+            [
+                (outer(0), outer(1), Some(outer(2))),
+                (outer(2), outer(3), Some(outer(4))),
+                (outer(2), outer(4), None),
+                (outer(0), outer(2), Some(outer(5))),
+                (outer(0), outer(5), None),
+            ]
+        );
+    }
+
+    #[test]
     fn unused_view_keeps_the_clock_of_its_input() {
         let circuit = Circuit::from_json(json!({
             "class": "DBSPCircuit", "id": 0, "incremental": true, "declarations": [],
@@ -774,12 +865,13 @@ mod tests {
                 )
             })
             .collect();
-        let clocks = relation_clocks(&circuit, &facts).unwrap();
+        let order = insertion_order(&circuit).unwrap();
+        let clocks = relation_clocks(&circuit, &facts, &order).unwrap();
         assert_eq!(clocks[&NodeId::Outer(3)], StreamKind::Collection);
 
         facts.get_mut(&3).unwrap().input_kinds = Some(vec![Clock::Delta]);
         assert!(
-            relation_clocks(&circuit, &facts)
+            relation_clocks(&circuit, &facts, &order)
                 .unwrap_err()
                 .to_string()
                 .contains("recorded limiter clock differs")

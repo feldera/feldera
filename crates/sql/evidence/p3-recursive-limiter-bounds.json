@@ -1,0 +1,54 @@
+{
+  "scope": "Limiter entry and exit for every frozen program with a nested body, plus a recursive transitive closure over a table with LATENESS.",
+  "shards": [
+    {
+      "engine": "classic",
+      "cases": 15,
+      "input_sha256": "17f084952c30f18f12ad3cc6cd6ab6f339c8ad08e00b10fe5c5714ef16d8d90c",
+      "java_stream_sha256": "de82c9b61de049194c208492dfe303963947975c85e69e2e5b1b1f01911c282c",
+      "hybrid_stream_sha256": "7d3eff4ac081d358af8ee323ada047c329e0a60c3e3ed92cfb509355d610ca6f"
+    },
+    {
+      "engine": "classic",
+      "cases": 15,
+      "input_sha256": "58023b0db0bc4f683a40b7ca262fbdc239b644abc93a58ff8aa2ea6ab4eccbd0",
+      "java_stream_sha256": "e4a94a1b7e1540b7c78e247a861e429203b738dc75b897ee198b2031a2c7c379",
+      "hybrid_stream_sha256": "1952820468828b655a289ef67dd65f8813bf6317126b64b2b8a3f253dad25b71"
+    },
+    {
+      "engine": "gen2",
+      "cases": 13,
+      "input_sha256": "0bafb3343da860af855b219fa0f6f2ddb84ead5f77119677be7fc09c11785494",
+      "java_stream_sha256": "6fbb60e506aa72ebc01d1ac28055a7986d93113eb72767ba6abca6485622c418",
+      "hybrid_stream_sha256": "596552fae6794e3643e90a864fdb8859bd2850e7d0bd799e8e9d139b3609401f"
+    },
+    {
+      "engine": "gen2",
+      "cases": 16,
+      "input_sha256": "27fbbd4b4932036dc084d6a796ded070465e36b0a4ba4de9f171687a3ef6031c",
+      "java_stream_sha256": "722646b2749231f441522b67739bbefd27853e07b8cab4320cf90cf961b6c0a2",
+      "hybrid_stream_sha256": "151bd730992399ed17a3998759ea9a6e7d5dd77d558ff1b5917bbd90532724f7"
+    }
+  ],
+  "directed": {
+    "sql": "CREATE TABLE edges(x INT NOT NULL LATENESS 1, y INT NOT NULL);\nDECLARE RECURSIVE VIEW paths(x INT NOT NULL, y INT NOT NULL);\nCREATE MATERIALIZED VIEW paths AS\nSELECT x, y FROM edges UNION\nSELECT p.x, e.y FROM paths p JOIN edges e ON p.y = e.x;\n",
+    "equal_observations": {
+      "classic": 380,
+      "gen2": 382
+    }
+  },
+  "optimizer_library_sha256": "a65e29925f958d0204cdb2e4743ad2028d470edf13eaa30475ef226d8b056119",
+  "limiter_input_inventory": {
+    "description": "Operator classes at limiter entry in the archived Java graphs, including nested body members. Each class is supported by the current native selector.",
+    "cases": {
+      "classic": 8571,
+      "gen2": 8527
+    },
+    "java_stream_sha256": {
+      "classic-0-false.gz": "0d35ad64f8c326c05a6c51ae45b60bd47c5bb7ac57be66c638fe7c41734916cd",
+      "classic-1-false.gz": "3796f48d65c9dbbab121b72e191e1ee99ad84ede6e1c6d64513af1b1899659c6",
+      "gen2-0-false.gz": "009228fccff459dda483c9a672b401b1f59cd02101b6d3fa799db11e10858f4d",
+      "gen2-1-false.gz": "676a4cce572b870826c98f0dc8c9fa1781d1cf0f94d00033b81ad23e8fd8d8f5"
+    }
+  }
+}

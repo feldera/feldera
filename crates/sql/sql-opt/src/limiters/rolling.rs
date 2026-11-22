@@ -1,11 +1,12 @@
 //! Bound a rolling aggregate by its ordering key. The trace consumes a delayed,
 //! boxed key, while a frame ending at or before the row also bounds its output.
+use super::pass::InsertionSite;
 use super::{Bound, Projection, pass::apply_bound, retention::delay, source::link};
 use crate::monotonicity::bindings::waterline_bindings;
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,
-    OutputPort, TypeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, OutputPort,
+    TypeId,
 };
 
 struct RollingKey<'a> {
@@ -79,7 +80,10 @@ pub(super) struct RollingInput<'a> {
 
 pub(super) fn insert(
     edit: &mut CircuitEditor,
-    owner: NodeId,
+    InsertionSite {
+        body,
+        operator: owner,
+    }: InsertionSite,
     input: RollingInput<'_>,
     bounds_output: bool,
     next: &mut u64,
@@ -118,7 +122,6 @@ pub(super) fn insert(
     *next = next
         .checked_add(1)
         .ok_or_else(|| Error::new("generated names exhausted"))?;
-    let body = edit.circuit().root_id();
     let extract = key.transfer(edit, None, input, next, warnings)?;
     let control = apply_bound(edit, body, input, extract)?;
     let result = if bounds_output {

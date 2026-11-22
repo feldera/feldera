@@ -1,5 +1,6 @@
 //! Delay an inferred waterline by one step before using it to discard trace keys.
 use super::filter::{arg, tuple_compare};
+use super::pass::InsertionSite;
 use super::source::link;
 use super::{Bound, Projection};
 use crate::rebuild::input_type;
@@ -158,13 +159,16 @@ impl ValueRetention {
     pub(super) fn insert(
         self,
         edit: &mut CircuitEditor,
-        owner: NodeId,
+        site: InsertionSite,
         data: OutputPort,
         projection: &Projection,
         bound: Bound,
         next: &mut u64,
     ) -> Result<(), Error> {
-        let body = edit.circuit().root_id();
+        let InsertionSite {
+            body,
+            operator: owner,
+        } = site;
         let (_, control) = delay(edit, body, bound, next)?;
         let stream = input_type(edit, data)?;
         let row = edit.type_id(edit.node(stream.into())?.edge("elementType")?)?;

@@ -1,9 +1,10 @@
 //! Derive a temporal window's output waterline from its endpoints and input.
+use super::pass::InsertionSite;
 use super::{Bound, Projection, filter::arg, minimum_pair};
 use feldera_sql_expr::copy_expression;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId, OperatorKind as Op,
-    OutputPort, TypeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, OperatorKind as Op, OutputPort,
+    TypeId,
 };
 
 pub struct WindowWaterline {
@@ -17,7 +18,10 @@ pub struct WindowWaterline {
 /// emits it. The right input of the window boxes the two clock endpoints.
 pub(super) fn insert_window_bound(
     edit: &mut CircuitEditor,
-    site: NodeId,
+    InsertionSite {
+        body,
+        operator: site,
+    }: InsertionSite,
     projection: &Projection,
     input_bound: Option<Bound>,
     remap: impl Fn(OutputPort) -> OutputPort,
@@ -59,7 +63,6 @@ pub(super) fn insert_window_bound(
             .ok_or_else(|| Error::new("missing window clock stream"))?,
     );
     let functions = window_waterline(edit, endpoints, input.map(|b| b.ty), value.monotone(), next)?;
-    let body = edit.circuit().root_id();
     let clock = Bound {
         port: clock,
         ty: crate::rebuild::input_type(edit, clock)?,
@@ -73,7 +76,7 @@ pub(super) fn insert_window_bound(
             next,
             warnings,
         )?;
-        super::pass::apply_bound_pair(edit, [input, endpoint], function)?
+        super::pass::apply_bound_pair(edit, body, [input, endpoint], function)?
     } else {
         endpoint
     };
