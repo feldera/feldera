@@ -1,0 +1,43 @@
+{
+  "scope": "Frozen cases whose ExpandUnsafeCasts trace folded IS NULL before Java. The comparison covers ordered optimizer observations, schema, diagnostics, persistent-ID inputs and emitted artifacts through detached S2 replay.",
+  "cases": [
+    "classic StreamingTests#issue4909a/0",
+    "Gen-2 PivotTests#unpivotTests/18 through /21",
+    "Gen-2 StreamingTests#issue4909a/0"
+  ],
+  "optimizer_library_sha256": "5ab493f8bf9b8e530ceb8f900ece8264efc6b34ea18408c5e3630b2794e6afd1",
+  "runs": [
+    {
+      "cases": 5,
+      "input_sha256": "4e731e93f1cdb9d5f6aca8e2548dea5871b5e782dfcb41ed6ab383c6f18d6342",
+      "mismatches": 0,
+      "full_optimizer_trace": true,
+      "shards": [
+        {
+          "manifest_sha256": "d8dab198a41cb66d43c3045cce56f708e56cc5500b651f5fd477aa997bf7119f",
+          "records_sha256": "96c0e9dd45f9b2c2b24083631cbd7e1355ca780fabe51062d6c35bf8d1af0b6c"
+        },
+        {
+          "manifest_sha256": "71f06b58d14b4c18549b60d660a81e8db770eb5138f58c1ca4db2fc2bedd7704",
+          "records_sha256": "73943cdeb5839f15c61668ea566a6c44b79a430371bf3677b2dbc01dd0643fe9"
+        }
+      ]
+    },
+    {
+      "cases": 1,
+      "input_sha256": "64db92d40a1fa46008f90256aa106064a618f1e44902329b05b1726f3b99aadb",
+      "mismatches": 0,
+      "full_optimizer_trace": true,
+      "shards": [
+        {
+          "manifest_sha256": "93a9ae2b03215c204f3ada8024e829301604377883b621a338db5169813dc647",
+          "records_sha256": "564f06c3af3598596480e4388d9e6f265d3ed2bf97846eaa6da0264ccf6ad5eb"
+        },
+        {
+          "manifest_sha256": "992186a87b569801d99fa11355ad8c16e1a3ee90eaedb018c28324c101b4d6b6",
+          "records_sha256": "fd38f19b9e9c8c1124cd6af75fdad33cfc05123bfce5b002ec44e733cd4ee96c"
+        }
+      ]
+    }
+  ]
+}

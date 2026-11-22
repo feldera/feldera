@@ -189,6 +189,17 @@ impl CircuitEditor {
         )
     }
 
+    /// Reconstruct an existing IS NULL at its original source location.
+    /// ExpressionTranslator gives the test a fresh Boolean type and defers folding.
+    pub fn rebuild_written_null_test(&mut self, node: NodeId) -> Result<NodeId, Error> {
+        let operand = self.expression(self.node(node)?.edge("expression")?)?;
+        if !self.nullable(self.expression_type(operand)?)? {
+            return Err(Error::new("IS NULL requires a nullable operand"));
+        }
+        let ty = self.derive_inner(self.node(node)?.edge("type")?, [])?;
+        self.derive_inner(node, [("type", Field::Reference(ty))])
+    }
+
     pub fn is_null_literal(&self, expr: ExpressionId) -> Result<bool, Error> {
         let kind = self.expr_kind(expr)?;
         Ok(match kind {

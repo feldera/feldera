@@ -94,6 +94,14 @@ struct ExpandCasts {
 }
 
 impl Transformation for ExpandCasts {
+    fn rebuild_null_test(
+        &mut self,
+        editor: &mut CircuitEditor,
+        node: NodeId,
+    ) -> Result<NodeId, Error> {
+        editor.rebuild_written_null_test(node)
+    }
+
     fn preorder(&mut self, editor: &mut CircuitEditor, id: NodeId) -> Result<Visit, Error> {
         visit_expression(editor, id)
     }
@@ -112,7 +120,7 @@ impl Transformation for ExpandCasts {
             Some("SqlSafe") => true,
             Some("SqlUnsafe") => false,
             Some("UnwrapResultSafe" | "UnwrapResultUnsafe" | "RustCast" | "Saturating") => {
-                return Ok(id)
+                return Ok(id);
             }
             _ => return Err(Error::new("unknown SQL cast mode")),
         };
@@ -384,4 +392,49 @@ fn unwrap_option(
         ],
     )?;
     Ok(unwrap.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_sql_ir::Circuit;
+    use serde_json::json;
+
+    #[test]
+    fn expanding_a_nullable_cast_preserves_the_enclosing_null_test() {
+        let position = json!({
+            "start_line_number": 1, "start_column": 8,
+            "end_line_number": 1, "end_column": 23
+        });
+        let circuit = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": [{
+                "class": "DBSPConstantOperator", "id": 1, "inputs": [], "function": {
+                    "class": "DBSPIsNullExpression", "id": 2, "position": position,
+                    "type": {"class":"DBSPTypeBool", "id":3, "code":"BOOL", "mayBeNull":false, "sourceEmpty":true},
+                    "expression": {
+                        "class": "DBSPCastExpression", "id": 4, "safe": "SqlUnsafe",
+                        "type": {"class":"DBSPTypeBool", "id":5, "code":"BOOL", "mayBeNull":true},
+                        "source": {"class":"DBSPVariablePath", "id":6, "variable":"v", "type":{"node":3}}
+                    }
+                }
+            }]
+        })).unwrap();
+        let mut edit = CircuitEditor::new(circuit);
+        let original = NodeId::Inner(2);
+        let expanded = expand_sql_casts(&mut edit, original, CastSafety::Unsafe, &mut 0).unwrap();
+        let test = edit.node(expanded).unwrap();
+        assert_eq!(test.class(), "DBSPIsNullExpression");
+        assert_eq!(
+            test.field("position"),
+            edit.node(original).unwrap().field("position")
+        );
+        assert_ne!(
+            test.edge("type").unwrap(),
+            edit.node(original).unwrap().edge("type").unwrap()
+        );
+        assert_eq!(
+            edit.node(test.edge("expression").unwrap()).unwrap().class(),
+            "DBSPSomeExpression"
+        );
+    }
 }

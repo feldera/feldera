@@ -93,10 +93,7 @@ impl Transformation for IndexReader<'_> {
         edit: &mut CircuitEditor,
         node: NodeId,
     ) -> Result<NodeId, Error> {
-        // ParameterIndexRewriter constructs this test at the original SQL
-        // location with a new Boolean type, even when the operand is foldable.
-        let ty = edit.derive_inner(edit.node(node)?.edge("type")?, [])?;
-        edit.derive_inner(node, [("type", Field::Reference(ty))])
+        edit.rebuild_written_null_test(node)
     }
 
     fn postorder_rebuilt(
