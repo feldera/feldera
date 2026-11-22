@@ -1,0 +1,29 @@
+{
+  "scope": "Project references to partially bounded rows and preserve target-sized literal types in Rust waterlines.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "4ff42eae2a67fd37d7968f00a5baa432bfc43112ee7d4f50227cfb6bd9e4eb28",
+    "waterlines.jar": "f4775e460ef1772582e9f06ea021462345e0296e450ef6400509ae3f976bb7cf",
+    "tests.log": "4f46efc5c588c501a2e4cbb406e4a0d2c9628a77d43e20581524ee9a7b6d90dc",
+    "clippy.log": "f443675bde45411405bc945f4a627365790ff28ce8db76643e42e7b8e04dbdfe",
+    "build.log": "04fc81f8bd3ebb08e035c9b86bad6c0bd89a105dcf604df831799c52b281bd14",
+    "waterlines.log": "8a889cc730ebd04417be9c72103a99d093d705be4e448af0a7fa8bca9d046a78"
+  },
+  "rust_tests": 171,
+  "junit_tests": 17,
+  "engines": {
+    "classic": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "mismatches": 0,
+      "receipt_sha256": "594c9307392f7c403943b8d2e79f1f27d1b2994eef5f63dc14c2f7d53cf58f97",
+      "monotonicity": "MonotoneAnalyzer matched at 291 invocations across 291 cases"
+    },
+    "gen2": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "mismatches": 0,
+      "receipt_sha256": "8f994278844d09fc7c868beb0f4ce3bc269ca7f0dce990978eb20ff62cf2e31a",
+      "monotonicity": "MonotoneAnalyzer matched at 259 invocations across 259 cases"
+    }
+  }
+}

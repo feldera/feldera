@@ -172,7 +172,7 @@ impl Row {
             Expr::Let | Expr::Block => return self.scope(edit, expression, depth),
             Expr::VariablePath => return self.variable(edit, expression),
             kind if scalar::literal(kind) => {
-                return scalar::literal_bound(edit, expression).map(Some);
+                return scalar::literal_bound(edit, expression);
             }
             Expr::Apply => return self.call(edit, expression, depth),
             Expr::Binary | Expr::TimeAddSub => return self.binary(edit, expression, depth),
@@ -486,8 +486,6 @@ pub fn project_rows(
     projections: &[Projection],
     indexed: bool,
 ) -> Result<Option<ProjectedValue>, Error> {
-    // This visitor handles data rows. References and closure-typed columns need
-    // their original binding information in the general monotonicity visitor.
     if (indexed && (projections.len() != 2 || bounds.len() != 1))
         || (!indexed && projections.len() != bounds.len())
     {

@@ -462,6 +462,11 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust projects partially bounded rows through references and preserves the
+constructor type of non-NULL `isize` and `usize` literals in waterlines.
+All 550 monotonicity comparisons and 11,178 ordered optimizer observations
+matched Java across the two engines. [Reference waterlines](evidence/p3-reference-waterlines.json)
+
 Rust compares the declared types of temporal keys structurally, including
 function parameters and results, generic type arguments, stream kind and stream
 nesting. A regression compares 256 nested rows with shared fields. The build

@@ -94,6 +94,7 @@ impl Shape {
         Some(match shape {
             Projection::Other { .. } => return None,
             Projection::Scalar { monotone } => Self::Scalar(*monotone),
+            Projection::Reference { base } => Self::Reference(Self::from_input(base)?.into()),
             Projection::Tuple {
                 fields, nullable, ..
             } => Self::tuple(

@@ -64,6 +64,41 @@ impl CircuitEditor {
         self.primitive_singleton(sample.0, Ty::ISize, "ISIZE", self.nullable(sample)?)
     }
 
+    /// A target-sized literal uses the compiler's nonnullable singleton.
+    /// The signed literal constructor clears its origin. The unsigned one retains it.
+    pub fn required_size_literal(&mut self, literal: ExpressionId) -> Result<ExpressionId, Error> {
+        let kind = self.expr_kind(literal)?;
+        let (ty, code) = match kind {
+            Expr::ISizeLiteral => (Ty::ISize, "ISIZE"),
+            Expr::USizeLiteral => (Ty::USize, "USIZE"),
+            _ => return Err(Error::new("expected a target-sized literal")),
+        };
+        let value = self
+            .node(literal.into())?
+            .data("value")
+            .filter(|v| !v.is_null())
+            .cloned()
+            .ok_or_else(|| Error::new("expected a non-NULL size literal"))?;
+        let required = self.primitive_singleton(literal.into(), ty, code, false)?;
+        if kind == Expr::ISizeLiteral {
+            let id = self.empty_origin_node(
+                literal.into(),
+                InnerKind::Expression(kind),
+                [
+                    ("type", Field::Reference(required.into())),
+                    ("value", Field::Data(value)),
+                ],
+            )?;
+            return self.expression(id);
+        }
+        self.make_expr(
+            literal.into(),
+            kind,
+            required,
+            [("value", Field::Data(value))],
+        )
+    }
+
     pub fn minimum_value(&mut self, ty: TypeId) -> Result<ExpressionId, Error> {
         let kind = self.type_kind(ty)?;
         if matches!(kind, Ty::Tuple | Ty::RawTuple) {

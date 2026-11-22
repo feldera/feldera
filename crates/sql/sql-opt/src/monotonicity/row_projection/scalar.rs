@@ -21,6 +21,8 @@ pub(super) fn literal(kind: Expr) -> bool {
             | Expr::U32Literal
             | Expr::U64Literal
             | Expr::U128Literal
+            | Expr::ISizeLiteral
+            | Expr::USizeLiteral
             | Expr::DecimalLiteral
             | Expr::RealLiteral
             | Expr::DoubleLiteral
@@ -55,7 +57,7 @@ impl ProjectedValue {
 pub(super) fn literal_bound(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
-) -> Result<ProjectedValue, Error> {
+) -> Result<Option<ProjectedValue>, Error> {
     let site = expression.into();
     let ty = edit.expression_type(expression)?;
     let kind = edit.expr_kind(expression)?;
@@ -65,12 +67,18 @@ pub(super) fn literal_bound(
         .filter(|v| !v.is_null())
         .cloned()
     else {
+        // These maxima depend on the target. Java reports the unsupported
+        // operation at the SQL site when a NULL literal needs that maximum.
+        if matches!(kind, Expr::ISizeLiteral | Expr::USizeLiteral) {
+            return Ok(None);
+        }
         let required = edit.with_nullability(ty, false)?;
         let maximum = edit.scalar_maximum(required)?;
-        return ProjectedValue::bounded(edit, expression, maximum, false);
+        return ProjectedValue::bounded(edit, expression, maximum, false).map(Some);
     };
     let sql_type = edit.type_kind(ty)?;
     let bound = match sql_type {
+        Ty::ISize | Ty::USize => edit.required_size_literal(expression)?,
         Ty::Integer | Ty::Bool | Ty::Real | Ty::Double => {
             let required = match sql_type {
                 Ty::Integer => {
@@ -114,7 +122,7 @@ pub(super) fn literal_bound(
             edit.make_expr(site, kind, required, [("value", Field::Data(value))])?
         }
     };
-    ProjectedValue::bounded(edit, expression, bound, true)
+    ProjectedValue::bounded(edit, expression, bound, true).map(Some)
 }
 
 fn never_null(edit: &CircuitEditor, mut expression: ExpressionId) -> Result<bool, Error> {
@@ -226,7 +234,7 @@ mod tests {
         for (width, signed, kind) in [(16, true, Expr::I16Literal), (32, false, Expr::U32Literal)] {
             let ty = edit.integer_type(origin, width, signed, true)?;
             let literal = edit.make_expr(site, kind, ty, [("value", Field::Data("2".into()))])?;
-            let bound = literal_bound(&mut edit, literal)?.reduced.unwrap();
+            let bound = literal_bound(&mut edit, literal)?.unwrap().reduced.unwrap();
             let required = edit.expression_type(bound)?;
             let original = edit.node(ty.into())?;
             let projected = edit.node(required.into())?;

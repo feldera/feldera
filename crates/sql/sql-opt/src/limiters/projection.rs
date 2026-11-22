@@ -10,7 +10,10 @@ pub enum Projection {
     Scalar {
         monotone: bool,
     },
-    /// A function or reference can occupy a source slot that the destination skips.
+    Reference {
+        base: Box<Self>,
+    },
+    /// An opaque function can occupy a source slot that the destination skips.
     Other {
         monotone: bool,
     },
@@ -55,6 +58,11 @@ impl Projection {
         edit: &mut CircuitEditor,
         ty: TypeId,
     ) -> Result<TypeId, Error> {
+        if let Self::Reference { base } = self {
+            let referent = edit.type_id(edit.node(ty.into())?.edge("type")?)?;
+            let projected = base.projected_type(edit, referent)?;
+            return edit.reference_type(projected);
+        }
         let Self::Tuple { fields, raw, .. } = self else {
             return edit.with_nullability(ty, false);
         };
@@ -86,6 +94,9 @@ impl Projection {
                     nullable: *nullable,
                 },
                 Projection::Scalar { .. } => Projection::Scalar { monotone: false },
+                Projection::Reference { base } => Projection::Reference {
+                    base: Box::new(clear_fields(base)),
+                },
                 Projection::Other { .. } => Projection::Other { monotone: false },
             }
         }
@@ -111,6 +122,11 @@ impl Projection {
     ) -> Result<ExpressionId, Error> {
         match self {
             Self::Scalar { monotone: true } => Ok(value),
+            Self::Reference { base } => {
+                let referent = edit.dereference(value)?;
+                let projected = base.project_data(edit, referent)?;
+                edit.borrow_value(projected)
+            }
             Self::Tuple { fields, raw, .. } => {
                 let mut selected = Vec::new();
                 for (index, projection) in fields.iter().enumerate() {
@@ -130,6 +146,7 @@ impl Projection {
     pub fn monotone(&self) -> bool {
         match self {
             Self::Scalar { monotone } | Self::Other { monotone } => *monotone,
+            Self::Reference { base } => base.monotone(),
             Self::Tuple {
                 fields, nullable, ..
             } => fields.iter().any(Self::monotone) || fields.is_empty() && !nullable,

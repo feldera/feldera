@@ -22,6 +22,8 @@ public final class WaterlineProjection {
             var fields = node.putArray("fields");
             for (int i = 0; i < tuple.size(); i++)
                 fields.add(encode(tuple.getFieldType(i)));
+        } else if (type instanceof MonotoneRefType reference) {
+            node.put("kind", "reference").set("base", encode(reference.base));
         } else if (type instanceof ScalarMonotoneType) {
             node.put("kind", "scalar");
             node.put("monotone", type.mayBeMonotone());
