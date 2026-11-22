@@ -1,0 +1,28 @@
+{
+  "source_commit": "11fefc9af456542ed472eefa5945319346e1c3d5",
+  "captured_from": "3baee479dfd659e5185e3653a10dcf4553180260",
+  "input": "nexmark-suite.sql",
+  "requests": [
+    "IsStrictProjection",
+    "ComposeProjection",
+    "TryComposeProjection"
+  ],
+  "requests_per_round": 554,
+  "input_bytes_including_u32_lengths": 5249639,
+  "input_sha256": "9ce918944230d0701c73a15649c85e9b92b848cf23b79a875bff8781d339c170",
+  "matched_root_batches": 554,
+  "cpu": 15,
+  "warmup_pairs": 2,
+  "measured_pairs": 21,
+  "results_sha256": "bd6b18866c5093db720630066c0458e4f72cc5a2be85ad1fb7a12958a1e9146d",
+  "median_ms": {
+    "tree": 53.035,
+    "stream": 25.604
+  },
+  "median_paired_reduction_ms": 27.551,
+  "paired_reduction_bootstrap_95pct_ms": [
+    27.249,
+    27.671
+  ],
+  "workspace_archive": ".bench-results/p3-expression-batch-reader/2026-22-11-04-58-11fef"
+}

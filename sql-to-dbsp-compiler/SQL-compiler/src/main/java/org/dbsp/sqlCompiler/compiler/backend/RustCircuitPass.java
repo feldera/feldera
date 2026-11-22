@@ -606,12 +606,31 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public record BinaryBounds(BinaryDomain domain, DBSPOpcode opcode, WaterlineOperand left, WaterlineOperand right) {}
 
-    public static BinaryWaterline binaryWaterline(BinaryBounds bounds) {
+    public record BinaryTransfer(BinaryWaterline rule, @Nullable DBSPExpression bound) {}
+
+    /** The reduced operand trees already live in the JVM. Rust needs their types
+     * to build the parent and returns references to the original operands. */
+    public static BinaryTransfer binaryWaterline(DBSPCompiler compiler, DBSPExpression expression,
+            BinaryBounds facts, @Nullable DBSPExpression left, @Nullable DBSPExpression right) {
+        var site = expressionSite(expression.getNode());
+        site.set("operation", MAPPER.valueToTree(facts));
+        var lhs = left == null ? null : new DBSPVariablePath("left", left.getType());
+        var rhs = right == null ? null : new DBSPVariablePath("right", right.getType());
         try {
-            var reply = transformWithContext("Monotonicity/Binary", MAPPER.writeValueAsBytes(bounds), 0, "", EMPTY_CONTEXT);
-            return MAPPER.readValue(reply, BinaryWaterline.class);
+            var reply = invokeLowering(compiler, "Monotonicity/BinaryBound", MAPPER.writeValueAsBytes(site),
+                    expression.getType(), lhs, rhs);
+            var rule = MAPPER.treeToValue(reply.value.required("rule"), BinaryWaterline.class);
+            var bound = reply.value.required("bound");
+            if (bound.isNull())
+                return new BinaryTransfer(rule, null);
+            var live = Objects.requireNonNull(reply.writer.liveNodes);
+            if (lhs != null)
+                live.put(lhs.id, left);
+            if (rhs != null)
+                live.put(rhs.id, right);
+            return new BinaryTransfer(rule, expressionDecoder(reply.writer).decodeInner(bound, DBSPExpression.class));
         } catch (IOException error) {
-            throw new UncheckedIOException("Invalid binary waterline rule from Rust", error);
+            throw new UncheckedIOException("Invalid binary waterline from Rust", error);
         }
     }
 

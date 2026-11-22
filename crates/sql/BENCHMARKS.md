@@ -14,17 +14,21 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.560 | 1.789 | 2.238 | 3.173 | 1.418× |
-| Nexmark suite | 3.319 | 7.881 | 4.911 | 11.110 | 2.262× |
-| Outer join | 1.406 | 1.646 | 2.176 | 2.995 | 1.376× |
+| Correlated array subquery | 1.426 | 1.722 | 1.479 | 1.797 | 1.215× |
+| Nexmark suite | 3.220 | 7.195 | 3.950 | 8.653 | 2.191× |
+| Outer join | 1.343 | 1.571 | 1.418 | 1.879 | 1.325× |
 
-The table measures the deindex build at `3baee479d` with no concurrent
+The table measures the streaming expression reader at `11fefc9af` with no concurrent
 compiler verification. Each workload ran two warmup pairs and 21 measured
 pairs on CPU 15. All 69 pairs matched on diagnostics and emitted artifacts.
-All three workloads exceeded the 1.2× ceiling. Timings varied during the run.
-On Nexmark, direct Java's median rose from 3.246 s in the first seven measured
-pairs to 3.916 s in the last seven. The hybrid median rose from 7.353 s to
-9.447 s over the same pairs.
+All three workloads exceeded the 1.2× ceiling. A separate decoder benchmark
+replayed the 554 projection requests captured from one Nexmark compile. Across
+21 alternating pairs, median decode time for the full sequence was 53.035 ms
+with the tree reader and 25.604 ms with the streaming reader. Both readers
+produced identical root identities and expression graphs. [Projection benchmark](evidence/p3-expression-batch-reader.json)
+
+On the preceding deindex build (`3baee479d`), the p95 ratios were 1.418×,
+2.262× and 1.376× in workload order.
 On the preceding typed NULL waterline build at `c03c4fcee`, the p95 ratios
 were 1.281×, 2.326× and 1.129× in workload order.
 Under the same profile, the earlier chain-topology build at `72183b58e`

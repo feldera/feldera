@@ -699,28 +699,22 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                                     DBSPExpression lhs, DBSPExpression rhs) {
         var left = this.get(lhs);
         var right = this.get(rhs);
-        var rule = RustCircuitPass.BinaryWaterline.None;
-        if (left.mayBeMonotone() || right.mayBeMonotone())
-            rule = RustCircuitPass.binaryWaterline(new RustCircuitPass.BinaryBounds(domain, opcode,
-                    this.operand(opcode, lhs, left), this.operand(opcode, rhs, right)));
-        DBSPExpression reduced = switch (rule) {
-            case None -> null;
-            case Left -> castToTypeOf(expression, left.getReducedExpression());
-            case Right -> castToTypeOf(expression, right.getReducedExpression());
-            case Coalesce -> new DBSPBinaryExpression(expression.getNode(), expression.type.withMayBeNull(false),
-                    DBSPOpcode.MIN, castToTypeOf(expression, left.getReducedExpression()),
-                    castToTypeOf(expression, right.getReducedExpression()));
-            case Both, InheritLeft, InheritRight -> expression instanceof DBSPTimeAddSub time
-                    ? onWaterlines(time, left.getReducedExpression(), right.getReducedExpression())
-                    : onWaterlines(expression.to(DBSPBinaryExpression.class), left.getReducedExpression(), right.getReducedExpression());
-        };
-        IMaybeMonotoneType type = switch (rule) {
+        if (!left.mayBeMonotone() && !right.mayBeMonotone()) {
+            this.set(expression, new MonotoneExpression(expression, NonMonotoneType.nonMonotone(expression.type), null));
+            return;
+        }
+        var facts = new RustCircuitPass.BinaryBounds(domain, opcode,
+                this.operand(opcode, lhs, left), this.operand(opcode, rhs, right));
+        var transfer = RustCircuitPass.binaryWaterline(this.compiler, expression, facts,
+                left.mayBeMonotone() ? left.getReducedExpression() : null,
+                right.mayBeMonotone() ? right.getReducedExpression() : null);
+        IMaybeMonotoneType type = switch (transfer.rule()) {
             case None -> NonMonotoneType.nonMonotone(expression.type);
             case InheritLeft -> left.copyMonotonicity(expression.type);
             case InheritRight -> right.copyMonotonicity(expression.type);
             default -> new MonotoneType(expression.type);
         };
-        this.set(expression, new MonotoneExpression(expression, type, reduced));
+        this.set(expression, new MonotoneExpression(expression, type, transfer.bound()));
     }
 
     @Override

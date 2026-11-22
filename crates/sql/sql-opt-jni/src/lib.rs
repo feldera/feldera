@@ -108,6 +108,36 @@ impl ExpressionSite {
     }
 }
 
+fn binary_bound(input: &[u8], state: &[u8]) -> Result<Value, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Request<'a> {
+        #[serde(flatten)]
+        site: ExpressionSite,
+        #[serde(borrow)]
+        operation: feldera_sql_opt::BinaryOperation<'a>,
+    }
+    let request: Request = serde_json::from_slice(state)?;
+    let (arena, roots) = request.site.arena(input)?;
+    let (result, operands) = roots.split_first().ok_or("missing binary result type")?;
+    let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
+    let mut operands = operands.iter();
+    let mut bound = |present| -> Result<_, Box<dyn std::error::Error>> {
+        Ok(if present {
+            Some(edit.expression(*operands.next().ok_or("missing binary operand bound")?)?)
+        } else {
+            None
+        })
+    };
+    let bounds = [bound(request.operation.left.monotone)?, bound(request.operation.right.monotone)?];
+    if operands.next().is_some() {
+        return Err("unexpected binary operand bound".into());
+    }
+    let result = edit.type_id(*result)?;
+    let (rule, value) = request.operation.lower(&mut edit, arena.root_id(), result, bounds)?;
+    let mut expressions = edit.circuit().additional_expressions(&arena, value.as_slice())?;
+    Ok(json!({"rule": rule, "bound": expressions.pop()}))
+}
+
 fn finality_functions(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
@@ -744,19 +774,7 @@ fn transform(
             let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::function_waterline(&name, &arguments))?);
         }
-        "Monotonicity/Binary" => {
-            #[derive(serde::Deserialize)]
-            struct Binary<'a> {
-                domain: feldera_sql_opt::BinaryDomain,
-                opcode: &'a str,
-                left: feldera_sql_opt::WaterlineOperand,
-                right: feldera_sql_opt::WaterlineOperand,
-            }
-            let facts: Binary = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::binary_waterline(
-                facts.domain, facts.opcode, facts.left, facts.right,
-            ))?);
-        }
+        "Monotonicity/BinaryBound" => return binary_bound(input, state),
         "InnerCSE/Bindings" => {
             let scope: feldera_sql_opt::BindingScope = serde_json::from_slice(state)?;
             let bindings: Vec<feldera_sql_opt::PendingBinding> = serde_json::from_slice(input)?;

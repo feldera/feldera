@@ -21,7 +21,7 @@ pub use monotonicity::lag::lag_transfer;
 pub use monotonicity::casts::{cast_waterline, CastWaterline};
 pub use monotonicity::functions::{function_waterline, Argument as WaterlineArgument};
 pub use monotonicity::binary::{
-    binary_waterline, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
+    binary_waterline, BinaryOperation, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
 };
 pub use monotonicity::{filter_lower_bounds, filter_transfer, monotone_identity, unary_waterline, FilterBound};
 mod static_candidates;
