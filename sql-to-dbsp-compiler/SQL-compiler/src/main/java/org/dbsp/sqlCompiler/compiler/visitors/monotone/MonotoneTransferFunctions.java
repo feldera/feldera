@@ -161,6 +161,22 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     public VisitDecision preorder(DBSPFlatmap expression) {
         Utilities.enforce(this.parameterTypes.length == 1);
         Utilities.enforce(this.argumentKind == ArgumentKind.ZSet);
+        DBSPClosureExpression closure = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.flatmapWaterline(this.compiler, expression) : flatmapWaterline(expression);
+        DBSPType resultType = expression.getType().to(DBSPTypeFunction.class).resultType;
+        var computed = closure.getResultType();
+        Utilities.enforce(computed.sameType(resultType),
+                () -> "Flatmap result type " + resultType + " does not match computed type " + computed);
+        // This is the same as this.apply(closure)
+        this.resolver.apply(closure);
+        this.preorder(closure);
+        // The result applies to the original expression
+        MonotoneExpression result = this.maybeGet(closure);
+        this.maybeSet(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    private static DBSPClosureExpression flatmapWaterline(DBSPFlatmap expression) {
         // Synthesize a DBSPClosure expression that is much simpler than the Flatmap,
         // but carries only the fields that are copied ad-literam in the output
         // and analyze that expression.
@@ -173,39 +189,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             outputFields.add(field);
         }
 
-        // If collection element is a tuple type, all fields are inlined.
-        DBSPTypeTupleBase elementTupleType = expression.getCollectionElementType().as(DBSPTypeTupleBase.class);
-        if (expression.ordinalityIndexType != null) {
-            outputFields.add(new NoExpression(expression.ordinalityIndexType));
-        } else {
-            if (expression.postProcess != null) {
-                for (DBSPClosureExpression clo : expression.postProcess) {
-                    // TODO: this is very conservative
-                    outputFields.add(new NoExpression(clo.getResultType()));
-                }
-            } else if (elementTupleType != null) {
-                for (DBSPType elem : elementTupleType.tupFields) {
-                    outputFields.add(new NoExpression(elem));
-                }
-            } else {
-                outputFields.add(new NoExpression(expression.getCollectionElementType()));
-            }
-        }
-        if (expression.ordinalityIndexType != null)
-            outputFields.add(new NoExpression(expression.ordinalityIndexType));
+        // The columns produced from the collection elements are not monotone.
+        // TODO: this is very conservative for postProcess results
+        List<DBSPType> columnTypes = expression.unshuffledColumnTypes();
+        for (int i = expression.passthroughIndexes.size(); i < columnTypes.size(); i++)
+            outputFields.add(new NoExpression(columnTypes.get(i)));
         outputFields = expression.shuffle.shuffle(outputFields);
         DBSPExpression tuple = new DBSPTupleExpression(outputFields, false);
-        DBSPType resultType = expression.getType().to(DBSPTypeFunction.class).resultType;
-        Utilities.enforce(tuple.getType().sameType(resultType),
-                () -> "Flatmap result type " + resultType + " does not match computed type " + tuple.getType());
-        DBSPClosureExpression closure = tuple.closure(param);
-        // This is the same as this.apply(closure)
-        this.resolver.apply(closure);
-        this.preorder(closure);
-        // The result applies to the original expression
-        MonotoneExpression result = this.maybeGet(closure);
-        this.maybeSet(expression, result);
-        return VisitDecision.STOP;
+        return tuple.closure(param);
     }
 
     @Override

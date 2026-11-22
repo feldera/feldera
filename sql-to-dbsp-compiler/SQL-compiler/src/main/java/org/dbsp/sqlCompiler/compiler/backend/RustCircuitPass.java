@@ -597,6 +597,11 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static DBSPClosureExpression flatmapWaterline(DBSPCompiler compiler, DBSPFlatmap flatmap) {
+        return lowerFunction(compiler, "Monotonicity/Flatmap", flatmap, null,
+                DBSPClosureExpression.class);
+    }
+
     public static DBSPClosureExpression lowerFlatmap(DBSPCompiler compiler, DBSPFlatmap flatmap) {
         return lowerFunction(compiler, "LowerFlatmap", flatmap, flatmap.getCollectionElementType(),
                 DBSPClosureExpression.class);
@@ -1625,6 +1630,26 @@ public final class RustCircuitPass implements CircuitTransform {
         return new RemoveOperators(this.compiler, keep).apply(circuit);
     }
 
+    private DBSPCircuit replaceSharedProjections(DBSPCircuit circuit, FindCommonProjections analysis)
+            throws IOException {
+        if (analysis.outputProjection.isEmpty())
+            return circuit;
+        var candidates = new HashSet<>(analysis.inputProjection.keySet());
+        candidates.addAll(analysis.outputProjection.keySet());
+        var sites = MAPPER.createArrayNode();
+        for (var op : candidates) {
+            var site = sites.addObject().put("id", op.id).put("kind", op.getClass().getSimpleName())
+                    .put("reader", analysis.inputProjection.containsKey(op));
+            var projection = analysis.outputProjection.get(op);
+            if (projection != null)
+                site.put("indexed", projection.getResultType().is(DBSPTypeRawTuple.class));
+        }
+        var edits = this.invoke("SharedProjections/Edits", MAPPER.writeValueAsBytes(sites),
+                DBSPVariablePath.nextGeneratedName(), EMPTY_CONTEXT);
+        return LiveSharedProjections.apply(this.compiler, circuit, analysis, MAPPER.convertValue(edits,
+                new TypeReference<Map<Long, LiveSharedProjections.Edits>>() {}));
+    }
+
     private DBSPCircuit fuseChains(DBSPCircuit circuit) throws IOException {
         int limit = Math.max(circuit.largestComponentSize(), 10);
         for (int round = 0; round < limit; round++) {
@@ -2044,8 +2069,8 @@ public final class RustCircuitPass implements CircuitTransform {
                 if (state.length == 0)
                     return circuit;
             }
-            if (this.replaceCommon != null && this.replaceCommon.analysis().outputProjection.isEmpty())
-                return circuit;
+            if (this.replaceCommon != null)
+                return this.replaceSharedProjections(circuit, this.replaceCommon.analysis());
             if (this.deferCarried != null) {
                 var layouts = this.deferCarried.layouts();
                 if (layouts.isEmpty())
@@ -2350,8 +2375,6 @@ public final class RustCircuitPass implements CircuitTransform {
                 writer.apply(circuit);
                 if (this.mapFusion != null)
                     state = MapFusionState.encode(writer, this.mapFusion);
-                else if (this.replaceCommon != null)
-                    state = SharedProjectionState.encode(writer, this.replaceCommon.analysis());
                 else if (state == EMPTY_CONTEXT)
                     state = this.passState(circuit, writer);
                 result = this.invoke("Live/" + this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8),

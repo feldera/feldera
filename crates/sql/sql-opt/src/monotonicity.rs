@@ -4,6 +4,7 @@ pub mod asof;
 pub mod binary;
 pub mod casts;
 pub mod chain_minimum;
+pub mod flatmap;
 pub mod functions;
 pub mod lag;
 use feldera_sql_ir::{

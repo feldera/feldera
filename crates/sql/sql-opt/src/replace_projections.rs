@@ -5,8 +5,8 @@ use crate::stream_rewrites::body_members;
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, Field, NodeId, OperatorKind as Op, OutputPort, TypeId, TypeKind,
 };
-use serde::Deserialize;
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 
 #[derive(Deserialize)]
@@ -32,6 +32,57 @@ fn supports_projection(kind: Op) -> bool {
             | Op::Map
             | Op::MapIndex
     )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+enum ProjectionMap {
+    Map,
+    MapIndex,
+}
+
+impl ProjectionMap {
+    fn reader(kind: Op) -> Option<Self> {
+        match kind {
+            Op::Map => Some(Self::Map),
+            Op::MapIndex => Some(Self::MapIndex),
+            _ => None,
+        }
+    }
+
+    fn producer(indexed: bool) -> Self {
+        if indexed { Self::MapIndex } else { Self::Map }
+    }
+
+    fn operator(self) -> Op {
+        match self {
+            Self::Map => Op::Map,
+            Self::MapIndex => Op::MapIndex,
+        }
+    }
+}
+
+/// A reader replacement takes precedence when its rewired input has a
+/// different type. Otherwise a producer projection follows the original node.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectionEdits {
+    reader_if_narrowed: Option<ProjectionMap>,
+    after_producer: Option<ProjectionMap>,
+}
+
+pub fn projection_edits(
+    kind: Op,
+    has_reader_closure: bool,
+    indexed_output: Option<bool>,
+) -> Option<ProjectionEdits> {
+    let reader_if_narrowed = ProjectionMap::reader(kind).filter(|_| has_reader_closure);
+    let after_producer = indexed_output
+        .filter(|_| supports_projection(kind))
+        .map(ProjectionMap::producer);
+    (reader_if_narrowed.is_some() || after_producer.is_some()).then_some(ProjectionEdits {
+        reader_if_narrowed,
+        after_producer,
+    })
 }
 
 fn projected_type(edit: &mut CircuitEditor, closure: NodeId, kind: Op) -> Result<TypeId, Error> {
@@ -64,7 +115,7 @@ impl Replacements {
         let Some(&function) = self.inputs.get(&id) else {
             return Ok(false);
         };
-        if !matches!(kind, Op::Map | Op::MapIndex) || after == before {
+        if ProjectionMap::reader(kind).is_none() || after == before {
             return Ok(false);
         }
         let ty = input_type(edit, after)?;
@@ -94,11 +145,8 @@ impl Replacements {
         let size = type_width(edit.circuit(), ty, &mut self.widths, 0)?;
         let result = edit.node(function)?.edge("body")?;
         let result = edit.expression_type(edit.expression(result)?)?;
-        let kind = if edit.type_kind(result)? == TypeKind::RawTuple {
-            Op::MapIndex
-        } else {
-            Op::Map
-        };
+        let kind =
+            ProjectionMap::producer(edit.type_kind(result)? == TypeKind::RawTuple).operator();
         let output = projected_type(edit, function, kind)?;
         // Java decodes the output type first. The closure can share its tuple type.
         let mut fields = vec![
@@ -203,4 +251,21 @@ pub fn replace_common_projections(
         }
     }
     rebuild_input_closures(edit.finish_with_rewrites()?, next)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retain_both_edits_when_a_reader_is_also_a_producer() {
+        let edits = projection_edits(Op::Map, true, Some(true)).unwrap();
+        assert_eq!(edits.reader_if_narrowed, Some(ProjectionMap::Map));
+        assert_eq!(edits.after_producer, Some(ProjectionMap::MapIndex));
+
+        let edits = projection_edits(Op::Deindex, true, Some(false)).unwrap();
+        assert_eq!(edits.reader_if_narrowed, None);
+        assert_eq!(edits.after_producer, Some(ProjectionMap::Map));
+        assert!(projection_edits(Op::Constant, true, Some(false)).is_none());
+    }
 }

@@ -50,35 +50,7 @@ fn rebuild_from_row(edit: &mut CircuitEditor, id: NodeId, row: NodeId) -> Result
     )?;
     let function_type = flatmap.edge("type")?;
     let shuffle = flatmap.field("shuffle").cloned();
-    if flatmap.field("postProcess").is_some() {
-        for post in flatmap.edges("postProcess")? {
-            let ty = edit.node(post)?.edge("type")?;
-            columns.push(edit.node(ty)?.edge("resultType")?);
-        }
-    } else {
-        let ordinal = flatmap
-            .field("ordinalityIndexType")
-            .and_then(Field::node_id);
-        let closure = edit.node(flatmap.edge("collectionExpression")?)?;
-        let collection = edit.node(closure.edge("type")?)?.edge("resultType")?;
-        let args = edit.node(collection)?.edges("typeArgs")?;
-        match (edit.type_kind(edit.type_id(collection)?)?, args.as_slice()) {
-            (TypeKind::Map, [key, value]) => columns.extend([*key, *value]),
-            (TypeKind::Array, [element]) => {
-                let ty = edit.type_id(*element)?;
-                if matches!(edit.type_kind(ty)?, TypeKind::Tuple | TypeKind::RawTuple) {
-                    let width = edit.node(*element)?.edges("tupFields")?.len();
-                    for i in 0..width {
-                        columns.push(edit.tuple_field_type(ty, i)?.into());
-                    }
-                } else {
-                    columns.push(*element);
-                }
-            }
-            _ => return Err(Error::new("flatmap requires an array or map")),
-        }
-        columns.extend(ordinal);
-    }
+    columns.extend(flatmap_generated_types(edit, id)?);
     let Some(Field::Object(shuffle)) = shuffle else {
         return Err(Error::new("flatmap requires an output shuffle"));
     };
@@ -108,6 +80,42 @@ fn rebuild_from_row(edit: &mut CircuitEditor, id: NodeId, row: NodeId) -> Result
             ("inputRowType", Field::Reference(row)),
         ],
     )
+}
+
+/// Types emitted by UNNEST after the passthrough fields and before the shuffle.
+pub fn flatmap_generated_types(edit: &mut CircuitEditor, id: NodeId) -> Result<Vec<NodeId>, Error> {
+    let flatmap = edit.node(id)?;
+    let mut columns = Vec::new();
+    if flatmap.field("postProcess").is_some() {
+        for post in flatmap.edges("postProcess")? {
+            let ty = edit.node(post)?.edge("type")?;
+            columns.push(edit.node(ty)?.edge("resultType")?);
+        }
+    } else {
+        let ordinal = flatmap
+            .field("ordinalityIndexType")
+            .and_then(Field::node_id);
+        let closure = edit.node(flatmap.edge("collectionExpression")?)?;
+        let collection = edit.node(closure.edge("type")?)?.edge("resultType")?;
+        let args = edit.node(collection)?.edges("typeArgs")?;
+        match (edit.type_kind(edit.type_id(collection)?)?, args.as_slice()) {
+            (TypeKind::Map, [key, value]) => columns.extend([*key, *value]),
+            (TypeKind::Array, [element]) => {
+                let ty = edit.type_id(*element)?;
+                if matches!(edit.type_kind(ty)?, TypeKind::Tuple | TypeKind::RawTuple) {
+                    let width = edit.node(*element)?.edges("tupFields")?.len();
+                    for i in 0..width {
+                        columns.push(edit.tuple_field_type(ty, i)?.into());
+                    }
+                } else {
+                    columns.push(*element);
+                }
+            }
+            _ => return Err(Error::new("flatmap requires an array or map")),
+        }
+        columns.extend(ordinal);
+    }
+    Ok(columns)
 }
 
 /// Column positions before and after an UNNEST output shuffle.

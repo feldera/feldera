@@ -10,7 +10,7 @@ macro_rules! operator_kinds {
                 match self { $(Self::$kind => concat!("DBSP", stringify!($kind), "Operator")),+ }
             }
 
-            pub(crate) fn from_wire(name: &str) -> Option<Self> {
+            pub fn from_wire(name: &str) -> Option<Self> {
                 match name {
                     $(concat!("DBSP", stringify!($kind), "Operator") => Some(Self::$kind)),+,
                     _ => None,

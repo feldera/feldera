@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -35,6 +36,14 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
         return this.fcp;
     }
 
+    /** Build a selected projection, retaining its original input width for later optimizations. */
+    public static DBSPSimpleOperator project(boolean indexed, CalciteRelNode site, DBSPClosureExpression closure,
+                                             OutputPort source, int width) {
+        DBSPSimpleOperator map = indexed ? new DBSPMapIndexOperator(site, closure, source)
+                : new DBSPMapOperator(site, closure, source);
+        return map.addAnnotation(new IsProjection(width), DBSPSimpleOperator.class);
+    }
+
     public boolean process(DBSPSimpleOperator operator) {
         if (this.fcp.outputProjection.containsKey(operator)) {
             List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
@@ -45,17 +54,7 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
             this.addOperator(replace);
             int size = operator.outputType().getToplevelFieldCount();
             boolean isRaw = projection.getResultType().is(DBSPTypeRawTuple.class);
-            DBSPSimpleOperator result;
-            if (isRaw) {
-                result = new DBSPMapIndexOperator(
-                        CalciteEmptyRel.INSTANCE, projection, replace.outputPort())
-                        .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
-            } else {
-                result = new DBSPMapOperator(
-                        CalciteEmptyRel.INSTANCE, projection, replace.outputPort())
-                        .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
-            }
-            this.map(operator, result);
+            this.map(operator, project(isRaw, CalciteEmptyRel.INSTANCE, projection, replace.outputPort(), size));
             return true;
         }
         return false;
@@ -117,10 +116,7 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
                 !source.outputType().sameType(operator.input().outputType())) {
             DBSPClosureExpression projection = this.fcp.inputProjection.get(operator);
             int size = source.outputType().getToplevelFieldCount();
-            DBSPSimpleOperator result = new DBSPMapOperator(
-                    operator.getRelNode(), projection, source)
-                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
-            this.map(operator, result);
+            this.map(operator, project(false, operator.getRelNode(), projection, source, size));
             return;
         }
         if (!this.process(operator))
@@ -135,10 +131,7 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
                 !source.outputType().sameType(operator.input().outputType())) {
             DBSPClosureExpression projection = this.fcp.inputProjection.get(operator);
             int size = source.outputType().getToplevelFieldCount();
-            DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    operator.getRelNode(), projection, source)
-                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
-            this.map(operator, result);
+            this.map(operator, project(true, operator.getRelNode(), projection, source, size));
             return;
         }
         if (!this.process(operator))

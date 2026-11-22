@@ -606,6 +606,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let ty = edit.type_id(*empty)?;
             feldera_sql_opt::lower_aggregate_fold(&mut edit, *list, Some(ty), &mut next, &mut warnings)?
         }
+        ("Monotonicity/Flatmap", [flatmap]) => {
+            feldera_sql_opt::flatmap_waterline(&mut edit, *flatmap, &mut next)?
+        }
         ("LowerFlatmap", [flatmap, element]) => {
             let ty = edit.type_id(*element)?;
             feldera_sql_opt::lower_flatmap(&mut edit, *flatmap, ty, &mut next, &mut warnings)?
@@ -685,6 +688,24 @@ fn transform(
         return Ok(json!({"needs_full_snapshot":required}));
     }
     match pass {
+        "SharedProjections/Edits" => {
+            #[derive(serde::Deserialize)]
+            struct Site {
+                id: u64,
+                kind: String,
+                reader: bool,
+                indexed: Option<bool>,
+            }
+            let mut edits = BTreeMap::new();
+            for site in serde_json::from_slice::<Vec<Site>>(input)? {
+                let kind = feldera_sql_ir::OperatorKind::from_wire(&site.kind)
+                    .ok_or_else(|| format!("unknown projection operator {}", site.kind))?;
+                if let Some(edit) = feldera_sql_opt::projection_edits(kind, site.reader, site.indexed) {
+                    edits.insert(site.id, edit);
+                }
+            }
+            return Ok(serde_json::to_value(edits)?);
+        }
         "Views/RemoveOrdinary" | "Views/RemoveAll" => {
             #[derive(serde::Deserialize)]
             struct View {
@@ -742,7 +763,7 @@ fn transform(
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
-        | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
+        | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
         | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
