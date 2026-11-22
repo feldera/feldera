@@ -17,6 +17,7 @@ struct OperatorFacts {
     projection: Option<Projection>,
     input_projection: Option<Projection>,
     aggregate: Option<super::aggregate::AggregateFacts>,
+    join: Option<super::join::JoinFacts>,
     distinct: Option<DistinctFacts>,
 }
 
@@ -96,7 +97,7 @@ fn identifier<'a>(op: &'a Node, slot: &str) -> Option<&'a str> {
     value.as_str()
 }
 
-fn projected_bound(
+pub(super) fn projected_bound(
     edit: &mut CircuitEditor,
     body: NodeId,
     input: Bound,
@@ -106,6 +107,34 @@ fn projected_bound(
 ) -> Result<Bound, Error> {
     let function = src.project_waterline(edit, input.ty, dst, None, next)?;
     apply_bound(edit, body, input, function)
+}
+
+pub(super) fn apply_bound_pair(
+    edit: &mut CircuitEditor,
+    inputs: [Bound; 2],
+    function: feldera_sql_ir::ExpressionId,
+) -> Result<Bound, Error> {
+    let body = edit.circuit().root_id();
+    let result = edit.node(function.into())?.edge("body")?;
+    let ty = edit.expression_type(edit.expression(result)?)?;
+    let operator = edit.append_operator(
+        body,
+        inputs[0].port.operator,
+        Op::Apply2,
+        &inputs.map(|bound| bound.port),
+        [
+            ("outputType", Field::Reference(ty.into())),
+            ("function", Field::Reference(function.into())),
+        ],
+    )?;
+    edit.annotate(operator, serde_json::json!({"class":"Waterline"}))?;
+    Ok(Bound {
+        port: OutputPort {
+            operator,
+            number: 0,
+        },
+        ty,
+    })
 }
 
 pub(super) fn apply_bound(
@@ -434,6 +463,29 @@ pub fn insert_limiters_with_warnings(
                     );
                 }
             }
+            Some(Op::Join | Op::JoinIndex) => {
+                let [left, right] = inputs.as_slice() else {
+                    return Err(Error::new("incremental join requires two inputs").into());
+                };
+                let facts = facts
+                    .join
+                    .as_ref()
+                    .ok_or_else(|| Error::new("missing join expansion facts"))?;
+                if let Some(expansion) = &facts.expansion {
+                    let ports = [*left, *right];
+                    let inputs = super::join::JoinInputs {
+                        owner: id,
+                        data: ports.map(|p| data.get(&p).map_or(p, |s| s.port)),
+                        bounds: ports.map(|p| bounds.get(&p).map(|(b, _)| *b)),
+                        functions: &functions,
+                    };
+                    if let Some(result) =
+                        expansion.insert(&mut edit, &inputs, projection, &mut next, warnings)?
+                    {
+                        bounds.insert(output, result);
+                    }
+                }
+            }
             Some(Op::Aggregate) => {
                 let [source] = inputs.as_slice() else {
                     return Err(Error::new("aggregate requires one input").into());
@@ -608,6 +660,7 @@ mod tests {
                         projection: None,
                         distinct: None,
                         aggregate: None,
+                        join: None,
                         input_projection: None,
                     },
                 )

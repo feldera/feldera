@@ -1,5 +1,5 @@
 //! Derive a temporal window's output waterline from its endpoints and input.
-use super::{Bound, Projection, filter::arg, minimum_pair, source::link};
+use super::{Bound, Projection, filter::arg, minimum_pair};
 use feldera_sql_expr::copy_expression;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId, OperatorKind as Op,
@@ -73,23 +73,7 @@ pub(super) fn insert_window_bound(
             next,
             warnings,
         )?;
-        let function_type = edit.expression_type(function)?;
-        let ty = edit.type_id(edit.node(function_type.into())?.edge("resultType")?)?;
-        let operator = edit.append_operator(
-            body,
-            input.port.operator,
-            Op::Apply2,
-            &[input.port, endpoint.port],
-            [("outputType", link(ty)), ("function", link(function))],
-        )?;
-        edit.annotate(operator, serde_json::json!({"class":"Waterline"}))?;
-        Bound {
-            port: OutputPort {
-                operator,
-                number: 0,
-            },
-            ty,
-        }
+        super::pass::apply_bound_pair(edit, [input, endpoint], function)?
     } else {
         endpoint
     };

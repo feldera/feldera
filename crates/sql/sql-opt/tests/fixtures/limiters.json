@@ -8,6 +8,12 @@
   "sum": {
     "sql": "CREATE TABLE a(x INT NOT NULL LATENESS 2); CREATE TABLE b(x INT NOT NULL LATENESS 4); CREATE VIEW v AS SELECT * FROM a UNION ALL SELECT * FROM b;"
   },
+  "joinPartiallyBoundedCompositeKey": {
+    "sql": "CREATE TABLE a(k INT NOT NULL LATENESS 1, t INT NOT NULL, x BIGINT LATENESS 2); CREATE TABLE b(k INT NOT NULL, t INT NOT NULL LATENESS 3, y BIGINT); CREATE VIEW v AS SELECT a.k, b.t, a.x, b.y FROM a JOIN b ON a.k = b.k AND a.t = b.t;"
+  },
+  "joinWithOneBoundedInput": {
+    "sql": "CREATE TABLE a(k INT NOT NULL, x INT); CREATE TABLE b(k INT NOT NULL LATENESS 3, y INT); CREATE VIEW v AS SELECT a.k, a.x, b.y FROM a JOIN b ON a.k = b.k;"
+  },
   "viewLatenessMergesWithInherited": {
     "sql": "CREATE TABLE t(ts INT NOT NULL LATENESS 1);\nLATENESS v.ts 10;\nCREATE LOCAL VIEW v AS SELECT ts FROM t;\nCREATE VIEW w AS SELECT * FROM v;"
   },

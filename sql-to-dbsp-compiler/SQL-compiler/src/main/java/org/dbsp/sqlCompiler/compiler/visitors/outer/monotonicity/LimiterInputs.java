@@ -20,6 +20,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -67,7 +69,8 @@ public final class LimiterInputs {
             DBSPIncrementalConstantOperator.class, DBSPDistinctOperator.class, DBSPPositiveOperator.class,
             DBSPApplyOperator.class, DBSPWaterlineOperator.class, DBSPWindowOperator.class,
             DBSPDifferentiateOperator.class, DBSPIntegrateOperator.class, DBSPIndexedTopKOperator.class,
-            DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class);
+            DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class,
+            DBSPJoinOperator.class, DBSPJoinIndexOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
     public static boolean canLowerCircuit(DBSPCircuit circuit) {
@@ -106,6 +109,12 @@ public final class LimiterInputs {
     public static Map<Long, DBSPClosureExpression> transferFunctions(InsertLimiters pass, DBSPCircuit original) {
         var functions = new LinkedHashMap<Long, DBSPClosureExpression>();
         for (var operator : original.allOperators) {
+            if (operator.getClass() == DBSPJoinOperator.class || operator.getClass() == DBSPJoinIndexOperator.class) {
+                var join = BinaryJoinInputs.from(pass.expandedInto.get(operator.to(DBSPSimpleOperator.class)));
+                if (join != null)
+                    join.recordTransfers(pass, functions);
+                continue;
+            }
             if (operator instanceof DBSPAggregateOperator aggregate
                     && pass.expandedInto.get(aggregate) instanceof AggregateDeltaExpansion expansion) {
                 recordTransfer(functions, expansion.aggregator.id, pass, expansion.aggregator);
@@ -141,6 +150,12 @@ public final class LimiterInputs {
             var entry = facts.putObject(Long.toString(operator.getId()));
             entry.set("position",operator.getNode().getPositionRange().asJson());
             entry.put("reachable_from_error", pass.reachableFromError.contains(operator));
+            if (operator.getClass() == DBSPJoinOperator.class || operator.getClass() == DBSPJoinIndexOperator.class) {
+                var state = entry.putObject("join");
+                var join = BinaryJoinInputs.from(pass.expandedInto.get(operator.to(DBSPSimpleOperator.class)));
+                if (join != null)
+                    join.capture(pass, state.putObject("expansion"), entry);
+            }
             if (operator instanceof DBSPSimpleOperator simple
                     && pass.expandedInto.get(simple) instanceof ReplacementDeltaExpansion expansion) {
                 var replacement = expansion.replacement;
