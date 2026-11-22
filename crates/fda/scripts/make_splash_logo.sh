@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bake the Feldera logo into src/splash_logo.bin for the fda first-run splash.
+# Make src/splash/splash_logo.bin, the Feldera logo for the fda welcome animation.
 #
 # Input: Feldera-logo-black-2000px.png from the brand kit (2000x875, RGBA).
 # Output: a label grid, one label per px. 0 = empty, 1 = bird body,
