@@ -146,6 +146,28 @@ fn rejects_dangling_nodes_bad_ports_and_duplicate_definitions() {
 }
 
 #[test]
+fn resolves_dense_and_sparse_ids_in_their_own_namespace() {
+    for (first, last) in [(62, 65), (u64::MAX - 3, u64::MAX), (0, u64::MAX)] {
+        let graph = json!({
+            "class": "DBSPCircuit", "id": first, "declarations": [], "allOperators": [
+                {"class": "DBSPConstantOperator", "id": last, "inputs": [],
+                 "outputType": {"class": "DBSPTypeTuple", "id": last,
+                                "tupFields": [{"node": first + 1}, {"class": "DBSPTypeInteger", "id": first + 1}]}}
+            ]
+        });
+        Circuit::from_json(graph.clone()).unwrap();
+        // The root's ID exists only in the outer namespace. The following ID
+        // is absent from both, even when it falls inside the bitmap's range.
+        for missing in [first, first + 2] {
+            let mut invalid = graph.clone();
+            invalid["allOperators"][0]["outputType"]["tupFields"][0]["node"] = json!(missing);
+            let error = Circuit::from_json(invalid).unwrap_err();
+            assert_eq!(error.to_string(), format!("undefined node Inner({missing})"));
+        }
+    }
+}
+
+#[test]
 fn preserves_schema_key_order_embedded_by_the_classic_rust_writer() {
     let schema = r#"{"name":"readings","case_sensitive":false,"fields":[],"foreign_keys":[]}"#;
     let raw: Value = serde_json::from_str(&format!(

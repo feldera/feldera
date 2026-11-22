@@ -6,10 +6,43 @@ pub use streaming::LiveCircuitDecoder;
 
 use super::{Circuit, Error, Field, Node, NodeClass, NodeId, OperatorKind, OutputPort};
 use indexmap::IndexMap;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 
 type Arena = BTreeMap<NodeId, Node>;
+
+/// A bitmap for one node namespace during whole-circuit validation. For widely
+/// spaced IDs, use the arena directly rather than allocating for the gaps.
+struct IdBitmap {
+    first_word: u64,
+    words: Vec<u64>,
+}
+
+impl IdBitmap {
+    fn from_range(nodes: &Arena, range: std::ops::RangeInclusive<NodeId>) -> Option<Self> {
+        let ids = nodes.range(range);
+        let first_word = ids.clone().next()?.0.number() / 64;
+        let last_word = ids.clone().next_back()?.0.number() / 64;
+        let len = usize::try_from(last_word - first_word + 1).ok()?;
+        if len > nodes.len() {
+            return None;
+        }
+        let mut words = vec![0; len];
+        for (id, _) in ids {
+            let n = id.number();
+            words[(n / 64 - first_word) as usize] |= 1 << (n % 64);
+        }
+        Some(Self { first_word, words })
+    }
+
+    fn contains(&self, number: u64) -> bool {
+        (number / 64)
+            .checked_sub(self.first_word)
+            .and_then(|i| usize::try_from(i).ok())
+            .and_then(|i| self.words.get(i))
+            .is_some_and(|bits| bits & (1 << (number % 64)) != 0)
+    }
+}
 
 pub(super) fn decode(value: Value) -> Result<Circuit, Error> {
     if value.get("class").and_then(Value::as_str) != Some("DBSPCircuit") {
@@ -23,9 +56,20 @@ pub(super) fn decode(value: Value) -> Result<Circuit, Error> {
 }
 
 pub(super) fn validated(root: NodeId, nodes: Arena) -> Result<Circuit, Error> {
+    let outer = IdBitmap::from_range(&nodes, NodeId::Outer(0)..=NodeId::Outer(u64::MAX));
+    let inner = IdBitmap::from_range(&nodes, NodeId::Inner(0)..=NodeId::Inner(u64::MAX));
+    let defined = |id: &NodeId| {
+        let bitmap = match id {
+            NodeId::Outer(_) => &outer,
+            NodeId::Inner(_) => &inner,
+        };
+        bitmap
+            .as_ref()
+            .map_or_else(|| nodes.contains_key(id), |b| b.contains(id.number()))
+    };
     for (&id, node) in &nodes {
         for value in node.fields.values() {
-            check_links(value, &nodes)?;
+            check_references(value, &defined)?;
         }
         if matches!(id, NodeId::Outer(_)) {
             validate_outer(id, node, &nodes)?;
@@ -124,12 +168,18 @@ pub(super) fn insert_node(nodes: &mut Arena, id: NodeId, node: Node) -> Result<(
 }
 
 pub(super) fn check_links(field: &Field, nodes: &Arena) -> Result<(), Error> {
+    check_references(field, &|id| nodes.contains_key(id))
+}
+
+fn check_references(field: &Field, defined: &impl Fn(&NodeId) -> bool) -> Result<(), Error> {
     match field {
-        Field::Reference(id) | Field::Definition(id) if !nodes.contains_key(id) => {
+        Field::Reference(id) | Field::Definition(id) if !defined(id) => {
             Err(Error(format!("undefined node {id:?}")))
         }
-        Field::Object(object) => object.values().try_for_each(|f| check_links(f, nodes)),
-        Field::Array(array) => array.iter().try_for_each(|f| check_links(f, nodes)),
+        Field::Object(object) => object
+            .values()
+            .try_for_each(|f| check_references(f, defined)),
+        Field::Array(array) => array.iter().try_for_each(|f| check_references(f, defined)),
         _ => Ok(()),
     }
 }
