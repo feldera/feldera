@@ -379,6 +379,15 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static JsonNode combineBounds(JsonNode inputs, boolean union) {
+        String pass = union ? "Monotonicity/Union" : "Monotonicity/Intersection";
+        try {
+            return MAPPER.readTree(transformWithContext(pass, MAPPER.writeValueAsBytes(inputs), 0, "", EMPTY_CONTEXT));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not combine waterline projections", error);
+        }
+    }
+
     public static DBSPClosureExpression hopTransfer(DBSPCompiler compiler, DBSPHopOperator hop, DBSPType inputRow) {
         var site = expressionSite(hop.getNode());
         site.put("timestamp_index", hop.timestampIndex);

@@ -4,6 +4,20 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## HOP expansion build, 2026-11-22
+
+On `e177acab4`, each workload ran two warmup pairs and 21 measured pairs
+in fresh processes on CPU 15. All 69 pairs produced equal diagnostics and
+classic artifacts. Nexmark exceeded the 1.2× ceiling.
+
+| Workload | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.459 | 1.729 | 1.185× |
+| Nexmark suite | 3.357 | 7.137 | 2.126× |
+| Outer join | 1.352 | 1.596 | 1.180× |
+
+[Paired timing results](evidence/p3-hop-window-fragments.json)
+
 ## Relation waterline build, 2026-11-22
 
 After the frozen-corpus replay finished, all 69 cold pairs matched through

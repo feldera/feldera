@@ -1,0 +1,34 @@
+{
+  "scope": "Union of join key bounds and intersection of bounds for sums and antijoins. Compare the MonotoneAnalyzer boundary against saved direct Java observations and replay directed programs through emission.",
+  "compiler_jar_sha256": "3013ee9b0a884b86d5aa5e3f5fa3ca76a9f8e6f9b4deefba429f0add46b49b52",
+  "optimizer_library_sha256": "f192b2d8e3a62878c360838b245b512fde038472cf79865e4e4934a15fbdaaf7",
+  "scalar_identity_comparisons": 128,
+  "engines": {
+    "classic": {
+      "matched_cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "direct_stream_sha256": "1c7617d8af34b8d7289a60038a04c9b7df42552bf5596e661c87b15554d9f925",
+      "candidate_stream_sha256": "fe17cb4732f23987c4acf5683530a69023a8a7f27a739f1884a0e90df450cf9f",
+      "directed_programs": [
+        "union-three",
+        "anti-key",
+        "bounded-asof",
+        "bounded-star"
+      ],
+      "detached_report_sha256": "99faa72d02a51282a43031f517676dcd99b4f316924c17cfcf647e44524038a4"
+    },
+    "gen2": {
+      "matched_cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "direct_stream_sha256": "b4f4d7c584f917048dbd56d75aad2cf9ceb2eff3232b51dce63d7e2445a1ebee",
+      "candidate_stream_sha256": "49d6b39fed8d8def69ebb17b341cf70f32ab94288612c8addcba2409ad1ac418",
+      "directed_programs": [
+        "union-three",
+        "anti-key",
+        "bounded-asof",
+        "bounded-star"
+      ],
+      "detached_report_sha256": "44f49ce12e6a201f0006471a4d4c6c64ff7b40d14bebed8cc4fdede29770731a"
+    }
+  }
+}

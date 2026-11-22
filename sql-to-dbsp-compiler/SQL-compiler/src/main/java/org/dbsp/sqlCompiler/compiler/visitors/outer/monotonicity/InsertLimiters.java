@@ -988,7 +988,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 Objects.requireNonNull(this.expansionMonotoneValues.get(antiJoin.left())));
         IMaybeMonotoneType rightProjection = Monotonicity.getBodyType(
                 Objects.requireNonNull(this.expansionMonotoneValues.get(antiJoin.right())));
-        PartiallyMonotoneTuple rightTarget = Monotonicity.commonKey(rightProjection, leftProjection);
+        PartiallyMonotoneTuple rightTarget = Monotonicity.commonKey(this.compiler(), rightProjection, leftProjection);
         OutputPort bound = this.project(antiJoinBound, antiJoinProjection, rightTarget);
         this.createRetainKeys(join.getRelNode(), this.mapped(join.right()), rightTarget, bound);
     }

@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.CombinedBounds;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneClosureType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
@@ -421,7 +422,7 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType leftValueType = leftType.getFieldType(1);
         IMaybeMonotoneType rightValueType = rightType.getFieldType(1);
 
-        IMaybeMonotoneType keyType = leftKeyType.union(rightKeyType);
+        IMaybeMonotoneType keyType = CombinedBounds.union(this.compiler(), leftKeyType, rightKeyType);
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
                 this.compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.Join,
@@ -446,11 +447,11 @@ public class Monotonicity extends CircuitVisitor {
      * {@code second}.  All value fields in the result are non-monotone.
      * @param first   Monotone type of an indexed Z-set; the result has this type.
      * @param second  Monotone type of an indexed Z-set with the same key type. */
-    static PartiallyMonotoneTuple commonKey(IMaybeMonotoneType first, IMaybeMonotoneType second) {
+    static PartiallyMonotoneTuple commonKey(DBSPCompiler compiler, IMaybeMonotoneType first, IMaybeMonotoneType second) {
         PartiallyMonotoneTuple firstKeyValue = first.to(PartiallyMonotoneTuple.class);
         PartiallyMonotoneTuple secondKeyValue = second.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType key = firstKeyValue.getFieldType(0)
-            .intersection(secondKeyValue.getFieldType(0));
+        IMaybeMonotoneType key = CombinedBounds.intersection(compiler,
+                List.of(firstKeyValue.getFieldType(0), secondKeyValue.getFieldType(0)));
         DBSPTypeTupleBase valueType = firstKeyValue.getFieldType(1)
             .getType().to(DBSPTypeTupleBase.class);
         return new PartiallyMonotoneTuple(
@@ -465,7 +466,7 @@ public class Monotonicity extends CircuitVisitor {
         MonotoneExpression right = this.getMonotoneExpression(node.right());
         if (left == null || right == null)
             return;
-        PartiallyMonotoneTuple outputType = commonKey(getBodyType(left), getBodyType(right));
+        PartiallyMonotoneTuple outputType = commonKey(this.compiler(), getBodyType(left), getBodyType(right));
         if (!outputType.getFieldType(0).mayBeMonotone())
             return;
         MonotoneExpression output = this.identity(node, outputType, true);
@@ -501,7 +502,7 @@ public class Monotonicity extends CircuitVisitor {
             return;
 
         List<IMaybeMonotoneType> types = Linq.map(inputFunctions, Monotonicity::getBodyType);
-        IMaybeMonotoneType resultType = IMaybeMonotoneType.intersection(types);
+        IMaybeMonotoneType resultType = CombinedBounds.intersection(this.compiler(), types);
         if (!resultType.mayBeMonotone())
             return;
 
@@ -732,7 +733,7 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType rightValueMonoType = rightType.getFieldType(1);
         IMaybeMonotoneType leftKeyMonoType = leftType.getFieldType(0);
         IMaybeMonotoneType rightKeyMonoType = rightType.getFieldType(0);
-        IMaybeMonotoneType keyMonoType = leftKeyMonoType.union(rightKeyMonoType);
+        IMaybeMonotoneType keyMonoType = CombinedBounds.union(this.compiler(), leftKeyMonoType, rightKeyMonoType);
 
         // We expect ASOF joins to look like projections.
         Projection projection = new Projection(this.compiler(), true, false);

@@ -822,6 +822,12 @@ fn transform(
             }
             return Ok(json!(edits));
         }
+        "Monotonicity/Union" | "Monotonicity/Intersection" => {
+            use feldera_sql_opt::BoundCombination::{Intersection, Union};
+            let mode = if pass == "Monotonicity/Union" { Union } else { Intersection };
+            let inputs = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::combine_bounds(inputs, mode))?);
+        }
         "Monotonicity/Function" => {
             let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::function_waterline(&name, &arguments))?);

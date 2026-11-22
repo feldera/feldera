@@ -32,5 +32,64 @@
       "report_sha256": "99a9b4fd87683d14651a6cc9cf081ab05aace121878ad79aa53752a1e8bcdf72",
       "expand_hop_median_cpu_ms": 0.546208
     }
+  },
+  "cold_compilation": {
+    "source_commit": "e177acab4",
+    "pairs_including_warmup": 69,
+    "environment_sha256": "0a28db0e9fc908ba49372e3b28f9e71519372c94e69052624c16ffa41e9ed57d",
+    "pairs_sha256": "8e1c0de36bb27eefc292a832bf795c32e913245d5c63e32d35200686c10095a4",
+    "workloads": {
+      "array-subquery.sql": {
+        "hybrid": {
+          "samples": 21,
+          "p50_seconds": 1.704075117,
+          "empirical_p95_seconds": 1.729046052
+        },
+        "direct": {
+          "samples": 21,
+          "p50_seconds": 1.394131209,
+          "empirical_p95_seconds": 1.458502196
+        },
+        "p95_ratio": 1.1854943082992793,
+        "mean_ratio_paired_95pct_interval": [
+          1.192576615593217,
+          1.2299265377846598
+        ]
+      },
+      "nexmark-suite.sql": {
+        "hybrid": {
+          "samples": 21,
+          "p50_seconds": 6.565759327,
+          "empirical_p95_seconds": 7.136902568
+        },
+        "direct": {
+          "samples": 21,
+          "p50_seconds": 3.142235764,
+          "empirical_p95_seconds": 3.356745153
+        },
+        "p95_ratio": 2.126137744362746,
+        "mean_ratio_paired_95pct_interval": [
+          2.0779917786171245,
+          2.138562581754522
+        ]
+      },
+      "outer-join.sql": {
+        "hybrid": {
+          "samples": 21,
+          "p50_seconds": 1.560956525,
+          "empirical_p95_seconds": 1.595873609
+        },
+        "direct": {
+          "samples": 21,
+          "p50_seconds": 1.326280963,
+          "empirical_p95_seconds": 1.352112775
+        },
+        "p95_ratio": 1.1802814369533636,
+        "mean_ratio_paired_95pct_interval": [
+          1.1610326939772753,
+          1.2086907097571582
+        ]
+      }
+    }
   }
 }

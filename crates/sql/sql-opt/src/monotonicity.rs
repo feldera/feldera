@@ -4,6 +4,7 @@ pub mod asof;
 pub mod binary;
 pub mod bindings;
 pub mod casts;
+pub mod combine;
 pub mod chain_minimum;
 pub mod flatmap;
 pub mod functions;

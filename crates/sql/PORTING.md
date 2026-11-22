@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust combines waterlines across join keys and sum inputs, preserving the SQL
+type of each selected field. The monotonicity pass matched Java on 291 classic
+and 259 Gen-2 frozen programs. Directed three-input union, antijoin, ASOF and
+star join cases matched at every optimizer boundary through emission on both
+engines. [Waterline comparisons](evidence/p3-combined-waterlines.json)
+
 Rust expands each HOP into a map of window starts and a flat-map of output
 rows using the input port, row types, interval, size and offset. All 20 classic
 and 20 Gen-2 frozen programs with HOP calls matched at this pass.
