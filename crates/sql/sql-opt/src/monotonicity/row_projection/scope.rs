@@ -1,6 +1,8 @@
 //! Resolve block locals in statement order. Only a block's final expression contributes its result.
-use super::{ProjectedValue, Row, RowType, Shape, unbounded};
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, TypeId};
+use super::{unbounded, ProjectedValue, Row, RowType, Shape};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId,
+};
 
 pub(super) struct Local {
     name: String,
@@ -33,62 +35,56 @@ impl Row {
         depth: usize,
     ) -> Result<Option<ProjectedValue>, Error> {
         let mut initializers = Vec::new();
-        let node = edit.node(expression.into())?;
-        let tail = if edit.expr_kind(expression)? == Expr::Let {
-            let variable = edit.node(node.edge("variable")?)?;
-            let name = variable
-                .data("variable")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::new("expected a LET variable name"))?
-                .to_owned();
-            let init = edit.expression(node.edge("initializer")?)?;
-            let tail = edit.expression(node.edge("consumer")?)?;
-            if !self.bind_local(edit, name, Some(init), depth, &mut initializers)? {
-                return Ok(None);
+        let mut scopes = std::collections::HashSet::new();
+        let mut tail = expression;
+        // A tail scope sees every enclosing declaration until its result is returned.
+        // Resolve successive LETs and blocks in one environment, in declaration order.
+        let mut value = loop {
+            if !scopes.insert(tail) {
+                return Err(Error::new("cycle in a waterline binding"));
             }
-            Some(tail)
-        } else {
-            let tail = node
-                .field("lastExpression")
-                .and_then(Field::node_id)
-                .map(|id| edit.expression(id))
-                .transpose()?;
-            for id in node.edges("contents")? {
-                let statement = edit.node(id)?;
-                match statement.class() {
-                    "DBSPComment" => {}
-                    "DBSPExpressionStatement" => {
-                        let value = edit.expression(statement.edge("expression")?)?;
-                        if self.visit(edit, value, depth + 1)?.is_none() {
-                            return Ok(None);
-                        }
-                    }
-                    "DBSPLetStatement" => {
-                        let name = statement
-                            .data("variable")
-                            .and_then(|v| v.as_str())
-                            .ok_or_else(|| Error::new("expected a block variable name"))?
-                            .to_owned();
-                        let init = statement
-                            .field("initializer")
-                            .and_then(Field::node_id)
-                            .map(|id| edit.expression(id))
-                            .transpose()?;
-                        if !self.bind_local(edit, name, init, depth, &mut initializers)? {
-                            return Ok(None);
-                        }
-                    }
-                    _ => return Ok(None),
+            let node = edit.node(tail.into())?;
+            let next = if edit.expr_kind(tail)? == Expr::Let {
+                let variable = edit.node(node.edge("variable")?)?;
+                let name = variable
+                    .data("variable")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| Error::new("expected a LET variable name"))?
+                    .to_owned();
+                let init = edit.expression(node.edge("initializer")?)?;
+                let consumer = edit.expression(node.edge("consumer")?)?;
+                if !self.bind_local(edit, name, Some(init), depth, &mut initializers)? {
+                    return Ok(None);
                 }
+                Some(consumer)
+            } else {
+                let last = node
+                    .field("lastExpression")
+                    .and_then(Field::node_id)
+                    .map(|id| edit.expression(id))
+                    .transpose()?;
+                let statements = node.edges("contents")?;
+                if !self.block_statements(edit, statements, depth, &mut initializers)? {
+                    return Ok(None);
+                }
+                last
+            };
+            let result = match next {
+                Some(next) if matches!(edit.expr_kind(next)?, Expr::Block | Expr::Let) => {
+                    tail = next;
+                    continue;
+                }
+                Some(next) => self.visit(edit, next, depth + 1)?,
+                None => unbounded(edit, tail)?,
+            };
+            let Some(value) = result else { return Ok(None) };
+            break value;
+        };
+        if value.shape.monotone() {
+            if let Some(operands) = &mut self.clock_operands {
+                operands.extend(scopes);
             }
-            tail
-        };
-        let Some(mut value) = (match tail {
-            Some(tail) => self.visit(edit, tail, depth + 1)?,
-            None => unbounded(edit, expression)?,
-        }) else {
-            return Ok(None);
-        };
+        }
         if !initializers.is_empty() {
             value.row_type = RowType::Scope {
                 initializers,
@@ -96,6 +92,44 @@ impl Row {
             };
         }
         Ok(Some(value))
+    }
+
+    fn block_statements(
+        &mut self,
+        edit: &mut CircuitEditor,
+        statements: Vec<NodeId>,
+        depth: usize,
+        initializers: &mut Vec<Option<RowType>>,
+    ) -> Result<bool, Error> {
+        for id in statements {
+            let statement = edit.node(id)?;
+            match statement.class() {
+                "DBSPComment" => {}
+                "DBSPExpressionStatement" => {
+                    let value = edit.expression(statement.edge("expression")?)?;
+                    if self.visit(edit, value, depth + 1)?.is_none() {
+                        return Ok(false);
+                    }
+                }
+                "DBSPLetStatement" => {
+                    let name = statement
+                        .data("variable")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| Error::new("expected a block variable name"))?
+                        .to_owned();
+                    let init = statement
+                        .field("initializer")
+                        .and_then(Field::node_id)
+                        .map(|id| edit.expression(id))
+                        .transpose()?;
+                    if !self.bind_local(edit, name, init, depth, initializers)? {
+                        return Ok(false);
+                    }
+                }
+                _ => return Ok(false),
+            }
+        }
+        Ok(true)
     }
 
     fn bind_local(

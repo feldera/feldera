@@ -470,7 +470,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var shapes = WaterlineProjection.inputShapes(parameters, indexed);
             String pass = indexed ? "Monotonicity/ProjectIndexedRow"
                     : shapes.size() == 1 ? "Monotonicity/ProjectRow" : "Monotonicity/ProjectJoinRow";
-            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(shapes.size() == 1 ? shapes.get(0) : shapes), roots);
+            var reply = projectWaterline(compiler, pass, MAPPER.writeValueAsBytes(shapes.size() == 1 ? shapes.get(0) : shapes), roots);
             if (reply.value.isNull())
                 return null;
             var nodes = Objects.requireNonNull(reply.writer.liveNodes);
@@ -499,7 +499,7 @@ public final class RustCircuitPass implements CircuitTransform {
         request.put("indexed", indexed);
         request.set("shapes", MAPPER.valueToTree(WaterlineProjection.inputShapes(argumentShapes, indexed)));
         try {
-            var reply = invokeLowering(compiler, "Monotonicity/ProjectClosure",
+            var reply = projectWaterline(compiler, "Monotonicity/ProjectClosure",
                     MAPPER.writeValueAsBytes(request), roots.toArray(IDBSPInnerNode[]::new));
             if (!answered(compiler, "Monotonicity/ProjectClosure", reply.value))
                 return null;
@@ -1296,6 +1296,11 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private record LoweringReply(ToJsonInnerVisitor writer, JsonNode value) {}
 
+    private static LoweringReply projectWaterline(DBSPCompiler compiler, String pass, byte[] state, IDBSPInnerNode[] inputs) {
+        var writer = new WaterlineArguments(compiler);
+        return invokeLowering(pass, state, writer, writer.encode(inputs));
+    }
+
     private static boolean answered(DBSPCompiler compiler, String operation, JsonNode reply) {
         boolean answered = !reply.isNull();
         if (compiler.stateObserver != null)
@@ -1319,9 +1324,12 @@ public final class RustCircuitPass implements CircuitTransform {
             if (input != null)
                 input.accept(inner);
         json.endArray();
+        return invokeLowering(pass, state, inner, json.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static LoweringReply invokeLowering(String pass, byte[] state, ToJsonInnerVisitor inner, byte[] inputs) {
         try {
-            byte[] reply = transformWithContext(pass, json.toString().getBytes(StandardCharsets.UTF_8),
-                    DBSPVariablePath.nextGeneratedName(), "", state);
+            byte[] reply = transformWithContext(pass, inputs, DBSPVariablePath.nextGeneratedName(), "", state);
             return new LoweringReply(inner, MAPPER.readTree(reply));
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid function from Rust pass " + pass, error);

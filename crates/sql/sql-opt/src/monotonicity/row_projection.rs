@@ -651,6 +651,37 @@ mod tests {
     }
 
     #[test]
+    fn each_tail_binding_inherits_its_consumers_clock_bound() -> Result<(), Error> {
+        let arena = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = arena.root_id();
+        let mut edit = CircuitEditor::new(arena);
+        let unit = edit.tuple_type(site, false, [])?;
+        let row = edit.tuple_type(site, false, [unit.into()])?;
+        let reference = edit.reference_type(row)?;
+        let input = edit.named_variable(reference, "row")?;
+        let parameter = edit.parameter_at(site, input)?;
+        let mut tail = edit.named_variable(unit, "v")?;
+        let mut scopes = Vec::new();
+        for i in 0..256 {
+            // Each inner initializer reads the preceding declaration of the same name.
+            let initializer = if i == 255 {
+                let row = edit.dereference(input)?;
+                edit.tuple_field(row, 0)?
+            } else {
+                edit.named_variable(unit, "v")?
+            };
+            let variable = edit.named_variable(unit, "v")?;
+            tail = edit.let_expression(variable, initializer, tail)?;
+            scopes.push(tail);
+        }
+        let bounds = clock_operands(&mut edit, parameter, tail)?.expect("bound on the unit field");
+        assert!(scopes.iter().all(|scope| bounds.contains(scope)));
+        Ok(())
+    }
+
+    #[test]
     fn repeated_row_aliases_keep_a_linear_type_recipe() -> Result<(), Error> {
         let arena = Circuit::from_json(json!({
             "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []

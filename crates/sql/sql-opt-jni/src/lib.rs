@@ -361,12 +361,37 @@ fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
     }
 }
 
+/// The Java waterline writer can put deep subtrees after the arguments, where
+/// the arena resolves them by ID without nesting the entire body in one object.
+fn lowering_arguments(input: &[u8]) -> Result<(Circuit, Vec<NodeId>), Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Batch<'a> {
+        arguments: usize,
+        #[serde(borrow)]
+        nodes: &'a serde_json::value::RawValue,
+    }
+
+    let header = json!({"class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]});
+    let base = Circuit::from_json(header)?;
+    if input.first() == Some(&b'{') {
+        let batch: Batch = serde_json::from_slice(input)?;
+        let (arena, mut roots) = base.with_inner_roots_bytes(batch.nodes.get().as_bytes())?;
+        if batch.arguments > roots.len() {
+            return Err("missing lowering arguments in expression batch".into());
+        }
+        roots.truncate(batch.arguments);
+        Ok((arena, roots))
+    } else {
+        Ok(base.with_inner_roots_bytes(input)?)
+    }
+}
+
 fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     let (arena, roots) = if matches!(pass, "Monotonicity/Filter" | "Monotonicity/Minimum" | "Monotonicity/ChainMinimum") {
         serde_json::from_slice::<ExpressionSite>(state)?.arena(input)?
     } else {
-        let header = json!({"class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]});
-        Circuit::from_json(header)?.with_inner_roots_bytes(input)?
+        lowering_arguments(input)?
     };
     if let ("KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys", [closure]) = (pass, roots.as_slice()) {
         #[derive(serde::Deserialize)]

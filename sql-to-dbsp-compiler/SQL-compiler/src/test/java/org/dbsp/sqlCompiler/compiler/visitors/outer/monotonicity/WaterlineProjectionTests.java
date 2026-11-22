@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -282,6 +283,38 @@ public class WaterlineProjectionTests {
             Assert.assertSame(inner.fields[0], inner.fields[1]);
             Assert.assertSame(inner.fields[0], inner.fields[2]);
             Assert.assertTrue(types.getFieldType(0).to(PartiallyMonotoneTuple.class).getFieldType(2).getType().mayBeNull);
+        }
+    }
+
+    @Test
+    public void deepBindingsRetainTheWaterlineOfTheOuterInput() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var node = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(node, 32, true, false);
+        var row = new MonotoneType(integer);
+        var input = new DBSPVariablePath("row", integer.ref());
+        int count = 180;
+        DBSPExpression body = new DBSPVariablePath("v" + (count - 1), integer);
+        for (int i = count - 1; i >= 0; i--) {
+            var name = "v" + i;
+            var init = i == 0 ? input.deref() : new DBSPVariablePath("v" + (i - 1), integer);
+            body = i % 2 == 0
+                    ? new DBSPLetExpression(new DBSPVariablePath(name, integer), init, body)
+                    : new DBSPBlockExpression(List.of(new DBSPLetStatement(name, init)), body);
+        }
+        var operator = new DBSPConstantOperator(node, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        var closure = body.closure(input);
+        var direct = new MonotoneTransferFunctions(compiler, operator, kind, row)
+                .applyAnalysis(closure).getReducedExpression();
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var projected = RustCircuitPass.projectRow(compiler, body, input, row);
+            Assert.assertNotNull(projected);
+            Assert.assertSame(row, projected.getMonotoneType());
+            Assert.assertTrue(direct.equivalent(projected.getReducedExpression().closure(input)));
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var hybrid = new MonotoneTransferFunctions(compiler, operator, kind, row).applyAnalysis(closure);
+            Assert.assertTrue(direct.equivalent(hybrid.getReducedExpression()));
         }
     }
 
