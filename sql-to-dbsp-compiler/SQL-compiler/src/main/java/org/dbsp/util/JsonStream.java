@@ -46,7 +46,10 @@ public class JsonStream {
                     return;
                 }
                 text.append('"');
-                JsonStringEncoder.getInstance().quoteAsString(value, text);
+                if (needsJsonEscape(value))
+                    JsonStringEncoder.getInstance().quoteAsString(value, text);
+                else
+                    text.append(value);
                 text.append('"');
             }
 
@@ -56,6 +59,15 @@ public class JsonStream {
                 text.append(':');
             }
         };
+    }
+
+    private static boolean needsJsonEscape(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c < ' ' || c == '"' || c == '\\')
+                return true;
+        }
+        return false;
     }
 
     public JsonStream append(SourcePositionRange range) {

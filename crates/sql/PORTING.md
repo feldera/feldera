@@ -462,6 +462,19 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `6e5879fa8`, Rust grouped timestamp windows whose offsets contain
+conditionals, string comparisons and null tests. All 423 pass comparisons
+matched across the 133 frozen clock programs and eight directed cases. The
+directed cases previously needed 20 Java fallbacks. All eight also matched
+Java through 4,824 ordered observations and artifact emission.
+[Conditional window comparisons](evidence/p3-conditional-window-keys.json)
+
+On `a98a0ce96`, both engines compiled their entire frozen SQL populations
+without a fallback at any of the 24 instrumented optimizer operations.
+The coverage oracle records requests made by those operations. The full
+artifact and runtime comparison in the phase status table used `bf609aab1`.
+[Request counts and input identities](evidence/p3-optimizer-requests.json)
+
 On `a45490134`, Rust selected temporal windows for timestamp keys with
 integer offsets and scaled intervals. The five directed programs on each
 engine previously needed 25 Java fallbacks. All 429 pass comparisons
