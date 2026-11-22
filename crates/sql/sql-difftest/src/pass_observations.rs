@@ -60,7 +60,9 @@ fn removed_policies<'de, D: serde::Deserializer<'de>>(input: D) -> Result<BTreeS
     let count = items.len();
     let ids: BTreeSet<_> = items.into_iter().collect();
     if ids.len() != count {
-        return Err(serde::de::Error::custom("duplicate discarded retention policy"));
+        return Err(serde::de::Error::custom(
+            "duplicate discarded retention policy",
+        ));
     }
     Ok(ids)
 }
@@ -126,6 +128,46 @@ struct ProjectionState {
 }
 
 impl Invocation {
+    /// The scan records one conjunct per selected filter in sharing-group order.
+    /// Attach it to the exit graph so the comparison follows each JVM's node IDs.
+    fn attach_chosen_conjuncts(&mut self) -> Result<(), String> {
+        let choices: Vec<(u64, usize)> = serde_json::from_value(
+            self.placement
+                .state
+                .remove("chosen_conjuncts")
+                .ok_or("missing chosen_conjuncts")?,
+        )
+        .map_err(|e| e.to_string())?;
+        if self.after.get("chosen_conjuncts").is_some() {
+            return Err("exit graph already has a chosen_conjuncts field".into());
+        }
+        let mut selected = Vec::with_capacity(choices.len());
+        if !choices.is_empty() {
+            let graph = Circuit::from_json(self.after.clone()).map_err(|e| e.to_string())?;
+            let mut seen = HashSet::new();
+            for (filter, conjunct) in choices {
+                if !seen.insert(filter) {
+                    return Err(format!("multiple chosen conjuncts for filter {filter}"));
+                }
+                if graph
+                    .node(NodeId::Outer(filter))
+                    .and_then(|node| node.operator_kind())
+                    != Some(feldera_sql_ir::OperatorKind::Filter)
+                {
+                    return Err(format!(
+                        "window selection refers to unknown filter {filter}"
+                    ));
+                }
+                selected.push(serde_json::json!({
+                    "filter": {"operator": {"node": filter}, "outputNumber": 0},
+                    "conjunct": conjunct,
+                }));
+            }
+        }
+        self.after["chosen_conjuncts"] = Value::Array(selected);
+        Ok(())
+    }
+
     /// A compiler can own the weight variable before the first operator uses it.
     /// Compare its binding independently in each graph, including first use at exit.
     fn attach_aggregate_state(&mut self) -> Result<(), String> {
@@ -246,7 +288,16 @@ impl Invocation {
     }
 }
 
-fn compare_invocation(i: usize, mut left: Invocation, mut right: Invocation) -> Result<(), String> {
+fn compare_invocation(
+    pass: &str,
+    i: usize,
+    mut left: Invocation,
+    mut right: Invocation,
+) -> Result<(), String> {
+    if pass == "Scan" {
+        left.attach_chosen_conjuncts()?;
+        right.attach_chosen_conjuncts()?;
+    }
     left.attach_aggregate_state()?;
     right.attach_aggregate_state()?;
     left.attach_projection_state()?;
@@ -282,7 +333,7 @@ fn compare_chunk(pass: &str, source: &Value, rows: [Value; 2], index: usize) -> 
             ));
         }
     }
-    compare_invocation(index, left.invocation, right.invocation)
+    compare_invocation(pass, index, left.invocation, right.invocation)
 }
 
 fn compare_case(
@@ -342,7 +393,7 @@ fn compare_case(
         .zip(candidate.invocations)
         .enumerate()
     {
-        compare_invocation(i, left, right)?;
+        compare_invocation(pass, i, left, right)?;
     }
     Ok(count)
 }
@@ -411,9 +462,11 @@ mod tests {
 
     #[test]
     fn discarded_policies_compare_by_membership() {
-        let traces = |removed| serde_json::from_value::<SharedTraces>(json!({
-            "aliases": {"8": 3}, "removed": removed,
-        }));
+        let traces = |removed| {
+            serde_json::from_value::<SharedTraces>(json!({
+                "aliases": {"8": 3}, "removed": removed,
+            }))
+        };
         let left = traces(vec![4, 7]).unwrap();
         assert!(left == traces(vec![7, 4]).unwrap());
         assert!(left != traces(vec![7, 5]).unwrap());
@@ -439,19 +492,21 @@ mod tests {
             }))
             .unwrap()
         }
-        assert!(compare_invocation(0, observed(7, 11), observed(27, 31)).is_ok());
+        assert!(
+            compare_invocation("ExpandAggregates", 0, observed(7, 11), observed(27, 31)).is_ok()
+        );
         let mut wrong_weight = observed(27, 31);
         wrong_weight
             .placement
             .state
             .insert("weight_id".into(), 99.into());
-        assert!(compare_invocation(0, observed(7, 11), wrong_weight).is_err());
+        assert!(compare_invocation("ExpandAggregates", 0, observed(7, 11), wrong_weight).is_err());
         let mut wrong_input = observed(27, 31);
         wrong_input
             .placement
             .state
             .insert("append_only_inputs".into(), json!([28]));
-        assert!(compare_invocation(0, observed(7, 11), wrong_input).is_err());
+        assert!(compare_invocation("ExpandAggregates", 0, observed(7, 11), wrong_input).is_err());
     }
 
     fn shared_projection(owner: u64, closure: u64, ty: u64) -> Invocation {
@@ -473,8 +528,13 @@ mod tests {
     #[test]
     fn projection_state_preserves_sharing_with_its_circuit_after_renumbering() {
         assert!(
-            compare_invocation(0, shared_projection(9, 2, 1), shared_projection(19, 12, 11))
-                .is_ok()
+            compare_invocation(
+                "ReplaceCommonProjections",
+                0,
+                shared_projection(9, 2, 1),
+                shared_projection(19, 12, 11)
+            )
+            .is_ok()
         );
         let mut copied = shared_projection(19, 12, 11);
         copied
@@ -482,7 +542,41 @@ mod tests {
             .state
             .get_mut("projection_closures")
             .unwrap()["outputs"]["19"]["type"] = json!({"class":"DBSPTypeBool","id":13});
-        assert!(compare_invocation(0, shared_projection(9, 2, 1), copied).is_err());
+        assert!(
+            compare_invocation(
+                "ReplaceCommonProjections",
+                0,
+                shared_projection(9, 2, 1),
+                copied
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn window_choices_compare_filter_identity_and_conjunct_position() {
+        let scan = |id: u64, choices: Value| -> Invocation {
+            let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+                {"class":"DBSPFilterOperator","id":id,"inputs":[]},
+                {"class":"DBSPFilterOperator","id":id+1,"inputs":[]}
+            ]});
+            serde_json::from_value(json!({
+                "before":graph,"after":graph,"container":"Conditional","index":0,"iteration":0,
+                "instance":0,"names_before":0,"names_after":0,"diagnostics":[],"chosen_conjuncts":choices
+            })).unwrap()
+        };
+        let expected = || scan(7, json!([[7, 1], [8, 0]]));
+        assert!(
+            compare_invocation("Scan", 0, expected(), scan(19, json!([[19, 1], [20, 0]]))).is_ok()
+        );
+        for choices in [
+            json!([[19, 0], [20, 1]]),
+            json!([[20, 0], [19, 1]]),
+            json!([[19, 1], [19, 0]]),
+            json!([[21, 1]]),
+        ] {
+            assert!(compare_invocation("Scan", 0, expected(), scan(19, choices)).is_err());
+        }
     }
 
     #[test]
@@ -498,8 +592,14 @@ mod tests {
             })).unwrap()
         }
         let original = || observed(5, 8, &[5, 8]);
-        assert!(compare_invocation(0, original(), observed(51, 12, &[51, 12])).is_ok());
-        assert!(compare_invocation(0, original(), observed(51, 12, &[12, 51])).is_err());
-        assert!(compare_invocation(0, original(), observed(51, 12, &[51, 99])).is_err());
+        assert!(
+            compare_invocation("TrimFilters", 0, original(), observed(51, 12, &[51, 12])).is_ok()
+        );
+        assert!(
+            compare_invocation("TrimFilters", 0, original(), observed(51, 12, &[12, 51])).is_err()
+        );
+        assert!(
+            compare_invocation("TrimFilters", 0, original(), observed(51, 12, &[51, 99])).is_err()
+        );
     }
 }

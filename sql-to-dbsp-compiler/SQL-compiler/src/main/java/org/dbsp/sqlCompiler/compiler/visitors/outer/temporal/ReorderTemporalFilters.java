@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
@@ -294,22 +295,9 @@ public class ReorderTemporalFilters extends Passes {
     /** An output port and a chain of functions applied to that port. */
     public record SourceAndMaps(OutputPort port, List<DBSPClosureExpression> maps) {}
 
-    /** Given a conjunct of a temporal filter and a source that should produce it,
-     * compute the transformation producing the timestamp needed by the conjunct
-     * from the source.  This transformation is the composition of all closures in
-     * source.maps followed by the closure computing the timestamp needed by the conjunct.
-     *
-     * @param source    Source of the filter the conjunct belongs to.
-     * @param filter    Filter the conjunct belongs to.
-     * @param parameter The parameter of the filter's expression
-     * @param conjunct  A single conjunct of the condition. */
-    @Nullable
-    static PortAndClosure temporalFilterSource(
-            DBSPCompiler compiler, SourceAndMaps source, DBSPFilterOperator filter, DBSPParameter parameter,
-            DBSPExpression conjunct) {
-        DBSPClosureExpression timestamp = timestampClosure(compiler, filter, parameter, conjunct);
-        if (timestamp == null)
-            return null;
+    /** Compose a window key with the maps between the source and the filter. */
+    private static PortAndClosure temporalFilterSource(
+            DBSPCompiler compiler, SourceAndMaps source, DBSPClosureExpression timestamp) {
         if (compiler.options.ioOptions.rustOptimizerPasses && !source.maps().isEmpty())
             timestamp = RustCircuitPass.composeTimestamp(compiler, timestamp, source.maps());
         else
@@ -367,6 +355,26 @@ public class ReorderTemporalFilters extends Passes {
         return condition.ensureTree(compiler).to(DBSPClosureExpression.class);
     }
 
+    /** Visit the window (if any) at each original conjunct position. */
+    private static void visitWindows(DBSPCompiler compiler, DBSPFilterOperator filter,
+                                     DBSPClosureExpression condition,
+                                     BiConsumer<Integer, RustCircuitPass.ConjunctWindow> visit) {
+        if (compiler.options.ioOptions.rustOptimizerPasses) {
+            var windows = RustCircuitPass.conjunctWindows(compiler, condition);
+            if (windows != null) {
+                for (int i = 0; i < windows.size(); i++)
+                    visit.accept(i, windows.get(i));
+                return;
+            }
+        }
+        var conjuncts = condition.body.conjuncts();
+        for (int i = 0; i < conjuncts.size(); i++) {
+            var bound = temporalFilter(compiler, filter, condition.parameters[0], conjuncts.get(i));
+            visit.accept(i, bound == null ? null :
+                    new RustCircuitPass.ConjunctWindow(bound.noNow(), RewriteNow.isGreater(bound.opcode())));
+        }
+    }
+
     /**
      * Fingerprints of the sources that may produce temporal filter keys for 'condition',
      * each with the position of the conjunct producing it.
@@ -377,13 +385,12 @@ public class ReorderTemporalFilters extends Passes {
     static Map<String, Integer> sourceFingerprints(
             DBSPCompiler compiler, SourceAndMaps source, DBSPFilterOperator filter, DBSPClosureExpression condition) {
         Map<String, Integer> keys = new LinkedHashMap<>();
-        List<DBSPExpression> conjuncts = condition.body.conjuncts();
-        for (int i = 0; i < conjuncts.size(); i++) {
-            PortAndClosure pc = temporalFilterSource(
-                    compiler, source, filter, condition.parameters[0], conjuncts.get(i));
-            if (pc != null)
-                keys.putIfAbsent(pc.inputFingerprint(compiler), i);
-        }
+        visitWindows(compiler, filter, condition, (i, window) -> {
+            if (window != null) {
+                var timestamp = timestampClosure(compiler, condition.parameters[0], window.key());
+                keys.putIfAbsent(temporalFilterSource(compiler, source, timestamp).inputFingerprint(compiler), i);
+            }
+        });
         return keys;
     }
 
@@ -547,21 +554,18 @@ public class ReorderTemporalFilters extends Passes {
             var condition = condition(this.compiler(), filter);
             if (condition == null)
                 return null;
-            var conjuncts = condition.body.conjuncts();
-            if (conjuncts.size() < 2)
+            if (!(condition.body.stripWrapBool() instanceof DBSPBinaryExpression binary) || binary.opcode != DBSPOpcode.AND)
                 return null;
             long start = DBSPVariablePath.nextGeneratedName();
-            DBSPParameter parameter = condition.parameters[0];
-            var bounds = new ArrayList<RustCircuitPass.TemporalBound>(conjuncts.size());
-            for (var conjunct : conjuncts) {
-                var bound = temporalFilter(this.compiler(), filter, parameter, conjunct);
-                if (bound == null) {
+            var bounds = new ArrayList<RustCircuitPass.TemporalBound>();
+            visitWindows(this.compiler(), filter, condition, (i, window) -> {
+                if (window == null) {
                     bounds.add(null);
                 } else {
-                    var key = CanonicalForm.asString(this.compiler(), timestampClosure(this.compiler(), parameter, bound.noNow()));
-                    bounds.add(new RustCircuitPass.TemporalBound(key, RewriteNow.isGreater(bound.opcode())));
+                    var timestamp = timestampClosure(this.compiler(), condition.parameters[0], window.key());
+                    bounds.add(new RustCircuitPass.TemporalBound(CanonicalForm.asString(this.compiler(), timestamp), window.lower()));
                 }
-            }
+            });
             long names = DBSPVariablePath.nextGeneratedName() - start;
             if (names == 0 && bounds.stream().allMatch(Objects::isNull))
                 return null;

@@ -15,6 +15,46 @@ pub enum TemporalPredicate {
     },
 }
 
+/// A window that one conjunct can implement before the other conjuncts run.
+pub struct ConjunctWindow {
+    pub key: ExpressionId,
+    pub lower: bool,
+}
+
+/// Window sharing inspects each conjunct independently. A residual interrupts
+/// window lowering in predicate order, but later conjuncts can still be moved
+/// to share a window with another filter.
+pub fn conjunct_windows(
+    edit: &mut CircuitEditor,
+    parameter: NodeId,
+    body: ExpressionId,
+) -> Result<Option<Vec<Option<ConjunctWindow>>>, Error> {
+    let terms = crate::filters::conjuncts(edit, body)?;
+    let mut windows = Vec::with_capacity(terms.len());
+    for term in terms {
+        let term = crate::filters::strip_wrap_bool(edit, term)?;
+        let Some(parts) = infer_temporal_predicates(edit, parameter, term)? else {
+            return Ok(None);
+        };
+        let window = match parts.as_slice() {
+            [
+                TemporalPredicate::Bound {
+                    key, comparison, ..
+                },
+            ] => Some(ConjunctWindow {
+                key: *key,
+                lower: matches!(
+                    comparison,
+                    WindowComparison::Greater | WindowComparison::GreaterEqual
+                ),
+            }),
+            _ => None,
+        };
+        windows.push(window);
+    }
+    Ok(Some(windows))
+}
+
 /// Classify scalar filters directly and use row projection for structured clock operands.
 pub fn infer_temporal_predicates(
     edit: &mut CircuitEditor,

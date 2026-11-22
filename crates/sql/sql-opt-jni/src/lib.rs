@@ -462,6 +462,17 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             feldera_sql_opt::compose_timestamp(&mut edit, timestamp, maps, &mut warnings)?
         }
         ("TemporalComparisons", roots) => return temporal::classify(&arena, &mut edit, roots, state),
+        ("WindowGroups/Conjuncts", [parameter, body]) => {
+            let body = edit.expression(*body)?;
+            let Some(windows) = feldera_sql_opt::conjunct_windows(&mut edit, *parameter, body)? else {
+                return Ok(Value::Null);
+            };
+            let windows = windows.into_iter().map(|window| window.map(|window| {
+                let NodeId::Inner(key) = window.key.into() else { unreachable!("expression has inner identity") };
+                json!({"key": key, "lower": window.lower})
+            })).collect::<Vec<_>>();
+            return Ok(serde_json::to_value(windows)?);
+        }
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;
             let filter = edit.expression(*filter)?;
@@ -967,7 +978,7 @@ fn transform(
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields"
-        | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
+        | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp" | "WindowGroups/Conjuncts"
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"

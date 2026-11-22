@@ -4,7 +4,9 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -19,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
@@ -26,11 +29,35 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.util.IdShuffle;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 
 import java.util.List;
 
 public class TemporalKeyTests {
+    @Test
+    public void windowSharingFindsBoundsAfterAResidualAndRetainsTheOriginalKeys() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var b = new ExpressionBuilder();
+        var ts = DBSPTypeTimestamp.INSTANCE;
+        var row = b.refVar(b.tup(ts, ts));
+        var first = b.field(row, 0);
+        var second = b.field(row, 1);
+        var upper = b.binary(DBSPOpcode.GT, new DBSPApplyExpression("now", ts), first);
+        var residual = b.binary(DBSPOpcode.NEQ, b.field(row, 0), new DBSPApplyExpression("now", ts));
+        var lower = b.binary(DBSPOpcode.GTE, second, new DBSPApplyExpression("now", ts));
+        var predicate = b.binary(DBSPOpcode.AND, upper, b.binary(DBSPOpcode.AND, residual, lower));
+        var windows = RustCircuitPass.conjunctWindows(compiler, predicate.closure(row));
+        Assert.assertNotNull(windows);
+        Assert.assertEquals(3, windows.size());
+        Assert.assertSame(first, windows.get(0).key());
+        Assert.assertFalse(windows.get(0).lower());
+        Assert.assertNull(windows.get(1));
+        Assert.assertSame(second, windows.get(2).key());
+        Assert.assertTrue(windows.get(2).lower());
+    }
+
     private static TemporalFilter key(String rowName, String localName, String aliasName, boolean readRow) {
         var zero = new DBSPI32Literal(0);
         var row = new DBSPVariablePath(rowName, zero.getType());

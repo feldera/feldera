@@ -1251,7 +1251,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var reply = invokeLowering(compiler, "RewriteNow/Filter", MAPPER.writeValueAsBytes(expressionSite(origin)),
                     rows.outputType, clock.outputType, DBSPTypeRawTuple.EMPTY, timestamp, DBSPTypeTuple.EMPTY,
                     filter.getOutputZSetType(), filter.getClosureFunction());
-            if (reply.value.isNull())
+            if (!answered(compiler, "RewriteNow/Filter", reply.value))
                 return null;
             var rejection = reply.value.get("rejected_lambda");
             if (rejection != null) {
@@ -1535,6 +1535,24 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public enum PredicateKind { NoNow, Residual, LT, LTE, GT, GTE }
     public record TemporalComparison(PredicateKind kind, DBSPExpression expression, @Nullable DBSPExpression clock) {}
+
+    public record ConjunctWindow(DBSPExpression key, boolean lower) {}
+
+    /** Return the window for each conjunct, preserving the live key's source position. */
+    @Nullable
+    public static List<ConjunctWindow> conjunctWindows(DBSPCompiler compiler, DBSPClosureExpression condition) {
+        var reply = invokeLowering(compiler, "WindowGroups/Conjuncts", condition.parameters[0], condition.body);
+        if (!answered(compiler, "WindowGroups/Conjuncts", reply.value))
+            return null;
+        var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+        var windows = new ArrayList<ConjunctWindow>(reply.value.size());
+        for (var window : reply.value) {
+            windows.add(window.isNull() ? null : new ConjunctWindow(
+                    Utilities.getExists(nodes, window.required("key").longValue()).to(DBSPExpression.class),
+                    window.required("lower").booleanValue()));
+        }
+        return windows;
+    }
 
     @Nullable
     public static List<TemporalComparison> inferTemporalPredicates(DBSPCompiler compiler,
@@ -2880,7 +2898,7 @@ public final class RustCircuitPass implements CircuitTransform {
         writer.apply(circuit);
         var result = this.invoke("Lineage", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                 initial, EMPTY_CONTEXT);
-        if (result.isNull())
+        if (!answered(this.compiler, "Lineage", result))
             return report.apply(circuit);
         for (var finding : MAPPER.treeToValue(result, LineageFinding[].class)) {
             var columns = new java.util.TreeSet<>(finding.columns());
@@ -3342,11 +3360,11 @@ public final class RustCircuitPass implements CircuitTransform {
                 result = this.invoke("Live/" + this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                         initial, state);
             }
-            if (this.mergeFilters != null && result.isNull()) {
+            if (this.mergeFilters != null && !answered(this.compiler, "MergeFilters", result)) {
                 this.usedGeneralTemporalAnalysis = true;
                 return this.mergeFilters.apply(circuit);
             }
-            if (this.replaceSharedIndexes != null && result.isNull())
+            if (this.replaceSharedIndexes != null && !answered(this.compiler, "ReplaceSharedIndexes", result))
                 return this.replaceSharedIndexes.apply(circuit);
             JsonNode counter = result.required("next_generated_name");
             if (!counter.isIntegralNumber() || !counter.canConvertToLong()
