@@ -4,14 +4,19 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -24,6 +29,39 @@ import java.util.HashSet;
 import java.util.List;
 
 public class JoinInputProjectionTests {
+    @Test
+    public void discardedStatementsAreCheckedBeforeTheFinalFieldRead() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var text = DBSPTypeString.varchar(false);
+        var row = new DBSPTypeTuple(text, text).ref().var();
+        var first = row.deref().field(0);
+        var second = row.deref().field(1);
+        var sameField = first.deepCopy();
+        var computed = new DBSPApplyExpression("identity", text, first);
+        for (var rhs : List.of(sameField, second, computed)) {
+            var assignment = new DBSPAssignmentExpression(first, rhs);
+            var nested = new DBSPBlockExpression(List.of(assignment.toStatement()), first);
+            var body = new DBSPBlockExpression(List.of(new DBSPComment("discarded read"), nested.toStatement()), second);
+            var reader = body.closure(row);
+            var actual = RustCircuitPass.parameterFieldDependencies(compiler, reader);
+            var visitor = new FindUsedFields(compiler);
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            if (rhs == sameField) {
+                Assert.assertEquals(List.of(List.of(List.of(1))), actual);
+                var reference = visitor.findUsedFields(reader);
+                var param = reader.parameters[0];
+                Assert.assertEquals(reference.get(param).toString(),
+                        FindUsedFields.fromPaths(reader, actual).get(param).toString());
+            } else {
+                Assert.assertNull(actual);
+                Assert.assertThrows(InternalCompilerError.class, () -> visitor.findUsedFields(reader));
+                compiler.options.ioOptions.rustOptimizerPasses = true;
+                Assert.assertThrows(InternalCompilerError.class, () -> new FindUsedFields(compiler).findUsedFields(reader));
+            }
+        }
+    }
+
     @Test
     public void sqlTopKUsesRustToDiscoverAndRemapComparedFields() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));

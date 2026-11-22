@@ -5889,6 +5889,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "feldera-sql-ir",
+ "indexmap 2.14.2",
  "num-bigint 0.4.8",
  "num-traits",
  "serde_json",
