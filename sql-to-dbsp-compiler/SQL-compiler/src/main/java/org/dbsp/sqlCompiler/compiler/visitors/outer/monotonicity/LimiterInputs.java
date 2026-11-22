@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
@@ -19,6 +20,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
@@ -39,6 +41,7 @@ import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -56,7 +59,7 @@ public final class LimiterInputs {
             DBSPMapOperator.class, DBSPMapIndexOperator.class, DBSPFilterOperator.class,
             DBSPHopOperator.class, DBSPFlatMapOperator.class, DBSPNoopOperator.class,
             DBSPNegateOperator.class, DBSPDeindexOperator.class, DBSPStreamAntiJoinOperator.class,
-            DBSPAggregateLinearPostprocessOperator.class, DBSPChainAggregateOperator.class);
+            DBSPAggregateLinearPostprocessOperator.class, DBSPChainAggregateOperator.class, DBSPLagOperator.class);
 
     private static final Set<Class<?>> OTHER_NATIVE_OPERATORS = Set.of(
             DBSPSourceMultisetOperator.class, DBSPViewOperator.class, DBSPSinkOperator.class, DBSPSumOperator.class,
@@ -64,7 +67,7 @@ public final class LimiterInputs {
             DBSPIncrementalConstantOperator.class, DBSPDistinctOperator.class, DBSPPositiveOperator.class,
             DBSPApplyOperator.class, DBSPWaterlineOperator.class, DBSPWindowOperator.class,
             DBSPDifferentiateOperator.class, DBSPIntegrateOperator.class, DBSPIndexedTopKOperator.class,
-            DBSPRankOperator.class, DBSPRowNumberOperator.class);
+            DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
     public static boolean canLowerCircuit(DBSPCircuit circuit) {
@@ -91,10 +94,24 @@ public final class LimiterInputs {
         return node;
     }
 
-    /** The reduced closures belong to the matching expansion of this circuit. */
+    private static void recordTransfer(Map<Long, DBSPClosureExpression> functions, long id,
+                                       InsertLimiters pass, DBSPSimpleOperator source) {
+        var value = pass.expansionMonotoneValues.get(source);
+        if (value != null)
+            functions.put(id, value.getReducedExpression().to(DBSPClosureExpression.class));
+    }
+
+    /** A stateful aggregate has an intermediate reduction and an output upsert.
+     * Keep both closures in the circuit writer's shared inner-node namespace. */
     public static Map<Long, DBSPClosureExpression> transferFunctions(InsertLimiters pass, DBSPCircuit original) {
         var functions = new LinkedHashMap<Long, DBSPClosureExpression>();
         for (var operator : original.allOperators) {
+            if (operator instanceof DBSPAggregateOperator aggregate
+                    && pass.expandedInto.get(aggregate) instanceof AggregateDeltaExpansion expansion) {
+                recordTransfer(functions, expansion.aggregator.id, pass, expansion.aggregator);
+                recordTransfer(functions, aggregate.id, pass, expansion.upsert);
+                continue;
+            }
             if (!TRANSFER_OPERATORS.contains(operator.getClass()))
                 continue;
             if (operator instanceof DBSPChainAggregateOperator && operator.annotations.first(AlwaysMonotone.class) != null)
@@ -102,9 +119,7 @@ public final class LimiterInputs {
             var expansion = pass.getReplacement(operator.to(DBSPSimpleOperator.class));
             if (expansion == null)
                 continue;
-            var value = pass.expansionMonotoneValues.get(expansion.replacement);
-            if (value != null)
-                functions.put(operator.id, value.getReducedExpression().to(DBSPClosureExpression.class));
+            recordTransfer(functions, operator.id, pass, expansion.replacement);
         }
         return functions;
     }
@@ -133,6 +148,26 @@ public final class LimiterInputs {
                 if (value != null)
                     entry.set("projection", projection(Monotonicity.getBodyType(value)));
                 entry.put("expanded_id", replacement.getId());
+                if (operator instanceof DBSPLagOperator) {
+                    var input = pass.expansionMonotoneValues.get(replacement.inputs.get(0));
+                    if (input != null)
+                        entry.set("input_projection", projection(Monotonicity.getBodyType(input)));
+                }
+            }
+            if (operator instanceof DBSPAggregateOperator aggregate) {
+                var aggregateFacts = entry.putObject("aggregate");
+                if (pass.expandedInto.get(aggregate) instanceof AggregateDeltaExpansion expansion) {
+                    aggregateFacts.put("primitive", expansion.aggregator.id);
+                    var input = pass.expansionMonotoneValues.get(expansion.aggregator.inputs.get(0));
+                    if (input != null)
+                        aggregateFacts.set("input_projection", projection(Monotonicity.getBodyType(input)));
+                    var reduction = pass.expansionMonotoneValues.get(expansion.aggregator);
+                    if (reduction != null)
+                        aggregateFacts.set("result_projection", projection(Monotonicity.getBodyType(reduction)));
+                    var output = pass.expansionMonotoneValues.get(expansion.upsert);
+                    if (output != null)
+                        entry.set("projection", projection(Monotonicity.getBodyType(output)));
+                }
             }
             if (operator instanceof DBSPDistinctOperator || operator instanceof DBSPPositiveOperator) {
                 var expansion = pass.expandedInto.get(operator.to(DBSPSimpleOperator.class));

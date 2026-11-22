@@ -9,7 +9,7 @@ use feldera_sql_ir::{
 
 /// DBSP checkpoints can store a typed tuple directly. A raw tuple or scalar
 /// travels through the delay as a single field of a typed tuple.
-fn delay(
+pub(super) fn delay(
     edit: &mut CircuitEditor,
     body: NodeId,
     bound: Bound,

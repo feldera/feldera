@@ -15,6 +15,8 @@ struct OperatorFacts {
     reachable_from_error: bool,
     input_kinds: Option<Vec<Clock>>,
     projection: Option<Projection>,
+    input_projection: Option<Projection>,
+    aggregate: Option<super::aggregate::AggregateFacts>,
     distinct: Option<DistinctFacts>,
 }
 
@@ -106,7 +108,7 @@ fn projected_bound(
     apply_bound(edit, body, input, function)
 }
 
-fn apply_bound(
+pub(super) fn apply_bound(
     edit: &mut CircuitEditor,
     body: NodeId,
     input: Bound,
@@ -362,6 +364,7 @@ pub fn insert_limiters_with_warnings(
                 | Op::Deindex
                 | Op::AggregateLinearPostprocess
                 | Op::ChainAggregate
+                | Op::Lag
                 | Op::StreamAntiJoin,
             ) => {
                 // These expansion operators transfer the bound of their first input,
@@ -380,13 +383,33 @@ pub fn insert_limiters_with_warnings(
                         .into());
                     }
                 };
-                if let (Some(projection), Some(&(upstream, _))) = (projection, bounds.get(source)) {
+                let retains_keys = matches!(
+                    kind,
+                    Some(Op::AggregateLinearPostprocess | Op::ChainAggregate | Op::Lag)
+                );
+                let transfer = projection
+                    .filter(|_| kind != Some(Op::Lag) || facts.input_projection.is_some());
+                if let (Some(projection), Some(&(upstream, _))) = (transfer, bounds.get(source)) {
                     let function = functions.get(&number).copied().ok_or_else(|| {
                         Error::new(format!(
                             "missing reduced waterline closure for {}",
                             op.class()
                         ))
                     })?;
+                    if let (Some(Op::Lag), Some(input_projection)) = (kind, &facts.input_projection)
+                    {
+                        let input = data.get(source).map_or(*source, |s| s.port);
+                        super::retention::retain_keys(
+                            &mut edit,
+                            body,
+                            id,
+                            input,
+                            input_projection,
+                            upstream,
+                            &mut next,
+                        )?
+                        .place_before_owner(&mut edit, body, id)?;
+                    }
                     let function = super::apply_waterlines(
                         &mut edit,
                         function,
@@ -397,10 +420,7 @@ pub fn insert_limiters_with_warnings(
                     let bound = apply_bound(&mut edit, body, upstream, function)?;
                     bounds.insert(output, (bound, projection));
                     edit.place_before(body, bound.port.operator, id)?;
-                    if matches!(
-                        kind,
-                        Some(Op::AggregateLinearPostprocess | Op::ChainAggregate)
-                    ) {
+                    if retains_keys {
                         let retention = super::retention::retain_keys(
                             &mut edit, body, id, output, projection, bound, &mut next,
                         )?;
@@ -408,15 +428,33 @@ pub fn insert_limiters_with_warnings(
                             edit.place_before(body, retention.first, before)?;
                         }
                     }
-                } else if projection.is_some()
-                    && !matches!(
-                        kind,
-                        Some(Op::AggregateLinearPostprocess | Op::ChainAggregate)
-                    )
-                {
+                } else if projection.is_some() && !retains_keys {
                     return Err(
                         Error::new(format!("missing input waterline for {}", op.class())).into(),
                     );
+                }
+            }
+            Some(Op::Aggregate) => {
+                let [source] = inputs.as_slice() else {
+                    return Err(Error::new("aggregate requires one input").into());
+                };
+                let expansion = facts
+                    .aggregate
+                    .as_ref()
+                    .ok_or_else(|| Error::new("missing aggregate expansion facts"))?;
+                if let Some(&(waterline, _)) = bounds.get(source) {
+                    let input = super::aggregate::AggregateInput {
+                        site: id,
+                        data: data.get(source).map_or(*source, |s| s.port),
+                        waterline,
+                        following: original.get(index + 1).copied(),
+                        functions: &functions,
+                    };
+                    if let Some(bound) = input.insert(&mut edit, expansion, &mut next, warnings)? {
+                        let projection = projection
+                            .ok_or_else(|| Error::new("missing aggregate upsert projection"))?;
+                        bounds.insert(output, (bound, projection));
+                    }
                 }
             }
             Some(Op::Distinct | Op::Positive) => {
@@ -569,6 +607,8 @@ mod tests {
                         input_kinds: None,
                         projection: None,
                         distinct: None,
+                        aggregate: None,
+                        input_projection: None,
                     },
                 )
             })

@@ -1,5 +1,6 @@
 //! Waterline operators built from monotonicity facts on the expanded circuit.
 
+mod aggregate;
 mod chain;
 mod filter;
 mod finality;
