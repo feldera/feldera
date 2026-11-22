@@ -5,66 +5,6 @@ use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId, TypeKind,
 };
 
-use std::collections::BTreeSet;
-
-#[derive(serde::Serialize)]
-pub struct AsofInputFields {
-    paths: Vec<BTreeSet<Vec<usize>>>,
-    timestamps: [usize; 2],
-}
-
-/// An ASOF join compares its timestamps even if neither appears in the result.
-/// Return the parameter dependencies and both timestamp positions after projection.
-pub fn asof_input_fields(
-    edit: &CircuitEditor,
-    closure: NodeId,
-    timestamps: [usize; 2],
-) -> Result<Option<AsofInputFields>, Error> {
-    let function = edit.node(closure)?;
-    let body = edit.expression(function.edge("body")?)?;
-    if edit.expr_kind(body)? != Expr::Tuple || edit.node(body.into())?.field("fields").is_none() {
-        return Ok(None);
-    }
-    let Some(mut paths) = live_parameter_field_paths(edit.circuit(), closure)? else {
-        return Ok(None);
-    };
-    let [_, left, right] = function
-        .edges("parameters")?
-        .try_into()
-        .map_err(|_| Error::new("ASOF output requires key, left and right parameters"))?;
-    let mut projected = [0; 2];
-    for (side, param) in [left, right].into_iter().enumerate() {
-        let reference = edit.type_id(edit.node(param)?.edge("type")?)?;
-        if edit.type_kind(reference)? != TypeKind::Ref {
-            return Ok(None);
-        }
-        let row = edit.type_id(edit.node(reference.into())?.edge("type")?)?;
-        let fields = edit.node(row.into())?.edges("tupFields")?;
-        let ts = timestamps[side];
-        if ts >= fields.len() {
-            return Err(Error::new(
-                "ASOF timestamp index exceeds the input row width",
-            ));
-        }
-        let uses = &mut paths[side + 1];
-        uses.insert(vec![ts]);
-        if uses.contains(&Vec::new()) || edit.type_kind(row)? == TypeKind::RawTuple {
-            projected[side] = ts;
-            continue;
-        }
-        let mut shape = RowFields::new(edit.circuit());
-        for (i, &ty) in fields[..ts].iter().enumerate() {
-            if !shape.unused(ty, &mut vec![i], uses, 0, 0)? {
-                projected[side] += 1;
-            }
-        }
-    }
-    Ok(Some(AsofInputFields {
-        paths,
-        timestamps: projected,
-    }))
-}
-
 /// The join key is never narrowed. Each changed value input gets its own
 /// projection before the join; unchanged inputs keep their original ports.
 pub enum JoinInputRewrite {
@@ -73,6 +13,7 @@ pub enum JoinInputRewrite {
     Narrowed {
         inputs: Vec<Option<ExpressionId>>,
         reader: ExpressionId,
+        timestamps: Option<[usize; 2]>,
     },
 }
 
@@ -88,9 +29,22 @@ pub fn narrow_join_inputs(
     site: NodeId,
     reader: NodeId,
     input_pairs: &[NodeId],
+    mut timestamps: Option<[usize; 2]>,
     next: &mut u64,
 ) -> Result<JoinInputRewrite, Error> {
-    let Some(paths) = live_parameter_field_paths(edit.circuit(), reader)? else {
+    if timestamps.is_some() {
+        if input_pairs.len() != 2 {
+            return Err(Error::new(
+                "ASOF join requires two timestamp-bearing inputs",
+            ));
+        }
+        let body = edit.expression(edit.node(reader)?.edge("body")?)?;
+        if edit.expr_kind(body)? != Expr::Tuple || edit.node(body.into())?.field("fields").is_none()
+        {
+            return Ok(JoinInputRewrite::Unsupported);
+        }
+    }
+    let Some(mut paths) = live_parameter_field_paths(edit.circuit(), reader)? else {
         return Ok(JoinInputRewrite::Unsupported);
     };
     let parameters = edit.node(reader)?.edges("parameters")?;
@@ -101,7 +55,7 @@ pub fn narrow_join_inputs(
     }
     let mut shapes = RowFields::new(edit.circuit());
     let mut values = Vec::with_capacity(input_pairs.len());
-    for (&parameter, paths) in parameters[1..].iter().zip(&paths[1..]) {
+    for (side, (&parameter, paths)) in parameters[1..].iter().zip(&mut paths[1..]).enumerate() {
         let ty = edit.type_id(edit.node(parameter)?.edge("type")?)?;
         if edit.type_kind(ty)? != TypeKind::Ref {
             return Ok(JoinInputRewrite::Unsupported);
@@ -111,12 +65,26 @@ pub fn narrow_join_inputs(
             return Ok(JoinInputRewrite::Unsupported);
         }
         let columns = edit.node(row.into())?.edges("tupFields")?;
+        if let Some(indices) = timestamps {
+            let ts = indices[side];
+            if ts >= columns.len() {
+                return Err(Error::new(
+                    "ASOF timestamp index exceeds the input row width",
+                ));
+            }
+            // The match condition reads each timestamp even if the output does not.
+            paths.insert(vec![ts]);
+        }
+        let whole_row = paths.contains(&Vec::new());
         let mut fields = Vec::with_capacity(columns.len());
         for (index, column) in columns.into_iter().enumerate() {
-            fields.push(
-                paths.contains(&Vec::new())
-                    || !shapes.unused(column, &mut vec![index], paths, 0, 0)?,
-            );
+            fields.push(whole_row || !shapes.unused(column, &mut vec![index], paths, 0, 0)?);
+        }
+        if let Some(indices) = &mut timestamps {
+            // Raw tuples retain field positions even when a field becomes empty.
+            if edit.type_kind(row)? != TypeKind::RawTuple {
+                indices[side] = fields[..indices[side]].iter().filter(|&&used| used).count();
+            }
         }
         let has_unused_leaf = shapes.unused(row.into(), &mut vec![], paths, usize::MAX, 0)?;
         values.push(JoinValue {
@@ -159,7 +127,11 @@ pub fn narrow_join_inputs(
         .enumerate()
         .map(|(i, (decl, value))| (i + 1, decl, value.fields.as_slice()));
     let reader = crate::projected_reader::rebind_parameters(edit, reader, projected)?;
-    Ok(JoinInputRewrite::Narrowed { inputs, reader })
+    Ok(JoinInputRewrite::Narrowed {
+        inputs,
+        reader,
+        timestamps,
+    })
 }
 
 pub fn project_join_input(
@@ -262,16 +234,36 @@ mod tests {
         let result = edit.tuple_expr(site, false, &[second])?;
         let closure = edit.closure_from_variables(result, &[key, left, right])?;
 
-        let fields = asof_input_fields(&edit, closure.into(), [2, 3])?.unwrap();
-        assert_eq!(fields.timestamps, [1, 2]);
+        let pair = edit.tuple_type(site, true, [reference.into(), reference.into()])?;
+        let mut next = 0;
+        let rewrite = narrow_join_inputs(
+            &mut edit,
+            site,
+            closure.into(),
+            &[pair.into(), pair.into()],
+            Some([2, 3]),
+            &mut next,
+        )?;
+        let JoinInputRewrite::Narrowed {
+            inputs,
+            reader,
+            timestamps,
+        } = rewrite
+        else {
+            panic!("both ASOF inputs contain unused columns");
+        };
+        assert_eq!(timestamps, Some([1, 2]));
+        assert!(inputs.iter().all(Option::is_some));
+        let parameters = edit.node(reader.into())?.edges("parameters")?;
         assert_eq!(
-            fields.paths,
-            [
-                BTreeSet::new(),
-                BTreeSet::from([vec![2]]),
-                BTreeSet::from([vec![1], vec![3]])
-            ]
+            parameters[0],
+            edit.node(closure.into())?.edges("parameters")?[0]
         );
+        for (slot, width) in [(1, 2), (2, 3)] {
+            let reference = edit.node(parameters[slot])?.edge("type")?;
+            let projected_row = edit.node(reference)?.edge("type")?;
+            assert_eq!(edit.node(projected_row)?.edges("tupFields")?.len(), width);
+        }
         Ok(())
     }
 }

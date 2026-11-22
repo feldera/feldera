@@ -999,25 +999,31 @@ public final class RustCircuitPass implements CircuitTransform {
         return lowerFunction(compiler, "AntijoinProjection", input, projection, DBSPClosureExpression.class);
     }
 
-    public record JoinInputProjection(List<DBSPClosureExpression> inputs, @Nullable DBSPClosureExpression reader) {}
+    public record JoinInputProjection(List<DBSPClosureExpression> inputs, @Nullable DBSPClosureExpression reader,
+                                      List<Integer> timestamps) {}
 
     /** A null projection for an input keeps its port. A null reader keeps the entire join. */
     @Nullable
     public static JoinInputProjection narrowJoinInputs(DBSPCompiler compiler, DBSPSimpleOperator join) {
+        var site = expressionSite(join.getRelNode());
         String pass = "RemoveUnusedFields/NarrowJoin";
+        if (join instanceof DBSPAsofJoinOperator asof) {
+            pass = "RemoveUnusedFields/NarrowAsof";
+            site.putArray("timestamps").add(asof.leftTimestampIndex).add(asof.rightTimestampIndex);
+        }
         var roots = new ArrayList<IDBSPInnerNode>();
         roots.add(join.getClosureFunction());
         for (var port : join.inputs)
             roots.add(port.getOutputIndexedZSetType().getKVRefType());
         try {
-            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(expressionSite(join.getRelNode())),
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site),
                     roots.toArray(IDBSPInnerNode[]::new));
             if (compiler.stateObserver != null)
                 compiler.stateObserver.nativeDecision(pass, !reply.value.isNull());
             if (reply.value.isNull())
                 return null;
             if (!reply.value.required("narrowed").booleanValue())
-                return new JoinInputProjection(List.of(), null);
+                return new JoinInputProjection(List.of(), null, List.of());
             var decoder = expressionDecoder(reply.writer);
             var functions = reply.value.required("functions").elements();
             var projections = new ArrayList<DBSPClosureExpression>();
@@ -1026,7 +1032,9 @@ public final class RustCircuitPass implements CircuitTransform {
             var reader = decoder.decodeInner(functions.next(), DBSPClosureExpression.class);
             Utilities.enforce(projections.size() == join.inputs.size() && !functions.hasNext());
             DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
-            return new JoinInputProjection(projections, reader);
+            List<Integer> timestamps = join instanceof DBSPAsofJoinOperator
+                    ? MAPPER.convertValue(reply.value.required("timestamps"), new TypeReference<>() {}) : List.of();
+            return new JoinInputProjection(projections, reader, timestamps);
         } catch (IOException error) {
             throw new UncheckedIOException("Could not encode join input projections", error);
         }
@@ -3191,20 +3199,6 @@ public final class RustCircuitPass implements CircuitTransform {
         var result = invokeLowering(compiler, "ParameterFieldDependencies", closure).value;
         return answered(compiler, "ParameterFieldDependencies", result)
                 ? MAPPER.convertValue(result, new TypeReference<>() {}) : null;
-    }
-
-    public record AsofInputFields(List<List<List<Integer>>> paths, List<Integer> timestamps) {}
-
-    @Nullable
-    public static AsofInputFields asofInputFields(DBSPCompiler compiler, DBSPAsofJoinOperator join) {
-        String pass = "RemoveUnusedFields/AsofInputs";
-        try {
-            var timestamps = MAPPER.writeValueAsBytes(List.of(join.leftTimestampIndex, join.rightTimestampIndex));
-            var reply = invokeLowering(compiler, pass, timestamps, join.getClosureFunction());
-            return answered(compiler, pass, reply.value) ? MAPPER.treeToValue(reply.value, AsofInputFields.class) : null;
-        } catch (IOException error) {
-            throw new UncheckedIOException("Invalid ASOF input fields from Rust", error);
-        }
     }
 
     /** Analyze each distinct reader closure once per unused-field iteration. */

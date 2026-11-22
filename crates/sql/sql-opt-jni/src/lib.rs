@@ -229,16 +229,23 @@ fn project_join_input(input: &[u8], state: &[u8], mut next: u64) -> Result<Value
 
 fn narrow_join_inputs(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     use feldera_sql_opt::JoinInputRewrite;
-    let (arena, roots) = serde_json::from_slice::<ExpressionSite>(state)?.arena(input)?;
+    #[derive(serde::Deserialize)]
+    struct JoinRequest {
+        #[serde(flatten)]
+        site: ExpressionSite,
+        timestamps: Option<[usize; 2]>,
+    }
+    let request: JoinRequest = serde_json::from_slice(state)?;
+    let (arena, roots) = request.site.arena(input)?;
     let (function, pairs) = roots.split_first().ok_or("missing join closure")?;
     let mut edit = CircuitEditor::new(arena.clone());
-    match feldera_sql_opt::narrow_join_inputs(&mut edit, arena.root_id(), *function, pairs, &mut next)? {
+    match feldera_sql_opt::narrow_join_inputs(&mut edit, arena.root_id(), *function, pairs, request.timestamps, &mut next)? {
         JoinInputRewrite::Unsupported => Ok(Value::Null),
         JoinInputRewrite::Unchanged => Ok(json!({"narrowed": false})),
-        JoinInputRewrite::Narrowed { inputs, reader } => {
+        JoinInputRewrite::Narrowed { inputs, reader, timestamps } => {
             let changed: Vec<_> = inputs.iter().map(Option::is_some).collect();
             let functions: Vec<_> = inputs.into_iter().flatten().chain([reader]).collect();
-            Ok(json!({"narrowed": true, "changed": changed, "next_generated_name": next,
+            Ok(json!({"narrowed": true, "changed": changed, "timestamps": timestamps, "next_generated_name": next,
                 "functions": edit.circuit().additional_expressions(&arena, &functions)?}))
         }
     }
@@ -397,11 +404,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(json!({"copies": copies, "groups": groups, "keys": keys}));
         }
         return Ok(serde_json::to_value(copies)?);
-    }
-    if let ("RemoveUnusedFields/AsofInputs", [closure]) = (pass, roots.as_slice()) {
-        let edit = CircuitEditor::new(arena);
-        let fields = feldera_sql_opt::asof_input_fields(&edit, *closure, serde_json::from_slice(state)?)?;
-        return Ok(serde_json::to_value(fields)?);
     }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_expr::live_parameter_field_paths(&arena, *closure)?)?);
@@ -957,7 +959,7 @@ fn transform(
                 .map(feldera_sql_opt::ProjectionRules::for_producer).unwrap_or_default();
             return Ok(serde_json::to_value(rules)?);
         }
-        "RemoveUnusedFields/NarrowJoin" => return narrow_join_inputs(input, state, next),
+        "RemoveUnusedFields/NarrowJoin" | "RemoveUnusedFields/NarrowAsof" => return narrow_join_inputs(input, state, next),
         "RemoveUnusedFields/JoinInput" => return project_join_input(input, state, next),
         "OptimizerOrder" => {
             let options = serde_json::from_slice(input)?;

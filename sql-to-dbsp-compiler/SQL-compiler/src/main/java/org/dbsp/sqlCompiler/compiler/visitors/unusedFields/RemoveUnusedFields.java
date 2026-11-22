@@ -133,6 +133,28 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         this.fullyUsedFunctions.done(function);
     }
 
+    private void applyJoinProjection(DBSPSimpleOperator join, RustCircuitPass.JoinInputProjection plan) {
+        var inputs = new ArrayList<OutputPort>(join.inputs.size());
+        for (int i = 0; i < join.inputs.size(); i++) {
+            var input = this.mapped(join.inputs.get(i));
+            var projection = plan.inputs().get(i);
+            if (projection != null) {
+                var map = new DBSPMapIndexOperator(join.getRelNode(), projection, input);
+                this.addOperator(map);
+                input = map.outputPort();
+            }
+            inputs.add(input);
+        }
+        var reader = Objects.requireNonNull(plan.reader());
+        if (join instanceof DBSPAsofJoinOperator asof) {
+            this.map(asof, new DBSPAsofJoinOperator(asof.getRelNode(), asof.getOutputZSetType(), reader,
+                    plan.timestamps().get(0), plan.timestamps().get(1), asof.comparator, asof.isLeft,
+                    inputs.get(0), inputs.get(1)));
+        } else {
+            this.map(join, join.with(reader, join.outputType, inputs, false).to(DBSPSimpleOperator.class));
+        }
+    }
+
     boolean processJoin(DBSPSimpleOperator join) {
         var function = join.getClosureFunction();
         if (this.done(join, function))
@@ -144,18 +166,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                     this.noUnusedFields(function);
                     return false;
                 }
-                var inputs = new ArrayList<OutputPort>(join.inputs.size());
-                for (int i = 0; i < join.inputs.size(); i++) {
-                    var input = this.mapped(join.inputs.get(i));
-                    var projection = plan.inputs().get(i);
-                    if (projection != null) {
-                        var map = new DBSPMapIndexOperator(join.getRelNode(), projection, input);
-                        this.addOperator(map);
-                        input = map.outputPort();
-                    }
-                    inputs.add(input);
-                }
-                this.map(join, join.with(plan.reader(), join.outputType, inputs, false).to(DBSPSimpleOperator.class));
+                this.applyJoinProjection(join, plan);
                 return true;
             }
         }
@@ -199,10 +210,17 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             Utilities.enforce(joinFunction.parameters.length == 3);
             DBSPParameter left = joinFunction.parameters[1];
             DBSPParameter right = joinFunction.parameters[2];
-            var nativeFields = this.compiler.options.ioOptions.rustOptimizerPasses
-                    ? RustCircuitPass.asofInputFields(this.compiler, join) : null;
-            var useMap = nativeFields == null ? this.asofReferenceFields(join)
-                    : FindUsedFields.fromPaths(joinFunction, nativeFields.paths());
+            if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                var plan = RustCircuitPass.narrowJoinInputs(this.compiler, join);
+                if (plan != null) {
+                    if (plan.reader() == null)
+                        super.postorder(join);
+                    else
+                        this.applyJoinProjection(join, plan);
+                    return;
+                }
+            }
+            var useMap = this.asofReferenceFields(join);
             RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
             FieldUseMap leftRemap = rw.getUseMap(left);
             FieldUseMap rightRemap = rw.getUseMap(right);
@@ -212,10 +230,8 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 OutputPort leftMap = getProjection(join.getRelNode(), leftRemap, join.left());
                 OutputPort rightMap = getProjection(join.getRelNode(), rightRemap, join.right());
                 DBSPClosureExpression newJoinFunction = rw.rewriteClosure(joinFunction);
-                int leftTimestampIndex = nativeFields == null
-                        ? leftRemap.deref().getNewIndex(join.leftTimestampIndex) : nativeFields.timestamps().get(0);
-                int rightTimestampIndex = nativeFields == null
-                        ? rightRemap.deref().getNewIndex(join.rightTimestampIndex) : nativeFields.timestamps().get(1);
+                int leftTimestampIndex = leftRemap.deref().getNewIndex(join.leftTimestampIndex);
+                int rightTimestampIndex = rightRemap.deref().getNewIndex(join.rightTimestampIndex);
                 DBSPSimpleOperator replacement =
                         new DBSPAsofJoinOperator(join.getRelNode(), join.getOutputZSetType(),
                                 newJoinFunction, leftTimestampIndex, rightTimestampIndex,
