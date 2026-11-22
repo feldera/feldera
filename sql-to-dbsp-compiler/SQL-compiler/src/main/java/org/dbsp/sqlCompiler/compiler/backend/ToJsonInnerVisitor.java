@@ -60,6 +60,7 @@ import org.dbsp.util.Utilities;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import org.dbsp.util.Shuffle;
 import javax.annotation.Nullable;
@@ -79,6 +80,7 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     final Set<Long> serialized;
     @Nullable Map<Long, Shuffle> liveShuffles;
     @Nullable Map<Long, IDBSPInnerNode> liveNodes;
+    @Nullable private IdentityHashMap<Shuffle, Long> keyShuffles;
     /** One entry for each node in the visitor context: true when the JSON object of the node
      * already has a "type" property. */
     final List<Boolean> hasType;
@@ -94,6 +96,11 @@ public class ToJsonInnerVisitor extends InnerVisitor {
         this.verbosity = verbosity;
         this.serialized = new HashSet<>();
         this.hasType = new ArrayList<>();
+    }
+
+    /** Rust compares a flatmap's shuffle by Java object identity within one snapshot. */
+    void includeShuffleIdentities() {
+        this.keyShuffles = new IdentityHashMap<>();
     }
 
     boolean checkDone(IDBSPInnerNode node, boolean silent) {
@@ -268,6 +275,9 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void postorder(DBSPFlatmap node) {
+        if (this.keyShuffles != null)
+            this.stream.label("shuffleIdentity").append(
+                    this.keyShuffles.computeIfAbsent(node.shuffle, ignored -> node.id));
         if (this.liveShuffles != null)
             this.liveShuffles.put(node.id, node.shuffle);
         this.startArrayProperty("passthroughIndexes");

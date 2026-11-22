@@ -188,6 +188,8 @@ final class OptimizerTopology {
     static ToJsonOuterVisitor selectedForRewrite(DBSPCompiler compiler, DBSPCircuit circuit,
                                                  Set<Long> selected, Details details) {
         var inner = new ToJsonInnerVisitor(compiler, JsonStream.compactCircuit(), 1, true);
+        if (details == Details.SHARED_INDEXES)
+            inner.includeShuffleIdentities();
         inner.liveNodes = new HashMap<>();
         return selectedExpressions(compiler, circuit, selected, details, inner);
     }

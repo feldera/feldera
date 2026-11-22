@@ -1312,6 +1312,8 @@ public final class RustCircuitPass implements CircuitTransform {
             case "MergeTemporalBounds", "TemporalGroups" -> new TemporalKeyWriter(compiler);
             default -> new LoweringArguments(compiler);
         };
+        if (pass.equals("SharedIndexes/Split") || pass.equals("SharedIndexes/WideFields"))
+            inner.includeShuffleIdentities();
         try {
             byte[] reply = transformWithContext(pass, inner.encode(inputs), DBSPVariablePath.nextGeneratedName(), "", state);
             return new LoweringReply(inner, MAPPER.readTree(reply));
@@ -2983,7 +2985,7 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             var reply = invokeLowering(compiler, "SharedIndexes/Split",
                     MAPPER.writeValueAsBytes(fixed), functions.toArray(DBSPClosureExpression[]::new)).value;
-            if (reply.isNull())
+            if (!answered(compiler, "SharedIndexes/Split", reply))
                 return null;
             var groups = MAPPER.treeToValue(reply.required("groups"), int[][].class);
             finishLowering(compiler, reply);
@@ -3037,7 +3039,7 @@ public final class RustCircuitPass implements CircuitTransform {
             fields.add(decoder.decodeInner(expressions.required(i), DBSPExpression.class));
         List<List<Integer>> layout = MAPPER.convertValue(reply.value.required("layout"), new TypeReference<>() {});
         var rows = new ArrayList<List<DBSPExpression>>();
-        if (layout == null) {
+        if (!answered(compiler, "SharedIndexes/WideFields", reply.value.required("layout"))) {
             int offset = 0;
             for (var width : reply.value.required("widths")) {
                 int end = Math.addExact(offset, width.intValue());
@@ -3120,6 +3122,9 @@ public final class RustCircuitPass implements CircuitTransform {
                     return keys.left.equivalent(keys.right);
                 });
         var state = MAPPER.readTree(result);
+        if (this.compiler.stateObserver != null)
+            this.compiler.stateObserver.nativeDecision("SharedIndexes/Discover",
+                    state.required("compared_all_keys").booleanValue());
         find.record(MAPPER.treeToValue(state.required("groups"), FindSharedIndexes.IndexReader[][].class),
                 MAPPER.treeToValue(state.required("visited"), long[].class), operatorsById(circuit));
         finishLowering(this.compiler, state);
@@ -3742,6 +3747,8 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             if (result == null) {
                 writer = this.snapshots.writer(this.reusesOperators());
+                if (this.replaceSharedIndexes != null)
+                    writer.innerVisitor.includeShuffleIdentities();
                 writer.innerVisitor.liveNodes = new HashMap<>();
                 writer.apply(circuit);
                 if (this.mapFusion != null)

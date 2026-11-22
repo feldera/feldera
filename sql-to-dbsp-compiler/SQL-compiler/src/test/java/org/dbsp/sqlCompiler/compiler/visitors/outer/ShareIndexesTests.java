@@ -21,14 +21,19 @@ import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ReplaceSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
@@ -46,10 +51,13 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.util.Linq;
+import org.dbsp.util.IdShuffle;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -526,6 +534,84 @@ public class ShareIndexesTests extends StreamingTestBase {
         List<T> found = operators(circuit, clazz);
         Assert.assertEquals(clazz.getSimpleName(), 1, found.size());
         return found.get(0);
+    }
+
+    private static DBSPFlatmap flatmap(IdShuffle shuffle) {
+        var type = new DBSPTypeTuple(new DBSPTypeArray(INT, false));
+        var row = type.ref().var();
+        return new DBSPFlatmap(CalciteObject.EMPTY, type, row.deref().field(0).closure(row),
+                List.of(), null, null, shuffle);
+    }
+
+    @Test
+    public void sharedIndexesCompareShuffleIdentity() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes"));
+        for (boolean nativePasses : List.of(false, true)) {
+            var compiler = this.testCompiler();
+            compiler.options.ioOptions.rustOptimizerPasses = nativePasses;
+            var decisions = new HashSet<String>();
+            compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                @Override
+                public void nativeDecision(String operation, boolean answered) {
+                    Assert.assertTrue(operation, answered);
+                    decisions.add(operation);
+                }
+
+                @Override
+                public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
+
+                @Override
+                public void after(String parent, int index, int iteration, CircuitTransform pass,
+                                  DBSPCircuit circuit, boolean completed) {}
+            };
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            var source = table(circuit, "T", "k");
+            var shared = new IdShuffle(1);
+            var indexes = new ArrayList<OutputPort>();
+            var functions = new ArrayList<DBSPClosureExpression>();
+            for (int i = 0; i < 4; i++) {
+                var row = source.getOutputZSetElementType().ref().var();
+                var tag = new DBSPI32Literal(i == 2 ? 2 : 1);
+                var key = new DBSPTupleExpression(tag, flatmap(i == 3 ? new IdShuffle(1) : shared));
+                var value = new DBSPTupleExpression(flatmap(shared), flatmap(new IdShuffle(1)));
+                var function = new DBSPRawTupleExpression(key, value).closure(row);
+                functions.add(function);
+                var index = new DBSPMapIndexOperator(CalciteEmptyRel.INSTANCE, function, source.outputPort());
+                circuit.addOperator(index);
+                indexes.add(index.outputPort());
+            }
+            for (int i = 0; i < indexes.size(); i += 2) {
+                var inputs = indexes.subList(i, i + 2);
+                var reader = firstFields(inputs);
+                circuit.addOperator(new DBSPJoinOperator(CalciteEmptyRel.INSTANCE,
+                        new DBSPTypeZSet(reader.getResultType()), reader, inputs.get(0), inputs.get(1), false));
+            }
+
+            var graph = new Graph(compiler);
+            graph.apply(circuit);
+            var find = new FindSharedIndexes(compiler, graph.getGraphs());
+            var snapshots = new OptimizerSnapshots(compiler);
+            (nativePasses ? new RustCircuitPass(compiler, find, snapshots) : find).apply(circuit);
+            var groups = find.candidateIds();
+            Assert.assertEquals(1, groups.size());
+            Assert.assertEquals(indexes.subList(0, 2).stream().map(port -> port.operator.id).toList(),
+                    groups.get(0).stream().map(member -> member[0]).toList());
+
+            var replace = new ReplaceSharedIndexes(compiler, find);
+            var result = (nativePasses ? new RustCircuitPass(compiler, replace, snapshots) : replace).apply(circuit);
+            var join = operators(result, DBSPJoinOperator.class).getFirst();
+            Assert.assertSame(join.left().node(), join.right().node());
+            Assert.assertEquals(3, join.left().getOutputIndexedZSetType().elementType.to(DBSPTypeTuple.class).size());
+            if (nativePasses) {
+                var pair = functions.subList(0, 2);
+                Assert.assertArrayEquals(new int[][]{{0, 1}},
+                        RustCircuitPass.splitSharedIndexes(compiler, pair, List.of(false, false)));
+                Assert.assertEquals(List.of(List.of(0, 1), List.of(0, 2)),
+                        RustCircuitPass.wideIndexFields(compiler, pair).layout());
+                Assert.assertTrue(decisions.containsAll(Set.of("SharedIndexes/Discover", "ReplaceSharedIndexes",
+                        "SharedIndexes/Split", "SharedIndexes/WideFields")));
+            }
+        }
     }
 
     /** Two joins read indexes of T whose values are {@code first} and {@code second}.

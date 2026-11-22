@@ -37,8 +37,10 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             serde_json::from_slice(&env.convert_byte_array(&visited)?).map_err(optimizer_error)?;
         let mut next = u64::try_from(next).map_err(optimizer_error)?;
         let mut edit = CircuitEditor::new(input.clone());
+        let mut compared_all_keys = true;
         let groups =
             feldera_sql_opt::find_shared_indexes(&mut edit, &visited, &mut next, |edit, keys| {
+                compared_all_keys = false;
                 let keys = edit.circuit().additional_expressions(&input, &keys)?;
                 let bytes = serde_json::to_vec(&keys).map_err(|e| Error::new(e.to_string()))?;
                 if bytes.len() > MAX_BYTES {
@@ -58,6 +60,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             })
             .map_err(optimizer_error)?;
         let bytes = serde_json::to_vec(&json!({
+            "compared_all_keys": compared_all_keys,
             "groups": groups.groups,
             "visited": groups.visited.difference(&visited).collect::<Vec<_>>(),
             "warnings": groups.warnings.into_iter().map(|w| json!({
