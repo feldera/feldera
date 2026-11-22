@@ -777,6 +777,7 @@ fn transform(
     let pass = live.unwrap_or(pass);
     match pass {
         "ExpandStreamAggregates/List" => return expand_stream_aggregate(input, state, next),
+        "DeltaExpansion/BinaryJoin" => return delta_expansion::binary(input, state, next),
         "DeltaExpansion/StarJoin" => return star_join::delta(input, state, next),
         "DeltaExpansion/Distinct" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Distinct, input, state, next),
         "DeltaExpansion/Positive" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Positive, input, state, next),
@@ -907,12 +908,6 @@ fn transform(
             let mode = if pass == "Monotonicity/Union" { Union } else { Intersection };
             let inputs = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::combine_bounds(inputs, mode))?);
-        }
-        "DeltaExpansion/BinaryJoins" => {
-            use feldera_sql_opt::JoinForm::{Inner, FilteredInner, LeftOuter, FilteredLeftOuter};
-            let formulas = [Inner, FilteredInner, LeftOuter, FilteredLeftOuter]
-                .map(|form| (form, form.steps()));
-            return Ok(serde_json::to_value(BTreeMap::from(formulas))?);
         }
         "Monotonicity/Function" => {
             let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;

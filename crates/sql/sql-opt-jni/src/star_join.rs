@@ -86,13 +86,6 @@ pub(super) fn delta(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, 
     if let Some(map) = graph.map {
         reply["map"] = operator_number(map).into();
     }
-    reply["warnings"] = json!(
-        warnings
-            .into_iter()
-            .map(|w| json!({
-                "range": w.position, "error_type": w.kind, "message": w.message,
-            }))
-            .collect::<Vec<_>>()
-    );
+    reply["warnings"] = json!(super::pass_warnings(warnings));
     Ok(reply)
 }

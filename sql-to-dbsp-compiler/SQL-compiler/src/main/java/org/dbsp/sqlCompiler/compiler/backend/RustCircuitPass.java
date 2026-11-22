@@ -177,6 +177,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
@@ -569,12 +570,30 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static Map<RustDeltaExpandOperators.JoinForm, List<RustDeltaExpandOperators.Step>> deltaJoinFormulas() {
+    public record ExpandedBinaryDelta(List<DBSPSimpleOperator> operators,
+                                      Map<RustDeltaExpandOperators.Term, DBSPSimpleOperator> terms) {}
+
+    public static ExpandedBinaryDelta binaryDelta(DBSPCompiler compiler, DBSPJoinBaseOperator join,
+            RustDeltaExpandOperators.JoinForm form, @Nullable DBSPExpression filter, OutputPort left, OutputPort right) {
+        var site = expressionSite(join.getRelNode());
+        site.put("form", form.name());
+        site.put("balanced", join.balanced);
+        site.putArray("ports").add(left.outputNumber).add(right.outputNumber);
         try {
-            var reply = transformWithContext("DeltaExpansion/BinaryJoins", EMPTY_CONTEXT, 0, "", EMPTY_CONTEXT);
-            return MAPPER.readValue(reply, new TypeReference<>() {});
+            var reply = invokeLowering(compiler, "DeltaExpansion/BinaryJoin", MAPPER.writeValueAsBytes(site),
+                    join.getFunction(), join.outputType, left.outputType(), right.outputType(), join.left().outputType(), filter);
+            var decoder = expressionDecoder(reply.writer);
+            var operators = decodeOperatorFragment(decoder, reply, op -> join.getRelNode(), left.node(), right.node());
+            var terms = new EnumMap<RustDeltaExpandOperators.Term, DBSPSimpleOperator>(RustDeltaExpandOperators.Term.class);
+            for (var entry : reply.value.required("terms").properties())
+                terms.put(RustDeltaExpandOperators.Term.valueOf(entry.getKey()),
+                        decoder.outer.lookup(entry.getValue().longValue(), DBSPSimpleOperator.class));
+            terms.get(RustDeltaExpandOperators.Term.LEFT_INTEGRAL).copyAnnotations(join.left().node());
+            terms.get(RustDeltaExpandOperators.Term.RIGHT_INTEGRAL).copyAnnotations(join.right().node());
+            finishLowering(compiler, reply.value);
+            return new ExpandedBinaryDelta(operators, terms);
         } catch (IOException error) {
-            throw new UncheckedIOException("Could not read binary join expansions from Rust", error);
+            throw new UncheckedIOException("Could not encode binary join inputs", error);
         }
     }
 

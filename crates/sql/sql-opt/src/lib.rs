@@ -60,7 +60,7 @@ mod operator_inputs;
 pub use operator_inputs::OperatorInputs;
 mod dead_code;
 mod delta_join;
-pub use delta_join::JoinForm;
+pub use delta_join::{DeltaJoin, JoinForm};
 mod delta_aggregate;
 pub use delta_aggregate::UnaryDelta;
 mod dependency_order;
