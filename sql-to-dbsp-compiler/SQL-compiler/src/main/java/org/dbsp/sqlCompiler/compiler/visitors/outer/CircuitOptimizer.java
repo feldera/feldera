@@ -254,7 +254,10 @@ public class CircuitOptimizer extends Passes {
         this.add(new MerkleHashes(compiler));
         this.add(new TagRegions(compiler));
         this.add(new CircuitStatistics(compiler));
-        this.add(new Conditional(compiler, new Gen2Lowering(compiler), () -> options.ioOptions.gen2));
+        // The Gen-2 engine runs the chain aggregates and joins that Gen2Lowering replaces with
+        // primitives, so the compiler does not lower its circuits yet; PrimitivesTests adds the
+        // pass back.
+        // this.add(new Conditional(compiler, new Gen2Lowering(compiler), () -> options.ioOptions.gen2));
     }
 
     /** Every pass must leave a circuit with consistent stream kinds; when the testing option
