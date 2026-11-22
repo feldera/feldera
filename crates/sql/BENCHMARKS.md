@@ -14,14 +14,19 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.428 | 1.740 | 1.571 | 2.012 | 1.281× |
-| Nexmark suite | 3.226 | 7.530 | 3.391 | 7.887 | 2.326× |
-| Outer join | 1.328 | 1.578 | 1.431 | 1.616 | 1.129× |
+| Correlated array subquery | 1.560 | 1.789 | 2.238 | 3.173 | 1.418× |
+| Nexmark suite | 3.319 | 7.881 | 4.911 | 11.110 | 2.262× |
+| Outer join | 1.406 | 1.646 | 2.176 | 2.995 | 1.376× |
 
-The table measures the typed NULL waterline build at `c03c4fcee` with no concurrent
+The table measures the deindex build at `3baee479d` with no concurrent
 compiler verification. Each workload ran two warmup pairs and 21 measured
 pairs on CPU 15. All 69 pairs matched on diagnostics and emitted artifacts.
-The array subquery and Nexmark exceeded the 1.2× ceiling.
+All three workloads exceeded the 1.2× ceiling. Timings varied during the run.
+On Nexmark, direct Java's median rose from 3.246 s in the first seven measured
+pairs to 3.916 s in the last seven. The hybrid median rose from 7.353 s to
+9.447 s over the same pairs.
+On the preceding typed NULL waterline build at `c03c4fcee`, the p95 ratios
+were 1.281×, 2.326× and 1.129× in workload order.
 Under the same profile, the earlier chain-topology build at `72183b58e`
 measured 1.094×, 2.346× and 1.221× in workload order.
 The earlier filter-trimming build measured 1.239×, 2.119× and 1.183× in

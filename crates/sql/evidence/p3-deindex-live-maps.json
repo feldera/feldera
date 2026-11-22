@@ -96,7 +96,12 @@
         }
       ],
       "total_request_bytes": 2669326,
-      "total_reply_bytes": 307954
+      "total_reply_bytes": 307954,
+      "all_instrumented_pass_calls": {
+        "calls": 2618,
+        "request_bytes": 99286827,
+        "reply_bytes": 10914059
+      }
     },
     "candidate": {
       "source_commit": "3baee479dfd659e5185e3653a10dcf4553180260",
@@ -108,7 +113,12 @@
         }
       ],
       "total_request_bytes": 126238,
-      "total_reply_bytes": 36
+      "total_reply_bytes": 36,
+      "all_instrumented_pass_calls": {
+        "calls": 2617,
+        "request_bytes": 96743532,
+        "reply_bytes": 10605930
+      }
     }
   },
   "full_s4": {

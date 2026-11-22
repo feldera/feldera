@@ -46,16 +46,17 @@ Path prefixes used in this document:
   passed, including 232 expected runtime errors. The checkpoint and decoder
   results and the outstanding independent reviews are recorded in the
   [phase status](crates/sql/PORTING.md#local-compiler-and-phase-status).
-- 2026-11-21. The typed NULL waterline build at `c03c4fcee` ran 3,133,126 Rust pass adapter
+- 2026-11-21. The deindex build at `3baee479d` ran 3,133,126 Rust pass adapter
   invocations across 105 pass kinds. All 17,098 frozen programs matched direct
   Java through S3, persistent-ID inputs and emitted artifacts. The selected
   LATENESS and NOW() programs passed 2,076 runtime commands, and COUNT and
   LATENESS checkpoints restored in both directions. The last full classic
   runtime run passed all 8,256 executable cases on the filter-bound build
-  (`c5c800f7f`). On `c03c4fcee`, with no concurrent compiler verification,
-  hybrid p95 was 1.281× direct Java on the array subquery, 2.326× on Nexmark
-  and 1.129× on the outer join. P3 remains opt-in while Java optimizer logic remains,
-  the 1.2× ceiling is exceeded, and the field-shadow gate is open.
+  (`c5c800f7f`). On `3baee479d`, with no concurrent compiler verification,
+  hybrid p95 was 1.418× direct Java on the array subquery, 2.262× on Nexmark
+  and 1.376× on the outer join. P3 remains opt-in. Java still runs part of the
+  optimizer, all three workloads exceeded the 1.2× ceiling, and the field-shadow
+  gate is open.
   [P3 implementation](crates/sql/PORTING.md#p3-optimizer-replay) · [Paired timings](crates/sql/BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across
   17,098 classic and Gen-2 cases. CSE, ARRAY_AGG fusion and the representative
