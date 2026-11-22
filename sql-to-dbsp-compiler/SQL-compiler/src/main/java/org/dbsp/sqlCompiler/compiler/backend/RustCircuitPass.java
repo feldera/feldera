@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ChainVisitor;
@@ -2197,6 +2198,16 @@ public final class RustCircuitPass implements CircuitTransform {
         DBSPVariablePath.restoreGeneratedNames(state.required("next_generated_name").longValue());
     }
 
+    private static IDBSPInnerNode simplifyRoot(DBSPCompiler compiler, String pass, IDBSPInnerNode root) {
+        // Both expression translators leave types untouched.
+        if (root instanceof DBSPType)
+            return root;
+        var reply = invokeLowering(compiler, pass, root);
+        var result = expressionDecoder(reply.writer).decodeInner(reply.value.required("root"), IDBSPInnerNode.class);
+        finishLowering(compiler, reply.value);
+        return result;
+    }
+
     /** The first root is the reader. Each following pair binds a narrow parameter to its wide row. */
     public static IDBSPInnerNode rewriteIndexReader(DBSPCompiler compiler, List<IDBSPInnerNode> roots,
                                                      List<List<Integer>> columns) {
@@ -2651,17 +2662,19 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             JsonNode result = null;
             switch (this.nativeName) {
+                case "Simplify" -> {
+                    return new Simplify(this.compiler) {
+                        @Override
+                        public IDBSPInnerNode apply(IDBSPInnerNode root) {
+                            return simplifyRoot(this.compiler, "Simplify/Root", root);
+                        }
+                    }.circuitRewriter(true).apply(circuit);
+                }
                 case "SimplifyWaterline" -> {
                     return new SimplifyWaterline(this.compiler) {
                         @Override
                         public IDBSPInnerNode apply(IDBSPInnerNode root) {
-                            // ExpressionTranslator treats types as opaque, including at aggregate sites.
-                            if (root instanceof DBSPType)
-                                return root;
-                            var reply = invokeLowering(this.compiler, "SimplifyWaterline/Root", root);
-                            var result = expressionDecoder(reply.writer).decodeInner(reply.value.required("root"), IDBSPInnerNode.class);
-                            finishLowering(this.compiler, reply.value);
-                            return result;
+                            return simplifyRoot(this.compiler, "SimplifyWaterline/Root", root);
                         }
                     }.circuitRewriter().apply(circuit);
                 }

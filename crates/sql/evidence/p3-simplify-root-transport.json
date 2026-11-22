@@ -1,0 +1,38 @@
+{
+  "scope": "Four Simplify placements per frozen program selected by a changed Simplify boundary. Each implementation starts from the same detached S2 and the comparator checks the whole pass output.",
+  "engines": {
+    "classic": {
+      "cases": 2144,
+      "matched_invocations": 8576,
+      "input_sha256": "6d6d5f3c0804ae98c6f91757fe9a2858a50106dae2fb9a5efa86ee7ef53db573"
+    },
+    "gen2": {
+      "cases": 2140,
+      "matched_invocations": 8560,
+      "input_sha256": "39876c1699a0f1f34240c535ef3676fd5b43a062866a4e24e8a6a3d373e2bced"
+    }
+  },
+  "nexmark": {
+    "metric": "Sum of main-thread CPU time over all four Simplify placements during one cold SQL compilation. Twelve pairs, alternating JVM order on logical CPU 13 during concurrent corpus replay.",
+    "input_sha256": "00a774ded7d5607ba0fda8fb439289f9f9010fe105e8bea3b5dcb879e10d2a6d",
+    "pairs": 12,
+    "builds": {
+      "clock-scaling": {
+        "compiler_jar_sha256": "b598cc7d6a016a352571dbe491b96b1d23cea97b564bf5e024c2ea6a3b3dee68",
+        "optimizer_library_sha256": "b32bac2182be38c3cf7bc4056aba3186f9a68831f793b7487369894a67459a6c",
+        "raw_timings_sha256": "54c5c0d8812fab895cfe2edb38a8112e104cfe2ac56fb67d2b4dc3fb498559dc",
+        "mean_cpu_ms": 347.901
+      },
+      "simplify-roots": {
+        "compiler_jar_sha256": "a00ad363deb0e30f3902db0bd689f31e85bc0af7c5ae6321c7cf7219173c8062",
+        "optimizer_library_sha256": "01d24e4a64e7ec5a41cb64e5cc8f4e9673518fb253ddfdb1eaf052b5ad68c38e",
+        "raw_timings_sha256": "71e9c05915c219375888ddf6bde3cb04f6a967af1d5b8a880164bf04cd782e84",
+        "mean_cpu_ms": 306.432
+      }
+    },
+    "paired_mean_cpu_ratio_bootstrap_95pct": [
+      0.8356,
+      0.9418
+    ]
+  }
+}

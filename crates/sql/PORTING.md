@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The live Simplify pass sends each selected expression to Rust. All 17,136
+invocations matched Java across the 2,144 classic and 2,140 Gen-2 programs
+with a changed Simplify boundary. On Nexmark, mean main-thread CPU time in
+the four simplifier calls fell from 348 ms to 306 ms across 12 paired
+compilations during concurrent corpus replay.
+[Simplify pass comparisons and timings](evidence/p3-simplify-root-transport.json)
+
 The live optimizer expands each stream aggregate from its list, indexed input,
 output type and row weight. The pass matched Java on all 958 classic and 949
 Gen-2 frozen programs where expansion changed the circuit. The comparator
