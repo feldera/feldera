@@ -7433,7 +7433,7 @@ pub mod test_http {
 
     /// A multihost pipeline refuses `send_snapshot`, on a connector in its configuration and on
     /// HTTP egress, because no host might have the whole view.
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_send_snapshot_is_refused(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -7489,7 +7489,7 @@ pub mod test_http {
     /// A distributed null output on 3 hosts runs on every host, and each host
     /// writes its own share of the view: every host gets some rows, and the
     /// shares add up to the view.
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_distributed_null_output(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -7554,7 +7554,7 @@ pub mod test_http {
     /// is one commit, and the table holds every row of the view, once.  The
     /// leader is on host 1, so that it is not the host that ingests.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_distributed_delta_output(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -7648,7 +7648,7 @@ pub mod test_http {
     /// Lake output to a new table waits for the leader, on host 1, to create the table.  This
     /// test has no input connector, but it activates the hosts in the same order.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_input_choices_before_outputs_initialize(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -7714,7 +7714,7 @@ pub mod test_http {
     /// distributed Delta Lake output refuses to start, the leader too, instead of waiting forever
     /// for reports that the other parts cannot send.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_distributed_delta_needs_host_urls(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -7745,7 +7745,7 @@ pub mod test_http {
     /// can be.  The report here is for a step that the leader already finished, so the leader
     /// answers it at once.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_distributed_delta_large_report(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -7781,7 +7781,7 @@ pub mod test_http {
     /// the table holds the files of all 3 parts and the next transaction
     /// version of the leader, in order, and the table holds every row once.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_distributed_delta_many_transactions(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -7831,7 +7831,7 @@ pub mod test_http {
     /// connector runs on the host that the stream is assigned to, as before output connectors could
     /// be distributed, and writes every row once.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_unsupported_distributed_output_runs_on_one_host(
         engine: &dyn PipelineTestEngine,
     ) {
@@ -7887,7 +7887,7 @@ pub mod test_http {
     /// reports fail at once, as transport errors of those parts, instead of retrying forever for a
     /// leader that does not come back.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_distributed_delta_leader_stops(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -7933,7 +7933,7 @@ pub mod test_http {
     /// When the leader of a distributed Delta Lake output cannot commit, every
     /// part reports the error, and no part counts its rows as written.
     #[cfg(all(feature = "with-deltalake", unix))]
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn multihost_distributed_delta_commit_failure(engine: &dyn PipelineTestEngine) {
         use std::os::unix::fs::PermissionsExt;
 
@@ -7987,7 +7987,7 @@ pub mod test_http {
 
     /// A 2-host pipeline restarts from its checkpoint with its state: after the restart, the
     /// hosts hold every row of the view from before it.
-    #[engine_test(requires(Storage, Checkpoints))]
+    #[engine_test(requires(Storage, Checkpoints, Multihost))]
     pub fn multihost_restart_from_checkpoint(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -8134,7 +8134,7 @@ pub mod test_http {
     /// Each time, the hosts hold every row of the view, where the layout says, and the view's
     /// output connector gets no row a second time.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test(requires(Storage, Checkpoints))]
+    #[engine_test(requires(Storage, Checkpoints, Multihost))]
     pub fn multihost_view_integrals_layout_follows_checkpoint_and_switch(
         engine: &dyn PipelineTestEngine,
     ) {
@@ -8253,7 +8253,7 @@ pub mod test_http {
     /// bootstraps it and sends every row of the view to the table again.
     /// Later rows reach the table once.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test(requires(Storage, Checkpoints))]
+    #[engine_test(requires(Storage, Checkpoints, Multihost))]
     pub fn multihost_output_becomes_distributed(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -8349,7 +8349,7 @@ pub mod test_http {
     /// Lake output after the restart, exactly as to one that is not
     /// distributed: in both cases the table ends with every row twice.
     #[cfg(feature = "with-deltalake")]
-    #[engine_test(requires(Storage, Checkpoints))]
+    #[engine_test(requires(Storage, Checkpoints, Multihost))]
     pub fn multihost_changed_view_resends_to_distributed_output(engine: &dyn PipelineTestEngine) {
         let mut tables = Vec::new();
         for distributed in [false, true] {
@@ -8440,7 +8440,7 @@ pub mod test_http {
     /// A restart that changes the layout of the views' state (`dev_tweaks.view_integrals`) refuses
     /// a concurrent bootstrap.  The views' state would be rebuilt in the background, and until
     /// cutover every view would read as empty.
-    #[engine_test(requires(Storage, Checkpoints))]
+    #[engine_test(requires(Storage, Checkpoints, Multihost))]
     pub fn multihost_layout_switch_refuses_concurrent_bootstrap(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -10618,7 +10618,7 @@ pub mod test_http {
     }
 
     /// A host without storage has no checkpoints, so it reports an error for any checkpoint.
-    #[engine_test]
+    #[engine_test(requires(Multihost))]
     pub fn checkpoint_output_assignment_without_storage(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
@@ -10637,7 +10637,7 @@ pub mod test_http {
     /// With the integrals of its views on all hosts, a 2-host pipeline can restart from its
     /// checkpoint with its view assigned to another host: the view's state does not depend on its
     /// host, so nothing is rebuilt, and after the restart the hosts hold every row of the view.
-    #[engine_test(requires(Storage, Checkpoints))]
+    #[engine_test(requires(Storage, Checkpoints, Multihost))]
     pub fn multihost_restart_with_view_on_another_host(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();

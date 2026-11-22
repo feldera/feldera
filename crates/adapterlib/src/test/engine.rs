@@ -35,6 +35,8 @@ pub enum Capability {
     FaultTolerance,
     /// A pipeline bootstraps the changed part of a modified program.
     Bootstrap,
+    /// A pipeline runs on more than one host.
+    Multihost,
     /// The `raw` input format.
     RawFormat,
     /// Rows rendered for the Postgres output connector.
@@ -66,12 +68,13 @@ pub enum Capability {
 
 impl Capability {
     /// Every capability, in the order of declaration.
-    pub const ALL: [Capability; 17] = [
+    pub const ALL: [Capability; 18] = [
         Capability::Storage,
         Capability::Checkpoints,
         Capability::SuspendResume,
         Capability::FaultTolerance,
         Capability::Bootstrap,
+        Capability::Multihost,
         Capability::RawFormat,
         Capability::PostgresRendering,
         Capability::DynamoDbItems,
