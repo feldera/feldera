@@ -735,14 +735,8 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType rightKeyMonoType = rightType.getFieldType(0);
         IMaybeMonotoneType keyMonoType = CombinedBounds.union(this.compiler(), leftKeyMonoType, rightKeyMonoType);
 
-        // We expect ASOF joins to look like projections.
-        Projection projection = new Projection(this.compiler(), true, false);
-        DBSPClosureExpression function = node.getClosureFunction();
-        projection.apply(function);
-        Utilities.enforce(projection.isProjection && projection.hasIoMap());
-        Projection.IOMap ioMap = projection.getIoMap();
         DBSPClosureExpression closure = this.compiler().options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.asofTransfer(this.compiler(), node, ioMap) : asofTransfer(node, ioMap);
+                ? RustCircuitPass.asofTransfer(this.compiler(), node) : this.asofTransfer(node);
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
                 this.compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.Join,
@@ -753,8 +747,12 @@ public class Monotonicity extends CircuitVisitor {
         this.set(node, result);
     }
 
-    private static DBSPClosureExpression asofTransfer(DBSPAsofJoinOperator node, Projection.IOMap ioMap) {
+    private DBSPClosureExpression asofTransfer(DBSPAsofJoinOperator node) {
         DBSPClosureExpression function = node.getClosureFunction();
+        Projection projection = new Projection(this.compiler(), true, false);
+        projection.apply(function);
+        Utilities.enforce(projection.isProjection && projection.hasIoMap());
+        Projection.IOMap ioMap = projection.getIoMap();
         DBSPTypeTupleBase keyType = node.getKeyType().to(DBSPTypeTupleBase.class);
 
         // We don't directly analyze the ASOF JOIN function; we make up

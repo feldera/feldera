@@ -1,0 +1,40 @@
+{
+  "scope": "Derive ASOF waterline output columns from the join closure in Rust, then replay detached S2 and compare every S4 boundary, final S3, hash inputs and emitted artifacts with direct Java.",
+  "artifacts_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "38a6363611660f6e752314ecdfa846860cd19d23634d4fe91d8e0b1bfded2a01",
+    "bin/sql-difftest": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d",
+    "compiler.jar": "24f429997317b8b3c8e1a406c0507482ecc95a30014c25e57d267f20051834bb",
+    "test.jar": "5f1166fc28e097a417d6cb63277b2e0e6a78baed0ad32a50e4de085b498187d2"
+  },
+  "engines": {
+    "classic": {
+      "cases": 24,
+      "receipt_sha256": [
+        "08f583059ce815599f88c6179595f7060f05fb3ffda19007e6de64de0f8d258a",
+        "a9814a7367fe021eb6132aac7760a31cc63eca0f9eb840c5c8414ca6a31e2260",
+        "72e3746a8b91f6bd92026ac0d0e9227dbd9bd4a62498bdde9d72272b2362bb57",
+        "c4a9c418848438bb2c625f85d4d8fe05142f20bb301b8dce865b6ff974241852"
+      ]
+    },
+    "gen2": {
+      "cases": 22,
+      "receipt_sha256": [
+        "a69529278f9c5b2fdeee14ef909d786941594e6be298b71411f399fbf641aa41",
+        "c24bae01aa57828eb96459eb3e9e242beff7021257b5dc1498e1e454eb5be493",
+        "db38c677796c79dce1c4d66b4069de41f2516061eb83eb96c53a9de71caa3373",
+        "7fbfbcb068b460da80ac4f3c344739483e9856f2d8972e7c64a5918fa86262fb"
+      ]
+    }
+  },
+  "tests": {
+    "rust": 222,
+    "maven": 54,
+    "jni": 14,
+    "logs_sha256": {
+      "tests.log": "ab7faff58c1fadabd05ce23819c7ddf8a6802c231a898abfd3425b2d90ec6ec0",
+      "maven.log": "210ba6eeaaa344bd11a21abd545306bd82749f111bd3e3e1711f4e9b8f3fc44c",
+      "jni-tests.log": "877cdbb057ceec46a3199fd0d2b2c80bc87f3f0ec9bb2a71631dd729b917ee00",
+      "clippy.log": "6eb1eccb9846a01b67f188523aeecd573aeed115cee24b45cf2766381292dccb"
+    }
+  }
+}

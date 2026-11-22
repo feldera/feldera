@@ -206,19 +206,20 @@ fn asof_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Bo
     #[derive(serde::Deserialize)]
     struct Request {
         timestamps: [usize; 2],
-        projection: Vec<[usize; 2]>,
         #[serde(flatten)]
         site: ExpressionSite,
     }
     let request: Request = serde_json::from_slice(state)?;
     let (arena, roots) = request.site.arena(input)?;
-    let &[key, left_parameter, right] = roots.as_slice() else {
-        return Err("expected ASOF key, left parameter and right row types".into());
+    let &[key, join, right] = roots.as_slice() else {
+        return Err("expected ASOF key type, join closure and right row type".into());
     };
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
-    let types = [edit.type_id(key)?, edit.type_id(left_parameter)?, edit.type_id(right)?];
+    let function = edit.expression(join)?;
+    let key = edit.type_id(key)?;
+    let right = edit.type_id(right)?;
     let closure = feldera_sql_opt::asof_waterline(
-        &mut edit, arena.root_id(), types, request.timestamps, &request.projection, &mut next,
+        &mut edit, arena.root_id(), function, key, right, request.timestamps, &mut next,
     )?;
     lowered_function_reply(&arena, &edit, Some(closure), next, Vec::new())
 }

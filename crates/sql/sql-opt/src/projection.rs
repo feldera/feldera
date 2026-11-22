@@ -54,7 +54,7 @@ pub(super) fn join_projection(
     let params = node.edges("parameters")?;
     let Projection::Fields(fields) = classify(edit, node.edge("body")?, &params, true)? else {
         return Err(Error::new(
-            "filtered join requires a projection of its input fields",
+            "join requires a projection of its input fields",
         ));
     };
     Ok(fields)

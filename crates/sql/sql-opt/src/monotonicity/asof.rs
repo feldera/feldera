@@ -1,19 +1,48 @@
 //! Lower bounds for an ASOF join whose left timestamp follows its right timestamp.
 use super::unknown;
+use crate::projection::{join_projection, simple_tuple};
 use feldera_sql_expr::copy_expression;
-use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, NodeId, TypeId};
+use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, NodeId, TypeId, TypeKind};
 
 /// Only the left timestamp can carry a bound. A right update can change a
 /// match to an old right row with the same key.
 pub fn asof_waterline(
     edit: &mut CircuitEditor,
     site: NodeId,
-    types: [TypeId; 3],
+    function: ExpressionId,
+    key_type: TypeId,
+    right_type: TypeId,
     timestamps: [usize; 2],
-    projection: &[[usize; 2]],
     next: &mut u64,
 ) -> Result<ExpressionId, Error> {
-    let [key_type, left_param_type, right_type] = types;
+    let join = edit.node(function.into())?;
+    let [_, left_parameter, _] = join.edges("parameters")?[..] else {
+        return Err(Error::new(
+            "ASOF join requires key, left and right parameters",
+        ));
+    };
+    let left_param_type = edit.type_id(edit.node(left_parameter)?.edge("type")?)?;
+    let output = edit.expression_type(edit.expression(join.edge("body")?)?)?;
+    if !simple_tuple(edit, output.into())? {
+        return Err(Error::new("ASOF join requires a flat output projection"));
+    }
+    let projection = join_projection(edit, function.into())?;
+    let fields = edit.node(output.into())?.edges("tupFields")?;
+    let width = if edit.type_kind(output)? == TypeKind::RawTuple {
+        // Projection.IOMap counts the columns of both the key and value.
+        let mut width = 0;
+        for part in fields {
+            width += edit.node(part)?.edges("tupFields")?.len();
+        }
+        width
+    } else {
+        fields.len()
+    };
+    if projection.len() != width {
+        return Err(Error::new(
+            "ASOF projection must select one input field per output",
+        ));
+    }
     let [left_index, right_index] = timestamps;
     let key_ref = edit.reference_type(key_type)?;
     let key = edit.variable(key_ref, next)?;
@@ -37,7 +66,7 @@ pub fn asof_waterline(
     )?;
 
     let mut fields = Vec::with_capacity(projection.len());
-    for &[input, index] in projection {
+    for (input, index) in projection {
         let bound = match input {
             1 if index == left_index => {
                 let copy = copy_expression(edit, minimum.into())?;

@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust derives ASOF waterline projections from the join closure. All 24 classic
+and 22 Gen-2 frozen ASOF programs matched direct Java through detached replay
+and emission. The key-equivalence visitor resolves nested declarations in
+index and temporal keys. The engines agreed on candidate keys at 12,270 output
+ports across 310 selected cases.
+[ASOF replay](evidence/p3-asof-join-projections.json) · [Key comparisons](evidence/p3-scoped-key-comparison.json)
+
 Rust tracks bounds through immutable row bindings, references, arithmetic,
 and named scalar functions. Temporal predicates retain their individual clock
 bounds when the comparison itself has no bound. All 71 classic and 62 Gen-2

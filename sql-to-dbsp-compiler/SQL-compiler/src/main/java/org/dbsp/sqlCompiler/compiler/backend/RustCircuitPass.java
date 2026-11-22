@@ -50,7 +50,6 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
@@ -421,16 +420,12 @@ public final class RustCircuitPass implements CircuitTransform {
                 lag.getClosureFunction(), lag.comparator, lag.input().getOutputIndexedZSetType()));
     }
 
-    public static DBSPClosureExpression asofTransfer(DBSPCompiler compiler, DBSPAsofJoinOperator join,
-            Projection.IOMap projection) {
+    public static DBSPClosureExpression asofTransfer(DBSPCompiler compiler, DBSPAsofJoinOperator join) {
         var site = expressionSite(join.getNode());
         site.putArray("timestamps").add(join.leftTimestampIndex).add(join.rightTimestampIndex);
-        var fields = site.putArray("projection");
-        for (var field : projection.fields())
-            fields.addArray().add(field.inputIndex()).add(field.fieldIndex());
         try {
             return loweredClosure(compiler, invokeLowering(compiler, "Monotonicity/Asof", MAPPER.writeValueAsBytes(site),
-                    join.getKeyType(), join.getClosureFunction().parameters[1].getType(),
+                    join.getKeyType(), join.getClosureFunction(),
                     join.right().getOutputIndexedZSetType().elementType));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode ASOF waterline projection", error);
