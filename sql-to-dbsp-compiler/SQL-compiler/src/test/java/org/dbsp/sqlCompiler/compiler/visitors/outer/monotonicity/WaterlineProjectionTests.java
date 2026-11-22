@@ -2,13 +2,21 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWeighOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
@@ -25,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
@@ -42,6 +51,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
@@ -49,6 +59,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 
 import java.util.List;
@@ -56,6 +67,44 @@ import java.util.Map;
 import java.util.Set;
 
 public class WaterlineProjectionTests {
+    @Test
+    public void weighRebuildsItsOutputWhenLimitersReplaceItsInput() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var site = CalciteEmptyRel.INSTANCE;
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            var name = DBSPCompiler.ERROR_VIEW_NAME;
+            var col = new ProgramIdentifier("k");
+            var integer = new DBSPI32Literal(1).getType();
+            var schema = new DBSPTypeStruct(site, name, List.of(new DBSPTypeStruct.Field(site, col, 0, integer)), false);
+            var rowType = schema.toTuple();
+            var source = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+            circuit.addOperator(source);
+            var metadata = new ViewMetadata(name, List.of(new ViewColumnMetadata(site, name, col, integer, null)),
+                    SqlCreateView.ViewKind.STANDARD, -1, false, false, null);
+            var view = new DBSPViewOperator(site, name, "", schema, metadata, source.outputPort());
+            circuit.addOperator(view);
+            var row = rowType.ref().var();
+            var indexed = new DBSPMapIndexOperator(site,
+                    new DBSPRawTupleExpression(row.deref().field(0), row.deref()).closure(row), view.outputPort());
+            circuit.addOperator(indexed);
+            var weigh = new DBSPWeighOperator(site, new DBSPISizeLiteral(1).closure(
+                    indexed.getOutputIndexedZSetType().keyType.ref().var(), rowType.ref().var()), indexed.outputPort());
+            circuit.addOperator(weigh);
+            Assert.assertTrue(LimiterInputs.canLowerCircuit(circuit));
+            var limiters = new InsertLimiters(compiler, circuit, new Monotonicity.MonotonicityInformation(),
+                    Map.of(), Set.of());
+            var result = hybrid ? new RustCircuitPass(compiler, limiters, new OptimizerSnapshots(compiler)).apply(circuit)
+                    : limiters.apply(circuit);
+            var rebuilt = result.allOperators.getLast().to(DBSPWeighOperator.class);
+            Assert.assertNotSame(indexed, rebuilt.input().node());
+            Assert.assertNotSame(weigh.getType(), rebuilt.getType());
+            Assert.assertSame(rebuilt.input().getOutputIndexedZSetType().elementType, rebuilt.getOutputZSetElementType());
+        }
+    }
+
     @Test
     public void wholeClosureProjectionPreservesBindingAndOccurrenceDiagnostics() {
         var compiler = new DBSPCompiler(new CompilerOptions());

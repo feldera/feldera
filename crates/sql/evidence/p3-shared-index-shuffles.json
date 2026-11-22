@@ -1,0 +1,60 @@
+{
+  "commit": "056b078af1ca3897e605bd47cc1f77e2e875b524",
+  "scope": "All frozen programs where a98a0ce96 requested ReplaceSharedIndexes. The directed IR circuit also compares fallback split and wide layout requests against the direct Java result.",
+  "build_sha256": {
+    "bin/sql-difftest": "9d72b7422c366d306f9bb3809f88f9df5885dda5e6ac1ed8c8d20484c9d45b31",
+    "bin/libfeldera_sql_opt_jni.so": "2b329b64129e42cff262d76b13fdad882fa1ce235a9b38979218eda40b49390a",
+    "maven/sql-compiler.jar": "024b3a246041e33fa333f276e5b5694fc9e54bd10618fd07074883e6978f0c60",
+    "maven/tests.jar": "f72bf935898acf539a03cae121c2b9bd7edf212fb1d6cd5d90a64abdc0d486d1"
+  },
+  "engines": {
+    "classic": {
+      "programs": 202,
+      "requests": {
+        "ReplaceSharedIndexes": {
+          "calls": 202,
+          "fallbacks": 0
+        },
+        "SharedIndexes/Discover": {
+          "calls": 202,
+          "fallbacks": 0
+        }
+      },
+      "ordered_s4_observations": 95511,
+      "mismatches": 0,
+      "population_sha256": "4c1e9fc0b99df6ea2ae187a9f48f1410200dcb7a6afb8d3543ca5861da827dc2",
+      "coverage_sha256": "3afcbcdae7594115dfeff953b298a59e507d1444bbb40413ace566c886b40e81",
+      "shard_receipts_sha256": {
+        "0": "9646db02d4e9f054590fb7b21a6ae8c21dcbdea850317506ca03b2642a939105",
+        "1": "dc432b714ef3f306da0ff822fe07ffad12f99377ba01793dd198375e72b69310",
+        "2": "a2a4bf4c026935ad1ac881b376651f0e8c49df4c140124ad3bedd3f849509f08",
+        "3": "22be80375905ad2e8a69990200e408f1cbcb44b77e02d48197f03b11c53745f1"
+      }
+    },
+    "gen2": {
+      "programs": 243,
+      "requests": {
+        "ReplaceSharedIndexes": {
+          "calls": 243,
+          "fallbacks": 0
+        },
+        "SharedIndexes/Discover": {
+          "calls": 243,
+          "fallbacks": 0
+        }
+      },
+      "ordered_s4_observations": 116195,
+      "mismatches": 0,
+      "population_sha256": "70c71fad46e1124d2ee0441387579a9b178adf508d7c9a0b1fa6d963434106d3",
+      "coverage_sha256": "caa8ba90ca8ddf53bc09f92ff68f9b35eb74b3d860b80401e5d664259cf8f627",
+      "shard_receipts_sha256": {
+        "0": "0b859978e67301ab3f02d0de60c808e74ccf38b414f93d44351ac814ebe66658",
+        "1": "92b93d793b65f8bde3ddd97e14a6a4e7b858b345537a9025046c746a6e3c6f36",
+        "2": "76d0260ac725cb5e40ccbebfde5ccfad65f25bda9e452a8d87954f672df4c29d",
+        "3": "3c02224cecb1d31cb0b8e6410094ccb0ed1ec94d2d9332a3eff7f39c72a762ee"
+      }
+    }
+  },
+  "rust_tests": 193,
+  "packaged_junit_tests": 61
+}

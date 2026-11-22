@@ -462,6 +462,20 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `1215a23f5`, the Rust field-use analysis checked expression statements
+before using the final value of a block. It preserved tuple and borrow
+structure when comparing the two sides of an assignment. All 26,102 live
+field-use requests agreed with the Java interpreter across the two frozen
+SQL populations. Directed tests cover a discarded read and assignments
+that trigger Java's diagnostic.
+[Field-use comparisons](evidence/p3-statement-field-uses.json)
+
+On `056b078af`, Rust compared flatmap shuffle identities while discovering
+and replacing shared indexes. All 445 frozen compilations that previously
+requested replacement matched through 211,706 ordered observations and
+artifact emission. Rust answered all 890 discovery and replacement requests.
+[Shared-index comparisons](evidence/p3-shared-index-shuffles.json)
+
 On `6e5879fa8`, Rust grouped timestamp windows whose offsets contain
 conditionals, string comparisons and null tests. All 423 pass comparisons
 matched across the 133 frozen clock programs and eight directed cases. The

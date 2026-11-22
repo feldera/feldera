@@ -1,0 +1,34 @@
+{
+  "commit": "1215a23f55854dc5ec62203432dfb6c11cf0ce6d",
+  "scope": "Full frozen SQL compilation with OptimizerCoverageOracle and feldera.optimizer.compareRustFieldUses enabled. FindUsedFields compares each accepted live result with the Java interpreter. Counts below are the ParameterFieldDependencies requests.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "4751b0d2c61b04091754ec5ac7d934650c92fb97b66fc9e24778620c7e8c5350",
+    "maven/sql-compiler.jar": "370a6fa486d49a195a3760b207cfdf38ade8b85894fcf9f65d47f7f5555699b3",
+    "maven/tests.jar": "28138a47066e24341ebeaa02abe5a785d759a2ce4a0ba6044f962a4594d99c84",
+    "packaged-junit.log": "c52484df4301e8ce7125bc95ebba372be415302f94ba9213f610d44331b4d027",
+    "tests.log": "8a5e0a1ef77347a2a20e6ec85e2e65ada73ba64f22f97030f0e1659318e2b7d9",
+    "clippy.log": "dbd1ebe41252ac0636f7ff152b166bdd297a620871b943f2d7df4fe1f4bca2c5"
+  },
+  "engines": {
+    "classic": {
+      "programs": 8571,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "observations_sha256": "0b517b724963ee49b20fcc13a00f575d49622c4b0e8febfb8082e8bd6273e3a6",
+      "field_use_requests": {
+        "calls": 13079,
+        "fallbacks": 0
+      }
+    },
+    "gen2": {
+      "programs": 8527,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "observations_sha256": "5366ae6185c69ab77489419f50af32f466ae3df0f1965eb3b868876d3f0315ae",
+      "field_use_requests": {
+        "calls": 13023,
+        "fallbacks": 0
+      }
+    }
+  },
+  "packaged_junit_tests": 61,
+  "rust_tests": 194
+}

@@ -316,6 +316,7 @@ impl Circuit {
                                 | Op::Subtract
                                 | Op::Sum
                                 | Op::View
+                                | Op::Weigh
                                 | Op::Window
                         )
                     ))
@@ -377,7 +378,22 @@ impl Circuit {
                 } else {
                     None
                 };
-                let output = if let Some(producer) = indexed_result {
+                let output = if node.operator_kind() == Some(Op::Weigh) {
+                    // Weigh wraps the new input's value type in its own ZSet.
+                    let element = self.nodes[&ty].edge("elementType")?;
+                    let mut wrapper = self.nodes[&node.edge("outputType")?].clone();
+                    wrapper
+                        .fields
+                        .insert("elementType".into(), Field::Reference(element));
+                    for key in ["sourceEmpty", "position"] {
+                        if let Some(value) = self.nodes[&element].field(key) {
+                            wrapper.fields.insert(key.into(), value.clone());
+                        } else {
+                            wrapper.fields.shift_remove(key);
+                        }
+                    }
+                    self.insert_inner(wrapper)?
+                } else if let Some(producer) = indexed_result {
                     let function_type = self.nodes[&producer].edge("type")?;
                     let row = self.nodes[&function_type].edge("resultType")?;
                     let mut indexed = self.nodes[&ty].clone();

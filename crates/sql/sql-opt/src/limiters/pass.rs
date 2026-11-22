@@ -755,6 +755,7 @@ pub fn insert_limiters_with_warnings(
                 | Op::StreamDistinct
                 | Op::Waterline
                 | Op::Apply
+                | Op::Weigh
                 | Op::Differentiate
                 | Op::Integrate
                 | Op::IndexedTopK

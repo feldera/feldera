@@ -326,6 +326,40 @@ fn coalescing_recursive_deltas_rebuilds_nested_inputs_and_consumer_types() {
 }
 
 #[test]
+fn rebuilt_weigh_wraps_the_new_index_value_and_shares_its_output_with_readers() {
+    let port = |id| json!({"operator":{"node":id},"outputNumber":0});
+    let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+        {"class":"DBSPMapIndexOperator","id":1,"inputs":[],
+         "outputType":{"class":"DBSPTypeIndexedZSet","id":10,
+           "elementType":{"class":"DBSPTypeTuple","id":11,"sourceEmpty":true}}},
+        {"class":"DBSPMapIndexOperator","id":2,"inputs":[],
+         "outputType":{"class":"DBSPTypeIndexedZSet","id":12,
+           "elementType":{"class":"DBSPTypeTuple","id":13,"sourceEmpty":false}}},
+        {"class":"DBSPWeighOperator","id":3,"inputs":[port(2)],
+         "outputType":{"class":"DBSPTypeZSet","id":14,"elementType":{"node":13},"sourceEmpty":false}},
+        {"class":"DBSPDistinctOperator","id":4,"inputs":[port(3)],"outputType":{"node":14}},
+        {"class":"DBSPConstantOperator","id":5,"inputs":[],"outputType":{"node":14}}
+    ]});
+    let result = Circuit::from_json(graph)
+        .unwrap()
+        .coalesce_operators(&[(NodeId::Outer(2), NodeId::Outer(1))].into())
+        .unwrap();
+    let output = |id| {
+        result
+            .node(NodeId::Outer(id))
+            .unwrap()
+            .edge("outputType")
+            .unwrap()
+    };
+    assert_ne!(output(3), output(5));
+    assert_eq!(output(3), output(4));
+    let wrapper = result.node(output(3)).unwrap();
+    assert_eq!(wrapper.class(), "DBSPTypeZSet");
+    assert_eq!(wrapper.edge("elementType").unwrap(), NodeId::Inner(11));
+    assert_eq!(wrapper.data("sourceEmpty"), Some(&Value::Bool(true)));
+}
+
+#[test]
 fn rebuilt_chains_preserve_declared_inputs_and_construct_map_outputs() {
     let port = |id| json!({"operator":{"node":id},"outputNumber":0});
     let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
