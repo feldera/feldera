@@ -540,6 +540,15 @@ all 9,262 output ports. The 114 classic and 114 Gen-2 detached replays matched
 through emission. COUNT and LATENESS checkpoints restored in both directions.
 [Filter key comparisons](evidence/p3-fixed-filter-keys.json)
 
+Rust projects ordinary row closures onto their waterlines. Nested field reads use
+the index in the compacted row and retain the analyzed input column’s SQL type.
+The full monotonicity pass matched Java on 291 classic and 259 Gen-2 programs,
+including the aggregate case that distinguishes two equal integer types by
+their sharing. Rust also selects incremental boundaries from the live topology.
+That pass matched Java on all 524 selected incremental programs. Both compiler
+directions restored COUNT and LATENESS state.
+[Pass comparisons and checkpoints](evidence/p3-row-waterlines-and-incrementalization.json)
+
 Rust groups output columns that evaluate equivalent expressions under the same
 closure bindings. Direct Java agreed on all 3,709 observed closures and all
 533 groups of equal columns, including lookups into map expressions. COUNT and

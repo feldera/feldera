@@ -264,9 +264,18 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         // Check that the expression is a pure tree; this is required by the dataflow analysis,
         // which represents monotonicity information as a key-value map indexed by expressions.
         new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
-        expression.body.accept(this);
+        MonotoneExpression bodyValue = null;
+        if (this.compiler.options.ioOptions.rustOptimizerPasses && this.argumentKind == ArgumentKind.ZSet
+                && (expression.body instanceof DBSPBaseTupleExpression || expression.body instanceof DBSPFieldExpression
+                    || expression.body instanceof DBSPDerefExpression || expression.body instanceof DBSPCloneExpression)) {
+            bodyValue = RustCircuitPass.projectRow(this.compiler, expression.body, projectedParameters[0].asVariable(),
+                    this.parameterTypes[0].to(MonotoneRefType.class).base);
+        }
+        if (bodyValue == null) {
+            expression.body.accept(this);
+            bodyValue = this.get(expression.body);
+        }
         this.pop(expression);
-        MonotoneExpression bodyValue = this.get(expression.body);
         if (bodyValue.mayBeMonotone()) {
             DBSPClosureExpression closure = this.compiler.options.ioOptions.rustOptimizerPasses
                     && this.argumentKind != ArgumentKind.ZSet

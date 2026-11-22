@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
@@ -56,8 +55,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
-import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
-import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.WaterlineProjection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
@@ -106,22 +104,7 @@ public final class LimiterInputs {
     }
 
     public static JsonNode projection(IMaybeMonotoneType type) {
-        ObjectNode node = JsonNodeFactory.instance.objectNode();
-        if (type instanceof PartiallyMonotoneTuple tuple) {
-            node.put("kind", "tuple");
-            node.put("raw", tuple.raw);
-            node.put("nullable", tuple.mayBeNull);
-            var fields = node.putArray("fields");
-            for (int i = 0; i < tuple.size(); i++)
-                fields.add(projection(tuple.getFieldType(i)));
-        } else if (type instanceof ScalarMonotoneType) {
-            node.put("kind", "scalar");
-            node.put("monotone", type.mayBeMonotone());
-        } else {
-            node.put("kind", "other");
-            node.put("monotone", type.mayBeMonotone());
-        }
-        return node;
+        return WaterlineProjection.encode(type);
     }
 
     static void recordTransfer(Map<Long, IDBSPInnerNode> functions, long id,

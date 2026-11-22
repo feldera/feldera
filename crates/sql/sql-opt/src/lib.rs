@@ -26,6 +26,7 @@ pub use monotonicity::binary::{
     binary_waterline, BinaryOperation, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
 };
 pub use monotonicity::identity::identity_bounds;
+pub use monotonicity::row_projection::project_row;
 pub use monotonicity::{filter_lower_bounds, filter_transfer, unary_waterline, FilterBound};
 mod static_candidates;
 mod static_items;
@@ -204,7 +205,7 @@ pub use hints::{check_hints, HintDiagnostic};
 pub use hoist_filters::{decompose_expensive_filters, filters_need_decomposition};
 pub use hop::{expand_hop, hop_waterline, Hop};
 pub use identity::{identity_closure, identity_decisions, remove_identity_operators};
-pub use incrementalize::incrementalize;
+pub use incrementalize::{incremental_boundaries, incrementalize};
 pub use indexed_inputs::{expand_indexed_inputs, IndexOptions};
 pub use integrate::remove_redundant_integrates;
 pub use left_joins::{

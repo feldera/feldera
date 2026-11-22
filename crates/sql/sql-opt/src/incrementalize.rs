@@ -1,5 +1,43 @@
 //! Convert snapshot sources and sinks into an incremental circuit before stream optimization.
+use crate::OperatorInputs;
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, OperatorKind as Op};
+use std::collections::BTreeMap;
+
+#[derive(Clone, Copy, serde::Serialize)]
+pub enum BoundaryStep {
+    DeltaSource,
+    DeltaConstant,
+    Original,
+    Differentiate,
+    Integrate,
+    AnnotatedIntegral,
+    Sink,
+}
+
+/// The first step consumes the mapped input of a sink or constructs a source.
+/// Each following step consumes the preceding output at the same circuit site.
+fn boundary(kind: Op) -> &'static [BoundaryStep] {
+    use BoundaryStep::*;
+    match kind {
+        Op::SourceMultiset | Op::SourceMap => &[DeltaSource, Integrate],
+        Op::Constant => &[DeltaConstant, AnnotatedIntegral],
+        Op::Now => &[Original, Differentiate, Integrate],
+        Op::Sink => &[Differentiate, Sink],
+        _ => &[],
+    }
+}
+
+pub fn incremental_boundaries(
+    operators: &[OperatorInputs],
+) -> BTreeMap<u64, &'static [BoundaryStep]> {
+    operators
+        .iter()
+        .filter_map(|op| {
+            let steps = boundary(op.kind);
+            (!steps.is_empty()).then_some((op.id, steps))
+        })
+        .collect()
+}
 
 pub fn incrementalize(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
     // Inserting a boundary never changes which operators were in the original body.
@@ -8,12 +46,14 @@ pub fn incrementalize(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error
     let mut edit = CircuitEditor::new(circuit);
     edit.mark_incremental();
     for (body, id) in sites {
-        match edit.node(id)?.operator_kind() {
-            Some(Op::SourceMultiset | Op::SourceMap | Op::Constant | Op::Now) => {
-                edit.integrate_source(body, id)?
-            }
-            Some(Op::Sink) => edit.differentiate_sink(body, id)?,
-            _ => {}
+        let kind = edit
+            .node(id)?
+            .operator_kind()
+            .ok_or_else(|| Error::new("expected a circuit operator"))?;
+        match boundary(kind) {
+            [] => {}
+            [.., BoundaryStep::Sink] => edit.differentiate_sink(body, id)?,
+            _ => edit.integrate_source(body, id)?,
         }
     }
     crate::rebuild::rebuild_input_closures(edit.finish_with_rewrites()?, next)

@@ -10,6 +10,7 @@ pub mod flatmap;
 pub mod functions;
 pub mod identity;
 pub mod lag;
+pub mod row_projection;
 pub mod schedule;
 mod sort_key;
 use feldera_sql_ir::{

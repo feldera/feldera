@@ -1,0 +1,39 @@
+{
+  "base_commit": "9b7552a94",
+  "scope": "Compare the full monotonicity pass and incrementalization pass against their direct Java implementations from frozen S2 captures. The row visitor reads compressed field indexes from the bound and preserves analyzed input type identity. The live incrementalization pass constructs the boundary sequence chosen by Rust on the mapped producer.",
+  "compiler_jar_sha256": "3976b5920a26e001c79f0a964fcf72bacd47ffdbdbcd02b204e84f65865aa7f7",
+  "optimizer_library_sha256": "2d79695d63b924a063c1af7a415a3dbcb87e12a7d2d0676ecf04599d31842dc2",
+  "engines": {
+    "classic": {
+      "MonotoneAnalyzer": {
+        "comparison": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+        "direct_sha256": "3c0b844c17d5527f65a096267779c05db13b2c3bd56a1b82be5f297016569ae4",
+        "hybrid_sha256": "475ad228a4c6eed0361876bc88491ecb5d6acbdb4d55766a4634de2c5c391cdb"
+      },
+      "IncrementalizeVisitor": {
+        "comparison": "IncrementalizeVisitor matched at 265 invocations across 265 cases",
+        "direct_sha256": "ec4557a17c8885bceda07873847589aaf167551607aaabcedd1c43188b0368e8",
+        "hybrid_sha256": "ec4557a17c8885bceda07873847589aaf167551607aaabcedd1c43188b0368e8"
+      }
+    },
+    "gen2": {
+      "MonotoneAnalyzer": {
+        "comparison": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+        "direct_sha256": "0768f35deb58f0cf38f12cac45ff610582454b11c3f76aa0ec1a5b1737d69408",
+        "hybrid_sha256": "ee7bce463d2bf40b0fdeb7c8348f9c1b4d53673bd85532330a75d772ab6ce94e"
+      },
+      "IncrementalizeVisitor": {
+        "comparison": "IncrementalizeVisitor matched at 259 invocations across 259 cases",
+        "direct_sha256": "adfb522f0529e17b8da74389ce0ea1058897c8fd8ae05e1bfc1d60f714dccc5a",
+        "hybrid_sha256": "adfb522f0529e17b8da74389ce0ea1058897c8fd8ae05e1bfc1d60f714dccc5a"
+      }
+    }
+  },
+  "tests.log_sha256": "e75131e8ea617615c76c69e66aaa026bd5884dc29df66bfc11580172691e036f",
+  "clippy.log_sha256": "d869d6868ea7a3f5af04b193f5587a3f716bea49cc4c3d020d0d0b63af180f4e",
+  "maven.log_sha256": "698d798e251e7207120e83ad1bae80d3351fcbaedb1cdfba994fa759b0708f60",
+  "checkpoint_restores_both_directions_sha256": {
+    "count": "2cd2f8debf869d78753c3c44e49e356f6c16b82ec1babd6fff41cdf49446590d",
+    "watermark": "92197ae07de3e9daf1b85223caf1629e01062c8d4c4b3fad8e2c32c74c0e0315"
+  }
+}

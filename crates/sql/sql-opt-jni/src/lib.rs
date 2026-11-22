@@ -606,6 +606,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let functions = edit.circuit().additional_expressions(&arena, &pair)?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
+        ("Monotonicity/ProjectRow", [body, bound]) => {
+            let shape = serde_json::from_slice(state)?;
+            let body = edit.expression(*body)?;
+            let bound = edit.expression(*bound)?;
+            let Some(value) = feldera_sql_opt::project_row(&mut edit, body, bound, &shape)? else {
+                return Ok(Value::Null);
+            };
+            let reduced = edit.circuit().additional_inner_nodes(&arena, value.reduced.map(NodeId::from))?;
+            return Ok(json!({"row_type": value.row_type, "bound": reduced.into_iter().next()}));
+        }
         ("Monotonicity/Filter", [closure, row]) => {
             let closure = edit.expression(*closure)?;
             let row = edit.type_id(*row)?;
@@ -804,6 +814,10 @@ fn transform(
             let request: feldera_sql_opt::JoinKeys = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(request.derive())?);
         }
+        "Incrementalize/Boundaries" => {
+            let operators: Vec<feldera_sql_opt::OperatorInputs> = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::incremental_boundaries(&operators))?);
+        }
         "CSE/Candidates" => {
             let operators = serde_json::from_slice(input)?;
             return Ok(json!(operator_numbers(feldera_sql_opt::projected_cse_payloads(operators))));
@@ -885,7 +899,7 @@ fn transform(
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
-        | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/Filter"
+        | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/ProjectRow" | "Monotonicity/Filter"
         | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

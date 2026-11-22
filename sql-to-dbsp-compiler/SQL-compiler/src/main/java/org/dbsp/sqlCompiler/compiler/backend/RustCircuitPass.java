@@ -107,6 +107,8 @@ import org.dbsp.sqlCompiler.ir.type.IndexedShape;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.WaterlineProjection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.LimiterInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -353,6 +355,23 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static DBSPExpression unaryWaterline(DBSPCompiler compiler, DBSPExpression operation, DBSPExpression bound) {
         return tryLowerFunction(compiler, "Monotonicity/Unary", operation, bound, DBSPExpression.class);
+    }
+
+    @Nullable
+    public static MonotoneExpression projectRow(DBSPCompiler compiler, DBSPExpression body,
+                                                DBSPVariablePath bound, IMaybeMonotoneType input) {
+        try {
+            var reply = invokeLowering(compiler, "Monotonicity/ProjectRow",
+                    MAPPER.writeValueAsBytes(WaterlineProjection.encode(input)), body, bound);
+            if (reply.value.isNull())
+                return null;
+            var result = WaterlineProjection.resolveType(reply.value.required("row_type"), input);
+            var reduced = reply.value.required("bound");
+            return new MonotoneExpression(body, result, reduced.isNull() ? null
+                    : expressionDecoder(reply.writer).decodeInner(reduced, DBSPExpression.class));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode a row waterline projection", error);
+        }
     }
 
     public static DBSPExpression nullLiteralWaterline(DBSPCompiler compiler, DBSPType type) {
@@ -2866,6 +2885,11 @@ public final class RustCircuitPass implements CircuitTransform {
                             OptimizerExpressions.inventory(this.compiler, circuit), initial, state);
                     if (!probe.required("needs_full_snapshot").booleanValue())
                         return circuit;
+                }
+                case "IncrementalizeVisitor" -> {
+                    var plan = this.invoke("Incrementalize/Boundaries", OptimizerTopology.operatorInputs(circuit), initial, state);
+                    Map<Long, List<IncrementalBoundaryEdits.Step>> edits = MAPPER.convertValue(plan, new TypeReference<>() {});
+                    return new IncrementalBoundaryEdits(this.compiler, edits).apply(circuit);
                 }
                 case "ExpandHop" -> { return this.expandHop(circuit); }
                 case "DecomposeExpensiveFilters" -> {
