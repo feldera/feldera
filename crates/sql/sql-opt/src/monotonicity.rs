@@ -7,6 +7,7 @@ pub mod chain_minimum;
 pub mod flatmap;
 pub mod functions;
 pub mod lag;
+mod sort_key;
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,
     NodeId, TypeId, TypeKind,
@@ -80,8 +81,11 @@ pub fn unary_waterline(
     operator: ExpressionId,
     bound: ExpressionId,
 ) -> Result<Option<ExpressionId>, Error> {
-    if edit.expr_kind(operator)? != Expr::Unary {
-        return Err(Error::new("expected a unary waterline operation"));
+    match edit.expr_kind(operator)? {
+        Expr::UnsignedWrap => return sort_key::encode_bound(edit, operator, bound),
+        Expr::UnsignedUnwrap => return sort_key::decode_bound(edit, operator, bound).map(Some),
+        Expr::Unary => {}
+        _ => return Err(Error::new("expected a unary waterline operation")),
     }
     let op =
         opcode(edit.node(operator.into())?).ok_or_else(|| Error::new("missing unary opcode"))?;

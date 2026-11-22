@@ -862,33 +862,31 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.positiveExpressions.add(expression);
         if (this.constantExpressions.contains(expression.source))
             this.constantExpressions.add(expression);
-        // DESC reverses the order, and NULLS FIRST encodes NULL, which is never late, below every value
-        if (!expression.ascending || (expression.source.getType().mayBeNull && !expression.nullsLast)) {
-            MonotoneExpression result = new MonotoneExpression(
-                    expression, new NonMonotoneType(expression.getType()), null);
-            this.set(expression, result);
-            return;
-        }
         DBSPExpression reduced = null;
         if (source.mayBeMonotone()) {
             DBSPExpression waterline = source.getReducedExpression();
-            // The encoding of a nullable value uses a wider integer; the encoding of Some(w) is
-            // the integer of the value w in the data
-            if (expression.source.getType().mayBeNull)
-                waterline = waterline.some();
-            reduced = new DBSPUnsignedWrapExpression(
-                    expression.getNode(), waterline, expression.ascending, expression.nullsLast);
+            if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                reduced = RustCircuitPass.unaryWaterline(this.compiler, expression, waterline);
+            } else if (expression.ascending && (!expression.source.getType().mayBeNull || expression.nullsLast)) {
+                // DESC reverses the order. NULLS FIRST admits late NULLs below any finite bound.
+                if (expression.source.getType().mayBeNull)
+                    waterline = waterline.some();
+                reduced = new DBSPUnsignedWrapExpression(
+                        expression.getNode(), waterline, expression.ascending, expression.nullsLast);
+            }
         }
-        MonotoneExpression result = new MonotoneExpression(
-                expression, source.copyMonotonicity(expression.getType()), reduced);
-        this.set(expression, result);
+        var type = reduced == null ? new NonMonotoneType(expression.getType())
+                : source.copyMonotonicity(expression.getType());
+        this.set(expression, new MonotoneExpression(expression, type, reduced));
     }
 
     @Override
     public void postorder(DBSPUnsignedUnwrapExpression expression) {
         MonotoneExpression source = this.get(expression.source);
         DBSPExpression reduced = null;
-        if (source.mayBeMonotone()) {
+        if (source.mayBeMonotone() && this.compiler.options.ioOptions.rustOptimizerPasses) {
+            reduced = RustCircuitPass.unaryWaterline(this.compiler, expression, source.getReducedExpression());
+        } else if (source.mayBeMonotone()) {
             DBSPType type = expression.getType();
             DBSPExpression decoded = new DBSPUnsignedUnwrapExpression(expression.getNode(),
                     source.getReducedExpression(), type, expression.ascending, expression.nullsLast);

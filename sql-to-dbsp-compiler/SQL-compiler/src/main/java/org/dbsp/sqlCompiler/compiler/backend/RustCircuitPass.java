@@ -108,7 +108,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
@@ -284,7 +283,7 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @Nullable
-    public static DBSPExpression unaryWaterline(DBSPCompiler compiler, DBSPUnaryExpression operation, DBSPExpression bound) {
+    public static DBSPExpression unaryWaterline(DBSPCompiler compiler, DBSPExpression operation, DBSPExpression bound) {
         return tryLowerFunction(compiler, "Monotonicity/Unary", operation, bound, DBSPExpression.class);
     }
 

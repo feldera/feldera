@@ -248,7 +248,8 @@ impl CircuitEditor {
         Ok(true)
     }
 
-    pub(super) fn integer_type(
+    /// Allocate an integer type at the source location of another type.
+    pub fn integer_type(
         &mut self,
         origin: TypeId,
         width: i64,
