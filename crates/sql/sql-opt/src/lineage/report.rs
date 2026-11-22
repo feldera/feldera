@@ -242,6 +242,7 @@ impl Report<'_> {
                 self.read(input(0)?)?
             }
             Op::Negate
+            | Op::Positive
             | Op::StreamDistinct
             | Op::View
             | Op::Integrate

@@ -1,0 +1,35 @@
+{
+  "scope": "Compare direct Java and Rust column reports on the same live circuit immediately before DeterministicFunctions. LineageOracle compares complete stdout and exceptions and counts invocations of the Java fallback.",
+  "upstream_pr": "https://github.com/feldera/feldera/pull/8044",
+  "base_commit": "66cd8cdf1",
+  "previous_baseline": "p3-correlated-columns.json",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "783e55760c81d33b9c02d886c490d7f4f76cdb7fbe78d1c18e891b7ad2fffd40",
+    "compiler.jar": "42e99c3356cb1d3965038b0c392291a211d77ef0f32bf29ca0ad23adb038bb77",
+    "maven/sql-compiler.jar": "f2087083f42a1cac83286697e7c8dcf37718bcb722e9a2645d2a7c04410773d6",
+    "maven/tests.jar": "666d5ba859d9e1e7fb4c66a5f3004947c55525e70b10dfa5f13b2e5ceebb8ca2",
+    "maven/build.log": "999cb81e9ff5c59b692462f62ff796c28d04b425b706a3582ed699d685ae0cf1",
+    "tests.log": "016952845eb7e7129e9f5a04d58bac7df24e8e0c1d5b62383fe6bf5d4298c6c3",
+    "clippy.log": "202f38c7366de6c0967cfc206eaec7c4d5559571208908c42419c27130995c18"
+  },
+  "rust_tests": 132,
+  "maven_tests": 104,
+  "engines": {
+    "classic": {
+      "programs": 8571,
+      "native_successes": 8571,
+      "previous_java_exceptions_resolved": 62,
+      "report_lines": 1666,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "report_sha256": "33113370cc31c7094f538bb52f80ea3049ee2ddae17c8458e9a7cd607e80ab60"
+    },
+    "gen2": {
+      "programs": 8527,
+      "native_successes": 8527,
+      "previous_java_exceptions_resolved": 62,
+      "report_lines": 1645,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "report_sha256": "f80a4db34063b65722454dcee99c5058898f78d9f53aa69e5074ca959654394a"
+    }
+  }
+}

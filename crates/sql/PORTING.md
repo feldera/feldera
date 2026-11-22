@@ -501,11 +501,15 @@ Java. With four CPUs reserved for four occupied workers, cancellation p95 was
 for input was 70,717,440 bytes per worker. [Waterline and worker results](evidence/p3-shared-row-types.json)
 
 With `--correlatedColumns`, Rust traces comparisons to their source columns and
-reports columns that joins equate. All 8,571 classic and 8,527 Gen-2 report
-comparisons matched Java on stdout and exceptions. Rust produced 16,974
-successful reports. The other 62 entries per engine hit the Java diagnostic
-for missing lineage after a positive-weight operator. With the report enabled,
-all 16 selected detached compilations matched through artifact emission.
+reports columns that joins equate. Both compilers now preserve the input columns
+when a Positive operator changes row weights. All 8,571 classic and 8,527 Gen-2
+reports completed in Rust and matched Java on stdout, including the 62 cases per
+engine that previously failed. The directed EXCEPT ALL regression checks the
+reported join keys. [Corrected baseline](evidence/p3-positive-lineage.json) ·
+[Upstream fix](https://github.com/feldera/feldera/pull/8044)
+
+With the report enabled on the earlier build, all 16 selected detached
+compilations matched through artifact emission.
 Run the test utility `LineageOracle` with the frozen JSONL population and the JNI
 library on `java.library.path` to repeat the report comparison.
 [Report and replay results](evidence/p3-correlated-columns.json)

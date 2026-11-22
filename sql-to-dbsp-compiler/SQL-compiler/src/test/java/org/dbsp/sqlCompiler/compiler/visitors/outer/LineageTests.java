@@ -138,6 +138,19 @@ public class LineageTests extends BaseSQLTests {
             Assert.assertEquals(expected, report(file, true));
     }
 
+    @Test
+    public void correlateColumnsAfterExceptAll() throws IOException, SQLException {
+        File input = createInputScript("""
+                CREATE TABLE l(k INT NOT NULL, flag BOOLEAN NOT NULL);
+                CREATE TABLE r(k INT NOT NULL);
+                CREATE LOCAL VIEW d AS SELECT k FROM l EXCEPT ALL SELECT k FROM l WHERE flag;
+                CREATE VIEW v AS SELECT d.k FROM d JOIN r ON d.k = r.k;""");
+        String expected = "[Correlated:] [l.k, r.k]\n";
+        Assert.assertEquals(expected, report(input, false));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLineage"))
+            Assert.assertEquals(expected, report(input, true));
+    }
+
     private static String report(File input, boolean rust) throws SQLException {
         List<String> options = new ArrayList<>(List.of("--noRust", "--correlatedColumns"));
         if (rust)
