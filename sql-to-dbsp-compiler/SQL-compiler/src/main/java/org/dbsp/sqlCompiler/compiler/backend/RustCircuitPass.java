@@ -1075,7 +1075,10 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass, byte[] state, IDBSPInnerNode... inputs) {
         var json = JsonStream.compactCircuit();
-        var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
+        var inner = switch (pass) {
+            case "MergeTemporalBounds", "TemporalGroups" -> new TemporalKeyWriter(compiler, json);
+            default -> new ToJsonInnerVisitor(compiler, json, 1, true);
+        };
         inner.liveNodes = new HashMap<>();
         json.beginArray();
         for (var input : inputs)

@@ -1,0 +1,32 @@
+{
+  "scope": "Compare loop and flatmap temporal keys under lexical binders and replay selected programs through the packaged optimizer on both engines.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "da545ffab3f5ef1396ffd69c64bd160a9cd014dfa29f0705dd32855e5fafac8e",
+    "maven/sql-compiler.jar": "9cde11d9ff24e704a643ab7f8566057a9ede088df024d3da89ced62e07129350",
+    "tests.log": "41b8f40aac6de8ff7f621258e582b09aff624e64c709a3b403ccca579cfa0315",
+    "clippy.log": "1cf06c104cfe7c72659c7465031833ca5f1c1ab90a117124781bd554669f8a45",
+    "build.log": "4d3dadde0aff8c0d1927672709f6f16b5a3453b0f82c837a95e1e9d40aad6e01",
+    "packaged-junit.log": "95aea305d6b568a8ecf5e84f7303424f854450afb5fbfb7ae4b97be334a84d08",
+    "maven/tests.jar": "2a51f3b5771d93c2ef03dcecbe4a3ea32aa24acf40856ad5342fedf0434c832f"
+  },
+  "rust_tests": 172,
+  "junit_tests": 30,
+  "engines": {
+    "classic": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "mismatches": 0,
+      "receipt_sha256": "d23f483667124f7b44cca52b5797ee5051a3171c0313c15f0255dcd08ad1b472",
+      "lineage_programs": 8571,
+      "lineage_report_sha256": "33113370cc31c7094f538bb52f80ea3049ee2ddae17c8458e9a7cd607e80ab60"
+    },
+    "gen2": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "mismatches": 0,
+      "receipt_sha256": "ee775a98c99e55b385bd98f91b42a4e10bfe4b1f14cbe217612dc66af15551ab",
+      "lineage_programs": 8527,
+      "lineage_report_sha256": "f80a4db34063b65722454dcee99c5058898f78d9f53aa69e5074ca959654394a"
+    }
+  }
+}

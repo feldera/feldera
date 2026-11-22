@@ -7,6 +7,7 @@ use feldera_sql_ir::{CircuitEditor, Error, Node, NodeId};
 pub(super) type Scope = Option<usize>;
 pub(super) enum Work {
     Compare(NodeId, NodeId, Scope),
+    FlatmapOutput(NodeId, NodeId),
     Leave(NodeId, NodeId),
 }
 
@@ -15,14 +16,14 @@ pub(super) struct Bindings<'a> {
     pairs: Vec<(&'a str, &'a str, Scope)>,
 }
 
-fn name<'a>(node: &'a Node, field: &str) -> Result<&'a str, Error> {
+pub(super) fn name<'a>(node: &'a Node, field: &str) -> Result<&'a str, Error> {
     node.data(field)
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::new(format!("missing {field} on {}", node.class())))
 }
 
 impl<'a> Bindings<'a> {
-    fn bind(&mut self, left: &'a str, right: &'a str, parent: Scope) -> Scope {
+    pub fn bind(&mut self, left: &'a str, right: &'a str, parent: Scope) -> Scope {
         let index = self.pairs.len();
         self.pairs.push((left, right, parent));
         Some(index)
@@ -36,13 +37,21 @@ impl<'a> Bindings<'a> {
     ) -> Result<Option<bool>, Error> {
         let left = name(left, "variable")?;
         let right = name(right, "variable")?;
+        let mut declarations = (None, None);
         while let Some(index) = scope {
             let (l, r, parent) = self.pairs[index];
-            if l == left || r == right {
-                return Ok(Some(l == left && r == right));
+            if l == left && declarations.0.is_none() {
+                declarations.0 = Some(index);
+            }
+            if r == right && declarations.1.is_none() {
+                declarations.1 = Some(index);
+            }
+            if let (Some(l), Some(r)) = declarations {
+                return Ok(Some(l == r));
             }
             scope = parent;
         }
+        // The live compiler reports a missing declaration at the original site.
         Ok(None)
     }
 

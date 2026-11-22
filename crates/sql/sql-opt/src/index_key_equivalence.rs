@@ -142,28 +142,52 @@ pub(super) fn equivalent_bodies(
     right: NodeId,
     parameters: Option<(&Node, &Node)>,
 ) -> Result<Option<bool>, Error> {
-    compare_expressions(edit, left, right, |left, right| {
-        let (lp, rp) = parameters?;
-        (left.data("variable") == lp.data("name") && right.data("variable") == rp.data("name"))
-            .then_some(true)
-    })
+    let names = parameters
+        .map(|(l, r)| Ok::<_, Error>((bindings::name(l, "name")?, bindings::name(r, "name")?)))
+        .transpose()?;
+    compare_expressions(edit, left, right, names)
 }
 
 /// Resolve distinct variable occurrences in the scope enclosing the two roots.
 /// Nested LET, block and closure declarations shadow those enclosing bindings.
-pub(crate) fn compare_expressions(
-    edit: &CircuitEditor,
+pub(crate) fn compare_expressions<'a>(
+    edit: &'a CircuitEditor,
     left: NodeId,
     right: NodeId,
-    variables: impl Fn(&Node, &Node) -> Option<bool>,
+    parameters: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<Option<bool>, Error> {
-    let mut pending = vec![Work::Compare(left, right, None)];
     let mut bindings = Bindings::default();
+    let outer = parameters.into_iter().fold(None, |scope, (left, right)| {
+        bindings.bind(left, right, scope)
+    });
+    let mut pending = vec![Work::Compare(left, right, outer)];
     let mut seen = HashSet::new();
     let mut active_binders = HashSet::new();
     while let Some(work) = pending.pop() {
         let (a, b, scope) = match work {
             Work::Compare(a, b, scope) => (a, b, scope),
+            Work::FlatmapOutput(a, b) => {
+                let left = edit.node(a)?;
+                let right = edit.node(b)?;
+                if left.field("passthroughIndexes") != right.field("passthroughIndexes") {
+                    return Ok(Some(false));
+                }
+                if a != b {
+                    // A shuffle compares by Java object identity. An older or detached
+                    // snapshot may carry its contents without the live identity.
+                    match (left.data("shuffleIdentity"), right.data("shuffleIdentity")) {
+                        (Some(l), Some(r)) if l == r => {}
+                        (Some(_), Some(_)) => return Ok(Some(false)),
+                        _ => return Ok(None),
+                    }
+                }
+                if !same_type(edit, left, right)?
+                    || !compare_children(left, right, "postProcess", None, &mut pending)?
+                {
+                    return Ok(Some(false));
+                }
+                continue;
+            }
             Work::Leave(a, b) => {
                 active_binders.remove(&(a, b));
                 continue;
@@ -180,7 +204,7 @@ pub(crate) fn compare_expressions(
         }
         // A cyclic expression can revisit the same binder under fresh scopes.
         // A shared acyclic term is eligible for comparison again after leaving it.
-        if matches!(kind, Expr::Let | Expr::Block | Expr::Closure) {
+        if matches!(kind, Expr::Let | Expr::Block | Expr::Closure | Expr::For) {
             if !active_binders.insert((a, b)) {
                 return Err(Error::new("cycle in key expression bindings"));
             }
@@ -189,10 +213,7 @@ pub(crate) fn compare_expressions(
         let children: &[&str] = match kind {
             Expr::VariablePath => {
                 if a != b {
-                    match bindings
-                        .variables(scope, left, right)?
-                        .or_else(|| variables(left, right))
-                    {
+                    match bindings.variables(scope, left, right)? {
                         Some(true) => {}
                         result => return Ok(result),
                     }
@@ -202,6 +223,31 @@ pub(crate) fn compare_expressions(
             Expr::Let => {
                 bindings.let_expression(edit, left, right, scope, &mut pending)?;
                 continue;
+            }
+            Expr::For => {
+                let Some(variable) = left.data("variable").and_then(|v| v.as_str()) else {
+                    return Ok(None);
+                };
+                if scope.is_none() {
+                    return Ok(None);
+                }
+                // DBSPForExpression.equivalent enters the left name in both maps.
+                let local = bindings.bind(variable, variable, scope);
+                pending.push(Work::Compare(
+                    left.edge("block")?,
+                    right.edge("block")?,
+                    local,
+                ));
+                pending.push(Work::Compare(
+                    left.edge("iterated")?,
+                    right.edge("iterated")?,
+                    scope,
+                ));
+                continue;
+            }
+            Expr::Flatmap => {
+                pending.push(Work::FlatmapOutput(a, b));
+                &["collectionExpression"]
             }
             Expr::Closure => {
                 if !bindings.closure(edit, left, right, scope, &mut pending)? {

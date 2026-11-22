@@ -7,6 +7,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
@@ -16,10 +18,13 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
+import org.dbsp.util.IdShuffle;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -60,6 +65,54 @@ public class TemporalKeyTests {
         var zero = new DBSPI32Literal(0);
         return new TemporalFilter(new DBSPVariablePath("row", zero.getType()).asParameter(),
                 key, zero, DBSPOpcode.GTE);
+    }
+
+    private static TemporalFilter loop(String variable, String read, int input) {
+        var value = new DBSPI32Literal(input);
+        var body = new DBSPBlockExpression(List.of(), new DBSPVariablePath(read, value.getType()));
+        return bound(new DBSPForExpression(variable, value, body));
+    }
+
+    @Test
+    public void loopComparesItsInputBeforeBindingTheBody() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var first = loop("item", "item", 1);
+        assertCompatible(compiler, first, loop("item", "item", 1), true);
+        assertCompatible(compiler, first, loop("item", "row", 1), false);
+        assertCompatible(compiler, first, loop("item", "item", 2), false);
+        var renamed = loop("other", "other", 1);
+        // The Java visitor enters the left name on both sides and diagnoses the unbound read.
+        Assert.assertThrows(RuntimeException.class, () -> first.compatible(renamed));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"))
+            Assert.assertNull(RustCircuitPass.acceptsTemporalBound(compiler, List.of("GTE", "GTE"),
+                    List.of(first.parameter(), first.noNow(), renamed.parameter(), renamed.noNow())));
+    }
+
+    private static DBSPFlatmap flatmap(IdShuffle shuffle, int passthrough, DBSPExpression projection) {
+        var type = new DBSPI32Literal(0).getType();
+        var rowType = new DBSPTypeTuple(type, type, new DBSPTypeArray(type, false));
+        var row = rowType.ref().var();
+        var element = new DBSPVariablePath("element", type);
+        return new DBSPFlatmap(CalciteObject.EMPTY, rowType, row.deref().field(2).closure(row),
+                List.of(passthrough), List.of(projection.closure(element)), null, shuffle);
+    }
+
+    @Test
+    public void flatmapKeysCompareShuffleIdentityAndPostprocessingClosures() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var shuffle = new IdShuffle(2);
+        var one = new DBSPI32Literal(1);
+        var first = bound(flatmap(shuffle, 0, one));
+        assertCompatible(compiler, first, bound(flatmap(shuffle, 0, one.deepCopy())), true);
+        assertCompatible(compiler, first, bound(flatmap(new IdShuffle(2), 0, one)), false);
+        assertCompatible(compiler, first, bound(flatmap(shuffle, 1, one)), false);
+        assertCompatible(compiler, first, bound(flatmap(shuffle, 0, new DBSPI32Literal(2))), false);
+        var free = bound(flatmap(shuffle, 0, new DBSPVariablePath("row", one.getType())));
+        var other = bound(flatmap(shuffle, 0, new DBSPVariablePath("row", one.getType())));
+        Assert.assertThrows(RuntimeException.class, () -> free.compatible(other));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"))
+            Assert.assertNull(RustCircuitPass.acceptsTemporalBound(compiler, List.of("GTE", "GTE"),
+                    List.of(free.parameter(), free.noNow(), other.parameter(), other.noNow())));
     }
 
     @Test

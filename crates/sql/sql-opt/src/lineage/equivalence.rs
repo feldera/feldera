@@ -1,8 +1,7 @@
 //! Group output columns whose expressions compute the same value in a closure.
 use super::{Column, OutputShape, text};
 use crate::index_key_equivalence::compare_expressions;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, Field, Node, NodeId};
-use std::collections::HashSet;
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, Field, NodeId};
 
 fn tuple_fields(
     edit: &CircuitEditor,
@@ -58,16 +57,12 @@ pub fn equal_computations(
         .edges("parameters")?
         .into_iter()
         .map(|p| text(edit.node(p)?, "name"))
-        .collect::<Result<HashSet<_>, _>>()?;
-    let same_binding = |left: &Node, right: &Node| {
-        let left = left.data("variable")?.as_str()?;
-        let right = right.data("variable")?.as_str()?;
-        (parameters.contains(left) && parameters.contains(right)).then_some(left == right)
-    };
+        .collect::<Result<Vec<_>, _>>()?;
     let mut groups = Vec::<(NodeId, Vec<Column>)>::new();
     'fields: for (expression, column) in fields {
         for (representative, columns) in &mut groups {
-            match compare_expressions(edit, *representative, expression, same_binding)? {
+            let bindings = parameters.iter().map(|&name| (name, name));
+            match compare_expressions(edit, *representative, expression, bindings)? {
                 Some(true) => {
                     columns.push(column);
                     continue 'fields;

@@ -462,6 +462,11 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust compares loop bindings and flatmap shuffle identity when grouping temporal
+filters. All 17,098 frozen column-lineage reports matched the corrected baseline.
+Across 16 detached compilations, all 11,178 ordered optimizer observations and
+both engines' final artifacts matched direct Java. [Temporal key comparisons](evidence/p3-temporal-loop-flatmap.json)
+
 Rust selects the top-level hybrid pass order and controls fixed-point iteration.
 The packaged compiler matched Java's pass order for snapshot and incremental
 compilation under both set and multiset output semantics. All 16 selected
