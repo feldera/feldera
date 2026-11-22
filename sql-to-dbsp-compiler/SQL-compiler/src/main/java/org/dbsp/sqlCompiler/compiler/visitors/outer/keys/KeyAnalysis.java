@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.keys;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
@@ -42,6 +43,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Lineage;
@@ -126,6 +128,29 @@ public class KeyAnalysis extends CircuitVisitor {
         this.keys.clear();
         this.portTransforms.clear();
         return super.startVisit(node);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPCircuit circuit) {
+        if (this.compiler().options.ioOptions.rustOptimizerPasses
+                && RustCircuitPass.circuitKeys(this.compiler(), circuit, this.losslessCasts, this::install))
+            return VisitDecision.STOP;
+        return super.preorder(circuit);
+    }
+
+    private void install(DBSPSimpleOperator operator, RustCircuitPass.PortKeyFacts facts) {
+        this.set(operator, Keys.fromMinimized(facts.keys()));
+        var transform = facts.transform();
+        if (transform == null)
+            return;
+        ColumnCopyTransform copies = switch (transform.kind()) {
+            case Identity -> ColumnCopyTransform.identity();
+            case Projection -> {
+                var provenance = fromCopies(java.util.Objects.requireNonNull(transform.columns()));
+                yield column -> provenance.columnsReading(Provenance.Source.reading(column));
+            }
+        };
+        this.portTransforms.put(operator.outputPort(), new PortTransform(operator.inputs.get(0), copies));
     }
 
     /** The symbolic value the interpreter starts from for (a part of) a closure parameter:

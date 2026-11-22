@@ -53,7 +53,7 @@ import java.util.Set;
 
 /** Circuit projection for passes that read only operator kinds, edges and annotations. */
 final class OptimizerTopology {
-    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, SHARED_INDEXES, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, MONOTONICITY, STREAM_KINDS, STATE_BOUNDS, AGGREGATE_RESULTS, CHAIN_FUNCTIONS }
+    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, PRIMARY_KEYS, CANDIDATE_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, SHARED_INDEXES, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, MONOTONICITY, STREAM_KINDS, STATE_BOUNDS, AGGREGATE_RESULTS, CHAIN_FUNCTIONS }
 
     private OptimizerTopology() {}
 
@@ -139,6 +139,10 @@ final class OptimizerTopology {
         return encode(circuit, Details.STATE_BOUNDS, compiler);
     }
 
+    static byte[] candidateKeys(DBSPCompiler compiler, DBSPCircuit circuit) {
+        return encode(circuit, Details.CANDIDATE_KEYS, compiler);
+    }
+
     static byte[] statistics(DBSPCompiler compiler, DBSPCircuit circuit) {
         return encode(circuit, Details.NONE, compiler);
     }
@@ -151,7 +155,7 @@ final class OptimizerTopology {
         json.label("declarations").beginArray();
         json.endArray();
         json.label("allOperators");
-        var types = typeContext == null ? null : new ToJsonInnerVisitor(typeContext, json, 1);
+        var types = typeContext == null ? null : new ToJsonInnerVisitor(typeContext, json, details == Details.CANDIDATE_KEYS ? 0 : 1);
         writeBody(json, circuit.getAllOperators(), details, types, null);
         json.endObject();
         return json.toString().getBytes(StandardCharsets.UTF_8);
@@ -308,7 +312,9 @@ final class OptimizerTopology {
                 else if (op instanceof DBSPIncrementalConstantOperator constant)
                     json.label("emptyLiteral").append(PropagateEmptySources.isEmpty(constant.getFunction()));
             }
-            if (details == Details.STATE_BOUNDS) {
+            if (details == Details.CANDIDATE_KEYS) {
+                CandidateKeyInputs.write(json, op, java.util.Objects.requireNonNull(types));
+            } else if (details == Details.STATE_BOUNDS) {
                 if (op instanceof DBSPSourceTableOperator table) {
                     json.label("tableName").beginObject().label("name").append(table.tableName.name()).endObject();
                     json.label("metadata").beginObject();
@@ -341,7 +347,7 @@ final class OptimizerTopology {
                     op.outputType(i).accept(types);
                 json.endArray();
             }
-            if (details != Details.STREAM_KINDS) {
+            if (details != Details.STREAM_KINDS && details != Details.CANDIDATE_KEYS) {
                 json.label("annotations");
                 op.annotations.asJson(json, true);
             }

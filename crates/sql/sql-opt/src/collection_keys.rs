@@ -1,6 +1,9 @@
 //! Derive keys through filters, projections and joins. Multiple columns can
 //! name the same value of a key.
+mod circuit;
+mod equivalence;
 use crate::lineage::{Column, ColumnCopy, Part};
+pub use circuit::circuit_keys;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -63,33 +66,38 @@ fn copies_by_source(copies: &[ColumnCopy]) -> Copies {
 }
 
 impl KeyProjection {
-    fn map(self, keys: &[KeyColumns], copies: &Copies) -> Vec<KeyColumns> {
-        let copy_to = |column: Column, output: &mut BTreeSet<Column>| {
-            let field = Column {
-                part: Part::None,
-                field: column.field,
-            };
-            let source = match self {
-                Self::Row => (0, column),
-                Self::Ranked if column.part == Part::Index => {
-                    output.insert(column);
-                    return;
-                }
-                Self::Ranked => (1, field),
-                Self::Join { value_parameter } => (
-                    if column.part == Part::Index {
-                        0
-                    } else {
-                        value_parameter
-                    },
-                    field,
-                ),
-            };
-            if let Some(columns) = copies.get(&source) {
-                output.extend(columns);
-            }
+    fn copy_to(self, column: Column, copies: &Copies, output: &mut BTreeSet<Column>) {
+        let field = Column {
+            part: Part::None,
+            field: column.field,
         };
-        minimal(keys.iter().filter_map(|key| key.project(copy_to)).collect())
+        let source = match self {
+            Self::Row => (0, column),
+            Self::Ranked if column.part == Part::Index => {
+                output.insert(column);
+                return;
+            }
+            Self::Ranked => (1, field),
+            Self::Join { value_parameter } => (
+                if column.part == Part::Index {
+                    0
+                } else {
+                    value_parameter
+                },
+                field,
+            ),
+        };
+        if let Some(columns) = copies.get(&source) {
+            output.extend(columns);
+        }
+    }
+
+    fn map(self, keys: &[KeyColumns], copies: &Copies) -> Vec<KeyColumns> {
+        minimal(
+            keys.iter()
+                .filter_map(|key| key.project(|c, out| self.copy_to(c, copies, out)))
+                .collect(),
+        )
     }
 
     /// Keep keys for which every value reaches at least one output column.

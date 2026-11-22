@@ -5,11 +5,11 @@ use serde::Deserialize;
 use std::collections::BTreeSet;
 
 /// Map flat result positions to the columns of the declared output collection.
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputShape {
-    pub(super) width: usize,
-    pub(super) index_fields: Option<usize>,
+    pub(crate) width: usize,
+    pub(crate) index_fields: Option<usize>,
 }
 
 impl OutputShape {
@@ -22,7 +22,7 @@ impl OutputShape {
         }
     }
 
-    pub(super) fn column(&self, position: usize) -> Column {
+    pub(crate) fn column(&self, position: usize) -> Column {
         match self.index_fields {
             None => Column {
                 part: Part::None,

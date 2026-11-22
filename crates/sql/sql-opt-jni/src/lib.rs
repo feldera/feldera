@@ -1092,6 +1092,11 @@ fn transform(
     } else {
         Circuit::from_json_bytes(input)?
     };
+    if pass == "KeyAnalysis/Circuit" {
+        let edit = feldera_sql_ir::CircuitEditor::new(circuit);
+        let keys = feldera_sql_opt::circuit_keys(&edit, serde_json::from_slice(state)?)?;
+        return Ok(serde_json::to_value(keys)?);
+    }
     if pass == "Lineage" {
         let edit = feldera_sql_ir::CircuitEditor::new(circuit);
         return Ok(serde_json::to_value(feldera_sql_opt::correlated_columns(&edit)?)?);

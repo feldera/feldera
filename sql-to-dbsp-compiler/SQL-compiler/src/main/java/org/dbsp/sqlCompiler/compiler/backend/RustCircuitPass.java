@@ -194,6 +194,7 @@ import java.util.IdentityHashMap;
 import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntPredicate;
@@ -2515,6 +2516,30 @@ public final class RustCircuitPass implements CircuitTransform {
                                                    CollectionShape shape, boolean lossless) {
         return analyzeKeyClosure(compiler, "KeyAnalysis/ColumnCopies", closure, shape, lossless,
                 null, null, new TypeReference<>() {});
+    }
+
+    public enum KeyTransformKind { Identity, Projection }
+    public record KeyTransform(KeyTransformKind kind, @Nullable List<KeyColumnCopy> columns) {}
+    public record PortKeyFacts(long operator, List<KeyColumns> keys, @Nullable KeyTransform transform) {}
+
+    public static boolean circuitKeys(DBSPCompiler compiler, DBSPCircuit circuit, boolean lossless,
+                                      BiConsumer<DBSPSimpleOperator, PortKeyFacts> install) {
+        try {
+            String pass = "KeyAnalysis/Circuit";
+            var bytes = transformWithContext(pass, OptimizerTopology.candidateKeys(compiler, circuit), 0, "",
+                    MAPPER.writeValueAsBytes(lossless));
+            var result = MAPPER.readTree(bytes);
+            if (!answered(compiler, pass, result))
+                return false;
+            if (!result.isEmpty()) {
+                var operators = operatorsById(circuit);
+                for (var facts : MAPPER.treeToValue(result, PortKeyFacts[].class))
+                    install.accept(Utilities.getExists(operators, facts.operator()).to(DBSPSimpleOperator.class), facts);
+            }
+            return true;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not read circuit candidate keys", error);
+        }
     }
 
     public enum KeyProjection { Row, Ranked }

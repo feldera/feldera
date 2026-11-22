@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.KeyAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LosslessCastKeyAnalysis;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.PortTransformOracle;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -20,6 +21,7 @@ public final class CandidateKeyOracle extends FrozenCircuitObserver {
     private int ordinary;
     private int lossless;
     private int ports;
+    private int transforms;
     private int keyed;
 
     private CandidateKeyOracle(DBSPCompiler compiler, ObjectNode observation) {
@@ -37,6 +39,8 @@ public final class CandidateKeyOracle extends FrozenCircuitObserver {
                 var actual = hybrid.getKeys(port);
                 if (!expected.keys.equals(actual.keys))
                     throw new AssertionError(this.observation + " at " + port + " expected " + expected + ", got " + actual);
+                if (PortTransformOracle.compare(port, direct, hybrid))
+                    this.transforms++;
                 this.ports++;
                 if (!expected.isEmpty())
                     this.keyed++;
@@ -78,7 +82,7 @@ public final class CandidateKeyOracle extends FrozenCircuitObserver {
     @Override
     void finish() {
         this.observation.put("ordinary", this.ordinary).put("lossless", this.lossless)
-                .put("ports", this.ports).put("keyed", this.keyed);
+                .put("ports", this.ports).put("keyed", this.keyed).put("transforms", this.transforms);
     }
 
     public static void main(String[] args) throws IOException {
