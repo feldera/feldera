@@ -203,21 +203,6 @@ public class Utilities {
         return builder.toString();
     }
 
-    /** Escape special characters in a string. */
-    public static String escapeDoubleQuotes(String value) {
-        StringBuilder builder = new StringBuilder();
-        final int length = value.length();
-        for (int offset = 0; offset < length; ) {
-            final int c = value.codePointAt(offset);
-            if (c == '\"' )
-                builder.append("\\\"");
-            else
-                builder.append((char)c);
-            offset += Character.charCount(c);
-        }
-        return builder.toString();
-    }
-
     /** Detects if the dot executable (from graphviz) is installed. */
     public static boolean isDotInstalled() {
         try {
