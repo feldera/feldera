@@ -3031,19 +3031,6 @@ public final class RustCircuitPass implements CircuitTransform {
                 scanTemporalWindows(this.compiler, circuit, this.temporalScan);
                 return circuit;
             }
-            if (this.temporalOrder != null) {
-                var orders = new LinkedHashMap<Long, ReorderTemporalFilters.Reorder.TemporalOrder>();
-                visitOperators(circuit.getAllOperators(), op -> {
-                    if (op instanceof DBSPFilterOperator filter) {
-                        var order = this.temporalOrder.classify(filter);
-                        if (order != null)
-                            orders.put(filter.id, order);
-                    }
-                });
-                if (orders.isEmpty())
-                    return circuit;
-                state = MAPPER.writeValueAsBytes(orders);
-            }
             if (this.clockUses != null) {
                 if (!this.clockUses.found()) {
                     var found = this.invoke(this.nativeName, OptimizerExpressions.operatorCalls(this.compiler, circuit),
@@ -3219,6 +3206,29 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             JsonNode result = null;
             switch (this.nativeName) {
+                case "Reorder" -> {
+                    var reorder = Objects.requireNonNull(this.temporalOrder);
+                    var chosen = new LinkedHashMap<Long, Integer>();
+                    reorder.chosenConjunct.forEach((filter, index) -> chosen.put(filter.id, index));
+                    writer = this.snapshots.writer(this.reusesOperators());
+                    writer.innerVisitor.liveNodes = new HashMap<>();
+                    writer.apply(circuit);
+                    byte[] input = writer.getJsonString().getBytes(StandardCharsets.UTF_8);
+                    result = this.invoke("Live/WindowGroups/Reorder", input, initial, MAPPER.writeValueAsBytes(chosen));
+                    if (!answered(this.compiler, "WindowGroups/Reorder", result)) {
+                        var orders = new LinkedHashMap<Long, ReorderTemporalFilters.Reorder.TemporalOrder>();
+                        visitOperators(circuit.getAllOperators(), op -> {
+                            if (op instanceof DBSPFilterOperator filter) {
+                                var order = reorder.classify(filter);
+                                if (order != null)
+                                    orders.put(filter.id, order);
+                            }
+                        });
+                        if (orders.isEmpty())
+                            return circuit;
+                        result = this.invoke("Live/Reorder", input, initial, MAPPER.writeValueAsBytes(orders));
+                    }
+                }
                 case "Simplify" -> {
                     return new Simplify(this.compiler) {
                         @Override

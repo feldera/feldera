@@ -14,24 +14,24 @@ pub struct TemporalCandidate<K = String> {
 /// Each top-level conjunct either supplies a timestamp bound or has no
 /// temporal classification. Bounds with the same fingerprint share a window.
 #[derive(Deserialize)]
-pub struct TemporalBound {
-    pub fingerprint: String,
+pub struct TemporalBound<K = String> {
+    pub fingerprint: K,
     pub lower: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct TimestampPartition<'a> {
+pub(super) struct TimestampPartition<'a, K> {
     pub first: bool,
-    pub timestamps: Vec<&'a str>,
+    pub timestamps: Vec<&'a K>,
 }
 
 /// Apply these stable partitions in sequence. Rebuilding an AND can insert
 /// nullable casts, so later partitions inspect the rebuilt expression tree.
-pub(super) fn temporal_filter_order<'a>(
-    bounds: &'a [Option<TemporalBound>],
-    shared: Option<&'a str>,
-) -> Vec<TimestampPartition<'a>> {
-    let mut bounded_below = IndexMap::<&str, bool>::new();
+pub(super) fn temporal_filter_order<'a, K: Eq + Hash>(
+    bounds: &'a [Option<TemporalBound<K>>],
+    shared: Option<&'a K>,
+) -> Vec<TimestampPartition<'a, K>> {
+    let mut bounded_below = IndexMap::<&K, bool>::new();
     for bound in bounds.iter().flatten() {
         *bounded_below.entry(&bound.fingerprint).or_default() |= bound.lower;
     }
@@ -114,33 +114,29 @@ mod tests {
 
     #[test]
     fn shared_window_precedes_plain_predicates_and_upper_only_windows_run_last() {
-        let bound = |name: &str, lower| {
-            Some(TemporalBound {
-                fingerprint: name.into(),
-                lower,
-            })
-        };
+        let (upper_only, both, shared) = (1, 2, 3);
+        let bound = |fingerprint, lower| Some(TemporalBound { fingerprint, lower });
         let conjuncts = [
             None,
-            bound("upper-only", false),
-            bound("both", false),
-            bound("shared", false),
-            bound("both", true),
+            bound(upper_only, false),
+            bound(both, false),
+            bound(shared, false),
+            bound(both, true),
         ];
         assert_eq!(
-            temporal_filter_order(&conjuncts, Some("shared")),
+            temporal_filter_order(&conjuncts, Some(&shared)),
             [
                 TimestampPartition {
                     first: false,
-                    timestamps: vec!["upper-only", "both"]
+                    timestamps: vec![&upper_only, &both]
                 },
                 TimestampPartition {
                     first: true,
-                    timestamps: vec!["shared"]
+                    timestamps: vec![&shared]
                 },
                 TimestampPartition {
                     first: false,
-                    timestamps: vec!["upper-only"]
+                    timestamps: vec![&upper_only]
                 },
             ]
         );
@@ -149,11 +145,11 @@ mod tests {
             [
                 TimestampPartition {
                     first: false,
-                    timestamps: vec!["upper-only", "both", "shared"]
+                    timestamps: vec![&upper_only, &both, &shared]
                 },
                 TimestampPartition {
                     first: false,
-                    timestamps: vec!["upper-only", "shared"]
+                    timestamps: vec![&upper_only, &shared]
                 },
             ]
         );

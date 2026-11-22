@@ -1583,6 +1583,13 @@ fn transform(
         "FilterJoinVisitor" => feldera_sql_opt::filter_joins(circuit, &mut next)?,
         "SimplifyConditionals" => feldera_sql_opt::simplify_conditionals(circuit, &mut next)?,
         "SimplifyWaterline" => feldera_sql_opt::simplify_waterlines(circuit, &mut next)?,
+        "WindowGroups/Reorder" => {
+            let chosen = serde_json::from_slice(state)?;
+            let Some(output) = feldera_sql_opt::reorder_shared_windows(circuit, &chosen, &mut next)? else {
+                return Ok(Value::Null);
+            };
+            output
+        }
         "Reorder" => feldera_sql_opt::reorder_temporal_filters(circuit, serde_json::from_slice(state)?, &mut next)?,
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(circuit, &mut next)?,
         "LowerCircuitVisitor"

@@ -1,0 +1,128 @@
+{
+  "scope": "Classify and reorder temporal conjuncts from the original filter closures in Rust, then compare with the direct Java pass.",
+  "build_sha256": {
+    "maven/sql-compiler.jar": "13a51ee4e244624378fa90f41eb87ae7f71d9d7689389ec867a905abeacafbe1",
+    "maven/tests.jar": "f03326406e19fa0643770c85d5d0b6e0f99f5cab00501800e61568a3b037407c",
+    "bin/libfeldera_sql_opt_jni.so": "21d7fe6634f4f179d467cfe7d7080b2a814b8511341b49450ad3534ea461744f",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36"
+  },
+  "engines": {
+    "classic": {
+      "temporal_population": {
+        "programs": 71,
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "observations_sha256": "697b48539b93d38794e03dc49b70bb73d6d79b852416cc6ca2880f0538b40d1a",
+        "requests": {
+          "MergeFilters": {
+            "calls": 35,
+            "fallbacks": 0
+          },
+          "Monotonicity/ProjectClosure": {
+            "calls": 291,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 163,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 14,
+            "fallbacks": 0
+          }
+        },
+        "programs_with_fallbacks": {}
+      },
+      "pass_comparisons": {
+        "Reorder": {
+          "matched": 71,
+          "changed_graphs": 10,
+          "direct_sha256": "18b8f9a2dde60ffe0503bb2e9155227c0643c4153036ccde8daef44b0fbd026e",
+          "hybrid_sha256": "aaad58ee536a58d649547c50af6c7d1f3c3cf8c1ae63793f2909054ee648baa9"
+        }
+      },
+      "detached_replay": {
+        "selected_programs": 11,
+        "ordered_observations": 6837,
+        "mismatches": 0,
+        "receipt_sha256": "644e72eb6ddecced56b1dd011ab17f24dd2d9e4dbb2f481fb90a66e7b2614051"
+      }
+    },
+    "gen2": {
+      "temporal_population": {
+        "programs": 62,
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "observations_sha256": "cc0fac92c5d4bb2a1fce8326c8626ccf5876682b42ab3a71dfd89ed7d0de43ba",
+        "requests": {
+          "Monotonicity/ProjectClosure": {
+            "calls": 274,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 151,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "MergeFilters": {
+            "calls": 32,
+            "fallbacks": 0
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 14,
+            "fallbacks": 0
+          }
+        },
+        "programs_with_fallbacks": {}
+      },
+      "pass_comparisons": {
+        "Reorder": {
+          "matched": 62,
+          "changed_graphs": 9,
+          "direct_sha256": "f0d6b56c7a749372288f1125cda85bc3a820690b58b67824079f76cc828f94f8",
+          "hybrid_sha256": "87625216b50533ae608c0673d163bb2ef968ff1eb3d18d7240aa64b6c69c62f7"
+        }
+      },
+      "detached_replay": {
+        "selected_programs": 11,
+        "ordered_observations": 6861,
+        "mismatches": 0,
+        "receipt_sha256": "18561633b4a1e0a68235cba8d9d97b78c74e8e2bd7e599edbca2a0253a9efa4d"
+      }
+    }
+  },
+  "verification": {
+    "rust_tests_in_build_log": 178,
+    "clippy": "passed",
+    "maven_passed": 29,
+    "maven_skipped": 1,
+    "jni_enabled_junit_passed": 33
+  },
+  "classic_runtime": {
+    "executed": 8,
+    "compile_only": 3,
+    "input_commands": 15,
+    "batch_receipts_sha256": "c40bf4cb2e0772ddfc9f4696fc705e1a3325fd84e29256d6ee01b24621fc232d"
+  }
+}

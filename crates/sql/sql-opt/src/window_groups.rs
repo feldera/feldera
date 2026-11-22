@@ -8,7 +8,7 @@ mod source;
 mod temporal;
 pub use source::{compose_timestamp, temporal_filter_sources, TemporalFilterSource};
 pub use scan::{scan_temporal_windows, TemporalScan};
-pub use reorder::{reorder_temporal_filters, reorder_temporal_predicate, TemporalOrder};
+pub use reorder::{reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate, TemporalOrder};
 use feldera_sql_ir::{
     BodyOrder, Circuit, Error, ExpressionKind as Expr, Field, InnerKind, NodeId, OperatorKind,
 };
