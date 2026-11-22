@@ -1014,8 +1014,8 @@ public class CatalogTests extends BaseSQLTests {
 
     @Test
     public void nestedCaseSensitivity() {
-        var ccs = this.getCCS(NESTED_FIELDS);
-        JsonNode table = ccs.compiler.metadata.getTableDescription(new ProgramIdentifier("t"))
+        var cc = this.getCC(NESTED_FIELDS);
+        JsonNode table = cc.compiler.metadata.getTableDescription(new ProgramIdentifier("t"))
                 .asJson(true);
         Assert.assertEquals(table.toPrettyString(), 5, countLeaves(table));
     }
@@ -1024,8 +1024,8 @@ public class CatalogTests extends BaseSQLTests {
      * the tables and in the views. */
     @Test
     public void nestedCaseSensitivityInTheProgramSchema() {
-        var ccs = this.getCCS(NESTED_FIELDS);
-        JsonNode schema = ccs.compiler.metadata.asJson();
+        var cc = this.getCC(NESTED_FIELDS);
+        JsonNode schema = cc.compiler.metadata.asJson();
         int relations = 0;
         for (String kind : new String[] { "inputs", "outputs" }) {
             for (JsonNode relation : schema.get(kind)) {

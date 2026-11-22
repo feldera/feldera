@@ -260,17 +260,19 @@ public class ProgramMetadata implements IJson {
         return this.isFalsy(variable);
     }
 
-    /** The program's schema: its input tables and output views.  The fields of nested
-     * ROW types carry their case sensitivity, as in the catalog of a compiled program. */
+    /** The program's schema: its input tables and output views. */
     public ObjectNode asJson() {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ArrayNode inputs = mapper.createArrayNode();
         for (IHasSchema input: this.inputTables.values()) {
             if (input.is(DeclareViewStatement.class))
                 continue;
+            // The fields of nested ROW types carry their case sensitivity, as in the catalog
+            // of a compiled program
             inputs.add(input.asJson(true));
         }
         ArrayNode outputs = mapper.createArrayNode();
+        // The same for the views
         for (IHasSchema output: this.outputViews.values())
             outputs.add(output.asJson(true));
         ObjectNode ios = mapper.createObjectNode();

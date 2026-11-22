@@ -387,6 +387,8 @@ public class PrimitivesTests extends SqlIoTest {
         options.languageOptions.incrementalize = true;
         options.ioOptions.checkSerialization = true;
         DBSPCompiler compiler = new DBSPCompiler(options);
+        // TODO: remove this hook, which exists for testing and debugging, once the optimizer
+        // runs Gen2Lowering again.
         compiler.optimizerHook = optimizer ->
                 optimizer.insertAfter(CircuitStatistics.class, new Gen2Lowering(compiler));
         compiler.submitStatementsForCompilation(sql);

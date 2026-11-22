@@ -257,6 +257,7 @@ public class CircuitOptimizer extends Passes {
         // The Gen-2 engine runs the chain aggregates and joins that Gen2Lowering replaces with
         // primitives, so the compiler does not lower its circuits yet; PrimitivesTests adds the
         // pass back.
+        // TODO: re-enable once the Gen-2 engine runs the primitives.
         // this.add(new Conditional(compiler, new Gen2Lowering(compiler), () -> options.ioOptions.gen2));
     }
 
