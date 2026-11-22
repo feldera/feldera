@@ -247,7 +247,7 @@ pub use trace_retention::{
 pub use udf::{inline_udfs, may_inline_udfs};
 pub use validation::{first_integral, recursive_violation, RecursiveViolation};
 pub use views::{constant_views, remove_views, ViewRemoval};
-pub use waterline::simplify_waterlines;
+pub use waterline::{simplify_waterline_root, simplify_waterlines};
 
 use feldera_sql_ir::{BodyOrder, Circuit, CircuitEditor, Error, NodeId, OperatorKind};
 use serde_json::json;

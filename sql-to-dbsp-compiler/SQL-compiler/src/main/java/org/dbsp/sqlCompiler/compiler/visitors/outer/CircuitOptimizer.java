@@ -26,7 +26,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -317,8 +316,7 @@ public class CircuitOptimizer extends Passes {
                 g -> new OptimizeProjections(compiler, false, g, operatorsAnalyzed)));
         // Second invocation, fuses aggregates and joins
         this.add(new FuseIntoArrayAgg(compiler));
-        this.add(new SimplifyWaterline(compiler)
-                .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
+        this.add(new SimplifyWaterline(compiler).circuitRewriter());
         this.add(new Simplify(compiler).circuitRewriter(true));
         this.add(new CSE(compiler));
         this.add(new ValidateRecursiveOperators(compiler));

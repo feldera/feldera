@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The live waterline simplifier sends Rust each selected expression or
+aggregate list. The entry and exit circuits matched Java on Nexmark and on
+typed and raw tuple closures, including the annotated cases that specialize
+both branches. All 13 classic and 12 Gen-2 detached smoke programs matched
+through every S4 boundary and final artifacts.
+[Waterline replay and timings](evidence/p3-waterline-root-transport.json)
+
 Rust builds both clock sources used by NOW(). The system clock emits a
 timestamp singleton and an index. The table-backed clock takes the maximum
 timestamp and exposes both the indexed and collection outputs. All 133

@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -22,6 +24,10 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 public class SimplifyWaterline extends Simplify {
     public SimplifyWaterline(DBSPCompiler compiler) {
         super(compiler);
+    }
+
+    public CircuitRewriter circuitRewriter() {
+        return this.circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class)));
     }
 
     @Override

@@ -1,7 +1,8 @@
 //! Specialize a waterline closure for the two values of its validity flag.
 use crate::expression_visitor::{rewrite_expressions, Context};
 use feldera_sql_expr::{
-    reduce_closure_body, simplify_closure_expression, Rewrite, Transformation, Visit,
+    reduce_closure_body, simplify_closure_with_warnings, Rewrite, SimplifyWarning, Transformation,
+    Visit,
 };
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,
@@ -110,6 +111,17 @@ impl Transformation for Specialize<'_> {
     }
 }
 
+/// Rewrite one selected function or aggregate list, preserving its live input bindings.
+pub fn simplify_waterline_root(
+    edit: &mut CircuitEditor,
+    root: NodeId,
+    next: &mut u64,
+    warnings: Option<&mut Vec<SimplifyWarning>>,
+) -> Result<NodeId, Error> {
+    let root = simplify_closure_with_warnings(edit, root, warnings)?;
+    Rewrite::translating_expressions(Specialize { next }).apply(edit, root)
+}
+
 pub fn simplify_waterlines(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
     rewrite_expressions(circuit, next, |edit, root, context, next| {
         let selected = match context {
@@ -120,7 +132,6 @@ pub fn simplify_waterlines(circuit: Circuit, next: &mut u64) -> Result<Circuit, 
         if !selected {
             return Ok(root);
         }
-        let root = simplify_closure_expression(edit, root)?;
-        Rewrite::translating_expressions(Specialize { next }).apply(edit, root)
+        simplify_waterline_root(edit, root, next, None)
     })
 }

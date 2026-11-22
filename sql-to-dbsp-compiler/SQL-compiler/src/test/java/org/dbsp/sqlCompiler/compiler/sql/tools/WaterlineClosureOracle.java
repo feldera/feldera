@@ -9,10 +9,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -59,8 +61,10 @@ public final class WaterlineClosureOracle {
         record.put("id", "waterline/raw=" + raw + "/annotated=" + annotated).put("pass", "SimplifyWaterline");
         var sample = record.putArray("invocations").addObject();
         sample.put("names_before", DBSPVariablePath.nextGeneratedName()).set("before", snapshot(compiler, circuit));
-        var result = new SimplifyWaterline(compiler)
-                .circuitRewriter(op -> op.hasAnnotation(a -> a.is(Waterline.class))).apply(circuit);
+        CircuitTransform pass = new SimplifyWaterline(compiler).circuitRewriter();
+        if (Boolean.getBoolean("feldera.optimizer.compareRustWaterline"))
+            pass = new RustCircuitPass(compiler, pass, new ToJsonOuterVisitor.OptimizerSnapshots(compiler));
+        var result = pass.apply(circuit);
         sample.put("names_after", DBSPVariablePath.nextGeneratedName()).set("after", snapshot(compiler, result));
         System.out.println(mapper.writeValueAsString(record));
     }

@@ -291,6 +291,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("SimplifyWaterline/Root", [root]) => {
+            let result = feldera_sql_opt::simplify_waterline_root(&mut edit, *root, &mut next, Some(&mut warnings))?;
+            let encoded = edit.circuit().additional_inner_nodes(&arena, [result])?;
+            return Ok(json!({"root": encoded[0], "next_generated_name": next, "warnings": pass_warnings(warnings)}));
+        }
         ("ExpandMetadataCasts/Initializer", [root]) => {
             let root = edit.expression(*root)?;
             feldera_sql_expr::prepare_column_default(&mut edit, root, &mut next)?
@@ -765,7 +770,7 @@ fn transform(
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
         | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
-        | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "SimplifyWaterline/Root" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {

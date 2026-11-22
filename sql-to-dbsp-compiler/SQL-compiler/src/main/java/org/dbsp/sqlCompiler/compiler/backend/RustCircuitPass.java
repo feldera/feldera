@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ChainVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
@@ -2612,6 +2613,20 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             JsonNode result = null;
             switch (this.nativeName) {
+                case "SimplifyWaterline" -> {
+                    return new SimplifyWaterline(this.compiler) {
+                        @Override
+                        public IDBSPInnerNode apply(IDBSPInnerNode root) {
+                            // ExpressionTranslator treats types as opaque, including at aggregate sites.
+                            if (root instanceof DBSPType)
+                                return root;
+                            var reply = invokeLowering(this.compiler, "SimplifyWaterline/Root", root);
+                            var result = expressionDecoder(reply.writer).decodeInner(reply.value.required("root"), IDBSPInnerNode.class);
+                            finishLowering(this.compiler, reply.value);
+                            return result;
+                        }
+                    }.circuitRewriter().apply(circuit);
+                }
                 case "ExpandMetadataCasts" -> {
                     return new ExpandMetadataCasts(this.compiler, initializer -> lowerFunction(this.compiler,
                             "ExpandMetadataCasts/Initializer", initializer, null, DBSPExpression.class)).apply(circuit);
@@ -2680,7 +2695,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         OptimizerTopology.encode(circuit, OptimizerTopology.Details.VIEW_NAMES), initial, state);
                 case "CheckRetain", "ValidateRecursiveOperators", "NoIntegralVisitor", "CheckHints", "CompactNames", "TagRegions" ->
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
-                case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
+                case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero",

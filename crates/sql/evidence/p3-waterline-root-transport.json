@@ -1,0 +1,59 @@
+{
+  "scope": "SimplifyWaterline during full cold Nexmark optimization. Alternating artifact order in 12 paired JVMs per build. Main-thread CPU on logical CPU 13, with concurrent corpus verification.",
+  "artifacts": {
+    "clock-source-operators": {
+      "optimizer_library_sha256": "ec82c99aa4606498723da2af14f48337b7e371c9ef66618e7ac877b75a107bd6",
+      "compiler_jar_sha256": "d58514bbec649491a20eb91497f245bd642db3a55e1567194409379a51c34305",
+      "timings_sha256": "7d9062b66f3b8717976484599408d29e3926e0f1d25fc08ac44b9c9489e5dc1b"
+    },
+    "waterline-root-transport": {
+      "optimizer_library_sha256": "8d8d6adbf0c37f26d002c6d515e5ba347ffa2cd80053663bc93a554b17de46ed",
+      "compiler_jar_sha256": "bb302ffac304f3222e6214c6573ba1ad64de3e023cc5f1faef299e0559699269",
+      "timings_sha256": "2f1af7fb6f19aca7c3cd8130a03bf8271dfbaf8c1daa7023cdc5557e7d0f34f4"
+    }
+  },
+  "population_sha256": "00a774ded7d5607ba0fda8fb439289f9f9010fe105e8bea3b5dcb879e10d2a6d",
+  "pairs": 12,
+  "mean_thread_cpu_ms": {
+    "clock-source-operators": 51.60315408333334,
+    "waterline-root-transport": 7.478903416666666
+  },
+  "mean_cpu_ratio_paired_bootstrap_95pct": [
+    0.13277244684305697,
+    0.15874587307826254
+  ],
+  "nexmark_pass_stream_sha256": {
+    "java": "93288f3f6bca388a62b93e5ae21190c62e20611dcf74e055d4cddd32e2815a6c",
+    "SimplifyWaterline": "93288f3f6bca388a62b93e5ae21190c62e20611dcf74e055d4cddd32e2815a6c"
+  },
+  "directed_graphs_and_names": {
+    "false": {
+      "stream_sha256": "979fd5b20b0ed26943913fafb3507836b2fa77a90d9d6f83aa69eccc91e5d1ad",
+      "cases": 4,
+      "name_changes": [
+        1,
+        0,
+        1,
+        0
+      ]
+    },
+    "true": {
+      "stream_sha256": "bdb4141425eeb9efd0514fa3780f7b6f2252a6e44b591d703aa3365d991e5d3f",
+      "cases": 4,
+      "name_changes": [
+        1,
+        0,
+        1,
+        0
+      ]
+    }
+  },
+  "classic": {
+    "detached_cases": 13,
+    "full_trace_sha256": "b6f88eefa55d489e8af554dc0bc834d965eae9740b283df77338edccbf1bc4f3"
+  },
+  "gen2": {
+    "detached_cases": 12,
+    "full_trace_sha256": "098a0421dac7a6f363f16330340dec10b7892441ac7af2d29b27836bdde48f56"
+  }
+}

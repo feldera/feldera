@@ -76,6 +76,13 @@ pairs, the 95% bootstrap interval for the candidate-to-baseline CPU ratio was
 0.822–0.866. This timing covers serialization through UTF-8 encoding.
 [Writer trials and detached replay](evidence/p3-compact-json-writer.json)
 
+Sending only the expression roots visited by `SimplifyWaterline` reduced the
+pass's mean main-thread CPU time from 51.60 ms to 7.48 ms on Nexmark. Each
+of the 12 pairs ran the full classic hybrid optimizer in fresh JVMs on CPU
+13 with alternating build order. The 95% paired bootstrap interval for the
+CPU ratio was 0.133–0.159. Corpus verification shared the VM during the run.
+[Waterline pass measurements](evidence/p3-waterline-root-transport.json)
+
 A chain-topology run at `72183b58e` overlapped ASOF corpus and runtime verification.
 All 69 pairs agreed on artifacts and diagnostics. Direct/hybrid p95 was
 6.752/12.263 s on the array subquery, 22.529/46.318 s on Nexmark and
