@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `a9387c693`, Rust answered all 51,294 circuit-wide candidate-key
+requests from the two frozen populations. Direct Java agreed on ordered keys
+at 374,851 ports and on all 108,044 predecessor transforms, including which
+output columns copy each input column. All 228 selected detached compilations
+matched through 105,453 S4 observations and emission. The 106 executable
+classic selections passed, and COUNT and LATENESS restored in both directions.
+[Candidate keys and checkpoint results](evidence/p3-circuit-candidate-keys.json)
+
 On `6d3eaf928`, the filter pass matched all 57 selected invocations and
 50 detached compilations. On `5ded4b782`, shared index chain collapse
 matched all 634 frozen cases in which Java rewrote the graph. All 42
