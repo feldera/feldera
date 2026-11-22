@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selects waterlines for filters, deindexing, HOP, LAG, stream and ASOF
+joins, and linear and rolling aggregates. It computed all 1,652 join argument
+projections in the 550-program monotonicity comparison. All 11,178 ordered
+optimizer observations matched across 16 detached compilations. Direct Java
+also reproduced its pre-refactor records for all 16. COUNT and LATENESS
+checkpoints restored from Java to hybrid and from hybrid to Java.
+[Temporal and aggregate transfers](evidence/p3-temporal-aggregate-transfers.json)
+
 Rust selected key and value waterlines at all 194 window transfers and 129
 annotated clock aggregates in the 550-program monotonicity sample. Rust also
 answered all 6,600 whole-closure requests and 452 temporal classifications on

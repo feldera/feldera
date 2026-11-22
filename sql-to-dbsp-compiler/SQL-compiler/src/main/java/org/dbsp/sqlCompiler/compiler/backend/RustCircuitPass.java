@@ -502,7 +502,14 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public static JsonNode combineBounds(JsonNode inputs, boolean union) {
-        String pass = union ? "Monotonicity/Union" : "Monotonicity/Intersection";
+        return exchangeBounds(inputs, union ? "Monotonicity/Union" : "Monotonicity/Intersection");
+    }
+
+    public static JsonNode joinArguments(JsonNode inputs) {
+        return exchangeBounds(inputs, "Monotonicity/JoinArguments");
+    }
+
+    private static JsonNode exchangeBounds(JsonNode inputs, String pass) {
         try {
             return MAPPER.readTree(transformWithContext(pass, MAPPER.writeValueAsBytes(inputs), 0, "", EMPTY_CONTEXT));
         } catch (IOException error) {
@@ -2496,11 +2503,14 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public enum TransferRule { Identity, DeclaredColumns, ApplyClosure, ProjectIndex, Analyze }
+    public enum TransferRule { Identity, DeclaredColumns, ApplyClosure, ProjectIndex, JoinClosure,
+        AggregateKey, RollingTimestamp, Analyze }
+    public enum ClosureBody { Operator, IndexedValue, Filter, Hop, Lag }
     public enum FieldWaterline { Whole, Unbounded, Unit, AllColumns }
     public record IndexedWaterline(boolean requireInputKey, FieldWaterline key, FieldWaterline value) {}
     public record MonotonicityTransfer(DBSPOperator operator, TransferRule rule, int input,
-                                       @Nullable List<Boolean> lateness, @Nullable IndexedWaterline projection) {}
+                                       @Nullable List<Boolean> lateness, @Nullable IndexedWaterline projection,
+                                       @Nullable ClosureBody function) {}
 
     /** Validate the graph after each pass. Consecutive passes often leave its ports,
      * source kinds and sink modes identical, even when they rewrite expressions. */
@@ -2549,7 +2559,7 @@ public final class RustCircuitPass implements CircuitTransform {
     /** Reconnect the transfer schedule to the live expressions of the expanded circuit. */
     public static List<MonotonicityTransfer> monotonicityTransfers(DBSPCircuit circuit) {
         record Step(long operator, TransferRule rule, int input, @Nullable List<Boolean> lateness,
-                    @Nullable IndexedWaterline projection) {}
+                    @Nullable IndexedWaterline projection, @Nullable ClosureBody function) {}
         byte[] topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.MONOTONICITY);
         byte[] result = transformWithContext("Topology/Monotonicity", topology, 0, "", EMPTY_CONTEXT);
         try {
@@ -2560,7 +2570,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var transfers = new ArrayList<MonotonicityTransfer>(steps.length);
             for (var step : steps)
                 transfers.add(new MonotonicityTransfer(Utilities.getExists(operators, step.operator()),
-                        step.rule(), step.input(), step.lateness(), step.projection()));
+                        step.rule(), step.input(), step.lateness(), step.projection(), step.function()));
             return transfers;
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid monotonicity transfer schedule", error);

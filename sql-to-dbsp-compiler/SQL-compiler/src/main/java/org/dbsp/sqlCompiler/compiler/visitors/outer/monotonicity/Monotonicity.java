@@ -183,9 +183,13 @@ public class Monotonicity extends CircuitVisitor {
                     case Identity -> this.identity(transfer.operator().to(DBSPSimpleOperator.class), transfer.input());
                     case DeclaredColumns -> this.declaredColumns(transfer.operator().to(DBSPSimpleOperator.class),
                             Objects.requireNonNull(transfer.lateness()));
-                    case ApplyClosure -> this.analyzeClosure(transfer.operator().to(DBSPUnaryOperator.class));
+                    case ApplyClosure -> this.analyzeClosure(transfer.operator().to(DBSPUnaryOperator.class),
+                            Objects.requireNonNull(transfer.function()));
                     case ProjectIndex -> this.projectIndex(transfer.operator().to(DBSPSimpleOperator.class),
                             Objects.requireNonNull(transfer.projection()));
+                    case JoinClosure -> this.processJoinBase(transfer.operator().to(DBSPJoinBaseOperator.class));
+                    case AggregateKey, RollingTimestamp -> this.aggregate(transfer.operator().to(DBSPSimpleOperator.class),
+                            transfer.rule() == RustCircuitPass.TransferRule.RollingTimestamp);
                     case Analyze -> transfer.operator().accept(this);
                 }
             }
@@ -409,20 +413,32 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     private void analyzeClosure(DBSPUnaryOperator node) {
+        this.analyzeClosure(node, RustCircuitPass.ClosureBody.Operator);
+    }
+
+    private void analyzeClosure(DBSPUnaryOperator node, RustCircuitPass.ClosureBody body) {
         MonotoneExpression inputFunction = this.getMonotoneExpression(node.input());
         if (inputFunction == null)
             return;
 
         IMaybeMonotoneType sourceType = getBodyType(inputFunction);
-        DBSPExpression function = node.getFunction();
+        if (body == RustCircuitPass.ClosureBody.IndexedValue
+                && !sourceType.to(PartiallyMonotoneTuple.class).getFieldType(1).mayBeMonotone())
+            return;
+        DBSPExpression function = switch (body) {
+            case Operator, IndexedValue -> node.getFunction();
+            case Filter -> this.nativeFilterTransfer(node.to(DBSPFilterOperator.class),
+                    sourceType.getType().to(DBSPTypeTupleBase.class));
+            case Hop -> RustCircuitPass.hopTransfer(this.compiler(), node.to(DBSPHopOperator.class),
+                    sourceType.getType().to(DBSPTypeTuple.class));
+            case Lag -> RustCircuitPass.lagTransfer(this.compiler(), node.to(DBSPLagOperator.class));
+        };
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(this
                 .compiler(), node,
                 MonotoneTransferFunctions.ArgumentKind.fromType(node.input().outputType()),
                 sourceType);
         MonotoneExpression result = mm.applyAnalysis(function);
-        if (result == null)
-            return;
-        this.set(node, result);
+        this.set(node, body == RustCircuitPass.ClosureBody.Filter ? Objects.requireNonNull(result) : result);
     }
 
     public void processJoinBase(DBSPJoinBaseOperator node) {
@@ -430,35 +446,23 @@ public class Monotonicity extends CircuitVisitor {
         MonotoneExpression right = this.getMonotoneExpression(node.right());
         if (left == null && right == null)
             return;
-        PartiallyMonotoneTuple leftType;
-        if (left != null) {
-            leftType = getBodyType(left).to(PartiallyMonotoneTuple.class);
-        } else {
-            DBSPType source = node.left().getOutputIndexedZSetType().getKVType();
-            leftType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
-        }
-        PartiallyMonotoneTuple rightType;
-        if (right != null) {
-            rightType = getBodyType(right).to(PartiallyMonotoneTuple.class);
-        } else {
-            DBSPType source = node.right().getOutputIndexedZSetType().getKVType();
-            rightType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
-        }
-
-        IMaybeMonotoneType leftKeyType = leftType.getFieldType(0);
-        IMaybeMonotoneType rightKeyType = rightType.getFieldType(0);
-        IMaybeMonotoneType leftValueType = leftType.getFieldType(1);
-        IMaybeMonotoneType rightValueType = rightType.getFieldType(1);
-
-        IMaybeMonotoneType keyType = CombinedBounds.union(this.compiler(), leftKeyType, rightKeyType);
+        var arguments = CombinedBounds.joinArguments(this.compiler(),
+                indexedInput(node.left(), left), indexedInput(node.right(), right));
+        DBSPExpression closure;
+        if (node instanceof DBSPAsofJoinOperator asof)
+            closure = this.compiler().options.ioOptions.rustOptimizerPasses
+                    ? RustCircuitPass.asofTransfer(this.compiler(), asof) : this.asofTransfer(asof);
+        else
+            closure = node.getFunction();
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.compiler(), node,
-                MonotoneTransferFunctions.ArgumentKind.Join,
-                keyType, leftValueType, rightValueType);
-        MonotoneExpression result = mm.applyAnalysis(node.getFunction());
-        if (result == null)
-            return;
-        this.set(node, result);
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.Join, arguments);
+        this.set(node, mm.applyAnalysis(closure));
+    }
+
+    private static PartiallyMonotoneTuple indexedInput(OutputPort port, @Nullable MonotoneExpression bound) {
+        var type = bound == null ? NonMonotoneType.nonMonotone(port.getOutputIndexedZSetType().getKVType())
+                : getBodyType(bound);
+        return type.to(PartiallyMonotoneTuple.class);
     }
 
     @Override
@@ -735,44 +739,8 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPAsofJoinOperator node) {
-        // The output timestamp has a waterline only when the match condition is >= or >
-        if (!node.isLeftAfterRight())
-            return;
-        MonotoneExpression left = this.getMonotoneExpression(node.left());
-        MonotoneExpression right = this.getMonotoneExpression(node.right());
-        if (left == null && right == null)
-            return;
-        PartiallyMonotoneTuple leftType;
-        if (left != null) {
-            leftType = getBodyType(left).to(PartiallyMonotoneTuple.class);
-        } else {
-            DBSPType source = node.left().getOutputIndexedZSetType().getKVType();
-            leftType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
-        }
-        PartiallyMonotoneTuple rightType;
-        if (right != null) {
-            rightType = getBodyType(right).to(PartiallyMonotoneTuple.class);
-        } else {
-            DBSPType source = node.right().getOutputIndexedZSetType().getKVType();
-            rightType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
-        }
-
-        IMaybeMonotoneType leftValueMonoType = leftType.getFieldType(1);
-        IMaybeMonotoneType rightValueMonoType = rightType.getFieldType(1);
-        IMaybeMonotoneType leftKeyMonoType = leftType.getFieldType(0);
-        IMaybeMonotoneType rightKeyMonoType = rightType.getFieldType(0);
-        IMaybeMonotoneType keyMonoType = CombinedBounds.union(this.compiler(), leftKeyMonoType, rightKeyMonoType);
-
-        DBSPClosureExpression closure = this.compiler().options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.asofTransfer(this.compiler(), node) : this.asofTransfer(node);
-        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.compiler(), node,
-                MonotoneTransferFunctions.ArgumentKind.Join,
-                keyMonoType, leftValueMonoType, rightValueMonoType);
-        MonotoneExpression result = mm.applyAnalysis(closure);
-        if (result == null)
-            return;
-        this.set(node, result);
+        if (node.isLeftAfterRight())
+            this.processJoinBase(node);
     }
 
     private DBSPClosureExpression asofTransfer(DBSPAsofJoinOperator node) {
@@ -862,9 +830,7 @@ public class Monotonicity extends CircuitVisitor {
         DBSPTypeTupleBase tuple = projection.getType().to(DBSPTypeTupleBase.class);
         DBSPClosureExpression closure;
         if (this.compiler().options.ioOptions.rustOptimizerPasses) {
-            closure = RustCircuitPass.filterTransfer(this.compiler(), node, tuple);
-            if (Logger.INSTANCE.getLoggingLevel(this.getClass()) >= 2)
-                this.logComparisons(node, new ComparisonsAnalyzer(node.getClosureFunction()));
+            closure = this.nativeFilterTransfer(node, tuple);
         } else {
             var comparisons = new ComparisonsAnalyzer(node.getClosureFunction());
             this.logComparisons(node, comparisons);
@@ -873,6 +839,13 @@ public class Monotonicity extends CircuitVisitor {
         var analyzer = new MonotoneTransferFunctions(
                 this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.ZSet, projection);
         this.set(node, Objects.requireNonNull(analyzer.applyAnalysis(closure)));
+    }
+
+    private DBSPClosureExpression nativeFilterTransfer(DBSPFilterOperator node, DBSPTypeTupleBase tuple) {
+        var closure = RustCircuitPass.filterTransfer(this.compiler(), node, tuple);
+        if (Logger.INSTANCE.getLoggingLevel(this.getClass()) >= 2)
+            this.logComparisons(node, new ComparisonsAnalyzer(node.getClosureFunction()));
+        return closure;
     }
 
     private void logComparisons(DBSPFilterOperator node, ComparisonsAnalyzer comparisons) {
@@ -925,27 +898,27 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     public void aggregate(DBSPSimpleOperator node) {
-        // Input type is IndexedZSet<key, tuple>
-        // Output type is IndexedZSet<key, aggregateType>
-        MonotoneExpression inputValue = this.getMonotoneExpression(node.inputs.get(0));
-        if (inputValue == null)
+        this.aggregate(node, false);
+    }
+
+    private void aggregate(DBSPSimpleOperator node, boolean rolling) {
+        MonotoneExpression input = this.getMonotoneExpression(node.inputs.get(0));
+        if (input == null)
             return;
-        IMaybeMonotoneType projection = Monotonicity.getBodyType(inputValue);
-        PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType tuple0 = tuple.getFieldType(0);
-        if (!tuple0.mayBeMonotone())
+        var projection = getBodyType(input).to(PartiallyMonotoneTuple.class);
+        var key = projection.getFieldType(0);
+        if (!key.mayBeMonotone())
             return;
 
-        DBSPTypeIndexedZSet ix = node.getOutputIndexedZSetType();
-        DBSPTypeTupleBase outputValueType = ix.getKVType();
-
-        Utilities.enforce(tuple0.getType().sameType(outputValueType.tupFields[0]),
-                () -> "Types differ " + tuple0.getType() + " and " + outputValueType.tupFields[0]);
-        DBSPClosureExpression closure = this.aggregateTransfer(projection, ix, false);
-        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+        var output = node.getOutputIndexedZSetType();
+        // Rolling aggregates carry the input timestamp in the first value field.
+        var target = rolling ? output.elementType.to(DBSPTypeTupleBase.class) : output.getKVType();
+        Utilities.enforce(key.getType().sameType(target.tupFields[0]),
+                () -> "Types differ " + key.getType() + " and " + target.tupFields[0]);
+        var closure = this.aggregateTransfer(projection, output, rolling);
+        var analyzer = new MonotoneTransferFunctions(
                 this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
-        MonotoneExpression result = analyzer.applyAnalysis(closure);
-        this.set(node, Objects.requireNonNull(result));
+        this.set(node, Objects.requireNonNull(analyzer.applyAnalysis(closure)));
     }
 
     private DBSPClosureExpression aggregateTransfer(IMaybeMonotoneType projection, DBSPTypeIndexedZSet output,
@@ -1195,33 +1168,9 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateOperator node) {
-        // Input type is IndexedZSet<timestamp, tuple>
-        // Output type is IndexedZSet<partition, Tup2<timestamp, aggregateType>>
-        if (node.upper.isFollowing())
-            // A new row at t changes the outputs of the earlier rows whose frame reaches t
-            return;
-        // A new row at t changes only the outputs of the rows at t or later, so
-        // WL(output[timestamp]) = WL(input[timestamp])
-        MonotoneExpression inputValue = this.getMonotoneExpression(node.input());
-        if (inputValue == null)
-            return;
-        IMaybeMonotoneType inputProjection = Monotonicity.getBodyType(inputValue);
-        PartiallyMonotoneTuple tuple = inputProjection.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType timestamp = tuple.getFieldType(0);
-        if (!timestamp.mayBeMonotone())
-            return;
-
-        DBSPType timestampType = timestamp.getType();
-        DBSPTypeIndexedZSet ix = node.getOutputIndexedZSetType();
-        DBSPTypeTupleBase outputValueType = ix.elementType.to(DBSPTypeTupleBase.class);
-
-        Utilities.enforce(timestamp.getType().sameType(outputValueType.tupFields[0]),
-                () -> "Types differ " + timestampType + " and " + outputValueType.tupFields[0]);
-        DBSPClosureExpression closure = this.aggregateTransfer(inputProjection, ix, true);
-        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, inputProjection);
-        MonotoneExpression result = analyzer.applyAnalysis(closure);
-        this.set(node, Objects.requireNonNull(result));
+        // A following frame can change earlier outputs when a later row arrives.
+        if (!node.upper.isFollowing())
+            this.aggregate(node, true);
     }
 
     @Override

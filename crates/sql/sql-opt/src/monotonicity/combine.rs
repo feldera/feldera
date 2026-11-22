@@ -102,9 +102,49 @@ pub fn combine_bounds(inputs: Vec<BoundType>, op: BoundCombination) -> Option<Bo
         .map(BoundType::selection)
 }
 
+#[derive(Deserialize)]
+pub struct IndexedInput {
+    key: BoundType,
+    /// The join carries the value projection unchanged, even for a wide nested row.
+    value: usize,
+}
+
+/// The join function takes a common key followed by the two input values.
+/// Either key can establish a lower bound. Value projections remain independent.
+pub fn join_arguments([left, right]: [IndexedInput; 2]) -> Option<[BoundSelection; 3]> {
+    let key = left.key.combine(right.key, BoundCombination::Union)?;
+    Some([
+        key.selection(),
+        BoundSelection::Original(left.value),
+        BoundSelection::Original(right.value),
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn join_parameters_take_bounds_from_both_keys_and_keep_each_value_intact() {
+        let inputs = r#"[
+            {"key":{"slot":1,"kind":"tuple","fields":[
+                {"slot":2,"kind":"scalar","monotone":true},{"slot":3,"kind":"scalar","monotone":false}]},"value":4},
+            {"key":{"slot":6,"kind":"tuple","fields":[
+                {"slot":7,"kind":"scalar","monotone":false},{"slot":8,"kind":"scalar","monotone":true}]},"value":9}
+        ]"#;
+        use BoundSelection::{Original, Rebuild};
+        assert_eq!(
+            join_arguments(serde_json::from_str(inputs).unwrap()),
+            Some([
+                Rebuild {
+                    template: 1,
+                    fields: vec![Original(2), Original(8)]
+                },
+                Original(4),
+                Original(9),
+            ])
+        );
+    }
 
     #[test]
     fn compound_bounds_keep_leaf_identity_and_the_first_tuple_shape() {
@@ -144,7 +184,10 @@ mod tests {
             {"slot":0,"kind":"scalar","monotone":false},
             {"slot":1,"kind":"tuple","fields":[]}
         ]"#;
-        for (mode, slot) in [(BoundCombination::Union, 1), (BoundCombination::Intersection, 0)] {
+        for (mode, slot) in [
+            (BoundCombination::Union, 1),
+            (BoundCombination::Intersection, 0),
+        ] {
             assert_eq!(
                 combine_bounds(serde_json::from_str(inputs).unwrap(), mode),
                 Some(BoundSelection::Original(slot))

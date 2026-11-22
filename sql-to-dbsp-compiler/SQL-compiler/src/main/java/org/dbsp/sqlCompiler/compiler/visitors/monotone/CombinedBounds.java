@@ -13,9 +13,14 @@ import java.util.List;
 public final class CombinedBounds {
     private final List<IMaybeMonotoneType> types = new ArrayList<>();
 
-    private ObjectNode input(IMaybeMonotoneType type) {
-        var result = JsonNodeFactory.instance.objectNode().put("slot", this.types.size());
+    private int slot(IMaybeMonotoneType type) {
+        int slot = this.types.size();
         this.types.add(type);
+        return slot;
+    }
+
+    private ObjectNode input(IMaybeMonotoneType type) {
+        var result = JsonNodeFactory.instance.objectNode().put("slot", this.slot(type));
         if (type instanceof PartiallyMonotoneTuple tuple) {
             var fields = result.put("kind", "tuple").putArray("fields");
             tuple.fields.forEach(field -> fields.add(this.input(field)));
@@ -65,5 +70,27 @@ public final class CombinedBounds {
             return bounds.result(reply);
         // Preserve the original diagnostic when a closure or incompatible tuple is combined.
         return union ? inputs.get(0).union(inputs.get(1)) : IMaybeMonotoneType.intersection(inputs);
+    }
+
+    public static IMaybeMonotoneType[] joinArguments(DBSPCompiler compiler,
+            PartiallyMonotoneTuple left, PartiallyMonotoneTuple right) {
+        if (compiler.options.ioOptions.rustOptimizerPasses) {
+            var bounds = new CombinedBounds();
+            var inputs = JsonNodeFactory.instance.arrayNode();
+            for (var pair : List.of(left, right)) {
+                var input = inputs.addObject();
+                input.set("key", bounds.input(pair.getFieldType(0)));
+                input.put("value", bounds.slot(pair.getFieldType(1)));
+            }
+            var reply = RustCircuitPass.joinArguments(inputs);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision("Monotonicity/JoinArguments", !reply.isNull());
+            if (!reply.isNull()) {
+                return new IMaybeMonotoneType[]{
+                        bounds.result(reply.required(0)), bounds.result(reply.required(1)), bounds.result(reply.required(2))};
+            }
+        }
+        return new IMaybeMonotoneType[]{left.getFieldType(0).union(right.getFieldType(0)),
+                left.getFieldType(1), right.getFieldType(1)};
     }
 }
