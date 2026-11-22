@@ -336,6 +336,37 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void deepArithmeticRetainsItsWaterlineThroughTheLiveCompiler() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(site, 32, true, false);
+        var field = new MonotoneType(integer);
+        var input = new DBSPVariablePath("row", integer.ref());
+        DBSPExpression body = input.deref();
+        for (int i = 1; i <= 180; i++) {
+            var literal = new DBSPI32Literal(i);
+            body = i % 2 == 0
+                    ? new DBSPBinaryExpression(site, integer, DBSPOpcode.SUB, body, literal)
+                    : new DBSPBinaryExpression(site, integer, DBSPOpcode.ADD, literal, body);
+        }
+        var closure = body.closure(input);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        var direct = new MonotoneTransferFunctions(compiler, operator, kind, field)
+                .applyAnalysis(closure).getReducedExpression();
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var projected = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(field)}, false);
+            Assert.assertNotNull(projected);
+            Assert.assertSame(integer, projected.bodyType().getType());
+            Assert.assertTrue(direct.equivalent(projected.closure()));
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var hybrid = new MonotoneTransferFunctions(compiler, operator, kind, field).applyAnalysis(closure);
+            Assert.assertTrue(direct.equivalent(hybrid.getReducedExpression()));
+        }
+    }
+
+    @Test
     public void deepBindingsRetainTheWaterlineOfTheOuterInput() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var node = CalciteEmptyRel.INSTANCE;

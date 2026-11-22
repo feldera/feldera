@@ -429,6 +429,22 @@ public final class RustCircuitPass implements CircuitTransform {
         return decoder;
     }
 
+    @Nullable
+    private static <T extends DBSPExpression> T decodeWaterline(ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
+        if (result.isNull())
+            return null;
+        var decoder = expressionDecoder(writer);
+        if (result.isArray()) {
+            // Rust emits the dependencies of a deep expression before its root.
+            int last = result.size() - 1;
+            Utilities.enforce(last >= 0);
+            for (int i = 0; i < last; i++)
+                decoder.decodeInner(result.get(i), IDBSPInnerNode.class);
+            result = result.get(last);
+        }
+        return decoder.decodeInner(result, kind);
+    }
+
     private static <T extends DBSPExpression> T loweredFunction(DBSPCompiler compiler,
             ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
         T function = expressionDecoder(writer).decodeInner(result.required("function"), kind);
@@ -477,8 +493,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var result = WaterlineProjection.resolveType(reply.value.required("row_type"),
                     id -> Utilities.getExists(nodes, id).to(DBSPType.class), parameters);
             var reduced = reply.value.required("bound");
-            return new MonotoneExpression(body, result, reduced.isNull() ? null
-                    : expressionDecoder(reply.writer).decodeInner(reduced, DBSPExpression.class));
+            return new MonotoneExpression(body, result, decodeWaterline(reply.writer, reduced, DBSPExpression.class));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode a row waterline projection", error);
         }
@@ -507,8 +522,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var type = WaterlineProjection.resolveType(reply.value.required("row_type"),
                     id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes);
             var closure = reply.value.required("closure");
-            return new ProjectedWaterline(type, closure.isNull() ? null :
-                    expressionDecoder(reply.writer).decodeInner(closure, DBSPClosureExpression.class));
+            return new ProjectedWaterline(type, decodeWaterline(reply.writer, closure, DBSPClosureExpression.class));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode a waterline closure", error);
         }

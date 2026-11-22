@@ -151,12 +151,16 @@ impl Row {
         depth: usize,
     ) -> Result<Option<ProjectedValue>, Error> {
         let value = self.project(edit, expression, depth)?;
+        self.record_clock(expression, value.as_ref());
+        Ok(value)
+    }
+
+    fn record_clock(&mut self, expression: ExpressionId, value: Option<&ProjectedValue>) {
         if let Some(operands) = &mut self.clock_operands {
-            if value.as_ref().is_some_and(|v| v.shape.monotone()) {
+            if value.is_some_and(|v| v.shape.monotone()) {
                 operands.insert(expression);
             }
         }
-        Ok(value)
     }
 
     fn project(

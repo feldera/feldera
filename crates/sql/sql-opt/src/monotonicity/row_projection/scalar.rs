@@ -161,60 +161,99 @@ impl Row {
         expression: ExpressionId,
         depth: usize,
     ) -> Result<Option<ProjectedValue>, Error> {
-        let node = edit.node(expression.into())?;
-        let left = edit.expression(node.edge("left")?)?;
-        let right = edit.expression(node.edge("right")?)?;
-        let opcode = node
-            .data("opcode")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::new("missing waterline opcode"))?
-            .to_owned();
-        let Some(lhs) = self.visit(edit, left, depth + 1)? else {
-            return Ok(None);
-        };
-        let Some(rhs) = self.visit(edit, right, depth + 1)? else {
-            return Ok(None);
-        };
-        let ty = edit.expression_type(expression)?;
-        let result_kind = edit.type_kind(ty)?;
-        let domain = match (edit.expr_kind(expression)?, result_kind) {
-            (Expr::TimeAddSub, Ty::Time) => Domain::TimeOfDay,
-            (Expr::TimeAddSub, _) => Domain::Temporal,
-            _ => Domain::Scalar,
-        };
-        let operation = BinaryOperation {
-            domain,
-            opcode: &opcode,
-            left: operand(edit, left, &lhs, &opcode)?,
-            right: operand(edit, right, &rhs, &opcode)?,
-        };
-        let scalar_operands = matches!(
-            (&lhs.shape, &rhs.shape),
-            (Shape::Scalar(_), Shape::Scalar(_))
-        );
-        let scalar_result = !matches!(
-            result_kind,
-            Ty::RawTuple | Ty::Tuple | Ty::Ref | Ty::Stream | Ty::Struct
-        );
-        if !(scalar_operands && scalar_result)
-            && binary_waterline(domain, &opcode, operation.left, operation.right)
-                != BinaryWaterline::None
-        {
-            return Ok(None);
+        enum Step {
+            Read(ExpressionId),
+            Combine(ExpressionId, [ExpressionId; 2]),
         }
-        let constant = lhs.constant && rhs.constant;
-        let (_, bound) =
-            operation.lower(edit, expression.into(), ty, [lhs.reduced, rhs.reduced])?;
-        if let Some(bound) = bound {
-            return ProjectedValue::bounded(edit, expression, bound, constant).map(Some);
+
+        let mut pending = vec![Step::Read(expression)];
+        let mut values = Vec::new();
+        let mut active = std::collections::HashSet::new();
+        while let Some(step) = pending.pop() {
+            let value = match step {
+                Step::Read(id)
+                    if matches!(edit.expr_kind(id)?, Expr::Binary | Expr::TimeAddSub) =>
+                {
+                    if !active.insert(id) {
+                        return Err(Error::new("cycle in a binary waterline expression"));
+                    }
+                    let node = edit.node(id.into())?;
+                    let left = edit.expression(node.edge("left")?)?;
+                    let right = edit.expression(node.edge("right")?)?;
+                    pending.extend([
+                        Step::Combine(id, [left, right]),
+                        Step::Read(right),
+                        Step::Read(left),
+                    ]);
+                    continue;
+                }
+                Step::Read(id) => self.visit(edit, id, depth + 1)?,
+                Step::Combine(id, operands) => {
+                    active.remove(&id);
+                    let rhs = values.pop().expect("visited right operand");
+                    let lhs = values.pop().expect("visited left operand");
+                    let value = binary_bound(edit, id, operands, [lhs, rhs])?;
+                    self.record_clock(id, value.as_ref());
+                    value
+                }
+            };
+            let Some(value) = value else { return Ok(None) };
+            values.push(value);
         }
-        // Retain the layout of an unbounded ROW for subsequent field reads.
-        let mut value = super::unbounded(edit, expression)?;
-        if let Some(value) = &mut value {
-            value.constant = constant;
-        }
-        Ok(value)
+        Ok(values.pop())
     }
+}
+
+fn binary_bound(
+    edit: &mut CircuitEditor,
+    expression: ExpressionId,
+    [left, right]: [ExpressionId; 2],
+    [lhs, rhs]: [ProjectedValue; 2],
+) -> Result<Option<ProjectedValue>, Error> {
+    let opcode = edit
+        .node(expression.into())?
+        .data("opcode")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Error::new("missing waterline opcode"))?
+        .to_owned();
+    let ty = edit.expression_type(expression)?;
+    let result_kind = edit.type_kind(ty)?;
+    let domain = match (edit.expr_kind(expression)?, result_kind) {
+        (Expr::TimeAddSub, Ty::Time) => Domain::TimeOfDay,
+        (Expr::TimeAddSub, _) => Domain::Temporal,
+        _ => Domain::Scalar,
+    };
+    let operation = BinaryOperation {
+        domain,
+        opcode: &opcode,
+        left: operand(edit, left, &lhs, &opcode)?,
+        right: operand(edit, right, &rhs, &opcode)?,
+    };
+    let scalar_operands = matches!(
+        (&lhs.shape, &rhs.shape),
+        (Shape::Scalar(_), Shape::Scalar(_))
+    );
+    let scalar_result = !matches!(
+        result_kind,
+        Ty::RawTuple | Ty::Tuple | Ty::Ref | Ty::Stream | Ty::Struct
+    );
+    if !(scalar_operands && scalar_result)
+        && binary_waterline(domain, &opcode, operation.left, operation.right)
+            != BinaryWaterline::None
+    {
+        return Ok(None);
+    }
+    let constant = lhs.constant && rhs.constant;
+    let (_, bound) = operation.lower(edit, expression.into(), ty, [lhs.reduced, rhs.reduced])?;
+    if let Some(bound) = bound {
+        return ProjectedValue::bounded(edit, expression, bound, constant).map(Some);
+    }
+    // Retain the layout of an unbounded ROW for subsequent field reads.
+    let mut value = super::unbounded(edit, expression)?;
+    if let Some(value) = &mut value {
+        value.constant = constant;
+    }
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -222,6 +261,39 @@ mod tests {
     use super::*;
     use feldera_sql_ir::Circuit;
     use serde_json::json;
+
+    #[test]
+    fn deep_binary_clock_bounds_include_each_intermediate_expression() -> Result<(), Error> {
+        let arena = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
+        }))?;
+        let site = arena.root_id();
+        let mut edit = CircuitEditor::new(arena);
+        let flag = edit.bool_type(site, false)?;
+        let ty = edit.integer_type(flag, 32, true, false)?;
+        let row = edit.reference_type(ty)?;
+        let var = edit.named_variable(row, "row")?;
+        let parameter = edit.parameter_at(site, var)?;
+        let unknown = edit.dereference(var)?;
+        let mut expr = unknown;
+        let mut bounded = Vec::new();
+        for n in 0..256 {
+            let literal = edit.make_expr(
+                site,
+                Expr::I32Literal,
+                ty,
+                [("value", Field::Data(n.into()))],
+            )?;
+            expr =
+                edit.binary_expression(site, ty, feldera_sql_ir::BinaryOp::Max, expr, literal)?;
+            bounded.push(expr);
+        }
+        let clocks =
+            super::super::clock_operands(&mut edit, parameter, expr)?.expect("clock operands");
+        assert!(!clocks.contains(&unknown));
+        assert!(bounded.iter().all(|id| clocks.contains(id)));
+        Ok(())
+    }
 
     #[test]
     fn integer_bounds_keep_the_wire_type_for_subsequent_operations() -> Result<(), Error> {

@@ -133,6 +133,51 @@ impl Circuit {
             .collect()
     }
 
+    /// Encode one live expression. Deep expressions travel as definitions in
+    /// dependency order, with the root last. Both forms reuse the JVM's input nodes.
+    pub fn live_expression(
+        &self,
+        input: &Self,
+        root: crate::ExpressionId,
+    ) -> Result<Value, crate::Error> {
+        let root = NodeId::from(root);
+        let mut emitted = BTreeSet::new();
+        if let Ok(inline) = self.additional_field(&Field::Reference(root), input, &mut emitted, 0) {
+            return Ok(inline);
+        }
+
+        // The inline encoder bounds document nesting. Emit each definition
+        // separately so the same field checks apply to each shallow document.
+        let mut order = Vec::new();
+        emitted.clear();
+        let mut visiting = BTreeSet::new();
+        let mut pending = vec![(root, false)];
+        while let Some((id, finish)) = pending.pop() {
+            if input.node(id).is_some() || emitted.contains(&id) {
+                continue;
+            }
+            if finish {
+                visiting.remove(&id);
+                emitted.insert(id);
+                order.push(id);
+                continue;
+            }
+            if !visiting.insert(id) {
+                return Err(crate::Error::new("cycle in a live expression"));
+            }
+            let node = self
+                .node(id)
+                .ok_or_else(|| crate::Error::new("missing live expression node"))?;
+            pending.push((id, true));
+            let mut children = Vec::new();
+            for (_, field) in node.fields() {
+                field.collect_inner_edges(&mut children);
+            }
+            pending.extend(children.into_iter().rev().map(|child| (child, false)));
+        }
+        self.additional_inner_nodes(input, order).map(Value::Array)
+    }
+
     /// Serialize a new operator sequence for a caller that owns its inputs.
     /// Each input must already exist in the input graph or precede its reader in
     /// the sequence. Share newly built inner objects across the entire sequence.

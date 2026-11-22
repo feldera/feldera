@@ -784,8 +784,8 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let Some(result) = feldera_sql_opt::project_closure(&mut edit, body, &parameters, &request.shapes, request.indexed)? else {
                 return Ok(Value::Null);
             };
-            let closure = edit.circuit().additional_inner_nodes(&arena, result.closure.map(NodeId::from))?;
-            return Ok(json!({"row_type":result.row_type, "closure":closure.into_iter().next()}));
+            let closure = result.closure.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
+            return Ok(json!({"row_type": result.row_type, "closure": closure}));
         }
         ("Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow", [body, bounds @ ..]) => {
             let indexed = pass == "Monotonicity/ProjectIndexedRow";
@@ -799,8 +799,8 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let Some(value) = feldera_sql_opt::project_rows(&mut edit, body, &bounds, &shapes, indexed)? else {
                 return Ok(Value::Null);
             };
-            let reduced = edit.circuit().additional_inner_nodes(&arena, value.reduced.map(NodeId::from))?;
-            return Ok(json!({"row_type": value.row_type, "bound": reduced.into_iter().next()}));
+            let reduced = value.reduced.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
+            return Ok(json!({"row_type": value.row_type, "bound": reduced}));
         }
         ("Monotonicity/Filter", [closure, row]) => {
             let closure = edit.expression(*closure)?;
