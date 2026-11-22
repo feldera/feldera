@@ -1,0 +1,212 @@
+{
+  "commit": "2559510a7451750986610fdb607afae71786495b",
+  "scope": "Observe the Rust discovery of rank and tie columns on SQL compilation, the rebuilding of comparators after narrowing, and pass parity on every frozen case exercising either operation.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "d1085844ba6e91ac94debad4273a738442f908d5cb5e5f47fbd300dcbb5cc346",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "df5b9348f2a056f438a80394496fac0f21951fff79a08c4081c091757fbe11b4",
+    "maven/tests.jar": "74318c6f94b4db25f5f39fc31eb2ef999a3b9780b5a26f1b11d7cacc6d622837"
+  },
+  "pass_reference": {
+    "commit": "0a95d4f7bc2717334f31587660e432deb78d4560",
+    "build_sha256": {
+      "bin/libfeldera_sql_opt_jni.so": "c1ccf55c4c3c4eb76b2a547c6341b97941c27df0bcdd41762a4922878031793c",
+      "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+      "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+      "maven/sql-compiler.jar": "495ebdadb80215d81e0b476cc1a441eecaa4e9315d1dc1890c2182ebe254598f",
+      "maven/tests.jar": "25026c190bd5af112275302f53982e52c1923861f3c2b1ebc755366c8393ac8d"
+    }
+  },
+  "engines": {
+    "classic": {
+      "frozen_sql": {
+        "programs": 8571,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "observations_sha256": "d4c00045340cd28090c558a9ebca0eec2d10027a534e7fdc9a00434f02bc2298",
+        "native_requests": {
+          "RemoveUnusedFields/TopKFields": {
+            "calls": 961,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/TopKComparators": {
+            "calls": 190,
+            "fallbacks": 0
+          }
+        },
+        "cases_overriding_population_mode": []
+      },
+      "selected_pass_shards": [
+        {
+          "programs": 41,
+          "matched_invocations": 130,
+          "population_sha256": "aae7397a851be5965c7f9bc8dec6bcb27eb6da9c600ca184c7afc7b9761032e4",
+          "direct_trace_sha256": "a4cd8f3c58d1281a0782798e1d61618f0c4ff6c6dda863c98a270bc9a582468d",
+          "hybrid_trace_sha256": "076ec11d0b1694872104f782d1574fc06882a47d85fe6d154e5316ab69cdbf10"
+        },
+        {
+          "programs": 36,
+          "matched_invocations": 111,
+          "population_sha256": "f367744be260c2faf276f9f1913c44c4983884dbcf0d37321f5b216b6662837f",
+          "direct_trace_sha256": "fb7655329dc1671e0a9fef99dd4aebe7cda7d7f6de10a905ae226350d247bcc9",
+          "hybrid_trace_sha256": "28c5328500fa466080b54c6a73997c94fb1ce70cd1aff0193ccf56245a0288ba"
+        },
+        {
+          "programs": 34,
+          "matched_invocations": 98,
+          "population_sha256": "6cbc39d8e07099f0f2354b0ffb4420140b91f3d28eff2f034194bf1c141168b8",
+          "direct_trace_sha256": "57f259144b4cbb9e79d4a5f332a451e16c6227afda1298f646c180b31306a201",
+          "hybrid_trace_sha256": "76ec383672fe9520a96607c45d117538e3330bad463bde62f3ae5a50fea082a8"
+        },
+        {
+          "programs": 38,
+          "matched_invocations": 123,
+          "population_sha256": "f4ea4880b049f262e54df5ee83c5caf86c1b6d6522c1046753c0f579cc55b664",
+          "direct_trace_sha256": "d0e32bd54fd523b254b4437e76d2c818b228bf5a94b2a8364f312f73ef2d8489",
+          "hybrid_trace_sha256": "473ccee2f09ed63f6a65bd974e89ec4c36104293a4264e14ae00fe9ea3ecfd80"
+        }
+      ],
+      "exercised_pass_shards": [
+        {
+          "programs": 63,
+          "matched_invocations": 249,
+          "population_sha256": "8ad6733fc1b96e9d3cbd5101aa644d2bcac52fe47e1f706d9496346976ae8bb6",
+          "direct_trace_sha256": "0ab84f49d63041e859e2c42dde0172149f581d6b8d15c9b222e3d090aeefdc0d",
+          "hybrid_trace_sha256": "d2e98822073dff6c783ff8813efb7b3fa5c3153a8a520c5b8c7bb96f2e1a7557"
+        },
+        {
+          "programs": 56,
+          "matched_invocations": 212,
+          "population_sha256": "1c88835f1167e317503578c3991eb995f9a26572b1c72630b5d3b17590379ee3",
+          "direct_trace_sha256": "6dbd3ac9a5eb758663e892c7cabc8fe6772f95b34b193a12eb7693306a2c7fb2",
+          "hybrid_trace_sha256": "731708bb4b9cce8ea6fab0b0420eebc2ce6858c1904f6604dc31788f0480d694"
+        },
+        {
+          "programs": 62,
+          "matched_invocations": 233,
+          "population_sha256": "9739504fbc85e657d9f4636e1e70700c5636ef029e56b0a88ad25ae7c467705c",
+          "direct_trace_sha256": "0ead01e9d327c8f596d8658663f8f433ca2476ebac8213cac1f3718bf7447941",
+          "hybrid_trace_sha256": "fecf911574efca415557918f5dcc4df333d906d35ecbc851609104e70e165d38"
+        },
+        {
+          "programs": 62,
+          "matched_invocations": 243,
+          "population_sha256": "4ef407560973091126d4db5e0abdbfb247c521e4626d2405f9d030919ef75a5a",
+          "direct_trace_sha256": "275d37cc1b395dc946e411d0db5b7ee7981ed48520e52ffd524db1b3a3eac347",
+          "hybrid_trace_sha256": "5307c9bafbeebc0566d4972c650c01111a6d686d085e2bb72831c4c0040c4a81"
+        }
+      ],
+      "detached": {
+        "cases": 149,
+        "mismatches": 0,
+        "ordered_s4_observations": 66785,
+        "population_sha256": "79ea6aa0d7483a72a73e6b6b64b50ab454584310f84a7c11ee076a06a4aa791f",
+        "shard_receipts_sha256": [
+          "2fb9949c9b843d8700a5c14d399b33b7c02506d3253ceee713bc5d0f5cd68483",
+          "3129ca208bfb6e108cc9327943f7203e5b6c453d5f39c8bfec39c55d0ed8d8f2",
+          "252b958cdce6800e940e095c6ab03388846d0fe573f443d6b9bccfc9ab67a934",
+          "4ab9780e4e4d9f960cacec2e84314a05d14c4d652f115583e3fd518a955aab40"
+        ]
+      }
+    },
+    "gen2": {
+      "frozen_sql": {
+        "programs": 8527,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "observations_sha256": "17fa04ab465589bb378bf5c5dfafc3563b729b23de2a0df4bf72050940020543",
+        "native_requests": {
+          "RemoveUnusedFields/TopKFields": {
+            "calls": 957,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/TopKComparators": {
+            "calls": 189,
+            "fallbacks": 0
+          }
+        },
+        "cases_overriding_population_mode": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+        ]
+      },
+      "selected_pass_shards": [
+        {
+          "programs": 34,
+          "matched_invocations": 101,
+          "population_sha256": "1f88d802ae437a9963c629240c09b68d3bcc87f28812b2e86886de915e767668",
+          "direct_trace_sha256": "a01946d9406477c0c455ceb752188c2d9c274725be845e9367872853e68ca4b3",
+          "hybrid_trace_sha256": "b723182cf9093fb3cc726108c02a68cc60dc5ca1e1563c1cdb997c3427fb8654"
+        },
+        {
+          "programs": 39,
+          "matched_invocations": 131,
+          "population_sha256": "42d0429dded87ec367f09c8499d685b96963b48e40e31afc9e12ee980c59d28e",
+          "direct_trace_sha256": "dff83b43cc0d04e258e29b4536491a700ec7425421cb5cdad15dfd04d4edad4d",
+          "hybrid_trace_sha256": "b050982c8f4e18650c19ceb5ddae2ec46f9e461a4c4c4671132d6692e668fa2f"
+        },
+        {
+          "programs": 41,
+          "matched_invocations": 130,
+          "population_sha256": "d756eb196c39e285525c48ef6e04badbe84b8bfee13682466081ae9151cd81f8",
+          "direct_trace_sha256": "716f14c751b922268eb4afc8a5aab6743e3176c3f4bff107cc6e273bc77f2a31",
+          "hybrid_trace_sha256": "d5917bead40551a120b48f50615f4c096d18b90e45214f729a49783f71f411df"
+        },
+        {
+          "programs": 33,
+          "matched_invocations": 96,
+          "population_sha256": "708f1f4c964ef6a6fa1374422ccf490b3cc5c41082503bcccbc39626fb53cccc",
+          "direct_trace_sha256": "2babb0cf53ccebf7e8fb54afa012cab9ae7e30a3c7c9aac165c5089b3a1c330d",
+          "hybrid_trace_sha256": "34dcf9e326a749cd271d3831eb235f1fd7444d9914a0d29301c0bfe2c5af9a43"
+        }
+      ],
+      "exercised_pass_shards": [
+        {
+          "programs": 65,
+          "matched_invocations": 263,
+          "population_sha256": "b2306bc1d0a0e46e5f6f6efe33ef70cfc7dfae8f77764751f27d729b1392cb03",
+          "direct_trace_sha256": "33aefd4ae4761480f215d134f0fbbc3c750688e015ba3ad9947d096e865ea537",
+          "hybrid_trace_sha256": "a576ea31df0178cb55a377bbd5471dd763ebcf7148b84af6a3550c2aff28feea"
+        },
+        {
+          "programs": 61,
+          "matched_invocations": 241,
+          "population_sha256": "d7dd411b1bf853010dc8be7f375386ec97226f719dfe2d106c816c63c8824e1f",
+          "direct_trace_sha256": "c5b06bce51fea1246e8b373d282290daeee7338e703fcb5b54b10829b0f6a6ad",
+          "hybrid_trace_sha256": "3f5aa1f874e4238be50e6a3d2d28806596663770763f8bc36b421ae2065619e8"
+        },
+        {
+          "programs": 59,
+          "matched_invocations": 219,
+          "population_sha256": "ae964ac85dca997a16270ae04b9cad09776236f543a510a2a208ceb9f60a393b",
+          "direct_trace_sha256": "775c6bef0895cde10103699a77bb27258e1cb5ac9fa5ab1c9d7b833d27d9a50f",
+          "hybrid_trace_sha256": "ee13f098525583e6f54716c4eb3d852cf9d84d63efc8628c237e4571c7a08438"
+        },
+        {
+          "programs": 57,
+          "matched_invocations": 210,
+          "population_sha256": "a7da21b11fe8739b442d9bf852db3a6db2e3f04b985b231ac36da60f8689c7f1",
+          "direct_trace_sha256": "e267da4aa78ee388353c92847456c7a4f620160a24f41d27fbc90631f5730224",
+          "hybrid_trace_sha256": "376a2557713ebb91d917c1de3715c7aea0ad59316a62f7df0f225e76d30dfd68"
+        }
+      ],
+      "detached": {
+        "cases": 147,
+        "mismatches": 0,
+        "ordered_s4_observations": 66529,
+        "population_sha256": "5e6448ba14c83bd0ebd97d16c90b8c9f75d6edd261364b42dc975198a6446337",
+        "shard_receipts_sha256": [
+          "3aae4a07c1355668e8de3c05ff2ccfef994d5939eb7af4668365420255d80cdc",
+          "d31a839e1958c778ceb130fb9703263fbd5640e934de58288e950280e66318a3",
+          "c1e632b4e2d2889fa7147ac0f5d201e6ca4fda34f108929f32b8141a64d35cff",
+          "30ab08d206b6a4e21410d84a3a313512f240f1bfb28554e034cacc04f01cde6d"
+        ]
+      }
+    }
+  },
+  "tests": {
+    "rust": 189,
+    "clippy": "passed",
+    "maven_passed": 42,
+    "maven_skipped": 21,
+    "packaged_junit": 55
+  }
+}

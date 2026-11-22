@@ -462,6 +462,20 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `2559510a7`, SQL compilation asked Rust to discover rank and tie columns
+1,918 times. Rust rebuilt 379 comparator pairs after narrowing. The earlier
+`0fcf9e21c` build called Java for discovery. All 1,870 pass invocations on
+the 485 affected frozen programs agreed with Java after wiring discovery
+into the SQL path. [TopK field discovery](evidence/p3-topk-field-discovery.json)
+
+On `0f703786d`, Rust rebound 5,770 stream aggregate components to narrowed
+input rows. All 4,443 pass invocations on the 1,335 affected programs matched
+Java. The 296 selected detached compilations matched through emission, all
+148 executable classic selections passed, and COUNT and LATENESS checkpoints
+restored in both directions. On `aaa37b8c6`, Rust also retained both ASOF
+timestamps on all 197 requests, including timestamps absent from the output.
+[Aggregate readers](evidence/p3-aggregate-input-readers.json) · [ASOF inputs](evidence/p3-asof-input-fields.json)
+
 On `558a19a6f`, Rust built 3,869 indexed-value projections for aggregates
 and TopK, and 41 UNNEST row projections. Java agreed on all 5,689 pass
 invocations across the 1,605 frozen cases that exercised them. On
