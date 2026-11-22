@@ -127,16 +127,34 @@ public class LineageTests extends BaseSQLTests {
                 CREATE TABLE S(X INT, Y INT);
                 CREATE LOCAL VIEW W AS SELECT T.X AS X, S.Y AS Y FROM T JOIN S ON T.X = S.X;
                 CREATE VIEW V AS SELECT X+1, Y, 2 FROM W WHERE X - 2 < Y AND x > 0;""";
-        File file = createInputScript(sql);
-        PrintStream save = System.out;
-        ByteArrayOutputStream capture = new ByteArrayOutputStream();
-        System.setOut(new PrintStream(capture));
-        CompilerMain.execute("--noRust", "--correlatedColumns", file.getPath());
-        System.setOut(save);
         Assert.assertEquals("""
                   [Correlated:] [s.x, t.x]
                   [Compared:] [ s.x > 0 ]
                   [Compared:] [ t.x > 0 ]
-                  """, capture.toString());
+                  """, correlatedColumns(sql));
+    }
+
+    @Test
+    public void correlateColumnsAfterExceptAll() throws IOException, SQLException {
+        String sql = """
+                CREATE TABLE l(k INT NOT NULL, flag BOOLEAN NOT NULL);
+                CREATE TABLE r(k INT NOT NULL);
+                CREATE LOCAL VIEW d AS SELECT k FROM l EXCEPT ALL SELECT k FROM l WHERE flag;
+                CREATE VIEW v AS SELECT d.k FROM d JOIN r ON d.k = r.k;""";
+        Assert.assertEquals("[Correlated:] [l.k, r.k]\n", correlatedColumns(sql));
+    }
+
+    private static String correlatedColumns(String sql) throws IOException, SQLException {
+        File input = createInputScript(sql);
+        PrintStream saved = System.out;
+        var capture = new ByteArrayOutputStream();
+        try (var stream = new PrintStream(capture)) {
+            System.setOut(stream);
+            var messages = CompilerMain.execute("--noRust", "--correlatedColumns", input.getPath());
+            Assert.assertEquals(messages.toString(), 0, messages.exitCode);
+        } finally {
+            System.setOut(saved);
+        }
+        return capture.toString();
     }
 }
