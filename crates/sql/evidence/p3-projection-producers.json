@@ -1,0 +1,318 @@
+{
+  "commit": "813ee9a19f09839f2f2547028b79998a275279f4",
+  "scope": "Select projection rewrites from the live producer class and compare the complete pass in both frozen populations.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "750ffaeff3b32769d39fda6cb985990edf3274061cfa36095645baeb130a5a1b",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "be1489f2db48040fd1ca1d049829bf68abc6f60e7843f43e03eca4f8c0add226",
+    "maven/tests.jar": "8fd32642f77a625296a90bc6e19ff35e265453f02c4fd1e84b34de9cbadecf6e"
+  },
+  "pass_reference": {
+    "commit": "432124575382be4d8d68764e392ee50a8514c309",
+    "build_sha256": {
+      "bin/libfeldera_sql_opt_jni.so": "c36784463978b210dc9f45d71b13a1a65853d76d2c85d152c3b23bb4f9c74f97",
+      "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+      "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+      "maven/sql-compiler.jar": "a3fe67301c63a20ea7f5fb2c9505a012a06cf4b451816d553bf40ee818d13853",
+      "maven/tests.jar": "c147b69a3c7f4c80025455ae4891bcf5d2ac8039e46e173d03af3095d06e85b1"
+    }
+  },
+  "engines": {
+    "classic": {
+      "frozen_sql": {
+        "programs": 8571,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "observations_sha256": "30c1f93687b27151ac8fa2c4c336a34f2a058e24c5d45c2c7c41cdd853ecac9b",
+        "native_requests": {
+          "OptimizeProjections/Producer": {
+            "calls": 93191,
+            "fallbacks": 0
+          }
+        },
+        "cases_overriding_population_mode": []
+      },
+      "selected_pass_shards": [
+        {
+          "programs": 41,
+          "matched_invocations": 259,
+          "population_sha256": "aae7397a851be5965c7f9bc8dec6bcb27eb6da9c600ca184c7afc7b9761032e4",
+          "direct_trace_sha256": "50bb10979bb7ddf9e8655e426fef5f056d10a8eba6704df50ade42b845175053",
+          "hybrid_trace_sha256": "5243e898972c6231b160ab78c66d22a8ab76a7b687be172a57f713209aef7b0a"
+        },
+        {
+          "programs": 36,
+          "matched_invocations": 230,
+          "population_sha256": "f367744be260c2faf276f9f1913c44c4983884dbcf0d37321f5b216b6662837f",
+          "direct_trace_sha256": "1b924afca9af2f1a0005619309920bca62a96250c14416b328ee78a993ca37dd",
+          "hybrid_trace_sha256": "91edeac990f707b026026a43f9541877acb550d934c6a4aef91979ddb0fc55f3"
+        },
+        {
+          "programs": 34,
+          "matched_invocations": 210,
+          "population_sha256": "6cbc39d8e07099f0f2354b0ffb4420140b91f3d28eff2f034194bf1c141168b8",
+          "direct_trace_sha256": "e45ff34132f814a7d40766198f6961cce11ac2c7709f191c51793758f4f4ebcd",
+          "hybrid_trace_sha256": "06a0d3376af34c248a1e79e2c7cbcf3719966e9f28fe135100d2db89171ffd9f"
+        },
+        {
+          "programs": 38,
+          "matched_invocations": 244,
+          "population_sha256": "f4ea4880b049f262e54df5ee83c5caf86c1b6d6522c1046753c0f579cc55b664",
+          "direct_trace_sha256": "bac3566ec2234f0054c07c8a97c2aab9acbd0594d56c5fdc7046eb4ae77029cb",
+          "hybrid_trace_sha256": "ddc5270074fded81daf03e61c9adeab2aafc0028740d655ed28cacf31603fb26"
+        }
+      ],
+      "full_pass_shards": [
+        {
+          "programs": 2143,
+          "matched_invocations": 10785,
+          "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+          "direct_trace_sha256": "f9868eea176b5d9c903a5b630f8276274c645ea2fa29354b2280e72fabfd81fa",
+          "hybrid_trace_sha256": "a090065ed3e84af0bdad0db15c6832e3de7f8a56c36bfd23aa5a062c9378f679"
+        },
+        {
+          "programs": 2143,
+          "matched_invocations": 10923,
+          "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+          "direct_trace_sha256": "47704cd5039302f86f2b870eeb98645711d8081f932b75157c3d9fc0b25e7af6",
+          "hybrid_trace_sha256": "e8cbdfabc15901c74116a611788ee1ac0bc5d40dc32ccc344a5870881390ee32"
+        },
+        {
+          "programs": 2143,
+          "matched_invocations": 10741,
+          "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+          "direct_trace_sha256": "992de2c6429686730c4365508859844c5f807e0f39ac00839c461318b667e821",
+          "hybrid_trace_sha256": "852195980258525814ae05dc97e168a49172baee75e68d5d216301ddc6ed9dd8"
+        },
+        {
+          "programs": 2142,
+          "matched_invocations": 10901,
+          "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+          "direct_trace_sha256": "ab71f85d7995486ae8f393ee096d7dbaf329ebb661d6b3f2c5e9ab3e8a234fa6",
+          "hybrid_trace_sha256": "af08ce5b4ad2b89841e376baa9ea0beb3725760f08d01446ad78abb369720b3c"
+        }
+      ],
+      "detached": {
+        "cases": 149,
+        "mismatches": 0,
+        "ordered_s4_observations": 66785,
+        "population_sha256": "79ea6aa0d7483a72a73e6b6b64b50ab454584310f84a7c11ee076a06a4aa791f",
+        "shard_receipts_sha256": [
+          "7cc27a850ba677bf78ae1889080b7414517503d95cbd72965475dab71250a7e1",
+          "7a0642369afe5a7e7e221b0d0248bec1389ad03aa311bb63e619207441567678",
+          "55a0ec58fb0355e76c4d7f6ae927a505cbb363a5c97bb7f1927cde76da6eb4a3",
+          "88eed47ad27997a50b443cbba4f0ecd5d5a30322b895fa4dfaed07c3c0ceaa4a"
+        ]
+      }
+    },
+    "gen2": {
+      "frozen_sql": {
+        "programs": 8527,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "observations_sha256": "b5e40ca8cbf76529240584bddd4db41018f1e9c6e2dee0cac0434f8e6ecf3aa9",
+        "native_requests": {
+          "OptimizeProjections/Producer": {
+            "calls": 97576,
+            "fallbacks": 0
+          }
+        },
+        "cases_overriding_population_mode": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+        ]
+      },
+      "selected_pass_shards": [
+        {
+          "programs": 34,
+          "matched_invocations": 210,
+          "population_sha256": "1f88d802ae437a9963c629240c09b68d3bcc87f28812b2e86886de915e767668",
+          "direct_trace_sha256": "4eec5e30f7984f608cbb3ee73e117c14c93b87cb43c2608d14dd925a4273849e",
+          "hybrid_trace_sha256": "cec288f302536a741d42b439adad3753a6606aff7d867b42a9949ca0b1df461b"
+        },
+        {
+          "programs": 39,
+          "matched_invocations": 257,
+          "population_sha256": "42d0429dded87ec367f09c8499d685b96963b48e40e31afc9e12ee980c59d28e",
+          "direct_trace_sha256": "dad899f982571680349556ece807c440e7d3c99f11d6fdf21d1dd938ea611127",
+          "hybrid_trace_sha256": "2f81ed2e9881baf137a3ee69a59f6694e91a64364d3c7e93e5788b17aa177388"
+        },
+        {
+          "programs": 41,
+          "matched_invocations": 261,
+          "population_sha256": "d756eb196c39e285525c48ef6e04badbe84b8bfee13682466081ae9151cd81f8",
+          "direct_trace_sha256": "5550ece0bd260b27676de655a47facb0e5a0a46cb59d7ed6b74e1a96625b3678",
+          "hybrid_trace_sha256": "a6305b9e545522ee42ee340163af1f2b4d5f3a1446f7e4e60c6323ccb1d8bccd"
+        },
+        {
+          "programs": 33,
+          "matched_invocations": 201,
+          "population_sha256": "708f1f4c964ef6a6fa1374422ccf490b3cc5c41082503bcccbc39626fb53cccc",
+          "direct_trace_sha256": "5c4870577aad9fceb8c20f5701ccec537e8d92cf6d8ffad46fd103edcc6a530f",
+          "hybrid_trace_sha256": "9375bc43530b8afacfa3b751c533df441fd969f6bcb7aeae48faf149e5800698"
+        }
+      ],
+      "full_pass_shards": [
+        {
+          "programs": 2132,
+          "matched_invocations": 10942,
+          "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+          "direct_trace_sha256": "eef5b0d32d32d939fdd75a5e5b51b0d3273b7c9b6d93fd51af7c450110b58980",
+          "hybrid_trace_sha256": "afc64a9327a98ddd0668cdbff081b360936c7c3f91f9db60453b7dcc6a9450f5"
+        },
+        {
+          "programs": 2132,
+          "matched_invocations": 10647,
+          "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+          "direct_trace_sha256": "5f7bdfa88622cf116e11e019a3d7a68d96972b2c0e2b8770cbfec49aa1dd1b6a",
+          "hybrid_trace_sha256": "08f09d72e03a0d4b9f66d4aef6c67597366012fba9e76ad9d0b3521b261adf46"
+        },
+        {
+          "programs": 2132,
+          "matched_invocations": 10779,
+          "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+          "direct_trace_sha256": "c2093c2adcc458691f6ce97dd6495294422e32064311aa8a8e97eb208749a81c",
+          "hybrid_trace_sha256": "4981dcffecb5bb61ac33a10beadff0f40ce75f9df3b1de18f4ce677eefd877fd"
+        },
+        {
+          "programs": 2131,
+          "matched_invocations": 10754,
+          "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+          "direct_trace_sha256": "5fa61ba99676618f6d3af9ae947e16355050c79018c700eb139004d93661e142",
+          "hybrid_trace_sha256": "f217c3bb1356afd557950c121f99dbbb1ddc5b66c2d78baae2a685964d4ac275"
+        }
+      ],
+      "detached": {
+        "cases": 147,
+        "mismatches": 0,
+        "ordered_s4_observations": 66529,
+        "population_sha256": "5e6448ba14c83bd0ebd97d16c90b8c9f75d6edd261364b42dc975198a6446337",
+        "shard_receipts_sha256": [
+          "1a36e6d834d170dfc61c5bffd91b449fb6f3839c60815a1768ca9acad0caf5b2",
+          "d126c7c95e627963d11e0d47a79432316eb08fcc32479e5eddb4cea8bb985621",
+          "857d0a82f17a318991e7d72a24d03c31f48018d959f7e21d669e3f35c43cf2a9",
+          "ec0ab9665211d02ae088cc66492387bb24912505fb177bf09128ef2f6b9d838f"
+        ]
+      }
+    }
+  },
+  "tests": {
+    "rust": 188,
+    "clippy": "passed",
+    "maven_passed": 42,
+    "maven_skipped": 14,
+    "packaged_junit": 48
+  },
+  "classic_runtime": {
+    "population_sha256": "79ea6aa0d7483a72a73e6b6b64b50ab454584310f84a7c11ee076a06a4aa791f",
+    "worker_sha256": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "batch_size": 64,
+    "rust_min_stack": 8388608,
+    "case_named_tests": true,
+    "optimizer_library_sha256": "750ffaeff3b32769d39fda6cb985990edf3274061cfa36095645baeb130a5a1b",
+    "executed": 148,
+    "compile_only": 1,
+    "batches": 5,
+    "total_frozen_cases": 149,
+    "input_commands": 151,
+    "expected_runtime_errors": 0,
+    "catalog_cases": 0,
+    "handle_cases": 148,
+    "batch_receipts_sha256": "28ab4e021cdf2cf9cec6ccfcd32a6883b2ecc641acf7aa01ebf96beb09523584",
+    "receipt_sha256": "2c892be7b7c63b846fd90e84ad3d0f221f7907f8c7b90f74cd2e1e7c50883896"
+  },
+  "checkpoints": {
+    "count": {
+      "receipt_sha256": "2d4b04c196c59739b46edc05c4dea6552c47ef5c83e9a97ade2ac3313e3b8c9f",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a204a3-a649-7ae1-b6e7-2f06b041e3b0",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a204a3-a65b-7863-b928-3f6c319d2f9e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "782b484dba4bcb4f8606ab9f870a9f2a2199c450ba088190b77bbfd5d1b71a10",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a204a4-147e-7110-9c25-d4d6d0ef87b0",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a204a4-1493-7470-81a4-1f89afb43289",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}

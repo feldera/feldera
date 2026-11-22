@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `813ee9a19`, Rust classified map and index projection rewrites at 190,767
+producer visits. Across both frozen populations, all 86,472 invocations of
+`OptimizeProjections` matched direct Java. All 296 selected detached
+compilations matched through 133,314 ordered observations and artifact emission.
+The 148 executable classic selections passed, and COUNT and LATENESS restored
+in both compiler directions. [Projection results](evidence/p3-projection-producers.json)
+
 On `432124575`, Rust selected column waterlines at 997 table and 29 view
 visits. Its monotonicity analysis and downstream limiter graphs matched Java
 on 550 pass comparisons. All 29 frozen programs that exercised view-declared
