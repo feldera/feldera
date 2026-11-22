@@ -74,7 +74,13 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.compiler = compiler;
         record.put("pass", passClass);
         this.invocations = record.putArray("invocations");
-        if (passClass.equals("LinearPostprocessRetainKeys") && Boolean.getBoolean("feldera.optimizer.compareRustLinearRetention"))
+        if (passClass.equals(System.getProperty("feldera.optimizer.compareRustTopLevelPass"))) {
+            compiler.optimizerHook = optimizer -> {
+                this.replaceObservedPass(optimizer);
+                if (this.originalPasses.isEmpty())
+                    throw new IllegalArgumentException("No top-level optimizer placement for " + passClass);
+            };
+        } else if (passClass.equals("LinearPostprocessRetainKeys") && Boolean.getBoolean("feldera.optimizer.compareRustLinearRetention"))
             compiler.optimizerHook = this::replaceObservedPass;
     }
 

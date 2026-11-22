@@ -1010,6 +1010,13 @@ fn transform(
         if name == "BypassNoops" {
             return Ok(json!(operator_numbers(feldera_sql_opt::bypassed_noops(&circuit)?)));
         }
+        if name == "DeindexMaps" {
+            let edits: BTreeMap<_, _> = feldera_sql_opt::deindex_operators(&circuit)?
+                .into_iter()
+                .map(|id| (operator_number(id), json!({"kind": "MapWithFunction"})))
+                .collect();
+            return Ok(serde_json::to_value(edits)?);
+        }
         if name == "FanoutProducers" {
             return Ok(json!(operator_numbers(feldera_sql_opt::fanout_producers(&circuit)?)));
         }

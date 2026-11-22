@@ -246,18 +246,26 @@ pub use validation::{first_integral, recursive_violation, RecursiveViolation};
 pub use views::{constant_views, remove_views, ViewRemoval};
 pub use waterline::simplify_waterlines;
 
-use feldera_sql_ir::{BodyOrder, Circuit, CircuitEditor, Error, OperatorKind};
+use feldera_sql_ir::{BodyOrder, Circuit, CircuitEditor, Error, NodeId, OperatorKind};
 use serde_json::json;
+
+/// The live and detached rewrites select the same operators, including those
+/// inside recursive circuits. Selection needs no expression payloads.
+pub fn deindex_operators(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
+    let mut operators = circuit.operator_order(BodyOrder::Postorder)?;
+    operators.retain(|&id| {
+        circuit.node(id).expect("ordered operator").operator_kind() == Some(OperatorKind::Deindex)
+    });
+    Ok(operators)
+}
 
 /// A Deindex already carries its projection closure. The physical map keeps
 /// its function, declared output type, input port and relational provenance.
 pub fn remove_deindex_operators(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
-    let order = circuit.operator_order(BodyOrder::Postorder)?;
+    let operators = deindex_operators(&circuit)?;
     let mut edit = CircuitEditor::new(circuit);
-    for id in order {
-        if edit.node(id)?.operator_kind() == Some(OperatorKind::Deindex) {
-            edit.deindex_as_map(id)?;
-        }
+    for id in operators {
+        edit.deindex_as_map(id)?;
     }
     rebuild::rebuild_input_closures(edit.finish_with_rewrites()?, next)
 }

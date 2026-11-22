@@ -1517,6 +1517,10 @@ public final class RustCircuitPass implements CircuitTransform {
                 if (!this.visited.add(op))
                     return;
                 switch (edit.required("kind").textValue()) {
+                    case "MapWithFunction" -> {
+                        var input = this.mapped(op.to(DBSPUnaryOperator.class).input());
+                        this.map(op, new DBSPMapOperator(op.getRelNode(), op.getFunction(), op.getOutputZSetType(), input));
+                    }
                     case "Delta" -> this.map(op, PropagateEmptySources.emptyStream(op, StreamKind.DELTA));
                     case "Collection" -> this.map(op, PropagateEmptySources.emptyStream(op, StreamKind.COLLECTION));
                     case "Forward" -> this.map(op.outputPort(), this.input(edit.required("inputs").required(0)), false);
@@ -2329,6 +2333,10 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             JsonNode result = null;
             switch (this.nativeName) {
+                case "RemoveDeindexOperators" -> {
+                    var edits = this.invoke("Topology/DeindexMaps", OptimizerTopology.encode(circuit), initial, state);
+                    return this.applyStreamEdits(circuit, edits);
+                }
                 case "RemoveNoops" -> {
                     return this.bypassNoops(circuit, initial);
                 }
@@ -2391,7 +2399,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
                 case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "DeadCode", "DeadCodeKeepSources", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
-                     "RemoveDeindexOperators", "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
+                     "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero", "ExpandMetadataCasts",
                      "ExpandHop", "RemoveIdentityOperators", "BuildNestedOperators",
                      "SubstituteLeftJoins", "ImplementChains", "StrayGC", "SeparateIntegrators" -> {
