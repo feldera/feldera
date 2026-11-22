@@ -68,6 +68,8 @@ mod error_wrappers;
 mod expand_aggregates;
 mod binding_placement;
 pub use binding_placement::{BindingScope, PendingBinding, bind_lazy_expression, lazy_statements};
+mod value_numbering;
+pub use value_numbering::NumberingInput;
 mod expression_uses;
 pub use expression_uses::{shared_expression_uses, NumberedExpression};
 mod expression_visitor;

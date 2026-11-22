@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,10 +43,13 @@ public class ValueNumbering extends InnerVisitor {
         /** Expressions which use this CanonicalExpression as a subexpression */
         final Set<ExpressionUser> users;
         final boolean expensive;
+        @Nullable final Set<Long> sharedIn;
         /** List of declarations whose values are used by this expression */
         final Set<IDBSPDeclaration> dependsOn;
 
-        CanonicalExpression(DBSPExpression expression, Set<IDBSPDeclaration> dependsOn, boolean expensive) {
+        CanonicalExpression(DBSPExpression expression, Set<IDBSPDeclaration> dependsOn, boolean expensive,
+                            @Nullable Set<Long> sharedIn) {
+            this.sharedIn = sharedIn;
             this.expression = expression;
             this.users = new HashSet<>();
             this.expensive = expensive;
@@ -102,6 +104,8 @@ public class ValueNumbering extends InnerVisitor {
          * @param closure     Only the users that are in this closure, and not in a closure nested in it, count.
          * @return True if there are at least 2 uses. */
         boolean manyUsers(Map<DBSPExpression, CanonicalExpression> translation, DBSPClosureExpression closure) {
+            if (this.sharedIn != null)
+                return this.sharedIn.contains(closure.id);
             if (this.users.size() < 2)
                 return false;
             return this.uses(translation, closure).size() > 1;
@@ -112,6 +116,8 @@ public class ValueNumbering extends InnerVisitor {
     public final Map<DBSPExpression, CanonicalExpression> canonical;
     final Map<String, CanonicalExpression> representation;
     final ResolveReferences resolver;
+    @Nullable private NativeValueNumbering nativeValues;
+    private final boolean rewrite;
     /** True if the expression contains an assignment, or a mutable borrow of an expression whose
      * base is not a variable; CSE is then unsafe */
     public boolean foundAssignment;
@@ -124,7 +130,17 @@ public class ValueNumbering extends InnerVisitor {
     final Set<IDBSPDeclaration> mutable;
 
     public ValueNumbering(DBSPCompiler compiler) {
+        this(compiler, false);
+    }
+
+    /** The CSE rewriter needs only the numbers shared within a closure. */
+    public static ValueNumbering forRewrite(DBSPCompiler compiler) {
+        return new ValueNumbering(compiler, true);
+    }
+
+    private ValueNumbering(DBSPCompiler compiler, boolean rewrite) {
         super(compiler);
+        this.rewrite = rewrite;
         this.canonical = new HashMap<>();
         this.representation = new HashMap<>();
         this.resolver = new ResolveReferences(compiler, false);
@@ -183,6 +199,10 @@ public class ValueNumbering extends InnerVisitor {
      * Returns the representative, or null if 'expression' has no value number. */
     @Nullable
     CanonicalExpression use(DBSPExpression expression, DBSPExpression user, int operand) {
+        if (this.nativeValues != null) {
+            this.nativeValues.use(expression, new ExpressionUser(user, operand, this.innermostClosure()));
+            return null;
+        }
         CanonicalExpression canon = this.canonical.get(expression);
         if (canon != null)
             canon.use(user, operand, this.innermostClosure());
@@ -191,6 +211,8 @@ public class ValueNumbering extends InnerVisitor {
 
     Representation getId(DBSPExpression expression, DBSPExpression user, int operand) {
         CanonicalExpression canon = this.use(expression, user, operand);
+        if (this.nativeValues != null)
+            return new Representation("", Set.of(), false, false, List.of(new Operand(0, expression.id)));
         if (canon == null)
             // Invalid representation
             return new Representation("", new HashSet<>(), false, true);
@@ -199,7 +221,14 @@ public class ValueNumbering extends InnerVisitor {
         return new Representation(id, canon.dependsOn, canon.expensive, false);
     }
 
-    record Representation(String repr, Set<IDBSPDeclaration> dependsOn, boolean expensive, boolean invalid) {
+    /** An operand occupies a position between two literal sections of the key. */
+    record Operand(int offset, long expression) {}
+    record Representation(String repr, Set<IDBSPDeclaration> dependsOn, boolean expensive, boolean invalid,
+                          List<Operand> operands) {
+        Representation(String repr, Set<IDBSPDeclaration> dependsOn, boolean expensive, boolean invalid) {
+            this(repr, dependsOn, expensive, invalid, List.of());
+        }
+
         Representation() {
             this("", new HashSet<>(), false, false);
         }
@@ -210,16 +239,22 @@ public class ValueNumbering extends InnerVisitor {
 
         @CheckReturnValue
         public Representation add(Representation repr) {
+            List<Operand> joined = this.operands;
+            if (!repr.operands.isEmpty()) {
+                joined = new ArrayList<>(this.operands);
+                for (var operand : repr.operands)
+                    joined.add(new Operand(this.repr.length() + operand.offset, operand.expression));
+            }
             return new Representation(
                     this.repr + repr.repr,
                     Utilities.concatSet(this.dependsOn, repr.dependsOn),
                     this.expensive || repr.expensive,
-                    repr.invalid || this.invalid);
+                    repr.invalid || this.invalid, joined);
         }
 
         @CheckReturnValue
         public Representation add(String repr) {
-            return new Representation(this.repr + repr, this.dependsOn, this.expensive, this.invalid);
+            return new Representation(this.repr + repr, this.dependsOn, this.expensive, this.invalid, this.operands);
         }
     }
     
@@ -431,6 +466,10 @@ public class ValueNumbering extends InnerVisitor {
     void checkRepresentation(DBSPExpression expression, Representation repr, boolean expensive) {
         if (repr.invalid || this.closures.isEmpty())
             return;
+        if (this.nativeValues != null) {
+            this.nativeValues.define(expression, repr, repr.expensive() || expensive);
+            return;
+        }
         if (this.representation.containsKey(repr.repr())) {
             CanonicalExpression expr = Utilities.getExists(this.representation, repr.repr());
             this.setCanonical(expression, expr);
@@ -448,6 +487,7 @@ public class ValueNumbering extends InnerVisitor {
                 .appendSupplier(node::toString)
                 .newline();
         super.startVisit(node);
+        this.nativeValues = this.compiler.options.ioOptions.rustOptimizerPasses ? new NativeValueNumbering() : null;
         this.canonical.clear();
         this.representation.clear();
         this.resolver.apply(node);
@@ -458,11 +498,11 @@ public class ValueNumbering extends InnerVisitor {
     @Override
     public void endVisit() {
         // An expression that reads a mutable variable has no canonical representative
-        Iterator<Map.Entry<DBSPExpression, CanonicalExpression>> entries = this.canonical.entrySet().iterator();
-        while (entries.hasNext()) {
-            CanonicalExpression canon = entries.next().getValue();
-            if (!Collections.disjoint(canon.dependsOn, this.mutable))
-                entries.remove();
+        if (this.nativeValues != null) {
+            this.nativeValues.finish(this.canonical, this.mutable, this.rewrite);
+            this.nativeValues = null;
+        } else {
+            this.canonical.values().removeIf(value -> !Collections.disjoint(value.dependsOn, this.mutable));
         }
         if (this.getDebugLevel() >= 1) {
             IIndentStream stream = Logger.INSTANCE.belowLevel(this, 1);
@@ -472,7 +512,7 @@ public class ValueNumbering extends InnerVisitor {
     
     void newCanonical(DBSPExpression expression, String repr,
                       Set<IDBSPDeclaration> dependsOn, boolean expensive) {
-        CanonicalExpression canonical = new CanonicalExpression(expression, dependsOn, expensive);
+        CanonicalExpression canonical = new CanonicalExpression(expression, dependsOn, expensive, null);
         Utilities.putNew(this.representation, repr, canonical);
         this.setCanonical(expression, canonical);
     } 

@@ -1,0 +1,186 @@
+{
+  "base_commit": "98348efd2a08c04125c598d7e839967a43be9f4a",
+  "scope": "Rust interns value-number keys in visitor order and selects the expressions with multiple distinct uses in each closure. Java supplies the printer spelling between operands, declaration identities and ordered visit events.",
+  "build": {
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "bin/sql-difftest": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d",
+    "bin/libfeldera_sql_opt_jni.so": "e1a08efa4832239d4f221a0d80743a84b92e691f470d7823d0f2ef5439399277",
+    "numbering.jar": "6d15a443bf257949a843da2d09238c2f1db0a07060c4ff4dec8551ee0719f374",
+    "classpath": {
+      "/stage/p3-verified-u0m6raxd/rolling-s4/shared-value-numbers/numbering.jar": "6d15a443bf257949a843da2d09238c2f1db0a07060c4ff4dec8551ee0719f374",
+      "/stage/p3-verified-u0m6raxd/rolling-s4/stream-validation/validator.jar": "56c15324ee43c2baf9ee8724015c18430163dc6474e1635a3a6b7d48cb6cf095",
+      "/stage/p3-verified-u0m6raxd/rolling-s4/block-waterlines/waterline-classes.jar": "12052a04b09c10a7a96c8db6a665a45a5d7fbd42e22a6425fb1bac8fcb4c97a1",
+      "/stage/p3-verified-u0m6raxd/rolling-s4/asof-join-projections/test.jar": "5f1166fc28e097a417d6cb63277b2e0e6a78baed0ad32a50e4de085b498187d2",
+      "/stage/p3-verified-u0m6raxd/rolling-s4/asof-join-projections/compiler.jar": "24f429997317b8b3c8e1a406c0507482ecc95a30014c25e57d267f20051834bb",
+      "/stage/p3-verified-u0m6raxd/rolling-trace-bounds/maven/sql-compiler.jar": "e118bea16e253e655068e3ef5638da948da6b3fe503a95c87e020b666731acfd"
+    }
+  },
+  "selected_pass": {
+    "classic": {
+      "invocations": 291,
+      "programs": 291,
+      "direct_sha256": "9bff9aaa58d9db62180787ef7bf43097963cf48ef1be957ce5e27730586a2257",
+      "hybrid_sha256": "b68b5fb04783ae6d06ff9b8b3bf345ad5d815c8fdb21bc9c87316b8a2c190c80"
+    },
+    "gen2": {
+      "invocations": 259,
+      "programs": 259,
+      "direct_sha256": "ce1e318054a802476f3bb15b3dcbd4a35a3c766f6a63ac6b4aa0b2fbd70c0968",
+      "hybrid_sha256": "49b64a5b484c5e9265c9a0592429714c18f6b05c4c24008b6f3983fe24cb693c"
+    }
+  },
+  "detached_replay": {
+    "classic": {
+      "programs": 17,
+      "ordered_s4_observations": 7604,
+      "mismatches": 0,
+      "receipt_sha256": "7581b6fc7b8932145c73982422bda3e4be1d8140e73b252b0e066c49574af114",
+      "population_sha256": "c8c3dba5685457449832feea648a5edd4c02e896af5a21e7f07f0ec879e1a4dd"
+    },
+    "gen2": {
+      "programs": 16,
+      "ordered_s4_observations": 7122,
+      "mismatches": 0,
+      "receipt_sha256": "173f9f1cc651b87d472952db1c5738b104387ba502a31fe0f454771a63f6352d",
+      "population_sha256": "786e3d8b75dcdc33b8038605de5eb8f9d6f18b5196bcf48f0d5db2fc427f1372"
+    }
+  },
+  "tests": {
+    "java": {
+      "equivalence": 22,
+      "numbering": 8
+    },
+    "java_and_jni": {
+      "equivalence": 22,
+      "numbering": 8
+    },
+    "rust": 123,
+    "clippy_log_sha256": "914565bf717017e704ea9cb1bd795435acf7037aa3bb78ab349b0af64852a453"
+  },
+  "restores": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20399-ca00-7113-9f14-c9c5f77b0e1c",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20399-ca23-7360-b521-1c65fd3bc0fa",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2039a-bc84-7033-b6f9-73f39c423c7d",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2039a-bcaa-7e02-9195-ae3ce0e4f4fd",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_limits": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      11.595396,
+      10.374144,
+      8.52164,
+      8.460223,
+      12.429439,
+      14.92061,
+      12.494772,
+      17.388197,
+      17.905032,
+      18.978534,
+      15.395069,
+      25.522629,
+      11.734146,
+      26.787339,
+      15.792945,
+      15.801028,
+      37.611067,
+      14.671943,
+      35.049146,
+      34.503187
+    ],
+    "p95_ms": 35.049146,
+    "largest_driver_plus_front_end_rss_bytes": 70946816,
+    "compiler_sha256": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "concurrent_work": "Frozen replay, a cold compilation benchmark and decoder verification shared the VM. Cancellation exceeded the 25 ms ceiling."
+  }
+}

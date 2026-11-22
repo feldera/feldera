@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust interns common subexpressions and decides which uses within each closure
+share a computation. All 550 selected pass invocations and 33 detached
+compilations matched Java. COUNT and LATENESS checkpoints restored in both
+directions. Four-worker cancellation p95 was 35.05 ms during concurrent
+verification, above the 25 ms limit.
+[Value numbering, detached replay and worker results](evidence/p3-value-numbering.json)
+
 Rust validates stream kinds after every top-level hybrid optimizer pass. Detached
 compilations of 36 classic and 33 Gen-2 programs matched Java at all 34,152
 ordered pass observations and on emitted artifacts. In a shared devcontainer,

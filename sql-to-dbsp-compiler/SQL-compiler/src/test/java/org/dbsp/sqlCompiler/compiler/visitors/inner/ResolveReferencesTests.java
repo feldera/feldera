@@ -62,6 +62,46 @@ public class ResolveReferencesTests extends BaseSQLTests {
         new ValueNumbering(this.testCompiler()).apply(closure);
     }
 
+    @Test
+    public void valueNumbersRetainClosureUsesAndDiscardMutableDependencies() {
+        var compiler = this.testCompiler();
+        var row = b.refVar(b.tup(b.i32(), b.i32()));
+        var first = b.call("f", b.lit("🦀#7#"), b.field(row, 0));
+        var second = first.deepCopy();
+        var write = b.i32().var();
+        var read = b.call("g", write);
+        var nested = b.lambda(b.i32(), x -> b.let(b.add(x, b.lit(1)),
+                y -> b.block(b.call("h", y), z -> b.tuple(z, first.deepCopy()))));
+        var body = b.tuple(first, second, nested, read, write.borrow(true)).closure(row, write);
+        ValueNumbering direct = new ValueNumbering(compiler);
+        direct.apply(body);
+        Assert.assertSame(direct.canonical.get(first), direct.canonical.get(second));
+        Assert.assertTrue(direct.canonical.get(first).expensive);
+        Assert.assertFalse(direct.canonical.containsKey(read));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustValueNumbers")) {
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            ValueNumbering nativePass = new ValueNumbering(compiler);
+            nativePass.apply(body);
+            Assert.assertEquals(direct.foundAssignment, nativePass.foundAssignment);
+            Assert.assertEquals(direct.canonical.keySet(), nativePass.canonical.keySet());
+            var rewrite = ValueNumbering.forRewrite(compiler);
+            rewrite.apply(body);
+            direct.canonical.forEach((node, expected) -> {
+                var actual = nativePass.canonical.get(node);
+                Assert.assertSame(expected.expression, actual.expression);
+                Assert.assertEquals(expected.expensive, actual.expensive);
+                Assert.assertEquals(expected.dependsOn, actual.dependsOn);
+                Assert.assertEquals(expected.users, actual.users);
+                for (var owner : java.util.List.of(body, nested)) {
+                    boolean share = expected.expensive && !ExpressionsCSE.neverShared(expected.expression)
+                            && expected.manyUsers(direct.canonical, owner);
+                    var planned = rewrite.canonical.get(node);
+                    Assert.assertEquals(share, planned != null && planned.manyUsers(rewrite.canonical, owner));
+                }
+            });
+        }
+    }
+
     /** A let initializer resolves in the scope outside the let:
      * in let x = 1; let x = x + 1; x
      * the second initializer sees the first x, the consumer the second. */

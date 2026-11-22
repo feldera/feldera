@@ -916,6 +916,10 @@ fn transform(
             let bindings: Vec<feldera_sql_opt::PendingBinding> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(scope.placements(&bindings))?);
         }
+        "InnerCSE/NumberValues" => {
+            let request: feldera_sql_opt::NumberingInput = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(request.number()?)?);
+        }
         "InnerCSE/Uses" => {
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);

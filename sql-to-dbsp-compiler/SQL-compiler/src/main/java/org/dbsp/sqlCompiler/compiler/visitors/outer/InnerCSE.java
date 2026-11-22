@@ -29,7 +29,7 @@ public class InnerCSE implements IRTransform {
 
     public InnerCSE(DBSPCompiler compiler) {
         this.compiler = compiler;
-        this.numbering = new ValueNumbering(compiler);
+        this.numbering = ValueNumbering.forRewrite(compiler);
         this.cse = new ExpressionsCSE(compiler, this.numbering.canonical);
     }
 

@@ -6,17 +6,17 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[derive(Deserialize)]
 pub struct NumberedExpression {
-    value: u64,
-    candidate: bool,
-    users: Vec<OperandUse>,
+    pub(crate) value: u64,
+    pub(crate) candidate: bool,
+    pub(crate) users: Vec<OperandUse>,
 }
 
 #[derive(Deserialize)]
-struct OperandUse {
-    closure: u64,
-    parent: u64,
-    operand: usize,
-    forwards: bool,
+pub(crate) struct OperandUse {
+    pub(crate) closure: u64,
+    pub(crate) parent: u64,
+    pub(crate) operand: usize,
+    pub(crate) forwards: bool,
 }
 
 type ScopedValue = (u64, u64); // (closure, canonical expression)

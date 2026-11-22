@@ -147,6 +147,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.NativeValueNumbering;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
@@ -1309,6 +1310,16 @@ public final class RustCircuitPass implements CircuitTransform {
             return MAPPER.readValue(reply, int[][].class);
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid map fusion groups from Rust", error);
+        }
+    }
+
+    public static NativeValueNumbering.Group[] numberValues(NativeValueNumbering.Request request) {
+        try {
+            byte[] reply = transformWithContext("InnerCSE/NumberValues", MAPPER.writeValueAsBytes(request),
+                    0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, NativeValueNumbering.Group[].class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid expression value numbers from Rust", error);
         }
     }
 
