@@ -1,13 +1,101 @@
 //! Derive a temporal window's output waterline from its endpoints and input.
-use super::{filter::arg, minimum_pair};
+use super::{Bound, Projection, filter::arg, minimum_pair, source::link};
 use feldera_sql_expr::copy_expression;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, TypeId};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId, OperatorKind as Op,
+    OutputPort, TypeId,
+};
 
 pub struct WindowWaterline {
     /// Applied to the clock input that drives the window bounds.
     pub endpoint: ExpressionId,
     /// An unbounded lower endpoint also needs the waterline on incoming keys.
     pub combine: Option<ExpressionId>,
+}
+
+/// Place the bound immediately before the window, where the Java visitor
+/// emits it. The right input of the window boxes the two clock endpoints.
+pub(super) fn insert_window_bound(
+    edit: &mut CircuitEditor,
+    site: NodeId,
+    projection: &Projection,
+    input_bound: Option<Bound>,
+    remap: impl Fn(OutputPort) -> OutputPort,
+    next: &mut u64,
+    warnings: &mut Vec<feldera_sql_expr::SimplifyWarning>,
+) -> Result<Bound, Error> {
+    let op = edit.node(site)?;
+    let [_, clock]: [OutputPort; 2] = op
+        .inputs()
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|_| Error::new("window requires data and clock inputs"))?;
+    let Projection::Tuple { fields, .. } = projection else {
+        return Err(Error::new("expected a key/value window projection"));
+    };
+    let [_, value] = fields.as_slice() else {
+        return Err(Error::new("window projection requires two fields"));
+    };
+    let lower_unbounded = op
+        .data("lowerUnbounded")
+        .and_then(|x| x.as_bool())
+        .ok_or_else(|| Error::new("window requires lowerUnbounded"))?;
+    let input = if lower_unbounded {
+        Some(input_bound.ok_or_else(|| Error::new("missing waterline on unbounded window input"))?)
+    } else {
+        None
+    };
+    let apply = edit.node(clock.operator)?;
+    if apply.operator_kind() != Some(Op::Apply) {
+        return Err(Error::new(
+            "window clock requires boxed endpoints from Apply",
+        ));
+    }
+    let endpoints = edit.expression(apply.edge("function")?)?;
+    let clock = remap(
+        apply
+            .inputs()
+            .next()
+            .ok_or_else(|| Error::new("missing window clock stream"))?,
+    );
+    let functions = window_waterline(edit, endpoints, input.map(|b| b.ty), value.monotone(), next)?;
+    let body = edit.circuit().root_id();
+    let clock = Bound {
+        port: clock,
+        ty: crate::rebuild::input_type(edit, clock)?,
+    };
+    let endpoint = clock.apply(edit, body, site, functions.endpoint)?;
+    let result = if let (Some(input), Some(combine)) = (input, functions.combine) {
+        let function = super::apply_waterlines(
+            edit,
+            combine.into(),
+            &[input.ty, endpoint.ty],
+            next,
+            warnings,
+        )?;
+        let function_type = edit.expression_type(function)?;
+        let ty = edit.type_id(edit.node(function_type.into())?.edge("resultType")?)?;
+        let operator = edit.append_operator(
+            body,
+            input.port.operator,
+            Op::Apply2,
+            &[input.port, endpoint.port],
+            [("outputType", link(ty)), ("function", link(function))],
+        )?;
+        edit.annotate(operator, serde_json::json!({"class":"Waterline"}))?;
+        Bound {
+            port: OutputPort {
+                operator,
+                number: 0,
+            },
+            ty,
+        }
+    } else {
+        endpoint
+    };
+    edit.move_origin_definition(site, endpoint.port.operator)?;
+    edit.place_before(body, endpoint.port.operator, site)?;
+    Ok(result)
 }
 
 pub fn window_waterline(

@@ -1,5 +1,6 @@
 //! Waterline operators built from monotonicity facts on the expanded circuit.
 
+mod chain;
 mod filter;
 mod finality;
 pub use finality::{FinalityColumn, FinalityFunctions};

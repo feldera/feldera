@@ -334,6 +334,23 @@ pub fn insert_limiters_with_warnings(
                     }
                 }
             }
+            Some(Op::ChainAggregate)
+                if op
+                    .data("annotations")
+                    .and_then(|x| x.as_array())
+                    .is_some_and(|annotations| {
+                        annotations.iter().any(|a| a["class"] == "AlwaysMonotone")
+                    }) =>
+            {
+                if let Some(projection) = projection {
+                    let (first, bound) =
+                        super::chain::chain_waterline(&mut edit, body, id, &mut next)?;
+                    bounds.insert(output, (bound, projection));
+                    if let Some(&before) = original.get(index + 1) {
+                        edit.place_before(body, first, before)?;
+                    }
+                }
+            }
             Some(
                 Op::Map
                 | Op::MapIndex
@@ -344,6 +361,7 @@ pub fn insert_limiters_with_warnings(
                 | Op::Negate
                 | Op::Deindex
                 | Op::AggregateLinearPostprocess
+                | Op::ChainAggregate
                 | Op::StreamAntiJoin,
             ) => {
                 // These expansion operators transfer the bound of their first input,
@@ -379,7 +397,10 @@ pub fn insert_limiters_with_warnings(
                     let bound = apply_bound(&mut edit, body, upstream, function)?;
                     bounds.insert(output, (bound, projection));
                     edit.place_before(body, bound.port.operator, id)?;
-                    if kind == Some(Op::AggregateLinearPostprocess) {
+                    if matches!(
+                        kind,
+                        Some(Op::AggregateLinearPostprocess | Op::ChainAggregate)
+                    ) {
                         let retention = super::retention::retain_keys(
                             &mut edit, body, id, output, projection, bound, &mut next,
                         )?;
@@ -387,7 +408,12 @@ pub fn insert_limiters_with_warnings(
                             edit.place_before(body, retention.first, before)?;
                         }
                     }
-                } else if projection.is_some() && kind != Some(Op::AggregateLinearPostprocess) {
+                } else if projection.is_some()
+                    && !matches!(
+                        kind,
+                        Some(Op::AggregateLinearPostprocess | Op::ChainAggregate)
+                    )
+                {
                     return Err(
                         Error::new(format!("missing input waterline for {}", op.class())).into(),
                     );
@@ -411,6 +437,24 @@ pub fn insert_limiters_with_warnings(
                     )?;
                     retention.place_before_owner(&mut edit, body, id)?;
                     bounds.insert(output, (bound, projected));
+                }
+            }
+            Some(Op::Window) => {
+                if let Some(projection) = projection {
+                    let input = inputs
+                        .first()
+                        .and_then(|port| bounds.get(port))
+                        .map(|(bound, _)| *bound);
+                    let bound = super::window::insert_window_bound(
+                        &mut edit,
+                        id,
+                        projection,
+                        input,
+                        |port| data.get(&port).map_or(port, |stream| stream.port),
+                        &mut next,
+                        warnings,
+                    )?;
+                    bounds.insert(output, (bound, projection));
                 }
             }
             Some(Op::Sink) => {
@@ -438,7 +482,18 @@ pub fn insert_limiters_with_warnings(
                     continue;
                 }
             }
-            Some(Op::Constant | Op::IncrementalConstant) => {}
+            // The Java visitor clones these operators without deriving output bounds.
+            Some(
+                Op::Constant
+                | Op::IncrementalConstant
+                | Op::Waterline
+                | Op::Apply
+                | Op::Differentiate
+                | Op::Integrate
+                | Op::IndexedTopK
+                | Op::Rank
+                | Op::RowNumber,
+            ) => {}
             _ => {
                 return Err(Error::new(format!(
                     "{} requires another InsertLimiters visitor",
@@ -456,7 +511,17 @@ pub fn insert_limiters_with_warnings(
                 .collect::<Vec<_>>();
             if matches!(
                 kind,
-                Some(Op::Filter | Op::View | Op::Sink | Op::Sum | Op::AtomicSum | Op::Subtract)
+                Some(
+                    Op::Filter
+                        | Op::View
+                        | Op::Sink
+                        | Op::Sum
+                        | Op::AtomicSum
+                        | Op::Subtract
+                        | Op::Window
+                        | Op::Differentiate
+                        | Op::Integrate
+                )
             ) {
                 let output_type = match data.get(&inputs[0]) {
                     Some(input) => input.ty,

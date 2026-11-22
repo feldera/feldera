@@ -3,8 +3,8 @@
 use super::filter::{arg, row_filter};
 use super::{Bound, Projection, Stream, StreamKind};
 use feldera_sql_ir::{
-    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,
-    NodeId, OperatorKind as Op, OutputPort, TypeId, TypeKind as Ty,
+    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId,
+    OperatorKind as Op, OutputPort, TypeId, TypeKind as Ty,
 };
 
 pub(super) struct Columns {
@@ -59,6 +59,48 @@ pub(super) fn link(id: impl Into<NodeId>) -> Field {
     Field::Reference(id.into())
 }
 
+/// A NULL value contributes the minimum of its non-nullable type to the waterline.
+pub(super) fn waterline_value(
+    edit: &mut CircuitEditor,
+    site: NodeId,
+    value: ExpressionId,
+) -> Result<ExpressionId, Error> {
+    let ty = edit.expression_type(value)?;
+    if !edit.nullable(ty)? {
+        return Ok(value);
+    }
+    let nonnull = edit.with_nullability(ty, false)?;
+    let minimum = edit.minimum_value(nonnull)?;
+    let boolean = super::filter::bool_type(edit, value.into())?;
+    let is_null = edit.make_expr(
+        value.into(),
+        Expr::IsNull,
+        boolean,
+        [("expression", link(value))],
+    )?;
+    let copy = feldera_sql_expr::copy_expression(edit, value.into())?;
+    let unwrapped = edit.with_nullability(ty, false)?;
+    let unwrap = edit.make_expr(
+        site,
+        Expr::Unwrap,
+        unwrapped,
+        [
+            ("expression", link(copy)),
+            ("message", Field::Data("".into())),
+        ],
+    )?;
+    edit.make_expr(
+        site,
+        Expr::If,
+        edit.expression_type(minimum)?,
+        [
+            ("condition", link(is_null)),
+            ("positive", link(minimum)),
+            ("negative", link(unwrap)),
+        ],
+    )
+}
+
 fn contribution(
     edit: &mut CircuitEditor,
     site: NodeId,
@@ -68,52 +110,7 @@ fn contribution(
 ) -> Result<ExpressionId, Error> {
     let data = edit.dereference(parameter)?;
     let field = edit.tuple_field(data, index)?;
-    let ty = edit.expression_type(field)?;
-    let value = if edit.nullable(ty)? {
-        let nonnull = edit.with_nullability(ty, false)?;
-        let minimum = edit.minimum_value(nonnull)?;
-        let boolean = edit.empty_origin_node(
-            field.into(),
-            InnerKind::Type(Ty::Bool),
-            [
-                ("code", Field::Data("BOOL".into())),
-                ("mayBeNull", Field::Data(false.into())),
-            ],
-        )?;
-        let is_null = edit.make_expr(
-            field.into(),
-            Expr::IsNull,
-            edit.type_id(boolean)?,
-            [("expression", link(field))],
-        )?;
-        // Java deep-copies this read in the guarded arm. The original and
-        // the copy keep their shared declaration but have distinct paths.
-        let copied = edit.derive_inner(parameter.into(), [])?;
-        let data = edit.dereference(edit.expression(copied)?)?;
-        let copy = edit.tuple_field(data, index)?;
-        let unwrapped = edit.with_nullability(ty, false)?;
-        let unwrap = edit.make_expr(
-            site,
-            Expr::Unwrap,
-            unwrapped,
-            [
-                ("expression", link(copy)),
-                ("message", Field::Data("".into())),
-            ],
-        )?;
-        edit.make_expr(
-            site,
-            Expr::If,
-            edit.expression_type(minimum)?,
-            [
-                ("condition", link(is_null)),
-                ("positive", link(minimum)),
-                ("negative", link(unwrap)),
-            ],
-        )?
-    } else {
-        field
-    };
+    let value = waterline_value(edit, site, field)?;
     let output = edit.expression_type(value)?;
     let amount = edit.expression(lateness)?;
     let temporal = matches!(
