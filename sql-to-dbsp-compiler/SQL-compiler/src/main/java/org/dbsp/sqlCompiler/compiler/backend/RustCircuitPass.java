@@ -2498,7 +2498,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static List<KeyColumnCopy> columnCopies(DBSPCompiler compiler, DBSPClosureExpression closure,
                                                    CollectionShape shape, boolean lossless) {
-        return analyzeKeyClosure(compiler, "KeyAnalysis/ColumnCopies", closure, shape, lossless, new TypeReference<>() {});
+        return analyzeKeyClosure(compiler, "KeyAnalysis/ColumnCopies", closure, shape, lossless, null, new TypeReference<>() {});
     }
 
     /** Independent answers for column copies and repeated computations in the same closure. */
@@ -2506,20 +2506,27 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public static OutputColumns outputColumns(DBSPCompiler compiler, DBSPClosureExpression closure,
                                               CollectionShape shape, boolean lossless) {
-        return analyzeKeyClosure(compiler, "KeyAnalysis/OutputColumns", closure, shape, lossless, new TypeReference<>() {});
+        return analyzeKeyClosure(compiler, "KeyAnalysis/OutputColumns", closure, shape, lossless, null, new TypeReference<>() {});
     }
 
     @Nullable
     public static Set<Column> fixedColumns(DBSPCompiler compiler, DBSPClosureExpression closure,
                                            CollectionShape shape, boolean lossless) {
-        return analyzeKeyClosure(compiler, "KeyAnalysis/FixedColumns", closure, shape, lossless, new TypeReference<>() {});
+        return analyzeKeyClosure(compiler, "KeyAnalysis/FixedColumns", closure, shape, lossless, null, new TypeReference<>() {});
+    }
+
+    @Nullable
+    public static List<KeyColumns> filterKeys(DBSPCompiler compiler, DBSPClosureExpression closure,
+                                              CollectionShape shape, boolean lossless, List<KeyColumns> keys) {
+        return analyzeKeyClosure(compiler, "KeyAnalysis/FilterKeys", closure, shape, lossless, keys, new TypeReference<>() {});
     }
 
     @Nullable
     private static <T> T analyzeKeyClosure(DBSPCompiler compiler, String pass, DBSPClosureExpression closure,
-                                           CollectionShape shape, boolean lossless, TypeReference<T> type) {
-        record Request(int width, @Nullable Integer indexFields, boolean lossless) {}
-        var request = new Request(shape.width(), shape instanceof IndexedShape i ? i.indexFields() : null, lossless);
+                                           CollectionShape shape, boolean lossless, @Nullable List<KeyColumns> keys,
+                                           TypeReference<T> type) {
+        record Request(int width, @Nullable Integer indexFields, boolean lossless, @Nullable List<KeyColumns> keys) {}
+        var request = new Request(shape.width(), shape instanceof IndexedShape i ? i.indexFields() : null, lossless, keys);
         var json = JsonStream.compactCircuit();
         json.beginArray();
         closure.accept(new ToJsonInnerVisitor(compiler, json, 0));

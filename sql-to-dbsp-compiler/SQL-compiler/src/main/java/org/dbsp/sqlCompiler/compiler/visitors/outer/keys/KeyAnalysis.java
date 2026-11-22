@@ -436,27 +436,23 @@ public class KeyAnalysis extends CircuitVisitor {
      * constant has the same value on every remaining row, so keys no longer need it. */
     @Override
     public void postorder(DBSPFilterOperator node) {
-        Keys keys = this.getKeys(node.input());
-        Set<Column> fixed = this.fixedColumns(node);
-        if (!fixed.isEmpty())
-            keys = keys.without(fixed);
-        this.set(node, keys, this.getEquivalence(node.input()));
+        this.set(node, this.filterKeys(node), this.getEquivalence(node.input()));
         // A filter drops rows and moves no column
         this.portTransforms.put(node.outputPort(), new PortTransform(node.input(), ColumnCopyTransform.identity()));
     }
 
-    /** Columns of the filter's input that the condition equates with a constant. */
-    private Set<Column> fixedColumns(DBSPFilterOperator node) {
-        Set<Column> result = new HashSet<>();
+    private Keys filterKeys(DBSPFilterOperator node) {
+        Keys keys = this.getKeys(node.input());
         CollectionShape input = node.input().getShape();
         DBSPClosureExpression closure = closureOf(node);
         if (input == null || closure == null)
-            return result;
+            return keys;
         if (this.compiler().options.ioOptions.rustOptimizerPasses) {
-            var fixed = RustCircuitPass.fixedColumns(this.compiler(), closure, input, this.losslessCasts);
-            if (fixed != null)
-                return fixed;
+            var result = RustCircuitPass.filterKeys(this.compiler(), closure, input, this.losslessCasts, keys.keys);
+            if (result != null)
+                return Keys.fromMinimized(result);
         }
+        Set<Column> fixed = new HashSet<>();
         Lineage.InnerLineage inner = this.interpreter();
         inner.analyze(closure, initialValues(closure));
         for (DBSPExpression conjunct : closure.body.conjuncts()) {
@@ -475,11 +471,11 @@ public class KeyAnalysis extends CircuitVisitor {
             if (column == null)
                 continue;
             Provenance.Source source = sourceOf(column);
-            Column fixed = source == null ? null : source.inputColumn(input);
-            if (fixed != null)
-                result.add(fixed);
+            Column inputColumn = source == null ? null : source.inputColumn(input);
+            if (inputColumn != null)
+                fixed.add(inputColumn);
         }
-        return result;
+        return fixed.isEmpty() ? keys : keys.without(fixed);
     }
 
     /** Every row of a sum or a difference is a row of one of its inputs.  No key of a single

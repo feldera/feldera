@@ -321,17 +321,22 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let header = json!({"class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]});
         Circuit::from_json(header)?.with_inner_roots_bytes(input)?
     };
-    if let ("KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns", [closure]) = (pass, roots.as_slice()) {
+    if let ("KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys", [closure]) = (pass, roots.as_slice()) {
         #[derive(serde::Deserialize)]
         struct Request {
             #[serde(flatten)]
             shape: feldera_sql_opt::OutputShape,
             lossless: bool,
+            keys: Option<Vec<feldera_sql_opt::KeyColumns>>,
         }
         let request: Request = serde_json::from_slice(state)?;
         let edit = CircuitEditor::new(arena);
-        if pass == "KeyAnalysis/FixedColumns" {
+        if matches!(pass, "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys") {
             let fixed = feldera_sql_opt::fixed_columns(&edit, *closure, &request.shape, request.lossless)?;
+            if pass == "KeyAnalysis/FilterKeys" {
+                let keys = request.keys.ok_or("filter key analysis requires input keys")?;
+                return Ok(serde_json::to_value(fixed.map(|fixed| feldera_sql_opt::filter_keys(keys, &fixed)))?);
+            }
             return Ok(serde_json::to_value(fixed)?);
         }
         let copies = feldera_sql_opt::column_copies(&edit, *closure, &request.shape, request.lossless)?;
@@ -984,7 +989,7 @@ fn transform(
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
         | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
-        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {

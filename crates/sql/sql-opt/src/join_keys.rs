@@ -1,5 +1,5 @@
-//! Derive collection keys for binary and star joins from the columns copied by
-//! their output closure. Multiple columns can name the same value of a key.
+//! Derive collection keys for filters and joins. Multiple columns can name
+//! the same value of a key.
 use crate::lineage::{Column, ColumnCopy, Part};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -74,6 +74,17 @@ fn minimal(mut keys: Vec<KeyColumns>) -> Vec<KeyColumns> {
         }
     }
     result
+}
+
+/// Input keys are already minimal. Fixing any alias fixes its entire key value.
+pub fn filter_keys(mut keys: Vec<KeyColumns>, fixed: &BTreeSet<Column>) -> Vec<KeyColumns> {
+    if fixed.is_empty() {
+        return keys;
+    }
+    for key in &mut keys {
+        key.sets.retain(|set| set.columns.is_disjoint(fixed));
+    }
+    minimal(keys)
 }
 
 #[derive(Deserialize)]
@@ -159,6 +170,29 @@ mod tests {
         // The last independent key falls beyond the first 64 sorted keys.
         assert_eq!(minimal(keys), [key(&[first])]);
         assert_eq!(minimal(vec![key(&[first]), empty.clone()]), [empty]);
+    }
+
+    #[test]
+    fn fixing_an_alias_reduces_keys_and_preserves_the_single_row_key() {
+        let index = column(Part::Index, 0);
+        let alias = column(Part::Value, 2);
+        let other = column(Part::Value, 0);
+        let aliases = EquivalentColumns {
+            columns: BTreeSet::from([index, alias]),
+        };
+        let mut compound = key(&[other]);
+        compound.sets.insert(aliases.clone());
+        let fixed = BTreeSet::from([alias]);
+        assert_eq!(filter_keys(vec![compound], &fixed), [key(&[other])]);
+
+        let unique = KeyColumns {
+            sets: BTreeSet::from([aliases]),
+        };
+        assert_eq!(
+            filter_keys(vec![unique, key(&[other])], &fixed),
+            [KeyColumns::default()]
+        );
+        assert!(filter_keys(Vec::new(), &fixed).is_empty());
     }
 
     #[test]
