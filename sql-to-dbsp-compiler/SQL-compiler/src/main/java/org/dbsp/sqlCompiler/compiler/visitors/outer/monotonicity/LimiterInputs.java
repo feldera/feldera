@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
@@ -20,13 +21,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
@@ -70,12 +70,12 @@ public final class LimiterInputs {
             DBSPApplyOperator.class, DBSPWaterlineOperator.class, DBSPWindowOperator.class,
             DBSPDifferentiateOperator.class, DBSPIntegrateOperator.class, DBSPIndexedTopKOperator.class,
             DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class,
-            DBSPJoinOperator.class, DBSPJoinIndexOperator.class);
+            DBSPAntiJoinOperator.class, DBSPNowOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
     public static boolean canLowerCircuit(DBSPCircuit circuit) {
         return circuit.allOperators.stream().allMatch(operator -> TRANSFER_OPERATORS.contains(operator.getClass())
-                || OTHER_NATIVE_OPERATORS.contains(operator.getClass()));
+                || OTHER_NATIVE_OPERATORS.contains(operator.getClass()) || BinaryJoinInputs.supports(operator.getClass()));
     }
 
     public static JsonNode projection(IMaybeMonotoneType type) {
@@ -109,7 +109,7 @@ public final class LimiterInputs {
     public static Map<Long, DBSPClosureExpression> transferFunctions(InsertLimiters pass, DBSPCircuit original) {
         var functions = new LinkedHashMap<Long, DBSPClosureExpression>();
         for (var operator : original.allOperators) {
-            if (operator.getClass() == DBSPJoinOperator.class || operator.getClass() == DBSPJoinIndexOperator.class) {
+            if (BinaryJoinInputs.supports(operator.getClass())) {
                 var join = BinaryJoinInputs.from(pass.expandedInto.get(operator.to(DBSPSimpleOperator.class)));
                 if (join != null)
                     join.recordTransfers(pass, functions);
@@ -150,7 +150,7 @@ public final class LimiterInputs {
             var entry = facts.putObject(Long.toString(operator.getId()));
             entry.set("position",operator.getNode().getPositionRange().asJson());
             entry.put("reachable_from_error", pass.reachableFromError.contains(operator));
-            if (operator.getClass() == DBSPJoinOperator.class || operator.getClass() == DBSPJoinIndexOperator.class) {
+            if (BinaryJoinInputs.supports(operator.getClass())) {
                 var state = entry.putObject("join");
                 var join = BinaryJoinInputs.from(pass.expandedInto.get(operator.to(DBSPSimpleOperator.class)));
                 if (join != null)

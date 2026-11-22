@@ -48,6 +48,36 @@ fn read_field(
 }
 
 impl Projection {
+    pub(super) fn with_unbounded_value_from(&self, right: &Self) -> Result<Self, Error> {
+        fn clear_fields(p: &Projection) -> Projection {
+            match p {
+                Projection::Tuple {
+                    fields,
+                    raw,
+                    nullable,
+                } => Projection::Tuple {
+                    fields: fields.iter().map(clear_fields).collect(),
+                    raw: *raw,
+                    nullable: *nullable,
+                },
+                Projection::Scalar { .. } => Projection::Scalar { monotone: false },
+                Projection::Other { .. } => Projection::Other { monotone: false },
+            }
+        }
+        let (Self::Tuple { fields: output, .. }, Self::Tuple { fields: input, .. }) = (self, right)
+        else {
+            return Err(Error::new("expected indexed antijoin projections"));
+        };
+        let ([key, _], [_, value]) = (output.as_slice(), input.as_slice()) else {
+            return Err(Error::new("antijoin projection requires a key and value"));
+        };
+        Ok(Self::Tuple {
+            fields: vec![key.clone(), clear_fields(value)],
+            raw: true,
+            nullable: false,
+        })
+    }
+
     /// Select monotone fields from the original data row before comparing it to its bound.
     pub(super) fn project_data(
         &self,

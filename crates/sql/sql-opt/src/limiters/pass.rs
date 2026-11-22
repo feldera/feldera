@@ -109,6 +109,28 @@ pub(super) fn projected_bound(
     apply_bound(edit, body, input, function)
 }
 
+/// Project inputs in port order before combining their waterlines. The whole
+/// group belongs immediately before the original operator.
+pub(super) fn projected_minimum<'a>(
+    edit: &mut CircuitEditor,
+    owner: NodeId,
+    inputs: impl IntoIterator<Item = (Bound, &'a Projection)>,
+    dst: &Projection,
+    next: &mut u64,
+) -> Result<Bound, Error> {
+    let body = edit.circuit().root_id();
+    let projected = inputs
+        .into_iter()
+        .map(|(bound, src)| projected_bound(edit, body, bound, src, dst, next))
+        .collect::<Result<Vec<_>, _>>()?;
+    let first = projected
+        .first()
+        .ok_or_else(|| Error::new("a waterline minimum needs an input"))?;
+    let bound = minimum_bound(edit, body, &projected, next)?;
+    edit.place_before(body, first.port.operator, owner)?;
+    Ok(bound)
+}
+
 pub(super) fn apply_bound_pair(
     edit: &mut CircuitEditor,
     inputs: [Bound; 2],
@@ -346,22 +368,19 @@ pub fn insert_limiters_with_warnings(
                 names.replaced(id);
                 continue;
             }
-            Some(Op::Sum | Op::AtomicSum | Op::Subtract) => {
+            Some(Op::Sum | Op::AtomicSum | Op::Subtract | Op::AntiJoin) => {
                 if let Some(dst) = projection {
                     let upstream = inputs
                         .iter()
                         .map(|p| bounds.get(p).copied())
                         .collect::<Option<Vec<_>>>();
                     if let Some(upstream) = upstream {
-                        let projected = upstream
-                            .into_iter()
-                            .map(|(b, src)| {
-                                projected_bound(&mut edit, body, b, src, dst, &mut next)
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
-                        let bound = minimum_bound(&mut edit, body, &projected, &mut next)?;
+                        let bound = projected_minimum(&mut edit, id, upstream, dst, &mut next)?;
                         bounds.insert(output, (bound, dst));
-                        edit.place_before(body, projected[0].port.operator, id)?;
+                    } else if kind == Some(Op::AntiJoin) {
+                        return Err(
+                            Error::new("antijoin key projection needs both input bounds").into(),
+                        );
                     }
                 }
             }
@@ -463,7 +482,7 @@ pub fn insert_limiters_with_warnings(
                     );
                 }
             }
-            Some(Op::Join | Op::JoinIndex) => {
+            Some(Op::Join | Op::JoinIndex | Op::LeftJoin | Op::LeftJoinIndex) => {
                 let [left, right] = inputs.as_slice() else {
                     return Err(Error::new("incremental join requires two inputs").into());
                 };
@@ -574,7 +593,8 @@ pub fn insert_limiters_with_warnings(
             }
             // The Java visitor clones these operators without deriving output bounds.
             Some(
-                Op::Constant
+                Op::Now
+                | Op::Constant
                 | Op::IncrementalConstant
                 | Op::Waterline
                 | Op::Apply

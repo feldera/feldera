@@ -1,7 +1,7 @@
 //! Combine compacted bounds from the two indexed inputs of a join.
 
-use super::pass::{apply_bound, apply_bound_pair, projected_bound};
-use super::{Bound, Projection, apply_waterlines, minimum_bound, retention::retain_keys};
+use super::pass::{apply_bound, apply_bound_pair, projected_bound, projected_minimum};
+use super::{Bound, Projection, apply_waterlines, retention::retain_keys};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
 use serde::Deserialize;
@@ -97,7 +97,16 @@ pub(super) struct BinaryJoinExpansion {
     /// Left delta, right delta, then both deltas, in visitor order.
     terms: [JoinTerm; 3],
     /// The sum preserves its own input order when projecting each term.
-    sum_inputs: [u64; 3],
+    sum_inputs: Vec<u64>,
+    unmatched: Option<UnmatchedRows>,
+}
+
+/// The antijoin and null-padding map supply the fourth term of a left join.
+#[derive(Deserialize)]
+struct UnmatchedRows {
+    output: Option<Projection>,
+    pad_id: u64,
+    padded: Option<Projection>,
 }
 
 #[derive(Deserialize)]
@@ -178,8 +187,22 @@ impl BinaryJoinExpansion {
         next: &mut u64,
         warnings: &mut Vec<SimplifyWarning>,
     ) -> Result<Option<(Bound, &'a Projection)>, Error> {
+        if matches!(join.bounds, [None, None]) {
+            return Ok(None);
+        }
+        let expected = 3 + usize::from(self.unmatched.is_some());
+        if self.sum_inputs.len() != expected {
+            return Err(Error::new(
+                "unexpected number of terms in incremental join sum",
+            ));
+        }
         let body = edit.circuit().root_id();
         for (side, opposite) in [(0, 1), (1, 0)] {
+            // For a left join, an unmatched left row can be retracted. Its
+            // antijoin key bound determines when the right trace can discard it.
+            if side == 0 && self.unmatched.is_some() {
+                continue;
+            }
             let Some(bound) = join.bounds[side] else {
                 continue;
             };
@@ -218,18 +241,70 @@ impl BinaryJoinExpansion {
                 results.insert(term.id, result);
             }
         }
+        if let Some(unmatched) = &self.unmatched {
+            if let Some(result) = unmatched.insert(edit, join, &self.inputs, next, warnings)? {
+                results.insert(unmatched.pad_id, result);
+            }
+        }
         let Some(dst) = output else {
             return Ok(None);
         };
-        let [Some(a), Some(b), Some(c)] = self.sum_inputs.map(|id| results.get(&id)) else {
+        let inputs = self
+            .sum_inputs
+            .iter()
+            .map(|id| results.get(id).copied())
+            .collect::<Option<Vec<_>>>();
+        let Some(inputs) = inputs else {
             return Ok(None);
         };
-        let mut projected = Vec::with_capacity(3);
-        for &(bound, src) in [a, b, c] {
-            projected.push(projected_bound(edit, body, bound, src, dst, next)?);
-        }
-        let result = minimum_bound(edit, body, &projected, next)?;
-        edit.place_before(body, projected[0].port.operator, join.owner)?;
+        let result = projected_minimum(edit, join.owner, inputs, dst, next)?;
         Ok(Some((result, dst)))
+    }
+}
+
+impl UnmatchedRows {
+    fn insert(
+        &self,
+        edit: &mut CircuitEditor,
+        join: &JoinInputs<'_>,
+        sides: &[JoinSide; 2],
+        next: &mut u64,
+        warnings: &mut Vec<SimplifyWarning>,
+    ) -> Result<Option<(Bound, &Projection)>, Error> {
+        let Some(output) = &self.output else {
+            return Ok(None);
+        };
+        let [Some(left), Some(right)] = join.bounds else {
+            return Err(Error::new(
+                "bounded left antijoin needs two input waterlines",
+            ));
+        };
+        let [Some(l), Some(r)] = sides.each_ref().map(|side| side.projection.as_ref()) else {
+            return Err(Error::new(
+                "bounded left antijoin needs two input projections",
+            ));
+        };
+        let bound = projected_minimum(edit, join.owner, [(left, l), (right, r)], output, next)?;
+
+        // Both traces use the intersection of their key projections. The value
+        // portion must have the shape of the right trace, including empty tuples.
+        let target = output.with_unbounded_value_from(r)?;
+        let body = edit.circuit().root_id();
+        let control = projected_bound(edit, body, bound, output, &target, next)?;
+        edit.place_before(body, control.port.operator, join.owner)?;
+        retain_keys(edit, body, join.owner, join.data[1], &target, control, next)?
+            .place_before_owner(edit, body, join.owner)?;
+
+        let Some(padded) = &self.padded else {
+            return Ok(None);
+        };
+        let function = join
+            .functions
+            .get(&self.pad_id)
+            .ok_or_else(|| Error::new("missing null-padding transfer for left join"))?;
+        let function = apply_waterlines(edit, *function, &[bound.ty], next, warnings)?;
+        let padded_bound = apply_bound(edit, body, bound, function)?;
+        edit.place_before(body, padded_bound.port.operator, join.owner)?;
+        Ok(Some((padded_bound, padded)))
     }
 }
