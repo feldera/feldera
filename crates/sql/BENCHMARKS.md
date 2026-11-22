@@ -4,6 +4,37 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Declared column waterlines, 2026-11-22
+
+On `432124575`, all three workloads met the 1.2× ceiling. The devcontainer
+ran 69 fresh-process pairs on CPU 15 with the same isolation and sample
+counts as the aggregate field-use build. All artifacts matched through
+classic source emission.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.425 | 1.110 | 0.779× |
+| Nexmark suite | 3.160 | 3.728 | 1.180× |
+| Outer join | 1.308 | 1.029 | 0.786× |
+
+[Paired timings and build identities](evidence/p3-declared-column-waterlines-cold.json)
+
+## Aggregate field uses, 2026-11-22
+
+On `5c6c0cd5b`, the hybrid compiler met the 1.2× direct Java p95 ceiling
+on all three workloads. The ARM64 devcontainer ran each pair on CPU 15,
+with two warmups and 21 measured pairs per workload. All 69 pairs produced
+matching compiler artifacts. Timing ends when the compiler emits classic
+source, before the pipeline's Cargo build.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.401 | 1.104 | 0.788× |
+| Nexmark suite | 3.174 | 3.761 | 1.185× |
+| Outer join | 1.331 | 1.026 | 0.770× |
+
+[Paired timings and build identities](evidence/p3-aggregate-field-uses-cold.json)
+
 ## Projected candidate keys, 2026-11-22
 
 On `63dbe7a9f`, all 69 cold SQL-to-classic-artifact pairs matched. Each
