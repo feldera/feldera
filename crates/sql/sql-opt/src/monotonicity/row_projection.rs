@@ -1,13 +1,15 @@
 //! Reduce the structural part of a row closure to its projected waterline.
 use crate::limiters::Projection;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node};
 
 /// Rebuild the analyzed type using the original input's field objects. Equal SQL
 /// types from the closure body can have different source positions and sharing.
 #[derive(serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RowType {
-    Input,
+    Input {
+        index: usize,
+    },
     Field {
         row: Box<Self>,
         index: usize,
@@ -29,13 +31,68 @@ pub struct ProjectedValue {
     pub reduced: Option<ExpressionId>,
 }
 
+struct Binding<'a> {
+    name: String,
+    variable: ExpressionId,
+    shape: &'a Projection,
+    /// Indexed closures receive a pair of references. A missing bound moves
+    /// the other reference to field zero of the compacted pair.
+    field: Option<(usize, usize)>,
+}
+
 struct Row<'a> {
-    projection: &'a Projection,
-    bound: ExpressionId,
-    parameter: &'a str,
+    bindings: Vec<Binding<'a>>,
+}
+
+fn field_number(node: &Node) -> Result<usize, Error> {
+    node.data("fieldNo")
+        .and_then(|n| n.as_u64())
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or_else(|| Error::new("expected row field index"))
 }
 
 impl Row<'_> {
+    fn dereference(
+        &self,
+        edit: &mut CircuitEditor,
+        base: ExpressionId,
+    ) -> Result<Option<ProjectedValue>, Error> {
+        let node = edit.node(base.into())?;
+        let (variable, field) = match edit.expr_kind(base)? {
+            Expr::VariablePath => (node, None),
+            Expr::Field => (
+                edit.node(node.edge("expression")?)?,
+                Some(field_number(node)?),
+            ),
+            _ => return Ok(None),
+        };
+        let Some(name) = variable.data("variable").and_then(|n| n.as_str()) else {
+            return Ok(None);
+        };
+        let Some((index, binding)) = self
+            .bindings
+            .iter()
+            .enumerate()
+            .find(|(_, b)| b.name == name && b.field.map(|(original, _)| original) == field)
+        else {
+            return Ok(None);
+        };
+        let reduced = if binding.shape.monotone() {
+            let reference = match binding.field {
+                Some((_, compact)) => edit.tuple_field(binding.variable, compact)?,
+                None => binding.variable,
+            };
+            Some(edit.dereference(reference)?)
+        } else {
+            None
+        };
+        Ok(Some(ProjectedValue {
+            shape: binding.shape.clone(),
+            row_type: RowType::Input { index },
+            reduced,
+        }))
+    }
+
     fn visit(
         &self,
         edit: &mut CircuitEditor,
@@ -51,32 +108,11 @@ impl Row<'_> {
         let value = match kind {
             Expr::Deref => {
                 let base = edit.expression(node.edge("expression")?)?;
-                if edit.expr_kind(base)? != Expr::VariablePath
-                    || edit
-                        .node(base.into())?
-                        .data("variable")
-                        .and_then(|n| n.as_str())
-                        != Some(self.parameter)
-                {
-                    return Ok(None);
-                }
-                ProjectedValue {
-                    shape: self.projection.clone(),
-                    row_type: RowType::Input,
-                    reduced: self
-                        .projection
-                        .monotone()
-                        .then(|| edit.dereference(self.bound))
-                        .transpose()?,
-                }
+                return self.dereference(edit, base);
             }
             Expr::Field => {
                 let base = edit.expression(node.edge("expression")?)?;
-                let index = node
-                    .data("fieldNo")
-                    .and_then(|n| n.as_u64())
-                    .and_then(|n| usize::try_from(n).ok())
-                    .ok_or_else(|| Error::new("expected row field index"))?;
+                let index = field_number(node)?;
                 let Some(base) = self.visit(edit, base, depth + 1)? else {
                     return Ok(None);
                 };
@@ -209,6 +245,24 @@ pub fn project_row(
     bound: ExpressionId,
     projection: &Projection,
 ) -> Result<Option<ProjectedValue>, Error> {
+    project_rows(
+        edit,
+        body,
+        &[bound],
+        std::slice::from_ref(projection),
+        false,
+    )
+}
+
+/// Join closures take separate reference parameters. Indexed closures take
+/// one pair of references to the key and value.
+pub fn project_rows(
+    edit: &mut CircuitEditor,
+    body: ExpressionId,
+    bounds: &[ExpressionId],
+    projections: &[Projection],
+    indexed: bool,
+) -> Result<Option<ProjectedValue>, Error> {
     // This visitor handles data rows. References and closure-typed columns need
     // their original binding information in the general monotonicity visitor.
     fn data_row(shape: &Projection) -> bool {
@@ -218,21 +272,35 @@ pub fn project_row(
             Projection::Tuple { fields, .. } => fields.iter().all(data_row),
         }
     }
-    if !data_row(projection) {
+    if !projections.iter().all(data_row) {
         return Ok(None);
     }
-    let parameter = edit
-        .node(bound.into())?
-        .data("variable")
-        .and_then(|n| n.as_str())
-        .ok_or_else(|| Error::new("expected a projected row variable"))?
-        .to_owned();
-    Row {
-        projection,
-        bound,
-        parameter: &parameter,
+    if (indexed && (projections.len() != 2 || bounds.len() != 1))
+        || (!indexed && projections.len() != bounds.len())
+    {
+        return Err(Error::new(
+            "waterline shapes do not match closure parameters",
+        ));
     }
-    .visit(edit, body, 0)
+    let mut bindings = Vec::with_capacity(projections.len());
+    let mut compact = 0;
+    for (index, shape) in projections.iter().enumerate() {
+        let variable = bounds[if indexed { 0 } else { index }];
+        let name = edit
+            .node(variable.into())?
+            .data("variable")
+            .and_then(|n| n.as_str())
+            .ok_or_else(|| Error::new("expected a projected row variable"))?
+            .to_owned();
+        bindings.push(Binding {
+            name,
+            variable,
+            shape,
+            field: indexed.then_some((index, compact)),
+        });
+        compact += usize::from(shape.monotone());
+    }
+    Row { bindings }.visit(edit, body, 0)
 }
 
 #[cfg(test)]

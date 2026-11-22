@@ -363,12 +363,23 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static MonotoneExpression projectRow(DBSPCompiler compiler, DBSPExpression body,
                                                 DBSPVariablePath bound, IMaybeMonotoneType input) {
+        return projectRows(compiler, body, new DBSPVariablePath[]{bound}, new IMaybeMonotoneType[]{input}, false);
+    }
+
+    @Nullable
+    public static MonotoneExpression projectRows(DBSPCompiler compiler, DBSPExpression body, DBSPVariablePath[] bounds,
+                                                 IMaybeMonotoneType[] inputs, boolean indexed) {
         try {
-            var reply = invokeLowering(compiler, "Monotonicity/ProjectRow",
-                    MAPPER.writeValueAsBytes(WaterlineProjection.encode(input)), body, bound);
+            var roots = new IDBSPInnerNode[bounds.length + 1];
+            roots[0] = body;
+            System.arraycopy(bounds, 0, roots, 1, bounds.length);
+            var shapes = Linq.map(List.of(inputs), WaterlineProjection::encode);
+            String pass = indexed ? "Monotonicity/ProjectIndexedRow"
+                    : inputs.length == 1 ? "Monotonicity/ProjectRow" : "Monotonicity/ProjectJoinRow";
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(inputs.length == 1 ? shapes.get(0) : shapes), roots);
             if (reply.value.isNull())
                 return null;
-            var result = WaterlineProjection.resolveType(reply.value.required("row_type"), input);
+            var result = WaterlineProjection.resolveType(reply.value.required("row_type"), inputs);
             var reduced = reply.value.required("bound");
             return new MonotoneExpression(body, result, reduced.isNull() ? null
                     : expressionDecoder(reply.writer).decodeInner(reduced, DBSPExpression.class));

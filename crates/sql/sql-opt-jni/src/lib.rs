@@ -619,11 +619,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             return lowered_function_reply(&arena, &edit, Some(function), next, warnings);
         }
-        ("Monotonicity/ProjectRow", [body, bound]) => {
-            let shape = serde_json::from_slice(state)?;
+        ("Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow", [body, bounds @ ..]) => {
+            let indexed = pass == "Monotonicity/ProjectIndexedRow";
+            let shapes = if pass == "Monotonicity/ProjectRow" {
+                vec![serde_json::from_slice(state)?]
+            } else {
+                serde_json::from_slice(state)?
+            };
             let body = edit.expression(*body)?;
-            let bound = edit.expression(*bound)?;
-            let Some(value) = feldera_sql_opt::project_row(&mut edit, body, bound, &shape)? else {
+            let bounds = bounds.iter().map(|&id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;
+            let Some(value) = feldera_sql_opt::project_rows(&mut edit, body, &bounds, &shapes, indexed)? else {
                 return Ok(Value::Null);
             };
             let reduced = edit.circuit().additional_inner_nodes(&arena, value.reduced.map(NodeId::from))?;
@@ -912,7 +917,7 @@ fn transform(
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
-        | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/Filter"
+        | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

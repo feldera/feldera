@@ -26,7 +26,7 @@ pub use monotonicity::binary::{
     binary_waterline, BinaryOperation, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
 };
 pub use monotonicity::identity::identity_bounds;
-pub use monotonicity::row_projection::project_row;
+pub use monotonicity::row_projection::{project_row, project_rows};
 pub use monotonicity::{filter_lower_bounds, filter_transfer, unary_waterline, FilterBound};
 mod static_candidates;
 mod static_items;

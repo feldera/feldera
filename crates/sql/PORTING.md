@@ -549,6 +549,13 @@ That pass matched Java on all 524 selected incremental programs. Both compiler
 directions restored COUNT and LATENESS state.
 [Pass comparisons and checkpoints](evidence/p3-row-waterlines-and-incrementalization.json)
 
+Indexed inputs and three-parameter joins also use the Rust row projection.
+An indexed value moves to slot zero when the key has no bound. A join
+resolves each field against its own input, including repeated reads of the
+same field. All 550 selected monotonicity comparisons and 40 detached
+replays matched Java, and both checkpoint programs restored in both directions.
+[Indexed and join waterlines](evidence/p3-indexed-join-waterlines.json)
+
 The output-projection pass sends Rust the producer and reader functions and
 reattaches the result to the live operator. This preserves chains of projections
 rewritten earlier in the same pass. All 580 pass observations and 310 selected

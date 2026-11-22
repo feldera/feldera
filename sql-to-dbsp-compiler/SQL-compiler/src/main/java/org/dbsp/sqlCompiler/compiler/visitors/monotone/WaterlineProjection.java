@@ -30,17 +30,17 @@ public final class WaterlineProjection {
     }
 
     /** Resolve the Rust projection against the same analyzed types that fed the closure. */
-    public static IMaybeMonotoneType resolveType(JsonNode projection, IMaybeMonotoneType input) {
+    public static IMaybeMonotoneType resolveType(JsonNode projection, IMaybeMonotoneType... inputs) {
         return switch (projection.required("kind").textValue()) {
-            case "input" -> input;
-            case "field" -> resolveType(projection.required("row"), input).to(PartiallyMonotoneTuple.class)
+            case "input" -> inputs[projection.required("index").intValue()];
+            case "field" -> resolveType(projection.required("row"), inputs).to(PartiallyMonotoneTuple.class)
                     .getFieldExpressionType(projection.required("index").intValue());
-            case "with_nullability" -> resolveType(projection.required("value"), input)
+            case "with_nullability" -> resolveType(projection.required("value"), inputs)
                     .withMaybeNull(projection.required("nullable").booleanValue());
             case "tuple" -> {
                 var members = new ArrayList<IMaybeMonotoneType>();
                 for (var field : projection.required("fields"))
-                    members.add(resolveType(field, input));
+                    members.add(resolveType(field, inputs));
                 yield new PartiallyMonotoneTuple(members, projection.required("raw").booleanValue(),
                         projection.required("nullable").booleanValue());
             }

@@ -1,0 +1,42 @@
+{
+  "base_commit": "ad3c38d5b",
+  "scope": "Rust projects structural waterline closures over the key and value of an indexed input or the three reference parameters of a join. Input field types and projected parameter indexes are preserved.",
+  "compiler_jar_sha256": "c859fb8d5e129a280feccc657f83d406cf32512ac7424fc6fcf10167ae48617d",
+  "optimizer_library_sha256": "88dc68a095fef9567bccf9ef6d8e6cb367f1b28ec1e936b13f0d9060bb12934d",
+  "engines": {
+    "classic": {
+      "monotonicity_comparison": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+      "direct_trace_sha256": "3c0b844c17d5527f65a096267779c05db13b2c3bd56a1b82be5f297016569ae4",
+      "hybrid_trace_sha256": "e7a311b7ac7168877dcd47a089ef00eb05ef4535c25257398e9ea1b58cb7fca9",
+      "detached_cases": 20,
+      "shard_receipts_sha256": [
+        "fb9863afa6038b1590dacadbca82aca752c10a18b9130e6b0c62496950130024",
+        "7df709fc71d823d1cc3f4e6b7e19b67d0897fcb0620f1e1ef27323ac02989f03",
+        "977310160af419d069f393c05fe3c880f705ba14f043f6112de990945d0be32d",
+        "220809918d7d7465e1a01ec1d2068dfb529c270cb92dfae2ef8c3965cb05e0a8"
+      ]
+    },
+    "gen2": {
+      "monotonicity_comparison": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+      "direct_trace_sha256": "0768f35deb58f0cf38f12cac45ff610582454b11c3f76aa0ec1a5b1737d69408",
+      "hybrid_trace_sha256": "37c5046d1884cb73a5bc9ddacb510b29254dc7c5979f1a8807684a7d34005812",
+      "detached_cases": 20,
+      "shard_receipts_sha256": [
+        "f4fdb5813a7862072c6488abc7235f776dc11019875edb923cb7e12023724a14",
+        "65f63ed00c91164dbc558afaf5b3bac5ef57aa2abc79c5a478195cec70f827c5",
+        "8f164165f98f4771a3b9fbd8db3900b302d6aaf29fe4caef45288dd8496831af",
+        "4bfef2ed9b5e17aca7c1da551d7c4ff9625bdad3caf0ed124b8efd7bf0e50cd2"
+      ]
+    }
+  },
+  "tests": {
+    "tests.log": "1616e47e3808fdcbdc3c06069212d9abe0dab3eb923a47d5ba55f5d1e89b71c7",
+    "clippy.log": "8a6117d39a2f29766f49dcdc102d10b6f10f15c320078ad8de38a01cb33b29fe",
+    "maven.log": "46f81b438435037d76a5dea58fc9f2753ef54f82fdeaeb07c9f8bc9bcb00a60c"
+  },
+  "directed": "44 Maven tests and four JNI-enabled WaterlineProjectionTests passed, including indexed input with an absent key bound and a three-argument join with repeated column reads and different bound layouts. The Java and hybrid reduced closures were equivalent.",
+  "checkpoint_restores": {
+    "count": "673625a0e7c061ebb940d767e5d3ff89fb8af91c4cd91fa876e9c24727396af8",
+    "watermark": "628920fbddee775fbea4f538e7c9a4798441f749d65707562f83b4b4c281e348"
+  }
+}

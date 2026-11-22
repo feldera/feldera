@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
@@ -60,6 +61,77 @@ public class WaterlineProjectionTests {
             Assert.assertTrue(shape.getFieldType(0).getType().mayBeNull);
             Assert.assertFalse(shape.getFieldType(1).mayBeMonotone());
             Assert.assertSame(fixed, shape.getFieldType(2));
+        }
+    }
+
+    @Test
+    public void projectValueWhenTheIndexHasNoBound() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPTypeInteger(CalciteEmptyRel.INSTANCE, 32, true, false);
+        var field = new MonotoneType(integer);
+        var unbounded = new NonMonotoneType(integer);
+        var key = new PartiallyMonotoneTuple(List.of(unbounded), false, false);
+        var value = new PartiallyMonotoneTuple(List.of(unbounded, field), false, false);
+        var indexed = new PartiallyMonotoneTuple(List.of(key, value), true, false);
+        var parameter = new DBSPVariablePath("pair", new DBSPTypeRawTuple(key.getType().ref(), value.getType().ref()));
+        var body = new DBSPTupleExpression(parameter.deepCopy().field(0).deref().field(0),
+                parameter.deepCopy().field(1).deref().field(1));
+        var closure = body.closure(parameter);
+        var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.IndexedZSet,
+                indexed).applyAnalysis(closure);
+        Assert.assertTrue(direct.mayBeMonotone());
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var bound = new DBSPVariablePath("pair", new DBSPTypeRawTuple(value.getProjectedType().ref()));
+            var nativeValue = RustCircuitPass.projectRows(compiler, body, new DBSPVariablePath[]{bound},
+                    new IMaybeMonotoneType[]{key, value}, true);
+            Assert.assertNotNull(nativeValue);
+            var expected = new DBSPTupleExpression(bound.deepCopy().field(0).deref().field(0)).closure(bound);
+            Assert.assertTrue(expected.equivalent(nativeValue.getReducedExpression().closure(bound)));
+            Assert.assertSame(field, nativeValue.getMonotoneType().to(PartiallyMonotoneTuple.class).getFieldType(1));
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var hybrid = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.IndexedZSet,
+                    indexed).applyAnalysis(closure);
+            Assert.assertTrue(direct.getReducedExpression().equivalent(hybrid.getReducedExpression()));
+        }
+    }
+
+    @Test
+    public void projectJoinRowsWithDifferentBoundColumns() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var node = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(node, 32, true, false);
+        var keyField = new MonotoneType(integer);
+        var leftField = new MonotoneType(integer);
+        var rightField = new MonotoneType(integer);
+        var unbounded = new NonMonotoneType(integer);
+        var key = new PartiallyMonotoneTuple(List.of(keyField), false, false);
+        var left = new PartiallyMonotoneTuple(List.of(unbounded, leftField), false, false);
+        var right = new PartiallyMonotoneTuple(List.of(rightField, unbounded), false, false);
+        var k = new DBSPVariablePath("k", key.getType().ref());
+        var l = new DBSPVariablePath("l", left.getType().ref());
+        var r = new DBSPVariablePath("r", right.getType().ref());
+        var body = new DBSPTupleExpression(r.deepCopy().deref().field(0), l.deepCopy().deref().field(0),
+                k.deepCopy().deref().field(0), l.deepCopy().deref().field(1), r.deepCopy().deref().field(0));
+        var closure = body.closure(k, l, r);
+        var inputs = new IMaybeMonotoneType[]{key, left, right};
+        var operator = new DBSPConstantOperator(node, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.Join;
+        var direct = new MonotoneTransferFunctions(compiler, operator, kind, inputs).applyAnalysis(closure);
+        Assert.assertTrue(direct.mayBeMonotone());
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var bounds = new DBSPVariablePath[]{new DBSPVariablePath("k", key.getProjectedType().ref()),
+                    new DBSPVariablePath("l", left.getProjectedType().ref()), new DBSPVariablePath("r", right.getProjectedType().ref())};
+            var projected = RustCircuitPass.projectRows(compiler, body, bounds, inputs, false);
+            Assert.assertNotNull(projected);
+            var tuple = projected.getMonotoneType().to(PartiallyMonotoneTuple.class);
+            var expected = List.of(rightField, unbounded, keyField, leftField, rightField);
+            Assert.assertEquals(expected.size(), tuple.size());
+            for (int i = 0; i < expected.size(); i++)
+                Assert.assertSame(expected.get(i), tuple.getFieldType(i));
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var hybrid = new MonotoneTransferFunctions(compiler, operator, kind, inputs).applyAnalysis(closure);
+            Assert.assertTrue(direct.getReducedExpression().equivalent(hybrid.getReducedExpression()));
         }
     }
 
