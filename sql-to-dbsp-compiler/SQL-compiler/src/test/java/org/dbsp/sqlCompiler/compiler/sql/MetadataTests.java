@@ -1555,6 +1555,20 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertTrue(tables.toString(), tables.contains("🐍t"));
     }
 
+    /** The dataflow report escapes a view name that is a JSON key */
+    @Test
+    public void dataflowViewNameKey() throws IOException, SQLException {
+        String sql = """
+                CREATE TABLE T(x INT);
+                CREATE VIEW "🐍\\q" AS SELECT x FROM T;""";
+        File file = createInputScript(sql);
+        File json = this.createTempJsonFile();
+        CompilerMessages messages = CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file.getPath());
+        Assert.assertEquals(0, messages.exitCode);
+        JsonNode parsed = Utilities.deterministicObjectMapper().readTree(json);
+        Assert.assertTrue(parsed.get("calcite_plan").has("🐍\\q"));
+    }
+
     @Test
     public void generateDFTest() throws IOException, SQLException {
         String sql = """

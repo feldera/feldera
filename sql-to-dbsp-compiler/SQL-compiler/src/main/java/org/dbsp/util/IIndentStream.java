@@ -228,7 +228,7 @@ public interface IIndentStream {
     int getIndentAmount();
 
     default IIndentStream appendJsonLabelAndColon(String label) {
-        return this.append("\"").append(Utilities.escapeDoubleQuotes(label)).append("\": ");
+        return this.append(Utilities.doubleQuote(label, false)).append(": ");
     }
 
     /** Given data composed of multiple lines, append each line
