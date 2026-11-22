@@ -395,6 +395,17 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 byField.getNode(), source, newFieldNo, byField.ascending, byField.nullsFirst);
     }
 
+    private boolean markComparedFields(DBSPComparatorExpression rank, DBSPComparatorExpression ties,
+                                       FieldUseMap fields) {
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
+            return setComparedFieldsToUsed(rank, fields) && setComparedFieldsToUsed(ties, fields);
+        var columns = RustCircuitPass.topKComparedFields(this.compiler, rank, ties);
+        if (columns == null)
+            return false;
+        columns.forEach(fields::setUsed);
+        return true;
+    }
+
     @Override
     public void postorder(DBSPIndexedTopKOperator operator) {
         // The TopK reads its input row both with 3 functions: the comparator, the equalityComparator,
@@ -425,11 +436,15 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression newProducer = rw.rewriteClosure(producer);
         DBSPMapIndexOperator adjust = this.projectValue(operator, rowUse);
         DBSPType newRowType = adjust.getOutputIndexedZSetType().elementType;
-        DBSPComparatorExpression newComparator = remapComparedFields(comparator, rowFields, newRowType);
+        var orders = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.projectTopKComparators(this.compiler, comparator, equality,
+                        newRowType, rowFields.usageAtDepth(1))
+                : Pair.of(remapComparedFields(comparator, rowFields, newRowType),
+                        remapComparedFields(equality, rowFields, newRowType));
         DBSPEqualityComparatorExpression newEquality = new DBSPEqualityComparatorExpression(
-                operator.equalityComparator.getNode(), remapComparedFields(equality, rowFields, newRowType));
+                operator.equalityComparator.getNode(), orders.right);
         DBSPSimpleOperator result = new DBSPIndexedTopKOperator(
-                operator.getRelNode(), operator.numbering, newComparator, operator.limit,
+                operator.getRelNode(), operator.numbering, orders.left, operator.limit,
                 newEquality, newProducer, adjust.outputPort())
                 .copyAnnotations(operator);
         this.map(operator, result);

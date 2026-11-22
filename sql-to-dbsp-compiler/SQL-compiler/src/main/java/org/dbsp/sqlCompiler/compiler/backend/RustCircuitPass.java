@@ -161,6 +161,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
@@ -1025,6 +1026,35 @@ public final class RustCircuitPass implements CircuitTransform {
             return result;
         } catch (IOException error) {
             throw new UncheckedIOException("Could not encode input column usage", error);
+        }
+    }
+
+    @Nullable
+    public static List<Integer> topKComparedFields(DBSPCompiler compiler,
+            DBSPComparatorExpression rank, DBSPComparatorExpression ties) {
+        String pass = "RemoveUnusedFields/TopKFields";
+        var reply = invokeLowering(compiler, pass, rank, ties);
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision(pass, true);
+        return reply.value.isNull() ? null : MAPPER.convertValue(reply.value, new TypeReference<>() {});
+    }
+
+    public static Pair<DBSPComparatorExpression, DBSPComparatorExpression> projectTopKComparators(
+            DBSPCompiler compiler, DBSPComparatorExpression rank, DBSPComparatorExpression ties,
+            DBSPType row, List<Boolean> used) {
+        String pass = "RemoveUnusedFields/TopKComparators";
+        record Projection(String row, List<Boolean> used) {}
+        try {
+            var state = MAPPER.writeValueAsBytes(new Projection(row.toString(), used));
+            var reply = invokeLowering(compiler, pass, state, rank, ties, row);
+            var decoder = expressionDecoder(reply.writer);
+            var order = decoder.decodeInner(reply.value.required(0), DBSPComparatorExpression.class);
+            var equality = decoder.decodeInner(reply.value.required(1), DBSPComparatorExpression.class);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return Pair.of(order, equality);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode TopK input projection", error);
         }
     }
 

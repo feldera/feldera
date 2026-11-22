@@ -5,6 +5,8 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -17,6 +19,36 @@ import org.junit.Test;
 import java.util.List;
 
 public class JoinInputProjectionTests {
+    @Test
+    public void topKProjectionPreservesTieBreakersAndNullOrdering() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteObject.EMPTY;
+        var text = DBSPTypeString.varchar(true);
+        var row = new DBSPTypeTuple(text, text, text, text);
+        var narrowed = new DBSPTypeTuple(text, text);
+        var base = new DBSPNoComparatorExpression(site, row);
+        var order = base.field(3, false, true).field(1, true, false);
+        var ties = base.field(3, true, false);
+        Assert.assertEquals(List.of(1, 3), RustCircuitPass.topKComparedFields(compiler, order, ties));
+        Assert.assertEquals(List.of(), RustCircuitPass.topKComparedFields(compiler, base, base));
+        var direct = new DBSPDirectComparatorExpression(site, base, true);
+        Assert.assertNull(RustCircuitPass.topKComparedFields(compiler, order, direct));
+
+        var fields = new FieldUseMap(row, false);
+        fields.setUsed(1);
+        fields.setUsed(3);
+        var result = RustCircuitPass.projectTopKComparators(compiler, order, ties, narrowed, fields.usageAtDepth(1));
+        var expectedOrder = RemoveUnusedFields.remapComparedFields(order, fields, narrowed);
+        var expectedTies = RemoveUnusedFields.remapComparedFields(ties, fields, narrowed);
+        Assert.assertTrue(EquivalenceContext.equiv(expectedOrder, result.left));
+        Assert.assertTrue(EquivalenceContext.equiv(expectedTies, result.right));
+        Assert.assertEquals(expectedOrder.getComparatorStructName(), result.left.getComparatorStructName());
+        Assert.assertEquals(expectedTies.getComparatorStructName(), result.right.getComparatorStructName());
+        Assert.assertSame(narrowed, result.left.comparedValueType());
+        Assert.assertSame(narrowed, result.right.comparedValueType());
+    }
+
     @Test
     public void compressesParametersAtTheRequestedDepthAndSharesOriginalLeaves() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));

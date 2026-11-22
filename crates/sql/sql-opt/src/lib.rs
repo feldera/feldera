@@ -50,6 +50,8 @@ mod balanced_joins;
 mod chains;
 mod collapse_shared_chains;
 mod comparators;
+mod field_comparator;
+pub use field_comparator::{project_topk_comparators, topk_compared_fields};
 mod replace_projections;
 pub use replace_projections::{projection_edits, replace_common_projections, ProjectionClosures};
 mod row_fields;

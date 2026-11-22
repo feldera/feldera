@@ -2,15 +2,15 @@
 use super::{asof_index, asof_projection, asof_timestamps};
 use crate::{
     asof_retention::asof_retainers,
+    field_comparator::{empty_comparator, field_comparator},
     rebuild::{ProjectionNames, input_type},
     stream_rewrites::body_members,
 };
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{
-    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field,
-    InnerKind, NodeId, OperatorKind as Op, OutputPort, TypeId, TypeKind,
+    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
+    OutputPort, TypeId,
 };
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub struct AsofRetention {
@@ -25,21 +25,6 @@ pub struct LoweredAsof {
     pub warnings: Vec<SimplifyWarning>,
     /// Original retainer and new concrete join, in retainer traversal order.
     pub retention: Vec<AsofRetention>,
-}
-
-fn comparator_type(edit: &mut CircuitEditor, site: NodeId, text: &str) -> Result<TypeId, Error> {
-    let digest = Sha256::digest(text.as_bytes());
-    let prefix = u64::from_be_bytes(digest[..8].try_into().expect("SHA-256 has 32 bytes"));
-    let ty = edit.empty_origin_node(
-        site,
-        InnerKind::Type(TypeKind::Comparator),
-        [
-            ("name", Field::Data(format!("CMP_{prefix:016x}").into())),
-            ("code", Field::Data("COMPARATOR".into())),
-            ("mayBeNull", Field::Data(false.into())),
-        ],
-    )?;
-    edit.type_id(ty)
 }
 
 struct JoinInput<'a> {
@@ -83,31 +68,9 @@ impl<'a> JoinInput<'a> {
         key: TypeId,
         flatten_key: bool,
     ) -> Result<(OutputPort, TypeId), Error> {
-        let empty_type = comparator_type(edit, site, self.printed_row)?;
-        let empty = edit.make_expr(
-            site,
-            Expr::NoComparator,
-            empty_type,
-            [("tupleType", Field::Reference(self.row.into()))],
-        )?;
-        let name = edit
-            .node(empty_type.into())?
-            .data("name")
-            .and_then(|name| name.as_str())
-            .expect("named comparator");
-        let field_type =
-            comparator_type(edit, site, &format!("{name}.{} true true", self.timestamp))?;
-        let order = edit.make_expr(
-            site,
-            Expr::FieldComparator,
-            field_type,
-            [
-                ("source", Field::Reference(empty.into())),
-                ("ascending", Field::Data(true.into())),
-                ("nullsFirst", Field::Data(true.into())),
-                ("fieldNo", Field::Data(self.timestamp.into())),
-            ],
-        )?;
+        let empty = empty_comparator(edit, site, self.row, self.printed_row)?;
+        let order = field_comparator(edit, site, empty, self.timestamp, true, true)?;
+        let field_type = edit.expression_type(order)?;
         let function = asof_index(edit, self.pair, order, flatten_key)?;
         let result = edit.node(function.into())?.edge("body")?;
         let pair = edit.expression_type(edit.expression(result)?)?;

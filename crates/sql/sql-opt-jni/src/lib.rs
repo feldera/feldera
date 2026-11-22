@@ -800,6 +800,23 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let row = edit.type_id(*row)?;
             feldera_sql_opt::project_used_fields(&mut edit, row, used, &mut next)?
         }
+        ("RemoveUnusedFields/TopKFields", [rank, ties]) => {
+            let fields = feldera_sql_opt::topk_compared_fields(&edit, [*rank, *ties])?;
+            return Ok(serde_json::to_value(fields)?);
+        }
+        ("RemoveUnusedFields/TopKComparators", [rank, ties, row]) => {
+            #[derive(serde::Deserialize)]
+            struct Projection {
+                row: String,
+                used: Vec<bool>,
+            }
+            let projection: Projection = serde_json::from_slice(state)?;
+            let row = edit.type_id(*row)?;
+            let orders = feldera_sql_opt::project_topk_comparators(
+                &mut edit, [*rank, *ties], row, &projection.row, &projection.used,
+            )?;
+            return Ok(serde_json::to_value(edit.circuit().additional_expressions(&arena, &orders)?)?);
+        }
         ("RemoveUnusedFields/ParameterTypes", types) => {
             #[derive(serde::Deserialize)]
             struct Request { depth: usize, usage: Vec<Vec<bool>> }
@@ -1082,6 +1099,7 @@ fn transform(
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
+        | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
             return lower_function(pass, input, state, next);
         }
