@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -84,6 +85,32 @@ public class ProjectionCompositionTests {
         var reader = b.lambda(new DBSPTypeRawTuple(b.tup(b.i32()).ref(), row.ref()), pair ->
                 new DBSPRawTupleExpression(b.tuple(), pair.field(1).deref()));
         Assert.assertNull(RustCircuitPass.trimTopKProjection(this.compiler, producer, reader));
+    }
+
+    @Test public void narrowUnnestInputWithRepeatedPassthroughAndOrdinality() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var array = new DBSPTypeArray(b.i32n(), false);
+        var input = b.tup(b.str(), b.i32(), array, b.str());
+        var row = input.ref().var();
+        var shuffle = new ExplicitShuffle(4, List.of(3, 0, 2, 1));
+        var flatmap = new DBSPFlatmap(CalciteObject.EMPTY, input, row.deref().field(2).closure(row),
+                List.of(3, 3), null, b.i32(), shuffle);
+        var reduced = RustCircuitPass.trimFlatmapInput(this.compiler, flatmap, List.of(false, false, true, false));
+        Assert.assertNotNull(reduced);
+        var narrowed = b.tup(array, b.str());
+        Assert.assertTrue(narrowed.sameType(reduced.left.getResultType()));
+        Assert.assertTrue(narrowed.sameType(reduced.right.inputRowType));
+        Assert.assertEquals(List.of(1, 1), reduced.right.passthroughIndexes);
+        var parameter = narrowed.ref().var();
+        Assert.assertTrue(EquivalenceContext.equiv(parameter.deref().field(0).closure(parameter),
+                reduced.right.collectionExpression));
+        Assert.assertEquals(List.of(3, 0, 2, 1), reduced.right.shuffle.shuffle(List.of(0, 1, 2, 3)));
+        Assert.assertSame(flatmap.ordinalityIndexType, reduced.right.ordinalityIndexType);
+        Assert.assertTrue(flatmap.getType().to(DBSPTypeFunction.class).resultType
+                .sameType(reduced.right.getType().to(DBSPTypeFunction.class).resultType));
+        long nextName = DBSPVariablePath.nextGeneratedName();
+        Assert.assertNull(RustCircuitPass.trimFlatmapInput(this.compiler, flatmap, List.of(true, true, true, false)));
+        Assert.assertEquals(nextName, DBSPVariablePath.nextGeneratedName());
     }
 
     @Test public void composeUnnestShufflesAndRejectComputedOutputs() {

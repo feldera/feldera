@@ -800,6 +800,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             closure
         }
+        ("RemoveUnusedFields/FlatmapInput", [flatmap]) => {
+            let used = serde_json::from_slice(state)?;
+            let Some(functions) = feldera_sql_opt::trim_flatmap_input(&mut edit, *flatmap, used, &mut next)? else {
+                return Ok(Value::Null);
+            };
+            return Ok(json!({"functions": edit.circuit().additional_expressions(&arena, &functions)?,
+                "next_generated_name": next}));
+        }
         ("RemoveUnusedFields/AggregateReader", [aggregate, rows @ ..]) => {
             let used: Vec<bool> = serde_json::from_slice(state)?;
             let aggregate = feldera_sql_opt::rebind_projected_aggregate(&mut edit, *aggregate, rows, &used)?;
@@ -1113,7 +1121,7 @@ fn transform(
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
-        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators" | "RemoveUnusedFields/AsofInputs"
+        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators" | "RemoveUnusedFields/AsofInputs"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
             return lower_function(pass, input, state, next);
         }

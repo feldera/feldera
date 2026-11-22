@@ -97,7 +97,7 @@ mod fanout;
 mod filter_joins;
 mod filters;
 mod flatmap;
-pub use flatmap::lower_flatmap;
+pub use flatmap::{lower_flatmap, trim_flatmap_input};
 mod function_calls;
 mod gen2;
 mod hints;

@@ -1,5 +1,7 @@
 //! Lower UNNEST to an outer row closure and an iterator that builds the output tuples.
 mod collection;
+mod input;
+pub use input::trim_flatmap_input;
 mod projection;
 
 use feldera_sql_expr::{FlatmapColumns, SimplifyWarning};

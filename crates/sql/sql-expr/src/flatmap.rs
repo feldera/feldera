@@ -82,6 +82,22 @@ fn rebuild_from_row(edit: &mut CircuitEditor, id: NodeId, row: NodeId) -> Result
     )
 }
 
+/// Rebuild UNNEST with a narrowed input, retaining the ordinality, postprocessing and output shuffle.
+pub fn replace_flatmap_input(
+    edit: &mut CircuitEditor,
+    flatmap: NodeId,
+    row: NodeId,
+    collection: NodeId,
+    passthrough: Vec<usize>,
+) -> Result<NodeId, Error> {
+    let columns = passthrough.into_iter().map(|i| Field::Data(i.into())).collect();
+    let narrowed = edit.derive_inner(flatmap, [
+        ("collectionExpression", Field::Reference(collection)),
+        ("passthroughIndexes", Field::Array(columns)),
+    ])?;
+    rebuild_from_row(edit, narrowed, row)
+}
+
 /// Types emitted by UNNEST after the passthrough fields and before the shuffle.
 pub fn flatmap_generated_types(edit: &mut CircuitEditor, id: NodeId) -> Result<Vec<NodeId>, Error> {
     let flatmap = edit.node(id)?;

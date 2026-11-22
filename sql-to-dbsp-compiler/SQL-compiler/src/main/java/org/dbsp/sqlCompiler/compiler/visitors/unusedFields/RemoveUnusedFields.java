@@ -467,41 +467,36 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
 
-        // Search for unused fields in the DBSPFlatmap expression
-        DBSPTypeTuple inputTuple = operator.input().getOutputZSetElementType().to(DBSPTypeTuple.class);
-        var useMap = this.find.findUsedFields(flatmap.collectionExpression);
-        FieldUseMap map = useMap.get(flatmap.collectionExpression.parameters[0]).deref();
-        for (int index: flatmap.passthroughIndexes) {
-            map.setUsed(index);
-        }
-        if (!map.hasUnusedFields(1)) {
+        var uses = this.find.findUsedFields(flatmap.collectionExpression);
+        var row = uses.get(flatmap.collectionExpression.parameters[0]).deref();
+        var narrowed = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.trimFlatmapInput(this.compiler, flatmap, row.usageAtDepth(1))
+                : this.trimFlatmapInput(flatmap, uses, row);
+        if (narrowed == null) {
             super.postorder(operator);
             return;
         }
-
-        // Project away the unused fields before the flatmap operator
-        int size = inputTuple.getToplevelFieldCount();
-        var borrowed = map.borrow();
-        DBSPClosureExpression projection = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.projectUsedFields(this.compiler, borrowed.getType(), borrowed.usageAtDepth(1), null)
-                : Objects.requireNonNull(borrowed.getProjection(1));
-        OutputPort source = this.mapped(operator.input());
-        DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getRelNode(), projection, source)
-                .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
+        int width = operator.input().getOutputZSetElementType().to(DBSPTypeTuple.class).getToplevelFieldCount();
+        var adjust = new DBSPMapOperator(operator.getRelNode(), narrowed.left, this.mapped(operator.input()))
+                .addAnnotation(new IsProjection(width), DBSPSimpleOperator.class);
         this.addOperator(adjust);
-        RewriteFields fieldRewriter = useMap.getFieldRewriter(this.compiler, 1);
-        DBSPClosureExpression collectionExpression = fieldRewriter.rewriteClosure(flatmap.collectionExpression);
+        this.map(operator, new DBSPFlatMapOperator(operator.getRelNode(), narrowed.right,
+                operator.getOutputZSetType(), adjust.outputPort()));
+    }
 
-        // Correct the DBSPFLatmap to account for the removed fields
-        List<Integer> indexes = Linq.map(flatmap.passthroughIndexes, map::getNewIndex);
-        DBSPFlatmap replacement = new DBSPFlatmap(flatmap.getNode(),
-                Objects.requireNonNull(map.compressedType(1)).to(DBSPTypeTuple.class),
-                collectionExpression, indexes, flatmap.postProcess, flatmap.ordinalityIndexType,
-                flatmap.shuffle);
-
-        DBSPSimpleOperator result = new DBSPFlatMapOperator(
-                operator.getRelNode(), replacement, operator.getOutputZSetType(), adjust.outputPort());
-        this.map(operator, result);
+    @Nullable
+    private Pair<DBSPClosureExpression, DBSPFlatmap> trimFlatmapInput(
+            DBSPFlatmap flatmap, ParameterFieldUse uses, FieldUseMap row) {
+        flatmap.passthroughIndexes.forEach(row::setUsed);
+        if (!row.hasUnusedFields(1))
+            return null;
+        var projection = Objects.requireNonNull(row.borrow().getProjection(1));
+        var reader = uses.getFieldRewriter(this.compiler, 1).rewriteClosure(flatmap.collectionExpression);
+        var indexes = Linq.map(flatmap.passthroughIndexes, row::getNewIndex);
+        var replacement = new DBSPFlatmap(flatmap.getNode(),
+                Objects.requireNonNull(row.compressedType(1)).to(DBSPTypeTuple.class),
+                reader, indexes, flatmap.postProcess, flatmap.ordinalityIndexType, flatmap.shuffle);
+        return Pair.of(projection, replacement);
     }
 
     @Override
