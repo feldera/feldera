@@ -12551,7 +12551,7 @@ fn retention_config(storage_dir: &Path, multihost: bool) -> PipelineConfig {
 }
 
 /// A single-host pipeline keeps only its newest checkpoint.
-#[engine_test(requires(Storage))]
+#[engine_test(requires(Storage, Checkpoints))]
 pub fn single_host_keeps_one_checkpoint(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -12574,7 +12574,7 @@ pub fn single_host_keeps_one_checkpoint(engine: &dyn PipelineTestEngine) {
 
 /// A single-host pipeline has no output assignment, so its checkpoint records none, and its
 /// `state.json` has no `output_assignment` key.
-#[engine_test(requires(Storage))]
+#[engine_test(requires(Storage, Checkpoints))]
 pub fn single_host_checkpoint_records_no_output_assignment(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -12597,7 +12597,7 @@ pub fn single_host_checkpoint_records_no_output_assignment(engine: &dyn Pipeline
 
 /// A host of a multihost pipeline keeps its two newest checkpoints, until the
 /// coordinator says that every host has the newest one.
-#[engine_test(requires(Storage))]
+#[engine_test(requires(Storage, Checkpoints))]
 pub fn multihost_keeps_two_checkpoints_until_complete(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
