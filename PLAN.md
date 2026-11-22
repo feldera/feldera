@@ -46,7 +46,7 @@ Path prefixes used in this document:
   passed, including 232 expected runtime errors. The checkpoint and decoder
   results and the outstanding independent reviews are recorded in the
   [phase status](crates/sql/PORTING.md#local-compiler-and-phase-status).
-- 2026-11-21. The HOP waterline build ran 3,040,897 Rust pass adapter
+- 2026-11-21. The UNNEST waterline build at `33a973569` ran 3,040,897 Rust pass adapter
   invocations across 105 pass kinds. All 17,098 frozen programs matched direct
   Java through S3, persistent-ID inputs and emitted artifacts. The selected
   LATENESS and NOW() programs passed 2,076 runtime commands, and COUNT and

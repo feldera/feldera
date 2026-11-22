@@ -462,6 +462,19 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust computes the UNNEST waterline before applying the output shuffle. Each
+copied input column keeps its bound. Array elements, map keys and values,
+postprocessing results and ordinals receive unknown bounds of their own types.
+Twelve directed cases across classic and Gen-2 matched Java on the closure,
+final S3, persistent-ID inputs, diagnostics, schema and emitted artifacts.
+The same build matched 550 monotonicity placements, 2,382 shared-projection
+replacements and all 17,098 frozen programs. The selected classic programs
+passed 2,076 runtime commands. COUNT and LATENESS checkpoints restored in
+both directions. Four-worker cancellation p95 was 38.99 ms during replay and
+6.41 ms in isolation against the 25 ms limit.
+[Replay and resource measurements](evidence/p3-unnest-waterlines.json) ·
+[Upstream regression](https://github.com/feldera/feldera/pull/8040)
+
 Rust constructs the ASOF waterline closure for matches where the left timestamp
 is greater than or equal to, or strictly greater than, the right timestamp. The
 left timestamp takes the minimum of the two input bounds. Right columns and

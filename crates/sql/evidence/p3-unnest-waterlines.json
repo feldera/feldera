@@ -1,0 +1,130 @@
+{
+  "source_commit": "33a9735698df7316be0cee904501a9033452608c",
+  "build": {
+    "jar_sha256": "a0db33bb9910e7af1f5bea8d7b714d1426a2cd3e06090b91e9d4b685ac6ce466",
+    "optimizer_library_sha256": "f5709e04448f2ce78b6b5487750cf65d89734629cf291808d82b512f374044fc",
+    "driver_sha256": "3a7a04e5e42c461dce7848060cb493eb6462de6a391a1d2f5ded68465c15bbb2",
+    "pass_kinds": 105
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "mismatches": 0
+    },
+    "gen2": {
+      "cases": 8527,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "mismatches": 0
+    }
+  },
+  "s4": {
+    "classic": {
+      "MonotoneAnalyzer": {
+        "invocations": 291,
+        "cases": 291,
+        "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+        "java_stream_sha256": "394084a76fd20b7cfdcbe7ef54b3cfe8b21f22b36f8fcfefb276a39bb6b194e7",
+        "rust_stream_sha256": "1581bbf02370d409aedc7ecf710294b506c966eb4ab3d19138440eb7219900d2"
+      },
+      "ReplaceCommonProjections": {
+        "invocations": 1246,
+        "cases": 291,
+        "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+        "java_stream_sha256": "a566e96c5971c943dcede3868590d81898de84225c12b86214aaf3bc3ee21205",
+        "rust_stream_sha256": "040b13ca197360987f985652ae6cb4e14ef9474ba770972b3139be6c076d8a8c"
+      }
+    },
+    "gen2": {
+      "MonotoneAnalyzer": {
+        "invocations": 259,
+        "cases": 259,
+        "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+        "java_stream_sha256": "12b2c06d99729cabe4a32e0989378a73a1a21a0181a6f5a5daf9b4a3bba2d167",
+        "rust_stream_sha256": "4a1b2106bcfe6d17b6054c6c517f44cc569766f9cc2953f9b7f6665e75cb1222"
+      },
+      "ReplaceCommonProjections": {
+        "invocations": 1136,
+        "cases": 259,
+        "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+        "java_stream_sha256": "eb6cc491c5aa4c6a4f397211a726e9d85a8c1ede595e99044816773c2049e722",
+        "rust_stream_sha256": "c67938953ce265ef364e162a536204e32bff10d86447b93d2061e9c4dc9598a9"
+      }
+    }
+  },
+  "directed_unnest": {
+    "classic": {
+      "cases": [
+        "map",
+        "ordinal",
+        "reordered",
+        "row-ordinal",
+        "rows",
+        "scalar"
+      ],
+      "matched_closure_graphs": 6,
+      "matched_final_artifacts": 6,
+      "population_sha256": "10f6374bed41736d62a86e05d35cac3ef89c165330499fd6f2a6bba6c9f3ad18",
+      "java_records_sha256": "badd662f60b1db2c7ab26e19b8ce67dba833b295f3076940fb82bf444f858ac0",
+      "hybrid_records_sha256": "a5bc6326c6a7cde2edfd8b768c82463df256e21831591635beef9262a0de235b"
+    },
+    "gen2": {
+      "cases": [
+        "map",
+        "ordinal",
+        "reordered",
+        "row-ordinal",
+        "rows",
+        "scalar"
+      ],
+      "matched_closure_graphs": 6,
+      "matched_final_artifacts": 6,
+      "population_sha256": "db6780f60bb14024f195e08329c34bce6ec192236b35ea047f3a70931e9d18dc",
+      "java_records_sha256": "9a4261397130eeb9dfb045c9911ed07bc42c1730c461db4af4c0beff4406f4a8",
+      "hybrid_records_sha256": "36a40f86b4253bcbdfe8a9782ce0edd137d2542e472cb106020251b17bdfb837"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "batch_receipts_sha256": "1a7ed485466f93090725df4bd26dcb1d4975bb6c6d0a72ff905d6ff4cde87622"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "ff8c01a643ad984721b3f3f9d0a75cc1fa2ed7932aa33e9a08e6b5e1d7220ea5",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "6cb3fdf9bd71f74850f1714ea027e66b22be23a222b7831b07c4acf48686872d",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "during_replay": {
+      "rounds": 5,
+      "slots_per_round": 4,
+      "p95_ms": 38.988102,
+      "largest_driver_plus_front_end_rss_bytes": 80023552
+    },
+    "isolated": {
+      "rounds": 5,
+      "slots_per_round": 4,
+      "p95_ms": 6.41284,
+      "largest_driver_plus_front_end_rss_bytes": 80109568
+    }
+  },
+  "upstream_regression": "https://github.com/feldera/feldera/pull/8040",
+  "maven": {
+    "tests": 122,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}
