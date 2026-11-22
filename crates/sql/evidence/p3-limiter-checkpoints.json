@@ -1,0 +1,95 @@
+{
+  "source_commit": "5cbda903adc5878fcc32e16364538cd93f75cae2",
+  "build": {
+    "jar_sha256": "0af7d724804fa92af602718b3491829e09cca9448b1cfb813af451b28bd77d9c",
+    "optimizer_library_sha256": "91f0c0883c192bf6585782b95ab5169585fbe3b1d5400baec451a82bb181be93",
+    "driver_sha256": "8c49dde37c0a4661733318d37feeb4e81efb435bc46fa94340aedaf652467a8d",
+    "pass_kinds": 106
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "native_limiter_insertions": 6484
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "native_limiter_insertions": 6264
+    }
+  },
+  "s4": {
+    "classic": {
+      "pass": "InsertLimiters",
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "af616b10efce69f98073891b79fe55f4ff2edd2c3e4523dbbaace5cb38c2517b",
+      "rust_stream_sha256": "89fcf1e8c93cccab33937077b53d3fe3ce9b7327f35e35dc05a24ef081c8c7a4"
+    },
+    "gen2": {
+      "pass": "InsertLimiters",
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "15c2e300cacd880a76b127a9fff20421ee448e9c71ac83b9bb00613b0101340f",
+      "rust_stream_sha256": "94d037b23399609425a9d73fd19951d337371e76168c9726c79dbe9cf3417d0a"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "d5305a93af5329cbe12a3de0b8b60177c0147ce023054c67725d62009ca655df"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "75efa070bf177c35058be834e7fbbd4eca61af3f24c9cbb2639a31e5083e42d2",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "53251ad29df570bd22f9ca2b1e1609206055c677269cf59ebe38dab0d532fa4c",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 6.148365,
+    "largest_driver_plus_front_end_rss_bytes": 80105472
+  },
+  "maven": {
+    "tests": 122,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "dump_replay": {
+    "program": "CREATE TABLE t(x INT); CREATE VIEW v AS SELECT x FROM t;",
+    "pass": "InsertLimiters",
+    "java": [
+      {
+        "sequence": 206,
+        "before": 5,
+        "after": 6,
+        "wire_changed": true
+      }
+    ],
+    "rust": [
+      {
+        "sequence": 147,
+        "before": 5,
+        "after": 6,
+        "wire_changed": true
+      }
+    ],
+    "canonical_input_and_result_match": true
+  }
+}

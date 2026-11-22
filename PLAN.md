@@ -46,8 +46,8 @@ Path prefixes used in this document:
   passed, including 232 expected runtime errors. The checkpoint and decoder
   results and the outstanding independent reviews are recorded in the
   [phase status](crates/sql/PORTING.md#local-compiler-and-phase-status).
-- 2026-11-21. The binary waterline build at `47efb1af2` ran 3,133,126 Rust pass adapter
-  invocations across 105 pass kinds. All 17,098 frozen programs matched direct
+- 2026-11-21. The limiter-insertion build at `5cbda903a` ran 106 Rust pass
+  kinds, including 12,748 whole limiter insertions. All 17,098 frozen programs matched direct
   Java through S3, persistent-ID inputs and emitted artifacts. The selected
   LATENESS and NOW() programs passed 2,076 runtime commands, and COUNT and
   LATENESS checkpoints restored in both directions. The last full classic
