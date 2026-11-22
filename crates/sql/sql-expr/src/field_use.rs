@@ -4,7 +4,7 @@
 use feldera_sql_ir::{
     Circuit, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId, TypeKind,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// A field belongs to the parameter that introduced it, including after
 /// tuple construction, field selection and scalar computations.
@@ -39,21 +39,21 @@ impl Use {
 #[derive(Clone, Copy)]
 enum ParameterShape {
     Borrowed { tuple: bool },
-    IndexedPair,
+    Pair,
 }
 
 impl ParameterShape {
     fn binding(self, parameter: usize) -> Use {
         let borrowed = |indices| Use::Borrowed(ParameterField { parameter, indices });
         match self {
-            Self::IndexedPair => Use::Tuple(vec![borrowed(vec![0]), borrowed(vec![1])]),
+            Self::Pair => Use::Tuple(vec![borrowed(vec![0]), borrowed(vec![1])]),
             Self::Borrowed { .. } => borrowed(vec![]),
         }
     }
 
     fn is_row_null_test(self, path: &[usize]) -> bool {
         match self {
-            Self::IndexedPair => path.len() == 1,
+            Self::Pair => path.len() == 1,
             Self::Borrowed { tuple } => tuple && path.is_empty(),
         }
     }
@@ -216,65 +216,138 @@ pub fn parameter_field_paths(
     circuit: &Circuit,
     closure: NodeId,
 ) -> Result<Vec<BTreeSet<Vec<usize>>>, Error> {
-    let node = circuit
-        .node(closure)
-        .ok_or_else(|| Error::new("missing input projection"))?;
-    let params = node.edges("parameters")?;
-    let arity = params.len();
-    let mut parameters = HashMap::with_capacity(params.len());
-    let mut shapes = Vec::with_capacity(params.len());
-    for (i, id) in params.into_iter().enumerate() {
-        let param = circuit.node(id).expect("validated parameter");
-        let name = param
-            .data("name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::new("missing input parameter name"))?;
-        if parameters.insert(name, i).is_some() {
-            return Err(Error::new("duplicate map or join parameter name"));
-        }
-        let ty = circuit
-            .node(param.edge("type")?)
-            .expect("validated parameter type");
-        let shape = match ty.inner_kind() {
-            Some(InnerKind::Type(TypeKind::RawTuple)) => {
-                let parts = ty.edges("tupFields")?;
-                if parts.len() != 2
-                    || !parts.iter().all(|id| {
-                        matches!(
-                            circuit.node(*id).and_then(Node::inner_kind),
-                            Some(InnerKind::Type(TypeKind::Ref))
-                        )
-                    })
-                {
-                    return Err(Error::new("expected a borrowed key and value"));
-                }
-                ParameterShape::IndexedPair
-            }
-            Some(InnerKind::Type(TypeKind::Ref)) => ParameterShape::Borrowed {
-                tuple: matches!(
-                    circuit.node(ty.edge("type")?).and_then(Node::inner_kind),
-                    Some(InnerKind::Type(TypeKind::Tuple))
-                ),
-            },
-            // TopK's rank argument is a scalar. Its entire parameter is read.
-            Some(InnerKind::Type(_)) if arity > 1 => ParameterShape::Borrowed { tuple: false },
-            _ => return Err(Error::new("expected a borrowed row or indexed pair")),
-        };
-        shapes.push(shape);
-    }
-    let mut paths = vec![BTreeSet::new(); shapes.len()];
-    let mut analysis = RowProjection {
-        circuit,
-        parameters,
-        shapes,
-        known: HashMap::new(),
+    let (mut analysis, body) = RowProjection::for_closure(circuit, closure)?;
+    let value = analysis.value(body, 0)?;
+    Ok(analysis.paths(value))
+}
+
+/// Check all operands of a live closure before accepting its dependencies. A
+/// block with statements or an assignment needs the reference visitor's handling
+/// of effects and diagnostics. A nested function has its own parameter scope.
+pub fn live_parameter_field_paths(
+    circuit: &Circuit,
+    closure: NodeId,
+) -> Result<Option<Vec<BTreeSet<Vec<usize>>>>, Error> {
+    let Ok((mut analysis, body)) = RowProjection::for_closure(circuit, closure) else {
+        // The caller can interpret parameters outside the supported row shapes.
+        return Ok(None);
     };
-    let mut uses = Dependencies::new();
-    analysis.value(node.edge("body")?, 0)?.collect(&mut uses);
-    for field in uses {
-        paths[field.parameter].insert(field.indices);
+    let mut pending = vec![(body, false)];
+    let mut active = HashSet::new();
+    while let Some((id, finish)) = pending.pop() {
+        if analysis.known.contains_key(&id) {
+            continue;
+        }
+        let node = circuit
+            .node(id)
+            .ok_or_else(|| Error::new("missing field-use operand"))?;
+        let Some(InnerKind::Expression(kind)) = node.inner_kind() else {
+            continue;
+        };
+        if finish {
+            // Every operand has already been evaluated in this scope. A live
+            // caller handles unsupported expressions at their original SQL site.
+            if analysis.value(id, 0).is_err() {
+                return Ok(None);
+            }
+            active.remove(&id);
+            continue;
+        }
+        match kind {
+            Expr::Block
+                if !node.edges("contents")?.is_empty()
+                    || node
+                        .field("lastExpression")
+                        .and_then(Field::node_id)
+                        .is_none() =>
+            {
+                return Ok(None);
+            }
+            Expr::Let | Expr::Assignment | Expr::For => return Ok(None),
+            _ => {}
+        }
+        if !active.insert(id) {
+            return Err(Error::new("cycle in field-use expression"));
+        }
+        pending.push((id, true));
+        if *kind != Expr::Closure {
+            let mut children = Vec::new();
+            for (_, field) in node.fields() {
+                field.collect_inner_edges(&mut children);
+            }
+            pending.extend(children.into_iter().rev().map(|child| (child, false)));
+        }
     }
-    Ok(paths)
+    let value = analysis
+        .known
+        .remove(&body)
+        .ok_or_else(|| Error::new("expected field-use expression"))?;
+    Ok(Some(analysis.paths(value)))
+}
+
+impl<'a> RowProjection<'a> {
+    fn for_closure(circuit: &'a Circuit, closure: NodeId) -> Result<(Self, NodeId), Error> {
+        let node = circuit
+            .node(closure)
+            .ok_or_else(|| Error::new("missing input projection"))?;
+
+        let params = node.edges("parameters")?;
+        let mut parameters = HashMap::with_capacity(params.len());
+        let mut shapes = Vec::with_capacity(params.len());
+        for (i, id) in params.into_iter().enumerate() {
+            let param = circuit.node(id).expect("validated parameter");
+            let name = param
+                .data("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::new("missing input parameter name"))?;
+            if parameters.insert(name, i).is_some() {
+                return Err(Error::new("duplicate map or join parameter name"));
+            }
+            let ty = circuit
+                .node(param.edge("type")?)
+                .expect("validated parameter type");
+            let shape = match ty.inner_kind() {
+                Some(InnerKind::Type(TypeKind::RawTuple)) => {
+                    // Indexed closures receive (&key, &value). Aggregate updates can
+                    // receive the accumulator pair by value. Both expose two fields.
+                    if ty.edges("tupFields")?.len() != 2 {
+                        return Err(Error::new("expected a two-field parameter"));
+                    }
+                    ParameterShape::Pair
+                }
+                Some(InnerKind::Type(TypeKind::Ref)) => ParameterShape::Borrowed {
+                    tuple: matches!(
+                        circuit.node(ty.edge("type")?).and_then(Node::inner_kind),
+                        Some(InnerKind::Type(TypeKind::Tuple))
+                    ),
+                },
+                // By-value parameters, including TopK ranks, are used as a whole.
+                Some(InnerKind::Type(_)) => ParameterShape::Borrowed { tuple: false },
+                _ => return Err(Error::new("missing field-use parameter type")),
+            };
+            shapes.push(shape);
+        }
+
+        Ok((
+            Self {
+                circuit,
+                parameters,
+                shapes,
+                known: HashMap::new(),
+            },
+            node.edge("body")?,
+        ))
+    }
+
+    fn paths(&self, value: Use) -> Vec<BTreeSet<Vec<usize>>> {
+        let mut paths = vec![BTreeSet::new(); self.shapes.len()];
+        let mut uses = Dependencies::new();
+        value.collect(&mut uses);
+        for field in uses {
+            paths[field.parameter].insert(field.indices);
+        }
+        paths
+    }
 }
 
 #[cfg(test)]
@@ -282,6 +355,94 @@ mod tests {
     use super::*;
     use feldera_sql_ir::CircuitEditor;
     use serde_json::json;
+
+    #[test]
+    fn live_field_reads_follow_deep_scalar_expressions() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let flag = edit.bool_type(site, false)?;
+        let row = edit.tuple_type(site, false, [flag.into(), flag.into()])?;
+        let reference = edit.reference_type(row)?;
+        let input = edit.named_variable(reference, "input")?;
+        let row = edit.dereference(input)?;
+        let mut read = edit.tuple_field(row, 1)?;
+        for _ in 0..160 {
+            read = edit.make_expr(
+                site,
+                Expr::Unary,
+                flag,
+                [
+                    ("opcode", Field::Data("NOT".into())),
+                    ("source", Field::Reference(read.into())),
+                ],
+            )?;
+        }
+        let closure = edit.closure_from_variables(read, &[input])?;
+        assert_eq!(
+            live_parameter_field_paths(edit.circuit(), closure.into())?,
+            Some(vec![BTreeSet::from([vec![1]])])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_aggregate_can_read_its_accumulator_pair_by_value() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let flag = edit.bool_type(site, false)?;
+        let pair = edit.tuple_type(site, true, [flag.into(), flag.into()])?;
+        let accumulator = edit.named_variable(pair, "accumulator")?;
+        let read = edit.tuple_field(accumulator, 1)?;
+        let closure = edit.closure_from_variables(read, &[accumulator])?;
+        assert_eq!(
+            live_parameter_field_paths(edit.circuit(), closure.into())?,
+            Some(vec![BTreeSet::from([vec![1]])])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn live_analysis_leaves_unused_statements_to_the_reference_visitor() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let flag = edit.bool_type(site, false)?;
+        let ty = edit.tuple_type(site, false, [flag.into(), flag.into()])?;
+        let reference = edit.reference_type(ty)?;
+        let row = edit.named_variable(reference, "row")?;
+        let value = edit.dereference(row)?;
+        let first = edit.tuple_field(value, 0)?;
+        let second = edit.tuple_field(value, 1)?;
+        let unused = edit.let_statement("unused", first)?;
+        for (statements, expected) in [
+            (vec![], Some(vec![BTreeSet::from([vec![1]])])),
+            (vec![Field::Reference(unused)], None),
+        ] {
+            let block = edit.make_expr(
+                site,
+                Expr::Block,
+                flag,
+                [
+                    ("contents", Field::Array(statements)),
+                    ("lastExpression", Field::Reference(second.into())),
+                ],
+            )?;
+            let closure = edit.closure_from_variables(block, &[row])?;
+            assert_eq!(
+                live_parameter_field_paths(edit.circuit(), closure.into())?,
+                expected
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn join_reads_distinguish_the_key_left_and_right_parameters() {

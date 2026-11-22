@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -418,6 +419,33 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
     }
 
     public ParameterFieldUse findUsedFields(DBSPClosureExpression expression) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var paths = RustCircuitPass.parameterFieldDependencies(this.compiler, expression);
+            if (paths != null) {
+                Utilities.enforce(paths.size() == expression.parameters.length);
+                var uses = new ParameterFieldUse();
+                for (int i = 0; i < expression.parameters.length; i++) {
+                    var parameter = expression.parameters[i];
+                    var fields = paths.get(i);
+                    if (fields.isEmpty())
+                        uses.set(parameter, new FieldUseMap(parameter.getType(), false));
+                    for (var field : fields)
+                        new ParameterField(parameter, field).markParameterUse(uses);
+                }
+                if (Boolean.getBoolean("feldera.optimizer.compareRustFieldUses")) {
+                    var reference = this.interpret(expression);
+                    for (var parameter : expression.parameters)
+                        Utilities.enforce(uses.get(parameter).toString().equals(reference.get(parameter).toString()),
+                                () -> "Field uses differ for " + parameter + " in " + expression
+                                        + ": " + uses.get(parameter) + " versus " + reference.get(parameter));
+                }
+                return uses;
+            }
+        }
+        return this.interpret(expression);
+    }
+
+    private ParameterFieldUse interpret(DBSPClosureExpression expression) {
         expression = expression.ensureTree(this.compiler).to(DBSPClosureExpression.class);
         this.apply(expression);
         IUsedFields used = this.get(expression.body);

@@ -364,7 +364,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         return Ok(serde_json::to_value(copies)?);
     }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
-        return Ok(serde_json::to_value(feldera_sql_expr::parameter_field_paths(&arena, *closure)?)?);
+        return Ok(serde_json::to_value(feldera_sql_expr::live_parameter_field_paths(&arena, *closure)?)?);
     }
     if let ("Monotonicity/Cast", [from, to, bound]) = (pass, roots.as_slice()) {
         let edit = feldera_sql_ir::CircuitEditor::new(arena);
