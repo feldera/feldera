@@ -549,6 +549,14 @@ That pass matched Java on all 524 selected incremental programs. Both compiler
 directions restored COUNT and LATENESS state.
 [Pass comparisons and checkpoints](evidence/p3-row-waterlines-and-incrementalization.json)
 
+The output-projection pass sends Rust the producer and reader functions and
+reattaches the result to the live operator. This preserves chains of projections
+rewritten earlier in the same pass. All 580 pass observations and 310 selected
+detached replays matched Java. COUNT and LATENESS restored in both directions.
+Across eight fresh-JVM pairs, the median calling-thread CPU time for this pass
+on Nexmark fell from 176.5 ms to 2.9 ms during concurrent verification.
+[Output-projection comparisons](evidence/p3-live-output-projections.json)
+
 Rust groups output columns that evaluate equivalent expressions under the same
 closure bindings. Direct Java agreed on all 3,709 observed closures and all
 533 groups of equal columns, including lookups into map expressions. COUNT and

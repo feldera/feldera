@@ -115,6 +115,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.OrderErrorConsumers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjectionVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -188,6 +189,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private final DBSPCompiler compiler;
     private final String name;
     private final String nativeName;
+    @Nullable private final OptimizeProjectionVisitor outputProjections;
     public final boolean wrapsGraphOptimization;
     private final OptimizerSnapshots snapshots;
     @Nullable private final FindMapChains mapChains;
@@ -295,6 +297,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.trimFilters = original instanceof TrimFilters trim ? trim : null;
         this.insertLimiters = original instanceof InsertLimiters limiters ? limiters : null;
         this.trimInputs = original instanceof TrimInputs trim ? trim : null;
+        this.outputProjections = original instanceof OptimizeProjectionVisitor projections ? projections : null;
         this.inputFields = original instanceof FindUnusedInputFields fields ? fields : null;
         this.streamAggregates = original instanceof ExpandStreamAggregates expand ? expand : null;
         this.appendOnly = original instanceof AppendOnly analysis ? analysis : null;
@@ -781,6 +784,20 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static DBSPFlatmap projectUnnest(DBSPCompiler compiler, DBSPFlatmap flatmap, DBSPClosureExpression reader) {
         return tryLowerFunction(compiler, "ProjectUnnest", flatmap, reader, DBSPFlatmap.class);
+    }
+
+    @Nullable
+    public static DBSPExpression projectOutputFunction(DBSPCompiler compiler, DBSPSimpleOperator producer,
+            DBSPSimpleOperator reader, boolean singleReader) {
+        try {
+            byte[] site = MAPPER.writeValueAsBytes(List.of(producer.getClass().getSimpleName(),
+                    reader instanceof DBSPMapIndexOperator, singleReader));
+            var reply = invokeLowering(compiler, "ProjectOutputs/Function", site, producer.getFunction(),
+                    reader.getFunction(), reader.outputType);
+            return reply.value.isNull() ? null : loweredFunction(compiler, reply.writer, reply.value, DBSPExpression.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode output projection", error);
+        }
     }
 
     public static DBSPExpression projectAggregateZero(DBSPCompiler compiler, DBSPExpression zero, DBSPClosureExpression reader) {
@@ -2541,6 +2558,8 @@ public final class RustCircuitPass implements CircuitTransform {
             ToJsonOuterVisitor writer = null;
             if (this.stages != null)
                 return this.stages.apply(circuit);
+            if (this.outputProjections != null)
+                return this.outputProjections.applyNative(circuit);
             if (this.streamAggregates != null)
                 return this.expandStreamAggregates(circuit, this.streamAggregates);
             if (this.arrayCandidates != null) {
@@ -2921,7 +2940,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         OptimizerTopology.encode(circuit, OptimizerTopology.Details.VIEW_NAMES), initial, state);
                 case "CheckRetain", "ValidateRecursiveOperators", "NoIntegralVisitor", "CheckHints", "CompactNames", "TagRegions" ->
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
-                case "LowerCircuitVisitor", "TrimWindows", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "MergeFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
+                case "LowerCircuitVisitor", "TrimWindows", "IndexedInputs", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "MergeFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero",

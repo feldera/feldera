@@ -1,0 +1,56 @@
+{
+  "base_commit": "cca1f5a85",
+  "scope": "Run OptimizeProjectionVisitor using the mapped producer function and the live reader, with direct Java as the oracle. Selected detached compilations compare ordered S4 observations, final S3 and emitted artifacts.",
+  "compiler_jar_sha256": "883ea5f6b8fc5d162e7b69860a89f8f02376a5985ffe5b3cf2f31cad1fa5a361",
+  "optimizer_library_sha256": "5c3cfa0fe352f2c2373327a7399cc17451431120179e015fe01ba0a18193a242",
+  "engines": {
+    "classic": {
+      "comparison": "OptimizeProjectionVisitor matched at 306 invocations across 291 cases",
+      "direct_trace_sha256": "715df6a30c79ac77597d96f2027f9ed3cc9d7d11b5522cf7633b205b1a954329",
+      "hybrid_trace_sha256": "88bee41bba3a792279c26d9e911e36713b523a1c6e14b7f0a59fe22254e9502a",
+      "detached_cases": 155,
+      "shard_receipts_sha256": [
+        "b760c7d7b5a46734ce579cdd06dd05660abccf4cb3b8b4c472400c7a638e27b1",
+        "431c43682cfbfe9f82fcdc2bbda0968e1437d8a94190d6337b5474fbd0cea797",
+        "1368fc5861cfc0ed4a75b3a4e07d818a2eb58d044de10063fd982969b17aec2c",
+        "373caf65ce38dba7d152b0ee0ca62361b449612f89e689e015ddaaf2d2d5ca4a"
+      ]
+    },
+    "gen2": {
+      "comparison": "OptimizeProjectionVisitor matched at 274 invocations across 259 cases",
+      "direct_trace_sha256": "3ed4388d262ea5b71b44a5c8d13b5ac41ba972954a9059c4ef43c1c3f06d58bd",
+      "hybrid_trace_sha256": "2c94ce584322bf6e91738272ae9e18094eb11830a679f8880114239dc76dc909",
+      "detached_cases": 155,
+      "shard_receipts_sha256": [
+        "551803aed9bb4a09d91c6fa0af866d6359e3ee6fc860e2aa038b01724f133ba0",
+        "b0c8994d33618b4c8e2e7bc0cf0e4b013d6e9fad13cc7e01ff952a9bb7e93d84",
+        "8a72633863ca68dfa4094ef3df03636adb83672692421357a2c793beade4e799",
+        "ea04a365f579a5b942339bd71fe49d99540af0a45212666144a30c72fb76993c"
+      ]
+    }
+  },
+  "restores": {
+    "count": "bced7953d4e8d65ba2fa8e6d017181286a93eaa71a9b87a66e272e7c07f9df66",
+    "watermark": "fca7342853a84ff246043578ed7a8f5e4aaeaf65923a66c4d07b23123cf4bffb"
+  },
+  "tests": {
+    "tests.log": "27d4e8ffc42329c34fcb1ffb1d9bc927d212fd550ddaa45ebadf393c0b1f7f4f",
+    "clippy.log": "4ac0d64cf68c56442e238d07794ca6fa764b023460fe674858370f3ba2424ce3",
+    "maven.log": "09cdbbd26942543a5a4c6984882a1adb9b0d4be7970e53aca8fe6378af2f61f6"
+  },
+  "nexmark_projection_timing": {
+    "method": "Calling-thread CPU in OptimizeProjectionVisitor in classic Nexmark. Nine fresh-process alternating pairs pinned to CPU 13 during detached corpus verification. Discard first pair.",
+    "live-row-boundaries": {
+      "median_cpu_ms": 176.4646515,
+      "raw_sha256": "b46ed6e0341f723add16de72432f9c98f4386d30c118932677b2e163477f6f56",
+      "compiler_jar_sha256": "3976b5920a26e001c79f0a964fcf72bacd47ffdbdbcd02b204e84f65865aa7f7",
+      "jni_sha256": "2d79695d63b924a063c1af7a415a3dbcb87e12a7d2d0676ecf04599d31842dc2"
+    },
+    "live-output-projections": {
+      "median_cpu_ms": 2.872832,
+      "raw_sha256": "f02af91b0068b72196a6c8a8975c6f3c042d0db19522b481cbbb276e01468463",
+      "compiler_jar_sha256": "883ea5f6b8fc5d162e7b69860a89f8f02376a5985ffe5b3cf2f31cad1fa5a361",
+      "jni_sha256": "5c3cfa0fe352f2c2373327a7399cc17451431120179e015fe01ba0a18193a242"
+    }
+  }
+}

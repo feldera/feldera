@@ -41,6 +41,11 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. The Rust output-projection rule matched Java at 580 invocations,
+  and 310 selected compilations matched through emission. Sending the live
+  producer and reader functions reduced this pass's median Nexmark CPU time
+  from 176.5 ms to 2.9 ms across eight measured pairs.
+  [Pass replay and timings](crates/sql/evidence/p3-live-output-projections.json)
 - 2026-11-22. Rust and Java identified the same fixed columns at 203 filter
   visits and the same candidate keys at 9,262 output ports. All 228 selected
   programs matched through detached replay and emission. COUNT and LATENESS

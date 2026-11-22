@@ -1,16 +1,16 @@
 //! Fuse output projections into constants, UNNEST and single-reader joins.
 use crate::{
-    projection::{projection, simple_tuple, Projection},
+    projection::{Projection, projection, simple_tuple},
     rebuild::ProjectionNames,
     stream_rewrites::{body_members, reader_counts},
 };
 use feldera_sql_expr::constant_rows::{self as rows, multiset};
 use feldera_sql_expr::{
-    compose_closures, project_flatmap, reduce_closure_body_with_warnings, SimplifyWarning,
+    SimplifyWarning, compose_closures, project_flatmap, reduce_closure_body_with_warnings,
 };
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
-    OperatorKind as Op, OutputPort, TypeKind,
+    OperatorKind as Op, OutputPort, TypeId, TypeKind,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -167,6 +167,77 @@ fn projected_join(source: Op, indexed: bool) -> Option<(Op, bool)> {
     Some((if indexed { index } else { plain }, was_indexed))
 }
 
+/// The reader layout and the original fanout determine whether a projection
+/// can replace its producer. Both the live visitor and detached replay run this rule.
+pub struct OutputProjection {
+    pub producer: Op,
+    pub indexed: bool,
+    pub single_reader: bool,
+    pub output_type: TypeId,
+}
+
+impl OutputProjection {
+    fn accepts_producer(&self) -> bool {
+        match self.producer {
+            Op::Constant => !self.indexed || self.single_reader,
+            Op::FlatMap => !self.indexed,
+            kind => self.single_reader && projected_join(kind, self.indexed).is_some(),
+        }
+    }
+
+    pub fn apply(
+        &self,
+        edit: &mut CircuitEditor,
+        before: ExpressionId,
+        reader: NodeId,
+        warnings: &mut Vec<SimplifyWarning>,
+    ) -> Result<Option<(Op, ExpressionId)>, Error> {
+        if !self.accepts_producer() {
+            return Ok(None);
+        }
+        let closure = edit.node(reader)?;
+        if closure.class() != "DBSPClosureExpression" {
+            return Ok(None);
+        }
+        let parameters = closure.edges("parameters")?;
+        let [parameter] = parameters.as_slice() else {
+            return Ok(None);
+        };
+        let body = closure.edge("body")?;
+        if self.indexed && !simple_tuple(edit, edit.node(body)?.edge("type")?)? {
+            return Ok(None);
+        }
+        let shape = projection(edit, body, *parameter)?;
+        let join = projected_join(self.producer, self.indexed);
+        if matches!(shape, Projection::Other)
+            || ((self.indexed || join.is_some()) && !matches!(shape, Projection::Fields(_)))
+        {
+            return Ok(None);
+        }
+        let new = match self.producer {
+            Op::Constant => project_constant(
+                edit,
+                before,
+                reader,
+                self.indexed,
+                self.output_type.into(),
+                warnings,
+            )?,
+            Op::FlatMap if edit.expr_kind(before)? == Expr::Flatmap => {
+                project_unnest(edit, before.into(), reader)?
+            }
+            _ => {
+                let Some((kind, was_indexed)) = join else {
+                    return Ok(None);
+                };
+                let function = compose_closures(edit, before, was_indexed, reader, Some(warnings))?;
+                return Ok(Some((kind, function)));
+            }
+        };
+        Ok(new.map(|function| (self.producer, function)))
+    }
+}
+
 pub fn project_outputs(
     circuit: Circuit,
     next: &mut u64,
@@ -205,64 +276,20 @@ pub fn project_outputs(
         let Some(kind) = producer.operator_kind() else {
             continue;
         };
-        let join = projected_join(kind, indexed);
-        if !matches!(kind, Op::FlatMap | Op::Constant) && join.is_none() {
-            continue;
-        }
-        if !single && (indexed || join.is_some()) {
+        let projection = OutputProjection {
+            producer: kind,
+            indexed,
+            single_reader: single,
+            output_type: edit.type_id(output_type)?,
+        };
+        if !projection.accepts_producer() {
             continue;
         }
         let before = edit.expression(producer.edge("function")?)?;
-        let closure = edit.node(function)?;
-        if closure.class() != "DBSPClosureExpression" {
+        let Some((kind, new_function)) =
+            projection.apply(&mut edit, before, function, &mut warnings)?
+        else {
             continue;
-        }
-        let params = closure.edges("parameters")?;
-        let [parameter] = params.as_slice() else {
-            continue;
-        };
-        let body = closure.edge("body")?;
-        if indexed && !simple_tuple(&edit, edit.node(body)?.edge("type")?)? {
-            continue;
-        }
-        let shape = projection(&edit, body, *parameter)?;
-        if matches!(shape, Projection::Other)
-            || ((indexed || join.is_some()) && !matches!(shape, Projection::Fields(_)))
-        {
-            continue;
-        }
-        let (kind, new_function) = match (kind, join) {
-            (Op::Constant, _) => {
-                let Some(c) = project_constant(
-                    &mut edit,
-                    before,
-                    function,
-                    indexed,
-                    output_type,
-                    &mut warnings,
-                )?
-                else {
-                    continue;
-                };
-                (Op::Constant, c)
-            }
-            (Op::FlatMap, _) if !indexed && edit.expr_kind(before)? == Expr::Flatmap => {
-                let Some(projected) = project_unnest(&mut edit, before.into(), function)? else {
-                    continue;
-                };
-                (Op::FlatMap, projected)
-            }
-            (_, Some((kind, was_indexed))) => (
-                kind,
-                compose_closures(
-                    &mut edit,
-                    before,
-                    was_indexed,
-                    function,
-                    Some(&mut warnings),
-                )?,
-            ),
-            _ => continue,
         };
         let output_type = if kind == Op::Constant {
             edit.expression_type(new_function)?.into()
@@ -302,7 +329,7 @@ pub fn project_outputs(
             Some(origins) => origins,
             None => provenance.insert(original.provenance()?),
         };
-        if indexed && join.is_some() {
+        if indexed && projected_join(kind, indexed).is_some() {
             let origin = origins.fuse_origins(new, source, id)?;
             edit.set_intermediate_origin(new, origin)?;
         } else {

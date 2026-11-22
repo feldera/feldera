@@ -112,7 +112,7 @@ pub use projection::is_map_projection;
 mod projection_composition;
 pub use projection_composition::{compose_indexed_projection, compose_projection};
 mod propagate_constants;
-pub use project_outputs::{project_outputs, project_unnest};
+pub use project_outputs::{project_outputs, project_unnest, OutputProjection};
 mod pull_filters;
 mod push_integrals;
 mod rebuild;
