@@ -111,5 +111,21 @@
       }
     }
   },
-  "interval_origin": "Each interval literal constructs a fresh type with the same units and an empty source. The regression covers both the minimum and the maximum."
+  "interval_origin": "Each interval literal constructs a fresh type with the same units and an empty source. The regression covers both the minimum and the maximum.",
+  "consumer_graph_oracle": {
+    "classic": {
+      "cases": 291,
+      "placements": 17014,
+      "nodes": 1026162,
+      "edges": 1193352,
+      "observations_sha256": "044cca9bf40bef3429f49a4a8376e747f09401cef8cc3c2b4c21b106938229c5"
+    },
+    "gen2": {
+      "cases": 259,
+      "placements": 15361,
+      "nodes": 1000387,
+      "edges": 1169221,
+      "observations_sha256": "519cc522985f472f9e6c3603a28414d127cbb379c6231a3556ba11dc8484c450"
+    }
+  }
 }

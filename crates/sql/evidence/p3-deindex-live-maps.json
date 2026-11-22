@@ -1,0 +1,155 @@
+{
+  "source_commit": "3baee479dfd659e5185e3653a10dcf4553180260",
+  "build": {
+    "jar_sha256": "7e86f01bbaa87b82df1aa804375e6c4f58971a5801b78da743c3fba7e4b1a6a9",
+    "optimizer_library_sha256": "878f602294baed302cd4ee58c9da58d8aa67f26824a94a26dbdc90e9c51e4dea",
+    "driver_sha256": "f41759ca28a42245ae8acfa590d6a12e58e224866bc5c6bb2cab89ac6533c431",
+    "pass_kinds": 105
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "s4": {
+    "classic": {
+      "pass": "RemoveDeindexOperators",
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "d3df8950fd6eba834485879b0d694c1b621a430928f0b8fa3ed1dad7836560ef",
+      "rust_stream_sha256": "d3df8950fd6eba834485879b0d694c1b621a430928f0b8fa3ed1dad7836560ef"
+    },
+    "gen2": {
+      "pass": "RemoveDeindexOperators",
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "3e549b30f0568a6996a0f3cc3ea4c14ab37c0046178e15cc33d0aaccb54909ba",
+      "rust_stream_sha256": "3e549b30f0568a6996a0f3cc3ea4c14ab37c0046178e15cc33d0aaccb54909ba"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "04a78968f97227e2ee97d512ef28d5a9c7b9bd4d59c3d6a5937f49cc6f633e92"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "79f10531311bd3675b28a8e92d53d3db9a83b548700d5bc4e22f0fa29ac48f59",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "81176f245e567693c72e53c56ca132331b59832a60cbd4281887e18ee0a19105",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 11.758846,
+    "largest_driver_plus_front_end_rss_bytes": 79896576
+  },
+  "maven": {
+    "tests": 122,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "jni_transfer": {
+    "workload": "nexmark-suite.sql",
+    "workload_sha256": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+    "artifact_equal_pairs": 2,
+    "published_sha256": {
+      "result.json": "ab41afa331001dbe08b60a3771431811ee91ddf0afa04fc48ae5e4d4729547a1",
+      "circuit.rs": "5e13416c53dcdf4d39df9037c39f3f34ea22fd953c58db1cbcd6636620101d08",
+      "schema.json": "92ecfeae102c932e484feb3702a9cee9318f472c51fa1c362e4be5ac734a7c86",
+      "dataflow.json": "c6ea063c6b3d6737ce025f9a70d74d61b9a24ab0de0825042ea94fa2c756b3c9",
+      "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+    },
+    "workspace_archive": ".bench-results/p3-deindex-live-maps/2026-22-11-02-26-3baee",
+    "baseline": {
+      "source_commit": "c03c4fcee21cd304137fc4157eed4d4b1560b61f",
+      "requests": [
+        {
+          "operation": "Topology/RemoveDeindexOperators",
+          "request_bytes": 126238,
+          "reply_bytes": 28
+        },
+        {
+          "operation": "Live/RemoveDeindexOperators",
+          "request_bytes": 2543088,
+          "reply_bytes": 307926
+        }
+      ],
+      "total_request_bytes": 2669326,
+      "total_reply_bytes": 307954
+    },
+    "candidate": {
+      "source_commit": "3baee479dfd659e5185e3653a10dcf4553180260",
+      "requests": [
+        {
+          "operation": "Topology/DeindexMaps",
+          "request_bytes": 126238,
+          "reply_bytes": 36
+        }
+      ],
+      "total_request_bytes": 126238,
+      "total_reply_bytes": 36
+    }
+  },
+  "full_s4": {
+    "classic": {
+      "cases": 8571,
+      "changed_cases": 403,
+      "deindex_operators": 483,
+      "shards": [
+        {
+          "population_sha256": "b4338b5b6140a4140a25aa840e6343db5ec487fc329191f6aacea35f196da5eb",
+          "cases": 4286,
+          "java_stream_sha256": "13a2cbbf2859d35e083c2095d8219b6944715041cdbf99d2e29bbab1b144f20b",
+          "rust_stream_sha256": "5009fcf4329988e3a55e4acd20226079f78d018078092e0cc657edbdbcb27b91"
+        },
+        {
+          "population_sha256": "dc173c35f469b11872a79432adebeff7faabff9ca4dd365ae6fe6de3be459d01",
+          "cases": 4285,
+          "java_stream_sha256": "5deb8176dd74e7fbb7a94544ac78eb5bea4d158be197849286056e4962bf7390",
+          "rust_stream_sha256": "c6eb9e8ec73882514fda30d7dbb152bca87df73d1709fdcd847301bfb6887b23"
+        }
+      ]
+    },
+    "gen2": {
+      "cases": 8527,
+      "changed_cases": 289,
+      "deindex_operators": 324,
+      "shards": [
+        {
+          "population_sha256": "1c7748dddb65f1a1827b939175297e45f8fe536d61cdf09ea190bbedd0aa2574",
+          "cases": 4264,
+          "java_stream_sha256": "a8d17e87c0701438680a0eacf1a173213d3b04e9e34339a312592f2490a713bd",
+          "rust_stream_sha256": "6148018d37c9fba353c3c34409ffbfc0536f3a2cf462b26223ea800c260a9d4f"
+        },
+        {
+          "population_sha256": "b4774f827621dfc5f78464a5eeba14f2f4c1921ebf33f53a44f0fe685fb0e6b3",
+          "cases": 4263,
+          "java_stream_sha256": "5ce8425796cab36110eb422201974507428416b64206f86e53a63304f433446f",
+          "rust_stream_sha256": "1cb2ddda462003f72efa399b261cbd92d0aff24a1d0c3b1aac5810be617fa2ad"
+        }
+      ]
+    }
+  },
+  "rust_tests_passed": 184
+}

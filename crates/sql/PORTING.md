@@ -462,13 +462,23 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selects deindex operators from the circuit topology. The JVM builds each
+map from the existing closure, declared output type and remapped input port.
+The Java and hybrid pass matched at entry and exit on all 17,098 frozen programs.
+The pass replaced 483 operators in 403 classic programs and 324 in 289 Gen-2
+programs. On Nexmark, the request shrank from 2,669,326 bytes to 126,238 and
+the reply from 307,954 bytes to 36. Both paired runs published identical files.
+[Deindex pass, runtime and checkpoint comparisons](evidence/p3-deindex-live-maps.json)
+
 For a typed NULL literal of a bounded scalar type, Rust emits the greatest
 value of that type as its waterline. The Java and Rust expression graphs
 matched in 140 comparisons covering SQL source positions, shared types and
 freshly constructed types. All 550 selected monotonicity observations and
 17,098 frozen programs matched direct Java. The selected classic suite passed
 2,076 runtime commands, and COUNT and LATENESS checkpoints restored in both
-directions. [Typed NULL replay](evidence/p3-null-literal-waterlines.json)
+directions. A separate comparison on the same build matched consumer order and
+input slots at all 32,375 graph constructions on the 550 selected programs.
+[Typed NULL replay and consumer graphs](evidence/p3-null-literal-waterlines.json)
 
 At both `RemoveNoops` placements, Rust selects which no-ops have no retention
 consumer. Each iteration forwards their original input ports and removes dead
@@ -1230,6 +1240,11 @@ for rust in false true; do
 done
 target/release/sql-difftest --compare-pass LowerCircuitVisitor "$POPULATION" lower-false.jsonl lower-true.jsonl
 ```
+
+For the deindex comparison, use `RemoveDeindexOperators` as the pass name in
+both JVMs and in `sql-difftest --compare-pass`. Set
+`-Dfeldera.optimizer.compareRustTopLevelPass=RemoveDeindexOperators` only in
+the candidate JVM. Both runs then use the same Java optimizer prefix.
 
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
 detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,948,987 scheduled invocations
