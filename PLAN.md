@@ -57,10 +57,13 @@ Path prefixes used in this document:
   frozen recursive cases ran Rust limiter insertion and matched Java at every
   optimizer boundary and through the generated artifacts. On `45ffbdba0`, with no concurrent compiler verification,
   hybrid p95 was 1.211× direct Java on the array subquery, 2.202× on Nexmark
-  and 1.179× on the outer join. P3 remains opt-in. Java still runs part of the
-  optimizer, the array and Nexmark workloads exceeded the 1.2× ceiling, and the field-shadow
-  gate is open.
+  and 1.179× on the outer join.
   [P3 implementation](crates/sql/PORTING.md#p3-optimizer-replay) · [Paired timings](crates/sql/BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)
+- 2026-11-22. On `4f84a9cf6`, isolated hybrid p95 was 1.213× direct Java on
+  the array subquery, 2.245× on Nexmark and 1.204× on the outer join. P3
+  remains opt-in. Java still runs part of the optimizer, the latency ceiling
+  was exceeded on all three workloads, and the field-shadow gate is open.
+  [Paired timings and worker measurements](crates/sql/BENCHMARKS.md#column-initializer-build-2026-11-22)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across
   17,098 classic and Gen-2 cases. CSE, ARRAY_AGG fusion and the representative
   limiter slice matched 296 Java S4 results and four Gen-2 refusals. The

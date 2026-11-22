@@ -1,0 +1,76 @@
+{
+  "source_commit": "4f84a9cf6",
+  "scope": "Cold classic compilation through schema, dataflow, generated Rust and UDF stubs. Alternating order, 2 warmup and 21 measured pairs per workload, CPU 15 on Linux aarch64. Each pair matched diagnostics and artifacts.",
+  "p95_ratio_ceiling": 1.2,
+  "passed": false,
+  "inputs": {
+    "array-subquery.sql": "42e09a2b580b083bb2653efdb4e32f8b79c1d1d6ca13796cb13e0eedaa93b33d",
+    "nexmark-suite.sql": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+    "outer-join.sql": "1a475a4c0d4e68f13d124dc2a7c30100baecf86a640ac8ac787ca0bb12d0435d"
+  },
+  "compiler_jar_sha256": "3707d62e3cc412c97ef69ca1229d9badd2cb36c133c0792d68f89d320770e227",
+  "worker_sha256": "99da059662e633b17acf0a93ad354e85676ca140c24f146aadebddf9f93a58fb",
+  "optimizer_library_sha256": "848335fbc4734663de4e38454f9292d5f108ffd25fe0efcaf1f948e10e62f4a4",
+  "pairs_sha256": "fa23ef56e127974c8bfdd628b0478df9ef77a8fa92a5bab252731037060b988d",
+  "environment_sha256": "2ad0861454738cadeaba4dcd20267dac2816fb5e4aa56d2a8ebdc395becfaa74",
+  "workloads": {
+    "array-subquery.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.71518137,
+        "empirical_p95_seconds": 1.743355294
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 1.398584191,
+        "empirical_p95_seconds": 1.437015551
+      },
+      "p95_ratio": 1.2131777507813484,
+      "mean_ratio_paired_95pct_interval": [
+        1.2117092814006751,
+        1.2357553302356203
+      ]
+    },
+    "nexmark-suite.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 6.974984219,
+        "empirical_p95_seconds": 7.062274247
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 3.127842982,
+        "empirical_p95_seconds": 3.146458868
+      },
+      "p95_ratio": 2.244515038421281,
+      "mean_ratio_paired_95pct_interval": [
+        2.2119573112810977,
+        2.2471625991645503
+      ]
+    },
+    "outer-join.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.588892107,
+        "empirical_p95_seconds": 1.608436434
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 1.321659839,
+        "empirical_p95_seconds": 1.335996874
+      },
+      "p95_ratio": 1.2039223034888629,
+      "mean_ratio_paired_95pct_interval": [
+        1.1938130362484007,
+        1.2086045580836426
+      ]
+    }
+  },
+  "cancellation": {
+    "rounds": 5,
+    "concurrent_workers": 4,
+    "p95_ms": 4.890013,
+    "peak_worker_rss_bytes": 75874304,
+    "report_sha256": "849a70f631ef5b83fbf00ca6cbfa0b87a5336157cbebfa1f654df9741bbf66b7"
+  }
+}

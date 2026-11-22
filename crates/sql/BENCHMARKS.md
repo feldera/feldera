@@ -4,6 +4,24 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Column initializer build, 2026-11-22
+
+On `4f84a9cf6`, each workload ran two warmup pairs and 21 measured pairs
+in alternating order on CPU 15. Each process compiled from SQL through
+classic Rust source emission. All 69 direct/hybrid pairs produced equal
+diagnostics and artifacts.
+
+| Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
+|---|---:|---:|---:|---:|---:|
+| Correlated array subquery | 1.399 | 1.715 | 1.437 | 1.743 | 1.213× |
+| Nexmark suite | 3.128 | 6.975 | 3.146 | 7.062 | 2.245× |
+| Outer join | 1.322 | 1.589 | 1.336 | 1.608 | 1.204× |
+
+All three ratios exceeded 1.2×. A separate run on the same build measured
+4.89 ms cancellation p95 across five rounds of four concurrent workers.
+The largest combined driver and waiting JVM high-water RSS was 72.4 MiB.
+[Timing and resource evidence](evidence/p3-metadata-latency.json)
+
 ## Packaged mixed optimizer, 2026-11-21
 
 The opt-in compiler ran 106 Rust pass kinds. Each timing starts a fresh
