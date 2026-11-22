@@ -1078,6 +1078,14 @@ fn transform(
                 &filters, threshold
             )));
         }
+        "LeftJoinChains/Steps" => {
+            let graph = serde_json::from_slice::<Vec<_>>(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::chain_steps(&graph)?)?);
+        }
+        "LeftJoinChains/Columns" => {
+            let facts = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::carried_columns(facts)?)?);
+        }
         "LeftJoinChains/Key" => {
             let facts = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::choose_chain_key(&facts))?);

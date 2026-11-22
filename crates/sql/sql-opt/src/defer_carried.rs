@@ -1,8 +1,11 @@
 //! Fetch the payload carried through a chain of left joins once, at its end.
 //! The chain analysis supplies the identifying key and column correspondence.
+mod chains;
 mod keys;
+pub use chains::{carried_columns, chain_steps};
 pub use keys::{ChainKeyChoice, ChainKeys, choose_chain_key};
 
+use crate::lineage::{Column, Part};
 use crate::rebuild::{ProjectionNames, input_type};
 use crate::stream_rewrites::{append_map, body_members};
 use feldera_sql_ir::{
@@ -11,20 +14,6 @@ use feldera_sql_ir::{
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
-
-#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-enum Part {
-    None,
-    Index,
-    Value,
-}
-
-#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq)]
-struct Column {
-    part: Part,
-    field: usize,
-}
 
 #[derive(Deserialize)]
 struct ColumnCopy {

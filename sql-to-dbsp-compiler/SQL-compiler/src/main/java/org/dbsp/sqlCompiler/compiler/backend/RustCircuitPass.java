@@ -97,6 +97,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilt
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.NativeLeftJoinChains;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.TrimInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
@@ -1522,6 +1523,30 @@ public final class RustCircuitPass implements CircuitTransform {
             return shared;
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid closure-local expression uses from Rust", error);
+        }
+    }
+
+    @Nullable
+    public static List<NativeLeftJoinChains.Step> chainSteps(DBSPCompiler compiler, List<NativeLeftJoinChains.Operator> graph) {
+        String pass = "LeftJoinChains/Steps";
+        try {
+            var reply = MAPPER.readTree(transformWithContext(pass, MAPPER.writeValueAsBytes(graph), 0, "", EMPTY_CONTEXT));
+            return answered(compiler, pass, reply) ? MAPPER.convertValue(reply, new TypeReference<>() {}) : null;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not read left-join chain steps", error);
+        }
+    }
+
+    public static List<NativeLeftJoinChains.Carried> carriedColumns(DBSPCompiler compiler, NativeLeftJoinChains.Inputs inputs) {
+        String pass = "LeftJoinChains/Columns";
+        try {
+            var bytes = transformWithContext(pass, MAPPER.writeValueAsBytes(inputs), 0, "", EMPTY_CONTEXT);
+            List<NativeLeftJoinChains.Carried> result = MAPPER.readValue(bytes, new TypeReference<>() {});
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not read carried left-join columns", error);
         }
     }
 

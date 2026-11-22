@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.KeyAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LosslessCastKeyAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.PortTransformOracle;
 
@@ -18,6 +19,7 @@ import java.nio.file.Path;
 /** Compare the ordered candidate keys of every port on the same live optimizer input. */
 public final class CandidateKeyOracle extends FrozenCircuitObserver {
     private final DBSPCompiler compiler;
+    private int chainRewrites;
     private int ordinary;
     private int lossless;
     private int ports;
@@ -58,9 +60,20 @@ public final class CandidateKeyOracle extends FrozenCircuitObserver {
         try {
             options.rustOptimizerPasses = false;
             var direct = this.analyze(circuit, allowCasts);
+            var directChains = allowCasts ? null : new LeftJoinChainsVisitor(this.compiler, direct);
+            if (directChains != null)
+                directChains.apply(circuit);
             options.rustOptimizerPasses = true;
             var hybrid = this.analyze(circuit, allowCasts);
             this.compare(circuit.getAllOperators(), direct, hybrid);
+            if (directChains != null) {
+                var hybridChains = new LeftJoinChainsVisitor(this.compiler, hybrid);
+                hybridChains.apply(circuit);
+                if (!directChains.chainEnd.equals(hybridChains.chainEnd))
+                    throw new AssertionError(this.observation + " expected chains " + directChains.chainEnd
+                            + ", got " + hybridChains.chainEnd);
+                this.chainRewrites += hybridChains.chainEnd.size();
+            }
         } finally {
             options.rustOptimizerPasses = previous;
         }
@@ -82,7 +95,7 @@ public final class CandidateKeyOracle extends FrozenCircuitObserver {
     @Override
     void finish() {
         this.observation.put("ordinary", this.ordinary).put("lossless", this.lossless)
-                .put("ports", this.ports).put("keyed", this.keyed).put("transforms", this.transforms);
+                .put("chain_rewrites", this.chainRewrites).put("ports", this.ports).put("keyed", this.keyed).put("transforms", this.transforms);
     }
 
     public static void main(String[] args) throws IOException {

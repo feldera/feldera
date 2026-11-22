@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.keys;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
@@ -12,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedFields;
@@ -39,6 +41,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -206,6 +209,28 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         return super.startVisit(node);
     }
 
+    @Override
+    public VisitDecision preorder(DBSPCircuit circuit) {
+        if (this.compiler().options.ioOptions.rustOptimizerPasses
+                && new NativeLeftJoinChains(this).analyze(circuit))
+            return VisitDecision.STOP;
+        return super.preorder(circuit);
+    }
+
+    /** Install a chain selected for a lookup or the optional end-of-chain report. */
+    void install(OutputPort start, OutputPort end, NativeLeftJoinChains.Carried facts, boolean terminal) {
+        Map<Column, Column> inputToOutput = new LinkedHashMap<>();
+        Map<Column, Column> outputToInput = new LinkedHashMap<>();
+        for (var copy : facts.copies()) {
+            inputToOutput.putIfAbsent(copy.source(), copy.result());
+            outputToInput.put(copy.result(), copy.source());
+        }
+        var carried = new Carried(start, facts.length(), inputToOutput, outputToInput, facts.read());
+        if (terminal)
+            this.carriedAt.put(end, carried);
+        this.record(carried, end);
+    }
+
     static boolean isLeftJoin(DBSPOperator operator) {
         return operator.is(DBSPLeftJoinOperator.class) || operator.is(DBSPLeftJoinIndexOperator.class);
     }
@@ -213,7 +238,7 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
     /** {@link KeyAnalysis#getPortSourceTransform} restricted to the ports a chain can run
      * through. */
     @Nullable
-    private KeyAnalysis.PortTransform sourceTransform(OutputPort port) {
+    KeyAnalysis.PortTransform sourceTransform(OutputPort port) {
         // Chains cannot be continued through right inputs of left joins
         if (port.getShape() instanceof IndexedShape &&
             port.getOutputIndexedZSetType().elementType.mayBeNull)
@@ -248,7 +273,12 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
      *         understands, so the columns read are unknown. */
     @Nullable
     private Set<Column> columnsComputedFrom(CollectionShape shape, DBSPClosureExpression closure, int parameter) {
-        Provenance provenance = this.keys.provenance(shape, closure);
+        return this.columnsComputedFrom(shape, closure, parameter, this.keys.provenance(shape, closure));
+    }
+
+    @Nullable
+    private Set<Column> columnsComputedFrom(CollectionShape shape, DBSPClosureExpression closure,
+                                            int parameter, Provenance provenance) {
         List<DBSPExpression> expressions = KeyAnalysis.outputExpressions(shape, closure);
         List<DBSPExpression> computed = new ArrayList<>();
         for (int i = 0; i < expressions.size(); i++) {
@@ -264,26 +294,53 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         return this.columnsRead(computing, parameter);
     }
 
+    @Nullable
+    private Set<Column> unaryReads(DBSPSimpleOperator operator, DBSPClosureExpression closure) {
+        if (operator instanceof DBSPFilterOperator)
+            return this.columnsRead(closure, 0);
+        var shape = operator.outputPort().getShape();
+        Utilities.enforce(shape != null && closure.parameters.length == 1,
+                () -> "Unexpected operator on a chain: " + operator);
+        return this.columnsComputedFrom(shape, closure, 0);
+    }
+
+    /** Read and copy facts in the input coordinates of one selected chain link. */
+    @Nullable NativeLeftJoinChains.LinkColumns linkColumns(DBSPSimpleOperator operator, boolean seed) {
+        var inputShape = operator.inputs.get(0).getShape();
+        if (inputShape == null)
+            return null;
+        var closure = KeyAnalysis.closureOf(operator);
+        var output = operator.outputPort();
+        boolean join = isLeftJoin(operator);
+        ColumnCopyTransform transform;
+        Set<Column> reads = Set.of();
+        if (join) {
+            var provenance = this.keys.provenance(output.getShape(), Objects.requireNonNull(closure));
+            transform = KeyAnalysis.sideTransform(provenance, 1);
+            reads = this.columnsComputedFrom(output.getShape(), closure, 1, provenance);
+        } else {
+            transform = Objects.requireNonNull(this.sourceTransform(output)).transform();
+            if (closure != null)
+                reads = this.unaryReads(operator, closure);
+        }
+        var copies = new ArrayList<DeferCarriedColumns.ColumnCopy>();
+        for (var source : inputShape.columns())
+            for (var target : transform.copiesOf(source))
+                copies.add(new DeferCarriedColumns.ColumnCopy(source, target));
+        return new NativeLeftJoinChains.LinkColumns(operator.id, join, seed ? inputShape.columns() : null,
+                reads, copies);
+    }
+
     /** Extend a chain with one operator that computes each output row from a single input row.
      * @param port    Output of the operator to append to the chain.
      * @param source  The {@link #sourceTransform} of {@code port}. */
     private Carried extend(Carried carried, OutputPort port, KeyAnalysis.PortTransform source) {
         DBSPSimpleOperator operator = port.node().to(DBSPSimpleOperator.class);
-        CollectionShape shape = port.getShape();
         DBSPClosureExpression closure = KeyAnalysis.closureOf(operator);
         Set<Column> startColumnsRead = carried.mutableReadCopy();
         // An operator without a function, a distinct or an integrator e.g., reads no column
         if (closure != null) {
-            Set<Column> readByOperator;
-            if (operator.is(DBSPFilterOperator.class)) {
-                // A filter copies every column, but its predicate reads some of them
-                readByOperator = this.columnsRead(closure, 0);
-            } else {
-                // A map or a map_index reads the columns it computes with, not the ones it only copies
-                Utilities.enforce(shape != null && closure.parameters.length == 1,
-                        () -> "Unexpected operator on a chain: " + operator);
-                readByOperator = this.columnsComputedFrom(shape, closure, 0);
-            }
+            Set<Column> readByOperator = this.unaryReads(operator, closure);
             // When the columns read are unknown, assume every column is read
             for (var copy : carried.outputToInputRemap().entrySet())
                 if (readByOperator == null || readByOperator.contains(copy.getKey()))
@@ -369,7 +426,7 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         Provenance provenance = this.keys.provenance(output, closure);
         // Parameter 1 of a join function is the value of its left input as a plain tuple,
         // so its column i is value column i of the left input
-        Set<Column> readByJoin = this.columnsComputedFrom(output, closure, 1);
+        Set<Column> readByJoin = this.columnsComputedFrom(output, closure, 1, provenance);
         Set<Column> startColumnsRead = carried.mutableReadCopy();
         // The join matches on its index, so every index column of the left input is read
         for (var copy : carried.outputToInputRemap().entrySet()) {
@@ -465,7 +522,7 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         var choice = RustCircuitPass.chooseChainKey(facts);
         if (!choice.worthwhile())
             return null;
-        return new Chain(carried.start(), end, carried.length(), keys.get(java.util.Objects.requireNonNull(choice.key())),
+        return new Chain(carried.start(), end, carried.length(), keys.get(Objects.requireNonNull(choice.key())),
                 onlyCarried(carried), carried.inputToOutputRemap(), carried.outputToInputRemap());
     }
 

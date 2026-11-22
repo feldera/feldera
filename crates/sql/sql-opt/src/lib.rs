@@ -165,7 +165,7 @@ mod topology;
 mod trace_integrators;
 mod trace_retention;
 mod defer_carried;
-pub use defer_carried::{choose_chain_key, ChainKeyChoice, ChainKeys, defer_carried_columns, ChainLayout};
+pub use defer_carried::{carried_columns, chain_steps, choose_chain_key, ChainKeyChoice, ChainKeys, defer_carried_columns, ChainLayout};
 mod trim_filters;
 pub use trim_filters::{trim_filter_closures, trim_filter_readers, trim_filters};
 mod trim_windows;

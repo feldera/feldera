@@ -47,6 +47,8 @@ public class LeftJoinChainsTests extends SqlIoTest {
         Logger.INSTANCE.setLoggingLevel(LeftJoinChainsVisitor.class, 1);
         try {
             DBSPCompiler compiler = this.testCompiler();
+            if (Boolean.getBoolean("feldera.optimizer.compareRustChainWalk"))
+                compiler.options.ioOptions.rustOptimizerPasses = true;
             compiler.submitStatementsForCompilation(TABLES + view);
             return new Analyzed(this.getCCS(compiler).withStringTrim(), builder.toString());
         } finally {
