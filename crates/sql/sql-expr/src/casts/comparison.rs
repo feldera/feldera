@@ -115,39 +115,68 @@ pub fn same_literal_value(
     Ok(Some(equal))
 }
 
+fn float_value(node: &Node, ty: TypeKind) -> Result<f64, Error> {
+    let bits = node
+        .data("value")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| Error::new("invalid floating-point literal bits"))?;
+    Ok(if ty == TypeKind::Real {
+        f64::from(f32::from_bits(bits as u32))
+    } else {
+        f64::from_bits(bits as u64)
+    })
+}
+
+fn exact_value(node: &Node) -> Result<bigdecimal::BigDecimal, Error> {
+    let value = node
+        .data("value")
+        .ok_or_else(|| Error::new("missing numeric literal"))?;
+    if let Some(n) = value.as_i64() {
+        return Ok(n.into());
+    }
+    if let Some(n) = value.as_u64() {
+        return Ok(n.into());
+    }
+    value
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| Error::new("invalid exact numeric literal"))
+}
+
+/// Implements the compiler's strict positive-literal test for waterline scaling.
+/// Java's numeric ordering puts NaN above infinity, but NaN is never a positive factor.
+pub fn literal_is_positive(editor: &CircuitEditor, literal: ExpressionId) -> Result<bool, Error> {
+    let node = editor.node(literal.into())?;
+    if node.data("value").is_none_or(|value| value.is_null()) {
+        return Ok(false);
+    }
+    let ty = editor.type_kind(editor.expression_type(literal)?)?;
+    match ty {
+        TypeKind::Real | TypeKind::Double => Ok(float_value(node, ty)? > 0.0),
+        TypeKind::Integer
+        | TypeKind::Decimal
+        | TypeKind::ISize
+        | TypeKind::USize
+        | TypeKind::LongInterval
+        | TypeKind::ShortInterval => Ok(exact_value(node)? > 0),
+        _ => Ok(false),
+    }
+}
+
 fn compare_numbers(ty: TypeKind, a: &Node, b: &Node) -> Result<Option<Ordering>, Error> {
     use TypeKind as Ty;
     let order = match ty {
         Ty::Real | Ty::Double => {
             // Java Float.compare and Double.compare order all NaNs together above infinity.
-            let float = |node: &Node| -> Result<f64, Error> {
-                let bits = node
-                    .data("value")
-                    .and_then(|v| v.as_i64())
-                    .ok_or_else(|| Error::new("invalid floating-point literal bits"))?;
-                let value = if ty == Ty::Real {
-                    f64::from(f32::from_bits(bits as u32))
-                } else {
-                    f64::from_bits(bits as u64)
-                };
-                Ok(if value.is_nan() { f64::NAN } else { value })
-            };
-            float(a)?.total_cmp(&float(b)?)
+            let canonical = |n: f64| if n.is_nan() { f64::NAN } else { n };
+            canonical(float_value(a, ty)?).total_cmp(&canonical(float_value(b, ty)?))
         }
         Ty::Integer
         | Ty::Decimal
         | Ty::ISize
         | Ty::USize
         | Ty::LongInterval
-        | Ty::ShortInterval => {
-            let number = |node: &Node| {
-                node.data("value")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| s.parse::<bigdecimal::BigDecimal>().ok())
-                    .ok_or_else(|| Error::new("invalid exact numeric literal"))
-            };
-            number(a)?.cmp(&number(b)?)
-        }
+        | Ty::ShortInterval => exact_value(a)?.cmp(&exact_value(b)?),
         _ => return Ok(None),
     };
     Ok(Some(order))

@@ -516,6 +516,12 @@ with nullable operands. Across both engines the directed oracle produced
 14 detached replays matched Java. COUNT and LATENESS checkpoints restored
 in both directions. [Clock comparisons](evidence/p3-scalar-clock-comparisons.json)
 
+The clock classifier follows cloned fields of nested input rows and checks
+the sign of REAL, DOUBLE, decimal, interval and integer literals. The Rust
+rule handled all ten directed filters across both engines. Both their full
+replays and the 133 frozen RewriteNow comparisons matched Java.
+[Nested field and numeric comparisons](evidence/p3-nested-numeric-clock-bounds.json)
+
 Rust derives collection keys for binary, left and star joins from each input's
 candidate keys and the columns copied by the join closure. The regular and
 lossless-cast analyses agreed with Java at 6,631 output ports, including 460
@@ -545,8 +551,9 @@ the index in the compacted row and retain the analyzed input column’s SQL type
 The full monotonicity pass matched Java on 291 classic and 259 Gen-2 programs,
 including the aggregate case that distinguishes two equal integer types by
 their sharing. Rust also selects incremental boundaries from the live topology.
-That pass matched Java on all 524 selected incremental programs. Both compiler
-directions restored COUNT and LATENESS state.
+That pass matched Java on all 524 selected incremental programs. All 550
+detached replays matched through emission. Both compiler directions restored
+COUNT and LATENESS state.
 [Pass comparisons and checkpoints](evidence/p3-row-waterlines-and-incrementalization.json)
 
 Indexed inputs and three-parameter joins also use the Rust row projection.

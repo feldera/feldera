@@ -9,7 +9,7 @@ use feldera_sql_ir::{
 mod arithmetic;
 mod collections;
 mod comparison;
-pub use comparison::same_literal_value;
+pub use comparison::{literal_is_positive, same_literal_value};
 mod literals;
 mod simplify;
 pub(crate) use simplify::SimplifyDefault;

@@ -1,0 +1,54 @@
+{
+  "base_commit": "461da4cd7",
+  "scope": "Check temporal filter classification for nested ROW fields and exact, REAL, and DOUBLE factors against Java. SQL includes positive and negative factors and a cloned nested row.",
+  "compiler_jar_sha256": "c859fb8d5e129a280feccc657f83d406cf32512ac7424fc6fcf10167ae48617d",
+  "optimizer_library_sha256": "a3ac305d42c41e312dd935ff59bfd8352cdfa63f5c9c8663a476c5bca67ef343",
+  "engines": {
+    "classic": {
+      "frozen_rewrite_now_matches": 71,
+      "direct_frozen_sha256": "19b005cfd85656bae9d639d9901d3cb294f8c121716792ed1f03a34cfc7bbeca",
+      "hybrid_frozen_sha256": "75fc92f344c29e92133586944f09dbb69659cb3e8592577fbe980cc44eb25ae0",
+      "directed_comparison": "RewriteNow matched at 5 invocations across 5 cases",
+      "rust_lowered_filters": {
+        "p3/clock-factor-nested-timestamp": 1,
+        "p3/clock-factor-decimal-positive": 1,
+        "p3/clock-factor-decimal-negative": 1,
+        "p3/clock-factor-real-positive": 1,
+        "p3/clock-factor-real-negative": 1
+      },
+      "directed_sql": [
+        "CREATE TABLE t(a ROW(ts TIMESTAMP)); CREATE VIEW v AS SELECT t.a.ts FROM t WHERE t.a.ts > NOW();",
+        "CREATE TABLE t(x DECIMAL(30, 10)); CREATE VIEW v AS SELECT x FROM t WHERE x > CAST(EXTRACT(EPOCH FROM NOW()) AS DECIMAL(20, 0)) * 0.0001;",
+        "CREATE TABLE t(x DECIMAL(30, 10)); CREATE VIEW v AS SELECT x FROM t WHERE x > CAST(EXTRACT(EPOCH FROM NOW()) AS DECIMAL(20, 0)) * -0.0001;",
+        "CREATE TABLE t(x REAL); CREATE VIEW v AS SELECT x FROM t WHERE x > CAST(EXTRACT(EPOCH FROM NOW()) AS REAL) * CAST(0.125 AS REAL);",
+        "CREATE TABLE t(x REAL); CREATE VIEW v AS SELECT x FROM t WHERE x > CAST(EXTRACT(EPOCH FROM NOW()) AS REAL) * CAST(-0.125 AS REAL);"
+      ],
+      "detached_cases": 5,
+      "detached_receipt_sha256": "e302b85094cd19503f403ec41fad64ccfa3d174fa3de92131cc980673e95c4e6"
+    },
+    "gen2": {
+      "frozen_rewrite_now_matches": 62,
+      "direct_frozen_sha256": "b324db4b8653b9d808b263420b9827389662882bd197eaeeb3fa234a69cab72e",
+      "hybrid_frozen_sha256": "cb4030cee9204d42d0c89cd73fd6b5648bcf289642fa1373e5b2632d1d4b2eb8",
+      "directed_comparison": "RewriteNow matched at 5 invocations across 5 cases",
+      "rust_lowered_filters": {
+        "p3/clock-factor-nested-timestamp": 1,
+        "p3/clock-factor-decimal-positive": 1,
+        "p3/clock-factor-decimal-negative": 1,
+        "p3/clock-factor-real-positive": 1,
+        "p3/clock-factor-real-negative": 1
+      },
+      "directed_sql": "Same SQL as classic",
+      "detached_cases": 5,
+      "detached_receipt_sha256": "e2e367caab2cd3e525f5ea28b272b0d7ba6f8d6a066716bd50f1ee42896c82ad"
+    }
+  },
+  "tests": {
+    "tests.log": "bb419ca836c6c7ad8ac6568fdc8d0953a07ca563ccf3a7191876e10ed2db1b1d",
+    "clippy.log": "123b6ab008579be6a86668e5a0a143607866b128b05c935b58078bbd93e3d984"
+  },
+  "checkpoint_restores": {
+    "count": "6e068706e00375258eed7bede54d3493deabcb222a596d63692f5991e076f427",
+    "watermark": "753d7f13e88f12626e79597e587373f88692adeb4edb4d8d93f68a57044042c4"
+  }
+}

@@ -113,7 +113,14 @@ pub(super) fn monotone_operands(
                 value.monotone = initial.monotone;
             }
             Expr::Field => {
-                let source = child("expression")?;
+                let mut source = child("expression")?;
+                let mut fields = HashSet::new();
+                while matches!(edit.expr_kind(source)?, Expr::Field | Expr::Clone) {
+                    if !fields.insert(source) {
+                        return Err(Error::new("cycle in temporal row field access"));
+                    }
+                    source = edit.expression(edit.node(source.into())?.edge("expression")?)?;
+                }
                 if edit.expr_kind(source)? != Expr::Deref {
                     return Ok(None);
                 }
@@ -197,36 +204,29 @@ pub(super) fn monotone_operands(
             | Expr::TimestampTzLiteral
             | Expr::ShortIntervalLiteral
             | Expr::LongIntervalLiteral
+            | Expr::I8Literal
+            | Expr::I16Literal
             | Expr::I32Literal
             | Expr::I64Literal
+            | Expr::I128Literal
+            | Expr::U8Literal
+            | Expr::U16Literal
+            | Expr::U32Literal
+            | Expr::U64Literal
+            | Expr::U128Literal
+            | Expr::ISizeLiteral
+            | Expr::USizeLiteral
+            | Expr::DecimalLiteral
+            | Expr::RealLiteral
+            | Expr::DoubleLiteral
             | Expr::BoolLiteral => {
-                value.monotone = true;
-                // A NULL literal has a bound but cannot serve as a constant offset.
                 value.constant = node.data("value").is_some_and(|v| !v.is_null());
-                if value.constant
-                    && matches!(
-                        kind,
-                        Expr::I32Literal
-                            | Expr::I64Literal
-                            | Expr::ShortIntervalLiteral
-                            | Expr::LongIntervalLiteral
-                    )
-                {
-                    let literal = node.data("value").expect("nonnull numeric literal");
-                    let number = literal
-                        .as_i64()
-                        .or_else(|| literal.as_str()?.parse().ok())
-                        .ok_or_else(|| {
-                            Error::new("invalid integer or interval literal in clock predicate")
-                        })?;
-                    value.positive_literal = number > 0;
+                if !value.constant && matches!(kind, Expr::ISizeLiteral | Expr::USizeLiteral) {
+                    // The general visitor reports the unsupported target-sized maximum at the SQL site.
+                    return Ok(None);
                 }
-            }
-            Expr::DoubleLiteral => {
-                let literal = double_literal(edit, id)?;
                 value.monotone = true;
-                value.constant = literal.is_some();
-                value.positive_literal = literal.is_some_and(|n| n > 0.0);
+                value.positive_literal = feldera_sql_expr::literal_is_positive(edit, id)?;
             }
             Expr::Binary | Expr::TimeAddSub => {
                 let left = child("left")?;
@@ -379,6 +379,51 @@ mod tests {
     }
 
     #[test]
+    fn clock_scaling_preserves_exact_and_float_signs() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let (circuit, types) = circuit.with_inner_roots([
+            json!({"class":"DBSPTypeDecimal","id":1,"code":"DECIMAL","precision":38,"scale":38,"mayBeNull":false}),
+            json!({"class":"DBSPTypeReal","id":2,"code":"REAL","mayBeNull":false}),
+            json!({"class":"DBSPTypeInteger","id":3,"code":"UINT128","width":128,"signed":false,"mayBeNull":false}),
+        ])?;
+        let mut edit = CircuitEditor::new(circuit);
+        let decimal = edit.type_id(types[0])?;
+        let real = edit.type_id(types[1])?;
+        let wide = edit.type_id(types[2])?;
+        let variable = edit.named_variable(decimal, "row")?;
+        let parameter = edit.parameter_at(types[0], variable)?;
+        for (kind, ty, value, positive) in [
+            (Expr::DecimalLiteral, decimal, json!("1E-38"), true),
+            (Expr::DecimalLiteral, decimal, json!("-1E-38"), false),
+            (Expr::DecimalLiteral, decimal, json!("0E-38"), false),
+            (Expr::U128Literal, wide, json!(u128::MAX.to_string()), true),
+            (
+                Expr::RealLiteral,
+                real,
+                json!(f32::NAN.to_bits() as i32),
+                false,
+            ),
+            (
+                Expr::RealLiteral,
+                real,
+                json!((-0.0_f32).to_bits() as i32),
+                false,
+            ),
+            (Expr::RealLiteral, real, json!(1), true),
+        ] {
+            let literal = edit.make_expr(types[0], kind, ty, [("value", Field::Data(value))])?;
+            // Both operands have bounds. MUL additionally requires a strictly positive factor.
+            let product = edit.binary_expression(types[0], ty, BinaryOp::Mul, literal, literal)?;
+            let bounded = monotone_operands(&edit, parameter, product)?.unwrap();
+            assert!(bounded.contains(&literal));
+            assert_eq!(bounded.contains(&product), positive);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn nullable_clock_maximum_needs_a_nonnull_operand() -> Result<(), Error> {
         let circuit = Circuit::from_json(json!({
             "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
@@ -390,12 +435,20 @@ mod tests {
         let site = types[0];
         let timestamp = edit.type_id(site)?;
         let nullable = edit.with_nullability(timestamp, true)?;
-        let input_ty = edit.tuple_type(site, false, [nullable.into()])?;
+        let inner_ty = edit.tuple_type(site, false, [nullable.into()])?;
+        let input_ty = edit.tuple_type(site, false, [inner_ty.into()])?;
         let reference = edit.reference_type(input_ty)?;
         let row = edit.named_variable(reference, "row")?;
         let parameter = edit.parameter_at(site, row)?;
         let row_value = edit.dereference(row)?;
-        let key = edit.tuple_field(row_value, 0)?;
+        let inner = edit.tuple_field(row_value, 0)?;
+        let cloned_row = edit.make_expr(
+            site,
+            Expr::Clone,
+            inner_ty,
+            [("expression", Field::Reference(inner.into()))],
+        )?;
+        let key = edit.tuple_field(cloned_row, 0)?;
         let now = edit.function_path(site, "now")?;
         let clock = edit.make_expr(
             site,

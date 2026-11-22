@@ -14,6 +14,15 @@
         "comparison": "IncrementalizeVisitor matched at 265 invocations across 265 cases",
         "direct_sha256": "ec4557a17c8885bceda07873847589aaf167551607aaabcedd1c43188b0368e8",
         "hybrid_sha256": "ec4557a17c8885bceda07873847589aaf167551607aaabcedd1c43188b0368e8"
+      },
+      "detached": {
+        "cases": 291,
+        "shard_receipts_sha256": [
+          "f31f0756aacb64891f8e7bbd449f974de26ff28fd6fc1ae67664bbd5ce7e5f6d",
+          "3be1d1aa39cfb897271ca2da6a7771ca5737cf3fb078318111d6e9d7b4e6b8e8",
+          "df655cfebf56f13ab0a1a9985512464fdd48c283c03075f6010421827ac2011e",
+          "d919530c7da9e0985aba9cd26102bbc39e207e2c40a564be57c79f9d5fa3efa9"
+        ]
       }
     },
     "gen2": {
@@ -26,6 +35,15 @@
         "comparison": "IncrementalizeVisitor matched at 259 invocations across 259 cases",
         "direct_sha256": "adfb522f0529e17b8da74389ce0ea1058897c8fd8ae05e1bfc1d60f714dccc5a",
         "hybrid_sha256": "adfb522f0529e17b8da74389ce0ea1058897c8fd8ae05e1bfc1d60f714dccc5a"
+      },
+      "detached": {
+        "cases": 259,
+        "shard_receipts_sha256": [
+          "a240add5b8b7e64c313577eec8d6fe33674c417da7c6f0572f7ea82bfad0b8f3",
+          "da727c60a59486fb44a5d89a68397abf011c093d7011840bd3943983f9a7b86f",
+          "a927a0c09fe7f392d3b5da74c2935a6ec2eeaa27dae4149c14da2a0e6b37201a",
+          "8cde52cd1c95ce1d9a5eb859042bb2dbf0b41339c4f6cc48933522f8d390225b"
+        ]
       }
     }
   },
