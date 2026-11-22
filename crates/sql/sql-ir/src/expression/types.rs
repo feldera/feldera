@@ -119,153 +119,6 @@ impl CircuitEditor {
             .ok_or_else(|| Error::new(format!("type requires integer {name}")))
     }
 
-    pub fn same_type(&self, left: TypeId, right: TypeId) -> Result<bool, Error> {
-        self.equal_types(left, right, false, 0)
-    }
-
-    /// Ignore the outer SQL nullability. Element and field nullability still participate.
-    pub fn same_type_ignoring_nullability(
-        &self,
-        left: TypeId,
-        right: TypeId,
-    ) -> Result<bool, Error> {
-        self.equal_types(left, right, true, 0)
-    }
-
-    fn equal_types(
-        &self,
-        left: TypeId,
-        right: TypeId,
-        ignore_null: bool,
-        depth: usize,
-    ) -> Result<bool, Error> {
-        if left == right {
-            return Ok(true);
-        }
-        if depth > 128 {
-            return Err(Error::new("recursive types exceed the expression limit"));
-        }
-        let kind = self.type_kind(left)?;
-        if kind != self.type_kind(right)?
-            || (!ignore_null && self.nullable(left)? != self.nullable(right)?)
-        {
-            return Ok(false);
-        }
-        let (a, b) = (self.node(left.0)?, self.node(right.0)?);
-        let properties: &[&str] = match kind {
-            Ty::Integer => &["width", "signed"],
-            Ty::Decimal => &["precision", "scale"],
-            Ty::String | Ty::Binary => &["fixed", "precision"],
-            Ty::ShortInterval | Ty::LongInterval => &["units"],
-            Ty::Struct => &["hashName"],
-            Ty::User | Ty::TypedBox | Ty::Weight => &["name"],
-            _ => &["code"],
-        };
-        if properties.iter().any(|p| a.data(p) != b.data(p)) {
-            return Ok(false);
-        }
-        if matches!(kind, Ty::ZSet | Ty::IndexedZSet) {
-            for field in ["elementType", "keyType"] {
-                if field == "keyType" && kind == Ty::ZSet {
-                    break;
-                }
-                if !self.equal_types(
-                    self.type_id(a.edge(field)?)?,
-                    self.type_id(b.edge(field)?)?,
-                    false,
-                    depth + 1,
-                )? {
-                    return Ok(false);
-                }
-            }
-            return Ok(true);
-        }
-        if kind == Ty::Ref {
-            return self.equal_types(
-                self.type_id(a.edge("type")?)?,
-                self.type_id(b.edge("type")?)?,
-                false,
-                depth + 1,
-            );
-        }
-        if kind == Ty::Struct {
-            if sql_name(a)? != sql_name(b)? {
-                return Ok(false);
-            }
-            let left = a.edges("fields")?;
-            let right = b.edges("fields")?;
-            if left.len() != right.len() {
-                return Ok(false);
-            }
-            let right = right
-                .into_iter()
-                .map(|id| {
-                    let field = self.node(id)?;
-                    Ok((sql_name(field)?, field))
-                })
-                .collect::<Result<std::collections::BTreeMap<_, _>, Error>>()?;
-            for id in left {
-                let field = self.node(id)?;
-                let Some(other) = right.get(sql_name(field)?) else {
-                    return Ok(false);
-                };
-                if field.data("index") != other.data("index")
-                    || !self.equal_types(
-                        self.type_id(field.edge("type")?)?,
-                        self.type_id(other.edge("type")?)?,
-                        false,
-                        depth + 1,
-                    )?
-                {
-                    return Ok(false);
-                }
-            }
-            return Ok(true);
-        }
-        let args = match kind {
-            Ty::Tuple | Ty::RawTuple => Some("tupFields"),
-            Ty::Array | Ty::Map | Ty::User | Ty::TypedBox | Ty::Weight | Ty::SqlResult => {
-                Some("typeArgs")
-            }
-            _ => None,
-        };
-        if let Some(args) = args {
-            let a = a.edges(args)?;
-            let b = b.edges(args)?;
-            if a.len() != b.len() {
-                return Ok(false);
-            }
-            for (a, b) in a.into_iter().zip(b) {
-                if !self.equal_types(self.type_id(a)?, self.type_id(b)?, false, depth + 1)? {
-                    return Ok(false);
-                }
-            }
-        } else if !(kind.numeric()
-            || kind.date()
-            || kind.interval()
-            || matches!(
-                kind,
-                Ty::String
-                    | Ty::Binary
-                    | Ty::Bool
-                    | Ty::Null
-                    | Ty::Uuid
-                    | Ty::GeoPoint
-                    | Ty::Variant
-                    | Ty::Void
-                    | Ty::ISize
-                    | Ty::USize
-                    | Ty::Keyword
-                    | Ty::Str
-            ))
-        {
-            return Err(Error::new(format!(
-                "SQL comparison is undefined for {kind:?}"
-            )));
-        }
-        Ok(true)
-    }
-
     /// Allocate an integer type at the source location of another type.
     pub fn integer_type(
         &mut self,
@@ -349,7 +202,7 @@ impl CircuitEditor {
             return self.with_nullability(left, true);
         }
         let nullable = self.nullable(left)? || self.nullable(right)?;
-        if self.equal_types(left, right, true, 0)?
+        if self.same_type_ignoring_nullability(left, right)?
             || matches!(a, Ty::Timestamp | Ty::TimestampTz) && b.date()
         {
             return self.with_nullability(left, nullable);
@@ -512,7 +365,7 @@ impl CircuitEditor {
     }
 }
 
-fn sql_name(node: &crate::Node) -> Result<&str, Error> {
+pub(super) fn sql_name(node: &crate::Node) -> Result<&str, Error> {
     let Some(Field::Object(name)) = node.field("name") else {
         return Err(Error::new("missing SQL identifier"));
     };

@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust compares the declared types of temporal keys structurally, including
+function parameters and results, generic type arguments, stream kind and stream
+nesting. A regression compares 256 nested rows with shared fields. The build
+matched Java on 550 monotonicity cases and 11,178 ordered optimizer observations
+in 16 detached compilations. [Type comparisons](evidence/p3-type-equality.json)
+
 Rust builds each supported waterline closure in one call. Its row, indexed and
 join bindings use the same expression arena as the projected body.
 All 550 selected monotonicity pass comparisons and 16 detached compilations

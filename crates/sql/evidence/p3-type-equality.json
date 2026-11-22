@@ -1,0 +1,29 @@
+{
+  "scope": "Structural comparison of optimizer types, checked against Java temporal key equivalence and detached compilation. Types in shared rows are compared once per pair. Stream kind and nesting use replay metadata.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "bd1308d3f32e055b4fd99c80253f1014747c5fde22182d7ade7366c7f24a4bb1",
+    "type-comparison.jar": "6ab8699d8a2c1e06455644f553f8ddfde6ebecb0883a6bd30839445bcfd367d8",
+    "tests.log": "34e685ed0d83715359a7dad2e58e22682a075aabf4a0eb0c4b67f630e1b49f00",
+    "clippy.log": "dddac328b763bf44b4682cf142b5189cd8c8a35a4fd1ea2f9a223d435e6ed80a",
+    "build.log": "ddbb49bee7371bcabfb934ec0c0d5b2c15a694558160d111f93ac7f9d32e85e0",
+    "temporal-keys.log": "d4afbae05fade8cd21385ff305193d2de6bb4d1fbe9fb26e9368b392ebef75dd"
+  },
+  "rust_tests": 171,
+  "junit_tests": 4,
+  "engines": {
+    "classic": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "mismatches": 0,
+      "receipt_sha256": "62709d715707e2c0779d9ccf5b154c9878d196dbef09cd07ec053916bb094d6e",
+      "monotonicity": "MonotoneAnalyzer matched at 291 invocations across 291 cases"
+    },
+    "gen2": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "mismatches": 0,
+      "receipt_sha256": "d359b62b9785d6b02394ad7cbc2b843234bf59e6565f1d9aba939e6d0e20c7ea",
+      "monotonicity": "MonotoneAnalyzer matched at 259 invocations across 259 cases"
+    }
+  }
+}

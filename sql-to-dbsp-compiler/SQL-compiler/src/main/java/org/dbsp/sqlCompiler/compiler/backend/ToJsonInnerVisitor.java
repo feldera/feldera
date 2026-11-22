@@ -53,6 +53,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
 
@@ -553,6 +554,15 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     public void postorder(DBSPTypeUser node) {
         this.property("name");
         this.stream.append(node.name);
+        super.postorder(node);
+    }
+
+    @Override
+    public void postorder(DBSPTypeStream node) {
+        if (this.replayMetadata) {
+            this.stream.label("kind").append(node.kind.name());
+            this.stream.label("nesting").append(node.nesting);
+        }
         super.postorder(node);
     }
 

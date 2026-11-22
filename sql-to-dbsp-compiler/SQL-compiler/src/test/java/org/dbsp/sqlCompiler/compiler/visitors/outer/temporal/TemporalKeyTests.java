@@ -14,6 +14,12 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -54,6 +60,44 @@ public class TemporalKeyTests {
         var zero = new DBSPI32Literal(0);
         return new TemporalFilter(new DBSPVariablePath("row", zero.getType()).asParameter(),
                 key, zero, DBSPOpcode.GTE);
+    }
+
+    @Test
+    public void comparatorAndGenericKeyTypesCompareByNameAndArguments() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var value = new DBSPI32Literal(1);
+        var comparator = DBSPComparatorType.generateType(value.getType());
+        var key = bound(new DBSPQualifyTypeExpression(value, comparator));
+        var named = new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, comparator.name, false);
+        var generic = bound(new DBSPQualifyTypeExpression(value, named));
+        assertCompatible(compiler, key, generic, true);
+        assertCompatible(compiler, generic, key, true);
+        var extra = new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, comparator.name, false, value.getType());
+        assertCompatible(compiler, key, bound(new DBSPQualifyTypeExpression(value, extra)), false);
+        var descending = DBSPComparatorType.generateType(comparator, false);
+        assertCompatible(compiler, key, bound(new DBSPQualifyTypeExpression(value, descending)), false);
+    }
+
+    @Test
+    public void keyTypeArgumentsDistinguishFunctionSignaturesAndStreams() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var value = new DBSPI32Literal(1);
+        var type = value.getType();
+        var nullable = type.withMayBeNull(true);
+        var signature = new DBSPTypeFunction(type, type, nullable);
+        var stream = new DBSPTypeStream(type, StreamKind.DELTA, 0);
+        var first = bound(new DBSPQualifyTypeExpression(value, signature, stream));
+        var same = new DBSPTypeFunction(type, type, nullable);
+        var delta = new DBSPTypeStream(type, StreamKind.DELTA, 0);
+        assertCompatible(compiler, first, bound(new DBSPQualifyTypeExpression(value, same, delta)), true);
+        for (var other : List.of(new DBSPTypeFunction(nullable, type, nullable),
+                new DBSPTypeFunction(type, nullable, type), new DBSPTypeFunction(type, type))) {
+            assertCompatible(compiler, first, bound(new DBSPQualifyTypeExpression(value, other, delta)), false);
+        }
+        for (var other : List.of(new DBSPTypeStream(nullable, StreamKind.DELTA, 0),
+                new DBSPTypeStream(type, StreamKind.COLLECTION, 0), new DBSPTypeStream(type, StreamKind.DELTA, 1))) {
+            assertCompatible(compiler, first, bound(new DBSPQualifyTypeExpression(value, same, other)), false);
+        }
     }
 
     @Test

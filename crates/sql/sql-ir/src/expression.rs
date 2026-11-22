@@ -8,6 +8,7 @@ pub use closure::RefParameter;
 mod binary;
 pub use binary::BinaryOp;
 mod tuple;
+mod type_equality;
 mod types;
 mod values;
 
