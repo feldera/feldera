@@ -4104,9 +4104,7 @@ fn main() {
             }
 
             if !matches!(cli.command, Commands::Welcome) {
-                // Many subcommands have a `--stdin` flag, so look for it in the raw arguments.
-                let reads_stdin = std::env::args_os().any(|a| a == "--stdin");
-                splash::first_run(&cli.host, reads_stdin);
+                splash::first_run(&cli.host, cli.command.reads_stdin());
             }
 
             let client_opts = ClientOpts::from_cli(&cli);

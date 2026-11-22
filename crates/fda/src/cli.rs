@@ -328,6 +328,25 @@ pub enum Commands {
     Welcome,
 }
 
+impl Commands {
+    /// Returns true if the command reads its input from stdin. This function
+    /// must name each command that has a `stdin` flag.
+    pub fn reads_stdin(&self) -> bool {
+        match self {
+            Commands::ValidateProgram { stdin, .. } => *stdin,
+            Commands::Pipeline(
+                PipelineAction::Create { stdin, .. }
+                | PipelineAction::Diff { stdin, .. }
+                | PipelineAction::Query { stdin, .. }
+                | PipelineAction::Program {
+                    action: ProgramAction::Set { stdin, .. },
+                },
+            ) => *stdin,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 pub enum ApiKeyActions {
     /// List available API keys
@@ -1382,7 +1401,7 @@ pub enum ConnectorAction {
 #[cfg(test)]
 mod tests {
     use crate::cli::{Cli, Commands, PipelineAction, ProgramAction};
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
 
     /// [clap] will panic inside `try_parse` if it finds anything invalid in the
     /// parser definition, such as a duplicated command name, so this test keeps
@@ -1419,5 +1438,45 @@ mod tests {
                 }) if source == "source" && destination == "destination"
             ));
         }
+    }
+
+    /// Returns the number of commands at or below `command` that have a
+    /// `stdin` flag.
+    fn stdin_flags(command: &clap::Command) -> usize {
+        let own = command.get_arguments().any(|arg| arg.get_id() == "stdin") as usize;
+        own + command.get_subcommands().map(stdin_flags).sum::<usize>()
+    }
+
+    #[test]
+    fn reads_stdin_follows_the_stdin_flag_of_each_command() {
+        let reads_stdin = |args: &[&str]| {
+            let cli = Cli::try_parse_from([&["fda"], args].concat()).expect("the command parses");
+            cli.command.reads_stdin()
+        };
+        let with_flag: [&[&str]; 8] = [
+            &["validate-program", "--stdin"],
+            &["create", "p", "--stdin"],
+            &["create", "p", "-s"],
+            &["diff", "p", "--stdin"],
+            &["query", "p", "--stdin"],
+            &["query", "p", "-s"],
+            &["program", "set", "p", "--stdin"],
+            &["program", "set", "p", "-s"],
+        ];
+        for args in with_flag {
+            assert!(reads_stdin(args), "{args:?}");
+        }
+        let without_flag: [&[&str]; 4] = [
+            &["pipelines"],
+            &["create", "p", "program.sql"],
+            &["query", "p", "SELECT 1"],
+            &["welcome"],
+        ];
+        for args in without_flag {
+            assert!(!reads_stdin(args), "{args:?}");
+        }
+        // `reads_stdin` names each command that has a `stdin` flag. If this
+        // number changes, update `reads_stdin` and the list above.
+        assert_eq!(stdin_flags(&Cli::command()), 5);
     }
 }

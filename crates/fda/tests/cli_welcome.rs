@@ -371,4 +371,27 @@ mod tty {
             "the command did not run"
         );
     }
+
+    #[test]
+    fn first_run_does_not_play_for_a_command_that_reads_stdin() {
+        for flag in ["--stdin", "-s"] {
+            let home = tempfile::tempdir().expect("temp dir");
+            let host = closed_host();
+            let args = ["--host", &host, "--retries", "0", "create", "p", flag];
+            let mut session = Session::start(100, 40, home.path(), &args);
+            // Ctrl-D ends the input of the command. The command then fails,
+            // because no server listens.
+            session.send(b"\x04");
+            session.finish();
+            let text = session.text();
+            assert!(
+                !text.contains("GET STARTED"),
+                "the animation played with {flag}"
+            );
+            assert!(
+                !has_marker(home.path()),
+                "the first run is claimed with {flag}"
+            );
+        }
+    }
 }
