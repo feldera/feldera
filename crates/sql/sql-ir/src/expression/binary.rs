@@ -4,7 +4,7 @@ use super::{CircuitEditor, Error, Expr, ExpressionId, Field, InnerKind, NodeId, 
 
 macro_rules! binary_ops {
     ($($name:ident => $wire:literal),+ $(,)?) => {
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum BinaryOp { $($name),+ }
         impl BinaryOp {
             pub fn wire_name(self) -> &'static str {

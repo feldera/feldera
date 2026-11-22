@@ -2,7 +2,7 @@
 //! window pass uses printed closures, so cast safety and call result types do
 //! not distinguish keys, while operand nullability in a binary expression does.
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId, TypeId,
+    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId, TypeId,
     TypeKind as Ty,
 };
 use indexmap::IndexSet;
@@ -21,8 +21,10 @@ enum Term {
     Clone,
     Call(String),
     Cast(String),
+    Integer(String),
+    TypedNull(String),
     Binary {
-        opcode: String,
+        opcode: BinaryOp,
         left_nullable: bool,
         right_nullable: bool,
     },
@@ -71,7 +73,16 @@ impl TimestampKey {
                 }
                 Visit::Intern(id, term, children) => {
                     let operands = children.into_iter().map(|child| numbers[&child]).collect();
-                    let (number, _) = terms.insert_full((term, operands));
+                    // A nullable integer and an explicit Some applied to the
+                    // same nonnullable integer have identical Java spellings.
+                    let wrap = matches!(term, Term::Integer(_))
+                        && edit.nullable(edit.expression_type(id)?)?;
+                    let (mut number, _) = terms.insert_full((term, operands));
+                    if wrap {
+                        number = terms
+                            .insert_full((Term::Call("Some".into()), vec![number]))
+                            .0;
+                    }
                     numbers.insert(id, number);
                     active.remove(&id);
                 }
@@ -105,6 +116,7 @@ fn key_term(
         }
         Expr::Deref => (Term::Deref, vec![child("expression")?]),
         Expr::Clone => (Term::Clone, vec![child("expression")?]),
+        Expr::Some => (Term::Call("Some".into()), vec![child("expression")?]),
         Expr::Cast => {
             let Some(target) = cast_spelling(edit, edit.expression_type(id)?)? else {
                 return Ok(None);
@@ -144,8 +156,11 @@ fn key_term(
             let right = child("right")?;
             let left_nullable = edit.nullable(edit.expression_type(left)?)?;
             let right_nullable = edit.nullable(edit.expression_type(right)?)?;
-            match string(node, "opcode") {
-                Some("VARIANT_INDEX") if edit.expr_kind(right)? == Expr::StringLiteral => {
+            let Some(op) = string(node, "opcode").and_then(BinaryOp::from_wire) else {
+                return Ok(None);
+            };
+            match op {
+                BinaryOp::VariantIndex if edit.expr_kind(right)? == Expr::StringLiteral => {
                     let Some(name) = string(edit.node(right.into())?, "value") else {
                         return Ok(None);
                     };
@@ -158,22 +173,70 @@ fn key_term(
                         vec![left],
                     )
                 }
-                // These spellings are distinct in both Java printers. TimeAddSub
-                // and Binary print the same operands, nullability and opcode.
-                Some(
-                    opcode @ ("ADD" | "SUB" | "ADD_SATURATING" | "SUB_SATURATING" | "MIN" | "MAX"
-                    | "MIN_IGNORE_NULLS" | "MAX_IGNORE_NULLS" | "MAX_NULL_WINS"
-                    | "COALESCE"),
-                ) => (
-                    Term::Binary {
-                        opcode: opcode.to_owned(),
-                        left_nullable,
-                        right_nullable,
-                    },
-                    vec![left, right],
-                ),
-                _ => return Ok(None),
+                // Collection conversions print multiline function calls.
+                BinaryOp::ArrayConvert
+                | BinaryOp::ArrayConvertSafe
+                | BinaryOp::MapConvert
+                | BinaryOp::MapConvertSafe => return Ok(None),
+                _ => {
+                    // Several distinct opcodes print the same infix operator.
+                    let opcode = match op {
+                        BinaryOp::MulInterval => BinaryOp::Mul,
+                        BinaryOp::DivInterval => BinaryOp::Div,
+                        BinaryOp::MulIntervalSaturating => BinaryOp::MulSaturating,
+                        BinaryOp::DivIntervalSaturating => BinaryOp::DivSaturating,
+                        BinaryOp::Concat => BinaryOp::Or,
+                        other => other,
+                    };
+                    (
+                        Term::Binary {
+                            opcode,
+                            left_nullable,
+                            right_nullable,
+                        },
+                        vec![left, right],
+                    )
+                }
             }
+        }
+        Expr::I8Literal
+        | Expr::I16Literal
+        | Expr::I32Literal
+        | Expr::I64Literal
+        | Expr::I128Literal
+        | Expr::U8Literal
+        | Expr::U16Literal
+        | Expr::U32Literal
+        | Expr::U64Literal
+        | Expr::U128Literal
+        | Expr::ISizeLiteral
+        | Expr::USizeLiteral => {
+            let term = match node.data("value").filter(|v| !v.is_null()) {
+                Some(value) => {
+                    // Current writers use decimal strings. Earlier snapshots
+                    // also contain JSON integers.
+                    let digits = match value.as_str() {
+                        Some(s) => s
+                            .parse::<i128>()
+                            .map(|n| n.to_string())
+                            .or_else(|_| s.parse::<u128>().map(|n| n.to_string()))
+                            .ok(),
+                        None if value.is_i64() || value.is_u64() => Some(value.to_string()),
+                        None => None,
+                    };
+                    let Some(digits) = digits else {
+                        return Ok(None);
+                    };
+                    Term::Integer(digits)
+                }
+                None => {
+                    let Some(name) = cast_spelling(edit, edit.expression_type(id)?)? else {
+                        return Ok(None);
+                    };
+                    Term::TypedNull(name)
+                }
+            };
+            (term, vec![])
         }
         Expr::ShortIntervalLiteral | Expr::LongIntervalLiteral => {
             let ty = edit.expression_type(id)?;
@@ -229,6 +292,19 @@ fn cast_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Err
         Ty::Date => "Date".to_owned(),
         Ty::Timestamp => "Timestamp".to_owned(),
         Ty::TimestampTz => "TimestampTz".to_owned(),
+        Ty::ISize => "i".to_owned(),
+        Ty::USize => "u".to_owned(),
+        Ty::Integer => {
+            let Some(width @ (8 | 16 | 32 | 64 | 128)) =
+                node.data("width").and_then(|v| v.as_u64())
+            else {
+                return Ok(None);
+            };
+            let Some(signed) = node.data("signed").and_then(|v| v.as_bool()) else {
+                return Ok(None);
+            };
+            format!("{}{width}", if signed { "i" } else { "u" })
+        }
         Ty::String => {
             let Some(precision) = node.data("precision").and_then(|v| v.as_i64()) else {
                 return Ok(None);
@@ -322,7 +398,7 @@ pub(super) fn same_row_spelling(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use feldera_sql_ir::{BinaryOp, Circuit};
+    use feldera_sql_ir::{Circuit, Field};
     use serde_json::json;
 
     #[test]
@@ -351,6 +427,85 @@ mod tests {
         let wrong_type = edit.bool_type(site, false)?;
         let invalid = edit.named_variable(wrong_type, "t")?;
         assert!(TimestampKey::read(&edit, invalid, row)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn integer_keys_follow_printed_width_nullability_and_operators() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[]
+        }))?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let origin = edit.bool_type(site, false)?;
+        let i16 = edit.integer_type(origin, 16, true, false)?;
+        let u64 = edit.integer_type(origin, 64, false, false)?;
+        let opt_i16 = edit.with_nullability(i16, true)?;
+        let opt_u64 = edit.with_nullability(u64, true)?;
+        let one = edit.make_expr(
+            site,
+            Expr::I16Literal,
+            i16,
+            [("value", Field::Data(json!(1)))],
+        )?;
+        let wide = edit.make_expr(
+            site,
+            Expr::U64Literal,
+            u64,
+            [("value", Field::Data(json!("1")))],
+        )?;
+        let nullable = edit.make_expr(
+            site,
+            Expr::U64Literal,
+            opt_u64,
+            [("value", Field::Data(json!("1")))],
+        )?;
+        let some = edit.make_expr(
+            site,
+            Expr::Some,
+            opt_i16,
+            [("expression", Field::Reference(one.into()))],
+        )?;
+        let function = edit.function_path(site, "Some")?;
+        let call = edit.make_expr(
+            site,
+            Expr::Apply,
+            opt_u64,
+            [
+                ("function", Field::Reference(function.into())),
+                (
+                    "arguments",
+                    Field::Array(vec![Field::Reference(wide.into())]),
+                ),
+            ],
+        )?;
+        let null16 = edit.make_expr(site, Expr::I16Literal, opt_i16, [])?;
+        let null64 = edit.make_expr(site, Expr::U64Literal, opt_u64, [])?;
+        let binary = |edit: &mut CircuitEditor, op: BinaryOp, right: ExpressionId| {
+            edit.make_expr(
+                site,
+                Expr::Binary,
+                u64,
+                [
+                    ("left", Field::Reference(wide.into())),
+                    ("opcode", Field::Data(json!(op.wire_name()))),
+                    ("right", Field::Reference(right.into())),
+                ],
+            )
+        };
+        let product = binary(&mut edit, BinaryOp::Mul, one)?;
+        let scaled_interval = binary(&mut edit, BinaryOp::MulInterval, wide)?;
+        let nullable_product = binary(&mut edit, BinaryOp::Mul, some)?;
+        let quotient = binary(&mut edit, BinaryOp::Div, one)?;
+        let key = |id| {
+            TimestampKey::read(&edit, id, RowParameter { name: "r", ty: i16 })
+                .map(|k| k.expect("numeric window key"))
+        };
+        assert!(key(one)? == key(wide)?);
+        assert!(key(nullable)? == key(some)? && key(some)? == key(call)?);
+        assert!(key(one)? != key(nullable)? && key(null16)? != key(null64)?);
+        assert!(key(product)? == key(scaled_interval)?);
+        assert!(key(product)? != key(nullable_product)? && key(product)? != key(quotient)?);
         Ok(())
     }
 }

@@ -1,8 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.WindowInputStats;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
@@ -33,9 +35,54 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class TemporalKeyTests {
+    @Test
+    public void numericOffsetsShareOnlyMatchingWindowKeys() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        for (boolean gen2 : List.of(false, true)) {
+            var options = new CompilerOptions();
+            options.ioOptions.gen2 = gen2;
+            options.ioOptions.rustOptimizerPasses = true;
+            var compiler = new DBSPCompiler(options);
+            var analyses = Set.of("WindowGroups/Scan", "WindowGroups/Reorder", "WindowGroups/Indexes");
+            var answered = new HashSet<String>();
+            compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                @Override
+                public void nativeDecision(String operation, boolean success) {
+                    if (analyses.contains(operation)) {
+                        Assert.assertTrue(operation, success);
+                        answered.add(operation);
+                    }
+                }
+
+                @Override
+                public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
+
+                @Override
+                public void after(String parent, int index, int iteration, CircuitTransform pass,
+                                  DBSPCircuit circuit, boolean completed) {}
+            };
+            compiler.submitStatementsForCompilation("""
+                    SET feldera_window_sharing_threshold = 2;
+                    CREATE TABLE t (id INT NOT NULL, ts TIMESTAMP);
+                    CREATE VIEW a AS SELECT id FROM t WHERE TIMESTAMPADD(SECOND, id + 1, ts) >= NOW() - INTERVAL '1' DAY AND id > 0;
+                    CREATE VIEW b AS SELECT id FROM t WHERE TIMESTAMPADD(SECOND, id + 1, ts) >= NOW() - INTERVAL '2' DAY AND id > 1;
+                    CREATE VIEW c AS SELECT id FROM t WHERE TIMESTAMPADD(SECOND, id + 2, ts) >= NOW() - INTERVAL '3' DAY AND id > 2;
+                    """);
+            var circuit = compiler.getFinalCircuit(false);
+            compiler.throwIfErrorsOccurred();
+            Assert.assertEquals(analyses, answered);
+            var windows = new WindowInputStats(compiler);
+            windows.apply(circuit);
+            Assert.assertEquals(3, windows.leftInputIds.size());
+            Assert.assertEquals(2, windows.distinctInputCount());
+        }
+    }
+
     @Test
     public void negativeSharingThresholdPreservesTheWarningAndSharedIndex() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
