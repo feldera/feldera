@@ -1,0 +1,161 @@
+{
+  "commit": "c29e9dda5373acb876fd75b04a8a030b1b2fb4e7",
+  "scope": "Compare field removal and common projection replacement on the complete classic and Gen-2 populations, including deeply shared row types in the Rust regression tests.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "90dd0891f9671a69c33e01db95f457d8164e94b4aaf6e6cd55c93ad8cb099188",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "86bbe9db53aa35cc429ceb3b9d29f5d71514f39b9196a434caac5b554980079c",
+    "maven/tests.jar": "11fee111e10759070abe82b001d11daf68662bdd67805e7a8d3610f491f43c83"
+  },
+  "direct_java_sha256": "495ebdadb80215d81e0b476cc1a441eecaa4e9315d1dc1890c2182ebe254598f",
+  "tests": {
+    "rust": 190,
+    "clippy": "passed",
+    "maven_passed": 42,
+    "maven_skipped": 22,
+    "packaged_junit": 56
+  },
+  "engines": {
+    "classic": {
+      "RemoveUnusedFields": {
+        "cases": 8571,
+        "matched_invocations": 16643,
+        "shards": [
+          {
+            "cases": 2143,
+            "matched_invocations": 4104,
+            "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+            "direct_sha256": "311f879860b78622878bf6f9a3d140404088abf5036295e2c57ca42deb4e72b9",
+            "hybrid_sha256": "45b3733f958429622a6318558b3ff34d3373d71d66fc48ae737272592945db82"
+          },
+          {
+            "cases": 2143,
+            "matched_invocations": 4243,
+            "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+            "direct_sha256": "e7886223b1cca88c76da5c80f017997be0d0e1fbd766e0dfb44c1ace776d9464",
+            "hybrid_sha256": "38303a0c92edc1e14fffd5d63bfd8fe029dd358ae559edcf184d19891dd74fbd"
+          },
+          {
+            "cases": 2143,
+            "matched_invocations": 4079,
+            "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+            "direct_sha256": "5190a83a8f5c54123e43be470ae8294df8e62b558de2b3a7f337e508594631a6",
+            "hybrid_sha256": "1ee952184518e7ae11270137b8285156bb1ae52491efcb91cade01e1fcda56dc"
+          },
+          {
+            "cases": 2142,
+            "matched_invocations": 4217,
+            "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+            "direct_sha256": "ba4e7ccffc840f42ee22bab97438f74a8b12cb4c38e4a5bdf6afbe1ffc467a1f",
+            "hybrid_sha256": "7561faa0f4c0419f4014330d8f623a3fca5dd8031a9360b8e9ddf4856b2e2944"
+          }
+        ]
+      },
+      "ReplaceCommonProjections": {
+        "cases": 8571,
+        "matched_invocations": 25214,
+        "shards": [
+          {
+            "cases": 2143,
+            "matched_invocations": 6247,
+            "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+            "direct_sha256": "8fd14277120c3f056067ad314f439539bbafcee16fa85017e9ea1b40bf4fcd7f",
+            "hybrid_sha256": "b4ded2fef5c85027167eb4dd37965f05dad10fd3c0705f95891111431494fe94"
+          },
+          {
+            "cases": 2143,
+            "matched_invocations": 6386,
+            "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+            "direct_sha256": "9fa2fb3fbfd54217f7ef53c06dee29ee5006744f9df870817cfa815af0f50244",
+            "hybrid_sha256": "139ce6655cadb63daa85acf0f509056f009dd2556e58a9aa3a27cb11ad1bf9b1"
+          },
+          {
+            "cases": 2143,
+            "matched_invocations": 6222,
+            "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+            "direct_sha256": "bef046d3293ea18038c90b7e9f3d4eaa141300a3f7a382a87d34cc559ac8f9c0",
+            "hybrid_sha256": "c5833e4c978b48d5c082fee6583f3178441eef7539f4be448f9aeffcdf5c2f2c"
+          },
+          {
+            "cases": 2142,
+            "matched_invocations": 6359,
+            "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+            "direct_sha256": "c78548da36e9790f21ca7042febaef63444df8d52f811e0d05e2d21f2978ce6c",
+            "hybrid_sha256": "b807a00f47ebb7f3f07efbcd487fcfb39bdb98e3ead8fd0eb89d5b6d602025f1"
+          }
+        ]
+      }
+    },
+    "gen2": {
+      "RemoveUnusedFields": {
+        "cases": 8527,
+        "matched_invocations": 16533,
+        "shards": [
+          {
+            "cases": 2132,
+            "matched_invocations": 4276,
+            "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+            "direct_sha256": "97c2916c043d9c2de81e2f852623c39cd5efc82a0a22aa8c86c1448dad86e48f",
+            "hybrid_sha256": "8a73eecb9887290b61d675f9324b80244105afc39fa174eb56a1204df13fece8"
+          },
+          {
+            "cases": 2132,
+            "matched_invocations": 4024,
+            "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+            "direct_sha256": "5b3e15c09e5268f063f0faca4d15105797f4e3e7a1fc4eea9c5f002572743cad",
+            "hybrid_sha256": "5424fc70e63dd382f32354d759e06573064066d0e2109d24a96498570591c74d"
+          },
+          {
+            "cases": 2132,
+            "matched_invocations": 4134,
+            "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+            "direct_sha256": "da2bda5fac436b32ead6dd22c488b3613f046625478d16fb28a0edc72714ece6",
+            "hybrid_sha256": "8689edc549d469050cd862783b7f2d1d236c2c96cd6951c3d0707438487ba7a1"
+          },
+          {
+            "cases": 2131,
+            "matched_invocations": 4099,
+            "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+            "direct_sha256": "ce51675eafafac2c5e76308b4499b079db60a5eec5cf3d4d73789f465816fde1",
+            "hybrid_sha256": "ce525932cf811135528e07a128bd35779219cf2aa716f6ccacd8d07b9bd4f259"
+          }
+        ]
+      },
+      "ReplaceCommonProjections": {
+        "cases": 8527,
+        "matched_invocations": 25060,
+        "shards": [
+          {
+            "cases": 2132,
+            "matched_invocations": 6408,
+            "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+            "direct_sha256": "08c9f24040879938932ef66281e75dc1d8dff7aec3c4c1209079c18dc42f537c",
+            "hybrid_sha256": "d220e4599acb775e141d3d6b16cb7a0901d2549b31406dcbeb921e07df22cc0c"
+          },
+          {
+            "cases": 2132,
+            "matched_invocations": 6156,
+            "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+            "direct_sha256": "e37096f89ccd6d7c4a162ba3ba9d83126c563782fe90a0a54b6fdb76d319a39b",
+            "hybrid_sha256": "ebb3d3b887536c73dc70d479ef9bb420ba7f625186ba346cc46f0b2e6f96e12c"
+          },
+          {
+            "cases": 2132,
+            "matched_invocations": 6266,
+            "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+            "direct_sha256": "d72d25d816a1ab1707d7172967b1fa8593c2acdcbda4a70d49258d1d567ab06c",
+            "hybrid_sha256": "14984f99458d6b250f402d2bd807ef67b404b7668765010b9126f9cedc2eb8b1"
+          },
+          {
+            "cases": 2131,
+            "matched_invocations": 6230,
+            "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+            "direct_sha256": "ee86a6ede05cdee5905069ffdee36bd5ac495b92fc88c4c53a729e0a0a7bcc53",
+            "hybrid_sha256": "7d053729278209df65633cfc952a7237c097ab92b1c60aa632fbc95311652412"
+          }
+        ]
+      }
+    }
+  }
+}

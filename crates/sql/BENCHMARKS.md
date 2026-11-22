@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Deep optimizer expressions, 2026-11-22
+
+On `955f165ae`, Nexmark exceeded the 1.2× ceiling. The ARM64 devcontainer
+ran two warmup and 21 measured pairs per workload on CPU 15, alternating
+which compiler ran first. All 69 pairs matched through classic artifact
+emission. Timing ends before Cargo builds the generated pipeline.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.421 | 1.115 | 0.785× |
+| Nexmark suite | 3.162 | 3.843 | 1.215× |
+| Outer join | 1.327 | 1.037 | 0.781× |
+
+[Paired timings and build identities](evidence/p3-lowering-expression-batches-cold.json)
+
 ## Declared column waterlines, 2026-11-22
 
 On `432124575`, all three workloads met the 1.2× ceiling. The devcontainer

@@ -1,0 +1,42 @@
+{
+  "commit": "955f165ae78e15277b449dcf3726c1859220bad5",
+  "scope": "Deep clock bindings through temporal classification and window selection, with live expression identity, plus detached replay.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "f5864e16c2695ca864e549976951e959f4b729760676c8f4168b8bdc87676b86",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "6af49b53475048fc1eb37a953aece482be8beb50f9a0460ff01504ad98dcde66",
+    "maven/tests.jar": "b8a96047f59bb5c94aff41867818cd9ff8d4c7f709d5f83e4e1d19c38f642ed3"
+  },
+  "tests": {
+    "rust": 191,
+    "clippy": "passed",
+    "maven_passed": 43,
+    "maven_skipped": 23,
+    "packaged_junit": 58
+  },
+  "engines": {
+    "classic": {
+      "shards": [
+        "f6ce022485ebdb23130de93abefc8ebaeaa679ba5a38cb68f9d73e9d5ffa227d",
+        "85a234bbd6f5b3cb9e3ce326454474a84664111a624bca2e2e263681a406ca57",
+        "f674a643d38a261854e3083712e19cca032697e672eaffb42ba528e04cefeb24",
+        "3590a43abfacb15ba7c9f9011e95437791d4ed997b3ff3cdbf5b16b4cf605de9"
+      ],
+      "ordered_s4_observations": 5292,
+      "selected_cases": 8,
+      "mismatches": 0
+    },
+    "gen2": {
+      "shards": [
+        "514333493647b6b1cef6f85efa823e48c311d014d075b4bbdc0a5bb3055192ca",
+        "4c4c81a7b3d2f3c61be9429b9af80739cc1496273f4a3ef18e342ab172de7e6d",
+        "12cfdd463c87bc02d78093e06bae79421e4284ed8f61918ffd3434d15b0daa8e",
+        "cafdbb19dd244eead0f92934963a431f72563ea3eac73ee54bbd08a61fc600fa"
+      ],
+      "ordered_s4_observations": 5886,
+      "selected_cases": 8,
+      "mismatches": 0
+    }
+  }
+}
