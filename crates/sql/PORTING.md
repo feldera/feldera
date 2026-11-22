@@ -462,6 +462,20 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `432124575`, Rust selected column waterlines at 997 table and 29 view
+visits. Its monotonicity analysis and downstream limiter graphs matched Java
+on 550 pass comparisons. All 29 frozen programs that exercised view-declared
+LATENESS matched through emission, as did 16 selected compilations with
+`--correlatedColumns`. COUNT and LATENESS checkpoints restored in both
+directions. [Waterline coverage, replay and restores](evidence/p3-declared-column-waterlines.json)
+
+On `d67ea1f8b`, Rust answered all 17,098 left-join chain discovery requests
+and all 583 column-propagation requests across the two frozen populations.
+Both compilers selected identical chains and columns for all 20 rewrites.
+All 228 selected detached compilations matched through emission, all 106
+executable classic cases in that selection passed, and COUNT and LATENESS
+restored in both directions. [Left-join comparisons](evidence/p3-carried-chain-columns.json)
+
 On `5c6c0cd5b`, Rust answered all 33,587 field-use requests across the two
 frozen populations. Java agreed on the fields read from each parameter,
 including the accumulator of a filtered ARG_MIN or ARG_MAX. All 228 selected
@@ -535,8 +549,8 @@ On `bf609aab1`, the Rust clock classifier retains nested nonnullable empty
 rows even when the surrounding row has unbounded fields. All 8,571 classic
 and 8,527 Gen-2 SQL programs compiled with the coverage observer. Rust
 answered all 8,937 requests recorded for the five exercised decisions. The
-16 selected detached compilations matched direct Java at all 11,178 ordered
-optimizer observations and through emission. All 8,256 executable classic
+full detached replay matched direct Java on all 17,098 frozen cases through
+6,996,738 ordered optimizer observations and emission. All 8,256 executable classic
 cases passed with 11,407 input commands. COUNT and LATENESS checkpoints
 restored in both directions. The coverage counters measure the instrumented
 decisions only. [Clock projections and compiler coverage](evidence/p3-empty-row-clock-inputs.json)

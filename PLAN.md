@@ -41,6 +41,12 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. Rust selected the same left-join chains and carried columns as
+  Java for every profitable rewrite across both frozen populations. The next
+  build matched all 550 selected monotonicity comparisons and all 29 detached
+  replays exercising view-declared LATENESS.
+  [Left-join chains](crates/sql/evidence/p3-carried-chain-columns.json) · [Column waterlines](crates/sql/evidence/p3-declared-column-waterlines.json)
+
 - 2026-11-22. On `63dbe7a9f`, ordinary and lossless-cast key analysis
   matched Java at 374,851 ports across the frozen populations. All 228
   selected detached compilations matched through emission. On a shared VM,
@@ -49,8 +55,9 @@ Path prefixes used in this document:
 
 - 2026-11-22. On `bf609aab1`, both engines compiled all 17,098 frozen SQL
   programs with coverage recording enabled. Rust answered all 8,937 measured
-  waterline and temporal-classification requests. The 16 selected detached
-  replays matched Java through emission. Cold hybrid p95 ranged from 0.758×
+  waterline and temporal-classification requests. All 17,098 detached replays
+  matched Java through 6,996,738 ordered S4 observations and emission.
+  Cold hybrid p95 ranged from 0.758×
   to 1.175× direct Java across three workloads on the shared verification VM.
   The 30-day field-shadow gate remains open.
   [Coverage and replay](crates/sql/evidence/p3-empty-row-clock-inputs.json) · [Timings](crates/sql/BENCHMARKS.md#nested-empty-rows-2026-11-22)
