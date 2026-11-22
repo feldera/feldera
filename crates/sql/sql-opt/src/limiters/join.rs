@@ -127,7 +127,7 @@ struct JoinSide {
 }
 
 #[derive(Deserialize)]
-struct JoinTerm {
+pub(super) struct JoinTerm {
     id: u64,
     left: Option<Projection>,
     right: Option<Projection>,
@@ -137,12 +137,14 @@ struct JoinTerm {
 pub(super) struct JoinInputs<'a> {
     pub owner: NodeId,
     pub data: [OutputPort; 2],
-    pub bounds: [Option<Bound>; 2],
+    /// Trace retention tests the original ports. Delta terms read the expanded ports.
+    pub original_bounds: [Option<Bound>; 2],
+    pub expanded_bounds: [Option<Bound>; 2],
     pub functions: &'a BTreeMap<u64, NodeId>,
 }
 
 impl JoinTerm {
-    fn insert(
+    pub(super) fn insert(
         &self,
         edit: &mut CircuitEditor,
         join: &JoinInputs<'_>,
@@ -198,7 +200,7 @@ impl BinaryJoinExpansion {
         next: &mut u64,
         warnings: &mut Vec<SimplifyWarning>,
     ) -> Result<Option<(Bound, &'a Projection)>, Error> {
-        if matches!(join.bounds, [None, None]) {
+        if matches!(join.original_bounds, [None, None]) {
             return Ok(None);
         }
         let expected = 3 + usize::from(self.unmatched.is_some());
@@ -214,7 +216,7 @@ impl BinaryJoinExpansion {
             if side == 0 && self.unmatched.is_some() {
                 continue;
             }
-            let Some(bound) = join.bounds[side] else {
+            let Some(bound) = join.original_bounds[side] else {
                 continue;
             };
             let Some(projection @ Projection::Tuple { fields, .. }) = &self.inputs[side].projection
@@ -240,7 +242,7 @@ impl BinaryJoinExpansion {
             }
         }
 
-        let [left, right] = join.bounds;
+        let [left, right] = join.expanded_bounds;
         let term_inputs = [
             [left, right.filter(|_| self.inputs[1].integral_monotone)],
             [left.filter(|_| self.inputs[0].integral_monotone), right],
@@ -324,7 +326,7 @@ impl UnmatchedRows {
         let Some(output) = &self.output else {
             return Ok(None);
         };
-        let [Some(left), Some(right)] = join.bounds else {
+        let [Some(left), Some(right)] = join.expanded_bounds else {
             return Err(Error::new(
                 "bounded left antijoin needs two input waterlines",
             ));

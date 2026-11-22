@@ -1,0 +1,25 @@
+{
+  "scope": "All classic frozen cases containing a snapshot binary join for which the complete limiter pass is now eligible to run in Rust. The two shards compare the pass entry and exit graphs, diagnostics, and generated names.",
+  "shards": [
+    {
+      "cases": 272,
+      "input_sha256": "ba75ea125a8c02d26551e37d204d712bf4aac5f92acd53bf49cc3af5cedb99f1",
+      "java_stream_sha256": "ff36eee31f97b55bf84c410eaf6c49573ed9cffc529bd3758e38d241881744aa",
+      "hybrid_stream_sha256": "f7eedec2f1ac71068f26f832c647bef3e666a0a0944d4abf08fd9979e0f0d77e"
+    },
+    {
+      "cases": 261,
+      "input_sha256": "04c7b62f895572b9b88e5d21ab5d22233bf15538777f3b7ee53fb968684a4b56",
+      "java_stream_sha256": "64666bb3b1716537f9685d01f6fc212fb1f2f05f0f0a8f04c0fab67f1a0ce5e2",
+      "hybrid_stream_sha256": "12e6105ab039d13dfb4c22d96ed957ea273f899ede14bc68db736f351c8ca8c5"
+    }
+  ],
+  "directed": {
+    "sql": "CREATE TABLE readings(station INT NOT NULL LATENESS 2, t INT NOT NULL LATENESS 1);\nCREATE TABLE forecasts(station INT NOT NULL LATENESS 4, t INT NOT NULL LATENESS 3);\nCREATE VIEW paired AS SELECT r.station, r.t AS observed, f.t AS expected\nFROM readings AS r JOIN forecasts AS f ON r.station = f.station;\nCREATE VIEW projected AS SELECT station, observed + expected AS total FROM paired;\n",
+    "equal_observations": {
+      "classic": 376,
+      "gen2": 378
+    }
+  },
+  "optimizer_library_sha256": "a2a33c6dd7fc6d5b29da55ddc8be0d294c317f5ab84181d43aa67c122596b5b4"
+}

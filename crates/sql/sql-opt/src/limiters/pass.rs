@@ -18,6 +18,7 @@ struct OperatorFacts {
     input_projection: Option<Projection>,
     aggregate: Option<super::aggregate::AggregateFacts>,
     join: Option<super::join::JoinFacts>,
+    snapshot_join: Option<super::join::JoinTerm>,
     distinct: Option<DistinctFacts>,
 }
 
@@ -287,7 +288,11 @@ pub fn insert_limiters_with_warnings(
     let mut errors = Vec::new();
     let mut data = BTreeMap::<OutputPort, Stream>::new();
     let mut bounds = BTreeMap::<OutputPort, (Bound, &Projection)>::new();
+    // Stream joins and rolling aggregates publish bounds only for their expanded
+    // output. Their original port cannot authorize trace retention downstream.
+    let mut expanded_only = BTreeMap::new();
     for (index, &id) in original.iter().enumerate() {
+        let expanded_bound = |p: &OutputPort| expanded_only.get(p).or_else(|| bounds.get(p));
         let NodeId::Outer(number) = id else {
             return Err(Error::new("expected outer operator").into());
         };
@@ -322,7 +327,7 @@ pub fn insert_limiters_with_warnings(
                         });
                     }
                     let kind = clocks[&id];
-                    let inherited = inputs.first().and_then(|p| bounds.get(p)).copied();
+                    let inherited = inputs.first().and_then(expanded_bound).copied();
                     if let Some(input) = inputs.first().and_then(|p| data.get(p)) {
                         edit.replace_stream_inputs(id, &[input.port], input.ty)?;
                     }
@@ -350,7 +355,7 @@ pub fn insert_limiters_with_warnings(
                     continue;
                 }
                 if let Some(dst) = projection {
-                    if let Some(&(input, _)) = inputs.first().and_then(|p| bounds.get(p)) {
+                    if let Some(&(input, _)) = inputs.first().and_then(expanded_bound) {
                         let param = edit.ref_parameter(input.ty, &mut next)?;
                         let read = edit.deref_parameter(&param)?;
                         let function = edit.closure(read, &[param])?;
@@ -372,7 +377,7 @@ pub fn insert_limiters_with_warnings(
                 if let Some(dst) = projection {
                     let upstream = inputs
                         .iter()
-                        .map(|p| bounds.get(p).copied())
+                        .map(|p| expanded_bound(p).copied())
                         .collect::<Option<Vec<_>>>();
                     if let Some(upstream) = upstream {
                         let bound = projected_minimum(&mut edit, id, upstream, dst, &mut next)?;
@@ -437,7 +442,12 @@ pub fn insert_limiters_with_warnings(
                 );
                 let transfer = projection
                     .filter(|_| kind != Some(Op::Lag) || facts.input_projection.is_some());
-                if let (Some(projection), Some(&(upstream, _))) = (transfer, bounds.get(source)) {
+                let bound = if retains_keys {
+                    bounds.get(source)
+                } else {
+                    expanded_bound(source)
+                };
+                if let (Some(projection), Some(&(upstream, _))) = (transfer, bound) {
                     let function = functions.get(&number).copied().ok_or_else(|| {
                         Error::new(format!(
                             "missing reduced waterline closure for {}",
@@ -483,32 +493,51 @@ pub fn insert_limiters_with_warnings(
                 }
             }
             Some(
-                Op::Join
+                Op::StreamJoin
+                | Op::StreamJoinIndex
+                | Op::Join
                 | Op::JoinIndex
                 | Op::JoinFilterMap
                 | Op::LeftJoin
                 | Op::LeftJoinIndex
                 | Op::LeftJoinFilterMap,
             ) => {
-                let [left, right] = inputs.as_slice() else {
-                    return Err(Error::new("incremental join requires two inputs").into());
+                let ports: [OutputPort; 2] = inputs
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| Error::new("join requires two inputs"))?;
+                let join = super::join::JoinInputs {
+                    owner: id,
+                    data: ports.map(|p| data.get(&p).map_or(p, |s| s.port)),
+                    original_bounds: ports.map(|p| bounds.get(&p).map(|(b, _)| *b)),
+                    expanded_bounds: ports.map(|p| expanded_bound(&p).map(|(b, _)| *b)),
+                    functions: &functions,
                 };
-                let facts = facts
-                    .join
-                    .as_ref()
-                    .ok_or_else(|| Error::new("missing join expansion facts"))?;
-                if let Some(expansion) = &facts.expansion {
-                    let ports = [*left, *right];
-                    let inputs = super::join::JoinInputs {
-                        owner: id,
-                        data: ports.map(|p| data.get(&p).map_or(p, |s| s.port)),
-                        bounds: ports.map(|p| bounds.get(&p).map(|(b, _)| *b)),
-                        functions: &functions,
-                    };
-                    if let Some(result) =
-                        expansion.insert(&mut edit, &inputs, projection, &mut next, warnings)?
-                    {
-                        bounds.insert(output, result);
+                if matches!(kind, Some(Op::StreamJoin | Op::StreamJoinIndex)) {
+                    if let Some(term) = &facts.snapshot_join {
+                        if let Some(result) = term.insert(
+                            &mut edit,
+                            &join,
+                            join.expanded_bounds,
+                            &mut next,
+                            warnings,
+                        )? {
+                            expanded_only.insert(output, result);
+                        }
+                    } else if projection.is_some() {
+                        return Err(Error::new("missing bounded snapshot join expansion").into());
+                    }
+                } else {
+                    let facts = facts
+                        .join
+                        .as_ref()
+                        .ok_or_else(|| Error::new("missing incremental join expansion facts"))?;
+                    if let Some(expansion) = &facts.expansion {
+                        if let Some(result) =
+                            expansion.insert(&mut edit, &join, projection, &mut next, warnings)?
+                        {
+                            bounds.insert(output, result);
+                        }
                     }
                 }
             }
@@ -517,7 +546,7 @@ pub fn insert_limiters_with_warnings(
                     return Err(Error::new("rolling aggregate requires one input").into());
                 };
                 if let (Some(shape @ Projection::Tuple { fields, .. }), Some(&(bound, _))) =
-                    (&facts.input_projection, bounds.get(source))
+                    (&facts.input_projection, expanded_bound(source))
                 {
                     if fields.first().is_some_and(Projection::monotone) {
                         let input = super::rolling::RollingInput {
@@ -538,7 +567,7 @@ pub fn insert_limiters_with_warnings(
                         )?
                         .zip(projection)
                         {
-                            bounds.insert(output, dst);
+                            expanded_only.insert(output, dst);
                         }
                         names.replaced(id);
                         continue;
@@ -592,7 +621,7 @@ pub fn insert_limiters_with_warnings(
                 if let Some(projection) = projection {
                     let input = inputs
                         .first()
-                        .and_then(|port| bounds.get(port))
+                        .and_then(expanded_bound)
                         .map(|(bound, _)| *bound);
                     let bound = super::window::insert_window_bound(
                         &mut edit,
@@ -613,7 +642,7 @@ pub fn insert_limiters_with_warnings(
                         .inputs()
                         .next()
                         .ok_or_else(|| Error::new("EMIT FINAL sink needs a stream"))?;
-                    let (bound, _) = bounds.get(&input).copied().ok_or_else(|| {
+                    let (bound, _) = expanded_bound(&input).copied().ok_or_else(|| {
                         Error::new("missing upstream bound for monotone EMIT FINAL column")
                     })?;
                     let stream = match data.get(&input) {
@@ -710,6 +739,7 @@ mod tests {
                         distinct: None,
                         aggregate: None,
                         join: None,
+                        snapshot_join: None,
                         input_projection: None,
                     },
                 )

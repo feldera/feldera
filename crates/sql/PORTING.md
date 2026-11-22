@@ -479,6 +479,12 @@ snapshot cases and 25 filtered left joins. A snapshot DISTINCT and GROUP BY
 over a table with LATENESS matched at all 446 classic and 448 Gen-2 observations.
 [Snapshot and filtered left join replay](evidence/p3-snapshot-filtered-left-limiters.json)
 
+Snapshot joins and indexed snapshot joins propagate waterlines on their expanded
+output ports. The original ports still determine whether a downstream stateful
+operator can retain its trace. All 533 selected classic limiter comparisons
+matched Java. A bounded two-table join matched all 376 classic and 378 Gen-2
+observations. [Snapshot join bounds](evidence/p3-snapshot-join-bounds.json)
+
 For filtered inner joins, Rust uses the bound from each filtered delta to retain
 values on the opposite input. All 36 classic and 130 Gen-2 cases that this
 change enabled matched Java at limiter entry and exit. Seven Gen-2 programs

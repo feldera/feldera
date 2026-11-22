@@ -62,6 +62,13 @@ record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOpe
             record.set(name, LimiterInputs.projection(Monotonicity.getBodyType(value)));
     }
 
+    static void captureTerm(InsertLimiters pass, DBSPJoinBaseOperator term, ObjectNode entry) {
+        entry.put("id", term.id);
+        projection(pass, term.left(), entry, "left");
+        projection(pass, term.right(), entry, "right");
+        projection(pass, term.outputPort(), entry, "output");
+    }
+
     void capture(InsertLimiters pass, ObjectNode join, ObjectNode owner) {
         var inputs = join.putArray("inputs");
         for (var integral : List.of(this.left, this.right)) {
@@ -70,12 +77,8 @@ record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOpe
             projection(pass, integral.input(), entry, "projection");
         }
         var terms = join.putArray("terms");
-        for (var term : this.terms) {
-            var entry = terms.addObject().put("id", term.id);
-            projection(pass, term.left(), entry, "left");
-            projection(pass, term.right(), entry, "right");
-            projection(pass, term.outputPort(), entry, "output");
-        }
+        for (var term : this.terms)
+            captureTerm(pass, term, terms.addObject());
         var order = join.putArray("sum_inputs");
         for (var port : this.sum.inputs)
             order.add(port.operator.id);

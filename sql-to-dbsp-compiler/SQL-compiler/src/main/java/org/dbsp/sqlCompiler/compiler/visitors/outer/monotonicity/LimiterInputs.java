@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -37,6 +38,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
@@ -75,7 +78,8 @@ public final class LimiterInputs {
             DBSPDifferentiateOperator.class, DBSPIntegrateOperator.class, DBSPIndexedTopKOperator.class,
             DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class,
             DBSPAntiJoinOperator.class, DBSPNowOperator.class, DBSPPartitionedRollingAggregateOperator.class,
-            DBSPStreamAggregateOperator.class, DBSPStreamDistinctOperator.class);
+            DBSPStreamAggregateOperator.class, DBSPStreamDistinctOperator.class,
+            DBSPStreamJoinOperator.class, DBSPStreamJoinIndexOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
     public static boolean canLowerCircuit(DBSPCircuit circuit) {
@@ -136,6 +140,12 @@ public final class LimiterInputs {
                 }
                 continue;
             }
+            if (operator instanceof DBSPStreamJoinOperator || operator instanceof DBSPStreamJoinIndexOperator) {
+                var expansion = pass.getReplacement(operator.to(DBSPSimpleOperator.class));
+                if (expansion != null)
+                    recordTransfer(functions, expansion.replacement.id, pass, expansion.replacement);
+                continue;
+            }
             if (!TRANSFER_OPERATORS.contains(operator.getClass()))
                 continue;
             if (operator instanceof DBSPChainAggregateOperator && operator.annotations.first(AlwaysMonotone.class) != null)
@@ -178,6 +188,8 @@ public final class LimiterInputs {
                 if (value != null)
                     entry.set("projection", projection(Monotonicity.getBodyType(value)));
                 entry.put("expanded_id", replacement.getId());
+                if (operator instanceof DBSPStreamJoinOperator || operator instanceof DBSPStreamJoinIndexOperator)
+                    BinaryJoinInputs.captureTerm(pass, replacement.to(DBSPJoinBaseOperator.class), entry.putObject("snapshot_join"));
                 if (operator instanceof DBSPLagOperator || operator instanceof DBSPPartitionedRollingAggregateOperator) {
                     var input = pass.expansionMonotoneValues.get(replacement.inputs.get(0));
                     if (input != null)
