@@ -14,14 +14,16 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.473 | 1.803 | 1.720 | 1.882 | 1.094× |
-| Nexmark suite | 3.405 | 8.299 | 3.801 | 8.918 | 2.346× |
-| Outer join | 1.393 | 1.673 | 1.513 | 1.849 | 1.221× |
+| Correlated array subquery | 1.428 | 1.740 | 1.571 | 2.012 | 1.281× |
+| Nexmark suite | 3.226 | 7.530 | 3.391 | 7.887 | 2.326× |
+| Outer join | 1.328 | 1.578 | 1.431 | 1.616 | 1.129× |
 
-The table measures the chain-topology build at `72183b58e` with no concurrent
+The table measures the typed NULL waterline build at `c03c4fcee` with no concurrent
 compiler verification. Each workload ran two warmup pairs and 21 measured
 pairs on CPU 15. All 69 pairs matched on diagnostics and emitted artifacts.
-Nexmark and the outer join exceeded the 1.2× ceiling.
+The array subquery and Nexmark exceeded the 1.2× ceiling.
+Under the same profile, the earlier chain-topology build at `72183b58e`
+measured 1.094×, 2.346× and 1.221× in workload order.
 The earlier filter-trimming build measured 1.239×, 2.119× and 1.183× in
 workload order, with concurrent corpus verification.
 The EMIT FINAL window build at `88ee907de` measured 1.223×, 2.306× and 1.118×
