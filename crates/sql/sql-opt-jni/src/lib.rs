@@ -321,6 +321,18 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     if pass == "DeltaExpansion/StarJoinTerm" {
         return star_join::delta_term(arena, &roots, next);
     }
+    if let ("KeyAnalysis/ColumnCopies", [closure]) = (pass, roots.as_slice()) {
+        #[derive(serde::Deserialize)]
+        struct Request {
+            #[serde(flatten)]
+            shape: feldera_sql_opt::OutputShape,
+            lossless: bool,
+        }
+        let request: Request = serde_json::from_slice(state)?;
+        let edit = CircuitEditor::new(arena);
+        let copies = feldera_sql_opt::column_copies(&edit, *closure, &request.shape, request.lossless)?;
+        return Ok(serde_json::to_value(copies)?);
+    }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_expr::parameter_field_paths(&arena, *closure)?)?);
     }
@@ -867,7 +879,7 @@ fn transform(
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
         | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/Filter"
         | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
-        | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "KeyAnalysis/ColumnCopies" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {

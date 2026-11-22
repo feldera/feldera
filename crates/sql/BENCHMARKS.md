@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Join key build, 2026-11-22
+
+On `c15e725ac`, all 69 cold pairs matched through classic source emission.
+Each workload ran two warmup pairs and 21 measured pairs on CPU 15.
+Twenty worker cancellations measured 5.08 ms p95, with a peak combined driver
+and waiting JVM RSS of 72.3 MiB.
+
+| Workload | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.415 | 1.761 | 1.245× |
+| Nexmark suite | 3.192 | 6.501 | 2.037× |
+| Outer join | 1.344 | 1.600 | 1.190× |
+
+[Cold compilation and cancellation measurements](evidence/p3-join-key-latency.json)
+
 ## Selected expression roots, 2026-11-22
 
 Four optimizer passes now send Rust only the expression roots they may change.

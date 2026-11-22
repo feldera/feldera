@@ -2,7 +2,7 @@
 //! stream this describes its integral, so a retraction alone does not imply
 //! that the stream is a multiset.
 
-mod lineage;
+use crate::lineage;
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, Node,
     NodeId, OperatorKind as Op, OutputPort,

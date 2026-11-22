@@ -1,0 +1,61 @@
+{
+  "scope": "Compare each Rust closure column-copy map directly with the Java reference, before LeftJoinChains and FindUnboundedState. The oracle requires a native answer for every closure. Compare derived keys on every output port, then independently compare ordered S4 and emission on detached S2 replay.",
+  "selection": "Frozen join cases, supplemented with programs selected for ranking, casts, COALESCE, nullable types, left joins, VARIANT and grouping. Coverage counts are observations across both analysis invocations per program.",
+  "base_commit": "c15e725ac",
+  "optimizer_library_sha256": "cd35fe5b39b2a51d82959e84548def48ebd632adb9cde44d93ecca5744aa5bd4",
+  "compiler_jar_sha256": "2b1bf1ce54be9a69b7022ecc395dbc0649253c900e65a308430be3a4d6c86bdc",
+  "oracle_sources_sha256": {
+    "ColumnCopyOracle.java": "775c215a155614d1b6d49f5a6d60ee42bd29277ba62fcbacab29c9bddc5063f0",
+    "ProvenanceCheck.java": "987d8efb58e8a234b0bead2bdf52f23ca8d6d210e1a746e083b7d96371e1ceb4"
+  },
+  "engines": {
+    "classic": {
+      "cases": 94,
+      "direct_oracle": {
+        "visits": 188,
+        "ports": 4367,
+        "keyed": 1582,
+        "joins": 237,
+        "closures": 1366,
+        "copies": 5488,
+        "indexed": 711,
+        "zero_index_width": 126,
+        "multi_parameter": 252
+      },
+      "oracle_report_sha256": "49f0d05079fc5d541e22f4309792a1dd6878ece09221c992f2e969141390f3d9",
+      "input_sha256": "7263302d37f41672b27cbe7c76c843afac322d5c1a2eea2a58c16f9eb431ae83",
+      "detached_reports_sha256": [
+        "d749c0c316999ea79d2e3555e5d3f0679084f32c97072fd32686a1d81a4b235f",
+        "02820b9b39594791ef7b2af47268bc65d6c29440f13c59647a43139301417482",
+        "3ba7263fabb5ff9d365abd2f2f9d3e1c9d6549b178a754c102649ce65d582754",
+        "21da3fd3f8b48d1be31a25875e95cc41d5517170c761497d25536a34f7750b3b"
+      ]
+    },
+    "gen2": {
+      "cases": 94,
+      "direct_oracle": {
+        "visits": 188,
+        "ports": 4258,
+        "keyed": 1557,
+        "joins": 263,
+        "closures": 1416,
+        "copies": 5794,
+        "indexed": 736,
+        "zero_index_width": 128,
+        "multi_parameter": 271
+      },
+      "oracle_report_sha256": "4356297bc0460869f513fc007e1bd3b45a597198daa7789c1beae00bd8cb14f5",
+      "input_sha256": "789b7d1fdfda46fc97c99748862cda3553be66790cefe6cb534e3186df74c859",
+      "detached_reports_sha256": [
+        "8e1d0d3f50006ff96fe650a8c37e32d8b2622f86173e595beff212f66af75243",
+        "64f87acee4264fb559bed0ae1d699250a05413c1eef2fcf1c3f320db6f9ef79d",
+        "5cd702b14c89c88160e7f42f202629045128463dc7c9f1af4a35138a9122d382",
+        "e78f24981505af9d388d833a326f7961a22c5d59f95c4446765fd837a9329e4d"
+      ]
+    }
+  },
+  "rust_tests_sha256": "f99636bff47b532371488a1e6ac9f10bdc06bfcdee33bcf0fc02aa61ab1a0531",
+  "maven_tests": 40,
+  "maven_log_sha256": "cfce8fcb19bf9313983b06b907ede5d011fe7822a8d01b5bcf2f93f50a957d87",
+  "clippy_log_sha256": "71849c9c1f4c99461cdcc13e7c21ec329ea3d0c77f374efb0de885da3205196e"
+}

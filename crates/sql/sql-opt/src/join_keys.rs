@@ -1,21 +1,8 @@
 //! Derive collection keys for binary and star joins from the columns copied by
 //! their output closure. Multiple columns can name the same value of a key.
+use crate::lineage::{Column, ColumnCopy, Part};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
-#[serde(rename_all = "UPPERCASE")]
-enum Part {
-    None,
-    Index,
-    Value,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
-struct Column {
-    part: Part,
-    field: usize,
-}
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 struct EquivalentColumns {
@@ -87,13 +74,6 @@ fn minimal(mut keys: Vec<KeyColumns>) -> Vec<KeyColumns> {
         }
     }
     result
-}
-
-#[derive(Deserialize)]
-struct ColumnCopy {
-    parameter: usize,
-    source: Column,
-    output: Column,
 }
 
 #[derive(Deserialize)]

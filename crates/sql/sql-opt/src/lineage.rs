@@ -1,36 +1,49 @@
-//! Track recoverable parameter columns through a closure. An expression can
-//! add computed columns and still be injective if it also copies every input.
+//! Track which parameter columns a closure copies into its result.
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId, TypeKind as Ty,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Part {
-    Row,
-    Key,
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(rename_all = "UPPERCASE")]
+pub(crate) enum Part {
+    None,
+    Index,
     Value,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) struct Column {
+    pub(crate) part: Part,
+    pub(crate) field: usize,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ColumnCopy {
+    pub(crate) parameter: usize,
+    pub(crate) source: Column,
+    pub(crate) output: Column,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Column {
+struct ParameterColumn {
     parameter: usize,
-    part: Part,
-    field: usize,
+    column: Column,
 }
 
 #[derive(Clone, Default)]
 enum Source {
     #[default]
     Unknown,
-    Column(Column),
+    Column(ParameterColumn),
     Ref(Rc<Source>),
     Tuple(Rc<[Source]>),
 }
 
 impl Source {
-    fn collect(&self, columns: &mut BTreeSet<Column>) -> bool {
+    fn collect(&self, columns: &mut BTreeSet<ParameterColumn>) -> bool {
         let mut complete = true;
         let mut work = vec![self];
         let mut seen = std::collections::HashSet::new();
@@ -92,15 +105,37 @@ fn text<'a>(node: &'a Node, key: &str) -> Result<&'a str, Error> {
         .ok_or_else(|| Error::new(format!("missing {key} on {}", node.class())))
 }
 
+enum AnalysisError {
+    InvalidIr(Error),
+    NestingLimit(&'static str),
+}
+
+impl From<Error> for AnalysisError {
+    fn from(error: Error) -> Self {
+        Self::InvalidIr(error)
+    }
+}
+
+impl From<AnalysisError> for Error {
+    fn from(error: AnalysisError) -> Self {
+        match error {
+            AnalysisError::InvalidIr(error) => error,
+            AnalysisError::NestingLimit(message) => Error::new(message),
+        }
+    }
+}
+
 fn initial(
     edit: &CircuitEditor,
     ty: NodeId,
     parameter: usize,
     part: Part,
     depth: usize,
-) -> Result<(Source, bool), Error> {
+) -> Result<(Source, bool), AnalysisError> {
     if depth > 128 {
-        return Err(Error::new("parameter type exceeds nesting limit"));
+        return Err(AnalysisError::NestingLimit(
+            "parameter type exceeds nesting limit",
+        ));
     }
     let id = edit.type_id(ty)?;
     let node = edit.node(ty)?;
@@ -117,10 +152,9 @@ fn initial(
                 Source::Tuple(
                     (0..fields.len())
                         .map(|field| {
-                            Source::Column(Column {
+                            Source::Column(ParameterColumn {
                                 parameter,
-                                part,
-                                field,
+                                column: Column { part, field },
                             })
                         })
                         .collect(),
@@ -131,9 +165,9 @@ fn initial(
         Ty::RawTuple => {
             let fields = node.edges("tupFields")?;
             let source = match fields.as_slice() {
-                [key, value] if part == Part::Row => Source::Tuple(
+                [key, value] if part == Part::None => Source::Tuple(
                     [
-                        initial(edit, *key, parameter, Part::Key, depth + 1)?.0,
+                        initial(edit, *key, parameter, Part::Index, depth + 1)?.0,
                         initial(edit, *value, parameter, Part::Value, depth + 1)?.0,
                     ]
                     .into(),
@@ -148,12 +182,12 @@ fn initial(
     Ok((source, singleton && !nullable))
 }
 
-fn preserves_cast(edit: &CircuitEditor, node: &Node) -> Result<bool, Error> {
+fn preserves_cast(edit: &CircuitEditor, node: &Node, lossless_casts: bool) -> Result<bool, Error> {
     let from = edit.expression_type(edit.expression(node.edge("source")?)?)?;
     let to = edit.type_id(node.edge("type")?)?;
     let (a, b) = (edit.node(from.into())?, edit.node(to.into())?);
     match (edit.type_kind(from)?, edit.type_kind(to)?) {
-        (Ty::Integer, Ty::Integer) => {
+        (Ty::Integer, Ty::Integer) if lossless_casts => {
             let safe = matches!(text(node, "safe")?, "SqlSafe" | "UnwrapResultSafe");
             let width = |n: &Node| {
                 n.data("width")
@@ -169,9 +203,10 @@ fn preserves_cast(edit: &CircuitEditor, node: &Node) -> Result<bool, Error> {
             }
         }
         (Ty::String, Ty::String)
-            if [a, b]
-                .iter()
-                .all(|n| n.data("fixed").and_then(|v| v.as_bool()) == Some(false))
+            if lossless_casts
+                && [a, b]
+                    .iter()
+                    .all(|n| n.data("fixed").and_then(|v| v.as_bool()) == Some(false))
                 && b.data("precision").and_then(|v| v.as_i64()) == Some(-1) =>
         {
             return Ok(true)
@@ -191,12 +226,40 @@ struct Interpreter<'a> {
     // The Java visitor resolves each shared expression in its declaration scope.
     values: HashMap<NodeId, Source>,
     unhandled: bool,
+    lossless_casts: bool,
 }
 
 impl<'a> Interpreter<'a> {
-    fn eval(&mut self, id: NodeId, scope: &Scope<'a>, depth: usize) -> Result<Source, Error> {
+    fn new(edit: &'a CircuitEditor, lossless_casts: bool) -> Self {
+        Self {
+            edit,
+            lossless_casts,
+            values: HashMap::new(),
+            unhandled: false,
+        }
+    }
+
+    fn closure_result(&mut self, id: NodeId) -> Result<Source, AnalysisError> {
+        let closure = self.edit.node(id)?;
+        let mut scope = Scope::new();
+        for (i, param) in closure.edges("parameters")?.into_iter().enumerate() {
+            let parameter = self.edit.node(param)?;
+            let (source, _) = initial(self.edit, parameter.edge("type")?, i, Part::None, 0)?;
+            scope.insert(text(parameter, "name")?, source);
+        }
+        self.eval(closure.edge("body")?, &scope, 0)
+    }
+
+    fn eval(
+        &mut self,
+        id: NodeId,
+        scope: &Scope<'a>,
+        depth: usize,
+    ) -> Result<Source, AnalysisError> {
         if depth > 128 {
-            return Err(Error::new("lineage expression exceeds nesting limit"));
+            return Err(AnalysisError::NestingLimit(
+                "lineage expression exceeds nesting limit",
+            ));
         }
         if let Some(value) = self.values.get(&id) {
             return Ok(value.clone());
@@ -227,7 +290,7 @@ impl<'a> Interpreter<'a> {
             Some(InnerKind::Expression(Expr::HandleError)) => eval(self, "source")?,
             Some(InnerKind::Expression(Expr::Cast)) => {
                 let source = eval(self, "source")?;
-                if preserves_cast(self.edit, node)? {
+                if preserves_cast(self.edit, node, self.lossless_casts)? {
                     source
                 } else {
                     Source::Unknown
@@ -324,6 +387,97 @@ impl<'a> Interpreter<'a> {
     }
 }
 
+/// Map flat result positions to the columns of the declared output collection.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputShape {
+    width: usize,
+    index_fields: Option<usize>,
+}
+
+impl OutputShape {
+    fn column(&self, position: usize) -> Column {
+        match self.index_fields {
+            None => Column {
+                part: Part::None,
+                field: position,
+            },
+            Some(n) if position < n => Column {
+                part: Part::Index,
+                field: position,
+            },
+            Some(n) => Column {
+                part: Part::Value,
+                field: position - n,
+            },
+        }
+    }
+}
+
+impl Source {
+    fn deref_once(&self) -> &Self {
+        match self {
+            Source::Ref(value) => value,
+            value => value,
+        }
+    }
+
+    fn tuple_fields(&self, width: usize) -> &[Self] {
+        match self.deref_once() {
+            Source::Tuple(fields) if fields.len() == width => fields,
+            _ => &[],
+        }
+    }
+}
+
+/// A raw pair represents an indexed output. Its key and value may be known
+/// independently. A plain tuple can also supply just the values of a ranked output.
+fn copies(result: &Source, raw_pair: bool, shape: &OutputShape) -> Result<Vec<ColumnCopy>, Error> {
+    let mut output = Vec::new();
+    let mut append = |fields: &[Source], offset| {
+        for (position, value) in fields.iter().enumerate() {
+            if let Source::Column(source) = value.deref_once() {
+                output.push(ColumnCopy {
+                    parameter: source.parameter,
+                    source: source.column,
+                    output: shape.column(offset + position),
+                });
+            }
+        }
+    };
+    if raw_pair {
+        let index = shape
+            .index_fields
+            .filter(|&i| i <= shape.width)
+            .ok_or_else(|| Error::new("raw tuple result requires an indexed output shape"))?;
+        if let [key, value] = result.tuple_fields(2) {
+            append(key.tuple_fields(index), 0);
+            append(value.tuple_fields(shape.width - index), index);
+        }
+    } else {
+        append(result.tuple_fields(shape.width), 0);
+    }
+    Ok(output)
+}
+
+/// The reference visitor handles unusually deep closures and reports diagnostics for assignments and returns.
+pub fn column_copies(
+    edit: &CircuitEditor,
+    id: NodeId,
+    shape: &OutputShape,
+    lossless_casts: bool,
+) -> Result<Option<Vec<ColumnCopy>>, Error> {
+    let mut interpreter = Interpreter::new(edit, lossless_casts);
+    let value = match interpreter.closure_result(id) {
+        Ok(value) if !interpreter.unhandled => value,
+        Ok(_) | Err(AnalysisError::NestingLimit(_)) => return Ok(None),
+        Err(AnalysisError::InvalidIr(error)) => return Err(error),
+    };
+    let body = edit.node(id)?.edge("body")?;
+    let ty = edit.expression_type(edit.expression(body)?)?;
+    copies(&value, edit.type_kind(ty)? == Ty::RawTuple, shape).map(Some)
+}
+
 pub(super) fn injective(edit: &CircuitEditor, id: NodeId, first_only: bool) -> Result<bool, Error> {
     let closure = edit.node(id)?;
     if !matches!(
@@ -336,18 +490,14 @@ pub(super) fn injective(edit: &CircuitEditor, id: NodeId, first_only: bool) -> R
     let mut required = BTreeSet::new();
     for (i, param) in closure.edges("parameters")?.into_iter().enumerate() {
         let parameter = edit.node(param)?;
-        let (source, singleton) = initial(edit, parameter.edge("type")?, i, Part::Row, 0)?;
+        let (source, singleton) = initial(edit, parameter.edge("type")?, i, Part::None, 0)?;
         let needed = if first_only { i == 0 } else { !singleton };
         if needed && !source.collect(&mut required) {
             return Ok(false);
         }
         scope.insert(text(parameter, "name")?, source);
     }
-    let mut interpreter = Interpreter {
-        edit,
-        values: HashMap::new(),
-        unhandled: false,
-    };
+    let mut interpreter = Interpreter::new(edit, true);
     let value = interpreter.eval(closure.edge("body")?, &scope, 0)?;
     let mut copied = BTreeSet::new();
     value.collect(&mut copied);
@@ -366,11 +516,51 @@ mod tests {
     }
 
     #[test]
-    fn intersect_shared_tuples_preserves_the_common_column() {
-        let column = Column {
-            parameter: 0,
+    fn indexed_result_preserves_a_known_half_and_maps_ranked_columns() {
+        let source = Column {
+            part: Part::None,
+            field: 3,
+        };
+        let field = Source::Column(ParameterColumn {
+            parameter: 1,
+            column: source,
+        });
+        let values = Source::Ref(Rc::new(Source::Tuple([field].into())));
+        let output = Column {
             part: Part::Value,
-            field: 2,
+            field: 0,
+        };
+        let expected = ColumnCopy {
+            parameter: 1,
+            source,
+            output,
+        };
+        let indexed = OutputShape {
+            width: 3,
+            index_fields: Some(2),
+        };
+        let pair = Source::Tuple([Source::Unknown, values.clone()].into());
+        assert_eq!(copies(&pair, true, &indexed).unwrap(), [expected]);
+
+        let ranked = OutputShape {
+            width: 1,
+            index_fields: Some(0),
+        };
+        let outputs = copies(&values, false, &ranked).unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].output, output);
+        assert_eq!(outputs[0].source, source);
+        assert!(copies(&values, false, &indexed).unwrap().is_empty());
+    }
+
+    #[test]
+    fn intersect_shared_tuples_preserves_the_common_column() {
+        let column = ParameterColumn {
+            parameter: 0,
+            column: Column {
+                part: Part::Value,
+                field: 2,
+            },
         };
         let left = Source::Tuple([Source::Column(column), Source::Unknown].into());
         let right = Source::Tuple([Source::Column(column), Source::Column(column)].into());

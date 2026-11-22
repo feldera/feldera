@@ -101,7 +101,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjecti
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.KeyColumns;
+import org.dbsp.sqlCompiler.ir.type.CollectionShape;
 import org.dbsp.sqlCompiler.ir.type.CollectionShape.Column;
+import org.dbsp.sqlCompiler.ir.type.IndexedShape;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
@@ -2194,6 +2196,24 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public record KeyColumnCopy(int parameter, Column source, Column output) {}
+
+    /** Returns null when the reference visitor must handle nesting depth or report a diagnostic. */
+    @Nullable
+    public static List<KeyColumnCopy> columnCopies(DBSPCompiler compiler, DBSPClosureExpression closure,
+                                                   CollectionShape shape, boolean lossless) {
+        record Request(int width, @Nullable Integer indexFields, boolean lossless) {}
+        var request = new Request(shape.width(), shape instanceof IndexedShape i ? i.indexFields() : null, lossless);
+        var json = JsonStream.compactCircuit();
+        json.beginArray();
+        closure.accept(new ToJsonInnerVisitor(compiler, json, 0));
+        try {
+            var graph = json.endArray().toString().getBytes(StandardCharsets.UTF_8);
+            var reply = transformWithContext("KeyAnalysis/ColumnCopies", graph, 0, "", MAPPER.writeValueAsBytes(request));
+            return MAPPER.readValue(reply, new TypeReference<List<KeyColumnCopy>>() {});
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not exchange column provenance with Rust", error);
+        }
+    }
 
     /** The lineage interpreter supplies plain column copies from the join function. */
     public static List<KeyColumns> joinKeys(List<List<KeyColumns>> inputs, List<KeyColumnCopy> copies,

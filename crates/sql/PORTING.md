@@ -516,6 +516,14 @@ expression rewrites matched through ordered S4 and emission. COUNT and LATENESS
 restored from each compiler's checkpoint with the other compiler.
 [Join key comparisons](evidence/p3-join-collection-keys.json)
 
+The regular and lossless-cast key analyses now use the same Rust closure
+interpreter as multiset analysis. Rust reproduced all 11,282 column copies in
+2,782 closures, including indexed results and ranked output values. The oracle
+compared the source and destination of each copy, then compared keys at 8,625
+ports. All 188 programs matched on detached replay. Assignments, returns and
+expressions beyond the interpreter's nesting limit still use the Java visitor.
+[Column provenance](evidence/p3-column-provenance.json)
+
 The JNI expression reader validates new references against both arenas and
 inserts the smaller map into the larger one. Across 41 paired sweeps of
 554 Nexmark batches, this saved a median 2.04 ms per sweep (bootstrap 95%

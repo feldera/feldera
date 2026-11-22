@@ -93,13 +93,21 @@ public class KeyAnalysis extends CircuitVisitor {
      * input those rows come from and where how the input's columns are copied. */
     private final Map<OutputPort, PortTransform> portTransforms = new HashMap<>();
 
+    private final boolean losslessCasts;
+
     public KeyAnalysis(DBSPCompiler compiler) {
+        this(compiler, false);
+    }
+
+    KeyAnalysis(DBSPCompiler compiler, boolean losslessCasts) {
         super(compiler);
+        this.losslessCasts = losslessCasts;
     }
 
     /** The lineage interpreter that decides which output columns copy which input columns */
     Lineage.InnerLineage interpreter() {
-        return new Lineage.InnerLineage(this.compiler(), null);
+        return this.losslessCasts ? new LosslessCastLineage(this.compiler(), true)
+                : new Lineage.InnerLineage(this.compiler(), null);
     }
 
     public Keys getKeys(OutputPort port) {
@@ -183,6 +191,15 @@ public class KeyAnalysis extends CircuitVisitor {
      * plain copy of a parameter column, that parameter column.
      * @param outputShape shape of the produced rows */
     Provenance provenance(CollectionShape outputShape, DBSPClosureExpression closure) {
+        if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+            var copies = RustCircuitPass.columnCopies(this.compiler(), closure, outputShape, this.losslessCasts);
+            if (copies != null) {
+                Map<Column, Provenance.Source> sources = new HashMap<>();
+                for (var copy : copies)
+                    Utilities.putNew(sources, copy.output(), new Provenance.Source(copy.parameter(), copy.source()));
+                return new Provenance(sources);
+            }
+        }
         Lineage.ValueSource result = this.interpreter().analyze(closure, initialValues(closure));
         List<Lineage.ValueSource> columns = new ArrayList<>();
         if (closure.body.getType().is(DBSPTypeRawTuple.class)) {
