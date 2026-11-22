@@ -379,12 +379,16 @@ public class PrimitivesTests extends SqlIoTest {
                 parsed.get("mir").get(name).get("operation").asText());
     }
 
+    /** A compiler for the Gen-2 engine whose optimizer ends with {@link Gen2Lowering}, which the
+     * optimizer does not run by default yet. */
     DBSPCompiler gen2Compiler(String sql) {
         CompilerOptions options = this.testOptions();
         options.ioOptions.gen2 = true;
         options.languageOptions.incrementalize = true;
         options.ioOptions.checkSerialization = true;
         DBSPCompiler compiler = new DBSPCompiler(options);
+        compiler.optimizerHook = optimizer ->
+                optimizer.insertAfter(CircuitStatistics.class, new Gen2Lowering(compiler));
         compiler.submitStatementsForCompilation(sql);
         return compiler;
     }
@@ -591,7 +595,9 @@ public class PrimitivesTests extends SqlIoTest {
                 CREATE TABLE t(k INT, v INT) WITH ('append_only' = 'true');
                 CREATE VIEW mn AS SELECT k, MIN(v) FROM t GROUP BY k;""");
         RecordIds beforeLowering = new RecordIds();
-        compiler.optimizerHook = optimizer -> optimizer.insertAfter(CircuitStatistics.class, beforeLowering);
+        // Inserted after CircuitStatistics, ahead of the lowering that gen2Compiler adds there
+        compiler.optimizerHook = compiler.optimizerHook.andThen(
+                optimizer -> optimizer.insertAfter(CircuitStatistics.class, beforeLowering));
         Set<String> afterLowering = persistentIds(finalCircuit(compiler));
         Assert.assertFalse(beforeLowering.ids.isEmpty());
         Assert.assertTrue(afterLowering.containsAll(beforeLowering.ids));
