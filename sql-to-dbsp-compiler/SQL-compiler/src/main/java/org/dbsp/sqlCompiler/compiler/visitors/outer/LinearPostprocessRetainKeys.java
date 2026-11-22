@@ -13,7 +13,9 @@ import org.dbsp.util.graph.Port;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import javax.annotation.Nullable;
 
 /** Replaces the following pattern:
  * {@link org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator} followed by
@@ -33,13 +35,23 @@ public class LinearPostprocessRetainKeys implements CircuitTransform, IWritesLog
     }
 
     /** Does the actual replacement work */
-    protected static class ReplaceLinear extends CircuitCloneWithGraphsVisitor {
+    public static class ReplaceLinear extends CircuitCloneWithGraphsVisitor {
+        @Nullable private final Map<DBSPAggregateLinearPostprocessOperator, DBSPIntegrateTraceRetainKeysOperator> planned;
+
         protected ReplaceLinear(DBSPCompiler compiler, CircuitGraphs graphs) {
+            this(compiler, graphs, null);
+        }
+
+        public ReplaceLinear(DBSPCompiler compiler, CircuitGraphs graphs,
+                @Nullable Map<DBSPAggregateLinearPostprocessOperator, DBSPIntegrateTraceRetainKeysOperator> planned) {
             super(compiler, graphs);
+            this.planned = planned;
         }
 
         protected Optional<DBSPIntegrateTraceRetainKeysOperator> selectRetainer(
                 DBSPAggregateLinearPostprocessOperator operator) {
+            if (this.planned != null)
+                return Optional.ofNullable(this.planned.get(operator));
             List<Port<DBSPOperator>> destinations = this.getGraph().getSuccessors(operator);
             for (Port<DBSPOperator> port : destinations) {
                 if (port.node().is(DBSPIntegrateTraceRetainKeysOperator.class)) {

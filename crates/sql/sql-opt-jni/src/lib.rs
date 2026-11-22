@@ -981,6 +981,15 @@ fn transform(
         return Ok(json!(operator_numbers(candidates)));
     }
     if let Some(name) = pass.strip_prefix("Topology/") {
+        if name == "LinearPostprocessRetainKeys" {
+            let Some(plan) = feldera_sql_opt::linear_retention_plan(&circuit)? else {
+                return Ok(Value::Null);
+            };
+            let replacements: BTreeMap<_, _> = plan.replacements.into_iter()
+                .map(|(aggregate, retainer)| (operator_number(aggregate), operator_number(retainer)))
+                .collect();
+            return Ok(json!({"order": operator_numbers(plan.order), "retainers": replacements}));
+        }
         if name == "ChainRound" {
             let readers = feldera_sql_opt::chain_readers(&circuit)?;
             if !readers.is_empty() {

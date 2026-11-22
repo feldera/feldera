@@ -330,6 +330,7 @@ public final class CorpusDeterminism {
         Map<String, Integer> graphCleanups = new TreeMap<>();
         var unusedFieldIterations = new java.util.concurrent.atomic.AtomicInteger();
         var clockScans = new java.util.concurrent.atomic.AtomicInteger();
+        var linearRetentionGraphs = new java.util.concurrent.atomic.AtomicInteger();
         var asofMoves = new java.util.concurrent.atomic.AtomicInteger();
         var temporalSplits = new java.util.concurrent.atomic.AtomicInteger();
         if (liveFinal) {
@@ -350,6 +351,8 @@ public final class CorpusDeterminism {
                         clockScans.incrementAndGet();
                     if (completed && container.equals("Repeat") && pass.getName().equals("BreakFilters"))
                         temporalSplits.incrementAndGet();
+                    if (completed && container.equals("LinearPostprocessRetainKeys") && pass.getName().equals("Graph"))
+                        linearRetentionGraphs.incrementAndGet();
                     if (completed && container.equals("LowerAsof") && pass.getName().equals("MoveGC"))
                         asofMoves.incrementAndGet();
                     if (completed && pass instanceof RustCircuitPass)
@@ -415,6 +418,7 @@ public final class CorpusDeterminism {
             result.put("unused_field_iterations", unusedFieldIterations.get());
             result.put("clock_scans", clockScans.get());
             result.put("window_sharing_enabled", !compiler.metadata.windowSharingDisabled());
+            result.put("linear_retention_graphs", linearRetentionGraphs.get());
             result.put("asof_retention_moves", asofMoves.get());
             result.put("temporal_filter_iterations", temporalSplits.get());
             result.set("dead_code_by_container", MAPPER.valueToTree(graphCleanups));

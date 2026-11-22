@@ -197,7 +197,9 @@ pub use integrate::remove_redundant_integrates;
 pub use left_joins::{
     empty_right_join_closure, remove_useless_left_joins, substitute_left_joins, unmatched_row_projection,
 };
-pub use linear_retention::{linear_postprocess_retain_keys, linear_retention_order};
+pub use linear_retention::{
+    linear_postprocess_retain_keys, linear_retention_order, linear_retention_plan, LinearRetentionPlan,
+};
 pub use merge_gc::{
     merge_retention_policies, retention_groups, share_trace_inputs, RetentionGroup, SharedTraceInputs,
 };

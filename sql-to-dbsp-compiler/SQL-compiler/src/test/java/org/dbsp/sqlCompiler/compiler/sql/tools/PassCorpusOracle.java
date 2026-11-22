@@ -74,6 +74,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.compiler = compiler;
         record.put("pass", passClass);
         this.invocations = record.putArray("invocations");
+        if (passClass.equals("LinearPostprocessRetainKeys") && Boolean.getBoolean("feldera.optimizer.compareRustLinearRetention"))
+            compiler.optimizerHook = this::replaceObservedPass;
     }
 
     private static void writePorts(ObjectNode row, String name, java.util.Set<OutputPort> ports) {

@@ -63,6 +63,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.DeadCode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeterministicFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LinearPostprocessRetainKeys;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.HashPrefixPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.SetOperatorHashes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveOperators;
@@ -1649,6 +1652,29 @@ public final class RustCircuitPass implements CircuitTransform {
                 new TypeReference<Map<Long, LiveSharedProjections.Edits>>() {}));
     }
 
+    private DBSPCircuit retainLinearAggregateKeys(DBSPCircuit circuit, long next) throws IOException {
+        var graph = new Graph(this.compiler);
+        var buildGraph = new RustCircuitPass(this.compiler, graph, this.snapshots);
+        this.compiler.applyObservedPass(this.name, 0, 0, buildGraph, circuit);
+        var plan = this.invoke("Topology/LinearPostprocessRetainKeys",
+                OptimizerTopology.encode(circuit, OptimizerTopology.Details.CONSUMERS), next, EMPTY_CONTEXT);
+        if (plan.isNull())
+            return circuit;
+
+        circuit.applyOperatorOrder(MAPPER.treeToValue(plan.required("order"), long[].class));
+        this.compiler.observeCircuit(this.name, 1, "OrderWaterlineDependencies", circuit);
+        this.compiler.applyObservedPass(this.name, 2, 0, buildGraph, circuit);
+
+        var operators = operatorsById(circuit);
+        var retainers = new HashMap<DBSPAggregateLinearPostprocessOperator, DBSPIntegrateTraceRetainKeysOperator>();
+        Map<Long, Long> selected = MAPPER.convertValue(plan.required("retainers"), new TypeReference<>() {});
+        selected.forEach((aggregate, retainer) -> retainers.put(
+                Objects.requireNonNull(operators.get(aggregate)).to(DBSPAggregateLinearPostprocessOperator.class),
+                Objects.requireNonNull(operators.get(retainer)).to(DBSPIntegrateTraceRetainKeysOperator.class)));
+        var replace = new LinearPostprocessRetainKeys.ReplaceLinear(this.compiler, graph.getGraphs(), retainers);
+        return this.compiler.applyObservedPass(this.name, 3, 0, replace, circuit);
+    }
+
     private DBSPCircuit fuseChains(DBSPCircuit circuit) throws IOException {
         int limit = Math.max(circuit.largestComponentSize(), 10);
         for (int round = 0; round < limit; round++) {
@@ -2282,6 +2308,9 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             JsonNode result = null;
             switch (this.nativeName) {
+                case "LinearPostprocessRetainKeys" -> {
+                    return this.retainLinearAggregateKeys(circuit, initial);
+                }
                 case "RemoveViewOperators", "RemoveAllViews" -> {
                     return this.removeViews(circuit, initial);
                 }
@@ -2340,7 +2369,7 @@ public final class RustCircuitPass implements CircuitTransform {
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveDeindexOperators", "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero", "ExpandMetadataCasts",
-                     "LinearPostprocessRetainKeys", "ExpandHop", "RemoveIdentityOperators", "BuildNestedOperators",
+                     "ExpandHop", "RemoveIdentityOperators", "BuildNestedOperators",
                      "SubstituteLeftJoins", "ImplementChains", "StrayGC", "SeparateIntegrators" -> {
                     var details = switch (this.nativeName) {
                         case "SeparateIntegrators" -> OptimizerTopology.Details.TRACE_INTEGRATORS;

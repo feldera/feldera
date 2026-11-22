@@ -41,6 +41,14 @@ class FrozenPlacements(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Rust placements"):
             verify_placements("skipped star joins", counts, False)
 
+    def test_linear_retention_rebuilds_the_graph_only_after_reordering(self):
+        for graphs in (1, 2):
+            counts = {**BASE_COUNTS, "Graph": BASE_COUNTS["Graph"] + graphs}
+            verify_placements("linear retention", counts, False, linear_retention_graphs=graphs)
+        with self.assertRaisesRegex(ValueError, "Rust placements"):
+            verify_placements("missing rebuilt graph", {**counts, "Graph": counts["Graph"] - 1},
+                              False, linear_retention_graphs=2)
+
     def test_temporal_order_requires_a_clock_and_enabled_sharing(self):
         with_clock = {**BASE_COUNTS, "ContainsNow": 2, "DesugarNowEquality": 1, "Graph": BASE_COUNTS["Graph"] + 1}
         verify_placements("sharing off", with_clock, False, clock_scans=2, window_sharing_enabled=False)
