@@ -41,6 +41,12 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. On `63dbe7a9f`, ordinary and lossless-cast key analysis
+  matched Java at 374,851 ports across the frozen populations. All 228
+  selected detached compilations matched through emission. On a shared VM,
+  Nexmark measured 1.375× Java p95, above the 1.2× hybrid ceiling.
+  [Candidate keys](crates/sql/evidence/p3-projected-candidate-keys.json) · [Timings](crates/sql/BENCHMARKS.md#projected-candidate-keys-2026-11-22)
+
 - 2026-11-22. On `bf609aab1`, both engines compiled all 17,098 frozen SQL
   programs with coverage recording enabled. Rust answered all 8,937 measured
   waterline and temporal-classification requests. The 16 selected detached

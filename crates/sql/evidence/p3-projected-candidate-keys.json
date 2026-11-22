@@ -1,0 +1,281 @@
+{
+  "commit": "63dbe7a9f57dc2736aa3578b143a89426bfab14e",
+  "scope": "Candidate key projection through maps, indexed maps and ranked output closures; compare direct and hybrid candidate keys at every port.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "de94c399a6d5af2f8101e680470c3ab1aa6f0f8819ae47f8296119857dc41915",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/tests.jar": "3f42b997d7a30a61a4355a2e5f7eb4eff1d6c127f951ba460ba2bd243f3fb46b",
+    "maven/sql-compiler.jar": "1175525325a3e834ab13e5b38cd3824565d2f9f8863f96b8fd205ee21226e273"
+  },
+  "engines": {
+    "classic": {
+      "programs": 114,
+      "population_sha256": "d5ed5d30899ddb41c68b7940524b478f1305076083cb2816e281e42ff4ceaa0b",
+      "filter_comparisons": 104,
+      "filters_reducing_keys": 1,
+      "compared_ports": 4681,
+      "ports_with_keys": 1591,
+      "observations_sha256": "6a451544fd4d4d921d0236458aae1d15605287215647dcba3578d0489f9e87ff",
+      "detached": {
+        "programs": 114,
+        "ordered_s4_observations": 52154,
+        "mismatches": 0,
+        "shard_receipts_sha256": [
+          "557dcf8683e075cb07cac177f1cb21ed71212469cefe08df00b39a9625d2104c",
+          "d028ec0631a24d46350d9142f11555416633e84b1724fd0165262ec640bf1542",
+          "0e92bb57b69e9dc929afa86d3ca397da5ed3ca471968a5da645ec644a6373359",
+          "7b01110f3641323d2293466c712abaa430cf99a5db7cfcb1324d6ca3d4be4f59"
+        ]
+      },
+      "candidate_key_oracle_sha256": "d042ebf9d8093ed3204d5d18dacdf3c38b496ff297134c885bfe37c73e45b324",
+      "native_key_requests": {
+        "KeyAnalysis/Row": {
+          "calls": 1753,
+          "fallbacks": 0
+        },
+        "KeyAnalysis/FilterKeys": {
+          "calls": 158,
+          "fallbacks": 0
+        },
+        "KeyAnalysis/Ranked": {
+          "calls": 38,
+          "fallbacks": 0
+        }
+      },
+      "coverage_sha256": "37892fa9ee248d97d217f11220267bb657c0817843231a111d3d0a320a29cb18",
+      "frozen_sql": {
+        "programs": 8571,
+        "observations_sha256": "21ec5271912952e6788434bb6011367c4096f51a89b2c3870bc370e264c61897",
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "key_requests": {
+          "KeyAnalysis/Row": {
+            "calls": 64091,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/FilterKeys": {
+            "calls": 6206,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/Ranked": {
+            "calls": 827,
+            "fallbacks": 0
+          }
+        },
+        "actual_engine_modes": {
+          "classic": 8571
+        },
+        "cases_overriding_population_mode": [],
+        "candidate_key_comparisons": {
+          "ordinary": 8571,
+          "lossless": 8571,
+          "ports": 187573,
+          "keyed": 23924,
+          "exercised_cases": 8571,
+          "mismatches": 0,
+          "oracle_output_sha256": "dbe16a619975e687ce52a5123ac48770c0d4f89b0c033332b1399ba548fe1515"
+        }
+      }
+    },
+    "gen2": {
+      "programs": 114,
+      "population_sha256": "0bf91baf6aaea98a00b53ae68e8ad905412586df9432d516199f6074730113c2",
+      "filter_comparisons": 99,
+      "filters_reducing_keys": 1,
+      "compared_ports": 4581,
+      "ports_with_keys": 1565,
+      "observations_sha256": "ad116df2cd5174615d10947e71238741c8ca624e81e89db1d982ab63c324c1e3",
+      "detached": {
+        "programs": 114,
+        "ordered_s4_observations": 53299,
+        "mismatches": 0,
+        "shard_receipts_sha256": [
+          "199f2dc18282443f61593f82377cd1ca692c6e44ac0e2bf92d6564fdaae4e0d8",
+          "bca808a4819ae354e6e7b252d34811fe2aa412bc6aa56d495eaa38cf1811289c",
+          "8fa3e5cd48c85a62cb0d1fa02c7ff888ce0f7ac083105f9253acb62c5df127e8",
+          "19a4162e6182670bb9330d1ed376cfaa45a79b1c5247480a3e8bbfb7fec824cc"
+        ]
+      },
+      "candidate_key_oracle_sha256": "c3595556336d8c56867652bb74f67d31add85b0e0f6dc33af28ae26878c5decc",
+      "native_key_requests": {
+        "KeyAnalysis/Row": {
+          "calls": 1812,
+          "fallbacks": 0
+        },
+        "KeyAnalysis/FilterKeys": {
+          "calls": 153,
+          "fallbacks": 0
+        },
+        "KeyAnalysis/Ranked": {
+          "calls": 29,
+          "fallbacks": 0
+        }
+      },
+      "coverage_sha256": "c0b01834e03d3078fd9a75284b4af261b851dce0a0e3c26d14ec5a71205989c1",
+      "frozen_sql": {
+        "programs": 8527,
+        "observations_sha256": "ee41fb9fe2f39e545c373c5de53ad3194e9e6541dd0bd03b57cf34eb9278a70b",
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "key_requests": {
+          "KeyAnalysis/Row": {
+            "calls": 67596,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/FilterKeys": {
+            "calls": 5989,
+            "fallbacks": 0
+          },
+          "KeyAnalysis/Ranked": {
+            "calls": 824,
+            "fallbacks": 0
+          }
+        },
+        "actual_engine_modes": {
+          "gen2": 8526,
+          "classic": 1
+        },
+        "cases_overriding_population_mode": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+        ],
+        "candidate_key_comparisons": {
+          "ordinary": 8527,
+          "lossless": 8527,
+          "ports": 187278,
+          "keyed": 22799,
+          "exercised_cases": 8527,
+          "mismatches": 0,
+          "oracle_output_sha256": "c7c0b5e0f6609cc35320f3104ea6f398056055a12cbb9b16296d28243317b58a"
+        }
+      }
+    }
+  },
+  "tests": {
+    "rust": 181,
+    "maven": 48,
+    "packaged_junit": 34,
+    "clippy": "passed"
+  },
+  "oracle_source_sha256": "e2435d48a3f7881112cd6ae1d039bcaaeda082c9940a99ccb81ec9533ee4f032",
+  "classic_runtime": {
+    "population_sha256": "d5ed5d30899ddb41c68b7940524b478f1305076083cb2816e281e42ff4ceaa0b",
+    "worker_sha256": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "batch_size": 64,
+    "rust_min_stack": 8388608,
+    "case_named_tests": true,
+    "optimizer_library_sha256": "de94c399a6d5af2f8101e680470c3ab1aa6f0f8819ae47f8296119857dc41915",
+    "executed": 106,
+    "compile_only": 8,
+    "batches": 13,
+    "total_frozen_cases": 114,
+    "input_commands": 154,
+    "expected_runtime_errors": 0,
+    "catalog_cases": 0,
+    "handle_cases": 106,
+    "batch_receipts_sha256": "3058b644bfb98f90c4d72130eef686a829d679b6cb8b5c343811ee2df16bea7b"
+  },
+  "checkpoints": {
+    "count": {
+      "receipt_sha256": "09340a61e87554c81600a9085b933a8875ee0b5206ac7655285c5043c2e52880",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2045f-25de-7461-90ba-b97f25645b0b",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2045f-2612-7ed1-ae95-9fc9798dc85a",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "f1ec476e9aae1ba428093c25876afa29f1c038867cc191b7e9aebe76780b3424",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20460-1b4e-74d0-8e70-766fb6ad97e1",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20460-1b6d-7de2-aa45-9d08ce293372",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "explicit_gen2_cast_matrix": {
+    "source_id": "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0",
+    "change": "Set options.ioOptions.gen2 to true on the frozen Gen-2 export entry that sets it to false. Preserve SQL and submissions.",
+    "population_sha256": "54392cf0ca9ac49e2c3480d7ac43c14be5fccb08285e4fb2adc86b14a28eadb0",
+    "compared_ports": 168,
+    "ordered_s4_observations": 479,
+    "mismatches": 0,
+    "receipt_sha256": "455dfe8bdc680977454d522183bf5bf52fa502b3175f01306ab7f81121f0e105"
+  }
+}

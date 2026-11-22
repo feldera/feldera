@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Projected candidate keys, 2026-11-22
+
+On `63dbe7a9f`, all 69 cold SQL-to-classic-artifact pairs matched. Each
+workload ran two warmup pairs and 21 measured pairs on CPU 15 of the ARM64 VM.
+Key analysis comparisons, corpus replay and runtime tests shared the VM.
+Nexmark exceeded the 1.2× p95 ceiling on this run.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.841 | 3.136 | 1.104× |
+| Nexmark suite | 5.967 | 8.205 | 1.375× |
+| Outer join | 2.777 | 2.930 | 1.055× |
+
+[Paired timings and build identities](evidence/p3-projected-candidate-keys-cold.json)
+
 ## Compound window expressions, 2026-11-22
 
 On `9c0cd1ed9`, all 69 cold SQL-to-classic-artifact pairs produced matching
