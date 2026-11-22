@@ -127,6 +127,13 @@ Path prefixes used in this document:
   on `32d585d40`. On the preceding window and clock build, the Nexmark hybrid
   measured 2.280× Java p95 while corpus verification shared the VM.
   [Clock filter replays](crates/sql/evidence/p3-clock-filter-graphs.json) · [Cold compilation](crates/sql/evidence/p3-window-clock-cold-latency.json)
+- 2026-11-22. On `9c0cd1ed9`, the Rust window analyses matched Java in
+  all 399 frozen pass comparisons and all eight directed compilations. The
+  hybrid measured 0.804× direct Java p95 on the correlated array subquery,
+  1.187× on Nexmark and 0.829× on the outer join. These shared-VM timings
+  cover SQL through classic artifact emission. P3 still requires the
+  remaining optimizer port and field-shadow evidence.
+  [Window comparisons](crates/sql/evidence/p3-interval-window-projections.json) · [Paired timings](crates/sql/BENCHMARKS.md#compound-window-expressions-2026-11-22)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across
   17,098 classic and Gen-2 cases. CSE, ARRAY_AGG fusion and the representative
   limiter slice matched 296 Java S4 results and four Gen-2 refusals. The

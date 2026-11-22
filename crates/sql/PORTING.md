@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `5964e657b`, Rust derived filter keys from constant equalities, including
+columns that name the same value. The Java and hybrid analyses agreed on
+9,262 output ports across 114 programs per engine. The 228 detached replays
+matched through all 105,453 ordered S4 observations and artifact emission.
+[Filter key comparisons](evidence/p3-filter-candidate-keys.json)
+
 On `9c0cd1ed9`, the Rust window scan and reorder passes compare compound
 timestamp expressions by operand order, type and interval unit. Both engines
 matched Java on four directed programs, including reversed arguments to
@@ -483,7 +489,8 @@ rows even when the surrounding row has unbounded fields. All 8,571 classic
 and 8,527 Gen-2 SQL programs compiled with the coverage observer. Rust
 answered all 8,937 requests recorded for the five exercised decisions. The
 16 selected detached compilations matched direct Java at all 11,178 ordered
-optimizer observations and through emission. COUNT and LATENESS checkpoints
+optimizer observations and through emission. All 8,256 executable classic
+cases passed with 11,407 input commands. COUNT and LATENESS checkpoints
 restored in both directions. The coverage counters measure the instrumented
 decisions only. [Clock projections and compiler coverage](evidence/p3-empty-row-clock-inputs.json)
 

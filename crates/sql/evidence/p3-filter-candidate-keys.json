@@ -1,0 +1,59 @@
+{
+  "commit": "5964e657b4334eca6d7a679510131d0cf8352769",
+  "scope": "Filter candidate keys derived from the predicate and input keys in Rust. Compare with direct Java before LeftJoinChains and FindUnboundedState, including lossless casts.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "859af6b9a2cee979ee10ba85aa1a1dafc72b9fa1988b3a61c9666dfa39ed8c88",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/tests.jar": "fc99af59e2d4b9122e7d9ce34a59f5ea1e53b3fdc9f7a3cf1ba36292839d77ca",
+    "maven/sql-compiler.jar": "f0b604bb4136814821d1b7df0d4276388fadfdf5684aa8156771d8e6e4cbf1fe"
+  },
+  "engines": {
+    "classic": {
+      "programs": 114,
+      "population_sha256": "d5ed5d30899ddb41c68b7940524b478f1305076083cb2816e281e42ff4ceaa0b",
+      "filter_comparisons": 104,
+      "filters_reducing_keys": 1,
+      "compared_ports": 4681,
+      "ports_with_keys": 1591,
+      "observations_sha256": "6a451544fd4d4d921d0236458aae1d15605287215647dcba3578d0489f9e87ff",
+      "detached": {
+        "programs": 114,
+        "ordered_s4_observations": 52154,
+        "mismatches": 0,
+        "shard_receipts_sha256": [
+          "2ea93e6aafa43631764b6d119c31d02de96abf778027380dae25ef81903874b7",
+          "57778c671e70827f51eb5f5ee509d4802ed246ebcb9829e67f718937aac348cd",
+          "575bef8325c3905d75f676917f4408ce58d0032d9bae863d68c3e5a55b99fdd2",
+          "57aaa8d43ecdc41e3c76f33d187af0104d7c1b3c7a29a1cac48b5c5761f29c19"
+        ]
+      }
+    },
+    "gen2": {
+      "programs": 114,
+      "population_sha256": "0bf91baf6aaea98a00b53ae68e8ad905412586df9432d516199f6074730113c2",
+      "filter_comparisons": 99,
+      "filters_reducing_keys": 1,
+      "compared_ports": 4581,
+      "ports_with_keys": 1565,
+      "observations_sha256": "ad116df2cd5174615d10947e71238741c8ca624e81e89db1d982ab63c324c1e3",
+      "detached": {
+        "programs": 114,
+        "ordered_s4_observations": 53299,
+        "mismatches": 0,
+        "shard_receipts_sha256": [
+          "5e2a2d27e5a1775fb7ef2479ca8a1cec63c8d953bcc46afce3f077d215b6ab70",
+          "2da1efe4ec3ed76f11f9b8f273e6d673b19e24cfa0f6a562a2bb633e45163ddc",
+          "513e69fbe7abb5933f212ef492c9a42a451646b849399fcc9396da35eb080e84",
+          "27eebf85638f6577f19a67698daeb45ffff97fe4c6cbb83e6d83afae0a3ad0fc"
+        ]
+      }
+    }
+  },
+  "tests": {
+    "rust": 180,
+    "maven": 48,
+    "packaged_junit": 34,
+    "clippy": "passed"
+  }
+}
