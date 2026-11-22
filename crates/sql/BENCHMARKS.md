@@ -4,6 +4,26 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Single-request JVM, 2026-11-22
+
+The classic hybrid worker now limits its one-request JVM to tier 1 of the
+HotSpot compiler. Direct Java used the deployed JVM settings. On CPU 15, each
+workload ran two warmup pairs and 21 measured pairs in alternating order.
+All 69 pairs produced matching diagnostics, schema, dataflow and classic source.
+
+| Workload | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.437 | 1.097 | 0.764× |
+| Nexmark suite | 3.177 | 3.893 | 1.225× |
+| Outer join | 1.354 | 1.036 | 0.765× |
+
+In a separate sensitivity check, both JVMs used tier 1. Median direct and
+hybrid times over five measured pairs were 0.914 and 1.092 s for the array
+subquery, 1.878 and 3.804 s for Nexmark, and 0.872 and 1.005 s for the outer
+join. The shorter JVM startup accounts for much of the gain over the deployed
+baseline. These measurements end at source emission and exclude Cargo.
+[Paired results and executable identities](evidence/p3-single-request-jvm.json)
+
 ## Flat integral edits, 2026-11-22
 
 On the integral-planner build, median main-thread CPU time for

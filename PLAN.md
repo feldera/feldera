@@ -41,6 +41,11 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. With C1 compilation in the one-request hybrid JVM, all 69
+  cold SQL compilations matched direct Java through classic source emission.
+  Hybrid p95 was 0.764× direct Java on the array subquery, 1.225× on Nexmark,
+  and 0.765× on the outer join. Nexmark exceeds the 1.2× P3 ceiling.
+  [Cold measurements and matched-JVM comparison](crates/sql/BENCHMARKS.md#single-request-jvm-2026-11-22)
 - 2026-11-22. The Rust output-projection rule matched Java at 580 invocations,
   and 310 selected compilations matched through emission. Sending the live
   producer and reader functions reduced this pass's median Nexmark CPU time

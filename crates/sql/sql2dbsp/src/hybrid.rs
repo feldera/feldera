@@ -270,7 +270,10 @@ impl Request {
         let mut front = self.compiler_args(true);
         front.extend(self.front_args(scratch));
         let mut session = self.jvm(true)?;
+        // This JVM serves one SQL request and exits after printing its workspace.
+        // Limit JIT compilation to C1 to reduce startup work on the cold path.
         session
+            .arg("-XX:TieredStopAtLevel=1")
             .arg("org.dbsp.sqlCompiler.compiler.backend.S3PrinterSession")
             .arg(&ready)
             .arg(front.len().to_string())

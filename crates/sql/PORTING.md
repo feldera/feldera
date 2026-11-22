@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The classic hybrid driver limits JIT compilation to tier 1 in the JVM that
+serves a single compilation request. The cold Nexmark p95 measured 3.893 s
+against 3.177 s for direct Java, exceeding the 1.2× ceiling. The array and
+outer-join workloads met the ceiling. With four workers waiting for input,
+cancellation p95 was 5.16 ms. COUNT and LATENESS restored in both directions.
+[Full cold compilation measurements](BENCHMARKS.md#single-request-jvm-2026-11-22)
+
 Rust combines waterlines across join keys and sum inputs, preserving the SQL
 type of each selected field. The monotonicity pass matched Java on 291 classic
 and 259 Gen-2 frozen programs. Directed three-input union, antijoin, ASOF and

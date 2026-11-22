@@ -1,0 +1,134 @@
+{
+  "base_commit": "97d780b2dab53fb0291ed958b159e95913121ffc",
+  "driver_patch_sha256": "5458eae5267a8fd239ab41f4d331d61d66e02d7080e6825378e0de65e731852d",
+  "scope": "Cold SQL to emitted classic Rust source, schema, dataflow, stubs and diagnostics on CPU 15. Two warmups and 21 measured pairs per workload. The hybrid worker uses C1 and the direct baseline uses the existing JVM defaults.",
+  "matched_pairs": 69,
+  "identity": {
+    "inputs": {
+      "array-subquery.sql": "42e09a2b580b083bb2653efdb4e32f8b79c1d1d6ca13796cb13e0eedaa93b33d",
+      "nexmark-suite.sql": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+      "outer-join.sql": "1a475a4c0d4e68f13d124dc2a7c30100baecf86a640ac8ac787ca0bb12d0435d"
+    },
+    "compiler": "fc5a60bb7d5d2c5ecdfeb5eeccb436226b520248f50be861d90a21d16b2ac267",
+    "library": "a3ac305d42c41e312dd935ff59bfd8352cdfa63f5c9c8663a476c5bca67ef343",
+    "classpath": {
+      "/stage/p3-verified-u0m6raxd/rolling-s4/single-request-c1/test.jar": "1e96fd317faf63d22c624ba361c56e1bbe798661769dc93891bee7c29f7b6d2a",
+      "/stage/p3-verified-u0m6raxd/rolling-s4/single-request-c1/compiler.jar": "c859fb8d5e129a280feccc657f83d406cf32512ac7424fc6fcf10167ae48617d",
+      "/stage/p3-verified-u0m6raxd/rolling-trace-bounds/maven/sql-compiler.jar": "e118bea16e253e655068e3ef5638da948da6b3fe503a95c87e020b666731acfd"
+    },
+    "affinity": [
+      15
+    ],
+    "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+    "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n"
+  },
+  "pairs_sha256": "239e0950a9ddb49cecea364871a766d55e6dace40250c6b8cc1e13a118143752",
+  "results": {
+    "array-subquery.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.086521121,
+        "empirical_p95_seconds": 1.097246506
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 1.396310418,
+        "empirical_p95_seconds": 1.436795748
+      },
+      "p95_ratio": 0.7636760531393221,
+      "mean_ratio_paired_95pct_interval": [
+        0.7722566610692799,
+        0.7819593012385725
+      ]
+    },
+    "nexmark-suite.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 3.782333822,
+        "empirical_p95_seconds": 3.892928469
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 3.120864065,
+        "empirical_p95_seconds": 3.177347786
+      },
+      "p95_ratio": 1.2252132064840322,
+      "mean_ratio_paired_95pct_interval": [
+        1.2095007608969526,
+        1.2323473350074128
+      ]
+    },
+    "outer-join.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.002562875,
+        "empirical_p95_seconds": 1.036102032
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 1.331072563,
+        "empirical_p95_seconds": 1.353781169
+      },
+      "p95_ratio": 0.7653393736931202,
+      "mean_ratio_paired_95pct_interval": [
+        0.7515186245835587,
+        0.7627765616317419
+      ]
+    }
+  },
+  "matched_jit": {
+    "scope": "C1 in both JVMs, one warmup then five measured pairs per workload. Values are median seconds.",
+    "matched_pairs": 18,
+    "medians_seconds": {
+      "array-subquery": {
+        "direct": 0.913555122,
+        "hybrid": 1.091967835
+      },
+      "nexmark-suite": {
+        "direct": 1.877607128,
+        "hybrid": 3.803506926
+      },
+      "outer-join": {
+        "direct": 0.872036458,
+        "hybrid": 1.005327336
+      }
+    },
+    "pairs_sha256": "234947c6a8ca2d8d1408dd9fda6daaed5f7d9c2e3ed0cb98069e6717a20e460f"
+  },
+  "worker_limits": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      4.849085,
+      4.896043,
+      5.038251,
+      5.161918,
+      3.901502,
+      3.715043,
+      3.870793,
+      3.99146,
+      6.311501,
+      3.697085,
+      3.86671,
+      3.985876,
+      5.02021,
+      3.699751,
+      4.708251,
+      5.077919,
+      4.43671,
+      4.559793,
+      4.669668,
+      4.686877
+    ],
+    "p95_ms": 5.161918,
+    "largest_driver_plus_front_end_rss_bytes": 70844416,
+    "compiler_sha256": "fc5a60bb7d5d2c5ecdfeb5eeccb436226b520248f50be861d90a21d16b2ac267"
+  },
+  "checkpoint_restores": {
+    "count": "b7c3b5bc76e6714ffa2d2b6d3fb5fa36707b7a7ffbde29a761c69da4be35e7ef",
+    "watermark": "2cf22fcd4ece344135e69b7e87c5a2d61c74c8292b447478a550d023e5dd3853"
+  },
+  "archive": ".bench-results/p3-cold-jvm/2026-22-11-12-24-97d78"
+}
