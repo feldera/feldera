@@ -42,6 +42,24 @@ import java.util.Set;
 public class TemporalKeyTests {
     @Test
     public void numericOffsetsShareOnlyMatchingWindowKeys() {
+        checkOffsetKeys("id + 1", "id + 2");
+    }
+
+    @Test
+    public void conditionalTimestampKeysDistinguishBranchOrderAndStringValues() {
+        checkOffsetKeys("CASE WHEN flag THEN id ELSE 1 END", "CASE WHEN flag THEN 1 ELSE id END");
+        checkOffsetKeys("CASE WHEN label = 'déjà' THEN id ELSE 1 END",
+                "CASE WHEN label = 'deja' THEN id ELSE 1 END");
+        checkOffsetKeys("CASE WHEN label IS NULL THEN id ELSE 1 END",
+                "CASE WHEN label IS NOT NULL THEN id ELSE 1 END");
+    }
+
+    private static void checkOffsetKeys(String shared, String different) {
+        String key = "TIMESTAMPADD(SECOND, %s, ts)";
+        checkSharedWindowKeys(key.formatted(shared), key.formatted(different));
+    }
+
+    private static void checkSharedWindowKeys(String shared, String different) {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         for (boolean gen2 : List.of(false, true)) {
             var options = new CompilerOptions();
@@ -68,11 +86,11 @@ public class TemporalKeyTests {
             };
             compiler.submitStatementsForCompilation("""
                     SET feldera_window_sharing_threshold = 2;
-                    CREATE TABLE t (id INT NOT NULL, ts TIMESTAMP);
-                    CREATE VIEW a AS SELECT id FROM t WHERE TIMESTAMPADD(SECOND, id + 1, ts) >= NOW() - INTERVAL '1' DAY AND id > 0;
-                    CREATE VIEW b AS SELECT id FROM t WHERE TIMESTAMPADD(SECOND, id + 1, ts) >= NOW() - INTERVAL '2' DAY AND id > 1;
-                    CREATE VIEW c AS SELECT id FROM t WHERE TIMESTAMPADD(SECOND, id + 2, ts) >= NOW() - INTERVAL '3' DAY AND id > 2;
-                    """);
+                    CREATE TABLE t (id INT NOT NULL, ts TIMESTAMP, flag BOOLEAN, label VARCHAR);
+                    CREATE VIEW a AS SELECT id FROM t WHERE (%s) >= NOW() - INTERVAL '1' DAY AND id > 0;
+                    CREATE VIEW b AS SELECT id FROM t WHERE (%s) >= NOW() - INTERVAL '2' DAY AND id > 1;
+                    CREATE VIEW c AS SELECT id FROM t WHERE (%s) >= NOW() - INTERVAL '3' DAY AND id > 2;
+                    """.formatted(shared, shared, different));
             var circuit = compiler.getFinalCircuit(false);
             compiler.throwIfErrorsOccurred();
             Assert.assertEquals(analyses, answered);

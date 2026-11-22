@@ -19,19 +19,22 @@ enum Term {
     Field(u64),
     Deref,
     Clone,
+    IsNull,
+    If,
     Call(String),
     Cast(String),
     Integer(String),
+    Bool(bool),
+    String(String),
     TypedNull(String),
     Binary {
         opcode: BinaryOp,
         left_nullable: bool,
         right_nullable: bool,
     },
-    VariantField {
-        name: String,
-        row_nullable: bool,
-        name_nullable: bool,
+    Unary {
+        opcode: String,
+        nullable: bool,
     },
     Interval {
         months: bool,
@@ -73,9 +76,8 @@ impl TimestampKey {
                 }
                 Visit::Intern(id, term, children) => {
                     let operands = children.into_iter().map(|child| numbers[&child]).collect();
-                    // A nullable integer and an explicit Some applied to the
-                    // same nonnullable integer have identical Java spellings.
-                    let wrap = matches!(term, Term::Integer(_))
+                    // The literal printer and an explicit Some use the same spelling.
+                    let wrap = matches!(term, Term::Integer(_) | Term::Bool(_) | Term::String(_))
                         && edit.nullable(edit.expression_type(id)?)?;
                     let (mut number, _) = terms.insert_full((term, operands));
                     if wrap {
@@ -116,6 +118,31 @@ fn key_term(
         }
         Expr::Deref => (Term::Deref, vec![child("expression")?]),
         Expr::Clone => (Term::Clone, vec![child("expression")?]),
+        Expr::IsNull => (Term::IsNull, vec![child("expression")?]),
+        Expr::If => {
+            let mut branches = vec![child("condition")?, child("positive")?];
+            if node.field("negative").is_some() {
+                branches.push(child("negative")?);
+            }
+            (Term::If, branches)
+        }
+        Expr::Unary => {
+            let Some(
+                opcode @ ("WRAP_BOOL" | "IS_TRUE" | "IS_FALSE" | "IS_NOT_TRUE" | "IS_NOT_FALSE"
+                | "NOT" | "NEG" | "UNARY_PLUS" | "INDICATOR" | "TYPEDBOX"),
+            ) = string(node, "opcode")
+            else {
+                return Ok(None);
+            };
+            let source = child("source")?;
+            (
+                Term::Unary {
+                    opcode: opcode.to_owned(),
+                    nullable: edit.nullable(edit.expression_type(source)?)?,
+                },
+                vec![source],
+            )
+        }
         Expr::Some => (Term::Call("Some".into()), vec![child("expression")?]),
         Expr::Cast => {
             let Some(target) = cast_spelling(edit, edit.expression_type(id)?)? else {
@@ -160,19 +187,6 @@ fn key_term(
                 return Ok(None);
             };
             match op {
-                BinaryOp::VariantIndex if edit.expr_kind(right)? == Expr::StringLiteral => {
-                    let Some(name) = string(edit.node(right.into())?, "value") else {
-                        return Ok(None);
-                    };
-                    (
-                        Term::VariantField {
-                            name: name.to_owned(),
-                            row_nullable: left_nullable,
-                            name_nullable: right_nullable,
-                        },
-                        vec![left],
-                    )
-                }
                 // Collection conversions print multiline function calls.
                 BinaryOp::ArrayConvert
                 | BinaryOp::ArrayConvertSafe
@@ -199,7 +213,9 @@ fn key_term(
                 }
             }
         }
-        Expr::I8Literal
+        Expr::BoolLiteral
+        | Expr::StringLiteral
+        | Expr::I8Literal
         | Expr::I16Literal
         | Expr::I32Literal
         | Expr::I64Literal
@@ -212,6 +228,19 @@ fn key_term(
         | Expr::ISizeLiteral
         | Expr::USizeLiteral => {
             let term = match node.data("value").filter(|v| !v.is_null()) {
+                Some(value) if kind == Expr::BoolLiteral => {
+                    let Some(value) = value.as_bool() else {
+                        return Ok(None);
+                    };
+                    Term::Bool(value)
+                }
+                Some(value) if kind == Expr::StringLiteral => {
+                    // Quoting and escaping are injective in Java's debug printer.
+                    let Some(value) = value.as_str() else {
+                        return Ok(None);
+                    };
+                    Term::String(value.to_owned())
+                }
                 Some(value) => {
                     // Current writers use decimal strings. Earlier snapshots
                     // also contain JSON integers.
@@ -290,6 +319,7 @@ fn cast_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Err
     let node = edit.node(ty.into())?;
     let mut text = match edit.type_kind(ty)? {
         Ty::Date => "Date".to_owned(),
+        Ty::Bool => "b".to_owned(),
         Ty::Timestamp => "Timestamp".to_owned(),
         Ty::TimestampTz => "TimestampTz".to_owned(),
         Ty::ISize => "i".to_owned(),
