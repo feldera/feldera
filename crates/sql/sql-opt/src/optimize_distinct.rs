@@ -5,7 +5,7 @@
 //! distincts using the multiplicities of the streams produced by the rewrite.
 
 use crate::{
-    multiset::{input_fact, record_outputs, Multiplicities},
+    multiset::{input_fact, record_outputs, record_topology_outputs, Multiplicities},
     rebuild::{input_type, rebuild_input_closures},
     stream_rewrites::body_members,
 };
@@ -53,6 +53,99 @@ struct DistinctPass {
     edit: CircuitEditor,
     facts: Multiplicities,
     replaced: BTreeMap<NodeId, OutputPort>,
+}
+
+enum Action {
+    Keep,
+    Bypass(OutputPort),
+    SkipPositive(Vec<OutputPort>),
+    StripProducerInputs {
+        producer: NodeId,
+        kind: Op,
+        raw: Vec<OutputPort>,
+    },
+    MoveAfter {
+        raw: Vec<OutputPort>,
+        site: NodeId,
+    },
+}
+
+/// Use the same rules on the original topology and on the inputs already
+/// rewritten by the pass. A rewrite can expose a new distinct to a later reader.
+fn action(
+    edit: &CircuitEditor,
+    facts: &Multiplicities,
+    id: NodeId,
+    kind: Op,
+    ports: &[OutputPort],
+) -> Result<Action, Error> {
+    match kind {
+        Op::StreamDistinct | Op::Distinct | Op::Positive => {
+            let input = unary(ports)?;
+            let source = edit
+                .node(input.operator)?
+                .operator_kind()
+                .ok_or_else(|| Error::new("expected a distinct input operator"))?;
+            let redundant = if kind == Op::Positive {
+                matches!(source, Op::Positive | Op::Distinct)
+            } else {
+                matches!(source, Op::Distinct | Op::StreamDistinct) || !input_fact(facts, input)?
+            };
+            if redundant {
+                return Ok(Action::Bypass(input));
+            }
+            if kind == Op::StreamDistinct && source == Op::Positive {
+                return Ok(Action::SkipPositive(inputs(edit, input.operator)?));
+            }
+            if kind != Op::Positive
+                && (matches!(source, Op::StreamJoin | Op::Map | Op::Sum)
+                    || (kind == Op::StreamDistinct && source == Op::AtomicSum))
+            {
+                if let Some(raw) = below_distincts(edit, &inputs(edit, input.operator)?)? {
+                    return Ok(Action::StripProducerInputs {
+                        producer: input.operator,
+                        kind: source,
+                        raw,
+                    });
+                }
+            }
+        }
+        Op::Filter | Op::StreamJoin => {
+            if let Some(raw) = below_distincts(edit, ports)? {
+                // A filter moves the original distinct. A join creates a new one.
+                let site = if kind == Op::Filter {
+                    unary(ports)?.operator
+                } else {
+                    id
+                };
+                return Ok(Action::MoveAfter { raw, site });
+            }
+        }
+        _ => {}
+    }
+    Ok(Action::Keep)
+}
+
+/// Unknown expression-dependent multiplicities are provisionally treated as
+/// sets. This can request an unnecessary snapshot but cannot hide a rewrite:
+/// the only multiplicity-dependent rule removes a distinct over a set.
+pub(super) fn needs_snapshot(circuit: &Circuit, order: &[NodeId]) -> Result<bool, Error> {
+    let edit = CircuitEditor::new(circuit.clone());
+    let mut facts = Multiplicities::new();
+    for &id in order {
+        let node = edit.node(id)?;
+        let kind = node
+            .operator_kind()
+            .ok_or_else(|| Error::new("expected a circuit operator"))?;
+        if !matches!(
+            action(&edit, &facts, id, kind, &inputs(&edit, id)?)?,
+            Action::Keep
+        ) {
+            return Ok(true);
+        }
+        record_topology_outputs(id, node, &mut facts)?;
+    }
+    Ok(false)
 }
 
 impl DistinctPass {
@@ -118,59 +211,35 @@ impl DistinctPass {
             .map(|port| self.replaced.get(&port.operator).copied().unwrap_or(port))
             .collect();
         self.edit.rewire_inputs(id, &ports)?;
-        match kind {
-            Op::StreamDistinct | Op::Distinct | Op::Positive => {
-                let input = unary(&ports)?;
-                let source = self.kind(input.operator)?;
-                let redundant = if kind == Op::Positive {
-                    matches!(source, Op::Positive | Op::Distinct)
-                } else {
-                    matches!(source, Op::Distinct | Op::StreamDistinct)
-                        || !input_fact(&self.facts, input)?
-                };
-                if redundant {
-                    self.replaced.insert(id, input);
-                    return Ok(());
-                }
-                if kind == Op::StreamDistinct && source == Op::Positive {
-                    let raw = inputs(&self.edit, input.operator)?;
-                    self.edit.rewire_inputs(id, &raw)?;
-                } else if kind != Op::Positive
-                    && (matches!(source, Op::StreamJoin | Op::Map | Op::Sum)
-                        || (kind == Op::StreamDistinct && source == Op::AtomicSum))
-                {
-                    if let Some(raw) =
-                        below_distincts(&self.edit, &inputs(&self.edit, input.operator)?)?
-                    {
-                        let producer = self.append(body, input.operator, source, &raw, true)?;
-                        self.edit.place_before(body, producer, id)?;
-                        self.edit.rewire_inputs(id, &[output(producer)])?;
-                    }
-                }
+        match action(&self.edit, &self.facts, id, kind, &ports)? {
+            Action::Keep => {}
+            Action::Bypass(input) => {
+                self.replaced.insert(id, input);
+                return Ok(());
             }
-            Op::Filter | Op::StreamJoin => {
-                if let Some(raw) = below_distincts(&self.edit, &ports)? {
-                    let inner = self.append(body, id, kind, &raw, true)?;
-                    // The filter moves its input distinct. A join creates a
-                    // fresh distinct with the join's own relational origin.
-                    let site = if kind == Op::Filter {
-                        unary(&ports)?.operator
-                    } else {
-                        id
-                    };
-                    let distinct = self.append(
-                        body,
-                        site,
-                        Op::StreamDistinct,
-                        &[output(inner)],
-                        kind == Op::Filter,
-                    )?;
-                    self.edit.place_before(body, inner, id)?;
-                    self.replaced.insert(id, output(distinct));
-                    return Ok(());
-                }
+            Action::SkipPositive(raw) => self.edit.rewire_inputs(id, &raw)?,
+            Action::StripProducerInputs {
+                producer,
+                kind,
+                raw,
+            } => {
+                let replacement = self.append(body, producer, kind, &raw, true)?;
+                self.edit.place_before(body, replacement, id)?;
+                self.edit.rewire_inputs(id, &[output(replacement)])?;
             }
-            _ => {}
+            Action::MoveAfter { raw, site } => {
+                let inner = self.append(body, id, kind, &raw, true)?;
+                let distinct = self.append(
+                    body,
+                    site,
+                    Op::StreamDistinct,
+                    &[output(inner)],
+                    kind == Op::Filter,
+                )?;
+                self.edit.place_before(body, inner, id)?;
+                self.replaced.insert(id, output(distinct));
+                return Ok(());
+            }
         }
         record_outputs(&self.edit, id, &mut self.facts)
     }
@@ -199,4 +268,53 @@ pub fn optimize_distinct(circuit: Circuit, next: &mut u64) -> Result<Circuit, Er
         pass.visit(bodies[&id], id)?;
     }
     rebuild_input_closures(pass.edit.finish_forwarding(&pass.replaced)?, next)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn needs_distinct_snapshot(kinds: &[Op]) -> Result<bool, Error> {
+        let mut operators = Vec::new();
+        for (index, kind) in kinds.iter().enumerate() {
+            let ports = if index == 0 {
+                vec![]
+            } else {
+                vec![json!({"operator":{"node":index}, "outputNumber":0})]
+            };
+            operators.push(json!({"id":index + 1, "class":kind.wire_name(), "inputs":ports}));
+        }
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":operators
+        }))?;
+        crate::needs_full_snapshot("OptimizeDistinctVisitor", &graph)
+    }
+
+    #[test]
+    fn snapshot_depends_on_the_distinct_input() -> Result<(), Error> {
+        use Op::*;
+        assert!(!needs_distinct_snapshot(&[
+            SourceMultiset,
+            Map,
+            StreamDistinct
+        ])?);
+        assert!(needs_distinct_snapshot(&[SourceMap, Map, StreamDistinct])?);
+        assert!(needs_distinct_snapshot(&[
+            SourceMultiset,
+            StreamDistinct,
+            Filter
+        ])?);
+        assert!(needs_distinct_snapshot(&[
+            SourceMultiset,
+            Positive,
+            StreamDistinct
+        ])?);
+        assert!(needs_distinct_snapshot(&[
+            SourceMultiset,
+            Positive,
+            Positive
+        ])?);
+        Ok(())
+    }
 }

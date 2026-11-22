@@ -1,0 +1,27 @@
+{
+  "scope": "Compare the topology preflight and the full Rust DISTINCT rewrite with the frozen Java pass entry and exit, including the generated-name counter. The Nexmark probe uses the captured circuit before this pass.",
+  "nexmark": {
+    "full_snapshot_bytes": 1424989,
+    "full_snapshot_sha256": "7600fdc770075c00e5abdd8b9174ab6f4ca34abf6c9e1e720165563cfae0d858",
+    "topology_probe_bytes": 41837,
+    "topology_sha256": "14908b58f27697f7a5b7f72bd0648b15b243bd052e8c88989cac627bbc1245be",
+    "needs_full_snapshot": false
+  },
+  "optimizer_library_sha256": "54e80dceef9dbf37b5ebf982c25e49f8d513f22e24eb9041f03f4f63a9df4c9e",
+  "engines": {
+    "classic": {
+      "programs": 200,
+      "invocations": 200,
+      "changed": 13,
+      "input_archive_sha256": "79c41b1614d17e65d306278a5c1c87c62d225b03bafa6cc84700825a1c795680",
+      "results_sha256": "5c622fd6920cbe78803583255a734b01d474bc97ba03f3c217beec3acef09977"
+    },
+    "gen2": {
+      "programs": 199,
+      "invocations": 199,
+      "changed": 13,
+      "input_archive_sha256": "e83701baf9eb078ef7b346d29873659fd6826a422f5d2abbcee18ffbc975f582",
+      "results_sha256": "ed49a3a12d2f7172c83db246465aef6664fc33aa24cdc97dc7a4351da15abfb3"
+    }
+  }
+}

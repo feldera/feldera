@@ -314,6 +314,15 @@ pub(super) fn record_outputs(
     publish_outputs(id, node, facts, |payload| payload.may_repeat(edit, node))
 }
 
+/// Lower bound on multiplicity, using only operator kinds and ports.
+pub(super) fn record_topology_outputs(
+    id: NodeId,
+    node: &Node,
+    facts: &mut Multiplicities,
+) -> Result<(), Error> {
+    publish_outputs(id, node, facts, |_| Ok(false))
+}
+
 fn publish_outputs(
     id: NodeId,
     node: &Node,

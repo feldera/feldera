@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The DISTINCT pass uses operator kinds, ports and known stream multiplicities
+to check whether it needs the full circuit. It requests expression data when
+an unresolved multiplicity could change the result. The reduced path skipped
+a 1,424,989-byte Nexmark snapshot. All 200 classic and 199 Gen-2 directed
+programs matched Java, including 13 changed invocations on each engine.
+[DISTINCT pass comparisons](evidence/p3-distinct-topology.json)
+
 Rust expands each DEFAULT or LATENESS expression independently. The Java
 metadata visitor attaches the result to its column, so this pass no longer
 serializes the entire circuit. All eight frozen programs with changed

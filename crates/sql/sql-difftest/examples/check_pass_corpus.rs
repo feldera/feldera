@@ -406,7 +406,13 @@ fn compare_invocation(
             feldera_sql_opt::eliminate_dead_code(input, &mut next, keep)?.circuit
         }
         "EnsureExpressionTrees" => feldera_sql_opt::ensure_expression_trees(input, &mut next)?,
-        "OptimizeDistinctVisitor" => feldera_sql_opt::optimize_distinct(input, &mut next)?,
+        "OptimizeDistinctVisitor" => {
+            if feldera_sql_opt::needs_full_snapshot(pass, &input)? {
+                feldera_sql_opt::optimize_distinct(input, &mut next)?
+            } else {
+                input
+            }
+        }
         "ComparatorDeclarations" => feldera_sql_opt::declare_comparators(input)?,
         "SimplifyWaterline" => feldera_sql_opt::simplify_waterlines(input, &mut next)?,
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(input, &mut next)?,

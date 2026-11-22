@@ -128,7 +128,8 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
             !crate::balanced_joins::eligible_joins(circuit)?.is_empty() || has_dead_code(true)?
         }
         "RemoveDeindexOperators" => has(&[Op::Deindex]),
-        "OptimizeDistinctVisitor" => has(&[Op::Distinct, Op::StreamDistinct, Op::Positive]),
+        "OptimizeDistinctVisitor" => has(&[Op::Distinct, Op::StreamDistinct, Op::Positive])
+            && crate::optimize_distinct::needs_snapshot(circuit, &order)?,
         "RemoveIAfterD" => reads(Op::Integrate, &[Op::Differentiate, Op::IncrementalConstant]),
         "ExpandMetadataCasts" => order.iter().any(|&id| {
             let n = node(id);
