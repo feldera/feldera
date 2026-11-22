@@ -317,7 +317,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         OutputPort source = this.mapped(operator.input());
         DBSPType inputType = operator.input().getOutputIndexedZSetType().getKVRefType();
         DBSPClosureExpression projection = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.projectUsedFields(this.compiler, fm.getType(), fm.topLevelUsage(), inputType)
+                ? RustCircuitPass.projectUsedFields(this.compiler, fm.getType(), fm.usageAtDepth(1), inputType)
                 : indexedValueProjection(this.compiler, inputType, Objects.requireNonNull(fm.getProjection(1)));
 
         int size = operator.getType().getToplevelFieldCount();
@@ -462,7 +462,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         int size = inputTuple.getToplevelFieldCount();
         var borrowed = map.borrow();
         DBSPClosureExpression projection = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.projectUsedFields(this.compiler, borrowed.getType(), borrowed.topLevelUsage(), null)
+                ? RustCircuitPass.projectUsedFields(this.compiler, borrowed.getType(), borrowed.usageAtDepth(1), null)
                 : Objects.requireNonNull(borrowed.getProjection(1));
         OutputPort source = this.mapped(operator.input());
         DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getRelNode(), projection, source)

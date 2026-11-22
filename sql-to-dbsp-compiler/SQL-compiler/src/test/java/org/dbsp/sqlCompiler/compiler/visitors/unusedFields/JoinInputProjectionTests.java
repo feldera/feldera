@@ -18,6 +18,33 @@ import java.util.List;
 
 public class JoinInputProjectionTests {
     @Test
+    public void compressesParametersAtTheRequestedDepthAndSharesOriginalLeaves() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var text = DBSPTypeString.varchar(false);
+        var nested = new DBSPTypeTuple(text, text).withMayBeNull(true);
+        var pair = new DBSPTypeRawTuple(nested.ref(), new DBSPTypeTuple().ref());
+        var bits = new FieldUseMap(pair, false);
+        bits.field(0).deref().setUsed(1);
+        for (int depth : List.of(0, 1, 2)) {
+            var expected = bits.compressedType(depth);
+            Assert.assertNotNull(expected);
+            var actual = RustCircuitPass.compressedParameterTypes(compiler, depth, List.of(pair, text),
+                    List.of(bits.usageAtDepth(depth), List.of(true)));
+            Assert.assertTrue(expected.sameType(actual.get(0)));
+            Assert.assertSame(text, actual.get(1));
+            if (depth == 0)
+                Assert.assertSame(pair, actual.get(0));
+            else {
+                var row = actual.get(0).to(DBSPTypeRawTuple.class).tupFields[0].deref().to(DBSPTypeTuple.class);
+                Assert.assertEquals(depth == 1 ? 2 : 1, row.size());
+                Assert.assertSame(text, row.tupFields[0]);
+                Assert.assertTrue(row.mayBeNull);
+            }
+        }
+    }
+
+    @Test
     public void indexedValueProjectionExpandsNestedKeysAndPreservesNullableRows() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));
         var compiler = new DBSPCompiler(new CompilerOptions());
@@ -38,7 +65,7 @@ public class JoinInputProjectionTests {
                 var expected = RemoveUnusedFields.indexedValueProjection(compiler, input, projection);
                 long end = DBSPVariablePath.nextGeneratedName();
                 DBSPVariablePath.restoreGeneratedNames(start);
-                var actual = RustCircuitPass.projectUsedFields(compiler, used.getType(), used.topLevelUsage(), input);
+                var actual = RustCircuitPass.projectUsedFields(compiler, used.getType(), used.usageAtDepth(1), input);
                 Assert.assertEquals(end, DBSPVariablePath.nextGeneratedName());
                 Assert.assertTrue(expected.getResultType().sameType(actual.getResultType()));
                 Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
@@ -61,7 +88,7 @@ public class JoinInputProjectionTests {
                 Assert.assertNotNull(expected);
                 long end = DBSPVariablePath.nextGeneratedName();
                 DBSPVariablePath.restoreGeneratedNames(start);
-                var actual = RustCircuitPass.projectUsedFields(compiler, used.getType(), used.topLevelUsage(), null);
+                var actual = RustCircuitPass.projectUsedFields(compiler, used.getType(), used.usageAtDepth(1), null);
                 Assert.assertEquals(end, DBSPVariablePath.nextGeneratedName());
                 Assert.assertTrue(expected.getResultType().sameType(actual.getResultType()));
                 Assert.assertTrue(EquivalenceContext.equiv(expected, actual));

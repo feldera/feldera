@@ -800,6 +800,20 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let row = edit.type_id(*row)?;
             feldera_sql_opt::project_used_fields(&mut edit, row, used, &mut next)?
         }
+        ("RemoveUnusedFields/ParameterTypes", types) => {
+            #[derive(serde::Deserialize)]
+            struct Request { depth: usize, usage: Vec<Vec<bool>> }
+            let request: Request = serde_json::from_slice(state)?;
+            if types.len() != request.usage.len() {
+                return Err("parameter count differs from the number of field usage maps".into());
+            }
+            let mut outputs = Vec::with_capacity(types.len());
+            for (&ty, used) in types.iter().zip(&request.usage) {
+                let ty = edit.type_id(ty)?;
+                outputs.push(NodeId::from(feldera_sql_opt::compressed_field_type(&mut edit, ty, request.depth, used)?));
+            }
+            return Ok(serde_json::to_value(edit.circuit().additional_inner_nodes(&arena, outputs)?)?);
+        }
         ("RemoveUnusedFields/IndexedValue", [row, input]) => {
             let used = serde_json::from_slice(state)?;
             let row = edit.type_id(*row)?;
@@ -1067,7 +1081,7 @@ fn transform(
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
-        | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue"
+        | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
             return lower_function(pass, input, state, next);
         }

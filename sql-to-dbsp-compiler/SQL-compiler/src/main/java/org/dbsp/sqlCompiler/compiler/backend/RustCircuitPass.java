@@ -1028,6 +1028,27 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static List<DBSPType> compressedParameterTypes(DBSPCompiler compiler, int depth,
+            List<DBSPType> types, List<List<Boolean>> usage) {
+        String pass = "RemoveUnusedFields/ParameterTypes";
+        record Request(int depth, List<List<Boolean>> usage) {}
+        try {
+            var state = MAPPER.writeValueAsBytes(new Request(depth, usage));
+            var reply = invokeLowering(compiler, pass, state, types.toArray(DBSPType[]::new));
+            if (!reply.value.isArray() || reply.value.size() != types.size())
+                throw new IllegalStateException("Rust returned the wrong number of compressed parameter types");
+            var decoder = expressionDecoder(reply.writer);
+            var result = new ArrayList<DBSPType>(types.size());
+            for (var type : reply.value)
+                result.add(decoder.decodeInner(type, DBSPType.class));
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode parameter field usage", error);
+        }
+    }
+
     public static boolean isMapProjection(DBSPCompiler compiler, DBSPClosureExpression closure, boolean allowNestedAndCasts) {
         String pass = allowNestedAndCasts ? "IsNestedProjection" : "IsStrictProjection";
         var result = invokeLowering(compiler, pass, closure, null).value;

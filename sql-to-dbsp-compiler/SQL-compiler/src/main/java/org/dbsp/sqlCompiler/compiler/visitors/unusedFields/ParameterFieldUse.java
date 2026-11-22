@@ -1,9 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Substitution;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
 
 import java.util.HashMap;
@@ -87,14 +87,20 @@ public class ParameterFieldUse {
      * Note: you cannot mutate the finder; it and the rewrite share state. */
     public RewriteFields getFieldRewriter(DBSPCompiler compiler, int depth) {
         Substitution<DBSPParameter, DBSPParameter> newParam = new Substitution<>();
-        Iterable<DBSPParameter> parameters = this.getParameters();
+        var stream = this.paramMap.keySet().stream();
         if (compiler.usesCircuitSeam())
-            parameters = this.paramMap.keySet().stream()
-                    .sorted(java.util.Comparator.comparingLong(DBSPParameter::getId)).toList();
-        for (DBSPParameter param: parameters) {
-            FieldUseMap map = this.get(param);
-            DBSPType newType = Objects.requireNonNull(map.compressedType(depth));
-            newParam.substitute(param, new DBSPParameter(param.getNode(), param.name, newType));
+            stream = stream.sorted(java.util.Comparator.comparingLong(DBSPParameter::getId));
+        var parameters = stream.toList();
+        var nativeTypes = compiler.options.ioOptions.rustOptimizerPasses && !parameters.isEmpty()
+                ? RustCircuitPass.compressedParameterTypes(compiler, depth,
+                        parameters.stream().map(p -> this.get(p).getType()).toList(),
+                        parameters.stream().map(p -> this.get(p).usageAtDepth(depth)).toList())
+                : null;
+        for (int i = 0; i < parameters.size(); i++) {
+            var param = parameters.get(i);
+            var type = nativeTypes == null
+                    ? Objects.requireNonNull(this.get(param).compressedType(depth)) : nativeTypes.get(i);
+            newParam.substitute(param, new DBSPParameter(param.getNode(), param.name, type));
         }
         return new RewriteFields(compiler, newParam, this, depth);
     }

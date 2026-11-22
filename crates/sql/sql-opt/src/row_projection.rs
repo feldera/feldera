@@ -57,32 +57,7 @@ impl Component {
     }
 
     fn compressed_type(&self, edit: &mut CircuitEditor) -> Result<TypeId, Error> {
-        if !self.tuple {
-            return if self.used[0] {
-                Ok(self.ty)
-            } else {
-                edit.tuple_type(self.ty.into(), false, [])
-            };
-        }
-        let mut kept = Vec::new();
-        for (ty, &used) in edit
-            .node(self.ty.into())?
-            .edges("tupFields")?
-            .into_iter()
-            .zip(&self.used)
-        {
-            if used {
-                kept.push(ty);
-            } else if self.raw {
-                if matches!(edit.type_kind(edit.type_id(ty)?)?, Ty::Tuple | Ty::RawTuple) {
-                    kept.push(ty);
-                } else {
-                    kept.push(edit.tuple_type(ty, false, [])?.into());
-                }
-            }
-        }
-        let ty = edit.tuple_type(self.ty.into(), self.raw, kept)?;
-        edit.with_nullability(ty, edit.nullable(self.ty)?)
+        crate::compressed_field_type(edit, self.ty, 1, &self.used)
     }
 
     fn project(
@@ -154,8 +129,14 @@ fn read_references(
     edit: &mut CircuitEditor,
     mut value: ExpressionId,
 ) -> Result<ExpressionId, Error> {
-    while edit.type_kind(edit.expression_type(value)?)? == Ty::Ref {
+    let mut seen = HashSet::new();
+    let mut ty = edit.expression_type(value)?;
+    while edit.type_kind(ty)? == Ty::Ref {
+        if !seen.insert(NodeId::from(ty)) {
+            return Err(Error::new("cycle in projected reference type"));
+        }
         value = edit.dereference(value)?;
+        ty = edit.expression_type(value)?;
     }
     Ok(value)
 }

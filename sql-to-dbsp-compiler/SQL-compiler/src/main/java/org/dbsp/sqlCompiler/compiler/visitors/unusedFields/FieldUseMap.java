@@ -470,14 +470,22 @@ public class FieldUseMap {
         return this.fieldInfo.to(BitList.class).allUsedFields();
     }
 
-    /** Column usage at depth one. References do not add a level of nesting. */
-    List<Boolean> topLevelUsage() {
-        FieldInfo info = this.fieldInfo;
+    /** Usage bits in declaration order. References do not add a level of nesting. */
+    List<Boolean> usageAtDepth(int depth) {
+        List<Boolean> result = new ArrayList<>();
+        collectUsage(this.fieldInfo, depth, result);
+        return result;
+    }
+
+    private static void collectUsage(FieldInfo info, int depth, List<Boolean> result) {
         while (info instanceof Ref ref)
             info = ref.field;
-        if (info instanceof BitList tuple)
-            return Linq.map(tuple.fields, FieldInfo::anyUsed);
-        return List.of(info.anyUsed());
+        if (depth > 0 && info instanceof BitList tuple) {
+            for (var field : tuple.fields)
+                collectUsage(field, depth - 1, result);
+        } else {
+            result.add(info.anyUsed());
+        }
     }
 
     public FieldUseMap borrow() {
