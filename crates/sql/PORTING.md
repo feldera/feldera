@@ -462,6 +462,17 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+At `2a2398a2a`, Rust lowered trace-key retention for DISTINCT, positive
+weights and linear aggregates. Each trace receives the preceding step's
+waterline. Raw tuple and scalar bounds pass through a typed tuple so DBSP
+can checkpoint the delay. The full limiter pass ran in Rust 6,580 times
+on classic and 6,943 times on Gen-2. On both frozen populations, the
+mixed optimizer matched direct Java at all 17,098 limiter entries and
+exits, including generated-name counters. All final circuits, persistent-ID
+inputs and artifacts matched. The 217 selected executable programs and
+both checkpoint workloads passed.
+[Full limiter comparison and runtime results](evidence/p3-aggregate-key-origin.json)
+
 At `45ffbdba0`, Rust also propagated waterlines through no-op, negation,
 deindex and snapshot antijoin operators. Four directed circuits exercised
 projection reconstruction with and without LATENESS. The exit graphs and
