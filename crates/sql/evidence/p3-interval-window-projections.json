@@ -1,0 +1,212 @@
+{
+  "commit": "9c0cd1ed9150308ec6977720f1f373e7899083eb",
+  "scope": "Compare ordered compound window expressions at Scan and Reorder with direct Java, including interval units and argument order. Replay selected programs from detached S2 through emission.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "2d53ed521f460be978c02a4467c11036146a4eaa9bc386fc8db967e1edd9c0b7",
+    "bin/sql-difftest": "0eaf642dc4a874d489180f870cf04fb4cde438bd405b46c5942c6c0f47c62b20",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/tests.jar": "0d8506bd53d0c487802cc9d243f9abee0ac3f2a09e2659cba23c4621992cdc08",
+    "maven/sql-compiler.jar": "45ba06ba8564c90550ea79f322f173ff8f3777b77e66c2c8bf99f5349df3661a"
+  },
+  "directed_sql": {
+    "directed/hour": "SET feldera_window_sharing_threshold = 2;\nCREATE TABLE t(id INT, ts TIMESTAMP, ts2 TIMESTAMP);\nCREATE VIEW v0 AS SELECT id FROM t WHERE (ts + INTERVAL '1' HOUR) >= NOW() - INTERVAL '1' DAY AND id > 0;\nCREATE VIEW v1 AS SELECT id FROM t WHERE (ts + INTERVAL '60' MINUTE) >= NOW() - INTERVAL '2' DAY AND id > 1;\nCREATE VIEW v2 AS SELECT id FROM t WHERE (ts - INTERVAL '1' HOUR) >= NOW() - INTERVAL '3' DAY AND id > 2;",
+    "directed/month": "SET feldera_window_sharing_threshold = 2;\nCREATE TABLE t(id INT, ts TIMESTAMP, ts2 TIMESTAMP);\nCREATE VIEW v0 AS SELECT id FROM t WHERE (ts + INTERVAL '1' MONTH) >= NOW() - INTERVAL '1' DAY AND id > 0;\nCREATE VIEW v1 AS SELECT id FROM t WHERE (ts + INTERVAL '1' MONTH) >= NOW() - INTERVAL '2' DAY AND id > 1;\nCREATE VIEW v2 AS SELECT id FROM t WHERE (ts + INTERVAL '2' MONTH) >= NOW() - INTERVAL '3' DAY AND id > 2;",
+    "directed/two_columns": "SET feldera_window_sharing_threshold = 2;\nCREATE TABLE t(id INT, ts TIMESTAMP, ts2 TIMESTAMP);\nCREATE VIEW v0 AS SELECT id FROM t WHERE (GREATEST(ts, ts2)) >= NOW() - INTERVAL '1' DAY AND id > 0;\nCREATE VIEW v1 AS SELECT id FROM t WHERE (GREATEST(ts, ts2)) >= NOW() - INTERVAL '2' DAY AND id > 1;\nCREATE VIEW v2 AS SELECT id FROM t WHERE (GREATEST(ts2, ts)) >= NOW() - INTERVAL '3' DAY AND id > 2;",
+    "directed/coalesce": "SET feldera_window_sharing_threshold = 2;\nCREATE TABLE t(id INT, ts TIMESTAMP, ts2 TIMESTAMP);\nCREATE VIEW v0 AS SELECT id FROM t WHERE (COALESCE(ts, ts2)) >= NOW() - INTERVAL '1' DAY AND id > 0;\nCREATE VIEW v1 AS SELECT id FROM t WHERE (COALESCE(ts, ts2)) >= NOW() - INTERVAL '2' DAY AND id > 1;\nCREATE VIEW v2 AS SELECT id FROM t WHERE (COALESCE(ts2, ts)) >= NOW() - INTERVAL '3' DAY AND id > 2;"
+  },
+  "engines": {
+    "classic": {
+      "frozen": {
+        "programs": 71,
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "observations_sha256": "fb4fdbec9e7db94b4fa9c87d86e223cae4a5f567bd19d148780c270bf11dd05f",
+        "requests": {
+          "WindowGroups/Indexes": {
+            "calls": 64,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 71,
+            "fallbacks": 0
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched": 71,
+            "java_sha256": "253b2bc45df4a392dad95196641ef7446afacf6fb63c18bb98813d18d44a11b8",
+            "hybrid_sha256": "549f4aa482f37f2c4341c8611a21a790afce16a22515ee1a8c3387dc63af496b"
+          },
+          "Reorder": {
+            "matched": 71,
+            "java_sha256": "18b8f9a2dde60ffe0503bb2e9155227c0643c4153036ccde8daef44b0fbd026e",
+            "hybrid_sha256": "aaad58ee536a58d649547c50af6c7d1f3c3cf8c1ae63793f2909054ee648baa9"
+          },
+          "FindWindowGroups": {
+            "matched": 71,
+            "java_sha256": "9b25b9fbc8d25e09c91545684aa1935ca81d3d0820a87b60fae2fa9bad3312dd",
+            "hybrid_sha256": "e3a8d22d7593d5f737f1ca6d1baa0888c6406262654c0f42da033eb4c23cce57"
+          }
+        },
+        "detached_replay": {
+          "selected_cases": 11,
+          "ordered_s4_observations": 6837,
+          "mismatches": 0,
+          "receipt_sha256": "deb1cf56e9063d23a63641cd7134d079adbc317e9b4dda60725504dcf8587ad3"
+        }
+      },
+      "directed": {
+        "programs": 4,
+        "population_sha256": "ea9d9665f7de1caf2f5634515458c7777de6c9190655a9fa0649fb1176abaac2",
+        "observations_sha256": "9ad24340d707579a2af5f56b202429e340bb1d246d8c368a818aa96c7f820f46",
+        "requests": {
+          "WindowGroups/Indexes": {
+            "calls": 4,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 4,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 4,
+            "fallbacks": 0
+          }
+        },
+        "previous_build_window_fallbacks": {
+          "Scan": 4,
+          "Reorder": 4
+        },
+        "passes": {
+          "Scan": {
+            "matched": 4,
+            "java_sha256": "318c5af3039c2c40b1e49cd020ae516db108a597c5142d6010db87d6462ec920",
+            "hybrid_sha256": "7c75a3d59c0158e0b7ca3e7f1537c2ac10a2b6c5446bff4a4af4c681365b6788",
+            "chosen_filters": {
+              "directed/hour": 0,
+              "directed/month": 2,
+              "directed/two_columns": 2,
+              "directed/coalesce": 2
+            }
+          },
+          "Reorder": {
+            "matched": 4,
+            "java_sha256": "9f5189f1d82cc4ef2f72fd26bc947a579a4a6d09a24b3a34cca102b74d9259d8",
+            "hybrid_sha256": "f20f4060ab985e2863110c19ebc0170938a65d4d21648b1eb205389765367229"
+          }
+        },
+        "detached_replay": {
+          "selected_cases": 4,
+          "ordered_s4_observations": 2348,
+          "mismatches": 0,
+          "receipt_sha256": "39f25659cd2c8e4e8de68a5cfc9c16abc01e6703354a6610ce31e0e4a00c0ed8"
+        }
+      }
+    },
+    "gen2": {
+      "frozen": {
+        "programs": 62,
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "observations_sha256": "c00a1cb422fda68c84251e0ff4e634a8c7e1cce9cd06a082ae0a4ef332e1ecc3",
+        "requests": {
+          "WindowGroups/Indexes": {
+            "calls": 55,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 62,
+            "fallbacks": 0
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched": 62,
+            "java_sha256": "d8392c82b40194e1bf1c9d54344b4be12564de341fd58922a165f41ec9241ccf",
+            "hybrid_sha256": "cffc06d9493eec994ffc6e2c173e6a2b38313b261a233490cf484c66c5b5ab01"
+          },
+          "Reorder": {
+            "matched": 62,
+            "java_sha256": "f0d6b56c7a749372288f1125cda85bc3a820690b58b67824079f76cc828f94f8",
+            "hybrid_sha256": "87625216b50533ae608c0673d163bb2ef968ff1eb3d18d7240aa64b6c69c62f7"
+          },
+          "FindWindowGroups": {
+            "matched": 62,
+            "java_sha256": "16a303f141882a7891f789a75730ec6159199fac9f7e84bbb139bb8110bac270",
+            "hybrid_sha256": "87ca88675a82d60fd6b1af12750f6f4eed42793da2e2be84c579e8df0308b0a5"
+          }
+        },
+        "detached_replay": {
+          "selected_cases": 11,
+          "ordered_s4_observations": 6861,
+          "mismatches": 0,
+          "receipt_sha256": "39af2585da0048e3cc54516ec8dd0d2c701a203071518a37bda14c2fce0a548f"
+        }
+      },
+      "directed": {
+        "programs": 4,
+        "population_sha256": "9c284da01703650277bc35ecedae9407722a86694d38d5f90f53179bf6713f3e",
+        "observations_sha256": "4467ea393a13e64f5c2a296739eb56f37d3eba1eade78bd6ada30e8e2a552cf6",
+        "requests": {
+          "WindowGroups/Indexes": {
+            "calls": 4,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 4,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 4,
+            "fallbacks": 0
+          }
+        },
+        "previous_build_window_fallbacks": {
+          "Scan": 4,
+          "Reorder": 4
+        },
+        "passes": {
+          "Scan": {
+            "matched": 4,
+            "java_sha256": "fddd5dc33689258db8340acf11068b8be8725d34bf0ca4c2847acbc5113e14b4",
+            "hybrid_sha256": "fc38c7c16cdc88114495b11a2de295ea807d835b6f3ab7048e542b26d44a716a",
+            "chosen_filters": {
+              "directed/hour": 0,
+              "directed/month": 2,
+              "directed/two_columns": 2,
+              "directed/coalesce": 2
+            }
+          },
+          "Reorder": {
+            "matched": 4,
+            "java_sha256": "d40bf770cace85d792b74628c30de920c838dfe83e55ed4558c2d2f8b76ca284",
+            "hybrid_sha256": "4f866a26b697fb3e8980526d19d4d038d2e0ceba2f3e8c75f84dd56b6b339a54"
+          }
+        },
+        "detached_replay": {
+          "selected_cases": 4,
+          "ordered_s4_observations": 2366,
+          "mismatches": 0,
+          "receipt_sha256": "225fa4c4dfe6be261e82603bc025377ccf50a971d9942d2b5b9ca199c3da3acb"
+        }
+      }
+    }
+  },
+  "classic_runtime": {
+    "executed": 8,
+    "compile_only": 3,
+    "input_commands": 15,
+    "batch_receipts_sha256": "be6d323783f17d554bf89f78449b0779731eea5e6fbc23ff4fe68e694bbebb1a"
+  },
+  "tests": {
+    "rust": 179,
+    "packaged_junit": 34,
+    "clippy": "passed"
+  }
+}

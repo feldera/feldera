@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `9c0cd1ed9`, the Rust window scan and reorder passes compare compound
+timestamp expressions by operand order, type and interval unit. Both engines
+matched Java on four directed programs, including reversed arguments to
+`COALESCE` and equal durations written in different units. All 399 pass
+comparisons on the 133 frozen clock programs matched. The 22 selected frozen
+replays and eight directed replays matched through emission, and all eight
+executable classic selections passed. [Window expressions and replay receipts](evidence/p3-interval-window-projections.json)
+
 The Rust window finder groups indexes by source port and timestamp expression,
 then selects the shared columns in first-use order. On `59f09c271`, it
 answered all 119 requests in 133 frozen clock programs. The direct Java and
