@@ -14,6 +14,9 @@ pub enum RowType {
     Unbounded {
         type_id: u64,
     },
+    BoundedScalar {
+        type_id: u64,
+    },
     Input {
         index: usize,
     },
@@ -121,14 +124,20 @@ fn unbounded(
     if shape.monotone() {
         return Ok(None);
     }
-    let NodeId::Inner(type_id) = NodeId::from(ty) else {
-        unreachable!("type has an inner identity")
-    };
     Ok(Some(ProjectedValue {
         shape,
-        row_type: RowType::Unbounded { type_id },
+        row_type: RowType::Unbounded {
+            type_id: type_number(ty),
+        },
         reduced: None,
     }))
+}
+
+fn type_number(ty: TypeId) -> u64 {
+    let NodeId::Inner(number) = NodeId::from(ty) else {
+        unreachable!("type has an inner identity")
+    };
+    number
 }
 
 impl Row<'_> {
@@ -191,6 +200,32 @@ impl Row<'_> {
             | Expr::BinaryLiteral
             | Expr::UuidLiteral
             | Expr::VariantNullLiteral => return unbounded(edit, expression, depth),
+            Expr::Cast | Expr::Unary | Expr::UnsignedWrap | Expr::UnsignedUnwrap => {
+                let source = edit.expression(node.edge("source")?)?;
+                let Some(value) = self.visit(edit, source, depth + 1)? else {
+                    return Ok(None);
+                };
+                if !matches!(value.shape, Projection::Scalar { .. }) {
+                    return Ok(None);
+                }
+                let reduced = match value.reduced {
+                    None => None,
+                    Some(bound) if kind == Expr::Cast => {
+                        super::casts::cast_bound(edit, expression, bound)?
+                    }
+                    Some(bound) => super::unary_waterline(edit, expression, bound)?,
+                };
+                let Some(bound) = reduced else {
+                    return unbounded(edit, expression, depth);
+                };
+                ProjectedValue {
+                    shape: Projection::Scalar { monotone: true },
+                    row_type: RowType::BoundedScalar {
+                        type_id: type_number(edit.expression_type(expression)?),
+                    },
+                    reduced: Some(bound),
+                }
+            }
             Expr::Deref => {
                 let base = edit.expression(node.edge("expression")?)?;
                 return self.dereference(edit, base);

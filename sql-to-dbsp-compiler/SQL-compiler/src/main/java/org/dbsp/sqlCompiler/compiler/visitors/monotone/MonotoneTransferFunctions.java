@@ -268,7 +268,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         MonotoneExpression bodyValue = null;
         if (this.compiler.options.ioOptions.rustOptimizerPasses
                 && (expression.body instanceof DBSPBaseTupleExpression || expression.body instanceof DBSPFieldExpression
-                    || expression.body instanceof DBSPDerefExpression || expression.body instanceof DBSPCloneExpression)) {
+                    || expression.body instanceof DBSPDerefExpression || expression.body instanceof DBSPCloneExpression
+                    || expression.body instanceof DBSPCastExpression || expression.body instanceof DBSPUnaryExpression
+                    || expression.body instanceof DBSPUnsignedWrapExpression || expression.body instanceof DBSPUnsignedUnwrapExpression)) {
             boolean indexed = this.argumentKind == ArgumentKind.IndexedZSet;
             if (indexed)
                 inputTypes = inputTypes[0].to(PartiallyMonotoneTuple.class).fields.toArray(IMaybeMonotoneType[]::new);

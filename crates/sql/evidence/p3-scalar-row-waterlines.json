@@ -1,0 +1,129 @@
+{
+  "base_commit": "373fa4ce1",
+  "scope": "Rust reduces casts, unary operators and unsigned sort-key wrapping in structural waterlines, retaining the declared scalar type and nullability.",
+  "artifacts_sha256": {
+    "compiler.jar": "ba7a3b03a112719f6f658e8c08313f8db761450df90acf6abcc78fedafabcec6",
+    "test.jar": "ec8f0bb0ea7d489a281267501cd3c0852933a10b8bd224f446a1c006354b8f71",
+    "bin/libfeldera_sql_opt_jni.so": "01e539182d3c7dc983a52c6404bec711353a9696155e2b43ade35dd36e9fd0cc",
+    "bin/sql2dbsp": "f41e86f47daf5fd88fa9cbecf8aeb12bbb30a11755707f73ad5ac0e2d207f289",
+    "bin/sql-difftest": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d"
+  },
+  "engines": {
+    "classic": {
+      "frozen_pass": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+      "frozen_pass_sha256": {
+        "false": "3c0b844c17d5527f65a096267779c05db13b2c3bd56a1b82be5f297016569ae4",
+        "true": "b80382c14f3b662d2101e488c34bb58eabdf13008281ce006274fa7c72220b2e"
+      },
+      "detached": 20,
+      "detached_receipts_sha256": [
+        "b67af47d598d276ed36a8eda66f7f71902cb4043c474b8056b8520aee2a75173",
+        "122ad6d31f0d9100beef4ce78f471ca098a7ba1941a643ecab557df3083888b5",
+        "57c4a06f1b49c45db5b18395307994ce5c03af6e89b15b8d210dfc3c3df8352e",
+        "b4af306abad712a5ae0ff53d038fce68e03115cb169e8122293495c89938ba6d"
+      ],
+      "unnest": "MonotoneAnalyzer matched at 6 invocations across 6 cases",
+      "unnest_sha256": {
+        "false": "10ae98424f633e15a8cf8a918e2be45e6089336c24b788366dcae07350a42687",
+        "true": "0bfbec3619ea75477f1fdd7988b51747ea08b976e921b4bc1c4b1e93c7bdae39"
+      }
+    },
+    "gen2": {
+      "frozen_pass": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+      "frozen_pass_sha256": {
+        "false": "0768f35deb58f0cf38f12cac45ff610582454b11c3f76aa0ec1a5b1737d69408",
+        "true": "52e808874789abaf8822c7c631e1d04edc4647d5045ee266c60423b71ce77082"
+      },
+      "detached": 20,
+      "detached_receipts_sha256": [
+        "8f15587240a218005f45fe50d01d8f7e25b7fde33fd0fd0c22469020ec3b4c69",
+        "5668499297dd3519e74aed81971bf4f5532fa4aeaa0436791fb4e8c9b7a5b2a2",
+        "84221fea7d65d3835dbaab531708c09268d33951d922fcdad80149909bbfc865",
+        "84a67c11650dd34233480e805c507e1bce331f36a84579818c4de1ddd94c0fe7"
+      ],
+      "unnest": "MonotoneAnalyzer matched at 6 invocations across 6 cases",
+      "unnest_sha256": {
+        "false": "6e5dbf7dac75c9bcda924edf6d28d20affa963e93d28e52e1523f78873777ba1",
+        "true": "f6a10ff68d1702e47eac7c8fcb50552aae2b5f0964fa0222a974ec8ed1a550cd"
+      }
+    }
+  },
+  "tests": {
+    "rust_passed": 217,
+    "maven_passed": 46,
+    "logs_sha256": {
+      "tests.log": "765c0f3e098b4658c399f7c6e600762e87e1948082c66182019a200acbf720b3",
+      "maven.log": "e3c318d217f3ca9a707df9584749a244f58d1abb818e08fe5c0682aa4ffc7e87",
+      "clippy.log": "203e54b556b5bac511c4145ac8841fd26d0c7c238c6549232aaaa2edfaabd7b9"
+    },
+    "jni_enabled_passed": 6
+  },
+  "checkpoint_restores": {
+    "count": "33b98e664a9225d903cd73f7c98ff119b57101800b756060402b3cf21aca37fc",
+    "watermark": "6cf9119c7ad990f7009e3dcb3c82f1dca69d56fa0e91284f65ec4f36d638c067"
+  },
+  "resources": {
+    "during_replay": {
+      "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+      "rust_optimizer_passes": true,
+      "rounds": 5,
+      "slots_per_round": 4,
+      "signal_to_reap_ms": [
+        24.408635,
+        33.669571,
+        19.215791,
+        14.722198,
+        21.238587,
+        26.494014,
+        29.988105,
+        22.669548,
+        24.027093,
+        23.307758,
+        30.179064,
+        23.203591,
+        24.630885,
+        28.39881,
+        24.256551,
+        27.942226,
+        27.579225,
+        19.821042,
+        26.583556,
+        39.588584
+      ],
+      "p95_ms": 33.669571,
+      "largest_driver_plus_front_end_rss_bytes": 71118848,
+      "compiler_sha256": "f41e86f47daf5fd88fa9cbecf8aeb12bbb30a11755707f73ad5ac0e2d207f289"
+    },
+    "isolated": {
+      "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+      "rust_optimizer_passes": true,
+      "rounds": 5,
+      "slots_per_round": 4,
+      "signal_to_reap_ms": [
+        4.334384,
+        4.479926,
+        4.539051,
+        4.65201,
+        3.547633,
+        3.618674,
+        4.150634,
+        3.8583,
+        3.534799,
+        4.019884,
+        3.64355,
+        4.505926,
+        3.992842,
+        4.127093,
+        4.210967,
+        4.293551,
+        3.932134,
+        4.047842,
+        3.891133,
+        4.026676
+      ],
+      "p95_ms": 4.539051,
+      "largest_driver_plus_front_end_rss_bytes": 70799360,
+      "compiler_sha256": "f41e86f47daf5fd88fa9cbecf8aeb12bbb30a11755707f73ad5ac0e2d207f289"
+    }
+  }
+}

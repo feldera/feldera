@@ -36,6 +36,7 @@ public final class WaterlineProjection {
                                                  IMaybeMonotoneType... inputs) {
         return switch (projection.required("kind").textValue()) {
             case "unbounded" -> NonMonotoneType.nonMonotone(declaredType.apply(projection.required("type_id").longValue()));
+            case "bounded_scalar" -> new MonotoneType(declaredType.apply(projection.required("type_id").longValue()));
             case "input" -> inputs[projection.required("index").intValue()];
             case "field" -> resolveType(projection.required("row"), declaredType, inputs).to(PartiallyMonotoneTuple.class)
                     .getFieldExpressionType(projection.required("index").intValue());

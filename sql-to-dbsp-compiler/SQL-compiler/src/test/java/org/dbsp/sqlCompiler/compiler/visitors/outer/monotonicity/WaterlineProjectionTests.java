@@ -14,8 +14,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
@@ -134,6 +138,39 @@ public class WaterlineProjectionTests {
             compiler.options.ioOptions.rustOptimizerPasses = true;
             var hybrid = new MonotoneTransferFunctions(compiler, operator, kind, inputs).applyAnalysis(closure);
             Assert.assertTrue(direct.getReducedExpression().equivalent(hybrid.getReducedExpression()));
+        }
+    }
+
+    @Test
+    public void convertScalarWaterlinesInRowClosures() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var node = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(node, 32, true, true);
+        var wide = new DBSPTypeInteger(node, 64, true, true);
+        var narrow = new DBSPTypeInteger(node, 16, true, true);
+        var row = new PartiallyMonotoneTuple(List.of(new MonotoneType(integer)), false, false);
+        var parameter = new DBSPVariablePath("row", row.getType().ref());
+        var field = parameter.deref().field(0);
+        var body = new DBSPTupleExpression(
+                field.deepCopy().cast(node, wide, DBSPCastExpression.CastType.SqlUnsafe),
+                field.deepCopy().cast(node, narrow, DBSPCastExpression.CastType.SqlUnsafe),
+                field.deepCopy().cast(node, narrow, DBSPCastExpression.CastType.SqlSafe),
+                new DBSPUnaryExpression(node, integer, DBSPOpcode.UNARY_PLUS, field.deepCopy()),
+                new DBSPUnsignedWrapExpression(node, field.deepCopy(), true, true),
+                new DBSPUnsignedWrapExpression(node, field.deepCopy(), true, false));
+        var operator = new DBSPConstantOperator(node, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet,
+                row).applyAnalysis(body.closure(parameter)).getReducedExpression().to(DBSPClosureExpression.class);
+        Assert.assertEquals(4, direct.body.to(DBSPTupleExpression.class).size());
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var bound = new DBSPVariablePath("row", row.getProjectedType().ref());
+            var result = RustCircuitPass.projectRow(compiler, body, bound, row);
+            Assert.assertNotNull(result);
+            Assert.assertTrue(direct.equivalent(result.getReducedExpression().closure(bound)));
+            var shape = result.getMonotoneType().to(PartiallyMonotoneTuple.class);
+            Assert.assertSame(wide, shape.getFieldType(0).getType());
+            Assert.assertFalse(shape.getFieldType(2).mayBeMonotone());
+            Assert.assertFalse(shape.getFieldType(5).mayBeMonotone());
         }
     }
 

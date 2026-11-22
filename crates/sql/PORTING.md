@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust projects scalar casts, unary operators and unsigned sort keys inside row
+waterlines. The analyzed scalar keeps the SQL type from the original closure.
+All 550 frozen monotonicity comparisons, 12 directed LATENESS/UNNEST comparisons
+and 40 detached compilations matched direct Java. COUNT and LATENESS restored
+across compilers in both directions. Four-worker cancellation p95 measured
+33.67 ms during replay and 4.54 ms in isolation, against the 25 ms limit.
+[Scalar waterline comparisons and worker measurements](evidence/p3-scalar-row-waterlines.json)
+
 Rust validates trace sharing against the operator topology and returns the
 stream substitutions and retention policies to discard. All 63 classic and
 215 Gen-2 frozen programs where the pass had changed the graph matched Java

@@ -1,5 +1,7 @@
 //! Determine whether a scalar cast preserves a lower bound and which runtime cast to use.
-use feldera_sql_ir::{CircuitEditor, Error, Node, TypeId, TypeKind};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind, Field, Node, TypeId, TypeKind,
+};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -8,6 +10,49 @@ pub enum CastWaterline {
     Identity,
     Ordinary,
     Saturating,
+}
+
+/// Convert an existing lower bound to the target of the data cast.
+pub(super) fn cast_bound(
+    edit: &mut CircuitEditor,
+    cast: ExpressionId,
+    bound: ExpressionId,
+) -> Result<Option<ExpressionId>, Error> {
+    let node = edit.node(cast.into())?;
+    let source = edit.expression(node.edge("source")?)?;
+    let target = edit.expression_type(cast)?;
+    let safe = matches!(
+        node.data("safe").and_then(|v| v.as_str()),
+        Some("SqlSafe" | "UnwrapResultSafe")
+    );
+    let rule = cast_waterline(
+        edit,
+        edit.expression_type(source)?,
+        target,
+        edit.expression_type(bound)?,
+        safe,
+    )?;
+    Ok(match rule {
+        CastWaterline::None => None,
+        CastWaterline::Identity => Some(bound),
+        CastWaterline::Ordinary | CastWaterline::Saturating => {
+            let ty = edit.with_nullability(target, false)?;
+            let mode = if rule == CastWaterline::Ordinary {
+                "SqlUnsafe"
+            } else {
+                "Saturating"
+            };
+            Some(edit.make_expr(
+                cast.into(),
+                ExpressionKind::Cast,
+                ty,
+                [
+                    ("source", Field::Reference(bound.into())),
+                    ("safe", Field::Data(mode.into())),
+                ],
+            )?)
+        }
+    })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
