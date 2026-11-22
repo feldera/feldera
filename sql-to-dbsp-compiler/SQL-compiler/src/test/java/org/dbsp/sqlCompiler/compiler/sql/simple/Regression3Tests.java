@@ -733,6 +733,19 @@ public class Regression3Tests extends SqlIoTest {
                 "Table t: negative weight found");
     }
 
+    /** The Rust code spells the non-ASCII characters of a table name with Rust escapes */
+    @Test
+    public void testEnforcePositiveInputsNonAsciiName() {
+        String sql = """
+                SET ENFORCE_POSITIVE_INPUTS = TRUE;
+                CREATE TABLE "é🐍"(x INT NOT NULL);
+                CREATE VIEW V AS SELECT x FROM "é🐍";""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        this.runtimeFail(compiler, "REMOVE FROM \"é🐍\" VALUES (1);",
+                "Table é🐍: negative weight found");
+    }
+
     @Test
     public void issue6453() {
         var ccs = this.getCCS("""

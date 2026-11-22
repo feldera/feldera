@@ -1151,7 +1151,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(" = ")
                 .append(this.getInputName(operator, 0))
                 .append(".integral_weight_validator(")
-                .append(Utilities.doubleQuote(operator.message, false))
+                .append(Utilities.doubleQuote(operator.message, true))
                 .append(");");
         this.tagStream(operator);
         return VisitDecision.STOP;

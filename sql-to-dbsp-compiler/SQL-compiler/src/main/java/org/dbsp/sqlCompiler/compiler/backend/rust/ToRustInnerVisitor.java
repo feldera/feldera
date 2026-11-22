@@ -2358,7 +2358,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPFailExpression expression) {
         this.push(expression);
         this.builder.append("panic!(")
-                .append(Utilities.doubleQuote(expression.message, false))
+                .append(Utilities.doubleQuote(expression.message, true))
                 .append(")");
         this.pop(expression);
         return VisitDecision.STOP;
@@ -2376,7 +2376,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("unwrap_value(");
         expression.expression.accept(this);
         this.builder.append(", ")
-                .append(Utilities.doubleQuote(expression.message, false))
+                .append(Utilities.doubleQuote(expression.message, true))
                 .append(")");
         this.builder.append(")");
         this.pop(expression);
