@@ -321,7 +321,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     if pass == "DeltaExpansion/StarJoinTerm" {
         return star_join::delta_term(arena, &roots, next);
     }
-    if let ("KeyAnalysis/ColumnCopies" | "KeyAnalysis/FixedColumns", [closure]) = (pass, roots.as_slice()) {
+    if let ("KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns", [closure]) = (pass, roots.as_slice()) {
         #[derive(serde::Deserialize)]
         struct Request {
             #[serde(flatten)]
@@ -335,6 +335,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(serde_json::to_value(fixed)?);
         }
         let copies = feldera_sql_opt::column_copies(&edit, *closure, &request.shape, request.lossless)?;
+        if pass == "KeyAnalysis/OutputColumns" {
+            let groups = feldera_sql_opt::equal_computations(&edit, *closure, &request.shape)?;
+            return Ok(json!({"copies": copies, "groups": groups}));
+        }
         return Ok(serde_json::to_value(copies)?);
     }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
@@ -883,7 +887,7 @@ fn transform(
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
         | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/Filter"
         | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
-        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/FixedColumns" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {

@@ -193,13 +193,20 @@ public class KeyAnalysis extends CircuitVisitor {
     Provenance provenance(CollectionShape outputShape, DBSPClosureExpression closure) {
         if (this.compiler().options.ioOptions.rustOptimizerPasses) {
             var copies = RustCircuitPass.columnCopies(this.compiler(), closure, outputShape, this.losslessCasts);
-            if (copies != null) {
-                Map<Column, Provenance.Source> sources = new HashMap<>();
-                for (var copy : copies)
-                    Utilities.putNew(sources, copy.output(), new Provenance.Source(copy.parameter(), copy.source()));
-                return new Provenance(sources);
-            }
+            if (copies != null)
+                return fromCopies(copies);
         }
+        return this.referenceProvenance(outputShape, closure);
+    }
+
+    private static Provenance fromCopies(List<RustCircuitPass.KeyColumnCopy> copies) {
+        Map<Column, Provenance.Source> sources = new HashMap<>();
+        for (var copy : copies)
+            Utilities.putNew(sources, copy.output(), new Provenance.Source(copy.parameter(), copy.source()));
+        return new Provenance(sources);
+    }
+
+    private Provenance referenceProvenance(CollectionShape outputShape, DBSPClosureExpression closure) {
         Lineage.ValueSource result = this.interpreter().analyze(closure, initialValues(closure));
         List<Lineage.ValueSource> columns = new ArrayList<>();
         if (closure.body.getType().is(DBSPTypeRawTuple.class)) {
@@ -276,8 +283,7 @@ public class KeyAnalysis extends CircuitVisitor {
 
     /** Output columns that hold the same value: those computed by equal expressions.
      * E.g., SELECT f(x), f(x). */
-    private static ColumnEquivalence outputEquivalence(
-            CollectionShape shape, DBSPClosureExpression closure, Provenance provenance) {
+    static ColumnEquivalence equalComputations(CollectionShape shape, DBSPClosureExpression closure) {
         List<DBSPExpression> expressions = outputExpressions(shape, closure);
         EquivalenceContext context = customContext(closure);
         List<DBSPExpression> computations = new ArrayList<>();
@@ -300,7 +306,21 @@ public class KeyAnalysis extends CircuitVisitor {
             }
             groups.get(group).add(shape.output(i));
         }
-        return provenance.equivalence().merge(ColumnEquivalence.of(groups));
+        return ColumnEquivalence.of(groups);
+    }
+
+    record ClosureColumns(Provenance provenance, ColumnEquivalence equivalence) {}
+
+    /** Inspect a closure once for both analyses. A comparison that needs a
+     * specialized Java equivalence rule can still use the Rust column copies. */
+    ClosureColumns outputColumns(CollectionShape shape, DBSPClosureExpression closure) {
+        var nativeColumns = this.compiler().options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.outputColumns(this.compiler(), closure, shape, this.losslessCasts) : null;
+        Provenance provenance = nativeColumns != null && nativeColumns.copies() != null
+                ? fromCopies(nativeColumns.copies()) : this.referenceProvenance(shape, closure);
+        ColumnEquivalence computations = nativeColumns != null && nativeColumns.groups() != null
+                ? ColumnEquivalence.of(nativeColumns.groups()) : equalComputations(shape, closure);
+        return new ClosureColumns(provenance, provenance.equivalence().merge(computations));
     }
 
     /** Record the keys of an operator's output, no two columns of which hold the same data. */
@@ -366,11 +386,12 @@ public class KeyAnalysis extends CircuitVisitor {
         CollectionShape output = operator.outputPort().getShape();
         if (input == null || output == null)
             return;
-        Provenance provenance = this.provenance(output, closure);
+        var columns = this.outputColumns(output, closure);
+        Provenance provenance = columns.provenance();
         ColumnCopyTransform transform = column -> provenance.columnsReading(Provenance.Source.reading(column));
         Keys keys = this.getKeys(operator.input()).map(transform);
         ColumnEquivalence inputEquivalence = this.getEquivalence(operator.input()).after(transform);
-        ColumnEquivalence equivalence = outputEquivalence(output, closure, provenance).merge(inputEquivalence);
+        ColumnEquivalence equivalence = columns.equivalence().merge(inputEquivalence);
         this.set(operator, keys, equivalence);
         this.portTransforms.put(operator.outputPort(), new PortTransform(operator.input(), transform));
     }
@@ -650,14 +671,15 @@ public class KeyAnalysis extends CircuitVisitor {
             return;
         // The producer computes the value tuple from (rank, input value)
         CollectionShape produced = new IndexedShape(0, shape.valueFields());
-        Provenance provenance = this.provenance(produced, node.outputProducer);
+        var columns = this.outputColumns(produced, node.outputProducer);
+        Provenance provenance = columns.provenance();
         // The operator keeps the index; a value column becomes what the producer copies it to
         ColumnCopyTransform transform = column -> column.part() == Part.INDEX ?
                 List.of(column) :
                 provenance.columnsReading(new Provenance.Source(1, Column.none(column.field())));
         ColumnEquivalence inputEquivalence = this.getEquivalence(node.input()).after(transform);
         ColumnEquivalence equivalence =
-                outputEquivalence(produced, node.outputProducer, provenance).merge(inputEquivalence);
+                columns.equivalence().merge(inputEquivalence);
         Keys result = this.getKeys(node.input()).map(transform);
         boolean rowNumber = node.numbering == DBSPIndexedTopKOperator.Numbering.ROW_NUMBER;
         boolean limitOne = node.limit.is(DBSPUSizeLiteral.class) &&
@@ -703,7 +725,8 @@ public class KeyAnalysis extends CircuitVisitor {
         DBSPClosureExpression closure = closureOf(node);
         if (closure == null)
             return;
-        Provenance provenance = this.provenance(output, closure);
+        var columns = this.outputColumns(output, closure);
+        Provenance provenance = columns.provenance();
         Keys left = this.getKeys(node.left());
         Keys right = this.getKeys(node.right());
         // Parameter 0 is the shared index, parameters 1 and 2 the left and right values
@@ -711,7 +734,7 @@ public class KeyAnalysis extends CircuitVisitor {
         ColumnCopyTransform rightTransform = sideTransform(provenance, 2);
         ColumnEquivalence leftEquivalence = this.getEquivalence(node.left()).after(leftTransform);
         ColumnEquivalence rightEquivalence = this.getEquivalence(node.right()).after(rightTransform);
-        ColumnEquivalence equivalence = outputEquivalence(output, closure, provenance)
+        ColumnEquivalence equivalence = columns.equivalence()
                 .merge(leftEquivalence).merge(rightEquivalence);
         if (this.compiler().options.ioOptions.rustOptimizerPasses) {
             this.set(node, this.nativeJoinKeys(node.inputs, provenance, leftJoin), equivalence);
@@ -752,8 +775,9 @@ public class KeyAnalysis extends CircuitVisitor {
         DBSPClosureExpression closure = closureOf(node);
         if (closure == null)
             return;
-        Provenance provenance = this.provenance(output, closure);
-        ColumnEquivalence equivalence = outputEquivalence(output, closure, provenance);
+        var columns = this.outputColumns(output, closure);
+        Provenance provenance = columns.provenance();
+        ColumnEquivalence equivalence = columns.equivalence();
         List<Keys> mapped = new ArrayList<>();
         for (int i = 0; i < node.inputs.size(); i++) {
             OutputPort input = node.inputs.get(i);

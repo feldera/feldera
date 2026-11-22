@@ -540,6 +540,12 @@ all 9,262 output ports. The 114 classic and 114 Gen-2 detached replays matched
 through emission. COUNT and LATENESS checkpoints restored in both directions.
 [Filter key comparisons](evidence/p3-fixed-filter-keys.json)
 
+Rust groups output columns that evaluate equivalent expressions under the same
+closure bindings. Direct Java agreed on all 3,709 observed closures and all
+533 groups of equal columns, including lookups into map expressions. COUNT and
+LATENESS checkpoint restores passed in both directions.
+[Computed column comparisons](evidence/p3-computed-column-groups.json)
+
 The JNI expression reader validates new references against both arenas and
 inserts the smaller map into the larger one. Across 41 paired sweeps of
 554 Nexmark batches, this saved a median 2.04 ms per sweep (bootstrap 95%

@@ -1,5 +1,7 @@
 //! Track which parameter columns a closure copies into its result.
 mod columns;
+mod equivalence;
+pub use equivalence::equal_computations;
 pub use columns::{column_copies, fixed_columns, OutputShape};
 
 use feldera_sql_ir::{

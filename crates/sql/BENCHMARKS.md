@@ -12,6 +12,21 @@ build ran in nine alternating fresh-JVM pairs on CPU 13 during corpus
 verification. The medians exclude the first pair.
 [Integral pass profiles](evidence/p3-flat-integral-edits.json)
 
+## Fixed filter keys, 2026-11-22
+
+On `4e8cc5856`, all 69 cold pairs matched through classic source emission.
+Each workload ran two warmup pairs and 21 measured pairs on CPU 15. Twenty
+cancellations of workers waiting for SQL measured 5.73 ms p95. Peak combined
+driver and waiting JVM RSS was 72.4 MiB.
+
+| Workload | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.527 | 1.843 | 1.207× |
+| Nexmark suite | 3.376 | 6.736 | 1.995× |
+| Outer join | 1.427 | 1.728 | 1.211× |
+
+[Cold compilation and worker measurements](evidence/p3-filter-key-latency.json)
+
 ## Join key build, 2026-11-22
 
 On `c15e725ac`, all 69 cold pairs matched through classic source emission.

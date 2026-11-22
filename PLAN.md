@@ -44,7 +44,9 @@ Path prefixes used in this document:
 - 2026-11-22. Rust and Java identified the same fixed columns at 203 filter
   visits and the same candidate keys at 9,262 output ports. All 228 selected
   programs matched through detached replay and emission. COUNT and LATENESS
-  checkpoints restored in both directions. [Filter keys](crates/sql/evidence/p3-fixed-filter-keys.json)
+  checkpoints restored in both directions. Cold hybrid p95 exceeded the 1.2×
+  ceiling on all three workloads, reaching 1.995× on Nexmark.
+  [Cold timings](crates/sql/BENCHMARKS.md#fixed-filter-keys-2026-11-22) · [Filter keys](crates/sql/evidence/p3-fixed-filter-keys.json)
 - 2026-11-22. Rust planned integral moves from operator kinds and edges on
   flat circuits. Both pass invocations matched Java on 9,813 frozen programs,
   and all 572 selected programs matched through emission. On the preceding

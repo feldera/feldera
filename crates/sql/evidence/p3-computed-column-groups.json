@@ -1,0 +1,60 @@
+{
+  "base_commit": "4e8cc5856",
+  "scope": "Compare groups of equivalent computed columns, merged provenance and candidate keys with Java under strict and lossless casts. Replay the selected programs from detached S2 through ordered S4 and emission.",
+  "compiler_jar_sha256": "609ce0c6fd341029624a231aa4b523f2cf3e30032fca97cff244a93aa49f5b16",
+  "optimizer_library_sha256": "e4b36c9c09b0a5b52e12872b22a72e5cb753aad3092235296e4eb061e3314f16",
+  "oracle_sources_sha256": {
+    "ColumnCopyOracle.java": "3cfff61f9ca95ed106cad77646670562ec86851cca9824c9956f208955c28e06",
+    "ProvenanceCheck.java": "d1d9504d81b45aaf16218d286aafed16b2b3503b8c154cda83f2ebd5ea17c819"
+  },
+  "engines": {
+    "classic": {
+      "cases": 155,
+      "input_sha256": "30e44cdb8f8220f23b35b05ffc574281e0a4c2c31700759216ffb7e70a556fa6",
+      "direct_oracle": {
+        "computed_closures": 1819,
+        "computed_groups": 278,
+        "computed_columns": 571,
+        "deferred": 0,
+        "ports": 6200,
+        "keyed": 1970
+      },
+      "oracle_report_sha256": "200dc6a499b041f5ac48353b30850606fb7a5ccb5fb22492a40256a6c4b85219",
+      "equal_detached_cases": 155,
+      "detached_reports_sha256": [
+        "55a47b2715857a8a48baa6285d2e1ee4c95dd62eb7ace38c8c08388b79759e9e",
+        "b2303aafdd5800438554f8989bb73cd771443957c2612f8261ed152b02231206",
+        "c7346c7a8f9d0fddd5b21bcdeed2a60243376ad6c73101da726cc74eefaee30a",
+        "06c4d80c320664dc2c643d49148b1526d83f11a5f35c616c316852cad3921962"
+      ]
+    },
+    "gen2": {
+      "cases": 155,
+      "input_sha256": "98bc694bfd192525aa6fa653a836b1baf1c1428a072895eca0e07864da0fa99d",
+      "direct_oracle": {
+        "computed_closures": 1890,
+        "computed_groups": 255,
+        "computed_columns": 525,
+        "deferred": 0,
+        "ports": 6070,
+        "keyed": 1934
+      },
+      "oracle_report_sha256": "a31f5fe1eddeb46348de5921a0f2c656c6d4c96ab772848a561bab5fc1c26b93",
+      "equal_detached_cases": 155,
+      "detached_reports_sha256": [
+        "81f774409cb418c1c647c393e38e9d947d3663da89c073248e3bd5127b3458b7",
+        "093fbce4e41d932649c9f87c9a9f8b18cf77f51713c365e23503065133ca77b7",
+        "5f8ec3b0c98a350ead2b96f4d01ceaddeb6cc8cc03b375869c902581efd41360",
+        "32a21035c648a4477b1ceee903dc4d784fe2afadeea62127eab829166e9b2bb6"
+      ]
+    }
+  },
+  "checkpoint_restores_both_directions_sha256": {
+    "count": "1386ed68059ac33bd92275e4a394699caf29c5f6b03e3bc74392bc7036501b79",
+    "watermark": "e86460faeb53da82dfdcd546742f0a55c4ed68aae6f7a89148cf2a1337abf5da"
+  },
+  "rust_test_log_sha256": "0ddf31282c277aac0cdfcedf6cc4b4d2b5dc946238dfeccb0ceb08e64f73ed1c",
+  "clippy_log_sha256": "3e9c83d07be7450b7fba5b1af9248aa95cbe1911225cd2968723a034d045d8b9",
+  "maven_tests": 40,
+  "maven_log_sha256": "46ce6ca20c040bc491de1ef1358ee08577f59ebbd269ae819855072991690725"
+}

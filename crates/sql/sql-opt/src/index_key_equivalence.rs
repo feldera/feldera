@@ -94,6 +94,22 @@ pub(super) fn equivalent_bodies(
     right: NodeId,
     parameters: Option<(&Node, &Node)>,
 ) -> Result<Option<bool>, Error> {
+    compare_expressions(edit, left, right, |left, right| {
+        let (lp, rp) = parameters?;
+        (left.data("variable") == lp.data("name") && right.data("variable") == rp.data("name"))
+            .then_some(true)
+    })
+}
+
+/// Resolve distinct variable occurrences in the scope enclosing the two roots.
+/// Comparisons that need a nested binding or a specialized expression rule
+/// are left to the reference visitor.
+pub(crate) fn compare_expressions(
+    edit: &CircuitEditor,
+    left: NodeId,
+    right: NodeId,
+    variables: impl Fn(&Node, &Node) -> Option<bool>,
+) -> Result<Option<bool>, Error> {
     let mut pending = vec![(left, right)];
     let mut seen = HashSet::new();
     while let Some((a, b)) = pending.pop() {
@@ -109,22 +125,26 @@ pub(super) fn equivalent_bodies(
         let children: &[&str] = match kind {
             Expr::VariablePath => {
                 if a != b {
-                    let Some((lp, rp)) = parameters else {
-                        return Ok(None);
-                    };
-                    if left.data("variable") != lp.data("name")
-                        || right.data("variable") != rp.data("name")
-                    {
-                        return Ok(None);
+                    match variables(left, right) {
+                        Some(true) => {}
+                        result => return Ok(result),
                     }
                 }
                 &[]
             }
-            Expr::Tuple | Expr::RawTuple => {
-                if !same_type(edit, left, right)?
-                    || !compare_children(left, right, "fields", &mut pending)?
-                {
+            Expr::Tuple | Expr::RawTuple | Expr::Array | Expr::Map => {
+                if !same_type(edit, left, right)? {
                     return Ok(Some(false));
+                }
+                let lists: &[&str] = match kind {
+                    Expr::Array => &["data"],
+                    Expr::Map => &["keys", "values"],
+                    _ => &["fields"],
+                };
+                for field in lists.iter().rev() {
+                    if !compare_children(left, right, field, &mut pending)? {
+                        return Ok(Some(false));
+                    }
                 }
                 &[]
             }
@@ -206,7 +226,11 @@ pub(super) fn equivalent_bodies(
             | Expr::Some
             | Expr::Unwrap
             | Expr::UnwrapCustomOrd => &["expression"],
-            Expr::If => &["condition", "positive", "negative"],
+            Expr::If => match (left.field("negative"), right.field("negative")) {
+                (Some(_), Some(_)) => &["condition", "positive", "negative"],
+                (None, None) => &["condition", "positive"],
+                _ => return Ok(Some(false)),
+            },
             Expr::Static => {
                 if a != b {
                     return Ok(Some(false));

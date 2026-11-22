@@ -2204,6 +2204,14 @@ public final class RustCircuitPass implements CircuitTransform {
         return analyzeKeyClosure(compiler, "KeyAnalysis/ColumnCopies", closure, shape, lossless, new TypeReference<>() {});
     }
 
+    /** Independent answers for column copies and repeated computations in the same closure. */
+    public record OutputColumns(@Nullable List<KeyColumnCopy> copies, @Nullable List<List<Column>> groups) {}
+
+    public static OutputColumns outputColumns(DBSPCompiler compiler, DBSPClosureExpression closure,
+                                              CollectionShape shape, boolean lossless) {
+        return analyzeKeyClosure(compiler, "KeyAnalysis/OutputColumns", closure, shape, lossless, new TypeReference<>() {});
+    }
+
     @Nullable
     public static Set<Column> fixedColumns(DBSPCompiler compiler, DBSPClosureExpression closure,
                                            CollectionShape shape, boolean lossless) {

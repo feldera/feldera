@@ -8,8 +8,8 @@ use std::collections::BTreeSet;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputShape {
-    width: usize,
-    index_fields: Option<usize>,
+    pub(super) width: usize,
+    pub(super) index_fields: Option<usize>,
 }
 
 impl OutputShape {
@@ -22,7 +22,7 @@ impl OutputShape {
         }
     }
 
-    fn column(&self, position: usize) -> Column {
+    pub(super) fn column(&self, position: usize) -> Column {
         match self.index_fields {
             None => Column {
                 part: Part::None,
