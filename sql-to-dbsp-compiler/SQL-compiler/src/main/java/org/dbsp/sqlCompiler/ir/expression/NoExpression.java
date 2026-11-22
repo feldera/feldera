@@ -24,6 +24,7 @@ public final class NoExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        visitor.property("type");
         this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

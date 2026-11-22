@@ -13,6 +13,7 @@ mod lexical_scope;
 mod map_fusion;
 mod monotonicity;
 pub use monotonicity::aggregate::{aggregate_transfer, chain_minimum_transfer, minimum_transfer, AggregateTransfer};
+pub use monotonicity::asof::asof_waterline;
 pub use monotonicity::chain_minimum::is_minimum_chain;
 pub use monotonicity::lag::lag_transfer;
 pub use monotonicity::casts::{cast_waterline, CastWaterline};

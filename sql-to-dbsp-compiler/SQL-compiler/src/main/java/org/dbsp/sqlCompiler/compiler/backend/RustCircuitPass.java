@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ChainVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
@@ -296,6 +297,22 @@ public final class RustCircuitPass implements CircuitTransform {
         byte[] offset = Integer.toString(lag.offset).getBytes(StandardCharsets.US_ASCII);
         return loweredClosure(compiler, invokeLowering(compiler, "Monotonicity/Lag", offset,
                 lag.getClosureFunction(), lag.comparator, lag.input().getOutputIndexedZSetType()));
+    }
+
+    public static DBSPClosureExpression asofTransfer(DBSPCompiler compiler, DBSPAsofJoinOperator join,
+            Projection.IOMap projection) {
+        var site = expressionSite(join.getNode());
+        site.putArray("timestamps").add(join.leftTimestampIndex).add(join.rightTimestampIndex);
+        var fields = site.putArray("projection");
+        for (var field : projection.fields())
+            fields.addArray().add(field.inputIndex()).add(field.fieldIndex());
+        try {
+            return loweredClosure(compiler, invokeLowering(compiler, "Monotonicity/Asof", MAPPER.writeValueAsBytes(site),
+                    join.getKeyType(), join.getClosureFunction().parameters[1].getType(),
+                    join.right().getOutputIndexedZSetType().elementType));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode ASOF waterline projection", error);
+        }
     }
 
     public static DBSPClosureExpression hopTransfer(DBSPCompiler compiler, DBSPHopOperator hop, DBSPType inputRow) {

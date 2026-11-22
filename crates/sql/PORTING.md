@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust constructs the ASOF waterline closure for matches where the left timestamp
+is greater than or equal to, or strictly greater than, the right timestamp. The
+left timestamp takes the minimum of the two input bounds. Right columns and
+the remaining left columns have unknown bounds. All 30 directed closure graphs
+matched Java, including nullability, type sharing, source positions and generated
+names. All 550 selected monotonicity placements and both full frozen populations
+matched. [ASOF waterline evidence](evidence/p3-asof-waterline-transfer.json)
+
 Rust selects chain fusions from reader counts, operator kinds, map closure
 availability and `NoChain` annotations. The JVM constructs the selected
 operators with their existing closure objects. Rust prunes dead operators

@@ -726,6 +726,20 @@ public class Monotonicity extends CircuitVisitor {
         projection.apply(function);
         Utilities.enforce(projection.isProjection && projection.hasIoMap());
         Projection.IOMap ioMap = projection.getIoMap();
+        DBSPClosureExpression closure = this.compiler().options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.asofTransfer(this.compiler(), node, ioMap) : asofTransfer(node, ioMap);
+        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
+                this.compiler(), node,
+                MonotoneTransferFunctions.ArgumentKind.Join,
+                keyMonoType, leftValueMonoType, rightValueMonoType);
+        MonotoneExpression result = mm.applyAnalysis(closure);
+        if (result == null)
+            return;
+        this.set(node, result);
+    }
+
+    private static DBSPClosureExpression asofTransfer(DBSPAsofJoinOperator node, Projection.IOMap ioMap) {
+        DBSPClosureExpression function = node.getClosureFunction();
         DBSPTypeTupleBase keyType = node.getKeyType().to(DBSPTypeTupleBase.class);
 
         // We don't directly analyze the ASOF JOIN function; we make up
@@ -786,16 +800,7 @@ public class Monotonicity extends CircuitVisitor {
             fields.add(expr);
         }
         DBSPTupleExpression tuple = new DBSPTupleExpression(fields, false);
-        DBSPClosureExpression closure = tuple.closure(k, l, r);
-
-        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.compiler(), node,
-                MonotoneTransferFunctions.ArgumentKind.Join,
-                keyMonoType, leftValueMonoType, rightValueMonoType);
-        MonotoneExpression result = mm.applyAnalysis(closure);
-        if (result == null)
-            return;
-        this.set(node, result);
+        return tuple.closure(k, l, r);
     }
 
     @Override

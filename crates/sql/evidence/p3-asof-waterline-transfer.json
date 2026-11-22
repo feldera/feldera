@@ -1,0 +1,85 @@
+{
+  "build": {
+    "jar_sha256": "31bec7416af8122e6a87d8668d719ae1affc21a08f071dfc5d8ce9e30cdcdf7f",
+    "optimizer_library_sha256": "8bb38f7e923134fb5bc17d2fedc6e74ae3c28a3a2c158a8059f9c596c416cc27",
+    "driver_sha256": "aca2536bb977a1bbc5d8208e463aacdcb0ffbcebfc8086ef9ec9d4f298dd14cf",
+    "pass_kinds": 105
+  },
+  "s4": {
+    "classic": {
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "394084a76fd20b7cfdcbe7ef54b3cfe8b21f22b36f8fcfefb276a39bb6b194e7",
+      "rust_stream_sha256": "a1d2ae74ad1854a2062583db43da04e1b771937c2a87669104c518d27b10141d",
+      "matched_invocations": 291
+    },
+    "gen2": {
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "12b2c06d99729cabe4a32e0989378a73a1a21a0181a6f5a5daf9b4a3bba2d167",
+      "rust_stream_sha256": "4ca9ee03bd40850abe66b895c022387757d4f2629bcaf87b54fcf5aa6444a0fc",
+      "matched_invocations": 259
+    }
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "34b89356c31aab967c8d5f0d0f9f4c5b92176b1edeb9a523d2bb685f9cb754d6"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "d94769e924dcf4cde7e11a7f8d51c3b865a088d59474ff92d7491568ba1739ff",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "a1cf5359bcaeb2a5332e3ec3cb9210de7bc298cf615fc30f2499a9e899b08667",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 15.978883,
+    "largest_driver_plus_front_end_rss_bytes": 80035840
+  },
+  "directed_closures": {
+    "classic": {
+      "population_sha256": "0259154c83115de044c4ec635ef50117304e899b786881594b6a438832a026f6",
+      "programs": 13,
+      "matched_nullable_right_timestamp": 10,
+      "matched_nonnullable_right_timestamp": 5
+    },
+    "gen2": {
+      "population_sha256": "0468ff6db84f29a98e07608cd9a6bc51fb6b29814366901abd6ef910c4992290",
+      "programs": 11,
+      "matched_nullable_right_timestamp": 10,
+      "matched_nonnullable_right_timestamp": 5
+    }
+  },
+  "directed_method": "Instrumented both constructors with the same generated-name counter, checked their final counters and compared serialized closure graphs including source metadata, type sharing and unknown fields. The directed runner used the corrected NoExpression type label. The full replay and C7 builds predate that serializer correction.",
+  "serializer_regression": {
+    "suite": "ReplayTypeIdentityTests",
+    "cases": 18,
+    "failures": 0
+  }
+}

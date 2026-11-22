@@ -25,6 +25,12 @@ exceeded the 1.2× ceiling. Corpus verification overlapped this run.
 The EMIT FINAL window build at `88ee907de` measured 1.223×, 2.306× and 1.118×
 in workload order. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
 
+A chain-topology run at `72183b58e` overlapped ASOF corpus and runtime verification.
+All 69 pairs agreed on artifacts and diagnostics. Direct/hybrid p95 was
+6.752/12.263 s on the array subquery, 22.529/46.318 s on Nexmark and
+8.039/16.439 s on the outer join. These timings include contention.
+[Chain-topology benchmark](evidence/p3-hybrid-latency.json)
+
 On the earlier ASOF build (`54c227440`), the ratios were 0.961×, 2.551× and 1.369× in workload order. Compiler verification overlapped part of that run. The circuit lowering build at `99f23c273` measured 1.301×, 2.387× and 1.187×, respectively. The preceding checked waterline build at `5a92a1eb3` measured 1.247×, 2.521× and 1.117×. The earlier compact consumer graph build at `f08e3eb5d` measured 1.072×, 2.394× and 1.131× in workload order. The circuit-writer build at `5472764d0` measured 1.246×, 2.112× and 1.214×. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
 
 The static-declaration build at `a039e2fda` measured 1.237×, 2.435× and 1.198× in workload order. The directed limiter comparisons overlapped the beginning of that run. The full corpus and restore runs started after that benchmark.

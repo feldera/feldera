@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -135,6 +136,10 @@ public class ReplayTypeIdentityTests {
         var nullable = new DBSPTypeTuple(CalciteObject.EMPTY, true, null,
                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false));
         preservesSharedResultType(nullable.var().field(0));
+    }
+
+    @Test public void unknownWaterlineKeepsSharedType() throws Exception {
+        preservesSharedResultType(new NoExpression(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true)));
     }
 
     @Test public void borrowKeepsSharedType() throws Exception {

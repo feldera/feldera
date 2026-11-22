@@ -1,5 +1,6 @@
 //! Transfer almost-monotone columns through identity operators and filter comparisons.
 pub mod aggregate;
+pub mod asof;
 pub mod binary;
 pub mod casts;
 pub mod chain_minimum;
