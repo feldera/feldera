@@ -461,7 +461,7 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             var reply = invokeLowering(compiler, "Monotonicity/ProjectClosure",
                     MAPPER.writeValueAsBytes(request), roots.toArray(IDBSPInnerNode[]::new));
-            if (reply.value.isNull())
+            if (!answered(compiler, "Monotonicity/ProjectClosure", reply.value))
                 return null;
             var nodes = Objects.requireNonNull(reply.writer.liveNodes);
             var type = WaterlineProjection.resolveType(reply.value.required("row_type"),
@@ -1069,6 +1069,13 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private record LoweringReply(ToJsonInnerVisitor writer, JsonNode value) {}
 
+    private static boolean answered(DBSPCompiler compiler, String operation, JsonNode reply) {
+        boolean answered = !reply.isNull();
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision(operation, answered);
+        return answered;
+    }
+
     private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass, IDBSPInnerNode... inputs) {
         return invokeLowering(compiler, pass, EMPTY_CONTEXT, inputs);
     }
@@ -1523,7 +1530,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public static List<TemporalComparison> inferTemporalPredicates(DBSPCompiler compiler,
             DBSPParameter parameter, DBSPExpression body) {
         var reply = invokeLowering(compiler, "TemporalComparisons", parameter, body);
-        return reply.value.isNull() ? null : temporalComparisons(reply);
+        return answered(compiler, "TemporalComparisons", reply.value) ? temporalComparisons(reply) : null;
     }
 
     public static List<TemporalComparison> classifyTemporalPredicates(DBSPCompiler compiler,
@@ -1554,7 +1561,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public static List<TemporalGroup> groupTemporalFilters(DBSPCompiler compiler, List<String> kinds,
                                                             List<IDBSPInnerNode> roots) {
         var reply = temporalGroupRequest(compiler, "TemporalGroups", kinds, roots);
-        if (reply.value.isNull())
+        if (!answered(compiler, "TemporalGroups", reply.value))
             return null;
         var decoder = expressionDecoder(reply.writer);
         var groups = new ArrayList<TemporalGroup>();
@@ -1569,7 +1576,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static Boolean acceptsTemporalBound(DBSPCompiler compiler, List<String> kinds, List<IDBSPInnerNode> roots) {
         var value = temporalGroupRequest(compiler, "MergeTemporalBounds", kinds, roots).value;
-        return value.isNull() ? null : value.booleanValue();
+        return answered(compiler, "MergeTemporalBounds", value) ? value.booleanValue() : null;
     }
 
     private static LoweringReply temporalGroupRequest(DBSPCompiler compiler, String pass,
@@ -2489,9 +2496,11 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public enum TransferRule { Identity, DeclaredColumns, ApplyClosure, Analyze }
+    public enum TransferRule { Identity, DeclaredColumns, ApplyClosure, ProjectIndex, Analyze }
+    public enum FieldWaterline { Whole, Unbounded, Unit, AllColumns }
+    public record IndexedWaterline(boolean requireInputKey, FieldWaterline key, FieldWaterline value) {}
     public record MonotonicityTransfer(DBSPOperator operator, TransferRule rule, int input,
-                                       @Nullable List<Boolean> lateness) {}
+                                       @Nullable List<Boolean> lateness, @Nullable IndexedWaterline projection) {}
 
     /** Validate the graph after each pass. Consecutive passes often leave its ports,
      * source kinds and sink modes identical, even when they rewrite expressions. */
@@ -2539,7 +2548,8 @@ public final class RustCircuitPass implements CircuitTransform {
 
     /** Reconnect the transfer schedule to the live expressions of the expanded circuit. */
     public static List<MonotonicityTransfer> monotonicityTransfers(DBSPCircuit circuit) {
-        record Step(long operator, TransferRule rule, int input, @Nullable List<Boolean> lateness) {}
+        record Step(long operator, TransferRule rule, int input, @Nullable List<Boolean> lateness,
+                    @Nullable IndexedWaterline projection) {}
         byte[] topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.MONOTONICITY);
         byte[] result = transformWithContext("Topology/Monotonicity", topology, 0, "", EMPTY_CONTEXT);
         try {
@@ -2550,7 +2560,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var transfers = new ArrayList<MonotonicityTransfer>(steps.length);
             for (var step : steps)
                 transfers.add(new MonotonicityTransfer(Utilities.getExists(operators, step.operator()),
-                        step.rule(), step.input(), step.lateness()));
+                        step.rule(), step.input(), step.lateness(), step.projection()));
             return transfers;
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid monotonicity transfer schedule", error);

@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selected key and value waterlines at all 194 window transfers and 129
+annotated clock aggregates in the 550-program monotonicity sample. Rust also
+answered all 6,600 whole-closure requests and 452 temporal classifications on
+that sample. Run `OptimizerCoverageOracle POPULATION S2_DIRECTORY` with the
+matching optimizer library to collect the per-program counts.
+[Indexed waterline transfers](evidence/p3-indexed-waterline-transfers.json)
+
 Rust validates expression occurrences and variable bindings before projecting a
 whole waterline closure. The compiler preserved Java's diagnostics for shared
 expressions, unresolved lambda captures, and mistyped parameter reads. All 550

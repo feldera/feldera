@@ -6,6 +6,23 @@ use feldera_sql_ir::{BodyOrder, Circuit, Error, Node, NodeId, OperatorKind as Op
 use serde::Serialize;
 use std::collections::HashSet;
 
+/// Construct a waterline type from the corresponding live key or value type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub enum FieldWaterline {
+    Whole,
+    Unbounded,
+    Unit,
+    AllColumns,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexedWaterline {
+    pub require_input_key: bool,
+    pub key: FieldWaterline,
+    pub value: FieldWaterline,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "rule")]
 pub enum MonotonicityTransfer {
@@ -16,6 +33,9 @@ pub enum MonotonicityTransfer {
     /// from its input, and a source leaves the remaining fields unbounded.
     DeclaredColumns {
         lateness: Vec<bool>,
+    },
+    ProjectIndex {
+        projection: IndexedWaterline,
     },
     ApplyClosure,
     Analyze,
@@ -74,9 +94,24 @@ pub fn monotonicity_transfers(
                     .data("lowerUnbounded")
                     .and_then(|v| v.as_bool())
                     .ok_or_else(|| Error::new("window requires its lower-bound policy"))?;
-                (!unbounded || first).then_some(Analyze)
+                // Without a lower bound, newly arriving rows may have arbitrary
+                // keys unless the input key itself has a waterline.
+                (!unbounded || first).then_some(ProjectIndex {
+                    projection: IndexedWaterline {
+                        require_input_key: unbounded,
+                        key: FieldWaterline::Whole,
+                        value: FieldWaterline::Unbounded,
+                    },
+                })
             }
-            Some(Op::ChainAggregate) => (first || clock()).then_some(Analyze),
+            Some(Op::ChainAggregate) if clock() => Some(ProjectIndex {
+                projection: IndexedWaterline {
+                    require_input_key: false,
+                    key: FieldWaterline::Unit,
+                    value: FieldWaterline::AllColumns,
+                },
+            }),
+            Some(Op::ChainAggregate) => first.then_some(Analyze),
             Some(Op::DelayedIntegral) => (first && clock()).then_some(Identity { input: 0 }),
             Some(
                 Op::Sink
@@ -143,7 +178,11 @@ mod tests {
                 {"class": "DBSPWindowOperator", "id": 4, "lowerUnbounded": false,
                  "inputs": [port(1), port(2)]},
                 {"class": "DBSPBinaryDistinctOperator", "id": 5, "inputs": [port(1), port(4)]},
-                {"class": "DBSPSumOperator", "id": 6, "inputs": [port(5), port(3)]}
+                {"class": "DBSPSumOperator", "id": 6, "inputs": [port(5), port(3)]},
+                {"class": "DBSPWindowOperator", "id": 7, "lowerUnbounded": true,
+                 "inputs": [port(4), port(2)]},
+                {"class": "DBSPChainAggregateOperator", "id": 8, "inputs": [port(1)],
+                 "annotations": [{"class": "AlwaysMonotone"}]}
             ]
         }))
         .unwrap();
@@ -156,10 +195,39 @@ mod tests {
                         lateness: vec![false, true, false]
                     }
                 ),
-                (NodeId::Outer(4), MonotonicityTransfer::Analyze),
+                (
+                    NodeId::Outer(4),
+                    MonotonicityTransfer::ProjectIndex {
+                        projection: IndexedWaterline {
+                            require_input_key: false,
+                            key: FieldWaterline::Whole,
+                            value: FieldWaterline::Unbounded,
+                        },
+                    }
+                ),
                 (
                     NodeId::Outer(5),
                     MonotonicityTransfer::Identity { input: 1 }
+                ),
+                (
+                    NodeId::Outer(7),
+                    MonotonicityTransfer::ProjectIndex {
+                        projection: IndexedWaterline {
+                            require_input_key: true,
+                            key: FieldWaterline::Whole,
+                            value: FieldWaterline::Unbounded,
+                        },
+                    }
+                ),
+                (
+                    NodeId::Outer(8),
+                    MonotonicityTransfer::ProjectIndex {
+                        projection: IndexedWaterline {
+                            require_input_key: false,
+                            key: FieldWaterline::Unit,
+                            value: FieldWaterline::AllColumns,
+                        },
+                    }
                 ),
             ]
         );

@@ -1,0 +1,318 @@
+{
+  "scope": "Compute the key and value projections of windows and annotated clock aggregates from the Rust transfer schedule. Measure the selected live hybrid requests by operator and rule.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "5c7a2f1967072f2c6f2e2049d15266ea4496edb2efa6275d2eeaa900c62e4222",
+    "maven/sql-compiler.jar": "ceb157970b44993febec02db0f73c9c208dc6646d3b03da12dd7e67e124c55a6",
+    "tests.log": "cfcc9471a26df61502ca66197f87b508fec694b823dd75e6e6d381da856a1ba8",
+    "clippy.log": "e44674b881efb1aa204fccef96c56d76eddc9239415e0e518b6e9d72c6678e0c",
+    "build.log": "21601c7f8373ea1190de8dd41befb97d625959a2b5106f6581715be85cfce43d",
+    "packaged-junit.log": "66967c5a9c557660b4867179c0fd670df1a0816e80cb6f4eaa2a30b1c596594e",
+    "maven/tests.jar": "3ea1cb90fc1585e15d9028919b4bda7ce4b552766d58d6f16b36a270563dd310",
+    "maven/build.log": "60f2e2fd8e40b827422932a01961faf2413e5adddbc3b6152d7bd65004003656"
+  },
+  "rust_tests": 172,
+  "junit_tests": 31,
+  "engines": {
+    "classic": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "mismatches": 0,
+      "receipt_sha256": "a088b66c8543608df03bc770b2255c524b0540993c585cdbe6b2d30bb50a8e14",
+      "monotonicity": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+      "coverage": {
+        "programs": 291,
+        "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+        "observations_sha256": "54bd2246c2458e3f0e30b92944b7dc743e37415d50a0698415246c705232f0c7",
+        "requests": {
+          "Monotonicity/ProjectClosure": {
+            "calls": 3317,
+            "fallbacks": 0
+          },
+          "TemporalComparisons": {
+            "calls": 236,
+            "fallbacks": 0
+          }
+        },
+        "transfer_rules": {
+          "DBSPMapIndexOperator": {
+            "ApplyClosure": 1108
+          },
+          "DBSPMapOperator": {
+            "ApplyClosure": 1710
+          },
+          "DBSPNegateOperator": {
+            "Identity": 58
+          },
+          "DBSPNoopOperator": {
+            "Identity": 382
+          },
+          "DBSPPrimitiveAggregateOperator": {
+            "Analyze": 157
+          },
+          "DBSPSourceMultisetOperator": {
+            "DeclaredColumns": 514
+          },
+          "DBSPStreamJoinIndexOperator": {
+            "Analyze": 429
+          },
+          "DBSPStreamJoinOperator": {
+            "Analyze": 558
+          },
+          "DBSPSumOperator": {
+            "Analyze": 284
+          },
+          "DBSPUpsertFeedbackOperator": {
+            "Identity": 157
+          },
+          "DBSPChainAggregateOperator": {
+            "ProjectIndex": 69,
+            "Analyze": 74
+          },
+          "DBSPDeindexOperator": {
+            "Analyze": 68
+          },
+          "DBSPSinkOperator": {
+            "Identity": 218
+          },
+          "DBSPWindowOperator": {
+            "ProjectIndex": 100
+          },
+          "DBSPAggregateLinearPostprocessOperator": {
+            "Analyze": 291
+          },
+          "DBSPFilterOperator": {
+            "Analyze": 418
+          },
+          "DBSPBinaryDistinctOperator": {
+            "Identity": 76
+          },
+          "DBSPAntiJoinOperator": {
+            "Analyze": 48
+          },
+          "DBSPAsofJoinOperator": {
+            "Analyze": 16
+          },
+          "DBSPHopOperator": {
+            "Analyze": 7
+          },
+          "DBSPFlatMapOperator": {
+            "ApplyClosure": 4
+          },
+          "DBSPPartitionedRollingAggregateOperator": {
+            "Analyze": 49
+          },
+          "DBSPViewOperator": {
+            "DeclaredColumns": 15
+          },
+          "DBSPLagOperator": {
+            "Analyze": 10
+          },
+          "DBSPSubtractOperator": {
+            "Analyze": 11
+          }
+        }
+      }
+    },
+    "gen2": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "mismatches": 0,
+      "receipt_sha256": "a07be818a7d3051ceeac25c13564d5232797c232aefb49132a399b4f964e6f30",
+      "monotonicity": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+      "coverage": {
+        "programs": 259,
+        "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+        "observations_sha256": "4d948bc1636c7c5e26e10087b36ebeabf45b30c46b3480d6c2acc3bba5c4c9b6",
+        "requests": {
+          "Monotonicity/ProjectClosure": {
+            "calls": 3283,
+            "fallbacks": 0
+          },
+          "TemporalComparisons": {
+            "calls": 216,
+            "fallbacks": 0
+          }
+        },
+        "transfer_rules": {
+          "DBSPMapIndexOperator": {
+            "ApplyClosure": 1097
+          },
+          "DBSPMapOperator": {
+            "ApplyClosure": 1689
+          },
+          "DBSPNegateOperator": {
+            "Identity": 57
+          },
+          "DBSPNoopOperator": {
+            "Identity": 384
+          },
+          "DBSPPrimitiveAggregateOperator": {
+            "Analyze": 156
+          },
+          "DBSPSourceMultisetOperator": {
+            "DeclaredColumns": 483
+          },
+          "DBSPStreamJoinIndexOperator": {
+            "Analyze": 442
+          },
+          "DBSPStreamJoinOperator": {
+            "Analyze": 547
+          },
+          "DBSPSumOperator": {
+            "Analyze": 280
+          },
+          "DBSPUpsertFeedbackOperator": {
+            "Identity": 156
+          },
+          "DBSPAggregateLinearPostprocessOperator": {
+            "Analyze": 286
+          },
+          "DBSPSinkOperator": {
+            "Identity": 206
+          },
+          "DBSPChainAggregateOperator": {
+            "ProjectIndex": 60,
+            "Analyze": 74
+          },
+          "DBSPDeindexOperator": {
+            "Analyze": 59
+          },
+          "DBSPWindowOperator": {
+            "ProjectIndex": 94
+          },
+          "DBSPFilterOperator": {
+            "Analyze": 410
+          },
+          "DBSPBinaryDistinctOperator": {
+            "Identity": 76
+          },
+          "DBSPAntiJoinOperator": {
+            "Analyze": 47
+          },
+          "DBSPAsofJoinOperator": {
+            "Analyze": 15
+          },
+          "DBSPHopOperator": {
+            "Analyze": 7
+          },
+          "DBSPViewOperator": {
+            "DeclaredColumns": 14
+          },
+          "DBSPLagOperator": {
+            "Analyze": 10
+          },
+          "DBSPPartitionedRollingAggregateOperator": {
+            "Analyze": 55
+          },
+          "DBSPFlatMapOperator": {
+            "ApplyClosure": 3
+          },
+          "DBSPSubtractOperator": {
+            "Analyze": 11
+          }
+        }
+      }
+    }
+  },
+  "maven": {
+    "passed": 113,
+    "skipped": 3,
+    "jni_enabled_junit_tests": 31
+  },
+  "checkpoints": {
+    "count": {
+      "restore_receipt_sha256": "2118b2d283e278f39870b133d2ddc1ee6e12e21ca27b34fa18d0400a5e7d31b8",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2040a-0d30-7342-aa86-51f13bd77c3c",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2040a-0d5a-78a2-bd16-979b6740830e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "restore_receipt_sha256": "17eb2d5a9973cc660565ddda90facabe2324c69311301699131415c9a98531e4",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2040b-3158-74f1-9c8b-234759e43985",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2040b-317a-7422-8043-e2865852dc9c",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}

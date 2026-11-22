@@ -242,6 +242,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         void after(String container, int index, int iteration, CircuitTransform pass,
                    @Nullable DBSPCircuit circuit, boolean completed);
         default void inPlace(String container, int index, String operation, DBSPCircuit circuit) { }
+        /** A hybrid analysis requested an optional result from Rust. */
+        default void nativeDecision(String operation, boolean answered) { }
+        default void monotonicityTransfer(String operator, String rule) { }
     }
 
     @Nullable public StateObserver stateObserver;

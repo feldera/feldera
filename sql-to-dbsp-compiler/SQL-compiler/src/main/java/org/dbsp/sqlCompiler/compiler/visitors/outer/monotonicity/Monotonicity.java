@@ -176,11 +176,16 @@ public class Monotonicity extends CircuitVisitor {
         this.startVisit(circuit);
         try {
             for (var transfer : RustCircuitPass.monotonicityTransfers(circuit)) {
+                if (this.compiler().stateObserver != null)
+                    this.compiler().stateObserver.monotonicityTransfer(
+                            transfer.operator().getClass().getSimpleName(), transfer.rule().name());
                 switch (transfer.rule()) {
                     case Identity -> this.identity(transfer.operator().to(DBSPSimpleOperator.class), transfer.input());
                     case DeclaredColumns -> this.declaredColumns(transfer.operator().to(DBSPSimpleOperator.class),
                             Objects.requireNonNull(transfer.lateness()));
                     case ApplyClosure -> this.analyzeClosure(transfer.operator().to(DBSPUnaryOperator.class));
+                    case ProjectIndex -> this.projectIndex(transfer.operator().to(DBSPSimpleOperator.class),
+                            Objects.requireNonNull(transfer.projection()));
                     case Analyze -> transfer.operator().accept(this);
                 }
             }
@@ -188,6 +193,29 @@ public class Monotonicity extends CircuitVisitor {
         } finally {
             this.endVisit();
         }
+    }
+
+    private void projectIndex(DBSPSimpleOperator operator, RustCircuitPass.IndexedWaterline projection) {
+        if (projection.requireInputKey()) {
+            var input = this.getMonotoneExpression(operator.inputs.get(0));
+            if (input == null || !getBodyType(input).to(PartiallyMonotoneTuple.class).getFieldType(0).mayBeMonotone())
+                return;
+        }
+        var type = operator.getOutputIndexedZSetType();
+        var key = fieldWaterline(type.keyType, projection.key());
+        var value = fieldWaterline(type.elementType, projection.value());
+        var output = new PartiallyMonotoneTuple(List.of(key, value), true, false);
+        this.set(operator, this.identity(operator, output, true));
+    }
+
+    private static IMaybeMonotoneType fieldWaterline(DBSPType type, RustCircuitPass.FieldWaterline projection) {
+        return switch (projection) {
+            case Whole -> new MonotoneType(type);
+            case Unbounded -> PartiallyMonotoneTuple.noMonotoneFields(type.to(DBSPTypeTupleBase.class));
+            case Unit -> new PartiallyMonotoneTuple(List.of(), false, false);
+            case AllColumns -> new PartiallyMonotoneTuple(
+                    Linq.map(List.of(type.to(DBSPTypeTuple.class).tupFields), MonotoneType::new), false, false);
+        };
     }
 
     void set(DBSPSimpleOperator operator, @Nullable MonotoneExpression value) {
