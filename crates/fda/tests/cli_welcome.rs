@@ -14,6 +14,14 @@ fn fda() -> Command {
     command
 }
 
+/// Returns the URL of a local port on which no server listens. A command that
+/// connects to this host fails at once.
+fn closed_host() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("local address").port();
+    format!("http://127.0.0.1:{port}")
+}
+
 /// Returns true if a file named `welcome-shown` is in `dir` or below it.
 fn has_marker(dir: &Path) -> bool {
     std::fs::read_dir(dir)
@@ -55,22 +63,11 @@ fn welcome_in_a_pipe_prints_the_window_without_escape_sequences() {
 #[test]
 fn first_run_in_a_pipe_plays_nothing_and_writes_no_marker() {
     let home = tempfile::tempdir().expect("temp dir");
-    // No server listens on this port, so the command fails right after the
-    // first-run check.
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let port = listener.local_addr().expect("local address").port();
-    drop(listener);
-
+    // The command fails right after the first-run check.
     let output = fda()
         .env("HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path().join("config"))
-        .args([
-            "--host",
-            &format!("http://127.0.0.1:{port}"),
-            "--retries",
-            "0",
-            "pipelines",
-        ])
+        .args(["--host", &closed_host(), "--retries", "0", "pipelines"])
         .output()
         .expect("run fda");
     let text = String::from_utf8_lossy(&output.stdout);
@@ -84,7 +81,7 @@ fn first_run_in_a_pipe_plays_nothing_and_writes_no_marker() {
 /// Tests that run fda in a pseudo-terminal.
 #[cfg(unix)]
 mod tty {
-    use super::fda;
+    use super::{closed_host, fda, has_marker};
     use std::fs::File;
     use std::io::{Read, Write};
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
@@ -324,5 +321,54 @@ mod tty {
             session.raw().contains("\x1b[38;2;99;99;61m")
         });
         assert!(is_selected, "no Lichen shade in the output");
+    }
+
+    #[test]
+    fn ctrl_c_in_welcome_ends_fda_with_status_130() {
+        let home = tempfile::tempdir().expect("temp dir");
+        let mut session = Session::start(100, 40, home.path(), &WELCOME);
+        session.wait_for(ANIMATION_STARTED);
+        session.send(b"\x03");
+        assert_eq!(session.finish().code(), Some(130));
+        assert!(
+            session
+                .text()
+                .contains("Precisely compute only what changed.")
+        );
+        assert!(session.is_restored(), "the terminal is in raw mode");
+    }
+
+    #[test]
+    fn first_run_plays_one_time_and_ctrl_c_lets_the_command_run() {
+        let home = tempfile::tempdir().expect("temp dir");
+        let host = closed_host();
+        let args = ["--host", &host, "--retries", "0", "pipelines"];
+
+        let mut first = Session::start(100, 40, home.path(), &args);
+        first.wait_for(ANIMATION_STARTED);
+        first.send(b"\x03");
+        // The command runs after the animation. It fails with the status 1,
+        // because no server listens.
+        assert_eq!(first.finish().code(), Some(1));
+        let text = first.text();
+        assert!(text.contains("GET STARTED"), "no window in the first run");
+        assert!(
+            text.contains("Failed to list pipelines"),
+            "the command did not run"
+        );
+        assert!(has_marker(home.path()), "the first run is not claimed");
+        assert!(first.is_restored(), "the terminal is in raw mode");
+
+        let mut second = Session::start(100, 40, home.path(), &args);
+        second.finish();
+        let text = second.text();
+        assert!(
+            !text.contains("GET STARTED"),
+            "the animation played two times"
+        );
+        assert!(
+            text.contains("Failed to list pipelines"),
+            "the command did not run"
+        );
     }
 }

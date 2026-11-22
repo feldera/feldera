@@ -168,9 +168,6 @@ fn animate(film: &Film, window: &Window, keys: &mut Keys, out: &mut StdoutLock) 
     if stop.is_some() {
         draw(out, &film.final_frame());
     }
-    if stop == Some(Stop::Interrupt) {
-        return stop;
-    }
 
     // Part 3, the tagline. After a skip, all characters appear together. The tagline row is
     // `up` rows above the cursor.
@@ -208,8 +205,9 @@ fn animate(film: &Film, window: &Window, keys: &mut Keys, out: &mut StdoutLock) 
 }
 
 /// Plays the animation, or prints the window with the final frame if the animation cannot
-/// play. `host` is the Feldera host, which the CONNECTION panel shows.
-pub fn play(host: &str) {
+/// play. `host` is the Feldera host, which the CONNECTION panel shows. Returns how the viewer
+/// stopped the animation, or `None` if the viewer did not stop it.
+fn show(host: &str) -> Option<Stop> {
     let size = term::size();
     // Assume 80 columns if the terminal size is unknown.
     let inner = inner_width(size.map_or(80, |(cols, _)| cols));
@@ -228,11 +226,10 @@ pub fn play(host: &str) {
         for row in window.rows(&film.final_frame(), true) {
             let _ = writeln!(out, "{row}");
         }
-        return;
+        return None;
     }
 
-    // `keys` and `_cursor` restore the terminal at the end of this block. The
-    // block ends before `exit`, because `exit` runs no destructors.
+    // `keys` and `_cursor` restore the terminal at the end of this block.
     let stop = {
         let mut keys = Keys::new();
         // If `COLORFGBG` is not set, ask the terminal for its background color.
@@ -246,7 +243,14 @@ pub fn play(host: &str) {
         animate(&film, &window, &mut keys, &mut out)
     };
     let _ = out.flush();
-    if stop == Some(Stop::Interrupt) {
+    stop
+}
+
+/// Plays the animation for `fda welcome`. Ctrl-C skips the animation and then
+/// ends fda. `host` is the Feldera host.
+pub fn play(host: &str) {
+    // `show` restores the terminal before it returns. `exit` runs no destructors.
+    if show(host) == Some(Stop::Interrupt) {
         // 130 is the exit status of a process that Ctrl-C ends. It is 128 plus
         // the number of SIGINT.
         std::process::exit(130);
@@ -269,7 +273,9 @@ pub fn first_run(host: &str, reads_stdin: bool) {
     // Claim the first run before the animation plays, so that an interrupted
     // animation does not play again.
     if claim_first_run(dirs.config_dir()) {
-        play(host);
+        // Ctrl-C skips the animation as each other key does. The command of the
+        // user then runs.
+        show(host);
     }
 }
 

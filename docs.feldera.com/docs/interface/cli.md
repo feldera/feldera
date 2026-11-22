@@ -194,7 +194,8 @@ mkdir -Force (Split-Path $PROFILE)
 ### Welcome animation
 
 The first time you run an `fda` command in a terminal, `fda` shows a short animation of the Feldera logo
-before the command runs. It shows one time on each computer. Push any key to skip it.
+before the command runs. It shows one time on each computer. Push any key to skip it. The command then
+runs.
 
 `fda` does not show the animation when one of these is true:
 

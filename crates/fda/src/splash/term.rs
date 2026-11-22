@@ -163,7 +163,7 @@ mod sys {
 pub(super) enum Stop {
     /// A key press. The animation skips to the final frame.
     Skip,
-    /// Ctrl-C. The animation skips to the final frame, then `fda` exits.
+    /// Ctrl-C. The animation skips to the final frame. `fda welcome` then exits.
     Interrupt,
 }
 
