@@ -105,7 +105,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
 /// Default object store timeout. When not explicitly set by the user,
 /// we use a large timeout value to avoid this issue:
-/// https://github.com/delta-io/delta-rs/issues/2595, which is common for
+/// <https://github.com/delta-io/delta-rs/issues/2595>, which is common for
 /// tables with large files.
 const DEFAULT_OBJECT_STORE_TIMEOUT: &str = "120s";
 
@@ -113,7 +113,7 @@ const REPORT_ERROR: &str =
     "please report this error to developers (https://github.com/feldera/feldera/issues)";
 
 /// Semaphore used to control the number of concurrent reads to the object store
-/// as a workaround for https://github.com/apache/arrow-rs-object-store/issues/14.
+/// as a workaround for <https://github.com/apache/arrow-rs-object-store/issues/14>.
 /// (see `max_concurrent_readers` in `DeltaTableReaderConfig`).
 static DELTA_READER_SEMAPHORE: std::sync::LazyLock<Semaphore> =
     std::sync::LazyLock::new(|| Semaphore::new(DEFAULT_MAX_CONCURRENT_READERS));
@@ -2314,7 +2314,7 @@ impl DeltaTableInputEndpointInner {
             .map_err(|e| anyhow!("error projecting CDC columns: {e}"))
     }
 
-    /// Load the entire table snapshot as a single "select * where <filter>" query.
+    /// Load the entire table snapshot as a single `select * where <filter>` query.
     /// Returns the total number of records processed.
     ///
     /// Fails with an error if the function fails to read the snapshot after
@@ -4432,8 +4432,9 @@ impl DeltaTableInputEndpointInner {
     /// Arrow schema for reading a change data file: the columns the connector
     /// needs, plus the [`CHANGE_TYPE_COLUMN`] that only these files carry.
     ///
-    /// A file read through a [`StreamingTable`] rather than a listing has no
-    /// projection pushdown, so this schema is the only bound on what it decodes.
+    /// A file read through a [`StreamingTable`](datafusion::catalog::streaming::StreamingTable)
+    /// rather than a listing has no projection pushdown, so this schema is the
+    /// only bound on what it decodes.
     fn change_data_read_schema(&self) -> AnyResult<ReadSchema> {
         let table_schema = self.physical_read_schema(|name| self.needs_column(name))?;
         let mut fields: Vec<FieldRef> = table_schema.schema().fields().to_vec();

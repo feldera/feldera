@@ -39,7 +39,7 @@ pub struct LookupChunk {
 }
 
 /// Bits the filter spends per key. Charges the filter to the chunk's byte budget before
-/// [`LookupChunk::sort`] builds it; [`test::the_filter_fits_its_budget`] keeps it honest.
+/// [`LookupChunk::sort`] builds it; `test::the_filter_fits_its_budget` keeps it honest.
 const FILTER_BITS_PER_KEY: usize = 16;
 
 /// False positives the filter is sized for. A false positive costs only the binary search

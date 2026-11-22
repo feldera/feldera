@@ -102,7 +102,7 @@ pub(crate) struct AuthenticatedPrincipal {
     pub acting_tenant: TenantId,
     /// The principal's effective role in the acting tenant.
     pub role: Role,
-    /// Human-readable identity for audit logging (email, sub, or "apikey:<name>").
+    /// Human-readable identity for audit logging (email, sub, or `apikey:<name>`).
     pub label: String,
 }
 
@@ -1089,7 +1089,7 @@ impl TenantRecord {
     }
 }
 
-/// Extension trait for TokenData<OidcClaim> to provide unified claim handling
+/// Extension trait for `TokenData<OidcClaim>` to provide unified claim handling
 trait OidcClaimExt {
     /// Get the list of authorized tenants for this claim.
     /// Returns None if tenants should be resolved via other means (issuer/sub).

@@ -659,7 +659,8 @@ pub(crate) fn gen2_has_rust_udfs(udf_rust: &str) -> bool {
 /// Performs the SQL compilation:
 /// - Prepares a working directory for input and output
 /// - Call the SQL-to-DBSP compiler executable via a process
-/// - Returns the outcome from the output (namely, the [`ProgramInfo`] serialized as a JSON value)
+/// - Returns the outcome from the output (namely, the
+///   [`ProgramInfo`](crate::db::types::program::ProgramInfo) serialized as a JSON value)
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn perform_sql_compilation(
     common_config: &CommonConfig,

@@ -10,7 +10,7 @@
 //! Two archived forms do not hash like their decoded counterparts, so this
 //! cannot simply forward to [`Hash`]:
 //!
-//! - A map.  [`BTreeMap`](std::collections::BTreeMap) writes a length prefix
+//! - A map.  [`BTreeMap`] writes a length prefix
 //!   before its entries and `rkyv`'s archived map does not, which diverges for
 //!   every map, the empty one included.
 //! - Any enum whose archived hash is derived.  `rkyv` gives the archived type
@@ -46,7 +46,7 @@ use crate::hash::default_hasher;
 ///
 /// This cannot forward to [`Hash`], because two archived forms do not hash
 /// like their decoded counterparts: an archived map leaves out the length
-/// prefix [`BTreeMap`](std::collections::BTreeMap) writes before its entries,
+/// prefix [`BTreeMap`] writes before its entries,
 /// and an archived enum with a derived hash writes a discriminant narrower
 /// than the decoded one, usually one byte where the decoded enum's is eight.
 ///

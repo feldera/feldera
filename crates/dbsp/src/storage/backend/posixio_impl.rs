@@ -45,7 +45,7 @@ use tracing::{debug, info, warn};
 /// calls it, which is what keeps the sync off the threads that write files.
 ///
 /// `files_synced_total` and `storage_sync_latency_seconds` therefore count
-/// per-file fsyncs only. Under [SyncStrategy::Syncfs] a checkpoint's files
+/// per-file fsyncs only. Under `SyncStrategy::Syncfs` on Linux, a checkpoint's files
 /// never come through here, so both stay near zero and
 /// `storage_commit_all_latency_seconds` is the one that moves.
 fn sync_file(file: &File, path: &Path) -> Result<(), StorageError> {
@@ -161,7 +161,7 @@ mod syncfs {
     ///
     /// What this cannot see is a filesystem shared through another mount namespace,
     /// such as one read-write-many volume mounted by several pods. Only
-    /// [StorageSyncMode] covers that.
+    /// [StorageSyncMode](feldera_types::config::StorageSyncMode) covers that.
     pub(super) fn mount_is_exclusive(mountinfo: &str, base: &Path) -> bool {
         let entries = parse_mountinfo(mountinfo);
 

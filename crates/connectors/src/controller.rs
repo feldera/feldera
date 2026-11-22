@@ -168,8 +168,8 @@ pub mod test;
 /// [`CircuitThread::step`] stores `step + 1` before it collects input, so the
 /// step an input reader is feeding is one less. A controller that has
 /// initiated none is feeding nothing, which is what `None` says; a reader only
-/// ever asks while handling a [`InputReaderCommand::Queue`], which the
-/// controller issues from inside a step.
+/// ever asks while handling a [`Queue`](crate::transport::InputReaderCommand::Queue)
+/// command, which the controller issues from inside a step.
 fn current_step_of(initiated: Step) -> Option<Step> {
     initiated.checked_sub(1)
 }
@@ -312,7 +312,8 @@ impl ControllerBuilder {
     /// If `config` includes storage configuration, this opens the storage,
     /// so that it can be used before building the controller.
     ///
-    /// Use [build](Self::build) to finish building the controller.
+    /// Use one of the `open_*` methods, such as [`Self::open_latest_checkpoint`],
+    /// then [`ControllerInit::init`] to finish building the controller.
     ///
     /// # Arguments
     ///
@@ -689,7 +690,7 @@ pub type RebalanceCallbackFn = Box<dyn FnOnce(Result<(), ControllerError>) + Sen
 
 pub type StartCompactionCallbackFn = Box<dyn FnOnce(Result<(), ControllerError>) + Send>;
 
-/// A command that [Controller] can send to [Controller::circuit_thread].
+/// A command that [Controller] can send to [CircuitThread].
 ///
 /// There is no type for a command reply.  Instead, the command implementation
 /// uses a callback embedded in the command to reply.
@@ -4032,7 +4033,7 @@ impl CircuitThread {
     /// holds the bootstrap circuit's commit progress while it is committing (the
     /// backfill transaction, then the synchronization transaction) and is `None`
     /// otherwise. The phase is reported separately, set atomically at each phase
-    /// transition (see [`GlobalControllerMetrics::concurrent_bootstrap_phase`]).
+    /// transition (see [`stats::GlobalControllerMetrics::concurrent_bootstrap_phase`]).
     fn report_concurrent_bootstrap_progress(&mut self) {
         let (update, display) = {
             let updates = self.concurrent_bootstrap_updates.get_or_insert_default();
@@ -6316,7 +6317,7 @@ impl StepTrigger {
     /// - Whether we're currently `replaying`.
     /// - Whether the pipeline is currently `bootstrapping`.
     /// - Whether a checkpoint has already been requested.
-    /// - The current [CoordinationRequest] and the current step.
+    /// - The current [StepRequest] and the current step.
     ///
     /// Returns the action for the controller to take.
     #[allow(clippy::too_many_arguments)]
@@ -6462,8 +6463,8 @@ pub struct ControllerInit {
 
     /// The pipeline configuration.
     ///
-    /// This will differ from the one passed into [ControllerInit::new] if a
-    /// checkpoint is read, in which case this fields is computed by combining both configs.
+    /// This will differ from the one passed into [`ControllerBuilder::new`] if a
+    /// checkpoint is read, in which case this field is computed by combining both configs.
     pipeline_config: PipelineConfig,
 
     /// Initial counter for `total_processed_records`.
@@ -7063,11 +7064,10 @@ impl ControllerInit {
 
     /// Create a new I/O controller using config in `self`.
     ///
-    /// Creates a new instance of `Controller` that wraps `circuit`, with input
-    /// and output endpoints specified by the configuration passed to
-    /// [new](Self:new)`.  The controller is created with all endpoints in a
-    /// paused state.  Call [`Self::start`] to unpause the endpoints and start
-    /// ingesting data.
+    /// Creates a new instance of [`Controller`] using `circuit_factory`, with input
+    /// and output endpoints specified by [`Self::pipeline_config`]. The controller
+    /// is created with all endpoints in a paused state. Call [`Controller::start`]
+    /// to unpause the endpoints and start ingesting data.
     ///
     /// # Arguments
     ///
@@ -8514,7 +8514,7 @@ pub struct ControllerInner {
     /// The host that writes each output relation of a multihost pipeline, as the coordinator
     /// assigns them.  The part of a distributed output connector on its stream's host is the
     /// connector's leader (see [output_leader]).  Each checkpoint records it (see
-    /// [ControllerInner::checkpoint_output_assignment]).
+    /// [Self::output_assignment_for_checkpoint]).
     output_assignment: BTreeMap<String, usize>,
 
     /// The leader of each distributed output connector on this host, by connector name.

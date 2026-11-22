@@ -1,7 +1,7 @@
 //! Key validation and encoding for merge mode.
 //!
 //! Merge mode locates the row to supersede by comparing a key Feldera holds against the same
-//! value read back from parquet. Both sides go through [`arrow_row::RowConverter`], which
+//! value read back from parquet. Both sides go through [`RowConverter`], which
 //! encodes a value as bytes that compare the way the value does, so the probe is a byte
 //! comparison and the lookup chunk is a sorted byte buffer.
 //!
@@ -188,8 +188,9 @@ impl KeyEncoder {
         self.encode_columns(&self.columns_of(batch)?)
     }
 
-    /// The key columns of `batch`, in declaration order. Separate from [`Self::encode_batch`]
-    /// so a caller needing both the encoded key and the columns projects once.
+    /// The key columns of `batch`, in declaration order. Separate from the
+    /// test-only `Self::encode_batch` so a caller needing both the encoded key
+    /// and the columns projects once.
     pub fn columns_of(&self, batch: &RecordBatch) -> AnyResult<Vec<ArrayRef>> {
         let mut columns = Vec::with_capacity(self.column_names.len());
         for name in &self.column_names {

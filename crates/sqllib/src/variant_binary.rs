@@ -6,11 +6,12 @@
 //! connector reading one hands the record deserializer a map rather than the
 //! JSON string [`VariantFormat::JsonString`] historically expected.
 //!
-//! Reading and writing are not symmetric. [`deserialize_variant`] is handed the
-//! data, so it tells a JSON string from a binary variant and decodes either;
+//! Reading and writing are not symmetric.
+//! [`deserialize_variant`](crate::variant_binary::deserialize_variant) is handed the data, so it
+//! tells a JSON string from a binary variant and decodes either;
 //! one column can be a JSON string and the next a binary variant.
-//! [`serialize_variant`] is handed a value, which knows nothing of the column
-//! it will land in, so the encoding is chosen for it by
+//! [`serialize_variant`](crate::variant_binary::serialize_variant) is handed a value, which knows
+//! nothing of the column it will land in, so the encoding is chosen for it by
 //! [`VariantFormat::ParquetVariant`].
 //!
 //! [`VariantFormat::JsonString`]: feldera_types::serde_with_context::serde_config::VariantFormat::JsonString

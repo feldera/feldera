@@ -80,8 +80,8 @@ repos:
       # generation adds documentation to e.g., the rest-api crate.
       - id: cargo-doc
         name: Cargo Documentation
-        description: Generate documentation with warnings treated as errors
-        entry: bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --no-deps'
+        description: Generate documentation, including private items, with warnings treated as errors
+        entry: bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items'
         language: rust
         files: \.rs$
         pass_filenames: false

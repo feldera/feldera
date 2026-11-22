@@ -532,8 +532,8 @@ fn map_pin_cpus(config: &CircuitConfig) -> (Vec<CoreId>, Vec<CoreId>) {
 /// [CancellationToken::is_cancelled] locks a mutex and every operator polls
 /// this flag.
 ///
-/// If https://github.com/tokio-rs/tokio/issues/7775 is ever fixed (e.g. by
-/// https://github.com/martin-augment/tokio/pull/59), then this can be replaced
+/// If <https://github.com/tokio-rs/tokio/issues/7775> is ever fixed (e.g. by
+/// <https://github.com/martin-augment/tokio/pull/59>), then this can be replaced
 /// by a plain [CancellationToken].
 #[derive(Debug, Default)]
 struct KillSignal {
