@@ -1,4 +1,6 @@
 //! Compare projected index keys under the bindings of their two row parameters.
+mod bindings;
+use bindings::{Bindings, Scope, Work};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId};
 use std::collections::HashSet;
 
@@ -9,11 +11,29 @@ fn same_type(edit: &CircuitEditor, left: &Node, right: &Node) -> Result<bool, Er
     )
 }
 
+fn optional_child(
+    left: &Node,
+    right: &Node,
+    field: &str,
+    scope: Scope,
+    pending: &mut Vec<Work>,
+) -> Result<bool, Error> {
+    match (left.field(field), right.field(field)) {
+        (None, None) => Ok(true),
+        (Some(_), Some(_)) => {
+            pending.push(Work::Compare(left.edge(field)?, right.edge(field)?, scope));
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
 fn compare_children(
     left: &Node,
     right: &Node,
     field: &str,
-    pending: &mut Vec<(NodeId, NodeId)>,
+    scope: Scope,
+    pending: &mut Vec<Work>,
 ) -> Result<bool, Error> {
     if left.field(field).is_none() || right.field(field).is_none() {
         return Ok(left.field(field).is_none() && right.field(field).is_none());
@@ -23,7 +43,12 @@ fn compare_children(
     if l.len() != r.len() {
         return Ok(false);
     }
-    pending.extend(l.into_iter().zip(r).rev());
+    pending.extend(
+        l.into_iter()
+            .zip(r)
+            .rev()
+            .map(|(l, r)| Work::Compare(l, r, scope)),
+    );
     Ok(true)
 }
 
@@ -102,18 +127,26 @@ pub(super) fn equivalent_bodies(
 }
 
 /// Resolve distinct variable occurrences in the scope enclosing the two roots.
-/// Comparisons that need a nested binding or a specialized expression rule
-/// are left to the reference visitor.
+/// Nested LET, block and closure declarations shadow those enclosing bindings.
 pub(crate) fn compare_expressions(
     edit: &CircuitEditor,
     left: NodeId,
     right: NodeId,
     variables: impl Fn(&Node, &Node) -> Option<bool>,
 ) -> Result<Option<bool>, Error> {
-    let mut pending = vec![(left, right)];
+    let mut pending = vec![Work::Compare(left, right, None)];
+    let mut bindings = Bindings::default();
     let mut seen = HashSet::new();
-    while let Some((a, b)) = pending.pop() {
-        if !seen.insert((a, b)) {
+    let mut active_binders = HashSet::new();
+    while let Some(work) = pending.pop() {
+        let (a, b, scope) = match work {
+            Work::Compare(a, b, scope) => (a, b, scope),
+            Work::Leave(a, b) => {
+                active_binders.remove(&(a, b));
+                continue;
+            }
+        };
+        if !seen.insert((a, b, scope)) {
             continue;
         }
         let left = edit.node(a)?;
@@ -122,16 +155,41 @@ pub(crate) fn compare_expressions(
         if left.class() != right.class() {
             return Ok(Some(false));
         }
+        // A cyclic expression can revisit the same binder under fresh scopes.
+        // A shared acyclic term is eligible for comparison again after leaving it.
+        if matches!(kind, Expr::Let | Expr::Block | Expr::Closure) {
+            if !active_binders.insert((a, b)) {
+                return Err(Error::new("cycle in key expression bindings"));
+            }
+            pending.push(Work::Leave(a, b));
+        }
         let children: &[&str] = match kind {
             Expr::VariablePath => {
                 if a != b {
-                    match variables(left, right) {
+                    match bindings
+                        .variables(scope, left, right)?
+                        .or_else(|| variables(left, right))
+                    {
                         Some(true) => {}
                         result => return Ok(result),
                     }
                 }
                 &[]
             }
+            Expr::Let => {
+                bindings.let_expression(edit, left, right, scope, &mut pending)?;
+                continue;
+            }
+            Expr::Closure => {
+                if !bindings.closure(edit, left, right, scope, &mut pending)? {
+                    return Ok(Some(false));
+                }
+                continue;
+            }
+            Expr::Block => match bindings.block(edit, left, right, scope, &mut pending)? {
+                Some(true) => continue,
+                answer => return Ok(answer),
+            },
             Expr::Tuple | Expr::RawTuple | Expr::Array | Expr::Map => {
                 if !same_type(edit, left, right)? {
                     return Ok(Some(false));
@@ -142,7 +200,7 @@ pub(crate) fn compare_expressions(
                     _ => &["fields"],
                 };
                 for field in lists.iter().rev() {
-                    if !compare_children(left, right, field, &mut pending)? {
+                    if !compare_children(left, right, field, scope, &mut pending)? {
                         return Ok(Some(false));
                     }
                 }
@@ -153,7 +211,7 @@ pub(crate) fn compare_expressions(
                 result => return Ok(result),
             },
             Expr::Apply | Expr::Constructor | Expr::ApplyMethod => {
-                if !compare_children(left, right, "arguments", &mut pending)? {
+                if !compare_children(left, right, "arguments", scope, &mut pending)? {
                     return Ok(Some(false));
                 }
                 if kind == Expr::ApplyMethod {
@@ -175,62 +233,74 @@ pub(crate) fn compare_expressions(
                     result => return Ok(result),
                 }
             }
-            Expr::Field | Expr::CustomOrdField => {
-                if left.data("fieldNo") != right.data("fieldNo") {
-                    return Ok(Some(false));
-                }
-                &["expression"]
-            }
-            Expr::Borrow => {
-                if left.data("mut") != right.data("mut") {
-                    return Ok(Some(false));
-                }
-                &["expression"]
-            }
-            Expr::Cast => {
-                if left.data("safe") != right.data("safe") || !same_type(edit, left, right)? {
-                    return Ok(Some(false));
-                }
-                &["source"]
-            }
-            Expr::TimeAddSub => {
-                if ["opcode", "shortUnits", "longUnits"]
-                    .iter()
-                    .any(|name| left.data(name) != right.data(name))
-                {
+            Expr::GeoPointConstructor => {
+                if !same_type(edit, left, right)? {
                     return Ok(Some(false));
                 }
                 &["left", "right"]
             }
-            Expr::UnsignedWrap | Expr::UnsignedUnwrap => {
-                if left.data("ascending") != right.data("ascending")
-                    || left.data("nullsLast") != right.data("nullsLast")
-                {
-                    return Ok(Some(false));
-                }
-                &["source"]
-            }
-            Expr::Binary | Expr::Unary => {
-                if left.data("opcode") != right.data("opcode") {
-                    return Ok(Some(false));
-                }
-                if kind == Expr::Unary {
-                    &["source"]
-                } else {
-                    &["left", "right"]
-                }
-            }
-            Expr::Clone
+            Expr::Assignment => &["left", "right"],
+            Expr::ConditionalIncrement => &["left", "right", "condition"],
+            Expr::Field
+            | Expr::CustomOrdField
+            | Expr::Borrow
+            | Expr::Clone
             | Expr::Deref
             | Expr::IsNull
             | Expr::Some
             | Expr::Unwrap
-            | Expr::UnwrapCustomOrd => &["expression"],
-            Expr::If => match (left.field("negative"), right.field("negative")) {
-                (Some(_), Some(_)) => &["condition", "positive", "negative"],
-                (None, None) => &["condition", "positive"],
-                _ => return Ok(Some(false)),
-            },
+            | Expr::UnwrapCustomOrd
+            | Expr::Lazy => &["expression"],
+            Expr::Cast => {
+                if !same_type(edit, left, right)? {
+                    return Ok(Some(false));
+                }
+                &["source"]
+            }
+            Expr::TimeAddSub | Expr::Binary => &["left", "right"],
+            Expr::Unary
+            | Expr::Question
+            | Expr::HandleError
+            | Expr::UnsignedWrap
+            | Expr::UnsignedUnwrap
+            | Expr::DirectComparator
+            | Expr::FieldComparator => &["source"],
+            Expr::CustomOrd => &["source", "comparator"],
+            Expr::Sort | Expr::EqualityComparator => &["comparator"],
+            Expr::WindowBound => &["representation"],
+            Expr::Return => &["argument"],
+            Expr::If => &["condition", "positive", "negative"],
+            Expr::Variant => {
+                if !same_type(edit, left, right)? {
+                    return Ok(Some(false));
+                }
+                // Java treats a SQL NULL on the left as a separate comparison case.
+                if left.data("isSqlNull").and_then(|v| v.as_bool()) == Some(true) {
+                    if left.data("isSqlNull") != right.data("isSqlNull") {
+                        return Ok(Some(false));
+                    }
+                    &[]
+                } else {
+                    &["value"]
+                }
+            }
+            Expr::Fail | Expr::NoExpression | Expr::EnumValue => &[],
+            Expr::NoComparator | Expr::AsymmetricFieldComparator => {
+                let type_fields: &[&str] = if kind == Expr::NoComparator {
+                    &["tupleType"]
+                } else {
+                    &["leftType", "rightType"]
+                };
+                for field in type_fields {
+                    if !edit.same_type(
+                        edit.type_id(left.edge(field)?)?,
+                        edit.type_id(right.edge(field)?)?,
+                    )? {
+                        return Ok(Some(false));
+                    }
+                }
+                &[]
+            }
             Expr::Static => {
                 if a != b {
                     return Ok(Some(false));
@@ -239,8 +309,42 @@ pub(crate) fn compare_expressions(
             }
             _ => return Ok(None),
         };
+        let attributes: &[&str] = match kind {
+            Expr::AsymmetricFieldComparator => &["comparisons"],
+            Expr::DirectComparator => &["ascending"],
+            Expr::FieldComparator => &["ascending", "fieldNo", "nullsFirst"],
+            Expr::Field | Expr::CustomOrdField => &["fieldNo"],
+            Expr::Borrow => &["mut"],
+            Expr::Cast => &["safe"],
+            Expr::Unary | Expr::Binary | Expr::ConditionalIncrement => &["opcode"],
+            Expr::TimeAddSub => &["opcode", "shortUnits", "longUnits"],
+            Expr::UnsignedWrap | Expr::UnsignedUnwrap => &["ascending", "nullsLast"],
+            Expr::HandleError => &["runtimeBehavior", "hasSourcePosition", "index"],
+            Expr::WindowBound => &["isPreceding"],
+            Expr::EnumValue => &["enumName", "constructor"],
+            _ => &[],
+        };
+        if attributes
+            .iter()
+            .any(|name| left.field(name) != right.field(name))
+        {
+            return Ok(Some(false));
+        }
         for name in children.iter().rev() {
-            pending.push((left.edge(name)?, right.edge(name)?));
+            let optional = matches!(
+                (kind, *name),
+                (Expr::If, "negative")
+                    | (Expr::GeoPointConstructor, "left" | "right")
+                    | (Expr::ConditionalIncrement, "condition")
+                    | (Expr::Variant, "value")
+            );
+            if optional {
+                if !optional_child(left, right, name, scope, &mut pending)? {
+                    return Ok(Some(false));
+                }
+            } else {
+                pending.push(Work::Compare(left.edge(name)?, right.edge(name)?, scope));
+            }
         }
     }
     Ok(Some(true))
@@ -251,6 +355,67 @@ mod tests {
     use super::*;
     use feldera_sql_ir::{Circuit, Field};
     use serde_json::json;
+
+    #[test]
+    fn nested_bindings_compare_initializers_in_their_enclosing_scope() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let mut edit = CircuitEditor::new(circuit);
+        let site = edit.circuit().root_id();
+        let ty = edit.bool_type(site, false)?;
+
+        // |row| { let row = row; |arg| LET value = row IN (value, arg) }
+        // All names may change, but a reference to arg cannot become a reference to row.
+        let mut key = |row, local, arg, alias, capture_arg| -> Result<ExpressionId, Error> {
+            let outer = edit.named_variable(ty, row)?;
+            let inner = edit.named_variable(ty, arg)?;
+            let binding = edit.let_statement(local, outer)?;
+            let read = edit.named_variable(ty, local)?;
+            let alias = edit.named_variable(ty, alias)?;
+            let captured = if capture_arg { inner } else { read };
+            let pair = edit.tuple_expr(site, false, &[alias, captured])?;
+            let pair = edit.let_expression(alias, read, pair)?;
+            let lambda = edit.closure_from_variables(pair, &[inner])?;
+            let block = edit.make_expr(
+                site,
+                Expr::Block,
+                edit.expression_type(lambda)?,
+                [
+                    ("contents", Field::Array(vec![Field::Reference(binding)])),
+                    ("lastExpression", Field::Reference(lambda.into())),
+                ],
+            )?;
+            edit.closure_from_variables(block, &[outer])
+        };
+        let left = key("r", "r", "s", "x", true)?;
+        let renamed = key("a", "b", "c", "d", true)?;
+        let captured = key("a", "b", "c", "d", false)?;
+        assert_eq!(equivalent(&edit, left, renamed)?, Some(true));
+        assert_eq!(equivalent(&edit, left, captured)?, Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn shared_reads_are_compared_in_each_binding_scope() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let mut edit = CircuitEditor::new(circuit);
+        let site = edit.circuit().root_id();
+        let ty = edit.bool_type(site, false)?;
+        let mut key = |row_name, local_name| -> Result<_, Error> {
+            let row = edit.named_variable(ty, row_name)?;
+            let local = edit.named_variable(ty, local_name)?;
+            let shadow = edit.let_expression(local, row, row)?;
+            let pair = edit.tuple_expr(site, false, &[row, shadow])?;
+            edit.closure_from_variables(pair, &[row])
+        };
+        let left = key("x", "x")?;
+        let right = key("y", "z")?;
+        assert_eq!(equivalent(&edit, left, right)?, Some(false));
+        Ok(())
+    }
 
     #[test]
     fn ordering_keys_bind_the_row_by_position_and_keep_null_order() -> Result<(), Error> {

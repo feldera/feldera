@@ -1,0 +1,34 @@
+{
+  "base_commit": "fb2d84682",
+  "scope": "Compare the direct and Rust-assisted candidate keys at each output port before LeftJoinChains and FindUnboundedState. The directed JNI check also compares renamed temporal keys and a captured row under nested declarations.",
+  "rust_tests_passed": 222,
+  "jni_tests_passed": 1,
+  "artifacts_sha256": {
+    "tests.log": "92f287fecf7d8fc9bfdb3bc738a422986e07949f55915be7fd7ec76374b20960",
+    "jni.log": "05489dbeaa98a61ae434d04d1d246c010291fde04bf538fff96f54cdc58732c1",
+    "clippy.log": "db547942074c4fd62c07e25e23bf8ae414fc13b6a32f3715dcb427c8181b8087",
+    "bin/libfeldera_sql_opt_jni.so": "6f67f2c6b99ccb19447990ef564c9b78630183085d9568286f9d083c7df026b8",
+    "ProvenanceCheck.java": "d1d9504d81b45aaf16218d286aafed16b2b3503b8c154cda83f2ebd5ea17c819",
+    "ColumnCopyOracle.java": "3cfff61f9ca95ed106cad77646670562ec86851cca9824c9956f208955c28e06"
+  },
+  "engines": {
+    "classic": {
+      "cases": 155,
+      "population_sha256": "30e44cdb8f8220f23b35b05ffc574281e0a4c2c31700759216ffb7e70a556fa6",
+      "observations_sha256": "200dc6a499b041f5ac48353b30850606fb7a5ccb5fb22492a40256a6c4b85219",
+      "ports": 6200,
+      "computed_closures": 1819,
+      "computed_groups": 278,
+      "deferred": 0
+    },
+    "gen2": {
+      "cases": 155,
+      "population_sha256": "98bc694bfd192525aa6fa653a836b1baf1c1428a072895eca0e07864da0fa99d",
+      "observations_sha256": "a31f5fe1eddeb46348de5921a0f2c656c6d4c96ab772848a561bab5fc1c26b93",
+      "ports": 6070,
+      "computed_closures": 1890,
+      "computed_groups": 255,
+      "deferred": 0
+    }
+  }
+}
