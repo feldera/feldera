@@ -56,6 +56,8 @@ mod row_fields;
 mod row_projection;
 mod map_input;
 pub use map_input::{split_map_input, MapOutput};
+mod join_input;
+pub use join_input::project_join_input;
 mod common_projections;
 pub use common_projections::{common_projection_payloads, common_projections, shared_projection_closures, CommonProjection, SharedProjectionClosure};
 mod conditionals;

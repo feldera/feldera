@@ -209,6 +209,24 @@ fn declared_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value
     Ok(json!({"expressions": expressions, "next_generated_name": next}))
 }
 
+fn project_join_input(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Request {
+        columns: Vec<usize>,
+        #[serde(flatten)]
+        site: ExpressionSite,
+    }
+    let request: Request = serde_json::from_slice(state)?;
+    let (arena, roots) = request.site.arena(input)?;
+    let [pair] = roots.as_slice() else {
+        return Err("join input projection requires one indexed parameter type".into());
+    };
+    let mut edit = CircuitEditor::new(arena.clone());
+    let pair = edit.type_id(*pair)?;
+    let f = feldera_sql_opt::project_join_input(&mut edit, arena.root_id(), pair, &request.columns, &mut next)?;
+    lowered_function_reply(&arena, &edit, Some(f), next, vec![])
+}
+
 fn asof_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
@@ -857,6 +875,7 @@ fn transform(
                 .map(feldera_sql_opt::ProjectionRules::for_producer).unwrap_or_default();
             return Ok(serde_json::to_value(rules)?);
         }
+        "RemoveUnusedFields/JoinInput" => return project_join_input(input, state, next),
         "OptimizerOrder" => {
             let options = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::optimizer_order(options).collect::<Vec<_>>())?);

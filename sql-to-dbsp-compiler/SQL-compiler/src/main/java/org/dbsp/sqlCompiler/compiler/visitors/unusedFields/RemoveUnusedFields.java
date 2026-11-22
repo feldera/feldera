@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
@@ -94,10 +95,20 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return source;
 
         DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
+        var columns = fieldMap.deref().getUsedFields();
+        DBSPClosureExpression projection = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.projectJoinInput(this.compiler, node, inputType, columns)
+                : joinInputProjection(node, inputType, columns);
+        DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, source);
+        this.addOperator(map);
+        return map.outputPort();
+    }
+
+    static DBSPClosureExpression joinInputProjection(CalciteObject node, DBSPType inputType, List<Integer> columns) {
         DBSPVariablePath var = inputType.var();
         DBSPExpression field1 = var.field(1).deref();
         boolean nullable = field1.getType().mayBeNull;
-        List<DBSPExpression> resultFields = Linq.map(fieldMap.deref().getUsedFields(),
+        List<DBSPExpression> resultFields = Linq.map(columns,
                 f -> field1.deepCopy().unwrapIfNullable(field1.getNode(), "Field should not be NULL")
                         .field(f).applyCloneIfNeeded());
         DBSPExpression rightSide = new DBSPTupleExpression(resultFields, nullable);
@@ -107,11 +118,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPRawTupleExpression raw = new DBSPRawTupleExpression(
                 DBSPTupleExpression.flatten(var.field(0).deref()),
                 rightSide);
-        DBSPClosureExpression projection = raw.closure(var);
-
-        DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, source);
-        this.addOperator(map);
-        return map.outputPort();
+        return raw.closure(var);
     }
 
     boolean done(DBSPSimpleOperator operator) {

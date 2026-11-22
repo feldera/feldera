@@ -998,6 +998,22 @@ public final class RustCircuitPass implements CircuitTransform {
         return lowerFunction(compiler, "AntijoinProjection", input, projection, DBSPClosureExpression.class);
     }
 
+    public static DBSPClosureExpression projectJoinInput(DBSPCompiler compiler, CalciteObject origin,
+            DBSPType input, List<Integer> columns) {
+        var site = expressionSite(origin);
+        site.set("columns", MAPPER.valueToTree(columns));
+        String pass = "RemoveUnusedFields/JoinInput";
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site), input);
+            var function = loweredClosure(compiler, reply);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return function;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode projection of join input", error);
+        }
+    }
+
     public static boolean isMapProjection(DBSPCompiler compiler, DBSPClosureExpression closure, boolean allowNestedAndCasts) {
         String pass = allowNestedAndCasts ? "IsNestedProjection" : "IsStrictProjection";
         var result = invokeLowering(compiler, pass, closure, null).value;
