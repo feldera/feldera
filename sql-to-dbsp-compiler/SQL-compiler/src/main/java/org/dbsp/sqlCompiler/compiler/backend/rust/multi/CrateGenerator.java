@@ -40,6 +40,8 @@ public final class CrateGenerator {
 
     public CrateGenerator(File baseDirectory, String directory, String crateName, ICodeGenerator codeGenerator,
                           boolean enterprise, boolean lib, boolean testing) {
+        // The compiler and the pipeline manager make the crate names; Cargo.toml files hold them unescaped
+        Utilities.enforce(crateName.matches("[A-Za-z0-9_-]+"), () -> "Invalid crate name " + crateName);
         this.crateName = crateName;
         this.directory = directory;
         this.baseDirectory = baseDirectory;

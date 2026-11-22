@@ -109,6 +109,7 @@ public final class MultiCratesWriter extends RustWriter {
                 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }""";
 
         String relativePath = "../..";
+        // The pipeline manager supplies the runtime path; Cargo.toml holds it unescaped
         if (!options.ioOptions.runtimePath.isEmpty())
             relativePath = options.ioOptions.runtimePath;
         deps = deps.replace("$ROOT", relativePath);
