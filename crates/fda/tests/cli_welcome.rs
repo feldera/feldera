@@ -113,25 +113,31 @@ mod tty {
         /// `home` is the home directory of fda.
         fn start(cols: u16, rows: u16, home: &Path, args: &[&str]) -> Session {
             let (mut master, mut slave) = (0, 0);
-            let mut size = libc::winsize {
-                ws_row: rows,
-                ws_col: cols,
-                ws_xpixel: 0,
-                ws_ypixel: 0,
-            };
             // SAFETY: openpty writes one file descriptor through each of the
-            // first two pointers, which point to live integers. `size` is a
-            // live `winsize`. Null is valid for the name and for the settings.
+            // first two pointers, which point to live integers. Null is valid
+            // for the name, for the settings and for the size.
             let status = unsafe {
                 libc::openpty(
                     &mut master,
                     &mut slave,
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
-                    &mut size,
+                    std::ptr::null_mut(),
                 )
             };
             assert_eq!(status, 0, "openpty failed");
+            // openpty takes the size through a `*mut` pointer on macOS and a
+            // `*const` pointer on Linux, so set the size with a separate call.
+            let size = libc::winsize {
+                ws_row: rows,
+                ws_col: cols,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+            // SAFETY: TIOCSWINSZ reads one `winsize` through the pointer, which
+            // points to `size`. `master` is an open pseudo-terminal.
+            let status = unsafe { libc::ioctl(master, libc::TIOCSWINSZ, &size) };
+            assert_eq!(status, 0, "cannot set the size of the terminal");
             // SAFETY: openpty opened both file descriptors, and no other code owns them.
             let (terminal, slave) =
                 unsafe { (File::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
