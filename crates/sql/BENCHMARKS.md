@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Positive column lineage, 2026-11-22
+
+On `61105fd2c`, all 69 cold pairs matched through classic artifact emission.
+Both paths used the packaged compiler jar. CPU 15 ran the benchmark while
+other verification ran on the same Linux ARM64 VM. Each workload had two
+warmup pairs and 21 measured pairs. The timings end before Cargo compilation.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.305 | 1.929 | 0.837× |
+| Nexmark suite | 5.160 | 6.065 | 1.175× |
+| Outer join | 2.171 | 1.793 | 0.826× |
+
+[Compilation timings and build identities](evidence/p3-positive-lineage-cold.json)
+
 ## Shared row types, 2026-11-22
 
 On `19f82bffc`, CPU 15 ran the cold compiler benchmark in its own container.
