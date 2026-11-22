@@ -4,6 +4,22 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Weigh limiter inputs, 2026-11-22
+
+Build `b1cc5637e` met the 1.2× ceiling on all three workloads. Each
+workload ran two warmup pairs and 21 measured pairs in fresh JVMs on CPU
+15 of the ARM64 devcontainer, alternating compiler order. All 69 pairs
+matched through classic artifact emission. The timer stopped before Cargo
+built the pipeline.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.470 | 1.162 | 0.790× |
+| Nexmark suite | 3.277 | 3.790 | 1.156× |
+| Outer join | 1.398 | 1.090 | 0.780× |
+
+[Per-workload timings, input hashes, and build identities](evidence/p3-weigh-limiter-input-cold.json)
+
 ## Compact snapshot strings, 2026-11-22
 
 On `29f71e8ea`, all three workloads met the 1.2× ceiling. The ARM64
