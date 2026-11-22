@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.Gen2JsonVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -229,6 +230,22 @@ public class Gen2JsonTests extends SqlIoTest {
     public void gen2CircuitRoundTripsThroughJson() {
         for (String program : new String[] { WINDOW_PROGRAM, FOLD_PROGRAM, CONSTANT_PROGRAM })
             Assert.assertNotNull(this.compile(program, true, true).getFinalCircuit(false));
+    }
+
+    /** The Gen-2 circuit JSON of a VARIANT constant has one "type" key per object */
+    @Test
+    public void gen2JsonVariantConstant() throws JsonProcessingException {
+        DBSPCompiler compiler = this.compile("""
+                CREATE TABLE t(x INT);
+                CREATE VIEW v AS SELECT CAST(NULL AS VARIANT) AS n FROM t;""", true, false);
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        Gen2JsonVisitor visitor = Gen2JsonVisitor.create(compiler, 1);
+        visitor.apply(circuit);
+        String json = visitor.getJsonString();
+        Assert.assertTrue(json.contains("\"DBSPVariantExpression\""));
+        // The mapper fails on a duplicate key
+        Utilities.deterministicObjectMapper().readTree(json);
     }
 
     /** True if {@code simpleName} names a subclass of {@link DBSPExpression}. */
