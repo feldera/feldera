@@ -1120,6 +1120,20 @@ fn transform(
         return Ok(json!(operator_numbers(candidates)));
     }
     if let Some(name) = pass.strip_prefix("Topology/") {
+        if name == "OptimizeIncrementalVisitor" {
+            use feldera_sql_opt::IntegralEdit;
+            if let Some(edits) = feldera_sql_opt::flat_integral_edits(&circuit)? {
+                let actions: BTreeMap<_, _> = edits.into_iter().map(|(id, edit)| {
+                    let action = match edit {
+                        IntegralEdit::Bypass => "Bypass",
+                        IntegralEdit::Push => "Push",
+                        IntegralEdit::ReplaceAndPush(kind) => kind.wire_name(),
+                    };
+                    (operator_number(id), action)
+                }).collect();
+                return Ok(json!({"integral_edits": actions}));
+            }
+        }
         if name == "LinearPostprocessRetainKeys" {
             let Some(plan) = feldera_sql_opt::linear_retention_plan(&circuit)? else {
                 return Ok(Value::Null);

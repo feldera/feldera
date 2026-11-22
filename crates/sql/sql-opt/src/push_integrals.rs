@@ -41,6 +41,72 @@ fn marked_no_inc(node: &Node) -> bool {
         .is_some_and(|annotations| annotations.iter().any(|a| a["class"] == "NoInc"))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IntegralEdit {
+    Bypass,
+    Push,
+    ReplaceAndPush(Op),
+}
+
+/// Both the live plan and standalone rewrite select an edit after checking the inputs.
+fn integral_edit(kind: Op, node: &Node) -> Option<IntegralEdit> {
+    if !accepts_deltas(kind) {
+        None
+    } else if kind == Op::Differentiate && !marked_no_inc(node) {
+        Some(IntegralEdit::Bypass)
+    } else {
+        Some(
+            kind.incremental_form()
+                .map_or(IntegralEdit::Push, IntegralEdit::ReplaceAndPush),
+        )
+    }
+}
+
+/// On a flat circuit, only the number of consecutive integrals on a rewritten
+/// output can affect the next decision. Cancelling a derivative may expose an
+/// earlier integral. Recursive imports and exports use the full graph rewrite.
+pub fn flat_integral_edits(
+    circuit: &Circuit,
+) -> Result<Option<BTreeMap<NodeId, IntegralEdit>>, Error> {
+    let mut depths: BTreeMap<NodeId, usize> = BTreeMap::new();
+    let mut edits = BTreeMap::new();
+    for id in circuit.root().edges("allOperators")? {
+        let node = circuit
+            .node(id)
+            .ok_or_else(|| Error::new("missing circuit member"))?;
+        let kind = node
+            .operator_kind()
+            .ok_or_else(|| Error::new("expected an operator"))?;
+        if kind == Op::Nested {
+            return Ok(None);
+        }
+        let mut minimum = None;
+        for port in node.inputs() {
+            let Some(&depth) = depths.get(&port.operator) else {
+                // An import or forward edge needs the graph visitor's port mapping.
+                return Ok(None);
+            };
+            let input = if port.number == 0 { depth } else { 0 };
+            minimum = Some(minimum.map_or(input, |old: usize| old.min(input)));
+        }
+        let mut depth = 0;
+        if let Some(input) = minimum {
+            if kind == Op::Integrate {
+                depth = input + 1;
+            } else if let Some(edit) = integral_edit(kind, node).filter(|_| input > 0) {
+                depth = if edit == IntegralEdit::Bypass {
+                    input - 1
+                } else {
+                    1
+                };
+                edits.insert(id, edit);
+            }
+        }
+        depths.insert(id, depth);
+    }
+    Ok(Some(edits))
+}
+
 fn unary_input(node: &Node) -> Result<OutputPort, Error> {
     let mut ports = node.inputs();
     ports
@@ -121,10 +187,11 @@ impl PushIntegrals {
                 self.edit.rewire_inputs(id, &[raw])?;
                 continue;
             }
-            if !accepts_deltas(kind) || !self.all_integrated(&inputs) {
+            let Some(action) = integral_edit(kind, node).filter(|_| self.all_integrated(&inputs))
+            else {
                 self.edit.rewire_inputs(id, &inputs)?;
                 continue;
-            }
+            };
             let raw: Vec<_> = inputs
                 .iter()
                 .map(|p| unary_input(self.edit.node(p.operator)?))
@@ -133,7 +200,7 @@ impl PushIntegrals {
                 operator: id,
                 number: 0,
             };
-            if kind == Op::Differentiate && !marked_no_inc(node) {
+            if action == IntegralEdit::Bypass {
                 self.outputs.insert(output, raw[0]);
                 self.removed.insert(id, raw[0]);
             } else {
@@ -174,6 +241,35 @@ mod tests {
 
     fn port(id: u64, number: u64) -> Value {
         json!({"operator":{"node": id}, "outputNumber":number})
+    }
+
+    #[test]
+    fn cancelling_a_derivative_exposes_the_previous_integral() {
+        let unary = |class: &str, id, source| {
+            json!({
+                "class":class, "id":id, "inputs":[port(source,0)], "annotations":[]
+            })
+        };
+        let mut keep_derivative = unary("DBSPDifferentiateOperator", 6, 5);
+        keep_derivative["annotations"] = json!([{"class":"NoInc"}]);
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+                {"class":"DBSPSourceMultisetOperator","id":1,"inputs":[]},
+                unary("DBSPIntegrateOperator",2,1), unary("DBSPIntegrateOperator",3,2),
+                unary("DBSPDifferentiateOperator",4,3), unary("DBSPStreamDistinctOperator",5,4),
+                keep_derivative,
+                {"class":"DBSPStreamJoinOperator","id":7,"inputs":[port(5,0),port(1,0)]}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(
+            flat_integral_edits(&graph).unwrap().unwrap(),
+            BTreeMap::from([
+                (NodeId::Outer(4), IntegralEdit::Bypass),
+                (NodeId::Outer(5), IntegralEdit::ReplaceAndPush(Op::Distinct)),
+                (NodeId::Outer(6), IntegralEdit::Push),
+            ])
+        );
     }
 
     #[test]

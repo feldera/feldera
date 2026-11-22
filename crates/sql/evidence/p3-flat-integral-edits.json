@@ -1,0 +1,53 @@
+{
+  "base_commit": "cc33e225e",
+  "scope": "The Rust topology planner selects integral moves on flat circuits. Nested circuits use the existing Rust signature or full-graph rewrite. Compare both pass invocations on original frozen S2 captures for every program previously observed to change under integral pushing. Regenerate direct and hybrid observations in the same devcontainer and compare entries, exits and name counters. Independently replay the selected programs through ordered S4 and emission.",
+  "engines": {
+    "classic": {
+      "changed_cases": 1287,
+      "equal_pass_invocations": 2574,
+      "pass_shards": 13,
+      "pass_receipts_sha256": "d37e4f2cbd829fa155e2d106e21e2967427ce07e736c2fbeccd4e1c9630bac91",
+      "equal_detached_cases": 143,
+      "detached_reports_sha256": [
+        "f63826b9b1d82397da504b13e24acd5eff080ae7f59d5dc1daa55f3d63bc0352",
+        "2965ac274bbdf311a4fab39b2f346c63cb9615a70ba89014ce0a5247295bac55",
+        "5923c84b1c57971970d68805714c225f6a76ede87c18e8efce7312bbf8b39c31",
+        "12befd07d581f243f037cf91ee03188b166eb325f519eb314a1488081a049200"
+      ]
+    },
+    "gen2": {
+      "changed_cases": 8526,
+      "equal_pass_invocations": 17052,
+      "pass_shards": 86,
+      "pass_receipts_sha256": "d5124e95a44a022b564786ec2af27260ec17506a4d6895a8b3499a06a8d38aed",
+      "equal_detached_cases": 429,
+      "detached_reports_sha256": [
+        "ff3a5b381247210a4567fd7ce8dcca7234cfd2612e554cfaae068e6065705c21",
+        "3e733ba4a7c22c19e069045959864eeaa1a2bf1f82872f9ef69dbadc3fb402e5",
+        "1ea3418072857e26625f76c1d57ff5683b03f2faff6bf8a25a56523a8c3c988c",
+        "effb6a05814d752f42baec9480033817b9c495d656bcf7ce4c9e0ef4685c14d7"
+      ]
+    }
+  },
+  "checkpoint_restores_both_directions_sha256": {
+    "count": "8f09fd2a4ce3df9781cc9e700d599a489d25c829fd25f4d262f2fde7dc7f0563",
+    "watermark": "d2cc22caf1b2204a4f4b23e375b6e24915d9d8afbaa9c7c1e4d7a9bec73d642e"
+  },
+  "paired_cpu_method": "Two invocations per classic Nexmark compile. Nine alternating fresh-JVM pairs on CPU 13 during concurrent corpus verification. Discard first pair.",
+  "paired_cpu": {
+    "column-provenance": {
+      "compiler_jar_sha256": "2b1bf1ce54be9a69b7022ecc395dbc0649253c900e65a308430be3a4d6c86bdc",
+      "optimizer_library_sha256": "cd35fe5b39b2a51d82959e84548def48ebd632adb9cde44d93ecca5744aa5bd4",
+      "cpu_median_ms": 182.732,
+      "raw_sha256": "8d9759c409019351b2aea2c531d21e1cb9d59143fd6fadb0c12ae3d70477b7bb"
+    },
+    "flat-integral-edits": {
+      "compiler_jar_sha256": "d03a832b6a6d6c576d9abfd549eaca36ddf16a32c861e40d8676302683d9cb65",
+      "optimizer_library_sha256": "4d2b2801ed02e234620eb051f8aaeda70ddb88b71a25e3cbd6291c61b3a39861",
+      "cpu_median_ms": 4.43,
+      "raw_sha256": "c78d6ee4160e5ac49e67a52c0bcfb9a994d2f8c32a023d85866e9d0e4cda0b59"
+    }
+  },
+  "rust_test_log_sha256": "8c11e12264cba30d24c8616332f9a680eb3e62773995d9611f1256d5e6704036",
+  "clippy_log_sha256": "19cdda26af05ab854630bc8546adb2cba721d679f8da7e81b5a8d088047e2ee2"
+}

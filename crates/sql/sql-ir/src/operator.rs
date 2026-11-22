@@ -97,6 +97,18 @@ operator_kinds! {
 }
 
 impl OperatorKind {
+    /// Stateful counterpart of a snapshot operator whose inputs become deltas.
+    pub fn incremental_form(self) -> Option<Self> {
+        match self {
+            Self::StreamJoin => Some(Self::Join),
+            Self::StreamJoinIndex => Some(Self::JoinIndex),
+            Self::StreamAntiJoin => Some(Self::AntiJoin),
+            Self::StreamDistinct => Some(Self::Distinct),
+            Self::StreamAggregate => Some(Self::Aggregate),
+            _ => None,
+        }
+    }
+
     /// These constructors take their output collection type from their first input.
     /// The circuit editor can reconnect them without rebuilding a projection.
     pub fn supports_stream_input_replacement(self) -> bool {

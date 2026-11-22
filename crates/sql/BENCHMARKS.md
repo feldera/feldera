@@ -4,6 +4,14 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Flat integral edits, 2026-11-22
+
+On the integral-planner build, median main-thread CPU time for
+Nexmark's two integral-pushing passes fell from 182.73 to 4.43 ms. Each
+build ran in nine alternating fresh-JVM pairs on CPU 13 during corpus
+verification. The medians exclude the first pair.
+[Integral pass profiles](evidence/p3-flat-integral-edits.json)
+
 ## Join key build, 2026-11-22
 
 On `c15e725ac`, all 69 cold pairs matched through classic source emission.

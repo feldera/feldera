@@ -168,13 +168,8 @@ impl CircuitEditor {
         id: NodeId,
         aggregate_origin: Option<NodeId>,
     ) -> Result<(), Error> {
-        let kind = match self.node(id)?.operator_kind() {
-            Some(Op::StreamJoin) => Op::Join,
-            Some(Op::StreamJoinIndex) => Op::JoinIndex,
-            Some(Op::StreamAntiJoin) => Op::AntiJoin,
-            Some(Op::StreamDistinct) => Op::Distinct,
-            Some(Op::StreamAggregate) => Op::Aggregate,
-            _ => return Ok(()),
+        let Some(kind) = self.node(id)?.operator_kind().and_then(Op::incremental_form) else {
+            return Ok(());
         };
         let origin = if let Some(source) = aggregate_origin {
             self.node(source)?.field("provenance").cloned()

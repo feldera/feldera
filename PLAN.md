@@ -41,6 +41,11 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. Rust planned integral moves from operator kinds and edges on
+  flat circuits. Both pass invocations matched Java on 9,813 frozen programs,
+  and all 572 selected programs matched through emission. On the preceding
+  join-key build, cold Nexmark p95 was 2.037× direct Java.
+  [Integral replay](crates/sql/evidence/p3-flat-integral-edits.json) · [Cold timings](crates/sql/BENCHMARKS.md#join-key-build-2026-11-22)
 - 2026-11-22. Rust derived the same collection keys as Java at 6,631 ports
   across 94 classic and Gen-2 cases. All 269 selected programs matched at
   every optimizer boundary and through emission. COUNT and LATENESS checkpoints

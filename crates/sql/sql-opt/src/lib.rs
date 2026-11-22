@@ -226,7 +226,7 @@ pub use optimize_distinct::optimize_distinct;
 pub use output_integrators::share_output_integrators;
 pub use propagate_constants::propagate_constants;
 pub use pull_filters::pull_filters;
-pub use push_integrals::push_integrals;
+pub use push_integrals::{flat_integral_edits, push_integrals, IntegralEdit};
 pub use recursive_views::{resolve_view_references, ViewReferences, ViewResolution};
 pub use regions::{conflicting_regions, tag_regions};
 pub use remove_noops::{bypassed_noops, optimize_noops, remove_noops};

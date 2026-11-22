@@ -489,6 +489,14 @@ the graph. Across 12 paired Nexmark compilations, median CPU time for the
 two invocations fell from 284 ms to 253 ms during concurrent verification.
 [Integral-pushing replay](evidence/p3-integral-signatures.json)
 
+For flat circuits, Rust follows consecutive integrations at each output and
+sends the JVM only the moves and derivative cancellations to apply. This
+retains the live functions and their source positions. The recursive path
+still uses the Rust graph rewrite. All 19,626 pass invocations on previously
+changed programs matched Java, as did 572 selected programs through emission.
+COUNT and LATENESS checkpoints restored in both directions.
+[Flat integral edits](evidence/p3-flat-integral-edits.json)
+
 Rust selects the table and view columns with declared LATENESS and determines
 which tuple views inherit input bounds. All 550 selected monotonicity pass
 comparisons and 25 detached replays matched Java. COUNT and LATENESS

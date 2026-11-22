@@ -2894,6 +2894,10 @@ public final class RustCircuitPass implements CircuitTransform {
                     };
                     JsonNode probe = this.invoke("Topology/" + this.nativeName, OptimizerTopology.encode(circuit, details),
                             initial, state);
+                    if (probe.has("integral_edits")) {
+                        Map<Long, String> edits = MAPPER.convertValue(probe.required("integral_edits"), new TypeReference<>() {});
+                        return edits.isEmpty() ? circuit : new IntegralPushEdits(this.compiler, edits).apply(circuit);
+                    }
                     if (probe.has("empty_stream_edits"))
                         return this.applyStreamEdits(circuit, probe.required("empty_stream_edits"));
                     if (probe.has("stream_aggregate")) {
