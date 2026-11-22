@@ -991,23 +991,51 @@ public class CatalogTests extends BaseSQLTests {
         return leaves;
     }
 
+    /** A table and a view with a field named 'Leaf' in five kinds of nested positions. */
+    static final String NESTED_FIELDS = """
+            CREATE TYPE user_def AS ("Leaf" INT, plain INT);
+            CREATE TABLE T (
+                in_row ROW("Mid" ROW("Leaf" INT)),
+                in_array ROW("Leaf" INT) ARRAY,
+                in_map MAP<VARCHAR, ROW("Leaf" INT)>,
+                in_map_array MAP<VARCHAR, ROW("Leaf" INT) ARRAY>,
+                in_type user_def
+            );
+            CREATE VIEW V AS SELECT * FROM T;""";
+
+    /** The number of fields named 'Leaf' in the columns of a relation, checking the case
+     * sensitivity flag of every nested field. */
+    static int countLeaves(JsonNode relation) {
+        int leaves = 0;
+        for (JsonNode column : relation.get("fields"))
+            leaves += checkCaseSensitivity(column.get("columntype"));
+        return leaves;
+    }
+
     @Test
     public void nestedCaseSensitivity() {
-        var ccs = this.getCCS("""
-                CREATE TYPE user_def AS ("Leaf" INT, plain INT);
-                CREATE TABLE T (
-                    in_row ROW("Mid" ROW("Leaf" INT)),
-                    in_array ROW("Leaf" INT) ARRAY,
-                    in_map MAP<VARCHAR, ROW("Leaf" INT)>,
-                    in_map_array MAP<VARCHAR, ROW("Leaf" INT) ARRAY>,
-                    in_type user_def
-                );
-                CREATE VIEW V AS SELECT * FROM T;""");
+        var ccs = this.getCCS(NESTED_FIELDS);
         JsonNode table = ccs.compiler.metadata.getTableDescription(new ProgramIdentifier("t"))
                 .asJson(true);
-        int leaves = 0;
-        for (JsonNode column : table.get("fields"))
-            leaves += checkCaseSensitivity(column.get("columntype"));
-        Assert.assertEquals(table.toPrettyString(), 5, leaves);
+        Assert.assertEquals(table.toPrettyString(), 5, countLeaves(table));
+    }
+
+    /** The program schema that the compiler writes with -js marks the nested fields too, in
+     * the tables and in the views. */
+    @Test
+    public void nestedCaseSensitivityInTheProgramSchema() {
+        var ccs = this.getCCS(NESTED_FIELDS);
+        JsonNode schema = ccs.compiler.metadata.asJson();
+        int relations = 0;
+        for (String kind : new String[] { "inputs", "outputs" }) {
+            for (JsonNode relation : schema.get(kind)) {
+                String name = relation.get("name").asText();
+                if (!name.equals("t") && !name.equals("v"))
+                    continue;
+                relations++;
+                Assert.assertEquals(relation.toPrettyString(), 5, countLeaves(relation));
+            }
+        }
+        Assert.assertEquals(2, relations);
     }
 }

@@ -582,10 +582,12 @@ public class MetadataTests extends BaseSQLTests {
                               "name" : "t",
                               "nullable" : false,
                               "precision" : -1,
-                              "type" : "VARCHAR"
+                              "type" : "VARCHAR",
+                              "case_sensitive" : false
                             } ],
                             "nullable" : true
-                          }
+                          },
+                          "case_sensitive" : false
                         } ],
                         "nullable" : true
                       },
