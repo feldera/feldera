@@ -41,6 +41,10 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. Rust derived the same collection keys as Java at 6,631 ports
+  across 94 classic and Gen-2 cases. All 269 selected programs matched at
+  every optimizer boundary and through emission. COUNT and LATENESS checkpoints
+  restored in both directions. [Join key comparisons](crates/sql/evidence/p3-join-collection-keys.json)
 - 2026-11-22. The Rust clock classifier matched Java on 133 frozen programs
   and 150 directed predicates. Fourteen detached replays matched through
   emission, and COUNT and LATENESS checkpoints restored in both directions.

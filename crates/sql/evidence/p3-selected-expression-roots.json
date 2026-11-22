@@ -1,0 +1,72 @@
+{
+  "scope": "Four live Rust expression passes receive only roots containing candidate expressions, in circuit traversal order.",
+  "detached_replay": {
+    "classic": {
+      "matched_programs": 90,
+      "shards": [
+        {
+          "input_sha256": "48cfb141a84aa60b4875b56a72dab16e312a10efb7c38a33b14b9bd7adca9f19",
+          "report_sha256": "b43de94ceea25af49cec3ad42fcc2fe97bd23f7bf2fe369dd234c936b2b671ba"
+        },
+        {
+          "input_sha256": "933b6c9daf6eecf5e4fd610fdb649adea9aca0f1d956d5f0c10d2c8e14cc9738",
+          "report_sha256": "0800c11fd4822d1c218e7d37d20d8731485bf2d5e45b8e864ce05e01382cd6de"
+        },
+        {
+          "input_sha256": "ff38e7d173da320ffa7517bb9acc5ac0e5e6366066a0b37edba80b5c23801af4",
+          "report_sha256": "12de1d0fec7d1deff72c3a54b0b345541efde46b04994c1cb1ddca792c8d2877"
+        },
+        {
+          "input_sha256": "55785153c2d1672b412f666db88e9d89dc01302cb4e8b065e435e33389cb1944",
+          "report_sha256": "70c3860a8669e5b2f0f8231f664ae59fd3f46bfccb87e20f9af98e62fbbc3c7b"
+        }
+      ]
+    },
+    "gen2": {
+      "matched_programs": 89,
+      "shards": [
+        {
+          "input_sha256": "d916d8434e8d64601b610dfdc1d21035886aede190d80a89460256de1c08e6ed",
+          "report_sha256": "e1385612551579cefa717721f6cf8461afb0ff9f2649f5a239c4517b541aa4b2"
+        },
+        {
+          "input_sha256": "1faeaaaa90cde8f9102263730dca09b73de28da245b23007b8387e14746171ba",
+          "report_sha256": "30160d382e31c2811590691e2a0ff056b36e51b9c551d2a7ad68031b098335e4"
+        },
+        {
+          "input_sha256": "1760cf08287f216c098d2d136ef4383ed35588a2c248d5cf3fbe6f16b7316dd7",
+          "report_sha256": "5494370ff6bfb3ad2d0333ead964dfb6d0e136a5dfc2b9b757334b7b9f3ba1b6"
+        },
+        {
+          "input_sha256": "269abc2a1b9a2b0ed005e7796dfff0482b5b13e06a097251eb187cafbd1ef861",
+          "report_sha256": "c659451513ebe5c5af8ae1f9f0a848b1e1161facc92715e145c1784a4bdfda11"
+        }
+      ]
+    }
+  },
+  "profile": "Classic Nexmark, CPU 14 in the devcontainer, nine alternating fresh-JVM pairs during concurrent corpus replay. Discard the first pair. Median per-pass main-thread CPU time across eight measured samples per build.",
+  "builds": {
+    "scalar-clock-operations": {
+      "optimizer_library_sha256": "8e32dfc368145b9baa9ee6106ddc349f01a0c65d8382382724b468159aa39502",
+      "compiler_jar_sha256": "3013ee9b0a884b86d5aa5e3f5fa3ca76a9f8e6f9b4deefba429f0add46b49b52",
+      "profile_sha256": "f5d99fef06975690883491048aeadd7f1715743257ecf71b5303db42fb0bead7",
+      "median_cpu_ms": {
+        "SimplifyConditionals": 40.463,
+        "AdjustSqlIndex": 45.603,
+        "ExpandUnsafeCasts": 43.518,
+        "ExpandSafeCasts": 1.342
+      }
+    },
+    "selected-expression-roots": {
+      "optimizer_library_sha256": "7f8ffe5fa24de3645f384a30d8010b734375d778e55bd5d7afc1cd7130e42968",
+      "compiler_jar_sha256": "4806f14849566d5b0efff7642caad01d5d7c285a3decb23163ba0ea540c17728",
+      "profile_sha256": "fd34a4327dea666628e963598ab50c02da20e129afc1cbf53305d7dcde76debe",
+      "median_cpu_ms": {
+        "SimplifyConditionals": 11.623,
+        "AdjustSqlIndex": 3.989,
+        "ExpandUnsafeCasts": 11.81,
+        "ExpandSafeCasts": 1.625
+      }
+    }
+  }
+}

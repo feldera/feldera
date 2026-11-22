@@ -69,8 +69,10 @@ impl Transformation for AdjustIndex {
     }
 }
 
+pub fn adjust_index_root(editor: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
+    Rewrite::translating_expressions(AdjustIndex).apply(editor, root)
+}
+
 pub fn adjust_sql_index(circuit: Circuit) -> Result<Circuit, Error> {
-    CircuitEditor::new(circuit).rewrite_inner_roots(|editor, id| {
-        Rewrite::translating_expressions(AdjustIndex).apply(editor, id)
-    })
+    CircuitEditor::new(circuit).rewrite_inner_roots(adjust_index_root)
 }

@@ -55,6 +55,10 @@ public final class Keys {
             if (minimal)
                 result.add(key);
         }
+        return fromMinimized(result);
+    }
+
+    static Keys fromMinimized(List<KeyColumns> result) {
         return result.isEmpty() ? NONE : new Keys(List.copyOf(result));
     }
 

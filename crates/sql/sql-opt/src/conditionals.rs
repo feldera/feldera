@@ -167,19 +167,24 @@ impl Transformation for ReplaceKnown {
     }
 }
 
+pub fn simplify_conditional_root(edit: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
+    if edit.expression(root).is_err() || !contains_if(edit, root)? {
+        return Ok(root);
+    }
+    // A shared expression may be true in one branch and false in another.
+    let root = ensure_expression_tree(edit, root)?;
+    let mut facts = GuardedTests::default();
+    facts.visit(edit, root, 0)?;
+    Rewrite::translating_expressions(ReplaceKnown(facts.values)).apply(edit, root)
+}
+
 pub fn simplify_conditionals(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
     rewrite_expressions(circuit, next, |edit, root, context, _| {
-        if matches!(context, Context::Declaration)
-            || edit.expression(root).is_err()
-            || !contains_if(edit, root)?
-        {
-            return Ok(root);
+        if matches!(context, Context::Declaration) {
+            Ok(root)
+        } else {
+            simplify_conditional_root(edit, root)
         }
-        // A shared expression may be true in one branch and false in another.
-        let root = ensure_expression_tree(edit, root)?;
-        let mut facts = GuardedTests::default();
-        facts.visit(edit, root, 0)?;
-        Rewrite::translating_expressions(ReplaceKnown(facts.values)).apply(edit, root)
     })
 }
 

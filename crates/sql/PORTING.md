@@ -508,6 +508,14 @@ with nullable operands. Across both engines the directed oracle produced
 14 detached replays matched Java. COUNT and LATENESS checkpoints restored
 in both directions. [Clock comparisons](evidence/p3-scalar-clock-comparisons.json)
 
+Rust derives collection keys for binary, left and star joins from each input's
+candidate keys and the columns copied by the join closure. The regular and
+lossless-cast analyses agreed with Java at 6,631 output ports, including 460
+join outputs. All 135 classic and 134 Gen-2 programs selected for joins and
+expression rewrites matched through ordered S4 and emission. COUNT and LATENESS
+restored from each compiler's checkpoint with the other compiler.
+[Join key comparisons](evidence/p3-join-collection-keys.json)
+
 The JNI expression reader validates new references against both arenas and
 inserts the smaller map into the larger one. Across 41 paired sweeps of
 554 Nexmark batches, this saved a median 2.04 ms per sweep (bootstrap 95%

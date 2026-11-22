@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Lineage;
@@ -653,6 +654,16 @@ public class KeyAnalysis extends CircuitVisitor {
                 column.part() == Part.INDEX ? 0 : valueParameter, Column.none(column.field())));
     }
 
+    private Keys nativeJoinKeys(List<OutputPort> inputs, Provenance provenance, boolean leftJoin) {
+        var keys = inputs.stream().map(port -> this.getKeys(port).keys).toList();
+        if (keys.stream().allMatch(List::isEmpty))
+            return Keys.NONE;
+        var copies = provenance.sources().entrySet().stream().map(entry ->
+                new RustCircuitPass.KeyColumnCopy(entry.getValue().parameter(),
+                        entry.getValue().column(), entry.getKey())).toList();
+        return Keys.fromMinimized(RustCircuitPass.joinKeys(keys, copies, leftJoin));
+    }
+
     /** Joins: the join function receives (index, left value, right value).  A pair of keys,
      * one per side, is a key of the output.  When the index covers a key of the right
      * input every left row matches at most one right row, so the left keys survive alone;
@@ -680,6 +691,10 @@ public class KeyAnalysis extends CircuitVisitor {
         ColumnEquivalence rightEquivalence = this.getEquivalence(node.right()).after(rightTransform);
         ColumnEquivalence equivalence = outputEquivalence(output, closure, provenance)
                 .merge(leftEquivalence).merge(rightEquivalence);
+        if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+            this.set(node, this.nativeJoinKeys(node.inputs, provenance, leftJoin), equivalence);
+            return;
+        }
         Keys leftMapped = left.map(leftTransform);
         Keys rightMapped = right.map(rightTransform);
         List<KeyColumns> result = new ArrayList<>();
@@ -723,7 +738,12 @@ public class KeyAnalysis extends CircuitVisitor {
             // Parameter 0 is the shared index, parameter i + 1 the value of input i
             ColumnCopyTransform transform = sideTransform(provenance, i + 1);
             equivalence = equivalence.merge(this.getEquivalence(input).after(transform));
-            mapped.add(this.getKeys(input).map(transform));
+            if (!this.compiler().options.ioOptions.rustOptimizerPasses)
+                mapped.add(this.getKeys(input).map(transform));
+        }
+        if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+            this.set(node, this.nativeJoinKeys(node.inputs, provenance, false), equivalence);
+            return;
         }
         List<KeyColumns> result = new ArrayList<>();
         for (int i = 0; i < node.inputs.size(); i++) {

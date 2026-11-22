@@ -21,7 +21,7 @@ mod sql_index;
 pub use casts::{
     expand_sql_casts, prepare_column_default, same_literal_value, CastSafety, SimplifyWarning,
 };
-pub use sql_index::adjust_sql_index;
+pub use sql_index::{adjust_index_root, adjust_sql_index};
 
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind, Field, InnerKind, NodeId, TypeKind};
 use std::collections::HashMap;

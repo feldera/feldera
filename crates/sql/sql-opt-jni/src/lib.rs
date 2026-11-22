@@ -348,16 +348,25 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     }
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
+    if let Some(name) = pass.strip_suffix("/Root") {
+        use feldera_sql_expr::CastSafety;
+        let &[root] = roots.as_slice() else {
+            return Err(format!("{pass} requires one inner root").into());
+        };
+        let result = match name {
+            "Simplify" => feldera_sql_expr::simplify_closure_with_warnings(&mut edit, root, Some(&mut warnings))?,
+            "SimplifyWaterline" => feldera_sql_opt::simplify_waterline_root(&mut edit, root, &mut next, Some(&mut warnings))?,
+            "SimplifyConditionals" => feldera_sql_opt::simplify_conditional_root(&mut edit, root)?,
+            "AdjustSqlIndex" => feldera_sql_expr::adjust_index_root(&mut edit, root)?,
+            "ExpandSafeCasts" => feldera_sql_expr::expand_sql_casts(&mut edit, root, CastSafety::Safe, &mut next)?,
+            "ExpandUnsafeCasts" => feldera_sql_expr::expand_sql_casts(&mut edit, root, CastSafety::Unsafe, &mut next)?,
+            _ => return Err(format!("unknown expression rewrite {name}").into()),
+        };
+        let mut encoded = edit.circuit().additional_inner_nodes(&arena, [result])?;
+        return Ok(json!({"root": encoded.pop().expect("one result root"),
+            "next_generated_name": next, "warnings": pass_warnings(warnings)}));
+    }
     let function = match (pass, roots.as_slice()) {
-        ("Simplify/Root" | "SimplifyWaterline/Root", [root]) => {
-            let result = if pass == "Simplify/Root" {
-                feldera_sql_expr::simplify_closure_with_warnings(&mut edit, *root, Some(&mut warnings))?
-            } else {
-                feldera_sql_opt::simplify_waterline_root(&mut edit, *root, &mut next, Some(&mut warnings))?
-            };
-            let encoded = edit.circuit().additional_inner_nodes(&arena, [result])?;
-            return Ok(json!({"root": encoded[0], "next_generated_name": next, "warnings": pass_warnings(warnings)}));
-        }
         ("ExpandMetadataCasts/Initializer", [root]) => {
             let root = edit.expression(*root)?;
             feldera_sql_expr::prepare_column_default(&mut edit, root, &mut next)?
@@ -771,6 +780,10 @@ fn transform(
         return Ok(json!({"needs_full_snapshot":required}));
     }
     match pass {
+        "KeyAnalysis/Join" => {
+            let request: feldera_sql_opt::JoinKeys = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(request.derive())?);
+        }
         "CSE/Candidates" => {
             let operators = serde_json::from_slice(input)?;
             return Ok(json!(operator_numbers(feldera_sql_opt::projected_cse_payloads(operators))));
@@ -853,7 +866,8 @@ fn transform(
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
         | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/Filter"
-        | "Simplify/Root" | "SimplifyWaterline/Root" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
+        | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {

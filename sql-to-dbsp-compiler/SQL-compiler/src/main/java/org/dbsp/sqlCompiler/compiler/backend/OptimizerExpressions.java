@@ -36,6 +36,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /** Project the inner roots a pass inspects, preserving shared expression and type identities. */
 final class OptimizerExpressions {
@@ -139,6 +141,39 @@ final class OptimizerExpressions {
             json.append(call.name()).append(call.arity()).endArray();
         }
         return json.endArray().toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** Visit roots in circuit-rewriter order. Only roots containing a candidate
+     * expression need to cross JNI. Type annotations contain no executable code. */
+    static DBSPCircuit rewriteSelected(DBSPCompiler compiler, DBSPCircuit circuit,
+                                       boolean declarations, Predicate<DBSPExpression> candidate,
+                                       Function<IDBSPInnerNode, IDBSPInnerNode> rewrite) {
+        var visitor = new InnerVisitor(compiler) {
+            final Set<IDBSPInnerNode> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+            boolean found;
+
+            @Override
+            public VisitDecision preorder(IDBSPInnerNode node) {
+                if (this.found || node instanceof DBSPType || !this.seen.add(node))
+                    return VisitDecision.STOP;
+                if (node instanceof DBSPExpression expression && candidate.test(expression)) {
+                    this.found = true;
+                    return VisitDecision.STOP;
+                }
+                return VisitDecision.CONTINUE;
+            }
+
+            @Override
+            public IDBSPInnerNode apply(IDBSPInnerNode root) {
+                if (root instanceof DBSPType)
+                    return root;
+                this.found = false;
+                this.seen.clear();
+                super.apply(root);
+                return this.found ? rewrite.apply(root) : root;
+            }
+        };
+        return visitor.getCircuitRewriter(declarations).apply(circuit);
     }
 
     /** Summarize the executable inner graph before asking Rust whether it needs the full snapshot. */

@@ -1,0 +1,89 @@
+{
+  "scope": "Compare collection keys on every port before LeftJoinChains and FindUnboundedState with the same Java circuit. Replay the union of selected expression and join programs through ordered optimizer boundaries and emission. Java supplies closure column copies in this build.",
+  "base_commit": "b78c138fc7cab1e7a9704644c88bb4bdfc9e9336",
+  "optimizer_library_sha256": "a4c5380589778f56a8b44e8789128cda9117e6e4dc3e58e741836100519cd544",
+  "compiler_jar_sha256": "f69d63fbbbb4fa2e1400194e7b78d433b10eca8e00924d60ece7c82dde1396b9",
+  "oracle_sha256": "878ae07f905e9e80646149538b9cd79e2850ae25671dbb8f56f9d9d1d2716eda",
+  "engines": {
+    "classic": {
+      "direct_key_comparison": {
+        "programs": 47,
+        "visits": 94,
+        "ports": 3367,
+        "keyed": 1496,
+        "joins": 217,
+        "report_sha256": "08596c69dce9b4e13f18ec0e61ab8b4678f23d80384e6f84068ca1cfdc7254cb"
+      },
+      "detached_replay": {
+        "matched_programs": 135,
+        "shards": [
+          {
+            "input_sha256": "054417f084abb2053bdf6d7748adeb74d0150883c9a0a88df6a2c8ef160bd3c2",
+            "report_sha256": "c9041640e2afcae5fd8929ef3a24fef352af33b57dc3cf0ca42ee866ca4d7c37"
+          },
+          {
+            "input_sha256": "d1a76079a6fc6f43f63fe6491c85dbdcbd1fd3410d53ed45bbbad5bd3900cff1",
+            "report_sha256": "12089bc9176d4b619279003723f18efa525d323778c8fe596572a1927121857b"
+          },
+          {
+            "input_sha256": "1987459b366a997b8e70f68cf8d7f123735851c045da0266f7f0dfa072b573ee",
+            "report_sha256": "055b50ada245fee676248ec664ecab54223b7f961e1b9a2d5a9971587873fc7b"
+          },
+          {
+            "input_sha256": "8ea22851a5f7945fa31287bea4c2275501181c34c32540b21574a7009c16ed32",
+            "report_sha256": "50167f421adc9ccf9720159a9412468cf67534dfc216b9dbd5cb122206171d01"
+          }
+        ]
+      }
+    },
+    "gen2": {
+      "direct_key_comparison": {
+        "programs": 47,
+        "visits": 94,
+        "ports": 3264,
+        "keyed": 1472,
+        "joins": 243,
+        "report_sha256": "0dbb8182c7d16824fd32f42417c89d8ac27ab84c15892098dcd524d540528e5d"
+      },
+      "detached_replay": {
+        "matched_programs": 134,
+        "shards": [
+          {
+            "input_sha256": "5e9d3eb51613e2a18efca5e5d8f03654799ea65733a82b0ec4fe81d9b16ba4e2",
+            "report_sha256": "dc4df2792be837103c85fdcc4b295518566022cfab68bb689798d23e7325d5ef"
+          },
+          {
+            "input_sha256": "9eaf880cd76e78a0b414f25198327a405ee47a9b6ca7ba4be9fe60ddb08d00f0",
+            "report_sha256": "f5de71b5c3914a665a9b49ff018c38b11f59309a7204a9e471ae3ffa57a26905"
+          },
+          {
+            "input_sha256": "039457ff53ea27c7ad1d4b0ca511d2ab25462dbce6556b43adf996141a6c9e04",
+            "report_sha256": "c6e399635e32c64d0d3a81f71d17053efd023951a9f1906b12a3d7661c13205b"
+          },
+          {
+            "input_sha256": "38a8f866e4cab78eb407d4ccfe629fc13e32e42ff195ada6cc866c162d525007",
+            "report_sha256": "4cbf9e1761dbe186fe26ba27672d319ac862af4faf343ea03fdb8ae3c4aae409"
+          }
+        ]
+      }
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "report_sha256": "7d235707321cf6468d19d7439dbe681049411e9f1143de574896264f4d82a9ed",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "report_sha256": "efd57b4136591ec939a7e92da0170c273f36f3dce3f613ec9b2480f05655894a",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "rust_tests_sha256": "a6edb5ad65fe0afe99ba9506af2b885b35987e47146cd22c41bc01652300f93d",
+  "clippy_log_sha256": "dbfd82a91b658d1179437b1ddf3e6c14bed4317a05b7ed61adf9bd7c8d983079"
+}

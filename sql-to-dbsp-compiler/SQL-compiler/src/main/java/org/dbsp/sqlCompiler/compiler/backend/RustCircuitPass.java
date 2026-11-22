@@ -100,6 +100,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.KeyColumns;
+import org.dbsp.sqlCompiler.ir.type.CollectionShape.Column;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
@@ -113,6 +115,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -2188,6 +2193,21 @@ public final class RustCircuitPass implements CircuitTransform {
         return operators;
     }
 
+    public record KeyColumnCopy(int parameter, Column source, Column output) {}
+
+    /** The lineage interpreter supplies plain column copies from the join function. */
+    public static List<KeyColumns> joinKeys(List<List<KeyColumns>> inputs, List<KeyColumnCopy> copies,
+                                            boolean leftJoin) {
+        record Request(List<List<KeyColumns>> inputs, List<KeyColumnCopy> copies, boolean leftJoin) {}
+        try {
+            var request = MAPPER.writeValueAsBytes(new Request(inputs, copies, leftJoin));
+            var result = transformWithContext("KeyAnalysis/Join", request, 0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(result, new TypeReference<List<KeyColumns>>() {});
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not exchange join keys with Rust", error);
+        }
+    }
+
     public enum TransferRule { Identity, DeclaredColumns, ApplyClosure, Analyze }
     public record MonotonicityTransfer(DBSPOperator operator, TransferRule rule, int input,
                                        @Nullable List<Boolean> lateness) {}
@@ -2271,8 +2291,8 @@ public final class RustCircuitPass implements CircuitTransform {
         DBSPVariablePath.restoreGeneratedNames(state.required("next_generated_name").longValue());
     }
 
-    private static IDBSPInnerNode simplifyRoot(DBSPCompiler compiler, String pass, IDBSPInnerNode root) {
-        // Both expression translators leave types untouched.
+    private static IDBSPInnerNode rewriteInnerRoot(DBSPCompiler compiler, String pass, IDBSPInnerNode root) {
+        // Expression translators leave types untouched.
         if (root instanceof DBSPType)
             return root;
         var reply = invokeLowering(compiler, pass, root);
@@ -2740,7 +2760,7 @@ public final class RustCircuitPass implements CircuitTransform {
                     return new Simplify(this.compiler) {
                         @Override
                         public IDBSPInnerNode apply(IDBSPInnerNode root) {
-                            return simplifyRoot(this.compiler, "Simplify/Root", root);
+                            return rewriteInnerRoot(this.compiler, "Simplify/Root", root);
                         }
                     }.circuitRewriter(true).apply(circuit);
                 }
@@ -2748,7 +2768,7 @@ public final class RustCircuitPass implements CircuitTransform {
                     return new SimplifyWaterline(this.compiler) {
                         @Override
                         public IDBSPInnerNode apply(IDBSPInnerNode root) {
-                            return simplifyRoot(this.compiler, "SimplifyWaterline/Root", root);
+                            return rewriteInnerRoot(this.compiler, "SimplifyWaterline/Root", root);
                         }
                     }.circuitRewriter().apply(circuit);
                 }
@@ -2785,7 +2805,23 @@ public final class RustCircuitPass implements CircuitTransform {
                             .required("needs_full_snapshot").booleanValue())
                         return circuit;
                 }
-                case "SimplifyConditionals", "ExpandSafeCasts", "ExpandUnsafeCasts", "AdjustSqlIndex", "CreateRuntimeErrorWrappers" -> {
+                case "SimplifyConditionals", "ExpandSafeCasts", "ExpandUnsafeCasts", "AdjustSqlIndex" -> {
+                    Predicate<DBSPExpression> candidate = switch (this.nativeName) {
+                        case "SimplifyConditionals" -> expression -> expression instanceof DBSPIfExpression;
+                        case "AdjustSqlIndex" -> expression -> expression instanceof DBSPBinaryExpression binary
+                                && (binary.opcode == DBSPOpcode.SQL_INDEX || binary.opcode == DBSPOpcode.SAFE_RUST_INDEX);
+                        default -> {
+                            var safety = this.nativeName.equals("ExpandSafeCasts")
+                                    ? DBSPCastExpression.CastType.SqlSafe : DBSPCastExpression.CastType.SqlUnsafe;
+                            yield expression -> expression instanceof DBSPCastExpression cast && cast.safe == safety;
+                        }
+                    };
+                    String pass = this.nativeName + "/Root";
+                    return OptimizerExpressions.rewriteSelected(this.compiler, circuit,
+                            !this.nativeName.equals("SimplifyConditionals"), candidate,
+                            root -> rewriteInnerRoot(this.compiler, pass, root));
+                }
+                case "CreateRuntimeErrorWrappers" -> {
                     JsonNode probe = this.invoke("Expressions/" + this.nativeName,
                             OptimizerExpressions.inventory(this.compiler, circuit), initial, state);
                     if (!probe.required("needs_full_snapshot").booleanValue())

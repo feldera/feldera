@@ -4,6 +4,16 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Selected expression roots, 2026-11-22
+
+Four optimizer passes now send Rust only the expression roots they may change.
+On classic Nexmark, median main-thread CPU time fell from 40.46 to 11.62 ms for
+`SimplifyConditionals`, 45.60 to 3.99 ms for `AdjustSqlIndex`, and 43.52 to
+11.81 ms for `ExpandUnsafeCasts`. `ExpandSafeCasts` rose from 1.34 to 1.63 ms.
+Each build ran in nine alternating fresh-JVM pairs on CPU 14 with concurrent
+corpus replay. The medians use the last eight pairs.
+[Pass profiles and replay digests](evidence/p3-selected-expression-roots.json)
+
 ## HOP expansion build, 2026-11-22
 
 On `e177acab4`, each workload ran two warmup pairs and 21 measured pairs
