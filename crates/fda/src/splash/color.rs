@@ -128,12 +128,14 @@ impl Theme {
     }
 
     /// Returns the theme from the reply to an OSC 11 query, or `None` if the reply is not
-    /// complete. The reply has the form `ESC ] 11 ; rgb:RRRR/GGGG/BBBB`, with 1 to 4 hex digits
-    /// per channel.
+    /// complete. The reply has the form `ESC ] 11 ; rgb:RRRR/GGGG/BBBB` and an end mark, with 1
+    /// to 4 hex digits per channel.
     pub(super) fn from_osc11(reply: &[u8]) -> Option<Theme> {
         let text = std::str::from_utf8(reply).ok()?;
         let rgb = &text[text.find("rgb:")? + 4..];
-        let end = rgb.find(['\x07', '\x1b']).unwrap_or(rgb.len());
+        // The reply ends with BEL or with ESC \. Without this end, the last
+        // channel can still be incomplete.
+        let end = rgb.find(['\x07', '\x1b'])?;
         let parts: Vec<f64> = rgb[..end]
             .split('/')
             .map(|h| {
@@ -269,5 +271,14 @@ mod tests {
         assert_eq!(Theme::from_osc11(onyx), Some(Theme::Dark));
         assert_eq!(Theme::from_osc11(b"\x1b]11;rgb:ff"), None, "cut-off reply");
         assert_eq!(Theme::from_osc11(b"x"), None);
+    }
+
+    #[test]
+    fn background_reply_is_read_only_when_it_is_complete() {
+        // The complete reply is a dark background. A reply that is cut in its
+        // last channel must not give a different answer.
+        let complete = b"\x1b]11;rgb:7800/7800/e000\x07";
+        assert_eq!(Theme::from_osc11(complete), Some(Theme::Dark));
+        assert_eq!(Theme::from_osc11(&complete[..complete.len() - 4]), None);
     }
 }
