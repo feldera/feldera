@@ -1,7 +1,7 @@
 //! Buffer an EMIT FINAL view until its waterline passes the selected column.
 use super::{
     Bound, LimiterError, Projection, Stream, WindowBounds,
-    filter::{arg, bool_type, tuple_compare},
+    filter::{arg, bool_type},
     source::link,
 };
 use crate::rebuild::deindex_function;
@@ -169,30 +169,6 @@ fn output(operator: NodeId) -> OutputPort {
     }
 }
 
-fn apply(
-    edit: &mut CircuitEditor,
-    body: NodeId,
-    site: NodeId,
-    input: Bound,
-    function: ExpressionId,
-) -> Result<Bound, Error> {
-    let ty = edit.type_id(
-        edit.node(edit.node(function.into())?.edge("type")?)?
-            .edge("resultType")?,
-    )?;
-    let op = edit.append_operator(
-        body,
-        site,
-        Op::Apply,
-        &[input.port],
-        [("outputType", link(ty)), ("function", link(function))],
-    )?;
-    Ok(Bound {
-        port: output(op),
-        ty,
-    })
-}
-
 pub(super) fn emit_final(
     edit: &mut CircuitEditor,
     body: NodeId,
@@ -204,7 +180,7 @@ pub(super) fn emit_final(
 ) -> Result<(), Error> {
     let row = edit.type_id(edit.node(data.ty.into())?.edge("elementType")?)?;
     let f = field.functions(edit, sink, row, bound.ty, next)?;
-    let control = apply(edit, body, sink, bound, f.bounds)?;
+    let control = bound.apply(edit, body, sink, f.bounds)?;
     if let Some(filter) = f.filter {
         let id = edit.append_operator(
             body,
@@ -259,10 +235,15 @@ pub(super) fn emit_final(
         edit.set_property_position(&operators[window_start..], position)?;
     }
     if let Some(project) = f.project_bound {
-        bound = apply(edit, body, sink, bound, project)?;
+        bound = bound.apply(edit, body, sink, project)?;
     }
 
-    retain_window_keys(edit, body, sink, input, bound, key_type, next)?;
+    let key_projection = Projection::Tuple {
+        fields: vec![Projection::Scalar { monotone: true }],
+        raw: true,
+        nullable: false,
+    };
+    super::retention::retain_keys(edit, body, sink, input.port, &key_projection, bound, next)?;
 
     let map = deindex_function(edit, sink, key_type, row, next)?;
     let ty = edit.zset_type(row)?;
@@ -276,45 +257,4 @@ pub(super) fn emit_final(
     edit.move_origin_definition(sink, control.port.operator)?;
     edit.place_before(body, control.port.operator, sink)?;
     edit.replace_stream_inputs(sink, &[output(deindex)], ty)
-}
-
-fn retain_window_keys(
-    edit: &mut CircuitEditor,
-    body: NodeId,
-    sink: NodeId,
-    input: Stream,
-    bound: Bound,
-    key_type: TypeId,
-    next: &mut u64,
-) -> Result<(), Error> {
-    let minimum = edit.minimum_value(bound.ty)?;
-    let delay = edit.append_operator(
-        body,
-        bound.port.operator,
-        Op::Delay,
-        &[bound.port],
-        [("outputType", link(bound.ty)), ("function", link(minimum))],
-    )?;
-    let control_var = arg(edit, bound.ty, next)?;
-    let data_var = arg(edit, key_type, next)?;
-    let left = edit.dereference(data_var)?;
-    let right = column(edit, control_var, 0)?;
-    let compare = tuple_compare(edit, left, right)?;
-    let key_ref = edit.expression_type(data_var)?;
-    let data_param = edit.parameter_at(key_ref.into(), data_var)?;
-    let control_param = edit.parameter_at(control_var.into(), control_var)?;
-    let predicate = edit.closure_with_parameters(compare, &[data_param, control_param])?;
-    edit.append_operator(
-        body,
-        sink,
-        Op::IntegrateTraceRetainKeys,
-        &[input.port, output(delay)],
-        [
-            ("outputType", link(input.ty)),
-            ("function", link(predicate)),
-            ("accumulate", Field::Data(true.into())),
-        ],
-    )?;
-
-    Ok(())
 }

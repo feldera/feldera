@@ -11,6 +11,7 @@ pub use join::join_waterline;
 pub use keyed::KeyProjection;
 pub use pass::{insert_limiters, insert_limiters_with_warnings, LimiterError, LimiterInputs};
 mod projection;
+mod retention;
 mod source;
 pub(crate) use source::timestamp_max;
 mod streams;
@@ -31,6 +32,33 @@ use feldera_sql_ir::{
 pub struct Bound {
     pub port: OutputPort,
     pub ty: TypeId,
+}
+
+impl Bound {
+    fn apply(
+        self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        site: NodeId,
+        function: ExpressionId,
+    ) -> Result<Self, Error> {
+        let closure_type = edit.expression_type(function)?;
+        let ty = edit.type_id(edit.node(closure_type.into())?.edge("resultType")?)?;
+        let operator = edit.append_operator(
+            body,
+            site,
+            OperatorKind::Apply,
+            &[self.port],
+            [
+                ("outputType", Field::Reference(ty.into())),
+                ("function", Field::Reference(function.into())),
+            ],
+        )?;
+        Ok(Self {
+            port: OutputPort { operator, number: 0 },
+            ty,
+        })
+    }
 }
 
 /// Bind a limiter closure to the actual waterline input types. The caller supplies

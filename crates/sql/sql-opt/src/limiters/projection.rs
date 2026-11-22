@@ -48,6 +48,30 @@ fn read_field(
 }
 
 impl Projection {
+    /// Select monotone fields from the original data row before comparing it to its bound.
+    pub(super) fn project_data(
+        &self,
+        edit: &mut CircuitEditor,
+        value: ExpressionId,
+    ) -> Result<ExpressionId, Error> {
+        match self {
+            Self::Scalar { monotone: true } => Ok(value),
+            Self::Tuple { fields, raw, .. } => {
+                let mut selected = Vec::new();
+                for (index, projection) in fields.iter().enumerate() {
+                    if projection.monotone() {
+                        let field = edit.tuple_field(value, index)?;
+                        selected.push(projection.project_data(edit, field)?);
+                    }
+                }
+                edit.tuple_expr(value.into(), *raw, &selected)
+            }
+            _ => Err(Error::new(
+                "cannot project a non-monotone or non-data field for key retention",
+            )),
+        }
+    }
+
     pub fn monotone(&self) -> bool {
         match self {
             Self::Scalar { monotone } | Self::Other { monotone } => *monotone,

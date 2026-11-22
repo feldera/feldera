@@ -15,6 +15,13 @@ struct OperatorFacts {
     reachable_from_error: bool,
     input_kinds: Option<Vec<Clock>>,
     projection: Option<Projection>,
+    distinct: Option<DistinctFacts>,
+}
+
+#[derive(Deserialize)]
+struct DistinctFacts {
+    expanded: bool,
+    input_projection: Option<Projection>,
 }
 
 #[derive(Default, Deserialize)]
@@ -336,6 +343,7 @@ pub fn insert_limiters_with_warnings(
                 | Op::Noop
                 | Op::Negate
                 | Op::Deindex
+                | Op::AggregateLinearPostprocess
                 | Op::StreamAntiJoin,
             ) => {
                 // These expansion operators transfer the bound of their first input,
@@ -347,31 +355,62 @@ pub fn insert_limiters_with_warnings(
                     }
                     (_, [input]) => input,
                     _ => {
-                        return Err(
-                            Error::new(format!("{} requires one input stream", op.class())).into(),
-                        );
+                        return Err(Error::new(format!(
+                            "{} requires one input stream",
+                            op.class()
+                        ))
+                        .into());
                     }
                 };
-                if let Some(projection) = projection {
+                if let (Some(projection), Some(&(upstream, _))) = (projection, bounds.get(source)) {
                     let function = functions.get(&number).copied().ok_or_else(|| {
                         Error::new(format!(
                             "missing reduced waterline closure for {}",
                             op.class()
                         ))
                     })?;
-                    let (bound, _) = bounds.get(source).copied().ok_or_else(|| {
-                        Error::new(format!("missing input waterline for {}", op.class()))
-                    })?;
                     let function = super::apply_waterlines(
                         &mut edit,
                         function,
-                        &[bound.ty],
+                        &[upstream.ty],
                         &mut next,
                         warnings,
                     )?;
-                    let bound = apply_bound(&mut edit, body, bound, function)?;
+                    let bound = apply_bound(&mut edit, body, upstream, function)?;
                     bounds.insert(output, (bound, projection));
                     edit.place_before(body, bound.port.operator, id)?;
+                    if kind == Some(Op::AggregateLinearPostprocess) {
+                        let retention = super::retention::retain_keys(
+                            &mut edit, body, id, output, projection, bound, &mut next,
+                        )?;
+                        if let Some(&before) = original.get(index + 1) {
+                            edit.place_before(body, retention.first, before)?;
+                        }
+                    }
+                } else if projection.is_some() && kind != Some(Op::AggregateLinearPostprocess) {
+                    return Err(
+                        Error::new(format!("missing input waterline for {}", op.class())).into(),
+                    );
+                }
+            }
+            Some(Op::Distinct | Op::Positive) => {
+                let [source] = inputs.as_slice() else {
+                    return Err(Error::new("distinct retention requires one input").into());
+                };
+                let distinct = facts
+                    .distinct
+                    .as_ref()
+                    .ok_or_else(|| Error::new("missing distinct expansion facts"))?;
+                if let Some(&(bound, _)) = bounds.get(source).filter(|_| distinct.expanded) {
+                    let projected = distinct.input_projection.as_ref().ok_or_else(|| {
+                        Error::new("missing projection for bounded distinct input")
+                    })?;
+                    let port = data.get(source).map_or(*source, |stream| stream.port);
+                    let retention = super::retention::retain_keys(
+                        &mut edit, body, id, port, projected, bound, &mut next,
+                    )?;
+                    retention.place_before_owner(&mut edit, body, id)?;
+                    bounds.insert(output, (bound, projected));
                 }
             }
             Some(Op::Sink) => {
@@ -464,6 +503,7 @@ mod tests {
                         reachable_from_error: false,
                         input_kinds: None,
                         projection: None,
+                        distinct: None,
                     },
                 )
             })

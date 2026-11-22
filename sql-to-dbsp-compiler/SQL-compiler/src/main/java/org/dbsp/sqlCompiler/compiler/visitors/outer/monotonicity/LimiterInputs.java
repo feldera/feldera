@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
@@ -15,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
@@ -26,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.util.Utilities;
@@ -41,12 +45,13 @@ public final class LimiterInputs {
     private static final Set<Class<?>> TRANSFER_OPERATORS = Set.of(
             DBSPMapOperator.class, DBSPMapIndexOperator.class, DBSPFilterOperator.class,
             DBSPHopOperator.class, DBSPFlatMapOperator.class, DBSPNoopOperator.class,
-            DBSPNegateOperator.class, DBSPDeindexOperator.class, DBSPStreamAntiJoinOperator.class);
+            DBSPNegateOperator.class, DBSPDeindexOperator.class, DBSPStreamAntiJoinOperator.class,
+            DBSPAggregateLinearPostprocessOperator.class);
 
     private static final Set<Class<?>> OTHER_NATIVE_OPERATORS = Set.of(
             DBSPSourceMultisetOperator.class, DBSPViewOperator.class, DBSPSinkOperator.class, DBSPSumOperator.class,
             DBSPAtomicSumOperator.class, DBSPSubtractOperator.class, DBSPConstantOperator.class,
-            DBSPIncrementalConstantOperator.class);
+            DBSPIncrementalConstantOperator.class, DBSPDistinctOperator.class, DBSPPositiveOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
     public static boolean canLowerCircuit(DBSPCircuit circuit) {
@@ -113,6 +118,15 @@ public final class LimiterInputs {
                 if (value != null)
                     entry.set("projection", projection(Monotonicity.getBodyType(value)));
                 entry.put("expanded_id", replacement.getId());
+            }
+            if (operator instanceof DBSPDistinctOperator || operator instanceof DBSPPositiveOperator) {
+                var expansion = pass.expandedInto.get(operator.to(DBSPSimpleOperator.class));
+                var distinct = entry.putObject("distinct").put("expanded", expansion != null);
+                if (expansion != null) {
+                    var value = pass.expansionMonotoneValues.get(expansion.to(DistinctDeltaExpansion.class).distinct.right());
+                    if (value != null)
+                        distinct.set("input_projection", projection(Monotonicity.getBodyType(value)));
+                }
             }
         }
         return facts;
