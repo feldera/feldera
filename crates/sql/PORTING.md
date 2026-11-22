@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `a45490134`, Rust selected temporal windows for timestamp keys with
+integer offsets and scaled intervals. The five directed programs on each
+engine previously needed 25 Java fallbacks. All 429 pass comparisons
+matched across the directed and frozen clock programs. The ten directed
+compilations also matched through 6,012 ordered observations and emission.
+[Window key coverage and replay](evidence/p3-numeric-window-keys.json)
+
 Rust projected waterlines through 180 nested LETs and blocks in the live
 compiler on `c16f71675`. All 550 monotonicity comparisons matched Java,
 and COUNT and LATENESS restored in both directions. On `955f165ae`, Rust

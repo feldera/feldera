@@ -15,7 +15,7 @@ use jni::{
 use serde_json::{json, Value};
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -26,9 +26,31 @@ enum BridgeError {
     Optimizer(String),
 }
 
+#[derive(Default)]
+struct LiveCompilation {
+    decoder: feldera_sql_ir::LiveCircuitDecoder,
+    // Repeated Simplify passes often see the same closure again. Only retain
+    // a result if it returned the original root without emitting a warning.
+    simplified: HashMap<Box<[u8]>, u64>,
+    simplified_bytes: usize,
+}
+
+impl LiveCompilation {
+    fn remember_simplified(&mut self, input: &[u8], root: u64) {
+        const BYTE_BUDGET: usize = 4 * 1024 * 1024;
+        const ENTRY_BUDGET: usize = 4096;
+        if input.len() <= BYTE_BUDGET - self.simplified_bytes
+            && self.simplified.len() < ENTRY_BUDGET
+        {
+            self.simplified.insert(input.into(), root);
+            self.simplified_bytes += input.len();
+        }
+    }
+}
+
 // A compiler may optimize another circuit synchronously on the same JVM thread.
 thread_local! {
-    static LIVE_DECODERS: RefCell<Vec<feldera_sql_ir::LiveCircuitDecoder>> = const { RefCell::new(Vec::new()) };
+    static LIVE_COMPILATIONS: RefCell<Vec<LiveCompilation>> = const { RefCell::new(Vec::new()) };
 }
 
 const MAX_BYTES: usize = 64 * 1024 * 1024;
@@ -386,6 +408,12 @@ fn lowering_arguments(base: Circuit, input: &[u8]) -> Result<(Circuit, Vec<NodeI
 }
 
 fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+    if pass == "Simplify/Root" {
+        let cached = LIVE_COMPILATIONS.with_borrow(|stack| stack.last()?.simplified.get(input).copied());
+        if let Some(root) = cached {
+            return Ok(json!({"root": {"node": root}, "next_generated_name": next, "warnings": []}));
+        }
+    }
     let (arena, roots) = if matches!(pass, "Monotonicity/Filter" | "Monotonicity/Minimum" | "Monotonicity/ChainMinimum") {
         serde_json::from_slice::<ExpressionSite>(state)?.arena(input)?
     } else {
@@ -470,6 +498,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             "ExpandUnsafeCasts" => feldera_sql_expr::expand_sql_casts(&mut edit, root, CastSafety::Unsafe, &mut next)?,
             _ => return Err(format!("unknown expression rewrite {name}").into()),
         };
+        if name == "Simplify" && result == root && warnings.is_empty() {
+            let NodeId::Inner(id) = root else { return Err("expected an inner simplification root".into()) };
+            LIVE_COMPILATIONS.with_borrow_mut(|stack| {
+                if let Some(compile) = stack.last_mut() {
+                    compile.remember_simplified(input, id);
+                }
+            });
+        }
         let mut encoded = edit.circuit().additional_inner_nodes(&arena, [result])?;
         return Ok(json!({"root": encoded.pop().expect("one result root"),
             "next_generated_name": next, "warnings": pass_warnings(warnings)}));
@@ -1229,8 +1265,8 @@ fn transform(
         _ => {}
     }
     let circuit = if live.is_some() {
-        LIVE_DECODERS.with_borrow_mut(|stack| match stack.last_mut() {
-            Some(decoder) => decoder.decode(input),
+        LIVE_COMPILATIONS.with_borrow_mut(|stack| match stack.last_mut() {
+            Some(compile) => compile.decoder.decode(input),
             None => Circuit::from_live_json_bytes(input),
         })?
     } else {
@@ -1990,7 +2026,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     _class: JClass<'_>,
 ) {
     env.with_env(|_| -> Result<(), BridgeError> {
-        LIVE_DECODERS.with_borrow_mut(|stack| stack.push(Default::default()));
+        LIVE_COMPILATIONS.with_borrow_mut(|stack| stack.push(Default::default()));
         Ok(())
     })
     .resolve::<ThrowRuntimeExAndDefault>();
@@ -2003,7 +2039,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     _class: JClass<'_>,
 ) {
     env.with_env(|_| -> Result<(), BridgeError> {
-        LIVE_DECODERS.with_borrow_mut(|stack| stack.pop())
+        LIVE_COMPILATIONS.with_borrow_mut(|stack| stack.pop())
             .ok_or_else(|| BridgeError::Optimizer("no active optimizer snapshot scope".into()))?;
         Ok(())
     })
@@ -2046,4 +2082,35 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         Ok(env.byte_array_from_slice(&bytes)?)
     })
     .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_simplification_preserves_names_and_reports_each_warning() {
+        let int = json!({"class":"DBSPTypeInteger","id":2,"code":"INT32","width":32,"signed":true,"mayBeNull":false});
+        let literal = serde_json::to_vec(&json!([{
+            "class":"DBSPI32Literal","id":1,"type":int,"value":"3"
+        }])).unwrap();
+        let invalid_cast = serde_json::to_vec(&json!([{
+            "class":"DBSPCastExpression","id":1,"safe":"SqlUnsafe","type":int,
+            "source":{"class":"DBSPStringLiteral","id":3,"value":"oops","charset":"UTF-8",
+                "type":{"class":"DBSPTypeString","id":4,"code":"STRING","precision":-1,"fixed":false,"mayBeNull":false}}
+        }])).unwrap();
+        LIVE_COMPILATIONS.with_borrow_mut(|stack| stack.push(Default::default()));
+        for next in [0, 27] {
+            let same = lower_function("Simplify/Root", &literal, &[], next).unwrap();
+            assert_eq!(same, json!({"root":{"node":1},"warnings":[],"next_generated_name":next}));
+            // Both roots have ID 1. The serialized graph distinguishes them.
+            let warning = lower_function("Simplify/Root", &invalid_cast, &[], next).unwrap();
+            assert_eq!(warning["warnings"][0]["error_type"], "Not a number");
+            assert_eq!(warning["next_generated_name"], next);
+        }
+        let scope = LIVE_COMPILATIONS.with_borrow_mut(|stack| stack.pop().unwrap());
+        assert_eq!(scope.simplified.len(), 1);
+        assert_eq!(scope.simplified.get(literal.as_slice()), Some(&1));
+        assert_eq!(scope.simplified_bytes, literal.len());
+    }
 }

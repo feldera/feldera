@@ -1,0 +1,196 @@
+{
+  "commit": "a4549013439d7cb775f749e875e73f010f34aa27",
+  "scope": "Compare canonical grouping of timestamp keys with integer offsets and scaled intervals. Each directed program has two matching keys and a distinct third key.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "fb79e20524a0d4116ee0ce58ccd5e51efc2f22e6fc188c2c91a8d522d64b9990",
+    "bin/sql-difftest": "9d72b7422c366d306f9bb3809f88f9df5885dda5e6ac1ed8c8d20484c9d45b31",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "7f60ba935a7a6cba38a50d4d7d6f6e1ffd1cfdf0f92f49510bba260c67c6a638",
+    "maven/tests.jar": "e8c8205caaf9ab74de6752092a51cd99da678dc2f59261851de85a0b18f09d59"
+  },
+  "baseline_commit": "955f165ae78e15277b449dcf3726c1859220bad5",
+  "engines": {
+    "classic": {
+      "frozen": {
+        "programs": 71,
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "observations_sha256": "68332fd5146e3c00f3b25304c2da3462fae3cd93e52b3a146cafc020f021385c",
+        "requests": {
+          "WindowGroups/Scan": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 64,
+            "fallbacks": 0
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched_invocations": 71,
+            "direct_sha256": "253b2bc45df4a392dad95196641ef7446afacf6fb63c18bb98813d18d44a11b8",
+            "hybrid_sha256": "549f4aa482f37f2c4341c8611a21a790afce16a22515ee1a8c3387dc63af496b"
+          },
+          "Reorder": {
+            "matched_invocations": 71,
+            "direct_sha256": "18b8f9a2dde60ffe0503bb2e9155227c0643c4153036ccde8daef44b0fbd026e",
+            "hybrid_sha256": "aaad58ee536a58d649547c50af6c7d1f3c3cf8c1ae63793f2909054ee648baa9"
+          },
+          "FindWindowGroups": {
+            "matched_invocations": 71,
+            "direct_sha256": "521d6b5bfd048cf4efe3fe4a31e28e5b4995ce6a4984f16372598d12dd86d4ee",
+            "hybrid_sha256": "c95424c15ad1001b8dc6a870e9c88bcdd65deb830bbff794afc08b4b91c91172"
+          }
+        }
+      },
+      "directed": {
+        "programs": 5,
+        "population_sha256": "b31e9e82f0a6bc633f2cf20f6c80cac2e8dea0ff0c35615a3e7bf48860699f46",
+        "observations_sha256": "69f7f54be199227ff413ccf6d2da55b64cec3312ca082c836dc208829eee5eea",
+        "requests": {
+          "WindowGroups/Scan": {
+            "calls": 5,
+            "fallbacks": 0,
+            "baseline_fallbacks": 5
+          },
+          "WindowGroups/Reorder": {
+            "calls": 5,
+            "fallbacks": 0,
+            "baseline_fallbacks": 5
+          },
+          "WindowGroups/Indexes": {
+            "calls": 5,
+            "fallbacks": 0,
+            "baseline_fallbacks": 0
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched_invocations": 5,
+            "direct_sha256": "bda1c94ed857bd2f95f662fd5c02a5d5a40cb084a71b24c84572625b6b85817e",
+            "hybrid_sha256": "5804e2086955660a41eaeb6c0f0efec3e046ec26a42275952c787304a4478be9"
+          },
+          "Reorder": {
+            "matched_invocations": 5,
+            "direct_sha256": "dc42f3debdc8e7b67e3951d3b00e91e2e8f4eb7e8cf11c6871f4fc2ec5b576f1",
+            "hybrid_sha256": "d6152262748cf87d91d2b4af0bd6bf77db72745e71f466b1762e601143dc9274"
+          },
+          "FindWindowGroups": {
+            "matched_invocations": 5,
+            "direct_sha256": "03738ed74074f5b657eb9687de4643cdd60d56b96e317b91d8ee6ed8212b217b",
+            "hybrid_sha256": "03738ed74074f5b657eb9687de4643cdd60d56b96e317b91d8ee6ed8212b217b"
+          }
+        },
+        "baseline_observations_sha256": "d56a50af30ea851e10688c0ad651b2dc3d48b6d1b6638766079044b2a7e04ca7",
+        "detached": {
+          "selected_cases": 5,
+          "ordered_s4_observations": 2991,
+          "mismatches": 0,
+          "receipt_sha256": "ab1bc41e1026ff0588d083a94f53ce8bbba72131fc6a114f3d96734d930655f4"
+        }
+      }
+    },
+    "gen2": {
+      "frozen": {
+        "programs": 62,
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "observations_sha256": "cbac309b0dd2d9e5ccea8720a4a41f9b8f88e9a3b5e53c1856ee9606546d3794",
+        "requests": {
+          "WindowGroups/Scan": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 55,
+            "fallbacks": 0
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched_invocations": 62,
+            "direct_sha256": "d8392c82b40194e1bf1c9d54344b4be12564de341fd58922a165f41ec9241ccf",
+            "hybrid_sha256": "cffc06d9493eec994ffc6e2c173e6a2b38313b261a233490cf484c66c5b5ab01"
+          },
+          "Reorder": {
+            "matched_invocations": 62,
+            "direct_sha256": "f0d6b56c7a749372288f1125cda85bc3a820690b58b67824079f76cc828f94f8",
+            "hybrid_sha256": "87625216b50533ae608c0673d163bb2ef968ff1eb3d18d7240aa64b6c69c62f7"
+          },
+          "FindWindowGroups": {
+            "matched_invocations": 62,
+            "direct_sha256": "387e330449c3468e7ed8e3ff09e90adcfed48acd299babb2caeacc548393a161",
+            "hybrid_sha256": "940c246fc92768e2b6997eedc0001d8af33f15030d9a6c9b7e74337bc94a0ac7"
+          }
+        }
+      },
+      "directed": {
+        "programs": 5,
+        "population_sha256": "b21cb6747f0ca91f9a8e945b8a561a937ebbff29174b02be0529c4740f85cf0d",
+        "observations_sha256": "8ab3007a23ca2e463074f4f204c1367af3c89f7aef5f9711ed5886fb2581d54c",
+        "requests": {
+          "WindowGroups/Scan": {
+            "calls": 5,
+            "fallbacks": 0,
+            "baseline_fallbacks": 5
+          },
+          "WindowGroups/Reorder": {
+            "calls": 5,
+            "fallbacks": 0,
+            "baseline_fallbacks": 5
+          },
+          "WindowGroups/Indexes": {
+            "calls": 5,
+            "fallbacks": 0,
+            "baseline_fallbacks": 5
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched_invocations": 5,
+            "direct_sha256": "b7df9264dc80556aa2cdea1c37f0dd7bb3833c8248f8d4187b8b5bdd89f7c273",
+            "hybrid_sha256": "81f2b3d2b5adc989225c39e625df1af19e00eaf4a7fa956041475429a15c6fee"
+          },
+          "Reorder": {
+            "matched_invocations": 5,
+            "direct_sha256": "395ca6f1defb8306963bf54ed4bf826493054c3d6e605c9e57dbb5e9c76940c0",
+            "hybrid_sha256": "c51000c788024ccccd0cece37c317801deebed132e91c559a0c5feaae08da979"
+          },
+          "FindWindowGroups": {
+            "matched_invocations": 5,
+            "direct_sha256": "3df6a4b1ad0dfc180e0c465007519262daf694daf2cc2bcb080edc6de8cb132c",
+            "hybrid_sha256": "063956c711dff5b5dc8dc63f850be91f20ec6ceddb4f8a701ee00f0ccc8b8f45"
+          }
+        },
+        "baseline_observations_sha256": "385bc84b36a71c01ebbf9a551fd863cdead00ad59f7a5c29f6f22a50a8242201",
+        "detached": {
+          "selected_cases": 5,
+          "ordered_s4_observations": 3021,
+          "mismatches": 0,
+          "receipt_sha256": "8a318b473fe1e4a2b0ab63faf99f62ffc1f9b3ff171b1b2d771c35bd84b996eb"
+        }
+      }
+    }
+  },
+  "directed_sql": {
+    "directed/variable-second": "SET feldera_window_sharing_threshold = 2;\nCREATE TABLE t(id INTEGER NOT NULL, epoch BIGINT, ts TIMESTAMP);\nCREATE VIEW v0 AS SELECT id FROM t WHERE (TIMESTAMPADD(SECOND, id + 1, ts)) >= NOW() - INTERVAL '1' DAY AND id > 0;\nCREATE VIEW v1 AS SELECT id FROM t WHERE (TIMESTAMPADD(SECOND, id + 1, ts)) >= NOW() - INTERVAL '2' DAY AND id > 1;\nCREATE VIEW v2 AS SELECT id FROM t WHERE (TIMESTAMPADD(SECOND, id + 2, ts)) >= NOW() - INTERVAL '3' DAY AND id > 2;",
+    "directed/variable-month": "SET feldera_window_sharing_threshold = 2;\nCREATE TABLE t(id INTEGER NOT NULL, epoch BIGINT, ts TIMESTAMP);\nCREATE VIEW v0 AS SELECT id FROM t WHERE (TIMESTAMPADD(MONTH, id * 3, ts)) >= NOW() - INTERVAL '1' DAY AND id > 0;\nCREATE VIEW v1 AS SELECT id FROM t WHERE (TIMESTAMPADD(MONTH, id * 3, ts)) >= NOW() - INTERVAL '2' DAY AND id > 1;\nCREATE VIEW v2 AS SELECT id FROM t WHERE (TIMESTAMPADD(MONTH, id * 4, ts)) >= NOW() - INTERVAL '3' DAY AND id > 2;",
+    "directed/epoch": "SET feldera_window_sharing_threshold = 2;\nCREATE TABLE t(id INTEGER NOT NULL, epoch BIGINT, ts TIMESTAMP);\nCREATE VIEW v0 AS SELECT id FROM t WHERE (TIMESTAMPADD(MILLISECOND, CAST(epoch AS INT) + 10, ts)) >= NOW() - INTERVAL '1' DAY AND id > 0;\nCREATE VIEW v1 AS SELECT id FROM t WHERE (TIMESTAMPADD(MILLISECOND, CAST(epoch AS INT) + 10, ts)) >= NOW() - INTERVAL '2' DAY AND id > 1;\nCREATE VIEW v2 AS SELECT id FROM t WHERE (TIMESTAMPADD(MILLISECOND, CAST(epoch AS INT) + 11, ts)) >= NOW() - INTERVAL '3' DAY AND id > 2;",
+    "directed/seconds": "SET feldera_window_sharing_threshold = 2;\nCREATE TABLE t(id INTEGER NOT NULL, epoch BIGINT, ts TIMESTAMP);\nCREATE VIEW v0 AS SELECT id FROM t WHERE (TIMESTAMPADD(SECOND, CAST(epoch / 2 AS INT), ts)) >= NOW() - INTERVAL '1' DAY AND id > 0;\nCREATE VIEW v1 AS SELECT id FROM t WHERE (TIMESTAMPADD(SECOND, CAST(epoch / 2 AS INT), ts)) >= NOW() - INTERVAL '2' DAY AND id > 1;\nCREATE VIEW v2 AS SELECT id FROM t WHERE (TIMESTAMPADD(SECOND, CAST(epoch / 3 AS INT), ts)) >= NOW() - INTERVAL '3' DAY AND id > 2;",
+    "directed/scaled-interval": "SET feldera_window_sharing_threshold = 2;\nCREATE TABLE t(id INTEGER NOT NULL, epoch BIGINT, ts TIMESTAMP);\nCREATE VIEW v0 AS SELECT id FROM t WHERE (ts + INTERVAL '1' SECOND * (id + 1)) >= NOW() - INTERVAL '1' DAY AND id > 0;\nCREATE VIEW v1 AS SELECT id FROM t WHERE (ts + INTERVAL '1' SECOND * (id + 1)) >= NOW() - INTERVAL '2' DAY AND id > 1;\nCREATE VIEW v2 AS SELECT id FROM t WHERE (ts + INTERVAL '1' SECOND * (id + 2)) >= NOW() - INTERVAL '3' DAY AND id > 2;"
+  },
+  "tests": {
+    "rust": 192,
+    "clippy": "passed",
+    "maven_passed": 43,
+    "maven_skipped": 24,
+    "packaged_junit": 59
+  }
+}
