@@ -1,0 +1,115 @@
+{
+  "source_commit": "c03c4fcee21cd304137fc4157eed4d4b1560b61f",
+  "build": {
+    "jar_sha256": "c30cfbeaab7d8f10cd2878fe2e1f765d6d510efc6bf47d33fc4e25a6b1b8b1fa",
+    "optimizer_library_sha256": "edbc7866e2618ab709a08b1acfae4d175b6f8e48b53d015567c97132bd8d2ec3",
+    "driver_sha256": "15db7a51fff1cd87fc54a12263777658c266f44b4d0729dee47e87cd4b794d09",
+    "pass_kinds": 105
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "s4": {
+    "classic": {
+      "pass": "MonotoneAnalyzer",
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "394084a76fd20b7cfdcbe7ef54b3cfe8b21f22b36f8fcfefb276a39bb6b194e7",
+      "rust_stream_sha256": "e4011b4091684f75d56146aa582b822d768a195895d47a2461d877c583b5a535"
+    },
+    "gen2": {
+      "pass": "MonotoneAnalyzer",
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "12b2c06d99729cabe4a32e0989378a73a1a21a0181a6f5a5daf9b4a3bba2d167",
+      "rust_stream_sha256": "7e3a64a6641964fbcf6f280ca83945a7e83ec723ef637738e1ef32b1d5846563"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "0b228e7b5ef4ee6d807b4a5653f3580c685dad48b841997f0772997d7df0e441"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "2a0b7a5c079fd37ce9bb5fb9670ffe15fd942b2842a69c2574dc34fbf4697a36",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "04c5fb9bbcc4d75627d858607c7f457d90d56dd450382b47641d2e09a58f8824",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 7.349258,
+    "largest_driver_plus_front_end_rss_bytes": 79896576
+  },
+  "maven": {
+    "tests": 122,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "directed_scalar_bounds": {
+    "empty_origin": {
+      "matched_graphs": 70,
+      "by_type": {
+        "DBSPTypeBool": 2,
+        "DBSPTypeDate": 2,
+        "DBSPTypeDecimal": 10,
+        "DBSPTypeDouble": 2,
+        "DBSPTypeInteger": 20,
+        "DBSPTypeLongInterval": 6,
+        "DBSPTypeReal": 2,
+        "DBSPTypeShortInterval": 20,
+        "DBSPTypeTime": 2,
+        "DBSPTypeTimestamp": 2,
+        "DBSPTypeTimestampTz": 2
+      },
+      "graph_set_sha256": {
+        "java": "fd8508cedf8aaacbb31cafb9fcd57b9900839067303e430b0a10e0f5fa1170ae",
+        "rust": "9b8c4d16c4604df9d9a194861fed18b1eac40f2f21e55c43acdf8fae1ce5d0cd"
+      }
+    },
+    "sql_source_range": {
+      "matched_graphs": 70,
+      "by_type": {
+        "DBSPTypeBool": 2,
+        "DBSPTypeDate": 2,
+        "DBSPTypeDecimal": 10,
+        "DBSPTypeDouble": 2,
+        "DBSPTypeInteger": 20,
+        "DBSPTypeLongInterval": 6,
+        "DBSPTypeReal": 2,
+        "DBSPTypeShortInterval": 20,
+        "DBSPTypeTime": 2,
+        "DBSPTypeTimestamp": 2,
+        "DBSPTypeTimestampTz": 2
+      },
+      "graph_set_sha256": {
+        "java": "7e7da6e86dfc345def920a616938bdb07bee63e0a3ce0f3d4d0adbe33ce12e3d",
+        "rust": "60676bae60a8e069f93947b4e579094d855646eccc5631e9f237760526a39cac"
+      }
+    }
+  },
+  "interval_origin": "Each interval literal constructs a fresh type with the same units and an empty source. The regression covers both the minimum and the maximum."
+}

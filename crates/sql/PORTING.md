@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+For a typed NULL literal of a bounded scalar type, Rust emits the greatest
+value of that type as its waterline. The Java and Rust expression graphs
+matched in 140 comparisons covering SQL source positions, shared types and
+freshly constructed types. All 550 selected monotonicity observations and
+17,098 frozen programs matched direct Java. The selected classic suite passed
+2,076 runtime commands, and COUNT and LATENESS checkpoints restored in both
+directions. [Typed NULL replay](evidence/p3-null-literal-waterlines.json)
+
 At both `RemoveNoops` placements, Rust selects which no-ops have no retention
 consumer. Each iteration forwards their original input ports and removes dead
 operators. The selected replay matched Java at 648 classic and 587 Gen-2
