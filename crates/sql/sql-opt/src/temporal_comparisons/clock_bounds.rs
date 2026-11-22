@@ -3,29 +3,12 @@ use crate::function_calls::function_name;
 use crate::lexical_scope::predicate_references;
 use crate::monotonicity::binary::{BinaryWaterline, Domain, Operand, binary_waterline};
 use crate::monotonicity::casts::{CastWaterline, cast_waterline};
-use crate::monotonicity::functions::{Argument, function_waterline};
+use crate::monotonicity::functions::{Argument, double_literal_above_one, function_waterline};
 use crate::monotonicity::unary_preserves_order;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId, TypeKind,
 };
 use std::collections::{HashMap, HashSet};
-
-/// Java writes a DOUBLE literal's raw IEEE 754 bits as a signed long.
-fn double_literal(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<f64>, Error> {
-    if edit.expr_kind(id)? != Expr::DoubleLiteral {
-        return Ok(None);
-    }
-    edit.node(id.into())?
-        .data("value")
-        .filter(|value| !value.is_null())
-        .map(|value| {
-            value
-                .as_i64()
-                .map(|bits| f64::from_bits(bits as u64))
-                .ok_or_else(|| Error::new("invalid DOUBLE literal bits in clock predicate"))
-        })
-        .transpose()
-}
 
 /// Return the monotone operands when the entire predicate uses scalar columns,
 /// clock calls, immutable scalar bindings and supported scalar operations.
@@ -166,8 +149,7 @@ pub(super) fn monotone_operands(
                         arguments.push(Argument {
                             monotone: operand.monotone,
                             constant: operand.constant,
-                            double_literal_above_one: double_literal(edit, arg)?
-                                .is_some_and(|base| base > 1.0),
+                            double_literal_above_one: double_literal_above_one(edit, arg)?,
                         });
                     }
                     value.constant = arguments.iter().all(|arg| arg.constant);

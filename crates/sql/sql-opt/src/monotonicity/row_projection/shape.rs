@@ -6,6 +6,7 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub(super) enum Shape {
     Scalar(bool),
+    Reference(Rc<Self>),
     Tuple {
         fields: Rc<[Self]>,
         any_bound: bool,
@@ -39,6 +40,7 @@ impl Shape {
     pub fn monotone(&self) -> bool {
         match self {
             Self::Scalar(bound) => *bound,
+            Self::Reference(base) => base.monotone(),
             Self::Tuple {
                 fields,
                 any_bound,

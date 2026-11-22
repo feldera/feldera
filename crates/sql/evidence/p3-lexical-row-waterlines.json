@@ -1,0 +1,66 @@
+{
+  "base_commit": "7dc7bddfa",
+  "scope": "The Rust row visitor resolves immutable block and LET declarations at the initializer and consumer scopes. Repeated variable reads reuse the analyzed type and reduced expression. Mutable and unsupported initializers use the general transfer visitor.",
+  "artifacts_sha256": {
+    "compiler.jar": "7a5fdb714f45590ad429264ee95429de7639fed7de42ddf341eda4012699de1f",
+    "test.jar": "c82795f7981c1c0fe91ca068a3682a4fb4f1b1d104d58055ba95f47fdfee6cc8",
+    "bin/libfeldera_sql_opt_jni.so": "b7a4e472cb3aefd715b63284a0109a7dad2f4b9a44b28eb84a4cf5b87be1bccb",
+    "bin/sql2dbsp": "33462866e4d3d9c94ff994e16fd6362402c7f280febe7321074360c9b3298b6f",
+    "bin/sql-difftest": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d"
+  },
+  "engines": {
+    "classic": {
+      "pass_result": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+      "captures_sha256": {
+        "false": "3c0b844c17d5527f65a096267779c05db13b2c3bd56a1b82be5f297016569ae4",
+        "true": "b80382c14f3b662d2101e488c34bb58eabdf13008281ce006274fa7c72220b2e"
+      },
+      "detached_cases": 20,
+      "detached_receipts_sha256": [
+        "864878d37603ab5f8cce467e1ba0ad011ad75fd0b0e0b723feb31b2624eb788c",
+        "7d459afeb0305df3799e95c7e0df1422f099a991b01d9a49b83a97158f8006cd",
+        "6f46aff5b30289d219e975067884306f2a54264a595959ea68be4b4d7264b6a1",
+        "aee2c4cba4c8f0c68216708d0ccd9c92ce5f78095324581d4b2c70ac8e0b7afa"
+      ],
+      "directed_unnest": "MonotoneAnalyzer matched at 6 invocations across 6 cases",
+      "directed_captures_sha256": {
+        "false": "10ae98424f633e15a8cf8a918e2be45e6089336c24b788366dcae07350a42687",
+        "true": "0bfbec3619ea75477f1fdd7988b51747ea08b976e921b4bc1c4b1e93c7bdae39"
+      }
+    },
+    "gen2": {
+      "pass_result": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+      "captures_sha256": {
+        "false": "0768f35deb58f0cf38f12cac45ff610582454b11c3f76aa0ec1a5b1737d69408",
+        "true": "52e808874789abaf8822c7c631e1d04edc4647d5045ee266c60423b71ce77082"
+      },
+      "detached_cases": 20,
+      "detached_receipts_sha256": [
+        "1e06b05c09161c84814a465fa18175683c056eab3cf19d600c636b6971edbec3",
+        "7e4a8ded68fb2da52f73af6152a8aa7bcdaffe3dd3d595a87e4a957f8921fc72",
+        "f926fa30e285c1cb282ba095e0364cdec5e9b0a6e3c36430cdd04779857d3b78",
+        "6e2a7b7fc8dec58c67f68e7b9513d701605b17e13a0d03dc769fe764131eeeab"
+      ],
+      "directed_unnest": "MonotoneAnalyzer matched at 6 invocations across 6 cases",
+      "directed_captures_sha256": {
+        "false": "6e5dbf7dac75c9bcda924edf6d28d20affa963e93d28e52e1523f78873777ba1",
+        "true": "f6a10ff68d1702e47eac7c8fcb50552aae2b5f0964fa0222a974ec8ed1a550cd"
+      }
+    }
+  },
+  "tests": {
+    "rust_passed": 218,
+    "maven_passed": 47,
+    "logs_sha256": {
+      "tests.log": "d66772753cbb27e8db9a7b5e597ab9349d378e5b3b85d69e00851e58c8a38640",
+      "clippy.log": "43f59a48d8faf0f9413f56bf3fb25a8069345f40351676bc6b06d04983d2a56d",
+      "maven.log": "3063bc4d0fec6fa16070ccfaf2e0c5d3a2af68ed165d567b809425ff50f8a624"
+    },
+    "jni_enabled_passed": 7,
+    "jni_log_sha256": "5aa17ec564cfa9575b7160685acb75e314b80dfd80bc772ca4a1d1b831de8654"
+  },
+  "checkpoint_restores": {
+    "count": "8e7535fb085910ac14769d61743ecf8bb73a8929036c0411554437e3c7258559",
+    "watermark": "2316753672bbe62b300305514fadc4ccaf9432201e862002cd0e0fbd5df0e260"
+  }
+}

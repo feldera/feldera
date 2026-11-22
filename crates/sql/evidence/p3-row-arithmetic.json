@@ -1,0 +1,72 @@
+{
+  "base_commit": "027fc846a",
+  "scope": "Rust reduces scalar arithmetic, temporal subtraction, saturating scaling, nullable maxima, coalescing and value or NULL literals inside row closures. Variable reads preserve bounds without inheriting literal constant status.",
+  "artifacts_sha256": {
+    "compiler.jar": "9806b2a519fb7f4cdaafd7a69d80326a5b0b39daabc6cc5213c2b43cdfbe61c9",
+    "test.jar": "987c9fbe721c5f3f6f8375dedfe81794c77c37d79b0c56e39bc6e3e497d8d682",
+    "bin/libfeldera_sql_opt_jni.so": "2eb0f8bf639845c4278430ad044d3a380438f773261b7f9a7169618d214977c0",
+    "bin/sql2dbsp": "435bbf2621e7d85f1bf935d37d17fab8fbf7f6c7795c4dc29e399042a434f9b3",
+    "bin/sql-difftest": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d"
+  },
+  "engines": {
+    "classic": {
+      "pass_result": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+      "captures_sha256": {
+        "false": "3c0b844c17d5527f65a096267779c05db13b2c3bd56a1b82be5f297016569ae4",
+        "true": "815e8a5be35c62473f415bac5c832b6f6f017bfac3482366a6eb1697213ae570"
+      },
+      "detached_cases": 20,
+      "detached_receipts_sha256": [
+        "7c24c421a722e976af91c5389f5e9d255da347357c37ac8c4d5d71202194a0d1",
+        "92332c852bee9cb3628aaf4f4cab458039b8200faceb893c64c5c1a428547ca5",
+        "3235e3e29b2923802c404a452a9edd668ac8aa618b50e609a9c456bc1d489372",
+        "8987ef4380e2de594459115e1a0c7f81306f0b774dc0a882c636b0356d569734"
+      ],
+      "directed_unnest": "MonotoneAnalyzer matched at 6 invocations across 6 cases",
+      "directed_captures_sha256": {
+        "false": "10ae98424f633e15a8cf8a918e2be45e6089336c24b788366dcae07350a42687",
+        "true": "0bfbec3619ea75477f1fdd7988b51747ea08b976e921b4bc1c4b1e93c7bdae39"
+      },
+      "row_closures": 3018,
+      "general_closures": 299,
+      "coverage_log_sha256": "119b38ba9b6ce104f66e5eff44a8b7b4b900b814dd22aec9b45d0031a4953195"
+    },
+    "gen2": {
+      "pass_result": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+      "captures_sha256": {
+        "false": "0768f35deb58f0cf38f12cac45ff610582454b11c3f76aa0ec1a5b1737d69408",
+        "true": "a0b5101f486d895692b7d2536b2c6cb6675a6f46642564de14070ebb0905b599"
+      },
+      "detached_cases": 20,
+      "detached_receipts_sha256": [
+        "2e1ea187a3e296cca0b3dd2b41afd9f9afbd899012978d050b8d233436da2341",
+        "a1586022cac408f97ed3adcb4744beff23f90a1491725a494b59eb0cc44fefc9",
+        "41d30bf4f3b7a2d7a5b1449783b00f0a83118f71bcb0ca77ce2e0cf55fcb6836",
+        "3d89991f3f55b500372cb47d2355b381054730fc6b2989f4ce86a0435a88ea79"
+      ],
+      "directed_unnest": "MonotoneAnalyzer matched at 6 invocations across 6 cases",
+      "directed_captures_sha256": {
+        "false": "6e5dbf7dac75c9bcda924edf6d28d20affa963e93d28e52e1523f78873777ba1",
+        "true": "f6a10ff68d1702e47eac7c8fcb50552aae2b5f0964fa0222a974ec8ed1a550cd"
+      },
+      "row_closures": 2987,
+      "general_closures": 296,
+      "coverage_log_sha256": "c056c118e8056c45d9c23c2f6da7ce76dddc63e9966a5868309c9e5f8470033a"
+    }
+  },
+  "tests": {
+    "rust_passed": 218,
+    "maven_passed": 48,
+    "logs_sha256": {
+      "tests.log": "d971ad3685034bdd8095705d550ee14fcd0ca5ca80093500c282501c4ab05a3d",
+      "clippy.log": "9fefb7b6d4cc9b765d553ad498282d154526dc02095504ef8473f6ddae509272",
+      "maven.log": "ac93c6849f649842b51953b62f22a0b106888d648f150ee599211632ca255451"
+    },
+    "jni_enabled_passed": 8,
+    "jni_log_sha256": "7bc18f4119415f89baf09f903b531f7ba18f4663befa31b2142423210c55cd77"
+  },
+  "checkpoint_restores": {
+    "count": "ea82d0fc624c56617d030a0e1327cfe6455458f22b6e55defb0e10821f1b6e30",
+    "watermark": "b3047377302850fb6b1e3975859308d76669995237f571271084b3685dc2437c"
+  }
+}

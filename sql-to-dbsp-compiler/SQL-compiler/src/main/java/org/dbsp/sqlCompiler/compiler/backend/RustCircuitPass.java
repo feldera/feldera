@@ -111,6 +111,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.WaterlineProjection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.LimiterInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters;
@@ -372,19 +374,30 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static MonotoneExpression projectRows(DBSPCompiler compiler, DBSPExpression body, DBSPVariablePath[] bounds,
                                                  IMaybeMonotoneType[] inputs, boolean indexed) {
+        IMaybeMonotoneType[] parameters = Linq.map(inputs, MonotoneRefType::new, IMaybeMonotoneType.class);
+        if (indexed)
+            parameters = new IMaybeMonotoneType[]{new PartiallyMonotoneTuple(List.of(parameters),
+                    bounds[0].getType().is(DBSPTypeRawTuple.class), false)};
+        return projectClosureBody(compiler, body, bounds, parameters, indexed);
+    }
+
+    /** Analyze a closure against its live parameter types, retaining reference identity across reads. */
+    @Nullable
+    public static MonotoneExpression projectClosureBody(DBSPCompiler compiler, DBSPExpression body,
+            DBSPVariablePath[] bounds, IMaybeMonotoneType[] parameters, boolean indexed) {
         try {
             var roots = new IDBSPInnerNode[bounds.length + 1];
             roots[0] = body;
             System.arraycopy(bounds, 0, roots, 1, bounds.length);
-            var shapes = Linq.map(List.of(inputs), WaterlineProjection::encode);
+            var shapes = WaterlineProjection.inputShapes(parameters, indexed);
             String pass = indexed ? "Monotonicity/ProjectIndexedRow"
-                    : inputs.length == 1 ? "Monotonicity/ProjectRow" : "Monotonicity/ProjectJoinRow";
-            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(inputs.length == 1 ? shapes.get(0) : shapes), roots);
+                    : shapes.size() == 1 ? "Monotonicity/ProjectRow" : "Monotonicity/ProjectJoinRow";
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(shapes.size() == 1 ? shapes.get(0) : shapes), roots);
             if (reply.value.isNull())
                 return null;
             var nodes = Objects.requireNonNull(reply.writer.liveNodes);
             var result = WaterlineProjection.resolveType(reply.value.required("row_type"),
-                    id -> Utilities.getExists(nodes, id).to(DBSPType.class), inputs);
+                    id -> Utilities.getExists(nodes, id).to(DBSPType.class), parameters);
             var reduced = reply.value.required("bound");
             return new MonotoneExpression(body, result, reduced.isNull() ? null
                     : expressionDecoder(reply.writer).decodeInner(reduced, DBSPExpression.class));

@@ -1,11 +1,14 @@
 //! Reduce the structural part of a row closure to its projected waterline.
+mod function;
+mod scalar;
 mod shape;
 use self::shape::Shape;
 use crate::limiters::Projection;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId, TypeId,
-    TypeKind,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
+    TypeId, TypeKind,
 };
+use std::collections::HashSet;
 
 /// Rebuild the analyzed type using the original input's field objects. Equal SQL
 /// types from the closure body can have different source positions and sharing.
@@ -26,8 +29,14 @@ pub enum RowType {
         initializers: Vec<Self>,
         result: Box<Self>,
     },
-    Input {
+    Parameter {
         index: usize,
+    },
+    Borrow {
+        value: Box<Self>,
+    },
+    Deref {
+        value: Box<Self>,
     },
     Field {
         row: Box<Self>,
@@ -46,6 +55,7 @@ pub enum RowType {
 
 pub struct ProjectedValue {
     shape: Shape,
+    constant: bool,
     pub row_type: RowType,
     pub reduced: Option<ExpressionId>,
 }
@@ -54,9 +64,6 @@ struct Binding {
     name: String,
     variable: ExpressionId,
     shape: Shape,
-    /// Indexed closures receive a pair of references. A missing bound moves
-    /// the other reference to field zero of the compacted pair.
-    field: Option<(usize, usize)>,
 }
 
 struct Local {
@@ -69,6 +76,7 @@ struct Local {
 struct Row {
     bindings: Vec<Binding>,
     locals: Vec<Local>,
+    clock_operands: Option<HashSet<ExpressionId>>,
 }
 
 fn field_number(node: &Node) -> Result<usize, Error> {
@@ -96,26 +104,17 @@ fn unbounded_shape(edit: &CircuitEditor, ty: TypeId, depth: usize) -> Result<Opt
             }
             Shape::tuple(fields, edit.nullable(ty)?)
         }
-        TypeKind::Array
-        | TypeKind::Binary
-        | TypeKind::Bool
-        | TypeKind::Date
-        | TypeKind::Decimal
-        | TypeKind::Double
-        | TypeKind::GeoPoint
-        | TypeKind::Integer
-        | TypeKind::LongInterval
-        | TypeKind::Map
-        | TypeKind::Null
-        | TypeKind::Real
-        | TypeKind::ShortInterval
-        | TypeKind::String
-        | TypeKind::Time
-        | TypeKind::Timestamp
-        | TypeKind::TimestampTz
-        | TypeKind::Uuid
-        | TypeKind::Variant => Shape::Scalar(false),
-        _ => return Ok(None),
+        TypeKind::Ref => {
+            let base = edit.type_id(edit.node(ty.into())?.edge("type")?)?;
+            let Some(shape) = unbounded_shape(edit, base, depth + 1)? else {
+                return Ok(None);
+            };
+            Shape::Reference(shape.into())
+        }
+        // NonMonotoneType.nonMonotone accepts primitive, function and user
+        // types as opaque scalars. Struct and stream types have no such rule.
+        TypeKind::Struct | TypeKind::Stream => return Ok(None),
+        _ => Shape::Scalar(false),
     }))
 }
 
@@ -135,6 +134,7 @@ fn unbounded(
     }
     Ok(Some(ProjectedValue {
         shape,
+        constant: false,
         row_type: RowType::Unbounded {
             type_id: type_number(ty),
         },
@@ -196,51 +196,88 @@ impl Row {
         Ok(Some(value))
     }
 
-    fn dereference(
+    fn variable(
         &self,
-        edit: &mut CircuitEditor,
-        base: ExpressionId,
+        edit: &CircuitEditor,
+        expression: ExpressionId,
     ) -> Result<Option<ProjectedValue>, Error> {
-        let node = edit.node(base.into())?;
-        let (variable, field) = match edit.expr_kind(base)? {
-            Expr::VariablePath => (node, None),
-            Expr::Field => (
-                edit.node(node.edge("expression")?)?,
-                Some(field_number(node)?),
-            ),
-            _ => return Ok(None),
-        };
-        let Some(name) = variable.data("variable").and_then(|n| n.as_str()) else {
+        let node = edit.node(expression.into())?;
+        let Some(name) = node.data("variable").and_then(|v| v.as_str()) else {
             return Ok(None);
         };
-        if self.local(name).is_some() {
-            return Ok(None);
-        }
-        let Some((index, binding)) = self
+        let (shape, row_type, reduced) = if let Some((index, local)) = self.local(name) {
+            if !edit.same_type(edit.expression_type(expression)?, local.ty)? {
+                return Ok(None);
+            }
+            (&local.shape, RowType::Local { index }, local.reduced)
+        } else if let Some((index, parameter)) = self
             .bindings
             .iter()
             .enumerate()
-            .find(|(_, b)| b.name == name && b.field.map(|(original, _)| original) == field)
-        else {
+            .find(|(_, p)| p.name == name)
+        {
+            (
+                &parameter.shape,
+                RowType::Parameter { index },
+                parameter.shape.monotone().then_some(parameter.variable),
+            )
+        } else {
             return Ok(None);
         };
-        let reduced = if binding.shape.monotone() {
-            let reference = match binding.field {
-                Some((_, compact)) => edit.tuple_field(binding.variable, compact)?,
-                None => binding.variable,
-            };
-            Some(edit.dereference(reference)?)
-        } else {
-            None
-        };
         Ok(Some(ProjectedValue {
-            shape: binding.shape.clone(),
-            row_type: RowType::Input { index },
+            shape: shape.clone(),
+            row_type,
             reduced,
+            constant: false,
         }))
     }
 
+    /// Java visits the operands of these expressions, then assigns an unbounded
+    /// result regardless of their bounds. Visit them here as well so an
+    /// unsupported operand can still take the normal diagnostic path.
+    fn opaque(
+        &mut self,
+        edit: &mut CircuitEditor,
+        expression: ExpressionId,
+        depth: usize,
+    ) -> Result<Option<ProjectedValue>, Error> {
+        let mut children = Vec::new();
+        for (_, field) in edit.node(expression.into())?.fields() {
+            field.collect_inner_edges(&mut children);
+        }
+        for child in children {
+            match edit.node(child)?.inner_kind() {
+                Some(InnerKind::Type(_)) => {}
+                Some(InnerKind::Expression(_)) => {
+                    if self
+                        .visit(edit, edit.expression(child)?, depth + 1)?
+                        .is_none()
+                    {
+                        return Ok(None);
+                    }
+                }
+                _ => return Ok(None),
+            }
+        }
+        unbounded(edit, expression, depth)
+    }
+
     fn visit(
+        &mut self,
+        edit: &mut CircuitEditor,
+        expression: ExpressionId,
+        depth: usize,
+    ) -> Result<Option<ProjectedValue>, Error> {
+        let value = self.project(edit, expression, depth)?;
+        if let Some(operands) = &mut self.clock_operands {
+            if value.as_ref().is_some_and(|v| v.shape.monotone()) {
+                operands.insert(expression);
+            }
+        }
+        Ok(value)
+    }
+
+    fn project(
         &mut self,
         edit: &mut CircuitEditor,
         expression: ExpressionId,
@@ -287,28 +324,40 @@ impl Row {
                 }
                 return self.scoped(edit, &declarations, body, depth);
             }
-            Expr::VariablePath => {
-                let Some((index, local)) = node
-                    .data("variable")
-                    .and_then(|v| v.as_str())
-                    .and_then(|name| self.local(name))
-                else {
-                    return Ok(None);
-                };
-                if !edit.same_type(edit.expression_type(expression)?, local.ty)? {
-                    return Ok(None);
-                }
-                ProjectedValue {
-                    shape: local.shape.clone(),
-                    row_type: RowType::Local { index },
-                    reduced: local.reduced,
-                }
+            Expr::VariablePath => return self.variable(edit, expression),
+            kind if scalar::literal(kind) => {
+                return scalar::literal_bound(edit, expression).map(Some);
             }
-            Expr::NoExpression
+            Expr::Apply => return self.call(edit, expression, depth),
+            Expr::Binary | Expr::TimeAddSub => return self.binary(edit, expression, depth),
+            // A nested lambda has its own binding scope. The monotonicity
+            // visitor assigns it an opaque function type without entering it.
+            Expr::Closure
+            | Expr::Path
+            | Expr::NullLiteral
+            | Expr::KeywordLiteral
+            | Expr::StrLiteral
+            | Expr::VoidLiteral
+            | Expr::NoExpression
             | Expr::StringLiteral
             | Expr::BinaryLiteral
             | Expr::UuidLiteral
             | Expr::VariantNullLiteral => return unbounded(edit, expression, depth),
+            Expr::If
+            | Expr::IsNull
+            | Expr::Array
+            | Expr::Map
+            | Expr::ApplyMethod
+            | Expr::Constructor
+            | Expr::Lazy
+            | Expr::Question
+            | Expr::Variant
+            | Expr::GeoPointConstructor
+            | Expr::UnwrapCustomOrd
+            | Expr::CustomOrd
+            | Expr::HandleError => {
+                return self.opaque(edit, expression, depth);
+            }
             Expr::Cast | Expr::Unary | Expr::UnsignedWrap | Expr::UnsignedUnwrap => {
                 let source = edit.expression(node.edge("source")?)?;
                 let Some(value) = self.visit(edit, source, depth + 1)? else {
@@ -324,20 +373,51 @@ impl Row {
                     }
                     Some(bound) => super::unary_waterline(edit, expression, bound)?,
                 };
-                let Some(bound) = reduced else {
-                    return unbounded(edit, expression, depth);
-                };
-                ProjectedValue {
-                    shape: Shape::Scalar(true),
-                    row_type: RowType::BoundedScalar {
-                        type_id: type_number(edit.expression_type(expression)?),
-                    },
-                    reduced: Some(bound),
+                if reduced.is_none() {
+                    let Some(mut unknown) = unbounded(edit, expression, depth)? else {
+                        return Ok(None);
+                    };
+                    unknown.constant = value.constant;
+                    return Ok(Some(unknown));
                 }
+                ProjectedValue::scalar(edit, expression, reduced, value.constant)?
             }
-            Expr::Deref => {
+            Expr::Borrow | Expr::Deref => {
                 let base = edit.expression(node.edge("expression")?)?;
-                return self.dereference(edit, base);
+                let Some(value) = self.visit(edit, base, depth + 1)? else {
+                    return Ok(None);
+                };
+                if kind == Expr::Borrow {
+                    // For an unbounded borrow, Java constructs the reference
+                    // from the declared expression type, including nested fields.
+                    if value.reduced.is_none() {
+                        let Some(mut result) = unbounded(edit, expression, depth)? else {
+                            return Ok(None);
+                        };
+                        result.constant = value.constant;
+                        return Ok(Some(result));
+                    }
+                    ProjectedValue {
+                        shape: Shape::Reference(value.shape.into()),
+                        row_type: RowType::Borrow {
+                            value: Box::new(value.row_type),
+                        },
+                        reduced: value.reduced.map(|v| edit.borrow_value(v)).transpose()?,
+                        constant: value.constant,
+                    }
+                } else {
+                    let Shape::Reference(base) = value.shape else {
+                        return Ok(None);
+                    };
+                    ProjectedValue {
+                        shape: (*base).clone(),
+                        row_type: RowType::Deref {
+                            value: Box::new(value.row_type),
+                        },
+                        reduced: value.reduced.map(|v| edit.dereference(v)).transpose()?,
+                        constant: value.constant,
+                    }
+                }
             }
             Expr::Field => {
                 let base = edit.expression(node.edge("expression")?)?;
@@ -375,6 +455,7 @@ impl Row {
                 };
                 ProjectedValue {
                     shape,
+                    constant: false,
                     row_type: RowType::Field {
                         row: Box::new(base.row_type),
                         index,
@@ -389,10 +470,12 @@ impl Row {
                 let mut fields = Vec::new();
                 let mut types = Vec::new();
                 let mut bounds = Vec::new();
+                let mut constant = true;
                 for field in node.edges("fields")? {
                     let Some(value) = self.visit(edit, edit.expression(field)?, depth + 1)? else {
                         return Ok(None);
                     };
+                    constant &= value.constant;
                     fields.push(value.shape);
                     types.push(value.row_type);
                     bounds.extend(value.reduced);
@@ -414,6 +497,7 @@ impl Row {
                 };
                 ProjectedValue {
                     shape,
+                    constant,
                     row_type: RowType::Tuple {
                         fields: types,
                         raw,
@@ -464,6 +548,58 @@ impl Row {
     }
 }
 
+/// A temporal filter's input has no declared waterline. Record the original
+/// operand IDs as the row visitor encounters them, including inside LETs.
+pub(crate) fn clock_operands(
+    edit: &mut CircuitEditor,
+    parameter: NodeId,
+    body: ExpressionId,
+) -> Result<Option<HashSet<ExpressionId>>, Error> {
+    let node = edit.node(parameter)?;
+    let ty = edit.type_id(node.edge("type")?)?;
+    let Some(name) = node
+        .data("name")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+    else {
+        return Ok(None);
+    };
+    let Some(shape @ Shape::Reference(_)) = unbounded_shape(edit, ty, 0)? else {
+        return Ok(None);
+    };
+    // An empty nonnullable tuple supplies its own bound. Its parameter needs
+    // the projected SQL type computed by the general closure analysis.
+    if shape.monotone() {
+        return Ok(None);
+    }
+    let Some(references) =
+        crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?
+    else {
+        return Ok(None);
+    };
+    for (read, declaration) in references {
+        if declaration == parameter
+            && !edit.same_type(edit.expression_type(edit.expression(read)?)?, ty)?
+        {
+            return Ok(None);
+        }
+    }
+    let variable = edit.named_variable(ty, &name)?;
+    let mut row = Row {
+        bindings: vec![Binding {
+            name,
+            variable,
+            shape,
+        }],
+        locals: Vec::new(),
+        clock_operands: Some(HashSet::new()),
+    };
+    if row.visit(edit, body, 0)?.is_none() {
+        return Ok(None);
+    }
+    Ok(row.clock_operands)
+}
+
 pub fn project_row(
     edit: &mut CircuitEditor,
     body: ExpressionId,
@@ -497,31 +633,36 @@ pub fn project_rows(
             "waterline shapes do not match closure parameters",
         ));
     }
-    let mut bindings = Vec::with_capacity(projections.len());
-    let mut compact = 0;
-    for (index, shape) in projections.iter().enumerate() {
-        let Some(shape) = Shape::from_input(shape) else {
-            return Ok(None);
-        };
-        let variable = bounds[if indexed { 0 } else { index }];
+    let Some(mut shapes) = projections
+        .iter()
+        .map(|p| Shape::from_input(p).map(|shape| Shape::Reference(shape.into())))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    if indexed {
+        // The original pair holds (&key, &value). Ordinary field projection
+        // computes the compressed index when either reference lacks a bound.
+        shapes = vec![Shape::tuple(shapes, false)];
+    }
+    let mut bindings = Vec::with_capacity(bounds.len());
+    for (&variable, shape) in bounds.iter().zip(shapes) {
         let name = edit
             .node(variable.into())?
             .data("variable")
             .and_then(|n| n.as_str())
             .ok_or_else(|| Error::new("expected a projected row variable"))?
             .to_owned();
-        let monotone = shape.monotone();
         bindings.push(Binding {
             name,
             variable,
             shape,
-            field: indexed.then_some((index, compact)),
         });
-        compact += usize::from(monotone);
     }
     Row {
         bindings,
         locals: Vec::new(),
+        clock_operands: None,
     }
     .visit(edit, body, 0)
 }

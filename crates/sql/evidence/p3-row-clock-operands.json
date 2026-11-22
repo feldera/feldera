@@ -1,0 +1,54 @@
+{
+  "base_commit": "027fc846a",
+  "scope": "Keep the bounds of individual clock operands when the result of a temporal predicate is unbounded. Rust visits structured rows, conditional expressions and lexical bindings. A Java caller requesting operand facts visits the complete body.",
+  "artifacts_sha256": {
+    "compiler.jar": "d202c9ffad99910c6c16c8812e1e20691df7e3eb379f662315f082aa67b6f897",
+    "test.jar": "d8aed11a8c77db86e154d73bf62d490944c9277f0c927e204c3549bdde3d4c4a",
+    "bin/libfeldera_sql_opt_jni.so": "491fe7b1af4125e9c8cf6bd0175ff795b4873fbb8c74405d3081d1254e1658d0",
+    "bin/sql2dbsp": "b18f5f3dcc384ab318fe44f92b49114e24579f5be828a3bd681f1d72cf11a81c",
+    "bin/sql-difftest": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d"
+  },
+  "engines": {
+    "classic": {
+      "frozen_clock_cases": 71,
+      "directed_sql": [
+        "CREATE TABLE events(flag BOOLEAN NOT NULL, ts TIMESTAMP NOT NULL, ts2 TIMESTAMP NOT NULL);\nCREATE VIEW selected AS SELECT * FROM events WHERE (CASE WHEN flag THEN ts ELSE ts2 END) >= NOW();\n",
+        "CREATE TABLE events(flag BOOLEAN NOT NULL, ts TIMESTAMP NOT NULL, ts2 TIMESTAMP NOT NULL);\nCREATE VIEW selected AS SELECT * FROM events WHERE ts >= CASE WHEN flag THEN NOW() ELSE ts2 END;\n",
+        "CREATE TABLE events(flag BOOLEAN NOT NULL, ts TIMESTAMP NOT NULL, ts2 TIMESTAMP NOT NULL);\nCREATE VIEW selected AS SELECT * FROM events WHERE ts >= NOW() AND (CASE WHEN flag THEN ts2 ELSE ts END) < NOW();\n",
+        "CREATE TABLE events(flag BOOLEAN NOT NULL, ts TIMESTAMP NOT NULL, ts2 TIMESTAMP NOT NULL);\nCREATE VIEW selected AS SELECT * FROM events WHERE (CASE WHEN flag THEN ts2 ELSE NULL END) > NOW() - INTERVAL 1 HOUR;\n"
+      ],
+      "capture_sha256": {
+        "classic-RewriteNow-true.gz": "75fc92f344c29e92133586944f09dbb69659cb3e8592577fbe980cc44eb25ae0",
+        "classic-RewriteNow-false.gz": "19b005cfd85656bae9d639d9901d3cb294f8c121716792ed1f03a34cfc7bbeca",
+        "case-classic-captured-true.gz": "abf4c2578de8577b0bbfde640615be6aab9ca8463b47a8c3e77f0ea0d2538244",
+        "case-classic-captured-false.gz": "266029c634ec314ead093f0ff0857c18ce54043e17121aae4ad42df66592fb39"
+      }
+    },
+    "gen2": {
+      "frozen_clock_cases": 62,
+      "directed_sql": [
+        "CREATE TABLE events(flag BOOLEAN NOT NULL, ts TIMESTAMP NOT NULL, ts2 TIMESTAMP NOT NULL);\nCREATE VIEW selected AS SELECT * FROM events WHERE (CASE WHEN flag THEN ts ELSE ts2 END) >= NOW();\n",
+        "CREATE TABLE events(flag BOOLEAN NOT NULL, ts TIMESTAMP NOT NULL, ts2 TIMESTAMP NOT NULL);\nCREATE VIEW selected AS SELECT * FROM events WHERE ts >= CASE WHEN flag THEN NOW() ELSE ts2 END;\n",
+        "CREATE TABLE events(flag BOOLEAN NOT NULL, ts TIMESTAMP NOT NULL, ts2 TIMESTAMP NOT NULL);\nCREATE VIEW selected AS SELECT * FROM events WHERE ts >= NOW() AND (CASE WHEN flag THEN ts2 ELSE ts END) < NOW();\n",
+        "CREATE TABLE events(flag BOOLEAN NOT NULL, ts TIMESTAMP NOT NULL, ts2 TIMESTAMP NOT NULL);\nCREATE VIEW selected AS SELECT * FROM events WHERE (CASE WHEN flag THEN ts2 ELSE NULL END) > NOW() - INTERVAL 1 HOUR;\n"
+      ],
+      "capture_sha256": {
+        "gen2-RewriteNow-true.gz": "cb4030cee9204d42d0c89cd73fd6b5648bcf289642fa1373e5b2632d1d4b2eb8",
+        "gen2-RewriteNow-false.gz": "b324db4b8653b9d808b263420b9827389662882bd197eaeeb3fa234a69cab72e",
+        "case-gen2-captured-true.gz": "a77086ed273f8f5c4f3a421cf61b853da2d1a1faa511bea9cf93e242c6cad9d4",
+        "case-gen2-captured-false.gz": "9313b41214161cb0e7378a7e616c6c26df77df180ca363548a1aa2aae490411e"
+      }
+    }
+  },
+  "tests": {
+    "rust_passed": 219,
+    "maven_passed": 52,
+    "jni_enabled_passed": 12,
+    "logs_sha256": {
+      "tests.log": "cbe8dd1bb03f665dc9457d9ecba679d62111cad078acffe5abbb9dd2b764acac",
+      "maven.log": "0e405c021660a3851e1de9eea10afe3ca509a4cb5b9295e8a6d1f22cae144216",
+      "jni-tests.log": "23dea665f0f1a34819468f6e9f65eaa2330b6ad8046232045e7d006ba5774eb2",
+      "clippy.log": "de7465f06417583d0ee4473491f4c514378fc449d985ac800261b7c8db752e5e"
+    }
+  }
+}

@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust tracks bounds through immutable row bindings, references, arithmetic,
+and named scalar functions. Temporal predicates retain their individual clock
+bounds when the comparison itself has no bound. All 71 classic and 62 Gen-2
+frozen clock programs matched Java at the `RewriteNow` boundary. Four directed
+SQL predicates with conditional timestamps also matched on each engine.
+[Clock operands](evidence/p3-row-clock-operands.json) ·
+[Row bindings](evidence/p3-lexical-row-waterlines.json) ·
+[Arithmetic and checkpoint restores](evidence/p3-row-arithmetic.json)
+
 Rust projects scalar casts, unary operators and unsigned sort keys inside row
 waterlines. The analyzed scalar keeps the SQL type from the original closure.
 All 550 frozen monotonicity comparisons, 12 directed LATENESS/UNNEST comparisons

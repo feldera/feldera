@@ -1,7 +1,25 @@
 //! Select the runtime function that computes a lower bound for a scalar call.
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr};
 use regex::Regex;
 use serde::Deserialize;
 use std::sync::LazyLock;
+
+/// Java writes a DOUBLE literal's raw IEEE 754 bits as a signed long.
+pub(crate) fn double_literal_above_one(
+    edit: &CircuitEditor,
+    id: ExpressionId,
+) -> Result<bool, Error> {
+    if edit.expr_kind(id)? != Expr::DoubleLiteral {
+        return Ok(false);
+    }
+    let Some(value) = edit.node(id.into())?.data("value").filter(|v| !v.is_null()) else {
+        return Ok(false);
+    };
+    let bits = value
+        .as_i64()
+        .ok_or_else(|| Error::new("expected signed IEEE 754 bits in DOUBLE literal"))?;
+    Ok(f64::from_bits(bits as u64) > 1.0)
+}
 
 #[derive(Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]

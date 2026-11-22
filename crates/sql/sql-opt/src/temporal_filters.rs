@@ -178,7 +178,10 @@ fn split_filter(
     let output_type = node.edge("outputType")?;
     let function = simplify_closure_with_warnings(edit, function, Some(warnings))?;
     let parameters = edit.node(function)?.edges("parameters")?;
-    let predicate = crate::filters::strip_wrap_bool(edit, edit.expression(edit.node(function)?.edge("body")?)?)?;
+    let predicate = crate::filters::strip_wrap_bool(
+        edit,
+        edit.expression(edit.node(function)?.edge("body")?)?,
+    )?;
     let binary = edit.node(predicate.into())?;
     if edit.expr_kind(predicate)? != Expr::Binary {
         return Ok(None);
@@ -335,8 +338,7 @@ mod tests {
             Some(port(source))
         );
 
-        // A conditional needs general closure analysis. Earlier successful
-        // merges must not consume names or publish warnings on fallback.
+        // A conditional containing a clock is a residual, so it stays on its original input.
         let mut edit = CircuitEditor::new(circuit);
         let conditional = edit.make_expr(
             site,
@@ -349,6 +351,32 @@ mod tests {
             ],
         )?;
         let predicate = edit.binary_expression(site, boolean, BinaryOp::Gt, key, conditional)?;
+        let closure = edit.closure_from_variables(predicate, &[variable])?;
+        let residual = filter(&mut edit, cloned_filter, closure.into())?;
+        let circuit = edit.finish()?;
+        let mut next = 10;
+        let merged = merge_temporal_filters(circuit.clone(), &mut next, &mut warnings)?.unwrap();
+        assert_eq!(
+            merged.node(residual).unwrap().inputs().next(),
+            Some(port(cloned_filter))
+        );
+
+        // A mutable block still needs the general visitor. Earlier successful
+        // merges must not publish their generated names or warnings.
+        let mut edit = CircuitEditor::new(circuit);
+        let binding = edit.let_statement("t", clock)?;
+        let binding = edit.derive_inner(binding, [("mutable", Field::Data(true.into()))])?;
+        let read = edit.named_variable(timestamp, "t")?;
+        let block = edit.make_expr(
+            site,
+            Expr::Block,
+            timestamp,
+            [
+                ("contents", Field::Array(vec![Field::Reference(binding)])),
+                ("lastExpression", Field::Reference(read.into())),
+            ],
+        )?;
+        let predicate = edit.binary_expression(site, boolean, BinaryOp::Gt, key, block)?;
         let closure = edit.closure_from_variables(predicate, &[variable])?;
         filter(&mut edit, cloned_filter, closure.into())?;
         let mut next = 10;
