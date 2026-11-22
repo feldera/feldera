@@ -316,21 +316,26 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
     DBSPMapIndexOperator projectValue(DBSPUnaryOperator operator, FieldUseMap fm) {
         OutputPort source = this.mapped(operator.input());
         DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
-        // This projection is only for the values of the input indexed Z-set, we need an identity
-        // projection for the keys
-
-        DBSPVariablePath var = operator.input().getOutputIndexedZSetType().getKVRefType().var();
-        projection = new DBSPRawTupleExpression(
-                ExpressionCompiler.expandTuple(var.getNode(), var.field(0).deref()),
-                projection.call(var.field(1)))
-                .reduce(this.compiler)
-                .closure(var);
+        DBSPType inputType = operator.input().getOutputIndexedZSetType().getKVRefType();
+        projection = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.projectIndexedValue(this.compiler, inputType, projection)
+                : indexedValueProjection(this.compiler, inputType, projection);
 
         int size = operator.getType().getToplevelFieldCount();
         DBSPMapIndexOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
                 .addAnnotation(new IsProjection(size), DBSPMapIndexOperator.class);
         this.addOperator(adjust);
         return adjust;
+    }
+
+    static DBSPClosureExpression indexedValueProjection(DBSPCompiler compiler, DBSPType input,
+            DBSPClosureExpression projection) {
+        DBSPVariablePath var = input.var();
+        return new DBSPRawTupleExpression(
+                ExpressionCompiler.expandTuple(var.getNode(), var.field(0).deref()),
+                projection.call(var.field(1)))
+                .reduce(compiler)
+                .closure(var);
     }
 
     @Override

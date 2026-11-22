@@ -1014,6 +1014,15 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static DBSPClosureExpression projectIndexedValue(DBSPCompiler compiler, DBSPType input,
+            DBSPClosureExpression projection) {
+        String pass = "RemoveUnusedFields/IndexedValue";
+        var result = lowerFunction(compiler, pass, input, projection, DBSPClosureExpression.class);
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision(pass, true);
+        return result;
+    }
+
     public static boolean isMapProjection(DBSPCompiler compiler, DBSPClosureExpression closure, boolean allowNestedAndCasts) {
         String pass = allowNestedAndCasts ? "IsNestedProjection" : "IsStrictProjection";
         var result = invokeLowering(compiler, pass, closure, null).value;

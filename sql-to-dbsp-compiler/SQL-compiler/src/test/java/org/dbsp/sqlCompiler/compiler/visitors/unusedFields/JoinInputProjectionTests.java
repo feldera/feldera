@@ -18,6 +18,35 @@ import java.util.List;
 
 public class JoinInputProjectionTests {
     @Test
+    public void indexedValueProjectionExpandsNestedKeysAndPreservesNullableRows() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var number = new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false);
+        var text = DBSPTypeString.varchar(false);
+        var nested = new DBSPTypeTuple(number, text).withMayBeNull(true);
+        var key = new DBSPTypeTuple(text, nested);
+        for (boolean nullable : List.of(false, true)) {
+            var row = new DBSPTypeTuple(number, nested, text).withMayBeNull(nullable);
+            var input = new DBSPTypeRawTuple(key.ref(), row.ref());
+            var used = new FieldUseMap(row.ref(), false);
+            for (var columns : List.of(List.<Integer>of(), List.of(1, 2))) {
+                for (int column : columns)
+                    used.deref().setUsed(column);
+                var projection = used.getProjection(1);
+                Assert.assertNotNull(projection);
+                long start = DBSPVariablePath.nextGeneratedName();
+                var expected = RemoveUnusedFields.indexedValueProjection(compiler, input, projection);
+                long end = DBSPVariablePath.nextGeneratedName();
+                DBSPVariablePath.restoreGeneratedNames(start);
+                var actual = RustCircuitPass.projectIndexedValue(compiler, input, projection);
+                Assert.assertEquals(end, DBSPVariablePath.nextGeneratedName());
+                Assert.assertTrue(expected.getResultType().sameType(actual.getResultType()));
+                Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
+            }
+        }
+    }
+
+    @Test
     public void keepsCompositeKeysAndDistinguishesNullFromAnEmptyValue() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"));
         var compiler = new DBSPCompiler(new CompilerOptions());

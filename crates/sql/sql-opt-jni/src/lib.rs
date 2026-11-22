@@ -795,6 +795,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             closure
         }
+        ("RemoveUnusedFields/IndexedValue", [input, projection]) => {
+            let input = edit.type_id(*input)?;
+            let projection = edit.expression(*projection)?;
+            feldera_sql_opt::project_indexed_value(&mut edit, input, projection, &mut next, &mut warnings)?
+        }
         ("TrimTopKProjection", [producer, reader]) => {
             let Some(pair) = feldera_sql_opt::trim_topk_projection(&mut edit, *producer, *reader)? else {
                 return Ok(Value::Null);
@@ -1054,7 +1059,7 @@ fn transform(
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
-        | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
+        | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection" | "RemoveUnusedFields/IndexedValue"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
             return lower_function(pass, input, state, next);
         }

@@ -1,6 +1,27 @@
 //! Drop unused aggregate components while preserving the following map's input layout.
 use crate::row_projection::{RowProjection, tuple_of_fields};
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId};
+use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, TypeId};
+
+/// Lift a projection of the input value to the indexed stream consumed by
+/// aggregates and TopK. Nested key fields must survive the narrowing.
+pub fn project_indexed_value(
+    edit: &mut CircuitEditor,
+    input: TypeId,
+    projection: ExpressionId,
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<ExpressionId, Error> {
+    let pair = edit.variable(input, next)?;
+    let key = edit.tuple_field(pair, 0)?;
+    let key = edit.dereference(key)?;
+    let key = edit.expand_tuple(pair.into(), key)?;
+    let value = edit.tuple_field(pair, 1)?;
+    let value = edit.call_closure(projection, &[value])?;
+    let body = edit.tuple_expr(pair.into(), true, &[key, value])?;
+    let body = reduce_closure_body_with_warnings(edit, body.into(), &[], &[], Some(warnings))?;
+    edit.closure_from_variables(edit.expression(body)?, &[pair])
+}
 
 pub struct AggregateProjection {
     pub retained: Vec<usize>,
