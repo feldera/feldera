@@ -93,6 +93,16 @@ fn scalar_equals(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Resu
         .ok_or_else(|| Error::new("invalid zoned timestamp in a constant collection"))
 }
 
+/// Compare weighted collection literals under the compiler's row-value equality.
+/// Equal rows cancel even when the two collections enumerate them in different orders.
+pub fn equal_collections(
+    edit: &CircuitEditor,
+    left: ExpressionId,
+    right: ExpressionId,
+) -> Result<bool, Error> {
+    same_value(edit, left.into(), right.into(), 0)
+}
+
 fn same_value(edit: &CircuitEditor, a: NodeId, b: NodeId, depth: usize) -> Result<bool, Error> {
     if a == b {
         return Ok(true);

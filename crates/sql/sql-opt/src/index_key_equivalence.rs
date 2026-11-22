@@ -5,10 +5,38 @@ use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr,
 use std::collections::HashSet;
 
 fn same_type(edit: &CircuitEditor, left: &Node, right: &Node) -> Result<bool, Error> {
+    same_type_field(edit, left, right, "type")
+}
+
+fn same_type_field(
+    edit: &CircuitEditor,
+    left: &Node,
+    right: &Node,
+    field: &str,
+) -> Result<bool, Error> {
     edit.same_type(
-        edit.type_id(left.edge("type")?)?,
-        edit.type_id(right.edge("type")?)?,
+        edit.type_id(left.edge(field)?)?,
+        edit.type_id(right.edge(field)?)?,
     )
+}
+
+fn same_type_list(
+    edit: &CircuitEditor,
+    left: &Node,
+    right: &Node,
+    field: &str,
+) -> Result<bool, Error> {
+    let left = left.edges(field)?;
+    let right = right.edges(field)?;
+    if left.len() != right.len() {
+        return Ok(false);
+    }
+    for (a, b) in left.into_iter().zip(right) {
+        if !edit.same_type(edit.type_id(a)?, edit.type_id(b)?)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn optional_child(
@@ -64,15 +92,10 @@ fn same_path(edit: &CircuitEditor, left: &Node, right: &Node) -> Result<Option<b
         if l.class() != "DBSPSimplePathSegment" || r.class() != "DBSPSimplePathSegment" {
             return Ok(None);
         }
-        let lt = l.edges("genericArgs")?;
-        let rt = r.edges("genericArgs")?;
-        if l.data("identifier") != r.data("identifier") || lt.len() != rt.len() {
+        if l.data("identifier") != r.data("identifier")
+            || !same_type_list(edit, l, r, "genericArgs")?
+        {
             return Ok(Some(false));
-        }
-        for (a, b) in lt.into_iter().zip(rt) {
-            if !edit.same_type(edit.type_id(a)?, edit.type_id(b)?)? {
-                return Ok(Some(false));
-            }
         }
     }
     Ok(Some(true))
@@ -240,6 +263,47 @@ pub(crate) fn compare_expressions(
                 &["left", "right"]
             }
             Expr::Assignment => &["left", "right"],
+            Expr::QualifyType => {
+                if !same_type_list(edit, left, right, "types")? {
+                    return Ok(Some(false));
+                }
+                &["expression"]
+            }
+            Expr::ZSet | Expr::IndexedZSet => {
+                if !feldera_sql_expr::constant_rows::equal_collections(
+                    edit,
+                    edit.expression(a)?,
+                    edit.expression(b)?,
+                )? {
+                    return Ok(Some(false));
+                }
+                &[]
+            }
+            Expr::Fold | Expr::NonLinearAggregate | Expr::MinMaxAggregate => {
+                if !same_type_field(edit, left, right, "semigroup")? {
+                    return Ok(Some(false));
+                }
+                match kind {
+                    Expr::Fold => &["zero", "increment", "postProcess"],
+                    Expr::NonLinearAggregate => {
+                        &["zero", "increment", "postProcess", "emptySetResult"]
+                    }
+                    _ => &[
+                        "zero",
+                        "increment",
+                        "postProcess",
+                        "emptySetResult",
+                        "comparedValue",
+                    ],
+                }
+            }
+            Expr::LinearAggregate => &["map", "postProcess", "emptySetResult"],
+            Expr::MinMax => {
+                if !same_type(edit, left, right)? {
+                    return Ok(Some(false));
+                }
+                &["postProcessing"]
+            }
             Expr::ConditionalIncrement => &["left", "right", "condition"],
             Expr::Field
             | Expr::CustomOrdField
@@ -292,10 +356,7 @@ pub(crate) fn compare_expressions(
                     &["leftType", "rightType"]
                 };
                 for field in type_fields {
-                    if !edit.same_type(
-                        edit.type_id(left.edge(field)?)?,
-                        edit.type_id(right.edge(field)?)?,
-                    )? {
+                    if !same_type_field(edit, left, right, field)? {
                         return Ok(Some(false));
                     }
                 }
@@ -311,6 +372,8 @@ pub(crate) fn compare_expressions(
         };
         let attributes: &[&str] = match kind {
             Expr::AsymmetricFieldComparator => &["comparisons"],
+            Expr::MinMax => &["aggregation"],
+            Expr::MinMaxAggregate => &["operation"],
             Expr::DirectComparator => &["ascending"],
             Expr::FieldComparator => &["ascending", "fieldNo", "nullsFirst"],
             Expr::Field | Expr::CustomOrdField => &["fieldNo"],
@@ -337,6 +400,11 @@ pub(crate) fn compare_expressions(
                     | (Expr::GeoPointConstructor, "left" | "right")
                     | (Expr::ConditionalIncrement, "condition")
                     | (Expr::Variant, "value")
+                    | (
+                        Expr::NonLinearAggregate | Expr::MinMaxAggregate,
+                        "postProcess"
+                    )
+                    | (Expr::MinMax, "postProcessing")
             );
             if optional {
                 if !optional_child(left, right, name, scope, &mut pending)? {
