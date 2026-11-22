@@ -23,17 +23,24 @@ pub(super) fn compose(
     compose_closures(edit, before, indexed, after, None)
 }
 
+pub struct CollapsedIndex {
+    pub tail: NodeId,
+    pub function: ExpressionId,
+    pub input: OutputPort,
+}
+
 /// Chains are ordered downstream first, as FindMapChains publishes them.
-pub fn collapse_shared_chains(
-    circuit: Circuit,
+/// Read the original closures even where a chain overlaps another replacement.
+pub fn collapsed_indexes(
+    edit: &mut CircuitEditor,
     chains: &[Vec<NodeId>],
-    next: &mut u64,
-) -> Result<Circuit, Error> {
+) -> Result<Vec<CollapsedIndex>, Error> {
+    let circuit = edit.circuit();
     let mut by_source: HashMap<_, Vec<&[NodeId]>> = HashMap::new();
     for chain in chains {
         let head = *chain.last().ok_or_else(|| Error::new("empty map chain"))?;
         by_source
-            .entry(input(&circuit, head)?)
+            .entry(input(circuit, head)?)
             .or_default()
             .push(chain);
     }
@@ -45,12 +52,9 @@ pub fn collapse_shared_chains(
         .map(|chain| (chain[0], chain))
         .collect();
     if tails.is_empty() {
-        return Ok(circuit);
+        return Ok(Vec::new());
     }
     let order = circuit.operator_order(BodyOrder::Postorder)?;
-    let mut edit = CircuitEditor::new(circuit);
-    // Chains can overlap. Each composition reads the closures and input ports
-    // that FindMapChains observed, including operators replaced by another chain.
     let mut replacements = Vec::new();
     for tail in order {
         let Some(&chain) = tails.get(&tail) else {
@@ -72,21 +76,35 @@ pub fn collapse_shared_chains(
             }
             let indexed = edit.node(before)?.operator_kind() == Some(Op::MapIndex);
             let function = edit.node(after)?.edge("function")?;
-            closure = compose(&mut edit, closure, indexed, function)?;
+            closure = compose(edit, closure, indexed, function)?;
             before = after;
         }
         if collapsible {
-            replacements.push((tail, closure, upstream));
+            replacements.push(CollapsedIndex {
+                tail,
+                function: closure,
+                input: upstream,
+            });
         }
     }
-    for (tail, closure, upstream) in replacements {
+    Ok(replacements)
+}
+
+pub fn collapse_shared_chains(
+    circuit: Circuit,
+    chains: &[Vec<NodeId>],
+    next: &mut u64,
+) -> Result<Circuit, Error> {
+    let mut edit = CircuitEditor::new(circuit);
+    let replacements = collapsed_indexes(&mut edit, chains)?;
+    for index in replacements {
         edit.set_operator_field(
-            tail,
+            index.tail,
             "function",
-            feldera_sql_ir::Field::Reference(closure.into()),
+            feldera_sql_ir::Field::Reference(index.function.into()),
         )?;
-        edit.clear_annotations(tail)?;
-        edit.rewire_inputs(tail, &[upstream])?;
+        edit.clear_annotations(index.tail)?;
+        edit.rewire_inputs(index.tail, &[index.input])?;
     }
     rebuild_input_closures(edit.finish_with_rewrites()?, next)
 }

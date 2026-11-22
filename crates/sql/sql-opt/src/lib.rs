@@ -192,7 +192,7 @@ pub use append_only::append_only_streams;
 pub use array_agg::{fuse_into_array_agg, ArrayFusions};
 pub use balanced_joins::{balance_joins, optimize_balanced_joins};
 pub use chains::{chain_readers, fuse_chains, implement_chains, optimize_chains};
-pub use collapse_shared_chains::collapse_shared_chains;
+pub use collapse_shared_chains::{collapse_shared_chains, collapsed_indexes};
 pub use comparators::{declare_comparators, ordered_indexes, rewrite_index_functions};
 pub use conditionals::{simplify_conditional_root, simplify_conditionals};
 pub use constant_filters::remove_constant_filters;

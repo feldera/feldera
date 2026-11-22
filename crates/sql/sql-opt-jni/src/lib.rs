@@ -59,6 +59,11 @@ fn operator_numbers(ids: impl IntoIterator<Item = NodeId>) -> Vec<u64> {
     ids.into_iter().map(operator_number).collect()
 }
 
+fn map_chains(state: &[u8]) -> Result<Vec<Vec<NodeId>>, serde_json::Error> {
+    let chains: Vec<Vec<u64>> = serde_json::from_slice(state)?;
+    Ok(chains.into_iter().map(|chain| chain.into_iter().map(NodeId::Outer).collect()).collect())
+}
+
 fn ports(pairs: Vec<(u64, usize)>) -> BTreeSet<OutputPort> {
     pairs
         .into_iter()
@@ -1157,6 +1162,17 @@ fn transform(
         }).collect::<Vec<_>>();
         return Ok(json!({"closures": records, "next_generated_name": next}));
     }
+    if pass == "CollapseSharedChains/Closures" {
+        let mut edit = feldera_sql_ir::CircuitEditor::new(circuit.clone());
+        let indexes = feldera_sql_opt::collapsed_indexes(&mut edit, &map_chains(state)?)?;
+        let roots: Vec<_> = indexes.iter().map(|index| index.function).collect();
+        let closures = edit.circuit().additional_expressions(&circuit, &roots)?;
+        let records = indexes.into_iter().zip(closures).map(|(index, function)| {
+            json!({"tail": operator_number(index.tail), "source": operator_number(index.input.operator),
+                   "port": index.input.number, "function": function})
+        }).collect::<Vec<_>>();
+        return Ok(json!(records));
+    }
     if pass == "Topology/FindUnusedInputFields" {
         return Ok(json!(operator_numbers(feldera_sql_opt::input_projections(
             &circuit
@@ -1563,14 +1579,7 @@ fn transform(
             let groups = serde_json::from_slice::<Vec<_>>(state)?;
             feldera_sql_opt::implement_window_groups(circuit, &groups, &mut next)?
         }
-        "CollapseSharedChains" => {
-            let chains: Vec<Vec<u64>> = serde_json::from_slice(state)?;
-            let chains: Vec<_> = chains
-                .into_iter()
-                .map(|c| c.into_iter().map(NodeId::Outer).collect())
-                .collect();
-            feldera_sql_opt::collapse_shared_chains(circuit, &chains, &mut next)?
-        }
+        "CollapseSharedChains" => feldera_sql_opt::collapse_shared_chains(circuit, &map_chains(state)?, &mut next)?,
         "DuplicateSharedIndexes" => feldera_sql_opt::duplicate_shared_indexes(circuit, &mut next)?,
         "ImplementChains" => feldera_sql_opt::implement_chains(circuit, &mut next)?,
         "EnsureExpressionTrees" => feldera_sql_opt::ensure_expression_trees(circuit, &mut next)?,

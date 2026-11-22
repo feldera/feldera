@@ -2867,6 +2867,42 @@ public final class RustCircuitPass implements CircuitTransform {
         finishLowering(this.compiler, state);
     }
 
+    private DBSPCircuit collapseSharedChains(DBSPCircuit circuit, long next, CollapseSharedChains analysis) throws IOException {
+        var chains = analysis.chainIds();
+        var payloads = new HashSet<Long>();
+        for (var chain : chains)
+            if (chain.size() > 1)
+                payloads.addAll(chain);
+        if (payloads.isEmpty())
+            return circuit;
+        var writer = OptimizerTopology.selectedForRewrite(this.compiler, circuit, payloads, OptimizerTopology.Details.NONE);
+        var result = this.invoke("CollapseSharedChains/Closures", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
+                next, MAPPER.writeValueAsBytes(chains));
+        if (result.isEmpty())
+            return circuit;
+        var decoder = expressionDecoder(writer.innerVisitor);
+        var operators = operatorsById(circuit);
+        record Index(OutputPort source, DBSPClosureExpression function) {}
+        var indexes = new HashMap<Long, Index>();
+        for (var entry : result) {
+            var source = Utilities.getExists(operators, entry.required("source").longValue());
+            var port = source.getOutput(entry.required("port").intValue());
+            var closure = decoder.decodeInner(entry.required("function"), DBSPClosureExpression.class);
+            Utilities.putNew(indexes, entry.required("tail").longValue(), new Index(port, closure));
+        }
+        return new CircuitCloneVisitor(this.compiler, false) {
+            @Override
+            public void postorder(DBSPMapIndexOperator operator) {
+                var index = indexes.get(operator.id);
+                if (index == null)
+                    super.postorder(operator);
+                else
+                    this.map(operator, new DBSPMapIndexOperator(operator.getRelNode(), index.function(),
+                            operator.getOutputIndexedZSetType(), this.mapped(index.source())));
+            }
+        }.apply(circuit);
+    }
+
     private void findCommonProjections(DBSPCircuit circuit, long next, FindCommonProjections analysis) throws IOException {
         analysis.clear();
         var details = OptimizerTopology.Details.CONSUMERS;
@@ -3250,12 +3286,8 @@ public final class RustCircuitPass implements CircuitTransform {
                     return circuit;
                 state = MAPPER.writeValueAsBytes(groups);
             }
-            if (this.collapseChains != null) {
-                var chains = this.collapseChains.chainIds();
-                if (chains.stream().noneMatch(chain -> chain.size() > 1))
-                    return circuit;
-                state = MAPPER.writeValueAsBytes(chains);
-            }
+            if (this.collapseChains != null)
+                return this.collapseSharedChains(circuit, initial, this.collapseChains);
             if (this.windowImplementation != null) {
                 var groups = this.windowImplementation.projections();
                 if (groups.isEmpty())
