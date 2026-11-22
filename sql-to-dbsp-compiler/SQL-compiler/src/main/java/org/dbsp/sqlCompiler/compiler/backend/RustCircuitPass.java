@@ -291,6 +291,10 @@ public final class RustCircuitPass implements CircuitTransform {
         return tryLowerFunction(compiler, "Monotonicity/Unary", operation, bound, DBSPExpression.class);
     }
 
+    public static DBSPExpression nullLiteralWaterline(DBSPCompiler compiler, DBSPType type) {
+        return lowerFunction(compiler, "Monotonicity/NullLiteral", type, null, DBSPExpression.class);
+    }
+
     public static DBSPFold lowerAggregateFold(DBSPCompiler compiler, DBSPAggregateList aggregates) {
         return lowerFunction(compiler, "LowerAggregateFold", aggregates,
                 aggregates.isEmpty() ? DBSPTypeTuple.EMPTY : null, DBSPFold.class);

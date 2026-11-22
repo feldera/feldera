@@ -52,6 +52,8 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -459,7 +461,12 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 this.set(expression, new MonotoneExpression(expression, nmt, null));
                 return;
             }
-            waterline = waterlineType.to(IsBoundedType.class).getMaxValue();
+            // Target-sized integers report their unsupported maximum at the original SQL location.
+            if (this.compiler.options.ioOptions.rustOptimizerPasses
+                    && !(waterlineType instanceof DBSPTypeISize || waterlineType instanceof DBSPTypeUSize))
+                waterline = RustCircuitPass.nullLiteralWaterline(this.compiler, waterlineType);
+            else
+                waterline = waterlineType.to(IsBoundedType.class).getMaxValue();
         } else {
             waterline = expression.getWithNullable(false);
         }
