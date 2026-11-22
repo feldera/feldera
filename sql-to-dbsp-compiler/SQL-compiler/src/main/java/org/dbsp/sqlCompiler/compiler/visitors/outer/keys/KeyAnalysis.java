@@ -326,6 +326,20 @@ public class KeyAnalysis extends CircuitVisitor {
         var nativeColumns = this.compiler().options.ioOptions.rustOptimizerPasses
                 ? RustCircuitPass.outputColumns(this.compiler(), closure, shape, this.losslessCasts,
                         projection, input == null ? null : input.keys) : null;
+        return this.resolveColumns(shape, closure, nativeColumns);
+    }
+
+    private ClosureColumns joinColumns(List<OutputPort> inputs, CollectionShape shape, DBSPClosureExpression closure,
+                                       boolean leftJoin) {
+        if (!this.compiler().options.ioOptions.rustOptimizerPasses)
+            return this.outputColumns(shape, closure);
+        var keys = inputs.stream().map(port -> this.getKeys(port).keys).toList();
+        var columns = RustCircuitPass.joinOutputColumns(this.compiler(), closure, shape, this.losslessCasts, keys, leftJoin);
+        return this.resolveColumns(shape, closure, columns);
+    }
+
+    private ClosureColumns resolveColumns(CollectionShape shape, DBSPClosureExpression closure,
+                                          @Nullable RustCircuitPass.OutputColumns nativeColumns) {
         Provenance provenance = nativeColumns != null && nativeColumns.copies() != null
                 ? fromCopies(nativeColumns.copies()) : this.referenceProvenance(shape, closure);
         ColumnEquivalence computations = nativeColumns != null && nativeColumns.groups() != null
@@ -708,7 +722,11 @@ public class KeyAnalysis extends CircuitVisitor {
                 column.part() == Part.INDEX ? 0 : valueParameter, Column.none(column.field())));
     }
 
-    private Keys nativeJoinKeys(List<OutputPort> inputs, Provenance provenance, boolean leftJoin) {
+    private Keys nativeJoinKeys(List<OutputPort> inputs, ClosureColumns columns, boolean leftJoin) {
+        if (columns.projectedKeys() != null)
+            return columns.projectedKeys();
+        // The reference interpreter supplied column copies for this closure.
+        Provenance provenance = columns.provenance();
         var keys = inputs.stream().map(port -> this.getKeys(port).keys).toList();
         if (keys.stream().allMatch(List::isEmpty))
             return Keys.NONE;
@@ -735,7 +753,7 @@ public class KeyAnalysis extends CircuitVisitor {
         DBSPClosureExpression closure = closureOf(node);
         if (closure == null)
             return;
-        var columns = this.outputColumns(output, closure);
+        var columns = this.joinColumns(node.inputs, output, closure, leftJoin);
         Provenance provenance = columns.provenance();
         Keys left = this.getKeys(node.left());
         Keys right = this.getKeys(node.right());
@@ -747,7 +765,7 @@ public class KeyAnalysis extends CircuitVisitor {
         ColumnEquivalence equivalence = columns.equivalence()
                 .merge(leftEquivalence).merge(rightEquivalence);
         if (this.compiler().options.ioOptions.rustOptimizerPasses) {
-            this.set(node, this.nativeJoinKeys(node.inputs, provenance, leftJoin), equivalence);
+            this.set(node, this.nativeJoinKeys(node.inputs, columns, leftJoin), equivalence);
             return;
         }
         Keys leftMapped = left.map(leftTransform);
@@ -785,7 +803,7 @@ public class KeyAnalysis extends CircuitVisitor {
         DBSPClosureExpression closure = closureOf(node);
         if (closure == null)
             return;
-        var columns = this.outputColumns(output, closure);
+        var columns = this.joinColumns(node.inputs, output, closure, false);
         Provenance provenance = columns.provenance();
         ColumnEquivalence equivalence = columns.equivalence();
         List<Keys> mapped = new ArrayList<>();
@@ -798,7 +816,7 @@ public class KeyAnalysis extends CircuitVisitor {
                 mapped.add(this.getKeys(input).map(transform));
         }
         if (this.compiler().options.ioOptions.rustOptimizerPasses) {
-            this.set(node, this.nativeJoinKeys(node.inputs, provenance, false), equivalence);
+            this.set(node, this.nativeJoinKeys(node.inputs, columns, false), equivalence);
             return;
         }
         List<KeyColumns> result = new ArrayList<>();

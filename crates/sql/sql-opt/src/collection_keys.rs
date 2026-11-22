@@ -136,15 +136,33 @@ pub fn filter_keys(mut keys: Vec<KeyColumns>, fixed: &BTreeSet<Column>) -> Vec<K
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct JoinKeys {
+pub struct JoinInputs {
     inputs: Vec<Vec<KeyColumns>>,
-    copies: Vec<ColumnCopy>,
     left_join: bool,
+}
+
+/// Accept copies from the reference interpreter when it handles a closure.
+#[derive(Deserialize)]
+pub struct JoinKeys {
+    #[serde(flatten)]
+    layout: JoinInputs,
+    copies: Vec<ColumnCopy>,
 }
 
 impl JoinKeys {
     pub fn derive(self) -> Vec<KeyColumns> {
-        let copies = copies_by_source(&self.copies);
+        self.layout.derive(&self.copies)
+    }
+}
+
+impl JoinInputs {
+    /// Determine which input keys survive the join using the same column copies
+    /// as the output lineage analysis.
+    pub fn derive(&self, copies: &[ColumnCopy]) -> Vec<KeyColumns> {
+        if !self.inputs.is_empty() && self.inputs.iter().all(Vec::is_empty) {
+            return Vec::new();
+        }
+        let copies = copies_by_source(copies);
         let unique: Vec<_> = self
             .inputs
             .iter()
@@ -295,9 +313,11 @@ mod tests {
         };
         let derive = |left_join| {
             JoinKeys {
-                inputs: vec![vec![key(&[ix])], vec![key(&[val])]],
+                layout: JoinInputs {
+                    inputs: vec![vec![key(&[ix])], vec![key(&[val])]],
+                    left_join,
+                },
                 copies: layout(),
-                left_join,
             }
             .derive()
         };
@@ -317,13 +337,15 @@ mod tests {
         assert_eq!(derive(true), [both]);
 
         let star = JoinKeys {
-            inputs: vec![
-                vec![key(&[ix])],
-                vec![key(&[val])],
-                vec![KeyColumns::default()],
-            ],
+            layout: JoinInputs {
+                inputs: vec![
+                    vec![key(&[ix])],
+                    vec![key(&[val])],
+                    vec![KeyColumns::default()],
+                ],
+                left_join: false,
+            },
             copies: layout(),
-            left_join: false,
         };
         assert_eq!(star.derive(), [key(&[out(1)])]);
     }

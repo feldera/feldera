@@ -321,7 +321,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let header = json!({"class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]});
         Circuit::from_json(header)?.with_inner_roots_bytes(input)?
     };
-    if let ("KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys", [closure]) = (pass, roots.as_slice()) {
+    if let ("KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys", [closure]) = (pass, roots.as_slice()) {
         #[derive(serde::Deserialize)]
         struct Request {
             #[serde(flatten)]
@@ -329,6 +329,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             lossless: bool,
             keys: Option<Vec<feldera_sql_opt::KeyColumns>>,
             projection: Option<feldera_sql_opt::KeyProjection>,
+            join: Option<feldera_sql_opt::JoinInputs>,
         }
         let request: Request = serde_json::from_slice(state)?;
         let edit = CircuitEditor::new(arena);
@@ -341,12 +342,17 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(serde_json::to_value(fixed)?);
         }
         let copies = feldera_sql_opt::column_copies(&edit, *closure, &request.shape, request.lossless)?;
-        if pass == "KeyAnalysis/OutputColumns" {
+        if matches!(pass, "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns") {
             let groups = feldera_sql_opt::equal_computations(&edit, *closure, &request.shape)?;
-            let keys = match (request.projection, request.keys) {
-                (Some(projection), Some(keys)) => copies.as_ref().map(|copies| projection.keys(&keys, copies)),
-                (None, None) => None,
-                _ => return Err("column projection requires a row layout and input keys".into()),
+            let keys = if pass == "KeyAnalysis/JoinColumns" {
+                let inputs = request.join.ok_or("join column analysis requires input keys")?;
+                copies.as_ref().map(|copies| inputs.derive(copies))
+            } else {
+                match (request.projection, request.keys) {
+                    (Some(projection), Some(keys)) => copies.as_ref().map(|copies| projection.keys(&keys, copies)),
+                    (None, None) => None,
+                    _ => return Err("column projection requires a row layout and input keys".into()),
+                }
             };
             return Ok(json!({"copies": copies, "groups": groups, "keys": keys}));
         }
@@ -995,7 +1001,7 @@ fn transform(
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
         | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
-        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {

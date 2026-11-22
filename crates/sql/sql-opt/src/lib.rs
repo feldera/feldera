@@ -103,7 +103,7 @@ mod integrate;
 mod lineage;
 pub use lineage::{correlated_columns, column_copies, equal_computations, fixed_columns, Column, OutputShape};
 mod collection_keys;
-pub use collection_keys::{JoinKeys, KeyColumns, KeyProjection, filter_keys};
+pub use collection_keys::{JoinInputs, JoinKeys, KeyColumns, KeyProjection, filter_keys};
 mod join_filter_map;
 pub use join_filter_map::lower_join_filter_map;
 mod left_joins;

@@ -2548,6 +2548,26 @@ public final class RustCircuitPass implements CircuitTransform {
                        @Nullable KeyProjection projection, @Nullable List<KeyColumns> keys) {}
         var request = new Request(shape.width(), shape instanceof IndexedShape i ? i.indexFields() : null, lossless,
                 projection, keys);
+        return exchangeKeyClosure(compiler, pass, closure, request, type);
+    }
+
+    public static OutputColumns joinOutputColumns(DBSPCompiler compiler, DBSPClosureExpression closure,
+                                                  CollectionShape shape, boolean lossless,
+                                                  List<List<KeyColumns>> inputs, boolean leftJoin) {
+        record Join(List<List<KeyColumns>> inputs, boolean leftJoin) {}
+        record Request(int width, @Nullable Integer indexFields, boolean lossless, Join join) {}
+        var request = new Request(shape.width(), shape instanceof IndexedShape i ? i.indexFields() : null, lossless,
+                new Join(inputs, leftJoin));
+        OutputColumns result = exchangeKeyClosure(compiler, "KeyAnalysis/JoinColumns", closure, request,
+                new TypeReference<>() {});
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision("KeyAnalysis/JoinColumns", result.keys() != null);
+        return result;
+    }
+
+    @Nullable
+    private static <T> T exchangeKeyClosure(DBSPCompiler compiler, String pass, DBSPClosureExpression closure,
+                                            Object request, TypeReference<T> type) {
         var json = JsonStream.compactCircuit();
         json.beginArray();
         closure.accept(new ToJsonInnerVisitor(compiler, json, 0));
