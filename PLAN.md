@@ -52,8 +52,9 @@ Path prefixes used in this document:
   LATENESS and NOW() programs passed 2,076 runtime commands, and COUNT and
   LATENESS checkpoints restored in both directions. The last full classic
   runtime run passed all 8,256 executable cases on the filter-bound build
-  (`c5c800f7f`). On the separately timed filter-trimming build, hybrid p95
-  was 1.239× direct Java on the array subquery, 2.119× on Nexmark and 1.183×
+  (`c5c800f7f`). On the chain-topology build (`72183b58e`), with no concurrent
+  compiler verification, hybrid p95 was 1.094× direct Java on the array
+  subquery, 2.346× on Nexmark and 1.221×
   on the outer join. P3 remains opt-in while Java optimizer logic remains,
   the 1.2× ceiling is exceeded, and the field-shadow gate is open.
   [P3 implementation](crates/sql/PORTING.md#p3-optimizer-replay) · [Paired timings](crates/sql/BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)

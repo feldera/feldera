@@ -14,14 +14,16 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 2.234 | 2.505 | 2.860 | 3.542 | 1.239× |
-| Nexmark suite | 4.962 | 11.524 | 7.328 | 15.525 | 2.119× |
-| Outer join | 1.829 | 2.311 | 2.791 | 3.302 | 1.183× |
+| Correlated array subquery | 1.473 | 1.803 | 1.720 | 1.882 | 1.094× |
+| Nexmark suite | 3.405 | 8.299 | 3.801 | 8.918 | 2.346× |
+| Outer join | 1.393 | 1.673 | 1.513 | 1.849 | 1.221× |
 
-The table measures the build that sends selected filter closures to Rust. Each
-workload ran two warmup pairs and 21 measured pairs on CPU 15. All 69 pairs
-matched on diagnostics and emitted artifacts. The array subquery and Nexmark
-exceeded the 1.2× ceiling. Corpus verification overlapped this run.
+The table measures the chain-topology build at `72183b58e` with no concurrent
+compiler verification. Each workload ran two warmup pairs and 21 measured
+pairs on CPU 15. All 69 pairs matched on diagnostics and emitted artifacts.
+Nexmark and the outer join exceeded the 1.2× ceiling.
+The earlier filter-trimming build measured 1.239×, 2.119× and 1.183× in
+workload order, with concurrent corpus verification.
 The EMIT FINAL window build at `88ee907de` measured 1.223×, 2.306× and 1.118×
 in workload order. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
 
