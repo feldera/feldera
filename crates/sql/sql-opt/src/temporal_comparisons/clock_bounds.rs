@@ -4,6 +4,7 @@ use crate::lexical_scope::predicate_references;
 use crate::monotonicity::binary::{BinaryWaterline, Domain, Operand, binary_waterline};
 use crate::monotonicity::casts::{CastWaterline, cast_waterline};
 use crate::monotonicity::functions::{Argument, function_waterline};
+use crate::monotonicity::unary_preserves_order;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId, TypeKind,
 };
@@ -177,6 +178,9 @@ pub(super) fn monotone_operands(
                     Some("SqlUnsafe") => false,
                     _ => return Ok(None),
                 };
+                // A nullable CAST of a nonnull value yields a value or raises an error.
+                // A failing SAFE_CAST can yield NULL.
+                value.never_null = !safe && facts[&source].never_null;
                 value.constant = facts[&source].constant;
                 if facts[&source].monotone {
                     // Every scalar bound here has its operand's domain. Removing
@@ -240,28 +244,26 @@ pub(super) fn monotone_operands(
                         Domain::TimeOfDay
                     }
                     (Expr::TimeAddSub, _) => Domain::Temporal,
-                    (
-                        Expr::Binary,
-                        Some(
-                            "ADD" | "SUB" | "MUL" | "DIV" | "MUL_INTERVAL" | "DIV_INTERVAL" | "LT"
-                            | "LTE" | "GT" | "GTE" | "EQ" | "NEQ" | "AND" | "OR",
-                        ),
-                    ) => Domain::Scalar,
+                    (Expr::Binary, Some(_)) => Domain::Scalar,
                     _ => return Ok(None),
                 };
                 value.monotone = binary_waterline(domain, opcode.unwrap_or(""), left, right)
                     != BinaryWaterline::None;
             }
-            Expr::Unary if opcode == Some("WRAP_BOOL") => {
-                let source = child("source")?;
+            Expr::Unary | Expr::Clone | Expr::Some | Expr::Unwrap => {
+                let unary = kind == Expr::Unary;
+                let source = child(if unary { "source" } else { "expression" })?;
                 if !visited_children {
                     pending.extend([(id, true), (source, false)]);
                     continue;
                 }
+                value.monotone = facts[&source].monotone
+                    && (!unary || opcode.is_some_and(unary_preserves_order));
                 value.constant = facts[&source].constant;
             }
             _ => return Ok(None),
         }
+        value.never_null |= !edit.nullable(edit.expression_type(id)?)?;
         facts.insert(id, value);
     }
     Ok(Some(
@@ -372,6 +374,82 @@ mod tests {
                     .contains(&call),
                 bounded
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn nullable_clock_maximum_needs_a_nonnull_operand() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let (circuit, types) = circuit.with_inner_roots([json!({
+            "class":"DBSPTypeTimestamp","id":1,"code":"TIMESTAMP","mayBeNull":false
+        })])?;
+        let mut edit = CircuitEditor::new(circuit);
+        let site = types[0];
+        let timestamp = edit.type_id(site)?;
+        let nullable = edit.with_nullability(timestamp, true)?;
+        let input_ty = edit.tuple_type(site, false, [nullable.into()])?;
+        let reference = edit.reference_type(input_ty)?;
+        let row = edit.named_variable(reference, "row")?;
+        let parameter = edit.parameter_at(site, row)?;
+        let row_value = edit.dereference(row)?;
+        let key = edit.tuple_field(row_value, 0)?;
+        let now = edit.function_path(site, "now")?;
+        let clock = edit.make_expr(
+            site,
+            Expr::Apply,
+            timestamp,
+            [
+                ("function", Field::Reference(now.into())),
+                ("arguments", Field::Array(vec![])),
+            ],
+        )?;
+        let present = edit.some_at(site, clock)?;
+        let cloned = edit.make_expr(
+            site,
+            Expr::Clone,
+            nullable,
+            [("expression", Field::Reference(present.into()))],
+        )?;
+        let ordinary = edit.make_expr(
+            site,
+            Expr::Cast,
+            nullable,
+            [
+                ("source", Field::Reference(clock.into())),
+                ("safe", Field::Data("SqlUnsafe".into())),
+            ],
+        )?;
+        let safe = edit.make_expr(
+            site,
+            Expr::Cast,
+            nullable,
+            [
+                ("source", Field::Reference(clock.into())),
+                ("safe", Field::Data("SqlSafe".into())),
+            ],
+        )?;
+        for (operand, allowed) in [(ordinary, true), (safe, false), (cloned, false)] {
+            for (op, bounded) in [
+                (BinaryOp::MaxIgnoreNulls, allowed),
+                (BinaryOp::Max, true),
+                (BinaryOp::Coalesce, false),
+            ] {
+                let expr = edit.make_expr(
+                    site,
+                    Expr::Binary,
+                    nullable,
+                    [
+                        ("opcode", Field::Data(op.wire_name().into())),
+                        ("left", Field::Reference(key.into())),
+                        ("right", Field::Reference(operand.into())),
+                    ],
+                )?;
+                let facts = monotone_operands(&edit, parameter, expr)?.unwrap();
+                assert_eq!(facts.contains(&expr), bounded, "{op:?}");
+            }
         }
         Ok(())
     }

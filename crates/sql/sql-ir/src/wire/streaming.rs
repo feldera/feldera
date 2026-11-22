@@ -406,6 +406,54 @@ mod tests {
     }
 
     #[test]
+    fn larger_sparse_batch_preserves_existing_nodes_and_checks_both_namespaces() {
+        let base = Circuit::from_json(
+            json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}),
+        )
+        .unwrap();
+        let (base, _) = base
+            .with_inner_roots([json!({"class":"DBSPTypeInteger","id":1})])
+            .unwrap();
+        let batch = [
+            json!({"class":"DBSPI32Literal","id":2,"type":{"node":u64::MAX},"value":42}),
+            json!({"class":"DBSPI32Literal","id":3,"type":{"node":1},"value":7}),
+            json!({"class":"DBSPTypeInteger","id":u64::MAX}),
+        ];
+        let attach = |values| {
+            base.clone()
+                .with_inner_roots_bytes(&serde_json::to_vec(&values).unwrap())
+        };
+        let (graph, ids) = attach(batch.clone()).unwrap();
+        assert_eq!(
+            ids,
+            [NodeId::Inner(2), NodeId::Inner(3), NodeId::Inner(u64::MAX)]
+        );
+        assert_eq!(graph.node(ids[0]).unwrap().edge("type").unwrap(), ids[2]);
+        assert_eq!(
+            graph.node(ids[1]).unwrap().edge("type").unwrap(),
+            NodeId::Inner(1)
+        );
+        assert_eq!(graph.root().class(), "DBSPCircuit");
+
+        let mut duplicate = batch.clone();
+        duplicate[2]["id"] = 1.into();
+        assert!(
+            attach(duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("invalid additional inner node Inner(1)")
+        );
+        let mut missing = batch;
+        missing[0]["type"]["node"] = 0.into();
+        assert!(
+            attach(missing)
+                .unwrap_err()
+                .to_string()
+                .contains("undefined node Inner(0)")
+        );
+    }
+
+    #[test]
     fn consecutive_snapshots_share_the_arena_only_when_the_bytes_match() {
         let mut decoder = LiveCircuitDecoder::default();
         let graph = br#"{"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}"#;

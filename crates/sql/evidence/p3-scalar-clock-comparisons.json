@@ -1,0 +1,51 @@
+{
+  "scope": "Rust temporal bound selection for ordinary unary and binary expressions, clone, SOME, unwrap and nullable casts. For each directed predicate the harness required Rust to classify it, then compared the bound and residual filter with the direct Java analysis.",
+  "base_commit": "cd8ff7a599ecb6dd1406946fd616bed2ef37ec8f",
+  "optimizer_library_sha256": "8e32dfc368145b9baa9ee6106ddc349f01a0c65d8382382724b468159aa39502",
+  "compiler_jar_sha256": "3013ee9b0a884b86d5aa5e3f5fa3ca76a9f8e6f9b4deefba429f0add46b49b52",
+  "directed_oracle_sha256": "554964944cdf83d15f3c3baa43ed7d5dad94c28012695496c27e775e336685ba",
+  "engines": {
+    "classic": {
+      "rewrite_now_cases": 71,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_stream_sha256": "19b005cfd85656bae9d639d9901d3cb294f8c121716792ed1f03a34cfc7bbeca",
+      "hybrid_stream_sha256": "75fc92f344c29e92133586944f09dbb69659cb3e8592577fbe980cc44eb25ae0",
+      "directed_counts": {
+        "GTE": 18,
+        "Residual": 57
+      },
+      "directed_report_sha256": "62c3530558a0c91c66be309617ff69612a0a8b27c22de451e5c7735c68456180",
+      "detached_programs": 7,
+      "detached_report_sha256": "0f18cbc9cc034b94c4cd552a9a123baff92eb99b7558cf9de4274a1f1850059f"
+    },
+    "gen2": {
+      "rewrite_now_cases": 62,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_stream_sha256": "b324db4b8653b9d808b263420b9827389662882bd197eaeeb3fa234a69cab72e",
+      "hybrid_stream_sha256": "cb4030cee9204d42d0c89cd73fd6b5648bcf289642fa1373e5b2632d1d4b2eb8",
+      "directed_counts": {
+        "GTE": 18,
+        "Residual": 57
+      },
+      "directed_report_sha256": "7272a0bce0fcb8491a0e2151b7c311c43d78260f7dc181ebca4d723e3a5ba159",
+      "detached_programs": 7,
+      "detached_report_sha256": "da9e46bb714cc518c387e11da577abef6808013470f3fdad8f324046819538b8"
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ],
+      "report_sha256": "096782afda2437a4d9d110887fc0dbf3f09be8f5bf98683af2d9ee6049c5ed7d"
+    },
+    "watermark": {
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ],
+      "report_sha256": "7eaf510ab6beab9a67dcd79344752d15e7534c4bd04cfe0c4aee5be99c8fc766"
+    }
+  }
+}

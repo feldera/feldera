@@ -82,6 +82,58 @@ pub(super) fn validated(root: NodeId, nodes: Arena) -> Result<Circuit, Error> {
     })
 }
 
+impl Circuit {
+    pub(super) fn attach_inner_roots(
+        mut self,
+        mut extra: Arena,
+        roots: Vec<NodeId>,
+    ) -> Result<(Self, Vec<NodeId>), Error> {
+        if let Some((&first, _)) = extra.first_key_value() {
+            if matches!(first, NodeId::Outer(_)) {
+                return Err(Error(format!("invalid additional inner node {first:?}")));
+            }
+            // A fresh fragment normally supplies all inner definitions. Only
+            // check for collisions if its IDs overlap the existing arena.
+            if self
+                .nodes
+                .last_key_value()
+                .is_some_and(|(&last, _)| last >= first)
+            {
+                if let Some(id) = extra.keys().find(|id| self.nodes.contains_key(id)) {
+                    return Err(Error(format!("invalid additional inner node {id:?}")));
+                }
+            }
+        }
+
+        let inner = IdBitmap::from_range(&extra, NodeId::Inner(0)..=NodeId::Inner(u64::MAX));
+        let defined = |id: &NodeId| {
+            let in_batch = match (id, &inner) {
+                (NodeId::Inner(n), Some(bits)) => bits.contains(*n),
+                _ => extra.contains_key(id),
+            };
+            in_batch || self.nodes.contains_key(id)
+        };
+        for node in extra.values() {
+            for field in node.fields.values() {
+                check_references(field, &defined)?;
+            }
+        }
+        for &root in &roots {
+            check_references(&Field::Reference(root), &defined)?;
+        }
+
+        // Preserve the larger sorted map. For a closure batch, only the
+        // circuit header needs insertion into the freshly decoded arena.
+        if extra.len() > self.nodes.len() {
+            std::mem::swap(&mut extra, &mut *self.nodes);
+        }
+        if !extra.is_empty() {
+            self.nodes.extend(extra);
+        }
+        Ok((self, roots))
+    }
+}
+
 pub(super) fn check_depth(depth: usize) -> Result<(), Error> {
     if depth > 128 {
         return Err(Error("circuit exceeds 128 nested fields".into()));

@@ -502,6 +502,17 @@ directed comparisons produced a window bound and eight retained a residual
 filter, matching Java for both LET expressions and shadowed block variables.
 [Lexical clock bounds](evidence/p3-lexical-clock-bounds.json)
 
+Rust classifies scalar unary and binary clock expressions, including maxima
+with nullable operands. Across both engines the directed oracle produced
+36 bounds and 114 residual filters. All 133 frozen RewriteNow cases and
+14 detached replays matched Java. COUNT and LATENESS checkpoints restored
+in both directions. [Clock comparisons](evidence/p3-scalar-clock-comparisons.json)
+
+The JNI expression reader validates new references against both arenas and
+inserts the smaller map into the larger one. Across 41 paired sweeps of
+554 Nexmark batches, this saved a median 2.04 ms per sweep (bootstrap 95%
+interval 1.83–2.20 ms). [Decoder measurements](evidence/p3-expression-arena.json)
+
 Rust constructs both the data closure and its reduced waterline for identity
 operators, including indexed rows where only the key or value has a bound.
 The resulting limiter graphs matched Java on 291 classic and 259 Gen-2

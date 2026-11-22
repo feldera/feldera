@@ -1,0 +1,28 @@
+{
+  "scope": "Release expression reader in the devcontainer on CPU 14. Each timed sweep decodes all 554 captured Nexmark projection batches. Both builds separately checked every batch against the general JSON decoder before timing.",
+  "base_commit": "cd8ff7a599ecb6dd1406946fd616bed2ef37ec8f",
+  "batches": 554,
+  "warmup_pairs": 5,
+  "order": "alternating",
+  "measurement": {
+    "pairs": 41,
+    "median_ms": {
+      "baseline": 26.788897,
+      "candidate": 25.434561
+    },
+    "paired_median_reduction_ms": 2.044422,
+    "paired_median_reduction_95pct_ms": [
+      1.83038,
+      2.202005
+    ]
+  },
+  "sha256": {
+    "projections.bin": "9ce918944230d0701c73a15649c85e9b92b848cf23b79a875bff8781d339c170",
+    "pairs.jsonl": "dd646d77530d06777d04059f97c97ef0043f70de24321e5a225b5a5dd3f75774",
+    "bench.rs": "14d5b5f3ceaa8f2e0dfe5083cec507deee401bfc962e79de1f6c3b870c51d639",
+    "build.sh": "a5e89ce2133ed6751eb772672014a27fd81efeda9389a62c6efc6262729e100a",
+    "pair.py": "7d5a8cb15b2969aa8e1427dbea83804b748b1177e2b4ce25e5bfffc874e4e3a6",
+    "env.txt": "6ca33e165d2cfaef0018c03d068c17e857c412adb260360cc3f55b943240fdc6",
+    "changes.patch": "2b603b42e87f57692f381bdb0e4d73d33adde0dfefc8036ec1e9ce9e85047be1"
+  }
+}

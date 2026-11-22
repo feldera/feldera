@@ -41,6 +41,11 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-22. The Rust clock classifier matched Java on 133 frozen programs
+  and 150 directed predicates. Fourteen detached replays matched through
+  emission, and COUNT and LATENESS checkpoints restored in both directions.
+  On the HOP build, cold Nexmark compilation measured 2.126× direct Java p95
+  against the 1.2× ceiling. [Clock comparisons](crates/sql/evidence/p3-scalar-clock-comparisons.json) · [Cold timings](crates/sql/BENCHMARKS.md#hop-expansion-build-2026-11-22)
 - 2026-11-22. On `4f84a9cf6`, all 17,098 frozen programs matched direct
   Java through detached S2 replay, 6,996,738 ordered S4 observations and
   final emission. Rust ran limiter insertion on every program. The same

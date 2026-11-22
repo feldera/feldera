@@ -328,7 +328,6 @@ mod tests {
         assert_eq!(next, 12);
         assert!(warnings.is_empty());
 
-        // A predicate needing general closure analysis occurs after two successful merges.
         let mut edit = CircuitEditor::new(circuit);
         let variable = edit.named_variable(reference, "row")?;
         let row = edit.dereference(variable)?;
@@ -336,7 +335,31 @@ mod tests {
         let cloned = edit.clone_value(clock)?;
         let predicate = edit.binary_expression(site, boolean, BinaryOp::Gt, key, cloned)?;
         let closure = edit.closure_from_variables(predicate, &[variable])?;
-        filter(&mut edit, compatible, closure.into())?;
+        let cloned_filter = filter(&mut edit, compatible, closure.into())?;
+        let circuit = edit.finish()?;
+        let mut next = 10;
+        let merged = merge_temporal_filters(circuit.clone(), &mut next, &mut warnings)?.unwrap();
+        assert_eq!(
+            merged.node(cloned_filter).unwrap().inputs().next(),
+            Some(port(source))
+        );
+
+        // A conditional needs general closure analysis. Earlier successful
+        // merges must not consume names or publish warnings on fallback.
+        let mut edit = CircuitEditor::new(circuit);
+        let conditional = edit.make_expr(
+            site,
+            Expr::If,
+            timestamp,
+            [
+                ("condition", Field::Reference(predicate.into())),
+                ("positive", Field::Reference(clock.into())),
+                ("negative", Field::Reference(key.into())),
+            ],
+        )?;
+        let predicate = edit.binary_expression(site, boolean, BinaryOp::Gt, key, conditional)?;
+        let closure = edit.closure_from_variables(predicate, &[variable])?;
+        filter(&mut edit, cloned_filter, closure.into())?;
         let mut next = 10;
         assert!(merge_temporal_filters(edit.finish()?, &mut next, &mut warnings)?.is_none());
         assert_eq!(next, 10);

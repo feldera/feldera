@@ -59,7 +59,22 @@ pub fn unary_waterline(
     }
     let op =
         opcode(edit.node(operator.into())?).ok_or_else(|| Error::new("missing unary opcode"))?;
-    if !matches!(
+    if !unary_preserves_order(op) {
+        return Ok(None);
+    }
+    let ty = edit.with_nullability(edit.expression_type(operator)?, false)?;
+    let reduced = edit.derive_inner(
+        operator.into(),
+        [
+            ("type", Field::Reference(ty.into())),
+            ("source", Field::Reference(bound.into())),
+        ],
+    )?;
+    Ok(Some(edit.expression(reduced)?))
+}
+
+pub(crate) fn unary_preserves_order(op: &str) -> bool {
+    matches!(
         op,
         "UNARY_PLUS"
             | "TYPEDBOX"
@@ -75,18 +90,7 @@ pub fn unary_waterline(
             | "INTEGER_TO_BOOL"
             | "BINARY_TO_U64"
             | "BINARY_TO_U128"
-    ) {
-        return Ok(None);
-    }
-    let ty = edit.with_nullability(edit.expression_type(operator)?, false)?;
-    let reduced = edit.derive_inner(
-        operator.into(),
-        [
-            ("type", Field::Reference(ty.into())),
-            ("source", Field::Reference(bound.into())),
-        ],
-    )?;
-    Ok(Some(edit.expression(reduced)?))
+    )
 }
 
 fn opcode(node: &Node) -> Option<&str> {

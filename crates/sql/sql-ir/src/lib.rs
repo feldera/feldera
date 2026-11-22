@@ -342,29 +342,6 @@ impl Circuit {
         self.attach_inner_roots(extra, roots)
     }
 
-    fn attach_inner_roots(
-        mut self,
-        extra: BTreeMap<NodeId, Node>,
-        roots: Vec<NodeId>,
-    ) -> Result<(Self, Vec<NodeId>), Error> {
-        let ids: Vec<_> = extra.keys().copied().collect();
-        for (id, node) in extra {
-            if !matches!(id, NodeId::Inner(_)) || self.nodes.contains_key(&id) {
-                return Err(Error(format!("invalid additional inner node {id:?}")));
-            }
-            self.nodes.insert(id, node);
-        }
-        for id in ids {
-            for field in self.nodes[&id].fields.values() {
-                wire::check_links(field, &self.nodes)?;
-            }
-        }
-        for &root in &roots {
-            wire::check_links(&Field::Reference(root), &self.nodes)?;
-        }
-        Ok((self, roots))
-    }
-
     pub fn to_json(&self) -> Value {
         wire::encode_node(self.root, &self.nodes)
     }
