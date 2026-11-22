@@ -17,76 +17,96 @@ use std::collections::{BTreeMap, HashMap};
 /// The allocator is part of compiler state. Unused SQL variables can advance it
 /// before the observed circuit, so their names cannot be recovered from the IR.
 pub fn fuse_into_array_agg(mut circuit: Circuit, next_name: &mut u64) -> Result<Circuit, Error> {
-    let mut order = circuit.operator_order(BodyOrder::Preorder)?;
     let mut next = *next_name;
     loop {
-        let previous_count = order.len();
-        let (fused, changed) = fuse_once(circuit, &order, &mut next)?;
+        let previous_count = circuit.operator_order(BodyOrder::Preorder)?.len();
+        let edit = CircuitEditor::new(circuit);
+        let matches = ArrayFusions::find(&edit)?;
+        let changed = !matches.0.is_empty();
+        let fused = matches.apply(edit, &mut next)?;
         circuit = crate::remove_dead_operators(fused, &mut next)?;
-        order = circuit.operator_order(BodyOrder::Preorder)?;
-        if !changed && order.len() == previous_count {
+        if !changed && circuit.operator_order(BodyOrder::Preorder)?.len() == previous_count {
             *next_name = next;
             return Ok(circuit);
         }
     }
 }
 
-// Removing a dead reader can leave its producer with a single live use.
-// Recompute fanout before selecting the next set of candidates.
-fn fuse_once(circuit: Circuit, order: &[NodeId], next: &mut u64) -> Result<(Circuit, bool), Error> {
-    let mut fanout = HashMap::<NodeId, usize>::new();
-    for id in order {
-        for input in circuit.node(*id).expect("operator in circuit").inputs() {
-            *fanout.entry(input.operator).or_default() += 1;
+/// Matches found on the input graph for one iteration. The observer may inspect
+/// that graph before the rewrite consumes these operator and expression identities.
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct ArrayFusions(Vec<Match>);
+
+impl ArrayFusions {
+    pub fn find(edit: &CircuitEditor) -> Result<Self, Error> {
+        let order = edit.circuit().operator_order(BodyOrder::Preorder)?;
+        let mut fanout = HashMap::<NodeId, usize>::new();
+        for &id in &order {
+            for input in edit.node(id)?.inputs() {
+                *fanout.entry(input.operator).or_default() += 1;
+            }
         }
-    }
-    let mut edit = CircuitEditor::new(circuit);
-    let mut changed = false;
-    for &reader in order {
-        let node = edit.node(reader)?;
-        if !matches!(
-            node.operator_kind(),
-            Some(Op::Map | Op::MapIndex | Op::Join | Op::StreamJoin | Op::StarJoin)
-        ) {
-            continue;
-        }
-        let inputs: Vec<_> = node.inputs().collect();
-        for (index, input) in inputs.iter().enumerate() {
-            if fanout.get(&input.operator) != Some(&1) {
+        let mut matches = Vec::new();
+        for reader in order {
+            let node = edit.node(reader)?;
+            if !matches!(
+                node.operator_kind(),
+                Some(Op::Map | Op::MapIndex | Op::Join | Op::StreamJoin | Op::StarJoin)
+            ) {
                 continue;
             }
-            let source = edit.node(input.operator)?;
-            let (producer, window) = match source.operator_kind() {
-                Some(Op::Aggregate | Op::StreamAggregate) => (input.operator, None),
-                Some(Op::MapIndex) => {
-                    let Some(port) = source.inputs().next() else {
-                        continue;
-                    };
-                    if fanout.get(&port.operator) != Some(&1)
-                        || edit.node(port.operator)?.operator_kind()
-                            != Some(Op::PartitionedRollingAggregate)
-                    {
-                        continue;
-                    }
-                    let Some(window) =
-                        WindowIndex::recognize(&edit, input.operator, port.operator)?
-                    else {
-                        continue;
-                    };
-                    (port.operator, Some(window))
+            let inputs: Vec<_> = node.inputs().collect();
+            for (index, input) in inputs.iter().enumerate() {
+                if fanout.get(&input.operator) != Some(&1) {
+                    continue;
                 }
-                _ => continue,
-            };
-            if let Some(matched) = Match::find(&edit, producer, reader, index, window)? {
-                matched.rewrite(&mut edit, next)?;
-                changed = true;
-                break;
+                let source = edit.node(input.operator)?;
+                let (producer, window) = match source.operator_kind() {
+                    Some(Op::Aggregate | Op::StreamAggregate) => (input.operator, None),
+                    Some(Op::MapIndex) => {
+                        let Some(port) = source.inputs().next() else {
+                            continue;
+                        };
+                        if fanout.get(&port.operator) != Some(&1)
+                            || edit.node(port.operator)?.operator_kind()
+                                != Some(Op::PartitionedRollingAggregate)
+                        {
+                            continue;
+                        }
+                        let Some(window) =
+                            WindowIndex::recognize(edit, input.operator, port.operator)?
+                        else {
+                            continue;
+                        };
+                        (port.operator, Some(window))
+                    }
+                    _ => continue,
+                };
+                if let Some(matched) = Match::find(edit, producer, reader, index, window)? {
+                    matches.push(matched);
+                    break;
+                }
             }
         }
+        Ok(Self(matches))
     }
-    Ok((edit.finish()?, changed))
+
+    pub fn apply(self, mut edit: CircuitEditor, next: &mut u64) -> Result<Circuit, Error> {
+        let bodies: HashMap<_, _> = crate::stream_rewrites::body_members(edit.circuit())?
+            .into_iter()
+            .map(|(body, reader)| (reader, body))
+            .collect();
+        for matched in self.0 {
+            let body = *bodies
+                .get(&matched.reader)
+                .ok_or_else(|| Error::new("missing ARRAY_AGG reader"))?;
+            matched.rewrite(&mut edit, body, next)?;
+        }
+        crate::rebuild::rebuild_input_closures(edit.finish_with_rewrites()?, next)
+    }
 }
 
+#[derive(serde::Deserialize, serde::Serialize)]
 struct Match {
     producer: NodeId,
     reader: NodeId,
@@ -208,11 +228,43 @@ impl Match {
         }))
     }
 
-    fn rewrite(self, edit: &mut CircuitEditor, next_name: &mut u64) -> Result<(), Error> {
-        edit.move_before(self.producer, self.reader)?;
-        if let Some(window) = &self.window {
-            edit.move_before(window.operator, self.reader)?;
+    fn rewrite(
+        mut self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        next_name: &mut u64,
+    ) -> Result<(), Error> {
+        let input = edit
+            .node(self.producer)?
+            .inputs()
+            .next()
+            .ok_or_else(|| Error::new("missing aggregate input"))?;
+        let original = self
+            .window
+            .as_ref()
+            .map_or(self.producer, |window| window.operator);
+        self.producer = edit.copy_aggregate_input(body, self.producer, self.reader, input)?;
+        let mut fused_port = feldera_sql_ir::OutputPort {
+            operator: self.producer,
+            number: 0,
+        };
+        if let Some(window) = &mut self.window {
+            window.operator =
+                edit.copy_aggregate_input(body, window.operator, self.reader, fused_port)?;
+            fused_port.operator = window.operator;
         }
+        let inputs = edit
+            .node(self.reader)?
+            .inputs()
+            .map(|port| {
+                if port.operator == original {
+                    fused_port
+                } else {
+                    port
+                }
+            })
+            .collect::<Vec<_>>();
+        edit.rewire_inputs(self.reader, &inputs)?;
         let output = edit.node(self.producer)?.edge("outputType")?;
         let mut old_value = edit.node(output)?.edge("elementType")?;
         if self.window.is_some() {

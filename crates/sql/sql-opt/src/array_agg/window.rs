@@ -10,6 +10,7 @@ use crate::terms::Terms;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, Field, NodeId};
 use std::collections::BTreeMap;
 
+#[derive(serde::Deserialize, serde::Serialize)]
 pub(super) struct WindowIndex {
     pub operator: NodeId,
     function: NodeId,

@@ -37,7 +37,7 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize)]
 pub enum NodeId {
     Outer(u64),
     Inner(u64),

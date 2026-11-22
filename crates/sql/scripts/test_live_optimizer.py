@@ -1,12 +1,18 @@
 import unittest
 
-from validate_live_optimizer import FROZEN_SCHEDULE, check_artifacts, verify_placements
+from validate_live_optimizer import FROZEN_SCHEDULE, check_artifacts, compare_observations, verify_placements
 
 
 BASE_COUNTS = {name: count for name, count in FROZEN_SCHEDULE.items() if count}
 
 
 class FrozenPlacements(unittest.TestCase):
+    def test_final_circuit_equality_does_not_hide_a_missing_nested_observation(self):
+        expected = {"S2": {"count": 1}, "S4": {"count": 422, "sha256": "full"}, "S3": {"count": 1}}
+        actual = {**expected, "S4": {"count": 421, "sha256": "short"}}
+        with self.assertRaisesRegex(ValueError, "S4 observations differ"):
+            compare_observations("left join", expected, actual)
+
     def test_two_compilers_omitting_the_same_artifact_cannot_pass(self):
         for engine, missing in [("rust", "stubs.rs"), ("gen2", "circuit.json")]:
             files = {"dataflow.json": "a" * 64, missing: "b" * 64}

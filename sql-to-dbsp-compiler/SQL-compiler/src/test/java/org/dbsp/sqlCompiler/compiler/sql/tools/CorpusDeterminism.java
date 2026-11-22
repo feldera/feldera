@@ -325,7 +325,8 @@ public final class CorpusDeterminism {
             options.ioOptions.inputCircuit = true;
         }
         DBSPCompiler compiler = decoded == null ? new DBSPCompiler(options) : S1Program.loweringCompiler(decoded);
-        Observations observations = new Observations(canonicalizer, finalOnly, replayS3 || liveFinal);
+        Observations observations = new Observations(canonicalizer, finalOnly, replayS3 || (liveFinal && finalOnly));
+        Map<String, Map<String, Integer>> childPlacements = new TreeMap<>();
         Map<String, Integer> rustPasses = new TreeMap<>();
         Map<String, Integer> castIterations = new TreeMap<>();
         Map<String, Integer> graphCleanups = new TreeMap<>();
@@ -344,6 +345,9 @@ public final class CorpusDeterminism {
 
                 public void after(String container, int index, int iteration, CircuitTransform pass,
                                   DBSPCircuit output, boolean completed) {
+                    if (completed)
+                        childPlacements.computeIfAbsent(container, unused -> new TreeMap<>())
+                                .merge(pass.getName(), 1, Integer::sum);
                     if (completed && container.equals("Repeat")
                             && (pass.getName().equals("ExpandSafeCasts") || pass.getName().equals("ExpandUnsafeCasts")))
                         castIterations.merge(pass.getName(), 1, Integer::sum);
@@ -366,7 +370,7 @@ public final class CorpusDeterminism {
             };
         }
         Map<String, Fingerprint> hashes = new TreeMap<>();
-        if (capture && !replayS2 && !replayS3 && !liveFinal)
+        if (capture && !replayS2 && !replayS3 && !(liveFinal && finalOnly))
             compiler.circuitObservationHook = observations::accept;
         // The baseline disables circuit serialization but retains the passive hash callback.
         compiler.hashInputHook = (kind, value) -> hashes.computeIfAbsent(kind, ignored -> new Fingerprint()).add(value);
@@ -401,7 +405,7 @@ public final class CorpusDeterminism {
             var liveObserver = compiler.stateObserver;
             compiler = DBSPCompiler.forCircuitReplay(options);
             compiler.stateObserver = liveObserver;
-            if (!liveFinal)
+            if (!liveFinal || !finalOnly)
                 compiler.circuitObservationHook = observations::accept;
             compiler.hashInputHook = (kind, value) ->
                     hashes.computeIfAbsent(kind, ignored -> new Fingerprint()).add(value);
@@ -415,9 +419,12 @@ public final class CorpusDeterminism {
         }
         ObjectNode result = MAPPER.createObjectNode();
         if (liveFinal) {
-            compiler.circuitObservationHook = observations::accept;
-            new CircuitDumps(compiler, 0).write("S3", circuit);
-            compiler.circuitObservationHook = null;
+            if (finalOnly) {
+                compiler.circuitObservationHook = observations::accept;
+                new CircuitDumps(compiler, 0).write("S3", circuit);
+                compiler.circuitObservationHook = null;
+            }
+            result.set("child_placements", MAPPER.valueToTree(childPlacements));
             result.set("rust_passes", MAPPER.valueToTree(rustPasses));
             result.set("cast_iterations", MAPPER.valueToTree(castIterations));
             result.put("unused_field_iterations", unusedFieldIterations.get());
@@ -472,7 +479,8 @@ public final class CorpusDeterminism {
         boolean replayS2 = args[4].equals("replay-s2") || args[4].equals("live-s2");
         boolean replayS3 = args[4].equals("replay-s3");
         boolean liveFinal = args[4].equals("live-s3") || args[4].equals("live-s2");
-        boolean finalOnly = liveFinal || replayS3 || args[4].equals("capture-s3");
+        boolean finalOnly = (liveFinal && !Boolean.getBoolean("feldera.determinism.fullOptimizerTrace"))
+                || replayS3 || args[4].equals("capture-s3");
         boolean verifyWorker = args[4].equals("p2-worker");
         boolean capture = !verifyWorker && !args[4].equals("baseline");
         if (SEAM_ARTIFACTS && !capture)

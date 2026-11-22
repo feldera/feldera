@@ -163,7 +163,7 @@ pub use window_groups::{
 pub use aggregate_groups::{aggregate_groups, AggregateKind};
 pub use aggregate_zero::expand_aggregate_zero;
 pub use append_only::append_only_streams;
-pub use array_agg::fuse_into_array_agg;
+pub use array_agg::{fuse_into_array_agg, ArrayFusions};
 pub use balanced_joins::{balance_joins, optimize_balanced_joins};
 pub use chains::{chain_readers, fuse_chains, implement_chains, optimize_chains};
 pub use collapse_shared_chains::collapse_shared_chains;
@@ -187,11 +187,11 @@ pub use function_calls::{
     circuit_contains_now, connector_metadata_call, is_clock_call, is_connector_metadata,
     nondeterministic_initializers, ConnectorMetadataCall, NondeterministicInitializer,
 };
-pub use gen2::gen2_passes;
+pub use gen2::{gen2_passes, remove_clones, remove_typed_boxes};
 pub use hints::{check_hints, HintDiagnostic};
 pub use hoist_filters::{decompose_expensive_filters, filters_need_decomposition};
 pub use hop::{expand_hop, hop_waterline};
-pub use identity::{identity_closure, remove_identity_operators};
+pub use identity::{identity_closure, identity_decisions, remove_identity_operators};
 pub use incrementalize::incrementalize;
 pub use indexed_inputs::{expand_indexed_inputs, IndexOptions};
 pub use integrate::remove_redundant_integrates;
@@ -216,7 +216,7 @@ pub use propagate_constants::propagate_constants;
 pub use pull_filters::pull_filters;
 pub use push_integrals::push_integrals;
 pub use recursive_views::{resolve_view_references, ViewReferences, ViewResolution};
-pub use regions::tag_regions;
+pub use regions::{conflicting_regions, tag_regions};
 pub use remove_noops::{bypassed_noops, optimize_noops, remove_noops};
 pub use remove_table::{remove_table, unreferenced_table_sources, TableRemoval};
 pub use shared_index_candidates::{find_shared_indexes, shared_index_payloads, IndexReader, SharedIndexes};

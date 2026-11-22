@@ -34,7 +34,7 @@ public class ExpandAggregateZero extends Passes {
     // in the outer component.
     final Map<DBSPAggregateZeroOperator, DBSPExpression> zeros = new HashMap<>();
 
-    ExpandAggregateZero(DBSPCompiler compiler) {
+    public ExpandAggregateZero(DBSPCompiler compiler) {
         super("ExpandAggregateZero", compiler);
         this.add(new CollectZeros(compiler, zeros));
         this.add(new ExpandAggregateZeros(compiler, zeros));
@@ -72,11 +72,15 @@ public class ExpandAggregateZero extends Passes {
         }
     }
 
-    static class ExpandAggregateZeros extends CircuitCloneVisitor {
+    public static class ExpandAggregateZeros extends CircuitCloneVisitor {
         int crdId = 0;
 
         final Map<DBSPAggregateZeroOperator, DBSPExpression> zeros;
         final Map<DBSPAggregateZeroOperator, DBSPConstantOperator> zeroOperators;
+
+        public List<Long> hoistOrder() {
+            return this.zeros.keySet().stream().map(op -> op.id).toList();
+        }
 
         public ExpandAggregateZeros(
                 DBSPCompiler compiler,

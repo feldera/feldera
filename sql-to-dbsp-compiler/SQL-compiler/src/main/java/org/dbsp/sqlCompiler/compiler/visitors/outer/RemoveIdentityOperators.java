@@ -128,7 +128,7 @@ public class RemoveIdentityOperators extends Passes {
      *
      * <p>Removing an operator moves GC operators attached to its output to its input;
      * a node cannot have incompatible GC operators. */
-    static class Decide extends CircuitWithGraphsVisitor {
+    public static class Decide extends CircuitWithGraphsVisitor {
         /** Operators to remove, mapped to true if it may be removed and
          * false if it becomes a noop */
         public final Map<DBSPOperator, Boolean> remove = new HashMap<>();

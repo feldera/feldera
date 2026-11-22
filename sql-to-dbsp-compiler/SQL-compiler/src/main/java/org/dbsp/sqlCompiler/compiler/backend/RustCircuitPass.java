@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ChainVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CloneOperatorsWithFanout;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps;
@@ -63,6 +64,13 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.ExpandAggregates.ExpandStrea
 import org.dbsp.sqlCompiler.compiler.visitors.outer.EnsureDistinctOutputs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ConstantViews;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeadCode;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.FindDeadCode;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseIntoArrayAgg;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Gen2Passes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveStarJoins;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.TagRegions;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveIdentityOperators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeterministicFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
@@ -71,7 +79,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.HashPrefixPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.SetOperatorHashes;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveTable;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.StrayGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
@@ -205,6 +212,14 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final RemoveUselessLeftJoinsVisitor leftJoins;
     @Nullable private final OrderErrorConsumers errorOrder;
     @Nullable private final ProgramIdentifier tableToRemove;
+    @Nullable private final CircuitTransform stages;
+    @Nullable private final FuseIntoArrayAgg.FindFusable arrayCandidates;
+    @Nullable private final FuseIntoArrayAgg.Fuse arrayFusion;
+    @Nullable private final TagRegions.DetectConflicts regionConflicts;
+    @Nullable private final RemoveIdentityOperators.Decide identityMaps;
+    @Nullable private final ExpandAggregateZero.ExpandAggregateZeros aggregateZeros;
+    @Nullable private final FindDeadCode deadCode;
+    @Nullable private final CSE.FindCSE commonExpressions;
     @Nullable private final Set<DBSPOperator> seenConstants;
     private static final byte[] EMPTY_CONTEXT = new byte[0];
 
@@ -219,8 +234,12 @@ public final class RustCircuitPass implements CircuitTransform {
         this.wrapsGraphOptimization = original instanceof OptimizeWithGraph;
         this.temporalScan = original instanceof ReorderTemporalFilters.Scan scan ? scan : null;
         this.temporalOrder = original instanceof ReorderTemporalFilters.Reorder reorder ? reorder : null;
-        if (original instanceof DeadCode dead && dead.keepAllSources)
-            this.nativeName = "DeadCodeKeepSources";
+        if (original instanceof FuseIntoArrayAgg.Fuse)
+            this.nativeName = "FuseArrayReaders";
+        else if (original instanceof ExpandAggregateZero.ExpandAggregateZeros)
+            this.nativeName = "ExpandAggregateZero";
+        else if (original instanceof RemoveIdentityOperators.Decide)
+            this.nativeName = "IdentityDecisions";
         else if (original instanceof RemoveViewOperators views && views.removesAllViews())
             this.nativeName = "RemoveAllViews";
         else
@@ -265,7 +284,15 @@ public final class RustCircuitPass implements CircuitTransform {
         this.mapChains = original instanceof FindMapChains find ? find : null;
         this.errorOrder = original instanceof OrderErrorConsumers order ? order : null;
         this.tableToRemove = original instanceof RemoveTable table ? table.tableName() : null;
-        this.seenConstants = original instanceof CSE ? Collections.newSetFromMap(new WeakHashMap<>()) : null;
+        this.stages = this.selectStages(original);
+        this.arrayCandidates = original instanceof FuseIntoArrayAgg.FindFusable find ? find : null;
+        this.arrayFusion = original instanceof FuseIntoArrayAgg.Fuse fuse ? fuse : null;
+        this.aggregateZeros = original instanceof ExpandAggregateZero.ExpandAggregateZeros zeros ? zeros : null;
+        this.regionConflicts = original instanceof TagRegions.DetectConflicts detect ? detect : null;
+        this.identityMaps = original instanceof RemoveIdentityOperators.Decide decide ? decide : null;
+        this.deadCode = original instanceof FindDeadCode dead ? dead : null;
+        this.commonExpressions = original instanceof CSE.FindCSE common ? common : null;
+        this.seenConstants = this.commonExpressions != null ? Collections.newSetFromMap(new WeakHashMap<>()) : null;
     }
 
     private static native void enterSnapshotScope();
@@ -1249,8 +1276,8 @@ public final class RustCircuitPass implements CircuitTransform {
         if (this.nativeName.equals("IndexedInputs"))
             return MAPPER.writeValueAsBytes(Map.of("dedup_keys", this.compiler.options.ioOptions.gen2,
                     "lazy_upsert", this.compiler.metadata.lazyUpsert()));
-        if (this.nativeName.equals("ExpandAggregateZero"))
-            return MAPPER.writeValueAsBytes(ExpandAggregateZero.nestedHoistOrder(this.compiler, circuit));
+        if (this.aggregateZeros != null)
+            return MAPPER.writeValueAsBytes(this.aggregateZeros.hoistOrder());
         if (this.seenConstants == null)
             return EMPTY_CONTEXT;
         var state = MAPPER.createObjectNode();
@@ -1410,6 +1437,14 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     private DBSPCircuit applyResult(DBSPCircuit circuit, @Nullable ToJsonOuterVisitor writer, JsonNode result) throws IOException {
+        if (this.identityMaps != null) {
+            var live = operatorsById(circuit);
+            this.identityMaps.remove.clear();
+            Map<Long, Boolean> actions = MAPPER.convertValue(result.required("identity_actions"), new TypeReference<>() {});
+            actions.forEach((id, forward) -> this.identityMaps.remove.put(
+                    Objects.requireNonNull(live.get(id), "Unknown identity map " + id), forward));
+            return circuit;
+        }
         if (this.joinTrees != null) {
             JsonNode trees = result.required("join_trees");
             if (!trees.isArray())
@@ -1662,53 +1697,82 @@ public final class RustCircuitPass implements CircuitTransform {
         }.apply(circuit);
     }
 
-    /** Apply one round to live operators. Rebuilt operators have fresh identities
-     * and may become equivalent after their inputs have merged. */
-    private DBSPCircuit applyCse(DBSPCircuit circuit) throws IOException {
+    /** Keep the scheduler around stateful native analyses so each consumer sees
+     * the current round's results and every nested boundary remains observable. */
+    private RustCircuitPass nativeStage(CircuitTransform stage) {
+        return new RustCircuitPass(this.compiler, stage, this.snapshots);
+    }
+
+    /** Keep independent analysis state for the native sequence. The differential
+     * oracle can run the original sequence alongside it on the same compiler. */
+    @Nullable private CircuitTransform selectStages(CircuitTransform original) {
+        if (original instanceof RemoveStarJoins group)
+            return new Repeat(this.compiler, this.nativeStage(group.transform), group.repeats);
+        if (original instanceof OptimizeWithGraph group && group.transform instanceof Passes iteration) {
+            var steps = new Passes(iteration.getName(), this.compiler);
+            for (var step : iteration.passes)
+                steps.add(this.nativeStage(step));
+            return new Repeat(this.compiler, steps, group.repeats);
+        }
+        if (original instanceof Gen2Passes) {
+            var stages = new Gen2Passes(this.compiler);
+            stages.passes.replaceAll(this::nativeStage);
+            return stages;
+        }
+        if (original instanceof CSE || original instanceof FuseIntoArrayAgg) {
+            Repeat repeat = original instanceof CSE ? new CSE(this.compiler) : new FuseIntoArrayAgg(this.compiler);
+            ((Passes) repeat.transform).passes.replaceAll(this::selectAnalysis);
+            return repeat;
+        }
+
+        Passes stages;
+        if (original instanceof ExpandAggregateZero)
+            stages = new ExpandAggregateZero(this.compiler);
+        else if (original instanceof RemoveIdentityOperators)
+            stages = new RemoveIdentityOperators(this.compiler);
+        else if (original instanceof TagRegions)
+            stages = new TagRegions(this.compiler);
+        else if (original instanceof DeadCode dead)
+            stages = new DeadCode(this.compiler, dead.keepAllSources);
+        else
+            return null;
+        stages.passes.replaceAll(this::selectAnalysis);
+        return stages;
+    }
+
+    private CircuitTransform selectAnalysis(CircuitTransform stage) {
+        if (stage instanceof Graph || stage instanceof DeadCode || stage instanceof FindDeadCode
+                || stage instanceof CSE.FindCSE || stage instanceof FuseIntoArrayAgg.FindFusable
+                || stage instanceof FuseIntoArrayAgg.Fuse || stage instanceof ExpandAggregateZero.ExpandAggregateZeros
+                || stage instanceof TagRegions.DetectConflicts || stage instanceof RemoveIdentityOperators.Decide)
+            return this.nativeStage(stage);
+        return stage;
+    }
+
+    /** Populate the alias map shared with RemoveCSE for this iteration. */
+    private void findCommonExpressions(DBSPCircuit circuit, CSE.FindCSE finder, long next) throws IOException {
+        var probe = this.invoke("Topology/CSE", OptimizerTopology.encode(circuit), next, EMPTY_CONTEXT);
+        var payloads = new HashSet<Long>();
+        probe.required("payloads").forEach(id -> payloads.add(id.longValue()));
         var seen = Objects.requireNonNull(this.seenConstants);
-        int limit = Math.max(circuit.largestComponentSize(), 10);
-        for (int round = 0; round < limit; round++) {
-            long next = DBSPVariablePath.nextGeneratedName();
-            var probe = this.invoke("Topology/CSE", OptimizerTopology.encode(circuit), next, EMPTY_CONTEXT);
-            var payloads = new HashSet<Long>();
-            probe.required("payloads").forEach(id -> payloads.add(id.longValue()));
-            if (payloads.isEmpty()) {
-                visitConstants(circuit.getAllOperators(), seen::add);
-                return circuit;
-            }
+        if (!payloads.isEmpty()) {
             var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, payloads, OptimizerTopology.Details.NONE);
             var result = this.invoke("CSE", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                     next, this.passState(circuit, writer));
-            visitConstants(circuit.getAllOperators(), seen::add);
-            var pairs = result.required("aliases");
-            if (pairs.isEmpty())
-                return circuit;
-            var live = new HashMap<Long, DBSPOperator>();
-            visitOperators(circuit.getAllOperators(), op -> live.put(op.id, op));
-            var aliases = new HashMap<DBSPOperator, DBSPOperator>();
-            for (var pair : pairs) {
+            var live = operatorsById(circuit);
+            for (var pair : result.required("aliases")) {
                 var original = Objects.requireNonNull(live.get(pair.required(0).longValue()), "Unknown CSE operand");
                 var base = Objects.requireNonNull(live.get(pair.required(1).longValue()), "Unknown CSE representative");
-                aliases.put(original, base);
+                finder.setCanonical(original, base);
             }
-            var output = new CSE.RemoveCSE(this.compiler, aliases).apply(circuit);
-            if (output.sameCircuit(circuit))
-                return circuit;
-            circuit = output;
         }
-        this.compiler.reportError(SourcePositionRange.INVALID, "InfiniteLoop",
-                "Repeated optimization CSE " + limit + " times without convergence");
-        return circuit;
+        visitConstants(circuit.getAllOperators(), seen::add);
     }
 
-    private DBSPCircuit pruneCircuit(DBSPCircuit circuit, JsonNode pruning) {
-        JsonNode removed = pruning.required("pruned_operators");
-        if (removed.isEmpty())
-            return circuit;
+    private void collectKeptOperators(DBSPCircuit circuit, JsonNode pruning, Set<DBSPOperator> keep) {
         var drop = new HashSet<Long>();
-        for (var id : removed)
+        for (var id : pruning.required("pruned_operators"))
             drop.add(id.longValue());
-        var keep = new HashSet<DBSPOperator>();
         visitOperators(circuit.getAllOperators(), op -> {
             if (!drop.remove(op.id))
                 keep.add(op);
@@ -1716,7 +1780,6 @@ public final class RustCircuitPass implements CircuitTransform {
         if (!drop.isEmpty())
             throw new IllegalStateException("DeadCode returned unknown operators " + drop);
         this.reportUnusedSources(circuit, pruning.required("unused_sources"));
-        return new RemoveOperators(this.compiler, keep).apply(circuit);
     }
 
     private DBSPCircuit replaceSharedProjections(DBSPCircuit circuit, FindCommonProjections analysis)
@@ -1778,37 +1841,26 @@ public final class RustCircuitPass implements CircuitTransform {
         }.apply(circuit);
     }
 
-    private DBSPCircuit fuseChains(DBSPCircuit circuit) throws IOException {
-        int limit = Math.max(circuit.largestComponentSize(), 10);
-        for (int round = 0; round < limit; round++) {
-            var topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.CHAIN_FUNCTIONS);
-            var plan = this.invoke("Topology/ChainRound", topology, DBSPVariablePath.nextGeneratedName(), EMPTY_CONTEXT);
-            if (plan.has("chain_readers")) {
-                Set<Long> readers = MAPPER.convertValue(plan.required("chain_readers"), new TypeReference<>() {});
-                circuit = new CircuitCloneVisitor(this.compiler, false) {
-                    @Override
-                    public void replace(DBSPSimpleOperator operator) {
-                        if (!readers.contains(operator.id)) {
-                            super.replace(operator);
-                            return;
-                        }
-                        if (!this.visited.add(operator))
-                            return;
-                        var reader = operator.to(DBSPUnaryOperator.class);
-                        var chain = ChainVisitor.extendChain(reader, this.mapped(reader.input()));
-                        this.map(reader, Objects.requireNonNull(chain, "Invalid chain reader " + reader.id));
-                    }
-                }.apply(circuit);
-                plan = this.invoke("Topology/DeadCodeKeepSources", OptimizerTopology.encode(circuit),
-                        DBSPVariablePath.nextGeneratedName(), EMPTY_CONTEXT);
-            } else if (plan.required("pruned_operators").isEmpty()) {
-                return circuit;
+    private DBSPCircuit fuseChains(DBSPCircuit circuit, long next) throws IOException {
+        var topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.CHAIN_FUNCTIONS);
+        var plan = this.invoke("Topology/ChainReaders", topology, next, EMPTY_CONTEXT);
+        if (plan.isEmpty())
+            return circuit;
+        Set<Long> readers = MAPPER.convertValue(plan, new TypeReference<>() {});
+        return new CircuitCloneVisitor(this.compiler, false) {
+            @Override
+            public void replace(DBSPSimpleOperator operator) {
+                if (!readers.contains(operator.id)) {
+                    super.replace(operator);
+                    return;
+                }
+                if (!this.visited.add(operator))
+                    return;
+                var reader = operator.to(DBSPUnaryOperator.class);
+                var chain = ChainVisitor.extendChain(reader, this.mapped(reader.input()));
+                this.map(reader, Objects.requireNonNull(chain, "Invalid chain reader " + reader.id));
             }
-            circuit = this.pruneCircuit(circuit, plan);
-        }
-        this.compiler.reportError(SourcePositionRange.INVALID, "InfiniteLoop",
-                "Repeated optimization ChainVisitor " + limit + " times without convergence");
-        return circuit;
+        }.apply(circuit);
     }
 
     /** Apply the Rust deletion list without decoding the surviving expressions.
@@ -2173,10 +2225,46 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             byte[] state = EMPTY_CONTEXT;
             ToJsonOuterVisitor writer = null;
-            if (this.seenConstants != null)
-                return this.applyCse(circuit);
+            if (this.stages != null)
+                return this.stages.apply(circuit);
+            if (this.arrayCandidates != null) {
+                var topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.AGGREGATE_RESULTS);
+                var probe = this.invoke("Topology/FindFusable", topology, initial, EMPTY_CONTEXT);
+                byte[] matches = EMPTY_CONTEXT;
+                if (probe.required("needs_full_snapshot").booleanValue()) {
+                    var snapshot = this.snapshots.writer();
+                    snapshot.apply(circuit);
+                    var found = this.invoke("FindFusable", snapshot.getJsonString().getBytes(StandardCharsets.UTF_8),
+                            initial, EMPTY_CONTEXT);
+                    if (!found.isEmpty())
+                        matches = MAPPER.writeValueAsBytes(found);
+                }
+                this.arrayCandidates.setNativeMatches(matches);
+                return circuit;
+            }
+            if (this.arrayFusion != null) {
+                state = this.arrayFusion.nativeMatches();
+                if (state.length == 0)
+                    return circuit;
+            }
+            if (this.regionConflicts != null) {
+                var conflicts = this.invoke("DetectConflicts", OptimizerTopology.encode(circuit), initial, state);
+                this.regionConflicts.recordConflicts(MAPPER.treeToValue(conflicts, int[].class));
+                return circuit;
+            }
+            if (this.commonExpressions != null) {
+                this.findCommonExpressions(circuit, this.commonExpressions, initial);
+                return circuit;
+            }
+            if (this.deadCode != null) {
+                var mode = this.deadCode.keepAllSources ? "DeadCodeKeepSources" : "DeadCode";
+                var plan = this.invoke("Topology/" + mode, OptimizerTopology.encode(circuit), initial, state);
+                this.deadCode.toKeep.clear();
+                this.collectKeptOperators(circuit, plan, this.deadCode.toKeep);
+                return circuit;
+            }
             if (this.nativeName.equals("ChainVisitor"))
-                return this.fuseChains(circuit);
+                return this.fuseChains(circuit, initial);
             if (this.fanout != null) {
                 var producers = this.invoke("Topology/FanoutProducers", OptimizerTopology.encode(circuit), initial, state);
                 if (producers.isEmpty())
@@ -2475,7 +2563,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         OptimizerTopology.encode(circuit, OptimizerTopology.Details.VIEW_NAMES), initial, state);
                 case "CheckRetain", "ValidateRecursiveOperators", "NoIntegralVisitor", "CheckHints", "CompactNames", "TagRegions" ->
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
-                case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "DeadCode", "DeadCodeKeepSources", "PushDifferentialsUp",
+                case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero", "ExpandMetadataCasts",
@@ -2501,8 +2589,6 @@ public final class RustCircuitPass implements CircuitTransform {
                     }
                     if (probe.has("retention_violation"))
                         throw retentionError(circuit, probe.required("retention_violation"));
-                    if (probe.has("pruned_operators"))
-                        return this.pruneCircuit(circuit, probe);
                     if (!probe.required("needs_full_snapshot").booleanValue())
                         return circuit;
                 }

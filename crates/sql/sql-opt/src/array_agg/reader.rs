@@ -4,7 +4,7 @@
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, InnerKind, NodeId};
 use std::collections::BTreeSet;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub(super) struct Access {
     pub part: usize,
     pub field: usize,
@@ -27,7 +27,7 @@ pub(super) fn kind(edit: &CircuitEditor, id: NodeId) -> Option<Expr> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct Binding {
     hidden: BTreeSet<String>,
     pub parameters: Vec<NodeId>,

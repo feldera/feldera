@@ -1,0 +1,210 @@
+{
+  "scope": "Direct Java and opt-in hybrid comparisons of the nested optimizer schedule. Directed CLI dumps compare the canonical envelope at every path. Frozen samples compare direct SQL to a detached S2 replay and verify native pass invocations and emitted artifacts.",
+  "direct_sql": [
+    {
+      "sql": "CREATE TABLE l(k INT NOT NULL LATENESS 2, x INT); CREATE TABLE r(k INT NOT NULL LATENESS 3, y INT); CREATE VIEW v AS SELECT l.k, l.x, r.y FROM l LEFT JOIN r ON l.k = r.k;",
+      "engine": "classic",
+      "equal_observations": 424
+    },
+    {
+      "sql": "CREATE TABLE l(k INT NOT NULL LATENESS 2, x INT); CREATE TABLE r(k INT NOT NULL LATENESS 3, y INT); CREATE VIEW v AS SELECT l.k, l.x, r.y FROM l LEFT JOIN r ON l.k = r.k;",
+      "engine": "gen2",
+      "equal_observations": 426
+    },
+    {
+      "sql": "CREATE TABLE t (k INT NOT NULL, c INT);\nCREATE VIEW v AS SELECT k, CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS))) AS d FROM t GROUP BY k;",
+      "engine": "classic",
+      "equal_observations": 413
+    },
+    {
+      "sql": "CREATE TABLE t (k INT NOT NULL, c INT);\nCREATE VIEW v AS SELECT k, CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS))) AS d FROM t GROUP BY k;",
+      "engine": "gen2",
+      "equal_observations": 415
+    },
+    {
+      "sql": "CREATE TABLE t (p INT, ts INT NOT NULL LATENESS 2, c INT);\nCREATE VIEW v AS SELECT p, ts, c, CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS) OVER (PARTITION BY p ORDER BY ts RANGE BETWEEN 10 PRECEDING AND CURRENT ROW))) AS d FROM t;",
+      "engine": "classic",
+      "equal_observations": 386
+    },
+    {
+      "sql": "CREATE TABLE t (p INT, ts INT NOT NULL LATENESS 2, c INT);\nCREATE VIEW v AS SELECT p, ts, c, CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS) OVER (PARTITION BY p ORDER BY ts RANGE BETWEEN 10 PRECEDING AND CURRENT ROW))) AS d FROM t;",
+      "engine": "gen2",
+      "equal_observations": 388
+    }
+  ],
+  "detached_samples": [
+    {
+      "cases": {
+        "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#unboundedFollowing/0": 385,
+        "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#taxiTest/0": 449
+      },
+      "population_sha256": "3642c0ae6c2a622869734470d80bb3ce0dc8c5190e916ec2e5d7e49d64e5a938",
+      "optimizer_library_sha256": "6d647d90313b63244c54f48227349688172a118b4ef7572c5eab4af440d849d2",
+      "shards": [
+        {
+          "manifest_sha256": "4dff50980082e4f8a24075d4bf51cf9576b0f331c9b7d481912aecff0eae6c80",
+          "records_sha256": "487429de01649663e6bf6fed46d866039b93a1ca1c70689cbcde26ab6269c3f3"
+        },
+        {
+          "manifest_sha256": "71bb16b8ad94525c84a5349fb91b3552757a4ff4f099efda1e0c5b168c71f089",
+          "records_sha256": "a65e6be24cc5112db88c2b71dcd2d92d5bfac67ced3091f69a123f0723072daf"
+        }
+      ]
+    },
+    {
+      "cases": {
+        "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#unboundedFollowing/0": 387,
+        "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#taxiTest/0": 451
+      },
+      "population_sha256": "f226c27e26df79a445dbcfe80511affd2bcf7076eb92a337670124421bcb92de",
+      "optimizer_library_sha256": "6d647d90313b63244c54f48227349688172a118b4ef7572c5eab4af440d849d2",
+      "shards": [
+        {
+          "manifest_sha256": "dea60427bc68da05951b69ed8a401921b0fc4ccfe4c771d510aca39558e2d0f5",
+          "records_sha256": "96ad3eeb535b9bf8979423f066ba715b882239443bd7f0d8a6ce8ba0c3544469"
+        },
+        {
+          "manifest_sha256": "cf2562b3d51935100da639b7311fc7866da5c9e9ed08f5a5a9955eb4e0768a8d",
+          "records_sha256": "c3533db2418d70ae054723a89ca30b5096b4eb64d8ea43e8e80221e1ab53a05e"
+        }
+      ]
+    },
+    {
+      "cases": {
+        "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggLastValue/5": 496,
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue4447/0": 384,
+        "org.dbsp.sqlCompiler.compiler.sql.simple.FlatVariantTests#testJsonEachDateTime/9": 407,
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236/0": 455,
+        "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4010/0": 505,
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238BothBounds/1": 465
+      },
+      "population_sha256": "7cf2a02750b71b4838ce935628e8ddbed28bf0568bd7327f89c784495dac3919",
+      "optimizer_library_sha256": "6d647d90313b63244c54f48227349688172a118b4ef7572c5eab4af440d849d2",
+      "shards": [
+        {
+          "manifest_sha256": "cfb2a1d56ec8327215d267b8ad8bfea9654a62dba0f0e1d1c1be0c3d5d60712b",
+          "records_sha256": "4742397c713c027851aa8ee67e1a3d52a2c93f330c358389521cf02401a4b0a8"
+        },
+        {
+          "manifest_sha256": "e7c2c5b861eb1c7296eb99e053a2a45cbb8e1df496dd43e016aa8863a519ee1e",
+          "records_sha256": "2ecdfba90c8ff7e58b2c3eff16691b72cb67fe23b213380885378a9c3ce45f86"
+        }
+      ]
+    },
+    {
+      "cases": {
+        "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggLastValue/7": 480,
+        "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayTests#testUnnestOrdinality/0": 381,
+        "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q8test/0": 437,
+        "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue4909b/0": 1008,
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#asof4Test/0": 483
+      },
+      "population_sha256": "4c3d266a2d0049e475b0d47a1e61a603f9682eda92fd7cd8007950ada67ecf7b",
+      "optimizer_library_sha256": "6d647d90313b63244c54f48227349688172a118b4ef7572c5eab4af440d849d2",
+      "shards": [
+        {
+          "manifest_sha256": "cd19f9c40ed3a991799f81e4079fd5cb37c8da37b94fef9318fd178ae64f5f7d",
+          "records_sha256": "b65545a550146765e3e8e6165c22c36982f68518db6f92d43d4ff4bdd53cbfc8"
+        },
+        {
+          "manifest_sha256": "9043dc5d0358aafc2b822dbb9dcc63b45d9fe17d3c5ed504b440d37f6fc521c2",
+          "records_sha256": "82cb253553272cd2f7dd7dcc8be0335f11fa8d7448790a3a000345f7f19c9bab"
+        }
+      ]
+    }
+  ],
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a201f9-4fd3-77f1-9fd8-d5ddb065e2ce",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a201f9-4ff0-7582-9997-e447dfb2d617",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a201fa-2530-7b90-8682-f2662cd740bf",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a201fa-254a-7872-8d6e-2c25246c67cb",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}

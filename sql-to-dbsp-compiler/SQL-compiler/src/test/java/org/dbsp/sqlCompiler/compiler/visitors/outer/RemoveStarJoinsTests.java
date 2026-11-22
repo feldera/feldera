@@ -55,6 +55,37 @@ public class RemoveStarJoinsTests {
     }
 
     @Test
+    public void filteredStarExposesEveryIteration() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), true);
+        addFilteredJoin(circuit, true);
+        var iterations = new ArrayList<Integer>();
+        var stars = new ArrayList<Long>();
+        boolean nativePasses = Boolean.getBoolean("feldera.optimizer.rustPasses");
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+
+            @Override
+            public void after(String container, int index, int iteration, CircuitTransform pass,
+                              DBSPCircuit output, boolean completed) {
+                Assert.assertTrue(completed);
+                Assert.assertEquals("Repeat", container);
+                Assert.assertEquals("RemoveStarJoinsPass", pass.getName());
+                Assert.assertEquals(nativePasses, pass instanceof RustCircuitPass);
+                iterations.add(iteration);
+                stars.add(output.allOperators.stream().filter(DBSPStarJoinBaseOperator.class::isInstance).count());
+            }
+        };
+        CircuitTransform remove = new RemoveStarJoins(compiler);
+        if (nativePasses)
+            remove = new RustCircuitPass(compiler, remove, new OptimizerSnapshots(compiler));
+        remove.apply(circuit);
+        Assert.assertEquals(List.of(0, 1, 2), iterations);
+        Assert.assertEquals(List.of(1L, 0L, 0L), stars);
+    }
+
+    @Test
     public void deltaTermsUseOneChangingInputEach() {
         var options = new CompilerOptions();
         options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.rustPasses");

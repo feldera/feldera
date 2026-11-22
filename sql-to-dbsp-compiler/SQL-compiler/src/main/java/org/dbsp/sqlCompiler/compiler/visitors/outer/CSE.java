@@ -180,7 +180,7 @@ public class CSE extends Repeat {
             }
         }
 
-        void setCanonical(DBSPOperator operator, DBSPOperator canonical) {
+        public void setCanonical(DBSPOperator operator, DBSPOperator canonical) {
             Logger.INSTANCE.belowLevel(this, 1)
                     .append("CSE ")
                     .appendSupplier(operator::toString)

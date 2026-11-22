@@ -3,7 +3,7 @@
 mod shared_indexes;
 mod star_join;
 mod temporal;
-use feldera_sql_ir::{BodyOrder, Circuit, Field, NodeId, OutputPort};
+use feldera_sql_ir::{BodyOrder, Circuit, CircuitEditor, Field, NodeId, OutputPort};
 use jni::{
     errors::ThrowRuntimeExAndDefault,
     objects::{JByteArray, JClass, JString},
@@ -1026,14 +1026,8 @@ fn transform(
                 .collect();
             return Ok(json!({"order": operator_numbers(plan.order), "retainers": replacements}));
         }
-        if name == "ChainRound" {
-            let readers = feldera_sql_opt::chain_readers(&circuit)?;
-            if !readers.is_empty() {
-                return Ok(json!({"chain_readers": operator_numbers(readers)}));
-            }
-            // The composite runs DeadCodeKeepSources even when no chain forms.
-            let pruning = feldera_sql_opt::pruning(&circuit, true)?;
-            return Ok(json!({"pruned_operators": operator_numbers(pruning.removed), "unused_sources": []}));
+        if name == "ChainReaders" {
+            return Ok(json!(operator_numbers(feldera_sql_opt::chain_readers(&circuit)?)));
         }
         if name == "TrimFilters" {
             let readers = feldera_sql_opt::trim_filter_readers(&circuit, serde_json::from_slice(state)?)?;
@@ -1085,6 +1079,7 @@ fn transform(
             if let Some(error) = feldera_sql_opt::retention_violation(&circuit)? {
                 return Ok(json!({"retention_violation": error}));
             }
+            return Ok(json!({"needs_full_snapshot":false}));
         }
         if matches!(name, "DeadCode" | "DeadCodeKeepSources") {
             let pruning = feldera_sql_opt::pruning(&circuit, name == "DeadCodeKeepSources")?;
@@ -1191,6 +1186,18 @@ fn transform(
             inputs.gc_prefixes(&circuit)?
         };
         return Ok(json!({"prefixes":prefixes}));
+    }
+    if pass == "FindFusable" {
+        return Ok(serde_json::to_value(feldera_sql_opt::ArrayFusions::find(&CircuitEditor::new(circuit))?)?);
+    }
+    if pass == "DetectConflicts" {
+        return Ok(json!(feldera_sql_opt::conflicting_regions(&circuit)?));
+    }
+    if pass == "IdentityDecisions" {
+        let mut editor = CircuitEditor::new(circuit);
+        let actions: BTreeMap<_, _> = feldera_sql_opt::identity_decisions(&mut editor, &mut next)?
+            .into_iter().map(|(id, remove)| (operator_number(id), remove)).collect();
+        return Ok(json!({"identity_actions":actions, "next_generated_name":next}));
     }
     if matches!(pass, "CompactNames" | "TagRegions" | "SetOperatorHashes") {
         // Java implements these passes by mutating annotations on the live
@@ -1336,6 +1343,7 @@ fn transform(
         | "InsertLimiters"
         | "ExpandStreamAggregates"
         | "Fuse"
+        | "RemoveStarJoinsPass"
         | "RemoveStarJoins"
         | "OptimizeProjectionVisitor"
         | "PullFilterVisitor"
@@ -1396,6 +1404,11 @@ fn transform(
                     weight = result.new_weight;
                     (result.circuit, result.warnings)
                 }
+                "RemoveStarJoinsPass" => {
+                    let mut warnings = Vec::new();
+                    let result = feldera_sql_opt::expand_star_join_layer(circuit, &mut next, &mut warnings)?;
+                    (result, warnings)
+                }
                 "RemoveStarJoins" => feldera_sql_opt::remove_star_joins(circuit, &mut next)?,
                 "Fuse" => feldera_sql_opt::fuse_expensive_maps(
                     circuit, serde_json::from_slice(state)?, &mut next,
@@ -1442,11 +1455,11 @@ fn transform(
         "LinearPostprocessRetainKeys" => {
             feldera_sql_opt::linear_postprocess_retain_keys(circuit, &mut next)?
         }
-        "PushDifferentialsUp" => feldera_sql_opt::optimize_differentials(circuit, &mut next)?,
+        "PushDifferentialsUp" => feldera_sql_opt::push_differentials_up(circuit, &mut next)?,
         "PropagateEmptySources" => feldera_sql_opt::propagate_empty_sources(circuit, &mut next)?,
         "RemoveConstantFilters" => feldera_sql_opt::remove_constant_filters(circuit, &mut next)?,
         "OptimizeIncrementalVisitor" => feldera_sql_opt::push_integrals(circuit, &mut next)?,
-        "BalancedJoins" => feldera_sql_opt::optimize_balanced_joins(circuit, &mut next)?,
+        "BalancedJoins" => feldera_sql_opt::balance_joins(circuit, &mut next)?,
         "SeparateIntegrators" => feldera_sql_opt::separate_integrators(circuit, &mut next)?,
         "StrayGC" => {
             let (result, violation) =
@@ -1484,6 +1497,12 @@ fn transform(
             feldera_sql_opt::create_runtime_error_wrappers(circuit, &mut next)?
         }
         "AdjustSqlIndex" => feldera_sql_opt::adjust_sql_index(circuit)?,
+        "Unbox" => feldera_sql_opt::remove_typed_boxes(circuit)?,
+        "RemoveClones" => feldera_sql_opt::remove_clones(circuit)?,
+        "FuseArrayReaders" => {
+            let matches: feldera_sql_opt::ArrayFusions = serde_json::from_slice(state)?;
+            matches.apply(CircuitEditor::new(circuit), &mut next)?
+        }
         "Gen2Passes" => feldera_sql_opt::gen2_passes(circuit)?,
         "RemoveDeindexOperators" => feldera_sql_opt::remove_deindex_operators(circuit, &mut next)?,
         other => return Err(format!("unknown optimizer pass {other}").into()),

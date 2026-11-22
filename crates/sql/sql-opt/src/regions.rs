@@ -32,21 +32,20 @@ fn regions(circuit: &Circuit, id: NodeId) -> Result<Vec<i32>, Box<dyn Error>> {
         .collect()
 }
 
-/// Detect conflicts in circuit postorder, then remove all occurrences of the
-/// rejected regions. The predecessor set uses the original input annotations.
-pub fn tag_regions(mut circuit: Circuit) -> Result<Circuit, Box<dyn Error>> {
+/// Detect conflicts in circuit postorder using the original input annotations.
+pub fn conflicting_regions(circuit: &Circuit) -> Result<BTreeSet<i32>, Box<dyn Error>> {
     let order = circuit.operator_order(BodyOrder::Postorder)?;
     let mut removed = BTreeSet::new();
     let mut predecessors = BTreeMap::<NodeId, BTreeSet<i32>>::new();
     for &id in &order {
-        let mut local = regions(&circuit, id)?;
+        let mut local = regions(circuit, id)?;
         local.retain(|r| !removed.contains(r));
         // Java orders the tag's variable names lexically, including the numeric suffix.
         local.sort_by_cached_key(i32::to_string);
         removed.extend(local.iter().skip(1).copied());
         let mut ancestors = BTreeSet::new();
         for port in circuit.node(id).expect("ordered operator").inputs() {
-            let direct = regions(&circuit, port.operator)?;
+            let direct = regions(circuit, port.operator)?;
             if let Some(current) = local.first() {
                 if direct.contains(current) {
                     continue;
@@ -64,7 +63,12 @@ pub fn tag_regions(mut circuit: Circuit) -> Result<Circuit, Box<dyn Error>> {
         ancestors.extend(local);
         predecessors.insert(id, ancestors);
     }
-    for id in order {
+    Ok(removed)
+}
+
+pub fn tag_regions(mut circuit: Circuit) -> Result<Circuit, Box<dyn Error>> {
+    let removed = conflicting_regions(&circuit)?;
+    for id in circuit.operator_order(BodyOrder::Postorder)? {
         circuit.annotations_mut(id)?.retain(|a| {
             !region(a)
                 .expect("annotations validated before mutation")

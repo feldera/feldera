@@ -26,11 +26,11 @@ def check_artifacts(row):
         raise ValueError(f"Incomplete engine artifacts for {row['id']}")
 
 
-def read_run(directory, entry):
+def read_run(directory, entry, full_trace=False):
     manifest = json.loads((directory / "complete.json").read_bytes())
     if (manifest["failed_cases"] or manifest["entry_point"] != entry
             or manifest.get("initial_generated_name") != 0 or manifest.get("dataflow_contract") != "all-engines-v1"
-            or not manifest["capture"] or manifest["observation_contract"] != "final-s3-v1"
+            or not manifest["capture"] or manifest["observation_contract"] != ("full-prefix-v1" if full_trace else "final-s3-v1")
             or manifest["artifact_contract"] != "seam-v1"):
         raise ValueError(f"Incomplete {entry} comparison in {directory}")
     path = directory / manifest["records_file"]
@@ -43,6 +43,9 @@ def read_run(directory, entry):
                     or not row["exported_schema_equal"] or not row["exported_diagnostics_equal"]
                     or not {"inner-rust", "output-type", "local-operator", "global-operator"} <= row["hash_inputs"].keys()):
                 raise ValueError(f"Missing compiler evidence for {row['id']} in {directory}")
+            if full_trace and (row["observations"].get("S2", {}).get("count") != 1
+                               or row["observations"].get("S4", {}).get("count", 0) < 1):
+                raise ValueError(f"Missing optimizer prefix for {row['id']}")
             check_artifacts(row)
             yield row
             count += 1
@@ -192,7 +195,43 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
         raise ValueError(f"{case}: Rust placements {counts} differ from {expected}")
 
 
-def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
+# Native children of groups formerly dispatched in a single call. Their Java
+# placements also count the final, unchanged iteration of each fixed point.
+NATIVE_CHILDREN = {
+    "CSE": ("Graph", "FindCSE"),
+    "DeadCode": ("FindDeadCode",),
+    "FuseIntoArrayAgg": ("Graph", "FindFusable", "Fuse", "DeadCode"),
+    "ChainVisitor": ("Graph", "ChainVisitor", "DeadCode"),
+    "BalancedJoins": ("Graph", "BalancedJoins", "DeadCode"),
+    "PushDifferentialsUp": ("Graph", "PushDifferentialsUp", "DeadCode"),
+    "StrayGC": ("Graph", "StrayGC", "DeadCode"),
+    "ExpandAggregateZero": ("ExpandAggregateZeros",),
+    "RemoveIdentityOperators": ("Graph", "Decide"),
+    "TagRegions": ("DetectConflicts",),
+    "Gen2Passes": ("Unbox", "RemoveClones"),
+    "Repeat": ("RemoveStarJoinsPass",),
+}
+
+
+def nested_native_counts(placements):
+    counts = Counter()
+    for parent, children in NATIVE_CHILDREN.items():
+        for child in children:
+            count = placements.get(parent, {}).get(child, 0)
+            if type(count) is not int or count < 0:
+                raise ValueError(f"Invalid invocation count for {parent}/{child}")
+            if count:
+                counts[child] += count
+    return counts
+
+
+def compare_observations(case, reference, candidate):
+    for stage in reference.keys() | candidate.keys():
+        if reference.get(stage) != candidate.get(stage):
+            raise ValueError(f"{case}: {stage} observations differ from direct Java")
+
+
+def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, full_trace=False):
     expected = {}
     for row in records(population):
         key = row["id"]
@@ -203,7 +242,7 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
                          row["options"]["languageOptions"]["outputsAreSets"], row["options"]["ioOptions"]["trimInputs"])
     controls = {}
     for reference in references:
-        for row in read_run(reference, "SQL"):
+        for row in read_run(reference, "SQL", full_trace):
             key = row["id"]
             if (key not in expected or key in controls or row["input_sha256"] != expected[key][0]
                     or row["rust_passes"]):
@@ -213,12 +252,13 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
         raise ValueError("Java reference does not cover the frozen population")
     invocations = Counter()
     for directory in candidates:
-        for row in read_run(directory, "S2"):
+        for row in read_run(directory, "S2", full_trace):
             key = row["id"]
             control = controls.pop(key, None)
             if control is None:
                 raise ValueError(f"Unexpected or repeated candidate {key}")
-            for field in ("input_sha256", "schema", "diagnostics", "observations", "hash_inputs",
+            compare_observations(key, control["observations"], row["observations"])
+            for field in ("input_sha256", "schema", "diagnostics", "hash_inputs",
                           "gen2" if expected[key][1] else "rust"):
                 if row[field] != control[field]:
                     raise ValueError(f"{key}: {field} differs from direct Java")
@@ -259,7 +299,16 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
             asof_moves = control.get("asof_retention_moves")
             if "MoveGC" in schedule and (asof_moves is None or asof_moves != row.get("asof_retention_moves")):
                 raise ValueError(f"{key}: candidate and Java ASOF retention placements differ")
-            verify_placements(key, counts, expected[key][1], expected[key][2], schedule,
+            placements = control.get("child_placements")
+            if full_trace and not placements:
+                raise ValueError(f"{key}: missing Java nested pass invocations")
+            if placements != row.get("child_placements"):
+                raise ValueError(f"{key}: nested pass invocations differ from direct Java")
+            scheduled_counts = Counter(counts)
+            if placements is not None:
+                scheduled_counts.subtract(nested_native_counts(placements))
+                scheduled_counts = {name: n for name, n in scheduled_counts.items() if n}
+            verify_placements(key, scheduled_counts, expected[key][1], expected[key][2], schedule,
                               validate_weights=weights, cast_iterations=control["cast_iterations"],
                               unused_field_iterations=unused_fields, graph_cleanups=graph_cleanups,
                               clock_scans=clock_scans, temporal_splits=splits, now_stream=expected[key][3],
@@ -278,7 +327,8 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("population", type=Path)
+    parser.add_argument("--full-optimizer-trace", action="store_true")
     parser.add_argument("--reference", type=Path, required=True, action="append", help="direct Java SQL shard")
     parser.add_argument("candidates", nargs="+", type=Path)
     args = parser.parse_args()
-    print(json.dumps(compare(args.population, args.reference, args.candidates), indent=2))
+    print(json.dumps(compare(args.population, args.reference, args.candidates, full_trace=args.full_optimizer_trace), indent=2))

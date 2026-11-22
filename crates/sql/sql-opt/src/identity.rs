@@ -192,9 +192,13 @@ impl Retention {
     }
 }
 
-pub fn remove_identity_operators(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
-    let order = circuit.operator_order(BodyOrder::Postorder)?;
-    let mut edit = CircuitEditor::new(circuit);
+/// Decide which identity maps can forward their input without moving a conflicting GC policy.
+/// A map that has to keep its trace becomes a no-op.
+pub fn identity_decisions(
+    edit: &mut CircuitEditor,
+    next: &mut u64,
+) -> Result<Vec<(NodeId, bool)>, Error> {
+    let order = edit.circuit().operator_order(BodyOrder::Postorder)?;
     let mut attached = HashMap::<OutputPort, Retention>::new();
     for &id in &order {
         let op = edit.node(id)?;
@@ -216,7 +220,7 @@ pub fn remove_identity_operators(circuit: Circuit, next: &mut u64) -> Result<Cir
     }
 
     let mut counter = *next;
-    let mut forwarded = BTreeMap::new();
+    let mut decisions = Vec::new();
     let mut claimed = attached.clone();
     for id in order {
         let node = edit.node(id)?;
@@ -231,9 +235,9 @@ pub fn remove_identity_operators(circuit: Circuit, next: &mut u64) -> Result<Cir
             continue;
         };
         if !edit.same_type(
-            input_type(&edit, input)?,
+            input_type(edit, input)?,
             edit.type_id(node.edge("outputType")?)?,
-        )? || !identity_closure(&edit, closure, &mut counter)?
+        )? || !identity_closure(edit, closure, &mut counter)?
         {
             continue;
         }
@@ -244,7 +248,23 @@ pub fn remove_identity_operators(circuit: Circuit, next: &mut u64) -> Result<Cir
             })
             .copied()
             .unwrap_or_default();
-        if claimed.entry(input).or_default().claim(moving) {
+        decisions.push((id, claimed.entry(input).or_default().claim(moving)));
+    }
+    *next = counter;
+    Ok(decisions)
+}
+
+pub fn remove_identity_operators(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
+    let mut edit = CircuitEditor::new(circuit);
+    let mut counter = *next;
+    let mut forwarded = BTreeMap::new();
+    for (id, forward) in identity_decisions(&mut edit, &mut counter)? {
+        if forward {
+            let input = edit
+                .node(id)?
+                .inputs()
+                .next()
+                .ok_or_else(|| Error::new("map needs an input"))?;
             forwarded.insert(id, forwarded.get(&input.operator).copied().unwrap_or(input));
         } else {
             edit.identity_map_as_noop(id)?;

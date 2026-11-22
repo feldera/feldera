@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
+import org.dbsp.sqlCompiler.circuit.annotation.GlobalAggregate;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.RegionAnnotation;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -37,7 +38,7 @@ public class TagRegions extends Passes {
      * predecessors (up to circuit inputs).  If an input does NOT have an
      * annotation, yet one of its predecessors does, the annotation is removed.
       */
-    static class DetectConflicts extends CircuitVisitor {
+    public static class DetectConflicts extends CircuitVisitor {
         final Set<Annotation> toRemove;
         final Map<DBSPOperator, Set<Annotation>> allPredecessors;
 
@@ -45,6 +46,11 @@ public class TagRegions extends Passes {
             super(compiler);
             this.toRemove = toRemove;
             this.allPredecessors = new HashMap<>();
+        }
+
+        public void recordConflicts(int[] ids) {
+            for (int id : ids)
+                this.toRemove.add(new GlobalAggregate(id));
         }
 
         public void postorder(DBSPOperator operator) {

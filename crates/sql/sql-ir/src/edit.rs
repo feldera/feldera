@@ -264,6 +264,34 @@ impl CircuitEditor {
         Ok(derived)
     }
 
+    /// Insert a fused copy before its reader. The original is still visible
+    /// to observers until the following dead-code pass.
+    pub fn copy_aggregate_input(
+        &mut self,
+        body: NodeId,
+        original: NodeId,
+        reader: NodeId,
+        input: crate::OutputPort,
+    ) -> Result<NodeId, Error> {
+        let source = self.node(original)?;
+        let Some(kind @ (crate::OperatorKind::Aggregate | crate::OperatorKind::StreamAggregate
+                | crate::OperatorKind::PartitionedRollingAggregate | crate::OperatorKind::MapIndex)) = source.operator_kind()
+        else {
+            return Err(Error::new("expected an aggregate or its window index"));
+        };
+        let mut fields = source.fields.clone();
+        let id = self.append_operator(body, original, kind, &[input], [])?;
+        let copy = self.circuit.nodes.get_mut(&id).expect("new copy");
+        for name in ["inputs", "provenance"] {
+            if let Some(value) = copy.field(name) {
+                fields.insert(name.into(), value.clone());
+            }
+        }
+        copy.fields = fields;
+        self.place_before(body, id, reader)?;
+        Ok(id)
+    }
+
     /// Place a producer with one consumer at the consumer's position in its
     /// enclosing circuit. Fusion emits the replacement when it visits the reader.
     pub fn move_before(&mut self, producer: NodeId, consumer: NodeId) -> Result<(), Error> {

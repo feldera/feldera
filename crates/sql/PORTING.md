@@ -462,6 +462,16 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The hybrid optimizer now exposes the individual analysis, rewrite and cleanup
+steps of dead-code elimination, CSE, chain fusion and ARRAY_AGG fusion. It also
+exposes the final unchanged iteration of a fixed point. For the incremental
+left join, all 422 classic S4 observations matched direct Java. Grouped and
+rolling ARRAY_AGG also matched at every boundary in both engines. The corpus
+runner's `--rust-optimizer --full-optimizer-trace` mode compares those ordered
+observations through detached S2 replay. Fifteen sampled engine/program cases
+matched through emitted artifacts. COUNT and LATENESS restored in both
+directions. [Nested optimizer comparisons](evidence/p3-nested-optimizer-traces.json)
+
 At `2a2398a2a`, Rust lowered trace-key retention for DISTINCT, positive
 weights and linear aggregates. Each trace receives the preceding step's
 waterline. Raw tuple and scalar bounds pass through a typed tuple so DBSP

@@ -18,6 +18,8 @@ def main():
     parser.add_argument("input", type=Path, help="JSONL prepared by determinism.py")
     parser.add_argument("output", type=Path)
     parser.add_argument("--stage", choices=("S2", "S3"), default="S2")
+    parser.add_argument("--full-optimizer-trace", action="store_true",
+                        help="Compare the ordered S2, S4 and S3 graphs through the mixed optimizer")
     parser.add_argument("--rust-optimizer", action="store_true",
                         help="Replay S2 through the mixed optimizer using the JNI library next to the comparator")
     parser.add_argument(
@@ -44,6 +46,8 @@ def main():
         parser.error("Timeout and build identities must be positive and nonempty")
     args.output = args.output.resolve()
     args.comparator = args.comparator.resolve(strict=True)
+    if args.full_optimizer_trace and not args.rust_optimizer:
+        parser.error("--full-optimizer-trace requires --rust-optimizer")
     library = None
     if args.rust_optimizer:
         if args.stage != "S2":
@@ -109,6 +113,7 @@ def main():
         },
     }
     if library:
+        provenance["full_optimizer_trace"] = args.full_optimizer_trace
         provenance["optimizer_library_sha256"] = file_digest(library)
     (args.output / "provenance.json").write_text(
         json.dumps(provenance, indent=2) + "\n"
@@ -118,6 +123,7 @@ def main():
         if library:
             optimizer_options = [
                 "-Xss8m", "-XX:ActiveProcessorCount=1",
+                f"-Dfeldera.determinism.fullOptimizerTrace={str(args.full_optimizer_trace).lower()}",
                 f"-Djava.library.path={library.parent}",
                 f"-Dfeldera.optimizer.rustPasses={str(mode == replay_mode).lower()}",
             ]
@@ -154,7 +160,7 @@ def main():
     if library:
         if file_digest(library) != provenance["optimizer_library_sha256"]:
             raise ValueError("Rust optimizer library changed during replay")
-        result = compare_live_optimizer(selected, [direct], [replay])
+        result = compare_live_optimizer(selected, [direct], [replay], full_trace=args.full_optimizer_trace)
         result["equal"] = result["mismatches"] == 0
     else:
         result = compare(direct, replay)

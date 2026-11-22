@@ -523,9 +523,14 @@ public class FuseIntoArrayAgg extends Repeat {
     }
 
     /** Finds the readers to fuse */
-    static class FindFusable extends CircuitWithGraphsVisitor {
+    public static class FindFusable extends CircuitWithGraphsVisitor {
         /** Key: a reader operator; value: its match */
         final Map<DBSPOperator, Match> byReader = new HashMap<>();
+        private byte[] nativeMatches = new byte[0];
+
+        public void setNativeMatches(byte[] matches) {
+            this.nativeMatches = matches;
+        }
 
         FindFusable(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
@@ -634,9 +639,13 @@ public class FuseIntoArrayAgg extends Repeat {
     }
 
     /** Rewrites each matched reader and its producer */
-    static class Fuse extends CircuitCloneVisitor {
+    public static class Fuse extends CircuitCloneVisitor {
         /** The matches to rewrite */
         final FindFusable found;
+
+        public byte[] nativeMatches() {
+            return this.found.nativeMatches;
+        }
 
         Fuse(DBSPCompiler compiler, FindFusable found) {
             super(compiler, false);

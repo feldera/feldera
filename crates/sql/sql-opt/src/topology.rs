@@ -100,14 +100,14 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
         "PushDifferentialsUp" => {
             reads(Op::Differentiate, &[Op::Map, Op::MapIndex]) || has_dead_code(true)?
         }
-        "FuseIntoArrayAgg" => {
+        "FuseIntoArrayAgg" | "FindFusable" => {
             order.iter().any(|&id| {
                 let n = node(id);
                 matches!(
                     n.operator_kind(),
                     Some(Op::Aggregate | Op::StreamAggregate | Op::PartitionedRollingAggregate)
                 ) && n.data("hasArrayResult").and_then(|v| v.as_bool()) != Some(false)
-            }) || has_dead_code(true)?
+            }) || (pass == "FuseIntoArrayAgg" && has_dead_code(true)?)
         }
         "PropagateEmptySources" => crate::empty_sources::topology_needs_rewrite(circuit)?,
         "RemoveConstantFilters" => order.iter().any(|&id| {
