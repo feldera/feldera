@@ -470,13 +470,14 @@ ports in the entry graph. Six programs per engine matched at every optimizer
 boundary through emission. COUNT and LATENESS checkpoints restored in both
 directions. [Aggregate expansion comparisons](evidence/p3-stream-aggregate-lists.json)
 
-Rust infers which side of a time comparison can supply a window bound for
-scalar row columns, NOW() and interval arithmetic. At RewriteNow entry, it
-handled 149 of 163 classic filters and 141 of 151 Gen-2 filters. The other
-24 used the general closure analysis. All 532 entry/exit comparisons for
-Scan, Reorder, MergeFilters and RewriteNow matched Java. Fourteen detached
-programs matched through emission, and both checkpoint types restored in
-both directions. [Clock predicate bounds](evidence/p3-clock-predicate-bounds.json)
+Rust infers clock bounds for scalar row columns, casts, unary function calls
+and scaled intervals. All 163 classic and 151 Gen-2 top-level clock filters
+at RewriteNow entry now use this analysis. Twenty frozen programs had
+previously needed the general closure analysis. All twenty matched direct
+Java at every optimizer boundary through emission. All 532 isolated temporal
+pass comparisons matched, and COUNT and LATENESS checkpoints restored in both
+directions. Other expression forms can still use the general analysis.
+[Clock predicate bounds](evidence/p3-clock-predicate-bounds.json) · [Casts, calls and scaled intervals](evidence/p3-clock-scalar-bounds.json)
 
 The live waterline simplifier sends Rust each selected expression or
 aggregate list. The entry and exit circuits matched Java on Nexmark and on

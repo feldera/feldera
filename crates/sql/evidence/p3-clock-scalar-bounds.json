@@ -1,0 +1,166 @@
+{
+  "scope": "Infer clock bounds for casts, unary scalar calls and scaled intervals at RewriteNow entry. Four isolated temporal pass comparisons per frozen program resume both implementations from the same S2. Detached full traces cover every program that previously required the general analysis at this entry.",
+  "optimizer_library_sha256": "b32bac2182be38c3cf7bc4056aba3186f9a68831f793b7487369894a67459a6c",
+  "compiler_jar_sha256": "b598cc7d6a016a352571dbe491b96b1d23cea97b564bf5e024c2ea6a3b3dee68",
+  "comparator_sha256": "179ca5f8a8415396738f8619c84e04c5bc406f87b9cfa9071f8c686d46a5bf88",
+  "engines": {
+    "classic": {
+      "programs": 71,
+      "top_level_clock_filters": 163,
+      "previously_using_general_analysis": 14,
+      "still_using_general_analysis": 0,
+      "coverage_sha256": "31c309a1bf579ccd5eba363553e19eeb0201e28b6384eff4fcf6dcc3d8b4ead5",
+      "frozen_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "detached_full_trace_cases": 12,
+      "detached_trace_sha256": "a7ae3584d3871085c0d6e3085eaeedd69fce2cb4e363846c89e10edaac2c5e28",
+      "passes": {
+        "Scan": {
+          "matched_invocations": 71,
+          "java_gzip_sha256": "253b2bc45df4a392dad95196641ef7446afacf6fb63c18bb98813d18d44a11b8",
+          "rust_gzip_sha256": "ec4b59b1fe22f3c1b5ed240725d4712ac0c445b0e0cc423816271b0f419cc50b"
+        },
+        "Reorder": {
+          "matched_invocations": 71,
+          "java_gzip_sha256": "18b8f9a2dde60ffe0503bb2e9155227c0643c4153036ccde8daef44b0fbd026e",
+          "rust_gzip_sha256": "e180f27e35de99f300283598ea1dc0a70a8b29625ff82e4064be028664afd593"
+        },
+        "MergeFilters": {
+          "matched_invocations": 71,
+          "java_gzip_sha256": "29c5848446d7f21d9421eb6d0641f7ad84f359da0d8d422a57be6db6ef6f4825",
+          "rust_gzip_sha256": "76ed201168bb20d8ae0b01c46695ad6d4602cfcc63c528020f13dbf51fc764a4"
+        },
+        "RewriteNow": {
+          "matched_invocations": 71,
+          "java_gzip_sha256": "114e4d5749b7790f5c2455fb53f03025362a208d75ea2831f7117f855a0ac34f",
+          "rust_gzip_sha256": "9066ed0cfeb1fa1bf9aae10a61ab0f45a6cb8a0946208ea007a7dc500072d186"
+        }
+      }
+    },
+    "gen2": {
+      "programs": 62,
+      "top_level_clock_filters": 151,
+      "previously_using_general_analysis": 10,
+      "still_using_general_analysis": 0,
+      "coverage_sha256": "e7fffca32632830220561cd8ed08d4a73ac939b1eeaec4c87aeb9f87110a1512",
+      "frozen_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "detached_full_trace_cases": 8,
+      "detached_trace_sha256": "01c36bdb0c37eed3025b4a180034649a2370989c6ebbd064f659ddbeedc866f9",
+      "passes": {
+        "Scan": {
+          "matched_invocations": 62,
+          "java_gzip_sha256": "d8392c82b40194e1bf1c9d54344b4be12564de341fd58922a165f41ec9241ccf",
+          "rust_gzip_sha256": "201bdee1c60d7280b5260dbc997c072a6e727e3f0ac933d05264d615adaacc36"
+        },
+        "Reorder": {
+          "matched_invocations": 62,
+          "java_gzip_sha256": "f0d6b56c7a749372288f1125cda85bc3a820690b58b67824079f76cc828f94f8",
+          "rust_gzip_sha256": "20a7c7519d40e8474415238a8d74970896df89b6ca6339fd317f1d9b21a99ea3"
+        },
+        "MergeFilters": {
+          "matched_invocations": 62,
+          "java_gzip_sha256": "074e40a4cd03a1962f333a50faa31a66a2c42ca05872fb9f8f2c48f7cb5f470e",
+          "rust_gzip_sha256": "39ce3d3389ffbbd6f48e291460a1d600c9b0c71273d1e38f8f2d31023b7fd4c8"
+        },
+        "RewriteNow": {
+          "matched_invocations": 62,
+          "java_gzip_sha256": "ec52e27b01f35daf4e6f8089b4409156beeae5d2b6f53319e579e59352a28ea3",
+          "rust_gzip_sha256": "c5fe3640dda9479945525fd53b3b68d421adea49a2d01f95d4d85b523682f221"
+        }
+      }
+    }
+  },
+  "count_checkpoint": {
+    "report_sha256": "7720dc9a3562625fdcf41f0ff849673aeec9a0373b336f23d4750473f3551553",
+    "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+    "binary_sha256": {
+      "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+      "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+    },
+    "generated_rust_sha256": {
+      "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+      "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+    },
+    "restores": [
+      {
+        "writer": "java",
+        "reader": "hybrid",
+        "bootstrap": false,
+        "checkpoint_id": "01a2028d-bd62-7ac1-b3e1-bd0e11160ba7",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ]
+      },
+      {
+        "writer": "hybrid",
+        "reader": "java",
+        "bootstrap": false,
+        "checkpoint_id": "01a2028d-bd84-7df3-b650-ebba59f90cb8",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ]
+      }
+    ]
+  },
+  "watermark_checkpoint": {
+    "report_sha256": "aebff323ad9f2c7e0f9e0f89c57d44627eba60075f393773e50712031ba8fee2",
+    "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+    "binary_sha256": {
+      "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+      "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+    },
+    "generated_rust_sha256": {
+      "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+      "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+    },
+    "restores": [
+      {
+        "writer": "java",
+        "reader": "hybrid",
+        "bootstrap": false,
+        "checkpoint_id": "01a2028e-ce39-78d0-83e9-457254be0ac6",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ],
+        "late_input_dropped_after_restore": true
+      },
+      {
+        "writer": "hybrid",
+        "reader": "java",
+        "bootstrap": false,
+        "checkpoint_id": "01a2028e-ce5f-7682-9005-7e5fee7bc827",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ],
+        "late_input_dropped_after_restore": true
+      }
+    ]
+  }
+}

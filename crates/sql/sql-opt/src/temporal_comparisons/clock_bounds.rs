@@ -1,14 +1,16 @@
 //! Bounds for temporal predicates over an unordered input row and the system clock.
 use crate::function_calls::function_name;
 use crate::monotonicity::binary::{BinaryWaterline, Domain, Operand, binary_waterline};
+use crate::monotonicity::casts::{CastWaterline, cast_waterline};
+use crate::monotonicity::functions::{Argument, function_waterline};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId, TypeKind,
 };
 use std::collections::{HashMap, HashSet};
 
 /// Return the monotone operands when the entire predicate uses scalar columns,
-/// clock calls, constants and time arithmetic. Other functions and lexical
-/// bindings require the general closure analysis.
+/// clock calls, constants and supported scalar operations. Expressions with
+/// lexical bindings require the general closure analysis.
 pub(super) fn monotone_operands(
     edit: &CircuitEditor,
     parameter: NodeId,
@@ -48,11 +50,53 @@ pub(super) fn monotone_operands(
                     return Ok(None);
                 }
             }
-            Expr::Apply
-                if node.edges("arguments")?.is_empty()
-                    && function_name(edit.circuit(), node)?.as_deref() == Some("now") =>
-            {
-                value.monotone = true;
+            Expr::Apply => {
+                let Some(name) = function_name(edit.circuit(), node)? else {
+                    return Ok(None);
+                };
+                match node.edges("arguments")?.as_slice() {
+                    [] if name == "now" => value.monotone = true,
+                    [arg] if name != "now" => {
+                        let arg = edit.expression(*arg)?;
+                        if !visited_children {
+                            pending.extend([(id, true), (arg, false)]);
+                            continue;
+                        }
+                        let arg = facts[&arg];
+                        value.constant = arg.constant;
+                        value.monotone = function_waterline(
+                            &name,
+                            &[Argument {
+                                monotone: arg.monotone,
+                                constant: arg.constant,
+                                ..Default::default()
+                            }],
+                        )
+                        .is_some();
+                    }
+                    _ => return Ok(None),
+                }
+            }
+            Expr::Cast => {
+                let source = child("source")?;
+                if !visited_children {
+                    pending.extend([(id, true), (source, false)]);
+                    continue;
+                }
+                let safe = match node.data("safe").and_then(|v| v.as_str()) {
+                    Some("SqlSafe") => true,
+                    Some("SqlUnsafe") => false,
+                    _ => return Ok(None),
+                };
+                value.constant = facts[&source].constant;
+                if facts[&source].monotone {
+                    // Every scalar bound here has its operand's domain. Removing
+                    // nullability can change an ordinary cast to identity, both monotone.
+                    let from = edit.expression_type(source)?;
+                    value.monotone =
+                        cast_waterline(edit, from, edit.expression_type(id)?, from, safe)?
+                            != CastWaterline::None;
+                }
             }
             Expr::DateLiteral
             | Expr::TimestampLiteral
@@ -64,6 +108,24 @@ pub(super) fn monotone_operands(
                 value.monotone = true;
                 // A NULL literal has a bound but cannot serve as a constant offset.
                 value.constant = node.data("value").is_some_and(|v| !v.is_null());
+                if value.constant
+                    && matches!(
+                        kind,
+                        Expr::I32Literal
+                            | Expr::I64Literal
+                            | Expr::ShortIntervalLiteral
+                            | Expr::LongIntervalLiteral
+                    )
+                {
+                    let literal = node.data("value").expect("nonnull numeric literal");
+                    let number = literal
+                        .as_i64()
+                        .or_else(|| literal.as_str()?.parse().ok())
+                        .ok_or_else(|| {
+                            Error::new("invalid integer or interval literal in clock predicate")
+                        })?;
+                    value.positive_literal = number > 0;
+                }
             }
             Expr::Binary | Expr::TimeAddSub => {
                 let left = child("left")?;
@@ -74,20 +136,24 @@ pub(super) fn monotone_operands(
                 }
                 let (left, right) = (facts[&left], facts[&right]);
                 value.constant = left.constant && right.constant;
-                if kind == Expr::TimeAddSub {
-                    let domain = if edit.type_kind(edit.expression_type(id)?)? == TypeKind::Time {
+                let domain = match (kind, opcode) {
+                    (Expr::TimeAddSub, _)
+                        if edit.type_kind(edit.expression_type(id)?)? == TypeKind::Time =>
+                    {
                         Domain::TimeOfDay
-                    } else {
-                        Domain::Temporal
-                    };
-                    value.monotone = binary_waterline(domain, opcode.unwrap_or(""), left, right)
-                        != BinaryWaterline::None;
-                } else if !matches!(
-                    opcode,
-                    Some("LT" | "LTE" | "GT" | "GTE" | "EQ" | "NEQ" | "AND" | "OR")
-                ) {
-                    return Ok(None);
-                }
+                    }
+                    (Expr::TimeAddSub, _) => Domain::Temporal,
+                    (
+                        Expr::Binary,
+                        Some(
+                            "ADD" | "SUB" | "MUL" | "DIV" | "MUL_INTERVAL" | "DIV_INTERVAL" | "LT"
+                            | "LTE" | "GT" | "GTE" | "EQ" | "NEQ" | "AND" | "OR",
+                        ),
+                    ) => Domain::Scalar,
+                    _ => return Ok(None),
+                };
+                value.monotone = binary_waterline(domain, opcode.unwrap_or(""), left, right)
+                    != BinaryWaterline::None;
             }
             Expr::Unary if opcode == Some("WRAP_BOOL") => {
                 let source = child("source")?;
@@ -115,6 +181,103 @@ mod tests {
     use crate::{TemporalPredicate, WindowComparison, infer_temporal_predicates};
     use feldera_sql_ir::{BinaryOp, Circuit, Field};
     use serde_json::json;
+
+    #[test]
+    fn scalar_clock_bounds_follow_cast_and_function_rules() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let (circuit, roots) = circuit.with_inner_roots([json!({
+            "class":"DBSPTypeTimestamp","id":1,"code":"TIMESTAMP","mayBeNull":false
+        })])?;
+        let mut edit = CircuitEditor::new(circuit);
+        let site = roots[0];
+        let timestamp = edit.type_id(site)?;
+        let row = edit.named_variable(timestamp, "row")?;
+        let parameter = edit.parameter_at(site, row)?;
+        let now = edit.function_path(site, "now")?;
+        let clock = edit.make_expr(
+            site,
+            Expr::Apply,
+            timestamp,
+            [
+                ("function", Field::Reference(now.into())),
+                ("arguments", Field::Array(vec![])),
+            ],
+        )?;
+        let bigint = edit.integer_type(timestamp, 64, true, false)?;
+        let epoch = edit.cast(site, clock, bigint)?;
+        let offset = edit.make_expr(
+            site,
+            Expr::I64Literal,
+            bigint,
+            [("value", Field::Data(86400.into()))],
+        )?;
+        let sum = edit.binary_expression(site, bigint, BinaryOp::Add, epoch, offset)?;
+        assert!(
+            monotone_operands(&edit, parameter, sum)?
+                .unwrap()
+                .contains(&sum)
+        );
+        for factor in [-1, 0, 3] {
+            let scale = edit.make_expr(
+                site,
+                Expr::I64Literal,
+                bigint,
+                [("value", Field::Data(factor.to_string().into()))],
+            )?;
+            let product = edit.binary_expression(site, bigint, BinaryOp::Mul, epoch, scale)?;
+            assert_eq!(
+                monotone_operands(&edit, parameter, product)?
+                    .unwrap()
+                    .contains(&product),
+                factor > 0
+            );
+        }
+        let narrow = edit.integer_type(bigint, 16, true, true)?;
+        for (safety, bounded) in [("SqlSafe", false), ("SqlUnsafe", true)] {
+            let cast = edit.make_expr(
+                site,
+                Expr::Cast,
+                narrow,
+                [
+                    ("source", Field::Reference(epoch.into())),
+                    ("safe", Field::Data(safety.into())),
+                ],
+            )?;
+            assert_eq!(
+                monotone_operands(&edit, parameter, cast)?
+                    .unwrap()
+                    .contains(&cast),
+                bounded
+            );
+        }
+        for (callee, bounded) in [
+            ("extract_year_Timestamp", true),
+            ("extract_minute_Timestamp", false),
+        ] {
+            let path = edit.function_path(site, callee)?;
+            let call = edit.make_expr(
+                site,
+                Expr::Apply,
+                bigint,
+                [
+                    ("function", Field::Reference(path.into())),
+                    (
+                        "arguments",
+                        Field::Array(vec![Field::Reference(clock.into())]),
+                    ),
+                ],
+            )?;
+            assert_eq!(
+                monotone_operands(&edit, parameter, call)?
+                    .unwrap()
+                    .contains(&call),
+                bounded
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn clock_minus_interval_needs_a_constant_nonnull_offset() -> Result<(), Error> {
