@@ -9,6 +9,8 @@ mod aggregate_zero;
 mod antijoin_projection;
 pub use antijoin_projection::{antijoin_projection, split_antijoin_projection};
 mod append_only;
+mod repeat;
+pub use repeat::{repeat, RepeatResult};
 mod lexical_scope;
 mod map_fusion;
 mod monotonicity;

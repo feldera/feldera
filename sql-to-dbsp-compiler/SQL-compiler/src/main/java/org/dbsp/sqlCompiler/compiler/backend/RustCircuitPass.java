@@ -195,6 +195,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntPredicate;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.LinkedHashMap;
@@ -353,6 +354,10 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native void enterSnapshotScope();
     private static native void leaveSnapshotScope();
+
+    /** Drive an observed pass to convergence. The step returns true when the circuit changed.
+     * A positive result is the number of iterations that exhausted the convergence limit. */
+    public static native int repeat(int largestComponent, int requested, IntPredicate step);
 
     /** Release cached expressions when this optimizer returns, including on pass failure. */
     public static DBSPCircuit withLiveSnapshots(Supplier<DBSPCircuit> optimize) {

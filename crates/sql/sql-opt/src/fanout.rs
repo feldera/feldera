@@ -152,32 +152,33 @@ fn clone_once(circuit: Circuit, next: &mut u64) -> Result<(Circuit, bool), Error
 }
 
 /// Dead-code elimination after a clone can expose another eligible branch on the next iteration.
-pub fn optimize_fanout(mut circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
-    let mut budget = circuit.operators().count().max(10);
+pub fn optimize_fanout(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
+    let mut largest = circuit.operators().count();
     for (_, op) in circuit
         .operators()
         .filter(|(_, op)| op.operator_kind() == Some(Op::Nested))
     {
-        budget = budget.max(op.edges("allOperators")?.len());
+        largest = largest.max(op.edges("allOperators")?.len());
     }
-    for _ in 0..budget {
+    let outcome = crate::repeat(circuit, largest, None, |circuit, _| {
         let (cloned, changed) = clone_once(circuit, next)?;
         let before_pruning = cloned
             .operator_order(feldera_sql_ir::BodyOrder::Preorder)?
             .len();
-        circuit = crate::remove_dead_operators(cloned, next)?;
-        if !changed
-            && circuit
+        let circuit = crate::remove_dead_operators(cloned, next)?;
+        let changed = changed
+            || circuit
                 .operator_order(feldera_sql_ir::BodyOrder::Preorder)?
                 .len()
-                == before_pruning
-        {
-            return Ok(circuit);
-        }
+                != before_pruning;
+        Ok::<_, Error>((circuit, changed))
+    })?;
+    match outcome {
+        crate::RepeatResult::Finished(circuit) => Ok(circuit),
+        crate::RepeatResult::DidNotConverge { .. } => Err(Error::new(
+            "fanout cloning did not converge within the circuit size limit",
+        )),
     }
-    Err(Error::new(
-        "fanout cloning did not converge within the circuit size limit",
-    ))
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
 mod fragment;
+mod repeat;
 mod delta_expansion;
 mod shared_indexes;
 mod star_join;
