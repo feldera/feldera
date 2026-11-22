@@ -7,7 +7,7 @@ use self::{scope::Local, shape::Shape};
 use crate::limiters::Projection;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
-    TypeId, TypeKind,
+    TypeId,
 };
 use std::collections::HashSet;
 
@@ -80,45 +80,12 @@ fn field_number(node: &Node) -> Result<usize, Error> {
         .ok_or_else(|| Error::new("expected row field index"))
 }
 
-/// Unknown tuple fields can still be read by a subsequent field expression.
-/// Retain their layout, including the nullability of each nested tuple.
-fn unbounded_shape(edit: &CircuitEditor, ty: TypeId, depth: usize) -> Result<Option<Shape>, Error> {
-    if depth > 128 {
-        return Ok(None);
-    }
-    let kind = edit.type_kind(ty)?;
-    Ok(Some(match kind {
-        TypeKind::RawTuple | TypeKind::Tuple => {
-            let mut fields = Vec::new();
-            for member in edit.node(ty.into())?.edges("tupFields")? {
-                let Some(field) = unbounded_shape(edit, edit.type_id(member)?, depth + 1)? else {
-                    return Ok(None);
-                };
-                fields.push(field);
-            }
-            Shape::tuple(fields, edit.nullable(ty)?)
-        }
-        TypeKind::Ref => {
-            let base = edit.type_id(edit.node(ty.into())?.edge("type")?)?;
-            let Some(shape) = unbounded_shape(edit, base, depth + 1)? else {
-                return Ok(None);
-            };
-            Shape::Reference(shape.into())
-        }
-        // NonMonotoneType.nonMonotone accepts primitive, function and user
-        // types as opaque scalars. Struct and stream types have no such rule.
-        TypeKind::Struct | TypeKind::Stream => return Ok(None),
-        _ => Shape::Scalar(false),
-    }))
-}
-
 fn unbounded(
     edit: &CircuitEditor,
     expression: ExpressionId,
-    depth: usize,
 ) -> Result<Option<ProjectedValue>, Error> {
     let ty = edit.expression_type(expression)?;
-    let Some(shape) = unbounded_shape(edit, ty, depth)? else {
+    let Some(shape) = Shape::unbounded(edit, ty)? else {
         return Ok(None);
     };
     // A nonnullable empty tuple has a bound even when it occurs inside an
@@ -171,7 +138,7 @@ impl Row {
                 _ => return Ok(None),
             }
         }
-        unbounded(edit, expression, depth)
+        unbounded(edit, expression)
     }
 
     fn visit(
@@ -221,7 +188,7 @@ impl Row {
             | Expr::StringLiteral
             | Expr::BinaryLiteral
             | Expr::UuidLiteral
-            | Expr::VariantNullLiteral => return unbounded(edit, expression, depth),
+            | Expr::VariantNullLiteral => return unbounded(edit, expression),
             Expr::If
             | Expr::IsNull
             | Expr::Array
@@ -269,7 +236,7 @@ impl Row {
                     Some(bound) => super::unary_waterline(edit, expression, bound)?,
                 };
                 let Some(bound) = reduced else {
-                    let Some(mut unknown) = unbounded(edit, expression, depth)? else {
+                    let Some(mut unknown) = unbounded(edit, expression)? else {
                         return Ok(None);
                     };
                     unknown.constant = value.constant;
@@ -286,7 +253,7 @@ impl Row {
                     // For an unbounded borrow, Java constructs the reference
                     // from the declared expression type, including nested fields.
                     if value.reduced.is_none() {
-                        let Some(mut result) = unbounded(edit, expression, depth)? else {
+                        let Some(mut result) = unbounded(edit, expression)? else {
                             return Ok(None);
                         };
                         result.constant = value.constant;
@@ -360,7 +327,7 @@ impl Row {
             }
             Expr::RawTuple | Expr::Tuple => {
                 if node.field("fields").is_none() {
-                    return unbounded(edit, expression, depth);
+                    return unbounded(edit, expression);
                 }
                 let mut fields = Vec::new();
                 let mut types = Vec::new();
@@ -459,7 +426,7 @@ pub(crate) fn clock_operands(
     else {
         return Ok(None);
     };
-    let Some(shape @ Shape::Reference(_)) = unbounded_shape(edit, ty, 0)? else {
+    let Some(shape @ Shape::Reference(_)) = Shape::unbounded(edit, ty)? else {
         return Ok(None);
     };
     // An empty nonnullable tuple supplies its own bound. Its parameter needs

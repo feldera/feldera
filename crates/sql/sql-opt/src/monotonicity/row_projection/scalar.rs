@@ -201,7 +201,7 @@ impl Row {
             return ProjectedValue::bounded(edit, expression, bound, constant).map(Some);
         }
         // Retain the layout of an unbounded ROW for subsequent field reads.
-        let mut value = super::unbounded(edit, expression, depth)?;
+        let mut value = super::unbounded(edit, expression)?;
         if let Some(value) = &mut value {
             value.constant = constant;
         }

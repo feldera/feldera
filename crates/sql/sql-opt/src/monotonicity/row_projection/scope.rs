@@ -85,7 +85,7 @@ impl Row {
         };
         let Some(mut value) = (match tail {
             Some(tail) => self.visit(edit, tail, depth + 1)?,
-            None => unbounded(edit, expression, depth)?,
+            None => unbounded(edit, expression)?,
         }) else {
             return Ok(None);
         };

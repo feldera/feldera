@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Expression value numbering, 2026-11-22
+
+Each cell is hybrid p95 divided by direct Java p95 for 21 cold pairs on CPU 15.
+The two implementations ran separately while corpus verification shared the VM.
+All 69 pairs per build matched on diagnostics and classic artifacts, including
+the two warmups per workload.
+
+| Implementation | Array subquery | Nexmark | Outer join |
+|---|---:|---:|---:|
+| Intermediate build returning all value numbers | 0.823× | 1.155× | 0.710× |
+| Shared uses only (`7d54ab029`) | 0.831× | 1.231× | 0.744× |
+
+On the shared-use build, Nexmark took 9.736 s at p95 against 7.910 s for
+direct Java, above the 1.2× ceiling. [Paired measurements](evidence/p3-value-numbering-cold.json)
+
 ## Comparator declarations, 2026-11-22
 
 Batching the selected index functions reduced median calling-thread CPU time

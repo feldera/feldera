@@ -1,0 +1,65 @@
+{
+  "scope": "Derive shared SQL type shapes with an explicit postorder traversal. Expression projection still uses the general Java visitor for unsupported cases.",
+  "build": {
+    "bin/libfeldera_sql_opt_jni.so": "40396d73af0dcbac67d82c639ebc8e1d0e6b4ec02eb8ac884423dc88c4472e2a",
+    "tests.log": "1cbe70f5d437885749fa16ce26e2c1cce1b3241e372f5a98ac318dcbce1fe1cc",
+    "clippy.log": "83c0c4bc8f155e95769899e52dee218c7f3fc6d5e76ba54834dbe6b36fd94b8b"
+  },
+  "rust_tests": 125,
+  "engines": {
+    "classic": {
+      "monotonicity_invocations": 291,
+      "monotonicity_cases": 291,
+      "comparison_sha256": "5c62d6b948bb74f3b7f84283a84c5abd4bb8985d000330b71338ba19710fa47a",
+      "java_observations_sha256": "3c0b844c17d5527f65a096267779c05db13b2c3bd56a1b82be5f297016569ae4",
+      "rust_observations_sha256": "39444019b29d8f8e259248874d1922098a4457651bd945c333802437f1106776",
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "detached_receipt_sha256": "74cadde25476aa6c01920e1afecc572019767fc90c4a6f70b8569d6e4bd36dfd"
+    },
+    "gen2": {
+      "monotonicity_invocations": 259,
+      "monotonicity_cases": 259,
+      "comparison_sha256": "d3648166eee30509b7590933b5656246bc3b183124c2ff9a4f90d010b6f0dc27",
+      "java_observations_sha256": "0768f35deb58f0cf38f12cac45ff610582454b11c3f76aa0ec1a5b1737d69408",
+      "rust_observations_sha256": "b2baba05d5e96e708a9717b250f0a9138612b703ec1433e5d04b72dc90b3ebd4",
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "detached_receipt_sha256": "a3ec6740e010b0ac2b241100391886cc2cb9a47f1da83065b0d7b5dfcce9814e"
+    }
+  },
+  "cancellation": {
+    "profile": "The test used a second network-isolated local devcontainer reserved on CPUs 11-14. Concurrent compiler verification used CPUs 0-10 and 15.",
+    "result": {
+      "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+      "rust_optimizer_passes": true,
+      "rounds": 5,
+      "slots_per_round": 4,
+      "signal_to_reap_ms": [
+        11.823184,
+        15.571023,
+        15.935773,
+        16.165482,
+        13.974687,
+        7.235094,
+        16.819983,
+        14.292688,
+        12.134475,
+        12.160393,
+        12.277476,
+        13.109894,
+        16.331107,
+        11.512433,
+        11.419225,
+        11.76685,
+        11.1886,
+        6.576218,
+        6.70876,
+        11.164433
+      ],
+      "p95_ms": 16.331107,
+      "largest_driver_plus_front_end_rss_bytes": 70717440,
+      "compiler_sha256": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3"
+    }
+  }
+}

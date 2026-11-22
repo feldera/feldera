@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust computes the waterline shape of a nested SQL row once per type and
+shares it across repeated fields. The regression uses 160 nested row types.
+All 550 selected monotonicity invocations and 16 detached compilations matched
+Java. With four CPUs reserved for four occupied workers, cancellation p95 was
+16.33 ms over 20 cancellations. Peak driver and front-end RSS while waiting
+for input was 70,717,440 bytes per worker. [Waterline and worker results](evidence/p3-shared-row-types.json)
+
 With `--correlatedColumns`, Rust traces comparisons to their source columns and
 reports columns that joins equate. All 8,571 classic and 8,527 Gen-2 report
 comparisons matched Java on stdout and exceptions. Rust produced 16,974

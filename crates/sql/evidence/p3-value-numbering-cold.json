@@ -1,0 +1,141 @@
+{
+  "profile": "Cold SQL to classic artifact publication, CPU 15 on the Linux ARM64 devcontainer with concurrent corpus verification. Two warmup pairs and 21 measured pairs per workload, with alternating compiler order.",
+  "builds": [
+    {
+      "implementation": "Intermediate build returning all expression value numbers",
+      "base_commit": "507099263cb8aa14daa27d4c2bcc24a2e0fbb7f6",
+      "archive": ".bench-results/p3-live-compile/2026-22-11-06-06-50709",
+      "sha256": {
+        "changes.patch": "c62be079d674fa551a1a65411fddd8b090e31b08069fd683269d4b9cdb289228",
+        "pairs.jsonl": "962dc9c3c56244d743771851c42efe063080aa0d1b337ca8a5418c32bace1bb3",
+        "environment.json": "c4f7777725fc59c1f7c551ce2120817052f0a7c8c080338ebf1616d98790c767",
+        "results.json": "d0e379a23194f0f65f0a888d751426a1c1c33beed344f4be38dfd38ef5ed6a66",
+        "env.txt": "42288af1406080f77f6c96cfa20ea34564ae728c90753dd525d472f5971d2b4c"
+      },
+      "library_sha256": "dc7f7aaea465e5ebf6cb7cb4a54037378f68fcd003881c76936f09108d3df3da",
+      "driver_sha256": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+      "matched_pairs": 69,
+      "workloads": {
+        "array-subquery.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 2.670130944,
+            "empirical_p95_seconds": 3.084945352
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 3.215605545,
+            "empirical_p95_seconds": 3.750075543
+          },
+          "p95_ratio": 0.8226355220386024,
+          "mean_ratio_paired_95pct_interval": [
+            0.8013774369118193,
+            0.8431117893195067
+          ]
+        },
+        "nexmark-suite.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 7.934948821,
+            "empirical_p95_seconds": 9.431154581
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 6.837337482,
+            "empirical_p95_seconds": 8.162644769
+          },
+          "p95_ratio": 1.15540426514915,
+          "mean_ratio_paired_95pct_interval": [
+            1.1447846335605745,
+            1.1914976385178289
+          ]
+        },
+        "outer-join.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 2.355683298,
+            "empirical_p95_seconds": 2.800009926
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 3.000654119,
+            "empirical_p95_seconds": 3.94548935
+          },
+          "p95_ratio": 0.7096736748256588,
+          "mean_ratio_paired_95pct_interval": [
+            0.7384233135500128,
+            0.8073392942754217
+          ]
+        }
+      }
+    },
+    {
+      "implementation": "Selective groups subsequently committed as 7d54ab029",
+      "base_commit": "98348efd2a08c04125c598d7e839967a43be9f4a",
+      "archive": ".bench-results/p3-live-compile/2026-22-11-06-14-98348",
+      "sha256": {
+        "changes.patch": "20e5485d43ebc2bc7033c4b10f0a52d6a641f19b7f9415e14558d6c7b06768fd",
+        "pairs.jsonl": "4f5fb4b32cd3b0a6d71a4276f20dfe4d6a36dbea14b6fb4c825fcf050899a72f",
+        "environment.json": "ad534cfcb517e0e51021b59e3f2b262fd84302e2b60bfee2b85ae4abc921ae40",
+        "results.json": "393c113c25f4102fd4d3dfa84b53614bf82c844437dbc1b6079fb207b44bff19",
+        "env.txt": "34b8a09fd9a32dea376403c867eee73fb2c711fce14be6895aae1ebc3cbdf312"
+      },
+      "library_sha256": "e1a08efa4832239d4f221a0d80743a84b92e691f470d7823d0f2ef5439399277",
+      "driver_sha256": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+      "matched_pairs": 69,
+      "workloads": {
+        "array-subquery.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 2.50573202,
+            "empirical_p95_seconds": 3.058802722
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 3.144046968,
+            "empirical_p95_seconds": 3.680155957
+          },
+          "p95_ratio": 0.8311611675537477,
+          "mean_ratio_paired_95pct_interval": [
+            0.771881012492385,
+            0.8182851933832715
+          ]
+        },
+        "nexmark-suite.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 8.237496478,
+            "empirical_p95_seconds": 9.735908144
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 6.905471715,
+            "empirical_p95_seconds": 7.910431166
+          },
+          "p95_ratio": 1.2307683285136368,
+          "mean_ratio_paired_95pct_interval": [
+            1.1438992854953107,
+            1.2777327921010366
+          ]
+        },
+        "outer-join.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 2.28269802,
+            "empirical_p95_seconds": 2.817905373
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 3.064477499,
+            "empirical_p95_seconds": 3.789764864
+          },
+          "p95_ratio": 0.7435567836326851,
+          "mean_ratio_paired_95pct_interval": [
+            0.7276511375447999,
+            0.7935763498735733
+          ]
+        }
+      }
+    }
+  ]
+}

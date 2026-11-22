@@ -1,5 +1,5 @@
 //! Derive lower bounds for named scalar calls from the bounds of their arguments.
-use super::{ProjectedValue, Row, Shape, unbounded, unbounded_shape};
+use super::{ProjectedValue, Row, Shape, unbounded};
 use crate::function_calls::function_name;
 use crate::monotonicity::functions::{Argument, double_literal_above_one, function_waterline};
 use feldera_sql_expr::copy_expression;
@@ -63,13 +63,13 @@ impl Row {
             .as_deref()
             .and_then(|name| function_waterline(name, &facts))
         else {
-            let Some(mut result) = unbounded(edit, expression, depth)? else {
+            let Some(mut result) = unbounded(edit, expression)? else {
                 return Ok(None);
             };
             result.constant = constant;
             return Ok(Some(result));
         };
-        if !matches!(unbounded_shape(edit, ty, depth)?, Some(Shape::Scalar(_))) {
+        if !matches!(Shape::unbounded(edit, ty)?, Some(Shape::Scalar(_))) {
             return Ok(None);
         }
         let arguments = arguments
