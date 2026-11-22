@@ -216,7 +216,7 @@ pub use pull_filters::pull_filters;
 pub use push_integrals::push_integrals;
 pub use recursive_views::{resolve_view_references, ViewReferences, ViewResolution};
 pub use regions::tag_regions;
-pub use remove_noops::{optimize_noops, remove_noops};
+pub use remove_noops::{bypassed_noops, optimize_noops, remove_noops};
 pub use remove_table::{remove_table, unreferenced_table_sources, TableRemoval};
 pub use shared_index_candidates::{find_shared_indexes, shared_index_payloads, IndexReader, SharedIndexes};
 pub use index_reader::{rewrite_index_reader, IndexParameter};

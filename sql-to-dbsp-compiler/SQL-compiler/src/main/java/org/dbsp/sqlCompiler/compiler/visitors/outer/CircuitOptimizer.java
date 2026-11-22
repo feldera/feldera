@@ -132,7 +132,7 @@ public class CircuitOptimizer extends Passes {
         boolean supported;
         if (pass instanceof OptimizeWithGraph graph) {
             supported = switch (pass.getName()) {
-                case "RemoveNoops", "PushDifferentialsUp", "BalancedJoins", "ChainVisitor", "StrayGC" -> true;
+                case "PushDifferentialsUp", "BalancedJoins", "ChainVisitor", "StrayGC" -> true;
                 default -> false;
             };
             if (!supported && graph.transform instanceof Passes iteration)
@@ -160,7 +160,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof DesugarNowEquality
                     || pass instanceof FuseIntoArrayAgg || pass instanceof ComparatorDeclarations
                     || pass instanceof CompactNames || pass instanceof TagRegions
-                    || pass instanceof RemoveDeindexOperators || pass instanceof DeadCode
+                    || pass instanceof RemoveDeindexOperators || pass instanceof RemoveNoops || pass instanceof DeadCode
                     || pass instanceof OptimizeIncrementalVisitor || pass instanceof IncrementalizeVisitor
                     || pass instanceof NoIntegralVisitor || pass instanceof ValidateRecursiveOperators
                     || pass instanceof CSE || pass instanceof MergeSums || pass instanceof RemoveIAfterD

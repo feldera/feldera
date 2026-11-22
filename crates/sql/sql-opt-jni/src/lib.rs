@@ -1003,6 +1003,9 @@ fn transform(
             let readers = feldera_sql_opt::trim_filter_readers(&circuit, serde_json::from_slice(state)?)?;
             return Ok(json!(operator_numbers(readers)));
         }
+        if name == "BypassNoops" {
+            return Ok(json!(operator_numbers(feldera_sql_opt::bypassed_noops(&circuit)?)));
+        }
         if name == "FanoutProducers" {
             return Ok(json!(operator_numbers(feldera_sql_opt::fanout_producers(&circuit)?)));
         }

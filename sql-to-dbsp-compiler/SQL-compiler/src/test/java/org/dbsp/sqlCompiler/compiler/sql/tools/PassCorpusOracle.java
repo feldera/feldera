@@ -150,6 +150,10 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
                 throw new IllegalStateException("Expected a Rust shared-projection placement in " + container);
         }
         if (pass instanceof OptimizeWithGraph group && group.transform instanceof Passes steps
+                && group.getName().equals("RemoveNoops") && this.passClass.equals("RemoveNoops")
+                && Boolean.getBoolean("feldera.optimizer.compareRustNoopBypasses"))
+            this.replaceObservedPass(steps);
+        if (pass instanceof OptimizeWithGraph group && group.transform instanceof Passes steps
                 && group.getName().equals("TrimFilters") && this.passClass.equals("TrimFilters")
                 && Boolean.getBoolean("feldera.optimizer.compareRustTrimFilters")) {
             this.replaceObservedPass(steps);

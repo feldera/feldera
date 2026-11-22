@@ -1,9 +1,9 @@
-use feldera_sql_ir::{BodyOrder, Circuit, Error, OperatorKind as Op};
+use feldera_sql_ir::{BodyOrder, Circuit, Error, NodeId, OperatorKind as Op};
 use std::collections::BTreeSet;
 
-/// Bypass no-ops unless a garbage-collection operator consumes their output.
-/// The retention decision uses the original graph, as in Java's RemoveNoops.
-pub fn remove_noops(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
+/// Select no-ops from the entry graph. A retention operator protects either input,
+/// even when an earlier no-op on the same path can be bypassed.
+pub fn bypassed_noops(circuit: &Circuit) -> Result<BTreeSet<NodeId>, Error> {
     let order = circuit.operator_order(BodyOrder::Preorder)?;
     let operators = || {
         order
@@ -23,10 +23,14 @@ pub fn remove_noops(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> 
         })
         .flat_map(|(_, node)| node.inputs().map(|port| port.operator))
         .collect();
-    let removed = operators()
+    Ok(operators()
         .filter(|(id, node)| node.operator_kind() == Some(Op::Noop) && !retained.contains(id))
         .map(|(id, _)| id)
-        .collect();
+        .collect())
+}
+
+pub fn remove_noops(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
+    let removed = bypassed_noops(&circuit)?;
     crate::rebuild::rebuild_input_closures(circuit.bypass_unary_operators(&removed)?, next)
 }
 

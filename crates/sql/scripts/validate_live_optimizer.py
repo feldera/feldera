@@ -94,8 +94,14 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
                       validate_weights=False, cast_iterations=None, unused_field_iterations=None,
                       graph_cleanups=None, clock_scans=None, temporal_splits=None, now_stream=None,
                       outputs_are_sets=False, trim_inputs=False, asof_retention_moves=0, star_joins_enabled=True,
-                      window_sharing_enabled=True, linear_retention_graphs=None):
+                      window_sharing_enabled=True, linear_retention_graphs=None, noop_iterations=None):
     expected = dict(schedule)
+    if noop_iterations is not None:
+        if type(noop_iterations) is not int or noop_iterations < schedule["RemoveNoops"]:
+            raise ValueError(f"{case}: invalid no-op removal iteration count {noop_iterations}")
+        expected["RemoveNoops"] = noop_iterations
+        expected["Graph"] += noop_iterations
+        expected["DeadCode"] += noop_iterations
     if linear_retention_graphs is not None:
         if type(linear_retention_graphs) is not int or linear_retention_graphs not in (1, 2):
             raise ValueError(f"{case}: invalid linear aggregate retention graph count {linear_retention_graphs}")
@@ -235,6 +241,9 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
             if "ReplaceStarJoins" in schedule and (type(star_joins) is not bool
                     or row.get("star_joins_enabled") is not star_joins):
                 raise ValueError(f"{key}: star join policy differs from direct Java")
+            noop_iterations = control.get("noop_iterations")
+            if noop_iterations != row.get("noop_iterations"):
+                raise ValueError(f"{key}: no-op cleanup iterations differ from Java")
             linear_graphs = control.get("linear_retention_graphs")
             if linear_graphs != row.get("linear_retention_graphs"):
                 raise ValueError(f"{key}: linear aggregate retention graph placements differ from Java")
@@ -246,7 +255,7 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
                               unused_field_iterations=unused_fields, graph_cleanups=graph_cleanups,
                               clock_scans=clock_scans, temporal_splits=splits, now_stream=expected[key][3],
                               outputs_are_sets=expected[key][4], trim_inputs=expected[key][5],
-                              linear_retention_graphs=linear_graphs, asof_retention_moves=asof_moves, star_joins_enabled=star_joins, window_sharing_enabled=sharing)
+                              noop_iterations=noop_iterations, linear_retention_graphs=linear_graphs, asof_retention_moves=asof_moves, star_joins_enabled=star_joins, window_sharing_enabled=sharing)
             invocations.update(counts)
     if controls:
         raise ValueError(f"{len(controls)} cases missing from S2 replay")

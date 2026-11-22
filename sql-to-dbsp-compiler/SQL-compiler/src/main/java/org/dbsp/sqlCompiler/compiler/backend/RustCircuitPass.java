@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsVisito
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -1675,6 +1676,22 @@ public final class RustCircuitPass implements CircuitTransform {
         return this.compiler.applyObservedPass(this.name, 3, 0, replace, circuit);
     }
 
+    private DBSPCircuit bypassNoops(DBSPCircuit circuit, long next) throws IOException {
+        var reply = this.invoke("Topology/BypassNoops", OptimizerTopology.encode(circuit), next, EMPTY_CONTEXT);
+        Set<Long> bypassed = MAPPER.convertValue(reply, new TypeReference<>() {});
+        if (bypassed.isEmpty())
+            return circuit;
+        return new CircuitCloneVisitor(this.compiler, false) {
+            @Override
+            public void postorder(DBSPNoopOperator op) {
+                if (bypassed.contains(op.id))
+                    this.map(op.outputPort(), this.mapped(op.input()), false);
+                else
+                    super.postorder(op);
+            }
+        }.apply(circuit);
+    }
+
     private DBSPCircuit fuseChains(DBSPCircuit circuit) throws IOException {
         int limit = Math.max(circuit.largestComponentSize(), 10);
         for (int round = 0; round < limit; round++) {
@@ -2308,6 +2325,9 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             JsonNode result = null;
             switch (this.nativeName) {
+                case "RemoveNoops" -> {
+                    return this.bypassNoops(circuit, initial);
+                }
                 case "LinearPostprocessRetainKeys" -> {
                     return this.retainLinearAggregateKeys(circuit, initial);
                 }
@@ -2365,7 +2385,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         OptimizerTopology.encode(circuit, OptimizerTopology.Details.VIEW_NAMES), initial, state);
                 case "CheckRetain", "ValidateRecursiveOperators", "NoIntegralVisitor", "CheckHints", "CompactNames", "TagRegions" ->
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
-                case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "DeadCode", "DeadCodeKeepSources", "RemoveNoops", "PushDifferentialsUp",
+                case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "DeadCode", "DeadCodeKeepSources", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveDeindexOperators", "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero", "ExpandMetadataCasts",

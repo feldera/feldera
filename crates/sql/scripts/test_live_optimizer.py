@@ -68,6 +68,15 @@ class FrozenPlacements(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Rust placements"):
             verify_placements("missing final dead-code pass", {**BASE_COUNTS, "DeadCode": 4}, False)
 
+    def test_noop_removal_runs_cleanup_after_each_java_iteration(self):
+        iterations = 3
+        counts = {**BASE_COUNTS, "RemoveNoops": iterations, "Graph": BASE_COUNTS["Graph"] + iterations,
+                  "DeadCode": BASE_COUNTS["DeadCode"] + iterations}
+        verify_placements("no-op cleanup", counts, False, noop_iterations=iterations)
+        with self.assertRaisesRegex(ValueError, "Rust placements"):
+            verify_placements("early convergence", {**counts, "DeadCode": counts["DeadCode"] - 1},
+                              False, noop_iterations=iterations)
+
     def test_fixed_point_uses_observed_java_iteration_counts(self):
         iterations = {"ExpandSafeCasts": 1, "ExpandUnsafeCasts": 3}
         counts = {**BASE_COUNTS, **iterations}

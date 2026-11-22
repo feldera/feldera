@@ -418,6 +418,7 @@ public final class CorpusDeterminism {
             result.put("unused_field_iterations", unusedFieldIterations.get());
             result.put("clock_scans", clockScans.get());
             result.put("window_sharing_enabled", !compiler.metadata.windowSharingDisabled());
+            result.put("noop_iterations", graphCleanups.getOrDefault("RemoveNoops", 0));
             result.put("linear_retention_graphs", linearRetentionGraphs.get());
             result.put("asof_retention_moves", asofMoves.get());
             result.put("temporal_filter_iterations", temporalSplits.get());
