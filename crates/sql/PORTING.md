@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `558a19a6f`, Rust built 3,869 indexed-value projections for aggregates
+and TopK, and 41 UNNEST row projections. Java agreed on all 5,689 pass
+invocations across the 1,605 frozen cases that exercised them. On
+`50e1fc438`, Rust derived narrowed closure parameter types 13,675 times.
+Java agreed on all 9,348 pass invocations across the 2,944 affected cases.
+For each build, 296 selected detached compilations matched through 133,314
+ordered observations and artifact emission.
+[Row projections](evidence/p3-project-used-fields.json) · [Narrowed parameter types](evidence/p3-compressed-parameter-types.json)
+
 When narrowing joins, Rust built 2,089 input projections across both frozen
 populations on `0a95d4f7b`. All 3,916 invocations of `RemoveUnusedFields` on
 the 825 programs that exercised the change matched Java. All 296 selected

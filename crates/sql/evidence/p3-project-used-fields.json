@@ -1,0 +1,212 @@
+{
+  "commit": "558a19a6f57c6f433eac005ec2d49169484a9361",
+  "scope": "Derive aggregate, ranked and UNNEST field projections from the input usage masks.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "4cc81142ea1caa206079e1ce75ceb8632e7cf1c1102af34fc1a99fe377658c59",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "e20e2e6e701fbb55bce1c59289c93d4e511a3c075172f85e18927cb4b13b63d9",
+    "maven/tests.jar": "69a95c22ee9e9e779366c7f6653fcc7fa270602ea02bc11d7ce65685506f3861"
+  },
+  "pass_reference": {
+    "commit": "0a95d4f7bc2717334f31587660e432deb78d4560",
+    "build_sha256": {
+      "bin/libfeldera_sql_opt_jni.so": "c1ccf55c4c3c4eb76b2a547c6341b97941c27df0bcdd41762a4922878031793c",
+      "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+      "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+      "maven/sql-compiler.jar": "495ebdadb80215d81e0b476cc1a441eecaa4e9315d1dc1890c2182ebe254598f",
+      "maven/tests.jar": "25026c190bd5af112275302f53982e52c1923861f3c2b1ebc755366c8393ac8d"
+    }
+  },
+  "engines": {
+    "classic": {
+      "frozen_sql": {
+        "programs": 8571,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "observations_sha256": "ce99030898b96f4cb6d9bd35ed88f743deba4299725c1c1dc402192bc5c517ea",
+        "native_requests": {
+          "RemoveUnusedFields/IndexedValue": {
+            "calls": 1939,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/Row": {
+            "calls": 21,
+            "fallbacks": 0
+          }
+        },
+        "cases_overriding_population_mode": []
+      },
+      "selected_pass_shards": [
+        {
+          "programs": 41,
+          "matched_invocations": 130,
+          "population_sha256": "aae7397a851be5965c7f9bc8dec6bcb27eb6da9c600ca184c7afc7b9761032e4",
+          "direct_trace_sha256": "a4cd8f3c58d1281a0782798e1d61618f0c4ff6c6dda863c98a270bc9a582468d",
+          "hybrid_trace_sha256": "c557b6d068fa4e6e62497254ec0d94e6e771a642864ef45370d178848facd604"
+        },
+        {
+          "programs": 36,
+          "matched_invocations": 111,
+          "population_sha256": "f367744be260c2faf276f9f1913c44c4983884dbcf0d37321f5b216b6662837f",
+          "direct_trace_sha256": "fb7655329dc1671e0a9fef99dd4aebe7cda7d7f6de10a905ae226350d247bcc9",
+          "hybrid_trace_sha256": "db3a517c19055a171085b2717b6e7ba39d18cf7a8c864ac0ffad467f15b576ce"
+        },
+        {
+          "programs": 34,
+          "matched_invocations": 98,
+          "population_sha256": "6cbc39d8e07099f0f2354b0ffb4420140b91f3d28eff2f034194bf1c141168b8",
+          "direct_trace_sha256": "57f259144b4cbb9e79d4a5f332a451e16c6227afda1298f646c180b31306a201",
+          "hybrid_trace_sha256": "ca8a040cb1dede96fbb6b3075914c6464963cb7b11e1ca58c1dff70be71c1420"
+        },
+        {
+          "programs": 38,
+          "matched_invocations": 123,
+          "population_sha256": "f4ea4880b049f262e54df5ee83c5caf86c1b6d6522c1046753c0f579cc55b664",
+          "direct_trace_sha256": "d0e32bd54fd523b254b4437e76d2c818b228bf5a94b2a8364f312f73ef2d8489",
+          "hybrid_trace_sha256": "8209213b9cfe56094e0ca04fc3fb4207977a6b5300f5572cd2a72c20eea239bd"
+        }
+      ],
+      "exercised_pass_shards": [
+        {
+          "programs": 193,
+          "matched_invocations": 715,
+          "population_sha256": "6e28e7ab06be7bc9ac5eb57f4198e4745049253ccce5c18c749650893992462a",
+          "direct_trace_sha256": "2b95155bfec417a759d920f13d89551beedf9a470bfb02b9e821618e86d15889",
+          "hybrid_trace_sha256": "40d007834ad910a4bfae006da7f5097d97e88bd14b61866dd49ee1e632321443"
+        },
+        {
+          "programs": 212,
+          "matched_invocations": 739,
+          "population_sha256": "b49767857bf1a60e5150e7c50952f400a88216f947c6312d6a21e2a205ee1a17",
+          "direct_trace_sha256": "e992a68856e6049b8a6e432e58d12ebaa13b19a287632a02e63ee6fd52f0028d",
+          "hybrid_trace_sha256": "241bf59b5a054072fd19b8647f808a9c407662137f81e4d3409445509ee41655"
+        },
+        {
+          "programs": 200,
+          "matched_invocations": 694,
+          "population_sha256": "3740555f93588dafa01dcd2c0cc2df2b07dfcc926145d4758e41531340d3aab9",
+          "direct_trace_sha256": "b7dd75ab24a6b2a58fba4a76bb4f6815b2b4cbead69ba9d108e22c62c38211b0",
+          "hybrid_trace_sha256": "042befe33d1397a4ac404b23aa71ea1ad91483cd167e632125e8af3ffafb09ee"
+        },
+        {
+          "programs": 200,
+          "matched_invocations": 707,
+          "population_sha256": "5c5783c4d825578a933d26725030c4cbf7289f3a0291562350b6fec085a81229",
+          "direct_trace_sha256": "9bfc7e799000d4202b6db1944b653a57c4a487623496ba83db331300f13e1d37",
+          "hybrid_trace_sha256": "a99502d316b81c3750aa31a7fcee662a42ba001cf05805ee427c24dc2fcceca4"
+        }
+      ],
+      "detached": {
+        "cases": 149,
+        "mismatches": 0,
+        "ordered_s4_observations": 66785,
+        "population_sha256": "79ea6aa0d7483a72a73e6b6b64b50ab454584310f84a7c11ee076a06a4aa791f",
+        "shard_receipts_sha256": [
+          "7048c8a1dd26e5d489edfd7109f5faaaa60a838b5bef09bcf4b3ba8ae52d5aa4",
+          "5a4ebac31163e73bcee5f5de4d337dfdb03e04bdb92619e11a289671150bb348",
+          "d34c1ee3a76d8452badc00eb525c5794b77a3bc9f265057f9a447194bf8418b1",
+          "d224a4d43d87a333fad5ffe0cbd1b6de5f8275769e9727fccd08696af656c4d6"
+        ]
+      }
+    },
+    "gen2": {
+      "frozen_sql": {
+        "programs": 8527,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "observations_sha256": "ca2a8f18c53d867f85ea9e5e2753f7af6cc2dcbae6227350b37e1bea104cf752",
+        "native_requests": {
+          "RemoveUnusedFields/IndexedValue": {
+            "calls": 1930,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/Row": {
+            "calls": 20,
+            "fallbacks": 0
+          }
+        },
+        "cases_overriding_population_mode": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+        ]
+      },
+      "selected_pass_shards": [
+        {
+          "programs": 34,
+          "matched_invocations": 101,
+          "population_sha256": "1f88d802ae437a9963c629240c09b68d3bcc87f28812b2e86886de915e767668",
+          "direct_trace_sha256": "a01946d9406477c0c455ceb752188c2d9c274725be845e9367872853e68ca4b3",
+          "hybrid_trace_sha256": "9bee68734b0c7ada867f5b60bc7cb02cdd512a90cf69ff02ff8168fdacabc520"
+        },
+        {
+          "programs": 39,
+          "matched_invocations": 131,
+          "population_sha256": "42d0429dded87ec367f09c8499d685b96963b48e40e31afc9e12ee980c59d28e",
+          "direct_trace_sha256": "dff83b43cc0d04e258e29b4536491a700ec7425421cb5cdad15dfd04d4edad4d",
+          "hybrid_trace_sha256": "c368395c0f1cd27ccf3e710a366ead9ecb001b437b8434f9aab3ee7de6a80cac"
+        },
+        {
+          "programs": 41,
+          "matched_invocations": 130,
+          "population_sha256": "d756eb196c39e285525c48ef6e04badbe84b8bfee13682466081ae9151cd81f8",
+          "direct_trace_sha256": "716f14c751b922268eb4afc8a5aab6743e3176c3f4bff107cc6e273bc77f2a31",
+          "hybrid_trace_sha256": "02cb3d9f9ae68d4a3b702deb7252e65a246ee19298335b3b48d306448c263890"
+        },
+        {
+          "programs": 33,
+          "matched_invocations": 96,
+          "population_sha256": "708f1f4c964ef6a6fa1374422ccf490b3cc5c41082503bcccbc39626fb53cccc",
+          "direct_trace_sha256": "2babb0cf53ccebf7e8fb54afa012cab9ae7e30a3c7c9aac165c5089b3a1c330d",
+          "hybrid_trace_sha256": "8dfad12570795118b9140ebf14663c4b3ccbe496d8df4c53b348298e2dc21b57"
+        }
+      ],
+      "exercised_pass_shards": [
+        {
+          "programs": 211,
+          "matched_invocations": 756,
+          "population_sha256": "25d07d5a2794138f3fdff73eedc6e7db04825940533c0bfd0a0e3980de661cc2",
+          "direct_trace_sha256": "4cf203e85cf05751398526517718754b39b295ed98c84d957f3029b6ba7710e8",
+          "hybrid_trace_sha256": "ad00ffa35f80e29c8fb34e54d73d293189ec429d688bc89bf6737086c7c36cfd"
+        },
+        {
+          "programs": 197,
+          "matched_invocations": 709,
+          "population_sha256": "b5945ac0275562451103ddcbcd155343dfe31c327a0b149a7ec1cad4a5093a79",
+          "direct_trace_sha256": "e2018135569d2f535a6e86423321e1b6f122d1cf307df435a89950102024f845",
+          "hybrid_trace_sha256": "969987664915335ffb6640ee76ea1cb0ca51104f70d4bf07078feb0764db9fbd"
+        },
+        {
+          "programs": 184,
+          "matched_invocations": 625,
+          "population_sha256": "f415f75ea3b87bf6feeaf09893b3be7aecdd8841d2f026ee8852e2fa13cbb927",
+          "direct_trace_sha256": "4fb46570fe1856245c7798f4fec378fdf5b83161fd1acea880c90681f867e338",
+          "hybrid_trace_sha256": "9616c34ce657f5874d3787a2a012ac1f687bc0d207fb5270c8d8abca0e3c6596"
+        },
+        {
+          "programs": 208,
+          "matched_invocations": 744,
+          "population_sha256": "9d1bf553cf018271bbfbec5e10ab9ea521886e9b614e928c83df3bb81b9dd0bd",
+          "direct_trace_sha256": "12b94d8479a839936856dc7350752cedc9be05f8d65ccbffdc9e23a021b9375c",
+          "hybrid_trace_sha256": "8956c00c50b76ec8ddd8df9214f07010464927d80c229ce414b932171cb0d8d0"
+        }
+      ],
+      "detached": {
+        "cases": 147,
+        "mismatches": 0,
+        "ordered_s4_observations": 66529,
+        "population_sha256": "5e6448ba14c83bd0ebd97d16c90b8c9f75d6edd261364b42dc975198a6446337",
+        "shard_receipts_sha256": [
+          "c0f98f494fd19d6817169334f5f0376a96d9199071526c7b85ba738de5381328",
+          "93bc08b8e573f23853e71e1bbd0e3c016605f396dcfa4548c8184bdd9505a52a",
+          "ca4d85fdf9460096c0c9d8a2f690d9abea056084b517b77ddd69f401ec367d0e",
+          "91e4ce89caa13420140557cec704571c73c9da3f90ffc44c103dd07ca3cc8fba"
+        ]
+      }
+    }
+  },
+  "tests": {
+    "rust": 188,
+    "clippy": "passed",
+    "maven_passed": 42,
+    "maven_skipped": 17,
+    "packaged_junit": 51
+  }
+}
