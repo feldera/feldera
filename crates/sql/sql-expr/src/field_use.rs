@@ -60,16 +60,36 @@ struct RowProjection<'a> {
     known: HashMap<NodeId, Use>,
 }
 
+/// Only these operands contribute to the result. For example, a block projects
+/// its final expression and a nested closure introduces a separate scope.
+enum ProjectionOp {
+    Parameter(usize),
+    Borrow(NodeId),
+    Deref(NodeId),
+    Select(NodeId, usize),
+    Tuple(Vec<NodeId>),
+    IsNull(NodeId),
+    Forward(NodeId),
+    Compute(Vec<NodeId>),
+}
+
+impl ProjectionOp {
+    fn operands(&self) -> &[NodeId] {
+        match self {
+            Self::Parameter(_) => &[],
+            Self::Borrow(id)
+            | Self::Deref(id)
+            | Self::Select(id, _)
+            | Self::IsNull(id)
+            | Self::Forward(id) => std::slice::from_ref(id),
+            Self::Tuple(ids) | Self::Compute(ids) => ids,
+        }
+    }
+}
+
 impl RowProjection<'_> {
-    fn value(&mut self, id: NodeId, depth: usize) -> Result<Use, Error> {
-        if depth > 128 {
-            return Err(Error::new(
-                "projection exceeds the expression nesting limit",
-            ));
-        }
-        if let Some(value) = self.known.get(&id) {
-            return Ok(value.clone());
-        }
+    fn operation(&self, id: NodeId) -> Result<ProjectionOp, Error> {
+        use ProjectionOp as Op;
         let node = self
             .circuit
             .node(id)
@@ -77,80 +97,59 @@ impl RowProjection<'_> {
         let Some(InnerKind::Expression(kind)) = node.inner_kind() else {
             return Err(Error::new("expected a projection expression"));
         };
-        let mut operand = |field| self.value(node.edge(field)?, depth + 1);
-        let result = match kind {
+        let compute = |names: &[&str]| {
+            let mut children = Vec::new();
+            for name in names {
+                if let Some(field) = node.field(name) {
+                    field.collect_inner_edges(&mut children);
+                }
+            }
+            Op::Compute(children)
+        };
+        Ok(match kind {
             Expr::VariablePath => {
                 let parameter = node
                     .data("variable")
                     .and_then(|name| name.as_str())
                     .and_then(|name| self.parameters.get(name))
-                    .copied()
                     .ok_or_else(|| Error::new("unbound variable in an input projection"))?;
-                self.shapes[parameter].binding(parameter, &mut self.members)
+                Op::Parameter(*parameter)
             }
-            Expr::Borrow => match operand("expression")? {
-                Use::Field(path) => Use::Borrowed(path),
-                other => other,
-            },
-            Expr::Deref => match operand("expression")? {
-                Use::Borrowed(path) => Use::Field(path),
-                other => other,
-            },
+            Expr::Borrow => Op::Borrow(node.edge("expression")?),
+            Expr::Deref => Op::Deref(node.edge("expression")?),
             Expr::Field | Expr::CustomOrdField => {
                 let index = node
                     .data("fieldNo")
                     .and_then(|n| n.as_u64())
                     .and_then(|n| usize::try_from(n).ok())
                     .ok_or_else(|| Error::new("invalid projection field index"))?;
-                match operand("expression")? {
-                    Use::Field(mut path) => {
-                        path.indices.push(index);
-                        Use::Field(path)
-                    }
-                    Use::Tuple(fields) => fields
-                        .get(index)
-                        .map(|&id| self.members[id].clone())
-                        .ok_or_else(|| Error::new("projection exceeds tuple width"))?,
-                    other => other,
-                }
+                Op::Select(node.edge("expression")?, index)
             }
             Expr::Tuple | Expr::RawTuple if node.field("fields").is_some() => {
-                let mut fields = Vec::new();
-                for child in node.edges("fields")? {
-                    let value = self.value(child, depth + 1)?;
-                    fields.push(self.members.insert_full(value).0);
-                }
-                Use::Tuple(fields)
+                Op::Tuple(node.edges("fields")?)
             }
-            Expr::IsNull => match operand("expression")? {
-                // Checking the presence of the entire row does not read its columns.
-                Use::Field(path) if self.shapes[path.parameter].is_row_null_test(&path.indices) => {
-                    Use::Computed(BTreeSet::new())
-                }
-                other => other,
-            },
+            Expr::IsNull => Op::IsNull(node.edge("expression")?),
             Expr::Cast | Expr::Unary | Expr::UnsignedUnwrap | Expr::UnsignedWrap => {
-                operand("source")?
+                Op::Forward(node.edge("source")?)
             }
-            Expr::Unwrap | Expr::Some | Expr::Clone => operand("expression")?,
+            Expr::Unwrap | Expr::Some | Expr::Clone => Op::Forward(node.edge("expression")?),
             Expr::Variant if node.field("value").and_then(Field::node_id).is_some() => {
-                operand("value")?
+                Op::Forward(node.edge("value")?)
             }
-            Expr::WindowBound => operand("representation")?,
-            Expr::Block if node.field("lastExpression").is_some() => operand("lastExpression")?,
-            Expr::Apply => self.dependencies(node, &["arguments"], depth)?,
-            Expr::ApplyMethod => self.dependencies(node, &["self", "arguments"], depth)?,
-            Expr::Constructor => self.dependencies(node, &["function", "arguments"], depth)?,
+            Expr::WindowBound => Op::Forward(node.edge("representation")?),
+            Expr::Block if node.field("lastExpression").is_some() => {
+                Op::Forward(node.edge("lastExpression")?)
+            }
+            Expr::Apply => compute(&["arguments"]),
+            Expr::ApplyMethod => compute(&["self", "arguments"]),
+            Expr::Constructor => compute(&["function", "arguments"]),
             Expr::Binary | Expr::TimeAddSub | Expr::GeoPointConstructor => {
-                self.dependencies(node, &["left", "right"], depth)?
+                compute(&["left", "right"])
             }
-            Expr::ConditionalIncrement => {
-                self.dependencies(node, &["condition", "left", "right"], depth)?
-            }
-            Expr::If => self.dependencies(node, &["condition", "positive", "negative"], depth)?,
-            Expr::Map => self.dependencies(node, &["keys", "values"], depth)?,
-            Expr::Array => self.dependencies(node, &["data"], depth)?,
-            // A nested closure is a pure function value. Its parameters have their own scope.
+            Expr::ConditionalIncrement => compute(&["condition", "left", "right"]),
+            Expr::If => compute(&["condition", "positive", "negative"]),
+            Expr::Map => compute(&["keys", "values"]),
+            Expr::Array => compute(&["data"]),
             Expr::Closure
             | Expr::Static
             | Expr::Path
@@ -164,39 +163,97 @@ impl RowProjection<'_> {
             | Expr::DirectComparator
             | Expr::EqualityComparator
             | Expr::FieldComparator
-            | Expr::NoComparator => Use::Computed(BTreeSet::new()),
-            kind if kind.wire_name().ends_with("Literal") => Use::Computed(BTreeSet::new()),
+            | Expr::NoComparator => Op::Compute(vec![]),
+            kind if kind.wire_name().ends_with("Literal") => Op::Compute(vec![]),
             _ => {
                 return Err(Error::new(format!(
                     "unsupported input projection expression {}",
                     node.class()
                 )));
             }
-        };
-        self.known.insert(id, result.clone());
-        Ok(result)
+        })
     }
 
-    fn dependencies(&mut self, node: &Node, fields: &[&str], depth: usize) -> Result<Use, Error> {
-        let mut children = Vec::new();
-        for &name in fields {
-            if let Some(field) = node.field(name) {
-                field.collect_inner_edges(&mut children);
-            }
+    /// Evaluate shared operands once in dependency order, including expressions
+    /// that span several batches of IR definitions.
+    fn value(&mut self, root: NodeId) -> Result<Use, Error> {
+        if let Some(value) = self.known.get(&root) {
+            return Ok(value.clone());
         }
-        // FindUsedFields compares symbolic values at assignments. A computed
-        // tuple and its individual fields can read the same paths but compare
-        // differently. Preserve tuple and borrow structure until the final readout.
-        let mut uses = BTreeSet::new();
-        for child in children {
-            match self.value(child, depth + 1)? {
-                Use::Computed(fields) => uses.extend(fields),
-                value => {
-                    uses.insert(self.members.insert_full(value).0);
+        let mut pending = vec![(root, self.operation(root)?, 0)];
+        let mut active = HashSet::from([root]);
+        while let Some((_, op, next)) = pending.last_mut() {
+            if let Some(&child) = op.operands().get(*next) {
+                *next += 1;
+                if !self.known.contains_key(&child) {
+                    if !active.insert(child) {
+                        return Err(Error::new("cycle in field-use expression"));
+                    }
+                    pending.push((child, self.operation(child)?, 0));
                 }
+            } else {
+                let (id, op, _) = pending.pop().expect("current operation");
+                let value = self.apply(op)?;
+                self.known.insert(id, value);
+                active.remove(&id);
             }
         }
-        Ok(Use::Computed(uses))
+        Ok(self.known[&root].clone())
+    }
+
+    fn apply(&mut self, op: ProjectionOp) -> Result<Use, Error> {
+        use ProjectionOp as Op;
+        Ok(match op {
+            Op::Parameter(parameter) => {
+                self.shapes[parameter].binding(parameter, &mut self.members)
+            }
+            Op::Borrow(id) => match self.known[&id].clone() {
+                Use::Field(path) => Use::Borrowed(path),
+                other => other,
+            },
+            Op::Deref(id) => match self.known[&id].clone() {
+                Use::Borrowed(path) => Use::Field(path),
+                other => other,
+            },
+            Op::Select(id, index) => match self.known[&id].clone() {
+                Use::Field(mut path) => {
+                    path.indices.push(index);
+                    Use::Field(path)
+                }
+                Use::Tuple(fields) => fields
+                    .get(index)
+                    .map(|&id| self.members[id].clone())
+                    .ok_or_else(|| Error::new("projection exceeds tuple width"))?,
+                other => other,
+            },
+            Op::IsNull(id) => match self.known[&id].clone() {
+                Use::Field(path) if self.shapes[path.parameter].is_row_null_test(&path.indices) => {
+                    Use::Computed(BTreeSet::new())
+                }
+                other => other,
+            },
+            Op::Forward(id) => self.known[&id].clone(),
+            Op::Tuple(fields) => Use::Tuple(
+                fields
+                    .into_iter()
+                    .map(|id| self.members.insert_full(self.known[&id].clone()).0)
+                    .collect(),
+            ),
+            Op::Compute(children) => {
+                // Assignment checks compare symbolic values. A tuple and its
+                // fields can read the same paths but compare differently.
+                let mut uses = BTreeSet::new();
+                for child in children {
+                    match &self.known[&child] {
+                        Use::Computed(fields) => uses.extend(fields),
+                        value => {
+                            uses.insert(self.members.insert_full(value.clone()).0);
+                        }
+                    }
+                }
+                Use::Computed(uses)
+            }
+        })
     }
 }
 
@@ -219,7 +276,7 @@ pub fn parameter_field_paths(
     closure: NodeId,
 ) -> Result<Vec<BTreeSet<Vec<usize>>>, Error> {
     let (mut analysis, body) = RowProjection::for_closure(circuit, closure)?;
-    let value = analysis.value(body, 0)?;
+    let value = analysis.value(body)?;
     Ok(analysis.paths(value))
 }
 
@@ -256,9 +313,21 @@ pub fn live_parameter_field_paths(
                     return Ok(None);
                 }
             }
-            if analysis.value(id, 0).is_err() {
+            let op = match analysis.operation(id) {
+                Ok(op)
+                    if op
+                        .operands()
+                        .iter()
+                        .all(|id| analysis.known.contains_key(id)) =>
+                {
+                    op
+                }
+                _ => return Ok(None),
+            };
+            let Ok(value) = analysis.apply(op) else {
                 return Ok(None);
-            }
+            };
+            analysis.known.insert(id, value);
             active.remove(&id);
             continue;
         }
@@ -407,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn live_field_reads_follow_deep_scalar_expressions() -> Result<(), Error> {
+    fn field_reads_follow_deep_scalar_expressions() -> Result<(), Error> {
         let circuit = Circuit::from_json(json!({
             "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
         }))?;
@@ -431,6 +500,10 @@ mod tests {
             )?;
         }
         let closure = edit.closure_from_variables(read, &[input])?;
+        assert_eq!(
+            input_field_paths(edit.circuit(), closure.into())?,
+            BTreeSet::from([vec![1]])
+        );
         assert_eq!(
             live_parameter_field_paths(edit.circuit(), closure.into())?,
             Some(vec![BTreeSet::from([vec![1]])])
