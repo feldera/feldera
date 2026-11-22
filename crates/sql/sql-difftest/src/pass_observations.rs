@@ -9,6 +9,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+mod window_groups;
+
 struct Records<'a> {
     path: &'a Path,
     input: BufReader<File>,
@@ -297,6 +299,10 @@ fn compare_invocation(
     if pass == "Scan" {
         left.attach_chosen_conjuncts()?;
         right.attach_chosen_conjuncts()?;
+    }
+    if pass == "FindWindowGroups" {
+        window_groups::attach(&mut left)?;
+        window_groups::attach(&mut right)?;
     }
     left.attach_aggregate_state()?;
     right.attach_aggregate_state()?;

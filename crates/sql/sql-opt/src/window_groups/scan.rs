@@ -1,12 +1,10 @@
 //! Select shared temporal windows by tracing their keys to a common input.
-use super::key::{same_row_spelling, TimestampKey};
+use super::key::{row_parameter, same_row_spelling, TimestampKey};
 use super::source::{compose_timestamp, filter_sources, TemporalFilterSource};
 use super::temporal::{shared_temporal_inputs, TemporalCandidate};
 use crate::conjunct_windows;
 use feldera_sql_expr::ensure_expression_tree;
-use feldera_sql_ir::{
-    Circuit, CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId, TypeKind,
-};
+use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
 use std::collections::HashMap;
 
 pub enum TemporalScan {
@@ -99,20 +97,7 @@ fn source_key(
         parameter = input;
         key = edit.expression(closure.edge("body")?)?;
     }
-    let parameter = edit.node(parameter)?;
-    let reference = edit.type_id(parameter.edge("type")?)?;
-    let ty = edit.node(reference.into())?;
-    if edit.type_kind(reference)? != TypeKind::Ref
-        || edit.nullable(reference)?
-        || ty.data("mutable").and_then(|v| v.as_bool()) != Some(false)
-    {
-        return Ok(None);
-    }
-    let name = parameter
-        .data("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::new("missing timestamp parameter name"))?;
-    let input = edit.type_id(ty.edge("type")?)?;
+    let (input, name) = row_parameter(edit, parameter)?;
     Ok(TimestampKey::read(edit, key, name)?.map(|key| (input, key)))
 }
 

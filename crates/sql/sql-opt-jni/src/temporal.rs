@@ -6,6 +6,13 @@ use feldera_sql_opt::limiters::{Stream, StreamKind};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
+/// Java warns about negative settings but retains the signed value. Its
+/// nonempty sharing groups then all meet the threshold. Zero disables sharing.
+pub(super) fn sharing_threshold(state: &[u8]) -> Result<usize, serde_json::Error> {
+    let threshold = serde_json::from_slice::<i32>(state)?;
+    Ok(usize::try_from(threshold).unwrap_or(1))
+}
+
 pub(super) fn source_paths(paths: Vec<feldera_sql_opt::TemporalFilterSource>) -> Value {
     Value::Array(
         paths

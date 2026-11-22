@@ -2420,10 +2420,17 @@ public final class RustCircuitPass implements CircuitTransform {
         if (windows.isEmpty() || this.compiler.metadata.windowSharingDisabled())
             return;
         var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, payloads, OptimizerTopology.Details.NONE);
-        var candidates = this.invoke("FindWindowGroups", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
-                next, EMPTY_CONTEXT);
+        var reply = this.invoke("WindowGroups/Indexes", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
+                next, MAPPER.writeValueAsBytes(this.compiler.metadata.windowSharingThreshold()));
+        var plans = reply.get("plans");
+        if (this.compiler.stateObserver != null)
+            this.compiler.stateObserver.nativeDecision("WindowGroups/Indexes", plans != null);
+        if (plans != null) {
+            NativeWindowGroups.installPlans(analysis, windows, MAPPER.convertValue(plans, new TypeReference<>() {}));
+            return;
+        }
         var selected = new ArrayList<DBSPWindowOperator>();
-        for (long id : MAPPER.treeToValue(candidates, long[].class))
+        for (long id : MAPPER.treeToValue(reply.required("candidates"), long[].class))
             selected.add(Objects.requireNonNull(windows.get(id), "Rust returned an unknown window"));
         if (selected.isEmpty())
             return;

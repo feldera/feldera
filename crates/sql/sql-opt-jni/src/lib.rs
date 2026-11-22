@@ -1016,7 +1016,7 @@ fn transform(
         }
         "WindowGroups/Keys" => {
             let inputs: Vec<String> = serde_json::from_slice(input)?;
-            let threshold: usize = serde_json::from_slice(state)?;
+            let threshold = temporal::sharing_threshold(state)?;
             return Ok(json!(feldera_sql_opt::qualifying_window_groups(
                 &inputs, threshold
             )));
@@ -1030,7 +1030,7 @@ fn transform(
         "WindowGroups/TemporalInputs" => {
             let filters: Vec<Vec<feldera_sql_opt::TemporalCandidate>> =
                 serde_json::from_slice(input)?;
-            let threshold = serde_json::from_slice(state)?;
+            let threshold = temporal::sharing_threshold(state)?;
             return Ok(json!(feldera_sql_opt::shared_temporal_inputs(
                 &filters, threshold
             )));
@@ -1220,10 +1220,18 @@ fn transform(
         return Ok(json!(operator_numbers(streams)));
     }
     if pass == "WindowGroups/Scan" {
-        return temporal::scan(circuit, serde_json::from_slice(state)?);
+        return temporal::scan(circuit, temporal::sharing_threshold(state)?);
     }
     if pass == "WindowGroups/FilterSources" {
         return Ok(temporal::source_paths(feldera_sql_opt::temporal_filter_sources(circuit)?));
+    }
+    if pass == "WindowGroups/Indexes" {
+        use feldera_sql_opt::IndexedWindows;
+        let threshold = temporal::sharing_threshold(state)?;
+        return Ok(match feldera_sql_opt::indexed_window_groups(circuit, threshold)? {
+            IndexedWindows::Groups(plans) => json!({"plans": plans}),
+            IndexedWindows::Candidates(windows) => json!({"candidates": operator_numbers(windows)}),
+        });
     }
     if pass == "FindWindowGroups" {
         let candidates = feldera_sql_opt::window_candidates(&circuit)?;

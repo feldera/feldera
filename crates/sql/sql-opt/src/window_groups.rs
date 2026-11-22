@@ -1,23 +1,25 @@
-//! Select bounded windows that can use the same indexed input. Java supplies
-//! canonical closure text while it owns the expression printer.
+//! Select bounded windows that can use the same indexed input.
 mod implement;
+mod indexed;
 mod key;
 mod reorder;
 mod scan;
 mod source;
 mod temporal;
-pub use source::{compose_timestamp, temporal_filter_sources, TemporalFilterSource};
-pub use scan::{scan_temporal_windows, TemporalScan};
-pub use reorder::{reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate, TemporalOrder};
 use feldera_sql_ir::{
     BodyOrder, Circuit, Error, ExpressionKind as Expr, Field, InnerKind, NodeId, OperatorKind,
 };
 pub use implement::{implement_window_groups, WindowProjection};
-pub use temporal::{
-    shared_temporal_inputs, TemporalBound, TemporalCandidate,
+pub use indexed::{indexed_window_groups, IndexedWindows};
+pub use reorder::{
+    reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate, TemporalOrder,
 };
+pub use scan::{scan_temporal_windows, TemporalScan};
+pub use source::{compose_timestamp, temporal_filter_sources, TemporalFilterSource};
+pub use temporal::{shared_temporal_inputs, TemporalBound, TemporalCandidate};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::hash::Hash;
 
 /// The left input must index a stream by a key and a tuple of projected values.
 pub fn window_candidates(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
@@ -85,7 +87,7 @@ pub fn window_candidates(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
 
 /// The key includes the upstream output port and canonical timestamp closure.
 /// Both group order and member order follow the first use in circuit order.
-pub fn qualifying_window_groups(inputs: &[String], threshold: usize) -> Vec<Vec<usize>> {
+pub fn qualifying_window_groups<K: Eq + Hash>(inputs: &[K], threshold: usize) -> Vec<Vec<usize>> {
     if threshold == 0 {
         return Vec::new();
     }
@@ -111,7 +113,7 @@ pub struct WindowFields {
 }
 
 /// Deduplicate field computations only within one qualifying group.
-pub fn shared_window_fields(members: &[Vec<String>]) -> WindowFields {
+pub fn shared_window_fields<K: Eq + Hash>(members: &[Vec<K>]) -> WindowFields {
     let mut columns = HashMap::new();
     let mut sources = Vec::new();
     let projections = members
@@ -149,9 +151,9 @@ mod tests {
         );
         assert!(qualifying_window_groups(&inputs, 0).is_empty());
         let fields = [
-            vec!["y".into(), "x".into(), "y".into()],
+            vec!["y", "x", "y"],
             vec![],
-            vec!["z".into(), "x".into()],
+            vec!["z", "x"],
         ];
         assert_eq!(
             shared_window_fields(&fields),

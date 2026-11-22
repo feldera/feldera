@@ -1,4 +1,5 @@
 //! Build one index per selected window group and restore each window's original row shape.
+use super::indexed::WindowIndex;
 use crate::{rebuild::rebuild_input_closures, stream_rewrites::body_members};
 use feldera_sql_expr::reduce_closure_body;
 use feldera_sql_ir::{
@@ -23,50 +24,6 @@ fn output(operator: NodeId) -> OutputPort {
     OutputPort {
         operator,
         number: 0,
-    }
-}
-
-struct WindowIndex {
-    source: OutputPort,
-    parameter: NodeId,
-    key: NodeId,
-    fields: Vec<NodeId>,
-}
-
-impl WindowIndex {
-    fn read(edit: &CircuitEditor, window: NodeId) -> Result<Self, Error> {
-        let window = edit.node(window)?;
-        if window.operator_kind() != Some(OperatorKind::Window) {
-            return Err(Error::new("window group contains a non-window operator"));
-        }
-        let left = window
-            .inputs()
-            .next()
-            .ok_or_else(|| Error::new("window has no left input"))?;
-        let index = edit.node(left.operator)?;
-        if index.operator_kind() != Some(OperatorKind::MapIndex) {
-            return Err(Error::new("shared window requires an indexed projection"));
-        }
-        let source = index
-            .inputs()
-            .next()
-            .ok_or_else(|| Error::new("missing window index input"))?;
-        let closure = edit.node(index.edge("function")?)?;
-        let [parameter] = closure
-            .edges("parameters")?
-            .try_into()
-            .map_err(|_| Error::new("window index requires one parameter"))?;
-        let [key, value] = edit
-            .node(closure.edge("body")?)?
-            .edges("fields")?
-            .try_into()
-            .map_err(|_| Error::new("window index requires a key and a value"))?;
-        Ok(Self {
-            source,
-            parameter,
-            key,
-            fields: edit.node(value)?.edges("fields")?,
-        })
     }
 }
 

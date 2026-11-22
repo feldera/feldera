@@ -25,15 +25,19 @@ fn check_window_groups(circuit: &Circuit, invocation: &Value) -> Result<(), Box<
     {
         return Err("window candidates differ from Java".into());
     }
-    let threshold = serde_json::from_value(invocation["threshold"].clone())?;
+    let signed_threshold: i32 = serde_json::from_value(invocation["threshold"].clone())?;
+    let threshold = usize::try_from(signed_threshold).unwrap_or(1);
     let keys = candidates.iter().map(|c| c.key.clone()).collect::<Vec<_>>();
     let mut groups = Vec::new();
+    let mut plans = Vec::new();
     for group in feldera_sql_opt::qualifying_window_groups(&keys, threshold) {
         let fields = group
             .iter()
             .map(|&i| candidates[i].fields.clone())
             .collect::<Vec<_>>();
         let plan = feldera_sql_opt::shared_window_fields(&fields);
+        let windows: Vec<_> = group.iter().map(|&index| candidates[index].window).collect();
+        plans.push(json!({ "windows": windows, "fields": plan }));
         let expressions = plan
             .sources
             .iter()
@@ -45,6 +49,13 @@ fn check_window_groups(circuit: &Circuit, invocation: &Value) -> Result<(), Box<
             .map(|(&i, fields)| json!({"window":candidates[i].window,"fields":fields}))
             .collect::<Vec<_>>();
         groups.push(json!({"expressions":expressions,"members":members}));
+    }
+    if let feldera_sql_opt::IndexedWindows::Groups(native) =
+        feldera_sql_opt::indexed_window_groups(circuit.clone(), threshold)?
+    {
+        if serde_json::to_value(native)? != json!(plans) {
+            return Err("native index selection differs from the canonical closure fingerprints".into());
+        }
     }
     if json!(groups) != invocation["window_groups"] {
         return Err("shared window fields or member order differ from Java".into());

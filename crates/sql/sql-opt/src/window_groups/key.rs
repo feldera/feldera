@@ -1,7 +1,6 @@
 //! Compare the canonical spelling of a projection over one bound row. The Java
 //! window pass uses printed closures, so cast safety and call result types do
 //! not distinguish keys, while operand nullability in a binary expression does.
-use crate::window_projection::key_column;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId, TypeId,
     TypeKind as Ty,
@@ -9,13 +8,12 @@ use feldera_sql_ir::{
 use std::collections::HashSet;
 
 #[derive(Eq, Hash, PartialEq)]
-pub(super) struct TimestampKey {
-    column: usize,
-    steps: Vec<Step>,
-}
+pub(super) struct TimestampKey(Vec<Step>);
 
 #[derive(Eq, Hash, PartialEq)]
 enum Step {
+    Field(u64),
+    Deref,
     Clone,
     Call(String),
     Cast(String),
@@ -33,13 +31,24 @@ impl TimestampKey {
         parameter: &str,
     ) -> Result<Option<Self>, Error> {
         let mut steps = Vec::new();
+        let mut visited = HashSet::new();
         loop {
+            if !visited.insert(expression) {
+                return Err(Error::new("cycle in a window key expression"));
+            }
             let node = edit.node(expression.into())?;
             let (step, child) = match edit.expr_kind(expression)? {
-                Expr::Field => {
-                    return Ok(key_column(edit, expression, parameter)?
-                        .map(|column| Self { column, steps }))
+                Expr::VariablePath => {
+                    return Ok((string(node, "variable") == Some(parameter)).then_some(Self(steps)))
                 }
+                Expr::Field => {
+                    let column = node
+                        .data("fieldNo")
+                        .and_then(|v| v.as_u64())
+                        .ok_or_else(|| Error::new("invalid window key column"))?;
+                    (Step::Field(column), node.edge("expression")?)
+                }
+                Expr::Deref => (Step::Deref, node.edge("expression")?),
                 Expr::Clone => (Step::Clone, node.edge("expression")?),
                 Expr::Cast => {
                     let Some(target) = cast_spelling(edit, edit.expression_type(expression)?)?
@@ -105,10 +114,26 @@ fn string<'a>(node: &'a Node, field: &str) -> Option<&'a str> {
     node.data(field)?.as_str()
 }
 
-/// These casts can occur between a VARIANT lookup and a timestamp conversion.
+/// Canonical closures rename the parameter and print its type, including
+/// both references in the (key, value) parameter of an indexed map.
+pub(super) fn row_parameter(
+    edit: &CircuitEditor,
+    parameter: NodeId,
+) -> Result<(TypeId, &str), Error> {
+    let parameter = edit.node(parameter)?;
+    let ty = edit.type_id(parameter.edge("type")?)?;
+    let name = parameter
+        .data("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Error::new("missing timestamp parameter name"))?;
+    Ok((ty, name))
+}
+
+/// Match the Java debug printer used for temporal keys.
 fn cast_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Error> {
     let node = edit.node(ty.into())?;
     let mut text = match edit.type_kind(ty)? {
+        Ty::Date => "Date".to_owned(),
         Ty::Timestamp => "Timestamp".to_owned(),
         Ty::TimestampTz => "TimestampTz".to_owned(),
         Ty::String => {
@@ -140,6 +165,9 @@ pub(super) fn same_row_spelling(
     left: TypeId,
     right: TypeId,
 ) -> Result<bool, Error> {
+    if left == right {
+        return Ok(true);
+    }
     let mut pending = vec![(left, right)];
     let mut compared = HashSet::new();
     while let Some((left, right)) = pending.pop() {
@@ -151,6 +179,17 @@ pub(super) fn same_row_spelling(
             return Ok(false);
         }
         match kind {
+            Ty::Ref => {
+                let a = edit.node(left.into())?;
+                let b = edit.node(right.into())?;
+                if a.data("mutable") != b.data("mutable") {
+                    return Ok(false);
+                }
+                pending.push((
+                    edit.type_id(a.edge("type")?)?,
+                    edit.type_id(b.edge("type")?)?,
+                ));
+            }
             Ty::Tuple | Ty::RawTuple => {
                 let a = edit.node(left.into())?.edges("tupFields")?;
                 let b = edit.node(right.into())?.edges("tupFields")?;

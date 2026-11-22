@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.WindowInputStats;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
@@ -35,6 +36,30 @@ import org.junit.Test;
 import java.util.List;
 
 public class TemporalKeyTests {
+    @Test
+    public void negativeSharingThresholdPreservesTheWarningAndSharedIndex() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        for (boolean nativePasses : List.of(false, true)) {
+            var options = new CompilerOptions();
+            options.ioOptions.rustOptimizerPasses = nativePasses;
+            options.languageOptions.incrementalize = true;
+            var compiler = new DBSPCompiler(options);
+            compiler.submitStatementsForCompilation("""
+                    SET feldera_window_sharing_threshold = -1;
+                    CREATE TABLE t (a INT, b INT, ts TIMESTAMP);
+                    CREATE VIEW v1 AS SELECT a FROM t WHERE ts >= NOW() - INTERVAL 1 HOUR AND b > 2;
+                    CREATE VIEW v2 AS SELECT b FROM t WHERE ts >= NOW() - INTERVAL 2 HOURS AND a < 9;
+                    """);
+            var circuit = compiler.getFinalCircuit(false);
+            Assert.assertNotNull(compiler.messages.toString(), circuit);
+            Assert.assertTrue(compiler.messages.toString(), compiler.messages.toString().contains("Invalid setting"));
+            var windows = new WindowInputStats(compiler);
+            windows.apply(circuit);
+            Assert.assertEquals(2, windows.leftInputIds.size());
+            Assert.assertEquals(1, windows.distinctInputCount());
+        }
+    }
+
     @Test
     public void windowSharingFindsBoundsAfterAResidualAndRetainsTheOriginalKeys() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));

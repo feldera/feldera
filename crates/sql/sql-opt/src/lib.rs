@@ -179,9 +179,11 @@ mod waterline;
 mod window_groups;
 
 pub use window_groups::{
-    implement_window_groups, qualifying_window_groups, shared_temporal_inputs, shared_window_fields,
-    reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate, TemporalOrder, compose_timestamp, temporal_filter_sources, TemporalFilterSource, scan_temporal_windows, TemporalScan, window_candidates, TemporalBound, TemporalCandidate,
-    WindowFields, WindowProjection,
+    compose_timestamp, implement_window_groups, indexed_window_groups, qualifying_window_groups,
+    reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate,
+    scan_temporal_windows, shared_temporal_inputs, shared_window_fields, temporal_filter_sources,
+    window_candidates, IndexedWindows, TemporalBound, TemporalCandidate, TemporalFilterSource,
+    TemporalOrder, TemporalScan, WindowFields, WindowProjection,
 };
 
 pub use aggregate_groups::{aggregate_groups, AggregateKind};

@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.SharedIndexOrac
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.FindWindowGroups;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ShareWindowIntegrals;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ImplementWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.WindowGroupOracle;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -177,6 +178,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
                 && Boolean.getBoolean("feldera.optimizer.compareRustTrimFilters")) {
             this.replaceObservedPass(steps);
         }
+        if (pass instanceof ShareWindowIntegrals sharing && this.passClass.equals("FindWindowGroups")
+                && Boolean.getBoolean("feldera.optimizer.compareRustWindowGroups"))
+            this.replaceObservedPass(sharing);
         if (pass instanceof Passes group
                 && ((group instanceof ReorderTemporalFilters && (this.passClass.equals("Scan") || this.passClass.equals("Reorder")))
                     || (group instanceof ImplementNow && this.passClass.equals("MergeFilters")))
