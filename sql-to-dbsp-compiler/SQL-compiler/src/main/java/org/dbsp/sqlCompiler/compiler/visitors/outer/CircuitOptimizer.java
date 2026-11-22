@@ -202,11 +202,11 @@ public class CircuitOptimizer extends Passes {
         }
     }
 
-    /** Add a pass created ny {@code create} preceded by {@link MultisetAnalysis}. */
-    void addWithMultisets(Function<MultisetAnalysis, CircuitTransform> create) {
+    /** Build a pass preceded by {@link MultisetAnalysis}. */
+    private CircuitTransform withMultisets(Function<MultisetAnalysis, CircuitTransform> create) {
         MultisetAnalysis multisets = new MultisetAnalysis(this.compiler);
         CircuitTransform pass = create.apply(multisets);
-        this.add(new Passes(pass.getName(), this.compiler, this.selectImplementation(multisets), this.selectImplementation(pass)));
+        return new Passes(pass.getName(), this.compiler, this.selectImplementation(multisets), this.selectImplementation(pass));
     }
 
     static class StopOnError extends CircuitVisitor {
@@ -223,140 +223,108 @@ public class CircuitOptimizer extends Passes {
     }
 
     void createOptimizer() {
+        var options = this.compiler.options.languageOptions;
+        var order = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.optimizerOrder(options.outputsAreSets, options.incrementalize)
+                : OptimizerStep.referenceOrder(options.outputsAreSets, options.incrementalize);
+        var operatorsAnalyzed = new AnalyzedSet<DBSPOperator>();
+        for (var step : order)
+            this.add(this.createPass(step, operatorsAnalyzed));
+    }
+
+    private CircuitTransform createPass(OptimizerStep step, AnalyzedSet<DBSPOperator> operatorsAnalyzed) {
         CompilerOptions options = this.compiler.options;
-        // Example dumping circuit to a png file
-        // this.dump(3);
-        // First part of optimizations may still synthesize some circuit components
-        this.add(new UDFInliner(compiler).getCircuitRewriter(false));
-        // Runs before ImplementNow so temporal filters compare fields instead of
-        // expensive computations, which makes them implementable as windows
-        this.add(new DecomposeExpensiveFilters(compiler));
-        this.add(new ImplementNow(compiler, this::selectImplementation));
-        this.add(new Conditional(compiler, new Lineage(compiler, true), () -> compiler.options.ioOptions.correlatedColumns));
-        this.add(new DeterministicFunctions(compiler));
-        this.add(new NoConnectorMetadata(compiler).getCircuitVisitor(true));
-        this.add(new StopOnError(compiler));
-        this.add(new RecursiveComponents(compiler, this::selectImplementation));
-        this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable));
-        if (options.languageOptions.outputsAreSets)
-            this.addWithMultisets(multisets -> new EnsureDistinctOutputs(compiler, multisets));
-        this.addWithMultisets(multisets -> new PropagateConstants(compiler, multisets));
-        this.add(new PropagateEmptySources(compiler));
-        this.add(new MergeSums(compiler));
-        this.add(new Conditional(compiler, new CreateStarJoins(compiler, this::selectImplementation), () -> !this.compiler.metadata.noStarJoins()));
-        this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
-        AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
-        this.add(new OptimizeWithGraph(compiler,
-                g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed), 1));
-        this.add(new FuseExpensiveMaps(compiler));
-        this.add(new RemoveViewOperators(compiler, false));
-        this.add(new LeftJoinChains(compiler));
-        this.add(new UnusedFields(compiler, this::selectImplementation));
-        this.add(new RemoveUselessLeftJoins(compiler));
-        this.add(new CSE(compiler));
-        // First invocation, fuses aggregates and maps
-        this.add(new FuseIntoArrayAgg(compiler));
-        this.add(new ExpandAggregates(compiler, compiler.weightVar));
-        this.add(new ExpandAggregateZero(compiler));
-        this.add(new Conditional(compiler, new RemoveStarJoins(compiler), this.compiler.metadata::noStarJoins));
-        this.add(new DeadCode(compiler, true));
-        this.add(new PropagateEmptySources(compiler));
-        this.addWithMultisets(multisets -> new OptimizeDistinctVisitor(compiler, multisets));
-        // This is useful even without incrementalization if we have recursion
-        this.add(new OptimizeIncrementalVisitor(compiler));
-        this.add(new DeadCode(compiler, true));
-        if (options.languageOptions.incrementalize) {
-            this.add(new IncrementalizeVisitor(compiler));
-        }
-        this.add(new OptimizeIncrementalVisitor(compiler));
-        this.add(new RemoveIAfterD(compiler));
-        this.add(new DeadCode(compiler, true));
-        this.add(new Simplify(compiler).circuitRewriter(true));
-        this.add(new RemoveConstantFilters(compiler));
-        // RemoveConstantFilters has just turned constant-false filters into empty constants
-        this.add(new PropagateEmptySources(compiler));
-        this.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
-        this.add(new OptimizeWithGraph(compiler, g -> new PullFilterVisitor(compiler, g)));
-        this.add(new OptimizeWithGraph(compiler,
-                g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed)));
-        this.add(new ShareIndexes(compiler));
-        // Windows share an input only if the operators computing it are shared.  For the filters
-        // that ImplementNow generates this happens once the projections above them have been
-        // fused, which is after the CSE earlier in this pipeline.
-        this.add(new CSE(compiler));
-        this.add(new ShareWindowIntegrals(compiler));
-        // Combining Joins with subsequent filters can improve the precision of the monotonicity analysis
-        this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
-        // Runs before MonotoneAnalyzer, whose SeparateIntegrators gives the join its own integral
-        // wherever garbage collection needs it
-        this.add(new ShareOutputIntegrators(compiler));
-        this.add(new MonotoneAnalyzer(compiler, this::selectImplementation));
-        // Can remove this table after the monotone analysis only
-        this.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
-        // The circuit is complete here, start optimizing for real.
-
-        this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
-        this.add(new LinearPostprocessRetainKeys(compiler));
-        this.add(new ExpandIndexedInputs(compiler));
-        // Needs the GC operators of MonotoneAnalyzer and the primary-key indexes of ExpandIndexedInputs
-        this.add(new FindUnboundedState(compiler));
-        this.add(new Conditional(compiler, new InsertWeightValidation(compiler),
-                this.compiler.metadata::enforcePositiveInputs));
-        this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
-        this.add(new DeadCode(compiler, true));
-        this.add(new Simplify(compiler).circuitRewriter(true));
-        if (options.languageOptions.incrementalize) {
-            this.add(new NoIntegralVisitor(compiler));
-        }
-        this.add(new ExpandHop(compiler));
-        this.add(new RemoveDeindexOperators(compiler));
-        this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
-        this.add(new RemoveIdentityOperators(compiler));
-        this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
-        this.add(new OptimizeWithGraph(compiler,
-                g -> new OptimizeProjections(compiler, false, g, operatorsAnalyzed)));
-        // Second invocation, fuses aggregates and joins
-        this.add(new FuseIntoArrayAgg(compiler));
-        this.add(new SimplifyWaterline(compiler).circuitRewriter());
-        this.add(new Simplify(compiler).circuitRewriter(true));
-        this.add(new CSE(compiler));
-        this.add(new ValidateRecursiveOperators(compiler));
-        this.add(new LowerAsof(compiler, this::selectImplementation));
-        this.add(new LowerCircuitVisitor(compiler));
-        this.add(new AdjustSqlIndex(compiler).circuitRewriter(true));
-        this.add(new OptimizeWithGraph(compiler, g -> new BalancedJoins(compiler, g), 1));
-        this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
-        this.add(new ImplementChains(compiler));
-        this.add(new ExpandCasts(compiler, this::selectImplementation));
-        this.add(new CircuitRewriter(compiler, new SimplifyConditionals(compiler), false));
-        this.add(new Simplify(compiler).getCircuitRewriter(true));
-        this.add(new ImplementJoins(compiler));
-        this.add(new RemoveViewOperators(compiler, true));
-        this.add(new OptimizeWithGraph(compiler, g -> new PushDifferentialsUp(compiler, g)));
-        this.add(new CSE(compiler));
-        this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), true, InnerCSE::process));
-        this.add(new CreateRuntimeErrorWrappers(compiler).getCircuitRewriter(true));
-        this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));
-        // The canonical form is needed if we want the Merkle hashes to be "stable".
-        this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
-        this.add(new ConstantViews(compiler));
-        // A static spares the Rust code from rebuilding a constant on every call; the Gen-2 engine
-        // evaluates a closure over a whole batch, and a constant kept inline leaves the closure
-        // self-contained.
-        this.add(new Conditional(compiler,
-                new StaticDeclarations(compiler, new ImplementStatics(compiler, !options.ioOptions.multiCrates())),
-                () -> !options.ioOptions.gen2));
-        // From now on we cannot really change the graph anymore.
-
-        // this.add(new TestSerialize(compiler));
-        this.add(new CheckHints(compiler));
-        this.add(new ComparatorDeclarations(compiler, new DeclareComparators(compiler)));
-        // Before the Merkle hashes, so that they hash the circuit the Gen-2 engine reads
-        this.add(new Conditional(compiler, new Gen2Passes(compiler), () -> options.ioOptions.gen2));
-        this.add(new CompactNames(compiler));
-        this.add(new MerkleHashes(compiler));
-        this.add(new TagRegions(compiler));
-        this.add(new CircuitStatistics(compiler));
+        return switch (step) {
+            case UdfInliner -> new UDFInliner(compiler).getCircuitRewriter(false);
+            case DecomposeExpensiveFilters -> new DecomposeExpensiveFilters(compiler);
+            case ImplementNow -> new ImplementNow(compiler, this::selectImplementation);
+            case Lineage ->
+                    new Conditional(compiler, new Lineage(compiler, true), () -> compiler.options.ioOptions.correlatedColumns);
+            case DeterministicFunctions -> new DeterministicFunctions(compiler);
+            case NoConnectorMetadata -> new NoConnectorMetadata(compiler).getCircuitVisitor(true);
+            case StopOnError -> new StopOnError(compiler);
+            case RecursiveComponents -> new RecursiveComponents(compiler, this::selectImplementation);
+            case PruneUnusedInputs -> new DeadCode(compiler, options.languageOptions.generateInputForEveryTable);
+            case EnsureDistinctOutputs ->
+                    this.withMultisets(multisets -> new EnsureDistinctOutputs(compiler, multisets));
+            case PropagateConstants -> this.withMultisets(multisets -> new PropagateConstants(compiler, multisets));
+            case PropagateEmptySources -> new PropagateEmptySources(compiler);
+            case MergeSums -> new MergeSums(compiler);
+            case CreateStarJoins ->
+                    new Conditional(compiler, new CreateStarJoins(compiler, this::selectImplementation), () -> !this.compiler.metadata.noStarJoins());
+            case RemoveNoops -> new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g));
+            case OptimizeProjectionsOnce -> new OptimizeWithGraph(compiler,
+                    g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed), 1);
+            case FuseExpensiveMaps -> new FuseExpensiveMaps(compiler);
+            case RemoveIntermediateViews -> new RemoveViewOperators(compiler, false);
+            case LeftJoinChains -> new LeftJoinChains(compiler);
+            case UnusedFields -> new UnusedFields(compiler, this::selectImplementation);
+            case RemoveUselessLeftJoins -> new RemoveUselessLeftJoins(compiler);
+            case Cse -> new CSE(compiler);
+            case FuseIntoArrayAgg -> new FuseIntoArrayAgg(compiler);
+            case ExpandAggregates -> new ExpandAggregates(compiler, compiler.weightVar);
+            case ExpandAggregateZero -> new ExpandAggregateZero(compiler);
+            case RemoveStarJoins ->
+                    new Conditional(compiler, new RemoveStarJoins(compiler), this.compiler.metadata::noStarJoins);
+            case DeadCode -> new DeadCode(compiler, true);
+            case OptimizeDistinct -> this.withMultisets(multisets -> new OptimizeDistinctVisitor(compiler, multisets));
+            case OptimizeIncremental -> new OptimizeIncrementalVisitor(compiler);
+            case Incrementalize -> new IncrementalizeVisitor(compiler);
+            case RemoveIAfterD -> new RemoveIAfterD(compiler);
+            case Simplify -> new Simplify(compiler).circuitRewriter(true);
+            case RemoveConstantFilters -> new RemoveConstantFilters(compiler);
+            case OptimizeProjection -> new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g));
+            case PullFilter -> new OptimizeWithGraph(compiler, g -> new PullFilterVisitor(compiler, g));
+            case OptimizeOnlyProjections -> new OptimizeWithGraph(compiler,
+                    g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed));
+            case ShareIndexes -> new ShareIndexes(compiler);
+            case ShareWindowIntegrals -> new ShareWindowIntegrals(compiler);
+            case FilterJoin -> new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g));
+            case ShareOutputIntegrators -> new ShareOutputIntegrators(compiler);
+            case MonotoneAnalyzer -> new MonotoneAnalyzer(compiler, this::selectImplementation);
+            case RemoveErrorTable -> new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME);
+            case CloneOperatorsWithFanout ->
+                    new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g));
+            case LinearPostprocessRetainKeys -> new LinearPostprocessRetainKeys(compiler);
+            case ExpandIndexedInputs -> new ExpandIndexedInputs(compiler);
+            case FindUnboundedState -> new FindUnboundedState(compiler);
+            case InsertWeightValidation -> new Conditional(compiler, new InsertWeightValidation(compiler),
+                    this.compiler.metadata::enforcePositiveInputs);
+            case NoIntegral -> new NoIntegralVisitor(compiler);
+            case ExpandHop -> new ExpandHop(compiler);
+            case RemoveDeindexOperators -> new RemoveDeindexOperators(compiler);
+            case RemoveIdentityOperators -> new RemoveIdentityOperators(compiler);
+            case ChainVisitor -> new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g));
+            case OptimizeProjections -> new OptimizeWithGraph(compiler,
+                    g -> new OptimizeProjections(compiler, false, g, operatorsAnalyzed));
+            case SimplifyWaterline -> new SimplifyWaterline(compiler).circuitRewriter();
+            case ValidateRecursiveOperators -> new ValidateRecursiveOperators(compiler);
+            case LowerAsof -> new LowerAsof(compiler, this::selectImplementation);
+            case LowerCircuit -> new LowerCircuitVisitor(compiler);
+            case AdjustSqlIndex -> new AdjustSqlIndex(compiler).circuitRewriter(true);
+            case BalancedJoins -> new OptimizeWithGraph(compiler, g -> new BalancedJoins(compiler, g), 1);
+            case ImplementChains -> new ImplementChains(compiler);
+            case ExpandCasts -> new ExpandCasts(compiler, this::selectImplementation);
+            case SimplifyConditionals -> new CircuitRewriter(compiler, new SimplifyConditionals(compiler), false);
+            case ImplementJoins -> new ImplementJoins(compiler);
+            case RemoveAllViews -> new RemoveViewOperators(compiler, true);
+            case PushDifferentialsUp -> new OptimizeWithGraph(compiler, g -> new PushDifferentialsUp(compiler, g));
+            case InnerCse -> new CircuitRewriter(compiler, new InnerCSE(compiler), true, InnerCSE::process);
+            case CreateRuntimeErrorWrappers -> new CreateRuntimeErrorWrappers(compiler).getCircuitRewriter(true);
+            case StrayGc -> new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g));
+            case CanonicalForm -> new CanonicalForm(compiler).getCircuitRewriter(false);
+            case ConstantViews -> new ConstantViews(compiler);
+            case StaticDeclarations -> new Conditional(compiler,
+                    new StaticDeclarations(compiler, new ImplementStatics(compiler, !options.ioOptions.multiCrates())),
+                    () -> !options.ioOptions.gen2);
+            case CheckHints -> new CheckHints(compiler);
+            case ComparatorDeclarations -> new ComparatorDeclarations(compiler, new DeclareComparators(compiler));
+            case Gen2Passes -> new Conditional(compiler, new Gen2Passes(compiler), () -> options.ioOptions.gen2);
+            case CompactNames -> new CompactNames(compiler);
+            case MerkleHashes -> new MerkleHashes(compiler);
+            case TagRegions -> new TagRegions(compiler);
+            case CircuitStatistics -> new CircuitStatistics(compiler);
+        };
     }
 
     private final RustCircuitPass.StreamValidator streamValidator = new RustCircuitPass.StreamValidator();

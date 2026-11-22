@@ -80,6 +80,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.TagRegions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveIdentityOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizerStep;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeterministicFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
@@ -358,6 +359,17 @@ public final class RustCircuitPass implements CircuitTransform {
     /** Drive an observed pass to convergence. The step returns true when the circuit changed.
      * A positive result is the number of iterations that exhausted the convergence limit. */
     public static native int repeat(int largestComponent, int requested, IntPredicate step);
+
+    public static List<OptimizerStep> optimizerOrder(boolean outputsAreSets, boolean incrementalize) {
+        try {
+            byte[] options = MAPPER.writeValueAsBytes(Map.of(
+                    "outputs_are_sets", outputsAreSets, "incrementalize", incrementalize));
+            byte[] reply = transformWithContext("OptimizerOrder", options, 0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, new TypeReference<>() {});
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not read the Rust optimizer pass order", error);
+        }
+    }
 
     /** Release cached expressions when this optimizer returns, including on pass failure. */
     public static DBSPCircuit withLiveSnapshots(Supplier<DBSPCircuit> optimize) {

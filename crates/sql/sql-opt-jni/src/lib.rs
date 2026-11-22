@@ -798,6 +798,10 @@ fn transform(
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
     match pass {
+        "OptimizerOrder" => {
+            let options = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::optimizer_order(options).collect::<Vec<_>>())?);
+        }
         "ExpandStreamAggregates/List" => return expand_stream_aggregate(input, state, next),
         "DeltaExpansion/BinaryJoin" => return delta_expansion::binary(input, state, next),
         "DeltaExpansion/StarJoin" => return star_join::delta(input, state, next),
