@@ -26,12 +26,53 @@ impl Shape {
         }
     }
 
+    pub fn from_input(shape: &Projection) -> Option<Self> {
+        Some(match shape {
+            Projection::Other { .. } => return None,
+            Projection::Scalar { monotone } => Self::Scalar(*monotone),
+            Projection::Reference { base } => Self::Reference(Self::from_input(base)?.into()),
+            Projection::Tuple {
+                fields, nullable, ..
+            } => Self::tuple(
+                fields.iter().map(Self::from_input).collect::<Option<_>>()?,
+                *nullable,
+            ),
+        })
+    }
+
+    pub fn monotone(&self) -> bool {
+        let mut value = self;
+        loop {
+            match value {
+                Self::Reference(inner) => value = inner,
+                Self::Scalar(bound) => return *bound,
+                Self::Tuple {
+                    fields,
+                    any_bound,
+                    nullable,
+                } => return *any_bound || fields.is_empty() && !nullable,
+            }
+        }
+    }
+}
+
+/// The declared shape of a row with no LATENESS. A nonnullable empty tuple
+/// provides a bound, including when nested inside an otherwise unordered row.
+pub(super) struct UnorderedRow {
+    pub shape: Shape,
+    pub projected: Option<TypeId>,
+}
+
+impl UnorderedRow {
     /// Declarations may reuse a field type in several rows. Compute its shape
     /// once and share the children, including those of an unbounded nested row.
-    pub fn unbounded(edit: &CircuitEditor, root: TypeId) -> Result<Option<Self>, Error> {
-        fn scalar(kind: TypeKind) -> Option<Shape> {
+    pub fn from_type(edit: &mut CircuitEditor, root: TypeId) -> Result<Option<Self>, Error> {
+        fn scalar(kind: TypeKind) -> Option<UnorderedRow> {
             // NonMonotoneType has no representation for a struct or a stream.
-            (!matches!(kind, TypeKind::Struct | TypeKind::Stream)).then_some(Shape::Scalar(false))
+            (!matches!(kind, TypeKind::Struct | TypeKind::Stream)).then_some(UnorderedRow {
+                shape: Shape::Scalar(false),
+                projected: None,
+            })
         }
         let structured =
             |kind| matches!(kind, TypeKind::Tuple | TypeKind::RawTuple | TypeKind::Ref);
@@ -74,49 +115,36 @@ impl Shape {
                 }
                 continue;
             }
-            let shape = if kind == TypeKind::Ref {
-                Self::Reference(Rc::new(completed[&node.edge("type")?].clone()))
+            let row = if kind == TypeKind::Ref {
+                let base = &completed[&node.edge("type")?];
+                Self {
+                    shape: Shape::Reference(base.shape.clone().into()),
+                    projected: base
+                        .projected
+                        .map(|ty| edit.reference_type(ty))
+                        .transpose()?,
+                }
             } else {
-                let fields = node
-                    .edges("tupFields")?
+                let members = node.edges("tupFields")?;
+                let fields = members
                     .iter()
-                    .map(|id| completed[id].clone())
+                    .map(|id| completed[id].shape.clone())
                     .collect();
-                Self::tuple(fields, edit.nullable(ty)?)
+                let shape = Shape::tuple(fields, edit.nullable(ty)?);
+                let projected = if shape.monotone() {
+                    let kept = members
+                        .iter()
+                        .filter_map(|id| completed[id].projected.map(NodeId::from));
+                    Some(edit.tuple_type(id, kind == TypeKind::RawTuple, kept)?)
+                } else {
+                    None
+                };
+                Self { shape, projected }
             };
             active.remove(&id);
-            completed.insert(id, shape);
+            completed.insert(id, row);
         }
         Ok(completed.remove(&root))
-    }
-
-    pub fn from_input(shape: &Projection) -> Option<Self> {
-        Some(match shape {
-            Projection::Other { .. } => return None,
-            Projection::Scalar { monotone } => Self::Scalar(*monotone),
-            Projection::Reference { base } => Self::Reference(Self::from_input(base)?.into()),
-            Projection::Tuple {
-                fields, nullable, ..
-            } => Self::tuple(
-                fields.iter().map(Self::from_input).collect::<Option<_>>()?,
-                *nullable,
-            ),
-        })
-    }
-
-    pub fn monotone(&self) -> bool {
-        let mut value = self;
-        loop {
-            match value {
-                Self::Reference(inner) => value = inner,
-                Self::Scalar(bound) => return *bound,
-                Self::Tuple {
-                    fields,
-                    any_bound,
-                    nullable,
-                } => return *any_bound || fields.is_empty() && !nullable,
-            }
-        }
     }
 }
 
@@ -137,7 +165,11 @@ mod tests {
             ty = edit.tuple_type(root, false, [ty.into(), ty.into()])?;
         }
         let reference = edit.reference_type(ty)?;
-        let Some(Shape::Reference(shape)) = Shape::unbounded(&edit, reference)? else {
+        let Some(UnorderedRow {
+            shape: Shape::Reference(shape),
+            projected: None,
+        }) = UnorderedRow::from_type(&mut edit, reference)?
+        else {
             panic!("expected a reference to an unbounded row");
         };
         assert!(!shape.monotone());
@@ -146,10 +178,8 @@ mod tests {
             let Shape::Tuple { fields, .. } = row else {
                 panic!("expected row");
             };
-            let [
-                Shape::Tuple { fields: left, .. },
-                Shape::Tuple { fields: right, .. },
-            ] = fields.as_ref()
+            let [Shape::Tuple { fields: left, .. }, Shape::Tuple { fields: right, .. }] =
+                fields.as_ref()
             else {
                 panic!("expected two nested rows");
             };

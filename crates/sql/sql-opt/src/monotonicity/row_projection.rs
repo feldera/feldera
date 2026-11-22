@@ -3,7 +3,10 @@ mod function;
 mod scalar;
 mod scope;
 mod shape;
-use self::{scope::Local, shape::Shape};
+use self::{
+    scope::Local,
+    shape::{Shape, UnorderedRow},
+};
 use crate::limiters::Projection;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
@@ -81,11 +84,11 @@ fn field_number(node: &Node) -> Result<usize, Error> {
 }
 
 fn unbounded(
-    edit: &CircuitEditor,
+    edit: &mut CircuitEditor,
     expression: ExpressionId,
 ) -> Result<Option<ProjectedValue>, Error> {
     let ty = edit.expression_type(expression)?;
-    let Some(shape) = Shape::unbounded(edit, ty)? else {
+    let Some(UnorderedRow { shape, .. }) = UnorderedRow::from_type(edit, ty)? else {
         return Ok(None);
     };
     // A nonnullable empty tuple has a bound even when it occurs inside an
@@ -426,14 +429,13 @@ pub(crate) fn clock_operands(
     else {
         return Ok(None);
     };
-    let Some(shape @ Shape::Reference(_)) = Shape::unbounded(edit, ty)? else {
+    let Some(UnorderedRow {
+        shape: shape @ Shape::Reference(_),
+        projected,
+    }) = UnorderedRow::from_type(edit, ty)?
+    else {
         return Ok(None);
     };
-    // An empty nonnullable tuple supplies its own bound. Its parameter needs
-    // the projected SQL type computed by the general closure analysis.
-    if shape.monotone() {
-        return Ok(None);
-    }
     let Some(references) =
         crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?
     else {
@@ -446,7 +448,7 @@ pub(crate) fn clock_operands(
             return Ok(None);
         }
     }
-    let variable = edit.named_variable(ty, &name)?;
+    let variable = edit.named_variable(projected.unwrap_or(ty), &name)?;
     let mut row = Row {
         bindings: vec![Binding {
             name,
@@ -611,6 +613,42 @@ mod tests {
     use super::*;
     use feldera_sql_ir::Circuit;
     use serde_json::json;
+
+    #[test]
+    fn clock_operands_keep_nested_unit_fields_in_the_compressed_row() -> Result<(), Error> {
+        let arena = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = arena.root_id();
+        let mut edit = CircuitEditor::new(arena);
+        let flag = edit.bool_type(site, false)?;
+        let unit = edit.tuple_type(site, false, [])?;
+        let nullable = edit.with_nullability(unit, true)?;
+        let nested = edit.tuple_type(site, true, [nullable.into(), unit.into()])?;
+        let row = edit.tuple_type(site, false, [flag.into(), nested.into(), nested.into()])?;
+        let reference = edit.reference_type(row)?;
+        let read = edit.named_variable(reference, "row")?;
+        let parameter = edit.parameter_at(site, read)?;
+        let input = edit.dereference(read)?;
+        let pair = edit.tuple_field(input, 2)?;
+        let kept = edit.tuple_field(pair, 1)?;
+        let dropped = edit.tuple_field(pair, 0)?;
+        let bounds = clock_operands(&mut edit, parameter, kept)?.unwrap();
+        assert!(bounds.contains(&kept));
+        assert!(!clock_operands(&mut edit, parameter, dropped)?
+            .unwrap()
+            .contains(&dropped));
+        let projected = UnorderedRow::from_type(&mut edit, row)?
+            .unwrap()
+            .projected
+            .unwrap();
+        let fields = edit.node(projected.into())?.edges("tupFields")?;
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0], fields[1]);
+        assert_eq!(edit.node(fields[0])?.class(), "DBSPTypeRawTuple");
+        assert_eq!(edit.node(fields[0])?.edges("tupFields")?.len(), 1);
+        Ok(())
+    }
 
     #[test]
     fn repeated_row_aliases_keep_a_linear_type_recipe() -> Result<(), Error> {

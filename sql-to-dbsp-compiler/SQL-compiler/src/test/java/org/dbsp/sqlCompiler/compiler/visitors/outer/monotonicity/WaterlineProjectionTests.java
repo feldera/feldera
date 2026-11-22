@@ -375,6 +375,37 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void temporalComparisonsProjectEmptyRowsInAnUnorderedInput() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var timestamp = DBSPTypeTimestamp.create(false);
+        var unit = new DBSPTypeTuple();
+        var nested = new DBSPTypeTuple(unit.withMayBeNull(true), unit);
+        var row = new DBSPTypeTuple(timestamp, nested);
+        var input = new DBSPVariablePath("row", row.ref());
+        var key = input.deepCopy().deref().field(0);
+        var kept = input.deepCopy().deref().field(1).field(1);
+        var clock = new DBSPBlockExpression(List.of(new DBSPLetStatement("unit", kept)),
+                new DBSPApplyExpression("now", timestamp));
+        var predicate = new DBSPBinaryExpression(site, DBSPTypeBool.create(false), DBSPOpcode.GTE, key, clock);
+        var function = predicate.closure(input);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(timestamp));
+        var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet,
+                PartiallyMonotoneTuple.noMonotoneFields(row));
+        direct.apply(function);
+        Assert.assertTrue(direct.get(kept).mayBeMonotone());
+        Assert.assertTrue(direct.get(clock).mayBeMonotone());
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var terms = RustCircuitPass.inferTemporalPredicates(compiler, function.parameters[0], predicate);
+            Assert.assertNotNull(terms);
+            Assert.assertEquals(1, terms.size());
+            Assert.assertEquals(RustCircuitPass.PredicateKind.GTE, terms.get(0).kind());
+            Assert.assertSame(key, terms.get(0).expression());
+            Assert.assertSame(clock, terms.get(0).clock());
+        }
+    }
+
+    @Test
     public void temporalFiltersKeepTheClockBoundInsideAnUnboundedComparison() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         compiler.options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply");

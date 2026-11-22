@@ -1,7 +1,7 @@
 //! Derive lower bounds for named scalar calls from the bounds of their arguments.
-use super::{ProjectedValue, Row, Shape, unbounded};
+use super::{unbounded, ProjectedValue, Row, Shape};
 use crate::function_calls::function_name;
-use crate::monotonicity::functions::{Argument, double_literal_above_one, function_waterline};
+use crate::monotonicity::functions::{double_literal_above_one, function_waterline, Argument};
 use feldera_sql_expr::copy_expression;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind,
@@ -69,7 +69,10 @@ impl Row {
             result.constant = constant;
             return Ok(Some(result));
         };
-        if !matches!(Shape::unbounded(edit, ty)?, Some(Shape::Scalar(_))) {
+        if !matches!(
+            super::UnorderedRow::from_type(edit, ty)?.map(|row| row.shape),
+            Some(Shape::Scalar(_))
+        ) {
             return Ok(None);
         }
         let arguments = arguments
