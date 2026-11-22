@@ -1,6 +1,8 @@
 use super::fragment::Fragment;
-use feldera_sql_ir::{Circuit, CircuitEditor, NodeId, OperatorKind};
+use feldera_sql_ir::{Circuit, CircuitEditor, Error, NodeId, OperatorKind, OutputPort};
+use feldera_sql_opt::TemporalFilterLowering;
 use feldera_sql_opt::TemporalPredicate;
+use feldera_sql_opt::limiters::{Stream, StreamKind};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
@@ -61,13 +63,77 @@ pub(super) fn table_clock(
     fragment.clock_reply(&edit, clock, next)
 }
 
+fn window_inputs(
+    edit: &CircuitEditor,
+    [rows, clock]: [OutputPort; 2],
+    [row_type, clock_type, empty_key, timestamp]: [NodeId; 4],
+) -> Result<(TemporalFilterLowering, Stream), Error> {
+    let collection = |port, ty| Stream {
+        port,
+        ty,
+        kind: StreamKind::Collection,
+    };
+    Ok((
+        TemporalFilterLowering {
+            site: edit.circuit().root_id(),
+            clock: collection(clock, edit.type_id(clock_type)?),
+            empty_key: edit.type_id(empty_key)?,
+            timestamp: edit.type_id(timestamp)?,
+        },
+        collection(rows, edit.type_id(row_type)?),
+    ))
+}
+
+pub(super) fn filter(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    use feldera_sql_opt::{ClockFilter, LoweredClockFilter};
+    let (fragment, roots) = Fragment::bind(
+        serde_json::from_slice(state)?,
+        [
+            OperatorKind::SourceMultiset,
+            OperatorKind::Now,
+            OperatorKind::MapIndex,
+        ],
+        input,
+    )?;
+    let [rows, clock, raw_key, timestamp, join_key, output, closure] = roots.as_slice() else {
+        return Err("missing temporal filter inputs".into());
+    };
+    let mut edit = CircuitEditor::new(fragment.base.clone());
+    let (lowering, rows) = window_inputs(
+        &edit,
+        [fragment.inputs[0], fragment.inputs[1]],
+        [*rows, *clock, *raw_key, *timestamp],
+    )?;
+    let filter = ClockFilter {
+        function: edit.expression(*closure)?,
+        output: edit.type_id(*output)?,
+        indexed_clock: fragment.inputs[2],
+        join_key: edit.type_id(*join_key)?,
+    };
+    let Some(result) = lowering.lower_filter(&mut edit, rows, filter, &mut next)? else {
+        return Ok(Value::Null);
+    };
+    let mut reply = fragment.reply(&edit, next)?;
+    if let LoweredClockFilter::Joined(predicate) = result {
+        // This expression is read only for source positions. It carries its own node definitions.
+        reply["warning_predicate"] = edit
+            .circuit()
+            .additional_expressions(&fragment.base, &[predicate])?
+            .remove(0);
+    }
+    Ok(reply)
+}
+
 pub(super) fn window(
     input: &[u8],
     state: &[u8],
     mut next: u64,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    use feldera_sql_opt::limiters::{Stream, StreamKind};
-    use feldera_sql_opt::{InitialBounds, TemporalStreams, WindowComparison, WindowKey};
+    use feldera_sql_opt::{InitialBounds, WindowComparison, WindowKey};
     #[derive(serde::Deserialize)]
     struct Request {
         #[serde(flatten)]
@@ -81,11 +147,11 @@ pub(super) fn window(
         input,
     )?;
     let [
-        parameter,
         collection,
-        clock_collection,
-        empty_key,
+        clock,
+        raw_key,
         timestamp,
+        parameter,
         common,
         key,
         lower,
@@ -96,41 +162,22 @@ pub(super) fn window(
         return Err("missing temporal window input".into());
     };
     if request.comparisons.len() != operands.len() {
-        return Err("expected one expression for each temporal comparison".into());
+        return Err("expected one expression per temporal comparison".into());
     }
     let mut edit = CircuitEditor::new(fragment.base.clone());
-    let body = fragment.base.root_id();
-    let clock_collection = edit.type_id(*clock_collection)?;
-    let empty_key = edit.type_id(*empty_key)?;
-    let timestamp = edit.type_id(*timestamp)?;
-    let minimum = edit.minimum_value(timestamp)?;
-    let clock = feldera_sql_opt::scalar_clock_operators(
-        &mut edit,
-        body,
-        fragment.inputs[1],
-        clock_collection,
-        empty_key,
-        minimum,
-        &mut next,
+    let (lowering, rows) = window_inputs(
+        &edit,
+        fragment.inputs,
+        [*collection, *clock, *raw_key, *timestamp],
     )?;
-    let streams = TemporalStreams {
-        rows: Stream {
-            port: fragment.inputs[0],
-            ty: edit.type_id(*collection)?,
-            kind: StreamKind::Collection,
-        },
-        clock,
-    };
-    let row = edit.type_id(edit.node(*collection)?.edge("elementType")?)?;
     let key = WindowKey {
         parameter: *parameter,
-        row,
+        row: edit.type_id(edit.node(*collection)?.edge("elementType")?)?,
         expression: edit.expression(*common)?,
         nonnull_type: edit.type_id(*key)?,
     };
-    let key_type = key.nonnull_type;
     let initial = InitialBounds {
-        minimum_clock: edit.minimum_value(timestamp)?,
+        minimum_clock: edit.minimum_value(lowering.timestamp)?,
         lower: edit.expression(*lower)?,
         upper: edit.expression(*upper)?,
     };
@@ -138,15 +185,13 @@ pub(super) fn window(
         .iter()
         .map(|&id| edit.expression(id))
         .collect::<Result<Vec<_>, _>>()?;
-    let functions = feldera_sql_opt::temporal_window(
+    lowering.append_window(
         &mut edit,
+        rows,
         key,
         initial,
         request.comparisons.into_iter().zip(values),
         &mut next,
-    )?;
-    feldera_sql_opt::append_temporal_window(
-        &mut edit, body, body, streams, key_type, functions, &mut next,
     )?;
     fragment.reply(&edit, next)
 }

@@ -427,6 +427,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         if (circuit == null)
             throw new IllegalStateException("Missing output from " + this.passClass);
         var current = Objects.requireNonNull(this.active);
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow rewrite)
+            this.observation.put("native_clock_filters", rewrite.nativeClockFilters());
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps maps) {
             for (var step : maps.passes) {
                 if (step instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.Fuse fuse) {

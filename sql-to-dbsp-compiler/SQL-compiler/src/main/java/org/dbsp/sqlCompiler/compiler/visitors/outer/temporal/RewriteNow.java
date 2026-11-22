@@ -80,6 +80,11 @@ public class RewriteNow extends CircuitCloneVisitor {
     @Nullable
     DBSPSimpleOperator now = null;
     @Nullable private Map<Long, DBSPExpression> clockSites;
+    private int nativeClockFilters;
+
+    public int nativeClockFilters() {
+        return this.nativeClockFilters;
+    }
 
     /** Rewrites a closure of the form |t: &T| ... now() ...
      * to a closure of the form |t: &T1| ... (*t).last,
@@ -545,6 +550,19 @@ public class RewriteNow extends CircuitCloneVisitor {
             return;
         }
 
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var lowered = RustCircuitPass.temporalFilter(this.compiler, operator,
+                    this.mapped(operator.input()).simpleNode(), this.getNow(), Objects.requireNonNull(this.nowIndexed),
+                    ContainsNow.timestampType());
+            if (lowered != null) {
+                this.nativeClockFilters++;
+                if (lowered.warningPredicate() != null)
+                    this.warnExpensive(lowered.warningPredicate());
+                lowered.operators().forEach(this::addOperator);
+                this.map(operator.outputPort(), Utilities.last(lowered.operators()).outputPort(), false);
+                return;
+            }
+        }
         function = function.ensureTree(this.compiler).to(DBSPClosureExpression.class);
         List<BooleanExpression> filters = this.findTemporalFilters(operator, function);
         filters = this.compiler.options.ioOptions.rustOptimizerPasses
@@ -590,6 +608,7 @@ public class RewriteNow extends CircuitCloneVisitor {
         // after nodes that should depend on it
         // (but don't yet have an explicit edge, because they think they are calling a function).
         super.preorder(circuit);
+        this.nativeClockFilters = 0;
         this.clockSites = this.compiler.options.ioOptions.rustOptimizerPasses
                 ? RustCircuitPass.temporalClockSites(this.compiler, circuit) : null;
         DBSPType timestamp = ContainsNow.timestampType();

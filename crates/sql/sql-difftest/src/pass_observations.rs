@@ -77,6 +77,8 @@ struct Observation {
     pass: String,
     invocations: Vec<Invocation>,
     streamed_invocations: Option<usize>,
+    /// Implementation coverage. Both paths must still match at every pass boundary.
+    native_clock_filters: Option<usize>,
 }
 
 fn is_sha256(value: &str) -> bool {
@@ -272,6 +274,11 @@ fn compare_case(
     let [control, candidate] = rows.map(serde_json::from_value::<Observation>);
     let control = control.map_err(|e| format!("invalid control observation: {e}"))?;
     let candidate = candidate.map_err(|e| format!("invalid candidate observation: {e}"))?;
+    if control.native_clock_filters.unwrap_or(0) != 0
+        || (candidate.native_clock_filters.is_some() && pass != "RewriteNow")
+    {
+        return Err("unexpected native window filter coverage".into());
+    }
     for row in [&control, &candidate] {
         if source["id"].as_str() != Some(&row.id)
             || source["input_sha256"].as_str() != Some(&row.input_sha256)

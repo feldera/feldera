@@ -1,7 +1,7 @@
 //! Split temporal predicates and merge bounds that share a NOW window.
 use crate::{
-    TemporalBoundKey, TemporalPredicate, WindowTerm, accepts_temporal_bound,
-    filters::rewrite_filters, function_calls::contains_now, infer_temporal_predicates,
+    TemporalPredicate, WindowTerm, accepts_temporal_bound, filters::rewrite_filters,
+    function_calls::contains_now, infer_temporal_predicates,
 };
 use feldera_sql_expr::{SimplifyWarning, ensure_expression_tree, simplify_closure_with_warnings};
 use feldera_sql_ir::{
@@ -97,30 +97,27 @@ fn window_terms(
     edit: &mut CircuitEditor,
     closure: ExpressionId,
 ) -> Result<Option<Vec<WindowTerm>>, Error> {
+    Ok(
+        classify_closure(edit, closure)?.map(|(parameter, predicates)| {
+            predicates
+                .iter()
+                .map(|predicate| WindowTerm::from_predicate(parameter, predicate))
+                .collect()
+        }),
+    )
+}
+
+pub(super) fn classify_closure(
+    edit: &mut CircuitEditor,
+    closure: ExpressionId,
+) -> Result<Option<(NodeId, Vec<TemporalPredicate>)>, Error> {
     let tree = ensure_expression_tree(edit, closure.into())?;
     let node = edit.node(tree)?;
     let [parameter] = node.edges("parameters")?[..] else {
         return Err(Error::new("a temporal filter requires one row parameter"));
     };
     let body = strip_wrap_bool(edit, node.edge("body")?)?;
-    Ok(
-        infer_temporal_predicates(edit, parameter, body)?.map(|predicates| {
-            predicates
-                .into_iter()
-                .map(|p| match p {
-                    TemporalPredicate::NoNow(id) => WindowTerm::NoNow(id),
-                    TemporalPredicate::Residual(id) => WindowTerm::Residual(id),
-                    TemporalPredicate::Bound {
-                        key, comparison, ..
-                    } => WindowTerm::Bound(TemporalBoundKey {
-                        parameter,
-                        key,
-                        comparison,
-                    }),
-                })
-                .collect()
-        }),
-    )
+    Ok(infer_temporal_predicates(edit, parameter, body)?.map(|predicates| (parameter, predicates)))
 }
 
 fn strip_wrap_bool(edit: &CircuitEditor, mut id: NodeId) -> Result<ExpressionId, Error> {

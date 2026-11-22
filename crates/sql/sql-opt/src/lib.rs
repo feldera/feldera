@@ -136,6 +136,8 @@ pub use window_bounds::{temporal_window_bounds, WindowEndpoint};
 mod window_projection;
 pub use window_projection::{window_projection, TemporalWindowProjection};
 mod temporal_filters;
+mod temporal_filter_lowering;
+pub use temporal_filter_lowering::{ClockFilter, LoweredClockFilter, TemporalFilterLowering};
 mod terms;
 mod topk_projection;
 pub use topk_projection::trim_topk_projection;

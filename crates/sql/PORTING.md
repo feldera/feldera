@@ -542,6 +542,14 @@ Java in all 133 isolated clock-pass comparisons and 14 detached replays.
 Four waiting workers cancelled in 7.61 ms at p95 during corpus replay.
 [Window and clock comparisons](evidence/p3-window-clock-fragment.json)
 
+Rust lowers a filter closure into its ordinary filters, temporal windows and
+residual clock join in one call. All 163 classic and 151 Gen-2 clock filters
+in the frozen programs used this path. Every isolated `RewriteNow` invocation
+matched Java, including generated names and source positions. Both engines
+also preserved the warning and refusal for a clock call in a nested lambda.
+Java still traverses the circuit and handles expressions outside the Rust
+classifier. [Clock filter graphs and checkpoint results](evidence/p3-clock-filter-graphs.json)
+
 The DISTINCT pass uses operator kinds, ports and known stream multiplicities
 to check whether it needs the full circuit. It requests expression data when
 an unresolved multiplicity could change the result. The reduced path skipped

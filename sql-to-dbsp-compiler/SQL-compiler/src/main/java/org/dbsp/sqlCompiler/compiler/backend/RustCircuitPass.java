@@ -899,10 +899,15 @@ public final class RustCircuitPass implements CircuitTransform {
             throw new CompilationError("NOW() is not supported inside a lambda expression", lambda.getNode());
         }
         var origin = consumer.getRelNode();
-        var joinOrigin = origin.copy();
-        joinOrigin.addSourcePositions(List.of(call.getSourcePosition()));
+        var joinOrigin = clockJoinOrigin(origin, call);
         return decodeOperatorFragment(reply, op -> op instanceof DBSPStreamJoinOperator ? joinOrigin : origin,
                 rows, indexedClock);
+    }
+
+    private static CalciteRelNode clockJoinOrigin(CalciteRelNode origin, DBSPExpression call) {
+        var join = origin.copy();
+        join.addSourcePositions(List.of(call.getSourcePosition()));
+        return join;
     }
 
     public static DBSPClosureExpression unmatchedRows(DBSPCompiler compiler, DBSPJoinBaseOperator join) {
@@ -966,8 +971,8 @@ public final class RustCircuitPass implements CircuitTransform {
             DBSPSimpleOperator rows, DBSPSimpleOperator clock, DBSPParameter parameter,
             DBSPExpression key, DBSPType keyType, DBSPType clockType, DBSPExpression lowerInitial,
             DBSPExpression upperInitial, List<DBSPOpcode> comparisons, List<DBSPExpression> bounds) {
-        var inputs = new ArrayList<IDBSPInnerNode>(List.of(parameter, rows.outputType, clock.outputType,
-                DBSPTypeRawTuple.EMPTY, clockType, key, keyType, lowerInitial, upperInitial));
+        var inputs = new ArrayList<IDBSPInnerNode>(List.of(rows.outputType, clock.outputType,
+                DBSPTypeRawTuple.EMPTY, clockType, parameter, key, keyType, lowerInitial, upperInitial));
         inputs.addAll(bounds);
         try {
             var request = expressionSite(origin);
@@ -977,6 +982,32 @@ public final class RustCircuitPass implements CircuitTransform {
             return decodeOperatorFragment(reply, op -> windowOrigin(compiler, origin, clock, op), rows, clock);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode temporal window comparisons", error);
+        }
+    }
+
+    public record ClockFilter(List<DBSPSimpleOperator> operators, @Nullable DBSPExpression warningPredicate) {}
+
+    /** Lower the windows and residual clock join of one predicate in their original order. */
+    @Nullable
+    public static ClockFilter temporalFilter(DBSPCompiler compiler, DBSPFilterOperator filter,
+            DBSPSimpleOperator rows, DBSPSimpleOperator clock, DBSPSimpleOperator indexedClock, DBSPType timestamp) {
+        var origin = filter.getRelNode();
+        try {
+            var reply = invokeLowering(compiler, "RewriteNow/Filter", MAPPER.writeValueAsBytes(expressionSite(origin)),
+                    rows.outputType, clock.outputType, DBSPTypeRawTuple.EMPTY, timestamp, DBSPTypeTuple.EMPTY,
+                    filter.getOutputZSetType(), filter.getClosureFunction());
+            if (reply.value.isNull())
+                return null;
+            var warning = reply.value.get("warning_predicate");
+            DBSPExpression predicate = warning == null ? null :
+                    expressionDecoder(reply.writer).decodeInner(warning, DBSPExpression.class);
+            var join = predicate == null ? origin : clockJoinOrigin(origin,
+                    Objects.requireNonNull(temporalClockSites(compiler, List.of(predicate)).get(predicate.getId())));
+            return new ClockFilter(decodeOperatorFragment(reply,
+                    op -> op instanceof DBSPStreamJoinOperator ? join : windowOrigin(compiler, origin, clock, op),
+                    rows, clock, indexedClock), predicate);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode temporal filter origin", error);
         }
     }
 

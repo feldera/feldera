@@ -1,7 +1,7 @@
 //! Group consecutive SQL predicates into windows without moving residual filters.
-use crate::WindowComparison;
 use crate::index_key_equivalence::equivalent_bodies;
 use crate::temporal_comparisons::conjoin;
+use crate::{TemporalPredicate, WindowComparison};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId};
 
 #[derive(Clone, Copy)]
@@ -33,6 +33,22 @@ pub enum WindowTerm {
     Bound(TemporalBoundKey),
     NoNow(ExpressionId),
     Residual(ExpressionId),
+}
+
+impl WindowTerm {
+    pub(super) fn from_predicate(parameter: NodeId, predicate: &TemporalPredicate) -> Self {
+        match *predicate {
+            TemporalPredicate::NoNow(expression) => Self::NoNow(expression),
+            TemporalPredicate::Residual(expression) => Self::Residual(expression),
+            TemporalPredicate::Bound {
+                key, comparison, ..
+            } => Self::Bound(TemporalBoundKey {
+                parameter,
+                key,
+                comparison,
+            }),
+        }
+    }
 }
 
 /// MergeFilters checks each upstream bound against the downstream bound.

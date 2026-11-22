@@ -1,0 +1,125 @@
+{
+  "scope": "Lower each filter closure into its ordinary filters, window groups and residual clock join in one Rust circuit fragment. Compare the isolated RewriteNow entry, exit, diagnostics and generated names independently against Java; count the filters that actually used the Rust fragment.",
+  "compiler_jar_sha256": "9d61b7e0dca4d350b906c84c78bc2f7f8a53d7b3ded08888a0ae88e41b4561c9",
+  "test_jar_sha256": "c415b75f1188d562948acf6554285b7b89f667b8dc69844c92111bf50d482d72",
+  "optimizer_library_sha256": "ea9df9989b2e6aa2f8165d7bfacf4d6443848c6fc78e895f4bcce795fe4c30ea",
+  "comparator_sha256": "187d997c2562ede1c029e45e380218517238f4b2d961f7e8e330e5dd8e926f54",
+  "engines": {
+    "classic": {
+      "matched_rewrite_now_invocations": 71,
+      "native_filter_lowerings": 163,
+      "input_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_stream_sha256": "19b005cfd85656bae9d639d9901d3cb294f8c121716792ed1f03a34cfc7bbeca",
+      "hybrid_stream_sha256": "75fc92f344c29e92133586944f09dbb69659cb3e8592577fbe980cc44eb25ae0",
+      "detached_smoke_cases": 7,
+      "detached_report_sha256": "6fd85c2e73a29dd522eb095332a2da0c4bd1c7a86394e5641b6364b618e952c3",
+      "map_lambda_diagnostics_sha256": "c129ed6e0398a5e75e3e54f31282d0a447f64ee1cb630348297e7500f1140a12",
+      "filter_lambda_diagnostics_sha256": "e0412155e07e0e4eb164c761c558d6d98ba5052ac14b1b68b546aa1befeb404f"
+    },
+    "gen2": {
+      "matched_rewrite_now_invocations": 62,
+      "native_filter_lowerings": 151,
+      "input_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_stream_sha256": "b324db4b8653b9d808b263420b9827389662882bd197eaeeb3fa234a69cab72e",
+      "hybrid_stream_sha256": "cb4030cee9204d42d0c89cd73fd6b5648bcf289642fa1373e5b2632d1d4b2eb8",
+      "detached_smoke_cases": 7,
+      "detached_report_sha256": "d83be97af5f2604b189df774268cd0d71aee31790eeb7e17c86bfcd294be48d1",
+      "map_lambda_diagnostics_sha256": "c129ed6e0398a5e75e3e54f31282d0a447f64ee1cb630348297e7500f1140a12",
+      "filter_lambda_diagnostics_sha256": "e0412155e07e0e4eb164c761c558d6d98ba5052ac14b1b68b546aa1befeb404f"
+    }
+  },
+  "count_checkpoint": {
+    "report_sha256": "1b535c21afde5782021d4d9b74ba4ab902e9664a785d0d7d601ef281806b6791",
+    "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+    "binary_sha256": {
+      "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+      "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+    },
+    "generated_rust_sha256": {
+      "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+      "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+    },
+    "restores": [
+      {
+        "writer": "java",
+        "reader": "hybrid",
+        "bootstrap": false,
+        "checkpoint_id": "01a202ac-3811-7091-b3be-9ba4813456b0",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ]
+      },
+      {
+        "writer": "hybrid",
+        "reader": "java",
+        "bootstrap": false,
+        "checkpoint_id": "01a202ac-382f-7b32-80d2-d2247fdb6de9",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ]
+      }
+    ]
+  },
+  "watermark_checkpoint": {
+    "report_sha256": "9853659c81a59ff85da3df2f96522919bea511e0bfcdfe4cbf28c267ec94614a",
+    "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+    "binary_sha256": {
+      "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+      "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+    },
+    "generated_rust_sha256": {
+      "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+      "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+    },
+    "restores": [
+      {
+        "writer": "java",
+        "reader": "hybrid",
+        "bootstrap": false,
+        "checkpoint_id": "01a202ad-0e73-7651-a670-390391079c3f",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ],
+        "late_input_dropped_after_restore": true
+      },
+      {
+        "writer": "hybrid",
+        "reader": "java",
+        "bootstrap": false,
+        "checkpoint_id": "01a202ad-0e9b-7273-9bf3-ae3ef25efc5b",
+        "restored_count_deltas": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            -1
+          ]
+        ],
+        "late_input_dropped_after_restore": true
+      }
+    ]
+  }
+}

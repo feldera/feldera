@@ -685,6 +685,7 @@ fn transform(
         "ExpandStreamAggregates/List" => return expand_stream_aggregate(input, state, next),
         "RewriteNow/BuiltinClock" => return temporal::builtin_clock(input, next),
         "RewriteNow/TableClock" => return temporal::table_clock(input, next),
+        "RewriteNow/Filter" => return temporal::filter(input, state, next),
         "RewriteNow/JoinedMap" => return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Map),
         "RewriteNow/JoinedFilter" => return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Filter),
         _ => {}
