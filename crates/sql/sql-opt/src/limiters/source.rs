@@ -205,6 +205,8 @@ pub fn declared_waterline(
 }
 
 pub(super) struct SourceOutputs {
+    /// First operator in the contiguous group appended after the source.
+    pub first_inserted: NodeId,
     pub data: Stream,
     pub error: Stream,
     pub bound: Bound,
@@ -370,6 +372,7 @@ pub(super) fn source_bounds(
         ],
     )?;
     Ok(SourceOutputs {
+        first_inserted: waterline,
         data: Stream {
             port: port(controlled),
             ty: collection,

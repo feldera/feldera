@@ -338,7 +338,7 @@ public final class CorpusDeterminism {
         if (liveFinal) {
             compiler.stateObserver = new DBSPCompiler.StateObserver() {
                 public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {
-                    if (pass.getName().equals("InsertLimiters") && LimiterInputs.canLowerCircuit(input, options.ioOptions.gen2))
+                    if (pass.getName().equals("InsertLimiters") && LimiterInputs.canLowerCircuit(input))
                         nativeLimiterPlacements.incrementAndGet();
                 }
 

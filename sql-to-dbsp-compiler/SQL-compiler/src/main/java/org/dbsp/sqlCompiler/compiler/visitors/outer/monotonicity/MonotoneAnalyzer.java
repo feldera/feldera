@@ -190,7 +190,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         CircuitTransform insertion = limiters;
         if (this.compiler.options.ioOptions.rustOptimizerPasses
-                && LimiterInputs.canLowerCircuit(circuit, this.compiler.options.ioOptions.gen2))
+                && LimiterInputs.canLowerCircuit(circuit))
             insertion = this.select.apply(limiters);
         DBSPCircuit result = this.compiler.applyObservedPass(this.getName(), 7, 0,
                 this.insertLimiters(insertion), circuit);

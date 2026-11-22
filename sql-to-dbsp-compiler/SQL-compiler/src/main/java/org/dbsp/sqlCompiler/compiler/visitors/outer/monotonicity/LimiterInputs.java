@@ -41,19 +41,9 @@ public final class LimiterInputs {
             DBSPAtomicSumOperator.class, DBSPSubtractOperator.class, DBSPConstantOperator.class,
             DBSPIncrementalConstantOperator.class);
 
-    /** Whole-pass lowering uses the expansion facts for these operators. Keep
-     * the Java diagnostic sites for EMIT FINAL and Gen-2 primary-key tables. */
-    public static boolean canLowerCircuit(DBSPCircuit circuit, boolean gen2) {
-        for (var operator : circuit.allOperators) {
-            if (!NATIVE_OPERATORS.contains(operator.getClass()))
-                return false;
-            if (operator instanceof DBSPSinkOperator sink && sink.metadata.emitFinalColumn >= 0)
-                return false;
-            if (gen2 && operator instanceof DBSPSourceMultisetOperator table
-                    && table.metadata.getColumns().stream().anyMatch(column -> column.isPrimaryKey))
-                return false;
-        }
-        return true;
+    /** Whole-pass lowering uses the expansion facts for these operators. */
+    public static boolean canLowerCircuit(DBSPCircuit circuit) {
+        return circuit.allOperators.stream().allMatch(operator -> NATIVE_OPERATORS.contains(operator.getClass()));
     }
 
     public static JsonNode projection(IMaybeMonotoneType type) {

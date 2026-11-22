@@ -13,18 +13,21 @@ import tempfile
 import time
 
 
-def check_sql_error(compiler, classpath, directory, name, program, expected):
+def check_sql_error(compiler, classpath, directory, name, program, expected, *, engine="classic"):
     sql = directory / f"{name}-error.sql"
     sql.write_text(program)
     reference = directory / f"{name}-java.json"
     command = ["java", "-cp", classpath, "org.dbsp.sqlCompiler.CompilerMain", "-i", "-je",
-               "--alltables", "--ignoreOrder", "--errors", reference, "-o", directory / "unused.rs", sql]
+               "--alltables", "--ignoreOrder", "--errors", reference, "-o", directory / "unused.rs"]
+    if engine == "gen2":
+        command.append("--gen2")
+    command.append(sql)
     direct = subprocess.run(command, timeout=60)
     messages = json.loads(reference.read_bytes())
     if direct.returncode == 0 or not any(not m["warning"] and expected in m["message"] for m in messages):
         raise ValueError(f"Expected the Java {name} diagnostic: {messages}")
     request = directory / f"{name}-request.json"
-    request.write_text(json.dumps(dict(java_classpath=classpath, engine="classic", sql=str(sql),
+    request.write_text(json.dumps(dict(java_classpath=classpath, engine=engine, sql=str(sql),
         producer_commit="p3-check", runtime_abi="p3-check", slots=str(directory / "slots"),
         deadline_ms=60000, rust_optimizer_passes=True, allow_stateless_java_fallback=True)))
     attempt = directory / f"{name}-attempt"
@@ -112,6 +115,14 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
     assert sql["attempts"] == 1 and any(m["warning"] is False for m in sql["messages"])
 
     if rust_optimizer_passes:
+        check_sql_error(compiler, classpath, directory, "emit-final",
+                        "CREATE TABLE t(ts BIGINT LATENESS 1, other BIGINT);\n"
+                        "CREATE VIEW v WITH ('emit_final' = 'other') AS SELECT * FROM t;",
+                        "Could not infer a waterline for column 'v'.'other'")
+        check_sql_error(compiler, classpath, directory, "key-lateness",
+                        "CREATE TABLE t(ts BIGINT NOT NULL PRIMARY KEY LATENESS 2, x INT);\n"
+                        "CREATE VIEW v AS SELECT * FROM t;",
+                        "LATENESS on the primary-key table 't'", engine="gen2")
         check_sql_error(compiler, classpath, directory, "recursive",
                         "CREATE TABLE E(x INT, y INT);\n"
                         "DECLARE RECURSIVE VIEW CLOSURE(x INT, y INT);\n"

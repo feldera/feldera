@@ -291,6 +291,7 @@ pub(super) fn keyed_source(
         [("function", link(deindex)), ("outputType", link(ty))],
     )?;
     Ok(SourceOutputs {
+        first_inserted: extend,
         data: Stream {
             port: OutputPort {
                 operator: data,

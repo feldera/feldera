@@ -50,6 +50,18 @@ pub struct LimiterInputs {
     operators: BTreeMap<u64, OperatorFacts>,
 }
 
+/// A malformed checkpoint is an internal failure. SQL refusals identify the
+/// live table or output column so the front end can report its source range.
+#[derive(Debug, thiserror::Error)]
+pub enum LimiterError {
+    #[error(transparent)]
+    InvalidCircuit(#[from] Error),
+    #[error("LATENESS on the primary-key table '{table}' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version")]
+    Gen2KeyLateness { operator: u64, table: String, next: u64 },
+    #[error("Could not infer a waterline for column '{view}'.'{column}' which has an 'emit_final' annotation")]
+    MissingWaterline { operator: u64, row: usize, view: String, column: String, next: u64 },
+}
+
 fn identifier<'a>(op: &'a Node, slot: &str) -> Option<&'a str> {
     let Field::Object(name) = op.field(slot)? else {
         return None;
@@ -173,19 +185,20 @@ fn relation_clocks(
 
 pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circuit, u64), Error> {
     insert_limiters_with_warnings(circuit, state, &mut Vec::new())
+        .map_err(|error| Error::new(error.to_string()))
 }
 
 pub fn insert_limiters_with_warnings(
     circuit: Circuit,
     state: LimiterInputs,
     warnings: &mut Vec<feldera_sql_expr::SimplifyWarning>,
-) -> Result<(Circuit, u64), Error> {
+) -> Result<(Circuit, u64), LimiterError> {
     let body = circuit.root_id();
     let original = circuit.root().edges("allOperators")?;
     if original.len() != state.operators.len() {
         return Err(Error::new(
             "limiter facts and circuit have different populations",
-        ));
+        ).into());
     }
     let clocks = relation_clocks(&circuit, &state.operators)?;
     let (circuit, functions) = state.transfer_functions.attach(circuit)?;
@@ -202,7 +215,7 @@ pub fn insert_limiters_with_warnings(
     let mut bounds = BTreeMap::<OutputPort, (Bound, &Projection)>::new();
     for (index, &id) in original.iter().enumerate() {
         let NodeId::Outer(number) = id else {
-            return Err(Error::new("expected outer operator"));
+            return Err(Error::new("expected outer operator").into());
         };
         let facts = state
             .operators
@@ -217,7 +230,6 @@ pub fn insert_limiters_with_warnings(
         };
         let projection = facts.projection.as_ref().filter(|p| p.monotone());
         let kind = op.operator_kind();
-        let old_count = edit.node(body)?.edges("allOperators")?.len();
         match kind {
             Some(Op::SourceMultiset | Op::View)
                 if identifier(op, "viewName") != Some("error_view") =>
@@ -229,9 +241,7 @@ pub fn insert_limiters_with_warnings(
                         .ok_or_else(|| Error::new("missing table name"))?
                         .to_owned();
                     if state.gen2 && !columns.key.is_empty() {
-                        return Err(Error::new(format!(
-                            "LATENESS on the primary-key table '{name}' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
-                        )));
+                        return Err(LimiterError::Gen2KeyLateness { operator: number, table: name, next });
                     }
                     let kind = clocks[&id];
                     let inherited = inputs.first().and_then(|p| bounds.get(p)).copied();
@@ -256,8 +266,7 @@ pub fn insert_limiters_with_warnings(
                     data.insert(output, result.data);
                     bounds.insert(output, (result.bound, projection));
                     if let Some(&before) = original.get(index + 1) {
-                        let first = edit.node(body)?.edges("allOperators")?[old_count];
-                        edit.place_before(body, first, before)?;
+                        edit.place_before(body, result.first_inserted, before)?;
                     }
                     continue;
                 }
@@ -274,7 +283,7 @@ pub fn insert_limiters_with_warnings(
             }
             Some(Op::View) if identifier(op, "viewName") == Some("error_view") => {
                 if inputs.len() != 1 {
-                    return Err(Error::new("ERROR_VIEW needs one input"));
+                    return Err(Error::new("ERROR_VIEW needs one input").into());
                 }
                 connect_error_view(&mut edit, body, id, &errors, clocks[&id])?;
                 continue;
@@ -294,14 +303,13 @@ pub fn insert_limiters_with_warnings(
                             .collect::<Result<Vec<_>, _>>()?;
                         let bound = minimum_bound(&mut edit, body, &projected, &mut next)?;
                         bounds.insert(output, (bound, dst));
-                        let first = edit.node(body)?.edges("allOperators")?[old_count];
-                        edit.place_before(body, first, id)?;
+                        edit.place_before(body, projected[0].port.operator, id)?;
                     }
                 }
             }
             Some(Op::Map | Op::MapIndex | Op::Filter | Op::Hop | Op::FlatMap) => {
                 let [source] = inputs.as_slice() else {
-                    return Err(Error::new(format!("{} requires one input stream", op.class())));
+                    return Err(Error::new(format!("{} requires one input stream", op.class())).into());
                 };
                 if let Some(projection) = projection {
                     let function = functions.get(&number).copied().ok_or_else(|| {
@@ -331,7 +339,7 @@ pub fn insert_limiters_with_warnings(
                 continue;
             }
             Some(Op::Sink) => {
-                if let Some(field) = super::FinalityColumn::from_sink(op, projection)? {
+                if let Some(field) = super::FinalityColumn::from_sink(op, projection, number, next)? {
                     let input = op
                         .inputs()
                         .next()
@@ -358,7 +366,7 @@ pub fn insert_limiters_with_warnings(
                 return Err(Error::new(format!(
                     "{} requires another InsertLimiters visitor",
                     op.class()
-                )));
+                )).into());
             }
         }
         if inputs.iter().any(|port| data.contains_key(port)) {

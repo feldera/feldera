@@ -1,6 +1,6 @@
 //! Buffer an EMIT FINAL view until its waterline passes the selected column.
 use super::{
-    Bound, Projection, Stream, WindowBounds,
+    Bound, LimiterError, Projection, Stream, WindowBounds,
     filter::{arg, bool_type, tuple_compare},
     source::link,
 };
@@ -51,7 +51,9 @@ impl FinalityColumn {
     pub(super) fn from_sink(
         sink: &Node,
         projection: Option<&Projection>,
-    ) -> Result<Option<Self>, Error> {
+        operator: u64,
+        next: u64,
+    ) -> Result<Option<Self>, LimiterError> {
         let Some(Field::Object(metadata)) = sink.field("metadata") else {
             return Ok(None);
         };
@@ -62,7 +64,7 @@ impl FinalityColumn {
             Some(-1) => return Ok(None),
             Some(index) if index >= 0 => usize::try_from(index)
                 .map_err(|_| Error::new("EMIT FINAL column index exceeds row width"))?,
-            _ => return Err(Error::new("invalid EMIT FINAL column index")),
+            _ => return Err(Error::new("invalid EMIT FINAL column index").into()),
         };
         if let Some(Projection::Tuple { fields, .. }) = projection {
             if fields.get(row).is_some_and(Projection::monotone) {
@@ -72,20 +74,20 @@ impl FinalityColumn {
         }
         let view = sink.relation_name("viewName")?;
         let Some(Field::Array(columns)) = metadata.get("columns") else {
-            return Err(Error::new("missing view columns for EMIT FINAL"));
+            return Err(Error::new("missing view columns for EMIT FINAL").into());
         };
         let Some(Field::Object(column)) = columns.get(row) else {
-            return Err(Error::new("EMIT FINAL column index exceeds row width"));
+            return Err(Error::new("EMIT FINAL column index exceeds row width").into());
         };
         let Some(Field::Object(identifier)) = column.get("columnName") else {
-            return Err(Error::new("missing EMIT FINAL column identifier"));
+            return Err(Error::new("missing EMIT FINAL column identifier").into());
         };
         let Some(Field::Data(serde_json::Value::String(name))) = identifier.get("name") else {
-            return Err(Error::new("missing EMIT FINAL column name"));
+            return Err(Error::new("missing EMIT FINAL column name").into());
         };
-        Err(Error::new(format!(
-            "Could not infer a waterline for column '{view}'.'{name}' which has an 'emit_final' annotation"
-        )))
+        Err(LimiterError::MissingWaterline {
+            operator, row, view: view.to_owned(), column: name.clone(), next,
+        })
     }
 
     pub fn functions(

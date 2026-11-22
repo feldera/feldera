@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -1496,6 +1497,24 @@ public final class RustCircuitPass implements CircuitTransform {
                 this.compiler.reportProblem(SourcePositionRange.fromJson(message.required("range")),
                         message.required("warning").booleanValue(), message.required("continuation").booleanValue(),
                         message.required("error_type").textValue(), message.required("message").textValue());
+            if (result.has("limiter_refusal")) {
+                JsonNode refusal = result.required("limiter_refusal");
+                var operator = findOperator(circuit.allOperators, refusal.required("operator").longValue());
+                String message = result.required("message").textValue();
+                DBSPVariablePath.restoreGeneratedNames(result.required("next_generated_name").longValue());
+                switch (refusal.required("kind").textValue()) {
+                    case "gen2_key_lateness" -> {
+                        if (operator instanceof DBSPSourceMultisetOperator table)
+                            throw new UnimplementedException(message, table.getRelNode());
+                    }
+                    case "missing_waterline" -> {
+                        if (operator instanceof DBSPSinkOperator sink)
+                            throw new CompilationError(message, sink.metadata.columns
+                                    .get(refusal.required("column").intValue()).getPositionRange());
+                    }
+                }
+                throw new IllegalStateException("Unknown limiter diagnostic site " + refusal);
+            }
             if (!result.has("circuit"))
                 return circuit;
         }

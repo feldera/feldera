@@ -672,6 +672,13 @@ fn lowered_function_reply(arena: &Circuit, edit: &feldera_sql_ir::CircuitEditor,
     }))
 }
 
+fn pass_warnings(warnings: Vec<feldera_sql_expr::SimplifyWarning>) -> Vec<Value> {
+    warnings.into_iter().map(|w| json!({
+        "range":w.position, "error_type":w.kind, "message":w.message,
+        "warning":true, "continuation":false
+    })).collect()
+}
+
 fn transform(
     pass: &str,
     error_view: &str,
@@ -1342,9 +1349,24 @@ fn transform(
             let (output, warnings) = match pass {
                 "InsertLimiters" => {
                     let mut warnings = Vec::new();
-                    let (output, counter) = feldera_sql_opt::limiters::insert_limiters_with_warnings(
+                    use feldera_sql_opt::limiters::LimiterError;
+                    let (output, counter) = match feldera_sql_opt::limiters::insert_limiters_with_warnings(
                         circuit, serde_json::from_slice(state)?, &mut warnings,
-                    )?;
+                    ) {
+                        Ok(result) => result,
+                        Err(error) => {
+                            let message = error.to_string();
+                            let (finding, counter) = match error {
+                                LimiterError::Gen2KeyLateness { operator, next, .. } =>
+                                    (json!({"kind":"gen2_key_lateness", "operator":operator}), next),
+                                LimiterError::MissingWaterline { operator, row, next, .. } =>
+                                    (json!({"kind":"missing_waterline", "operator":operator, "column":row}), next),
+                                LimiterError::InvalidCircuit(error) => return Err(error.into()),
+                            };
+                            return Ok(json!({"limiter_refusal":finding, "message":message,
+                                "next_generated_name":counter, "diagnostics":pass_warnings(warnings)}));
+                        }
+                    };
                     next = counter;
                     (output, warnings)
                 }
@@ -1387,17 +1409,8 @@ fn transform(
                 "BreakFilters" => feldera_sql_opt::break_temporal_filters(circuit, &mut next)?,
                 _ => feldera_sql_opt::decompose_expensive_filters(circuit, &mut next)?,
             };
-            let warnings: Vec<_> = warnings
-                .into_iter()
-                .map(|w| {
-                    json!({
-                        "range":w.position, "error_type":w.kind, "message":w.message,
-                        "warning":true, "continuation":false
-                    })
-                })
-                .collect();
             let mut reply = json!({
-                "diagnostics":warnings, "weight_node":weight, "next_generated_name":next, "unused_sources":[]
+                "diagnostics":pass_warnings(warnings), "weight_node":weight, "next_generated_name":next, "unused_sources":[]
             });
             if let Some(retention) = retention {
                 reply["asof_retention"] = Value::Array(retention);
