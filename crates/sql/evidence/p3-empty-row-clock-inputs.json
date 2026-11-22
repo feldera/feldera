@@ -747,5 +747,36 @@
     "handle_cases": 8256,
     "batch_receipts_sha256": "6da079ab9d683395923f6fd16c1586cdcac980ff3b71b3a794294b14c3cd65ad",
     "receipt_sha256": "dbd7740411d33d23c9615af6705c74eed59bd853645bcec699df11b7b97bd7eb"
+  },
+  "decoder_campaign": {
+    "target": "decoder",
+    "elapsed_wall_seconds": 5433.7339487510035,
+    "elapsed_child_cpu_seconds": 3601.140805,
+    "target_cpu_seconds": 3600,
+    "final_sampled_worker_cpu_seconds": 3600.0,
+    "max_rss_kib": 147712,
+    "max_responded_batch_wall_seconds": 0.1164376379456371,
+    "deadline_seconds": 2,
+    "cases_per_batch": 32,
+    "seeds": 90,
+    "seeds_sha256": "a6d4368e8d404e0c28b85559a07aed3a28073536d13be580f1c0b147b2e4bcae",
+    "rng_seed": 672831,
+    "batches_complete": true,
+    "full_budget_reached": true,
+    "cases": 6835072,
+    "accepted": 2658642,
+    "exit_code": 0,
+    "mutations": {
+      "unknown_class": 976788,
+      "duplicate_identity": 977222,
+      "change_port": 975337,
+      "remove_operator": 976904,
+      "change_input": 976463,
+      "truncate": 976606,
+      "control": 975752
+    },
+    "worker_sha256": "eedf98ecb4a590bf40d5af33e3baa170cb3e60bb2d3797401020b9f0ec6e14f8",
+    "campaign_sha256": "89e625e1b57f8ea649613516b24b347aab86f7a34b0c6425bff57fd7f054da26",
+    "result_sha256": "4d45d9b6fa74925f06e337b795d911d80282936573f0dab301f4447fac1a9b7d"
   }
 }

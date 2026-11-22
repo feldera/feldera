@@ -1,0 +1,132 @@
+{
+  "commit": "5ded4b7822f7109a80fdc34b7160a7dc1715dbd4",
+  "scope": "Collapse shared index chains using only candidate map functions and their graph edges.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "75990c2e16bf59226af792e68f2463a3032ea56e92a796c15f995499e870c1a0",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "c81b70b32bbcde6be4228a73321c2a4549e16a856c54aa32b235c7b3a2e2072e",
+    "maven/tests.jar": "c2bb54813035490a1d2271ebe3e233684ba51afa051964813034c3a3143f8465"
+  },
+  "engines": {
+    "classic": {
+      "compared_programs": 246,
+      "pass_invocations": 246,
+      "comparisons": [
+        {
+          "population_sha256": "60824a0c202bb34b2a4c6bef1e5b44619f364a4fcbf4918487636c12388e36a5",
+          "reference_sha256": "c3a55f86ff2cf2a4c6024165ee81a52bbb8089d219861bde20cf9ea8b271df45",
+          "candidate_sha256": "e87fddfb6f9ae48da1bf4e9a389bb3333965801ec8ed83bef2c3d5e0680fb2af"
+        },
+        {
+          "population_sha256": "6685cb91320808c45e9f6f289d85fbe82f96398212405974cf0bb27882763963",
+          "reference_sha256": "d6ba37ee2dbd285e59b18456052914f9f99a399bc8ae631d112289561bb792a0",
+          "candidate_sha256": "9cd453146249ea92f693b6622c22f17c4d16a8c23bb44d3c820a5b0414bc8573"
+        },
+        {
+          "population_sha256": "221d7313dda58019dc14f60e91865735ea88ab4f54d2bda3038d46b8ad0eac33",
+          "reference_sha256": "2f4dde183eb018dc6cbb96a478b281ecf3a88b83dab1af8cda926840f66a958d",
+          "candidate_sha256": "8415073c4230a100368c3131a79f27f1b9ac358abe82df210f03df461e9d84c6"
+        },
+        {
+          "population_sha256": "816600eaa9aa5c903a3993c73312c0a683a1116183a0a6a8e6b6c26e72e4ce80",
+          "reference_sha256": "9a50e45d7d1aa76af25c0b0d88002b234b9d68a1089560c24a3fa1334a6385dc",
+          "candidate_sha256": "f0127ffac380e4b827f9828f7178cfda5263879348d629de58cd99439a0b6a29"
+        }
+      ],
+      "detached": {
+        "programs": 21,
+        "ordered_s4_observations": 9791,
+        "mismatches": 0,
+        "receipt_sha256": "a1da3160e529a82b64b2993a0463bfea1e70fb01cb835559526cc2da0a0c0417"
+      }
+    },
+    "gen2": {
+      "compared_programs": 388,
+      "pass_invocations": 388,
+      "comparisons": [
+        {
+          "population_sha256": "abd00acc6716e47307d15164f4cf0f55845e4f2736ebc0f383d2b5428a6fd40b",
+          "reference_sha256": "e70d1c4ef32fb66666c449c786cf9666249e0de149cff88693c90b76813a323b",
+          "candidate_sha256": "17bc2acd51cd8314f5af5ee8cfa9e2859a70697412b660c883339e928bc8a9e3"
+        },
+        {
+          "population_sha256": "234e7fc13a6e947c20fb5f4b9b350cf9679fccacfa726c45fcf3d147e9375b59",
+          "reference_sha256": "2de82115bd9b6912095d81ac8e0d2e39ee928954ff05684e06a5c2fac85b581a",
+          "candidate_sha256": "52b804c166d6909b60dfb5b6950f30c2a4bafaf1c4126b36a07da58b967422f3"
+        },
+        {
+          "population_sha256": "6cca33d60d60f595130018cb6468dac9adbdf53bf92f8e5a114374775f2393ae",
+          "reference_sha256": "ec53f731dc485770a8bcf4c4a295a43274e033d08ee43c25842065c1dab795ff",
+          "candidate_sha256": "b4a74f0d6d0fdb85e687000b130a22f8030bed81eb6208c3ca25bdbd03fca755"
+        },
+        {
+          "population_sha256": "2a2bb7b547da881904416a178b7d7647bb4b5e0f66e7bd740bfa175a9afa80e9",
+          "reference_sha256": "02a36fb830a4fa3015094cde3ac1dc4b33963aa6ed6a91bbd5a213823fddb44f",
+          "candidate_sha256": "1ae7a10f02e2c551b1e1cc98324eec943a7b71b8b0a4e0794ca33231eed7a965"
+        }
+      ],
+      "detached": {
+        "programs": 21,
+        "ordered_s4_observations": 9580,
+        "mismatches": 0,
+        "receipt_sha256": "3740c0c622b7ae3b800616c0517e72f80501423d6a238f8bf165ef573514d66a"
+      }
+    }
+  },
+  "tests": {
+    "rust": 181,
+    "clippy": "passed",
+    "maven": 48,
+    "packaged_junit": 34
+  },
+  "isolated_oracle_class_sha256": "0a0fbe6974a4a405c4a39be1f9395512247cbb96053e6289538041ea4ee49640",
+  "profile": {
+    "measurement": "Nexmark SQL, three fresh processes per compiler. Current-thread CPU in the selected pass excludes nested passes. Direct Java uses normal tiering and the hybrid uses TieredStopAtLevel=1. The VM also ran verification jobs.",
+    "metric": "main-thread CPU nanoseconds",
+    "sql_input_sha256": "ebe3c72dfd1de9e0cbaa6898a35cb0e293ffb19579b07fbeb594ff29f9e9e06b",
+    "profiler_source_sha256": "390f9bc523fdaed0840a5b3dddd987178ee1e82d28ed02722f5bd3ecd9eaf40c",
+    "runs": {
+      "before_direct_java": {
+        "cpu_ns": [
+          3006919,
+          2118498,
+          1883793
+        ],
+        "raw_sha256": "d0d6c76ba763fbce81537888150fd3a2dd80febfaf399a21a91e7a060dcd7f92",
+        "compiler_jar_sha256": "00e213eca374717613fe1010efe14573e31f43a3c3623d9b5b0018ae3e435c63",
+        "jni_library_sha256": "3ea8690b996ac9605e6e35176b35d1719b9dc72fc28d0083c0557a23d6229279"
+      },
+      "before_hybrid": {
+        "cpu_ns": [
+          150716414,
+          122255907,
+          126547222
+        ],
+        "raw_sha256": "87cba4f3d19381b6325de9a07ca96a3ae51e541c11b9b1e987dc4b4a42e790d4",
+        "compiler_jar_sha256": "00e213eca374717613fe1010efe14573e31f43a3c3623d9b5b0018ae3e435c63",
+        "jni_library_sha256": "3ea8690b996ac9605e6e35176b35d1719b9dc72fc28d0083c0557a23d6229279"
+      },
+      "after_direct_java": {
+        "cpu_ns": [
+          2303794,
+          3121541,
+          1932499
+        ],
+        "raw_sha256": "e301c5f5efe59eeb1b990f28d37b986f7899bd23c4ef9262b2a759a52af3b472",
+        "compiler_jar_sha256": "c81b70b32bbcde6be4228a73321c2a4549e16a856c54aa32b235c7b3a2e2072e",
+        "jni_library_sha256": "75990c2e16bf59226af792e68f2463a3032ea56e92a796c15f995499e870c1a0"
+      },
+      "after_hybrid": {
+        "cpu_ns": [
+          10230123,
+          7194875,
+          6665335
+        ],
+        "raw_sha256": "c2e05de8d81657cae0841d0be6863ffaaa716f001c829b4d76bb23cbf401ad4a",
+        "compiler_jar_sha256": "c81b70b32bbcde6be4228a73321c2a4549e16a856c54aa32b235c7b3a2e2072e",
+        "jni_library_sha256": "75990c2e16bf59226af792e68f2463a3032ea56e92a796c15f995499e870c1a0"
+      }
+    }
+  }
+}

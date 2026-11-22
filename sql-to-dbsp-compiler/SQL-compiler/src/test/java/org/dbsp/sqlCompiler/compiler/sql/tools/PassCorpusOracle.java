@@ -150,7 +150,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         if (pass instanceof ExpandAggregates expand && this.passClass.equals("ExpandStreamAggregates")
                 && Boolean.getBoolean("feldera.optimizer.compareRustAggregateLists"))
             this.replaceObservedPass(expand);
-        if (pass instanceof ShareIndexes sharing && this.passClass.equals("FindSharedIndexes")
+        if (pass instanceof ShareIndexes sharing
+                && (this.passClass.equals("FindSharedIndexes") || this.passClass.equals("CollapseSharedChains"))
                 && Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes")) {
             this.replaceObservedPass(sharing);
         }

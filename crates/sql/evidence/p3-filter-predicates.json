@@ -1,0 +1,101 @@
+{
+  "commit": "6d3eaf928cee1b446281b25dc4dd3ddd4a577e64",
+  "scope": "Move filters across maps and aggregates using the live closures or stream types.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "3ea8690b996ac9605e6e35176b35d1719b9dc72fc28d0083c0557a23d6229279",
+    "bin/sql-difftest": "3b31362d771007147209692d6bc06bec0dd04ba7c03be0d13e3f643d7d714c36",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/sql-compiler.jar": "00e213eca374717613fe1010efe14573e31f43a3c3623d9b5b0018ae3e435c63",
+    "maven/tests.jar": "a279edb5df25e538cb0dbef8d99a2c83fbf3a3c52a48dc531bfd913dae4a992f"
+  },
+  "engines": {
+    "classic": {
+      "compared_programs": 25,
+      "pass_invocations": 28,
+      "comparisons": [
+        {
+          "population_sha256": "cafcc3400440e669c3062090fc5285589c26ea75ccd09674fe6d548bcacb4c9e",
+          "reference_sha256": "d93947ee4e193798c0eac95ea4496856d7ff2e99efda5b9d5d91b9bc2d5d653b",
+          "candidate_sha256": "4cf13a5efdf536c06bf8633dc308fc0a03dbb92a3ab18658c28ab500cfd528fe"
+        }
+      ],
+      "detached": {
+        "programs": 25,
+        "ordered_s4_observations": 10197,
+        "mismatches": 0,
+        "receipt_sha256": "48a6bee3a22e9a943040228ecfdac062dd1f80c8a56ca2ce8348a2dc7daf9cd2"
+      }
+    },
+    "gen2": {
+      "compared_programs": 25,
+      "pass_invocations": 29,
+      "comparisons": [
+        {
+          "population_sha256": "1b805a3c6176f6d87d854005a27b8260f6fd28b8f258a37e97131455eefdec36",
+          "reference_sha256": "01b5c2754be872e1e2216cd0622fb9f787c004ffff2bce9bd01ad2260c037ee8",
+          "candidate_sha256": "6c5f4c691254e97e64c46fb65ddf44a26d82afa84d3fa1a600f68be7e7d24bfc"
+        }
+      ],
+      "detached": {
+        "programs": 25,
+        "ordered_s4_observations": 10604,
+        "mismatches": 0,
+        "receipt_sha256": "665b4b5b1e04528c4c0aaa2724e5d61b2f1f3f5fd15a951669f07fb9424242ff"
+      }
+    }
+  },
+  "tests": {
+    "rust": 181,
+    "clippy": "passed",
+    "maven": 48,
+    "packaged_junit": 34
+  },
+  "profile": {
+    "measurement": "Nexmark SQL, three fresh processes per compiler. Current-thread CPU in the selected pass excludes nested passes. Direct Java uses normal tiering and the hybrid uses TieredStopAtLevel=1. The VM also ran verification jobs.",
+    "metric": "main-thread CPU nanoseconds",
+    "sql_input_sha256": "ebe3c72dfd1de9e0cbaa6898a35cb0e293ffb19579b07fbeb594ff29f9e9e06b",
+    "profiler_source_sha256": "390f9bc523fdaed0840a5b3dddd987178ee1e82d28ed02722f5bd3ecd9eaf40c",
+    "runs": {
+      "before_direct_java": {
+        "cpu_ns": [
+          1882541,
+          2190376,
+          1832166
+        ],
+        "raw_sha256": "8cefc77e6cc9d264245e0eee096f306b4c6c175592be2654195bd7f1fa8f868c",
+        "compiler_jar_sha256": "bf8b4b0937f71f5c348cdb15dcfaaa321a99dbdcaa676b8d28e49f7ccabd9e23",
+        "jni_library_sha256": "6c7703ba35d1433a477822b94980128e6881e8550360e164d40a73d9f74e45c7"
+      },
+      "before_hybrid": {
+        "cpu_ns": [
+          212044781,
+          203873117,
+          200516301
+        ],
+        "raw_sha256": "a21c61a156ca53ffe71eb0fc7c5b4a4ec2fcd166d8c2c0cdfea37bc13258775a",
+        "compiler_jar_sha256": "bf8b4b0937f71f5c348cdb15dcfaaa321a99dbdcaa676b8d28e49f7ccabd9e23",
+        "jni_library_sha256": "6c7703ba35d1433a477822b94980128e6881e8550360e164d40a73d9f74e45c7"
+      },
+      "after_direct_java": {
+        "cpu_ns": [
+          2444292,
+          2241001,
+          1975542
+        ],
+        "raw_sha256": "d0d6c76ba763fbce81537888150fd3a2dd80febfaf399a21a91e7a060dcd7f92",
+        "compiler_jar_sha256": "00e213eca374717613fe1010efe14573e31f43a3c3623d9b5b0018ae3e435c63",
+        "jni_library_sha256": "3ea8690b996ac9605e6e35176b35d1719b9dc72fc28d0083c0557a23d6229279"
+      },
+      "after_hybrid": {
+        "cpu_ns": [
+          6509374,
+          5183460,
+          5264873
+        ],
+        "raw_sha256": "87cba4f3d19381b6325de9a07ca96a3ae51e541c11b9b1e987dc4b4a42e790d4",
+        "compiler_jar_sha256": "00e213eca374717613fe1010efe14573e31f43a3c3623d9b5b0018ae3e435c63",
+        "jni_library_sha256": "3ea8690b996ac9605e6e35176b35d1719b9dc72fc28d0083c0557a23d6229279"
+      }
+    }
+  }
+}

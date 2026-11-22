@@ -462,6 +462,18 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `6d3eaf928`, the filter pass matched all 57 selected invocations and
+50 detached compilations. On `5ded4b782`, shared index chain collapse
+matched all 634 frozen cases in which Java rewrote the graph. All 42
+selected detached compilations also matched. On Nexmark, median
+main-thread CPU fell from 204 to 5 ms for the filter pass and from 127
+to 7 ms for chain collapse. Each profile used three fresh hybrid JVMs.
+[Filter predicates](evidence/p3-filter-predicates.json) · [Shared index closures](evidence/p3-shared-chain-closures.json)
+
+The decoder campaign on `bf609aab1` completed 6,835,072 cases in one
+worker CPU-hour. It accepted 2,658,642 inputs and finished every batch
+within the two-second deadline. [Decoder and runtime results](evidence/p3-empty-row-clock-inputs.json)
+
 On `aaccfae30`, Rust analyzed each join closure once for both column lineage
 and candidate keys. The 11,665 join requests needed no Java fallback.
 Across the two frozen populations, direct and hybrid candidate keys matched
