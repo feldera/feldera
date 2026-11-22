@@ -333,6 +333,9 @@ public final class Gen2Runner {
         ObjectNode config = MAPPER.createObjectNode();
         config.put("name", name.substring(0, Math.min(name.length(), MAX_PIPELINE_NAME_CHARS)));
         config.put("workers", 1);
+        // The steps write the table `now` themselves, as the tests of the static engine do, so
+        // the controller's clock stays off.
+        config.putObject("dev_tweaks").put("gen2_wall_clock", false);
         config.putRawValue("program_ir", new RawValue(programIr(testCase.ccs)));
         config.putObject("inputs");
         config.set("outputs", outputs);
