@@ -33,6 +33,15 @@ pub enum ClosureBody {
     Lag,
 }
 
+/// Source of a lower bound for one column of a table or view. A closure
+/// upstream of a view can drop all bounds, even when its transfer was scheduled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub enum ColumnWaterline {
+    Declared,
+    InheritIfPresent,
+    Unbounded,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "rule")]
 pub enum MonotonicityTransfer {
@@ -42,7 +51,7 @@ pub enum MonotonicityTransfer {
     /// Declared fields get new bounds. A view inherits the remaining fields
     /// from its input, and a source leaves the remaining fields unbounded.
     DeclaredColumns {
-        lateness: Vec<bool>,
+        columns: Vec<ColumnWaterline>,
     },
     ProjectIndex {
         projection: IndexedWaterline,
@@ -87,11 +96,25 @@ fn relation_transfer(
     inherit: bool,
 ) -> Result<Option<MonotonicityTransfer>, Error> {
     let lateness = column_lateness(node, field)?.collect::<Result<Vec<_>, _>>()?;
-    Ok(if lateness.contains(&true) {
-        Some(MonotonicityTransfer::DeclaredColumns { lateness })
+    if !lateness.contains(&true) {
+        return Ok(inherit.then_some(MonotonicityTransfer::Identity { input: 0 }));
+    }
+    let undeclared = if inherit {
+        ColumnWaterline::InheritIfPresent
     } else {
-        inherit.then_some(MonotonicityTransfer::Identity { input: 0 })
-    })
+        ColumnWaterline::Unbounded
+    };
+    let columns = lateness
+        .into_iter()
+        .map(|declared| {
+            if declared {
+                ColumnWaterline::Declared
+            } else {
+                undeclared
+            }
+        })
+        .collect();
+    Ok(Some(MonotonicityTransfer::DeclaredColumns { columns }))
 }
 
 fn tuple_view(circuit: &Circuit, view: &Node) -> Result<bool, Error> {
@@ -467,7 +490,11 @@ mod tests {
                 (
                     NodeId::Outer(2),
                     MonotonicityTransfer::DeclaredColumns {
-                        lateness: vec![false, true, false]
+                        columns: vec![
+                            ColumnWaterline::Unbounded,
+                            ColumnWaterline::Declared,
+                            ColumnWaterline::Unbounded
+                        ]
                     }
                 ),
                 (
@@ -528,7 +555,7 @@ mod tests {
                 (
                     NodeId::Outer(1),
                     MonotonicityTransfer::DeclaredColumns {
-                        lateness: vec![true]
+                        columns: vec![ColumnWaterline::Declared]
                     }
                 ),
                 (
@@ -554,7 +581,9 @@ mod tests {
                  "metadata": {"columns": [{}, {}, {}]}},
                 {"class": "DBSPViewOperator", "id": 3, "inputs": [port(2)], "tupleRows": false,
                  "metadata": {"columns": [{"lateness": true}]}},
-                {"class": "DBSPSinkOperator", "id": 4, "inputs": [port(3)]}
+                {"class": "DBSPSinkOperator", "id": 4, "inputs": [port(3)]},
+                {"class": "DBSPViewOperator", "id": 5, "inputs": [port(2)], "tupleRows": true,
+                 "metadata": {"columns": [{}, {"lateness": true}, {}]}}
             ]
         }))?;
         assert_eq!(
@@ -563,12 +592,26 @@ mod tests {
                 (
                     NodeId::Outer(1),
                     MonotonicityTransfer::DeclaredColumns {
-                        lateness: vec![true, false, true]
+                        columns: vec![
+                            ColumnWaterline::Declared,
+                            ColumnWaterline::Unbounded,
+                            ColumnWaterline::Declared
+                        ]
                     }
                 ),
                 (
                     NodeId::Outer(2),
                     MonotonicityTransfer::Identity { input: 0 }
+                ),
+                (
+                    NodeId::Outer(5),
+                    MonotonicityTransfer::DeclaredColumns {
+                        columns: vec![
+                            ColumnWaterline::InheritIfPresent,
+                            ColumnWaterline::Declared,
+                            ColumnWaterline::InheritIfPresent
+                        ]
+                    }
                 ),
             ]
         );

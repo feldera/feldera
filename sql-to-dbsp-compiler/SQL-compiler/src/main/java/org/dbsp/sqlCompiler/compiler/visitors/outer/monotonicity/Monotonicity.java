@@ -181,8 +181,8 @@ public class Monotonicity extends CircuitVisitor {
                             transfer.operator().getClass().getSimpleName(), transfer.rule().name());
                 switch (transfer.rule()) {
                     case Identity -> this.identity(transfer.operator().to(DBSPSimpleOperator.class), transfer.input());
-                    case DeclaredColumns -> this.declaredColumns(transfer.operator().to(DBSPSimpleOperator.class),
-                            Objects.requireNonNull(transfer.lateness()));
+                    case DeclaredColumns -> this.installColumnWaterlines(transfer.operator().to(DBSPSimpleOperator.class),
+                            Objects.requireNonNull(transfer.columns()));
                     case ApplyClosure -> this.analyzeClosure(transfer.operator().to(DBSPUnaryOperator.class),
                             Objects.requireNonNull(transfer.function()));
                     case ProjectIndex -> this.projectIndex(transfer.operator().to(DBSPSimpleOperator.class),
@@ -360,19 +360,42 @@ public class Monotonicity extends CircuitVisitor {
         this.declaredColumns(node, Linq.map(node.metadata.columns, column -> column.lateness != null));
     }
 
-    private void declaredColumns(DBSPSimpleOperator node, List<Boolean> lateness) {
-        List<DBSPType> types;
-        MonotoneExpression input = null;
-        if (node instanceof DBSPSourceMultisetOperator table) {
-            types = table.metadata.getColumns().stream().map(column -> column.type).toList();
-        } else {
-            DBSPViewOperator view = node.to(DBSPViewOperator.class);
-            types = List.of(view.getOutputZSetElementType().to(DBSPTypeTuple.class).tupFields);
-            input = this.getMonotoneExpression(view.input());
+    private static List<DBSPType> columnTypes(DBSPSimpleOperator node) {
+        if (node instanceof DBSPSourceMultisetOperator table)
+            return table.metadata.getColumns().stream().map(column -> column.type).toList();
+        return List.of(node.getOutputZSetElementType().to(DBSPTypeTuple.class).tupFields);
+    }
+
+    @Nullable
+    private PartiallyMonotoneTuple inputRow(DBSPSimpleOperator node) {
+        if (node.inputs.isEmpty())
+            return null;
+        var input = this.getMonotoneExpression(node.inputs.get(0));
+        return input == null ? null : getBodyType(input).to(PartiallyMonotoneTuple.class);
+    }
+
+    /** Materialize the column sources selected on the expanded circuit. An
+     * inherited field keeps its original (possibly nested) monotone type. */
+    private void installColumnWaterlines(DBSPSimpleOperator node, List<RustCircuitPass.ColumnWaterline> sources) {
+        var types = columnTypes(node);
+        Utilities.enforce(sources.size() == types.size());
+        var inherited = sources.contains(RustCircuitPass.ColumnWaterline.InheritIfPresent) ? this.inputRow(node) : null;
+        List<IMaybeMonotoneType> fields = new ArrayList<>(types.size());
+        for (int i = 0; i < types.size(); i++) {
+            var type = types.get(i);
+            fields.add(switch (sources.get(i)) {
+                case Declared -> new MonotoneType(type);
+                case Unbounded -> NonMonotoneType.nonMonotone(type);
+                case InheritIfPresent -> inherited == null ? NonMonotoneType.nonMonotone(type) : inherited.getFieldType(i);
+            });
         }
+        this.setRowWaterline(node, fields);
+    }
+
+    private void declaredColumns(DBSPSimpleOperator node, List<Boolean> lateness) {
+        var types = columnTypes(node);
+        var inherited = this.inputRow(node);
         Utilities.enforce(lateness.size() == types.size());
-        PartiallyMonotoneTuple inherited = (input == null) ? null :
-                getBodyType(input).to(PartiallyMonotoneTuple.class);
         List<IMaybeMonotoneType> fields = new ArrayList<>();
         for (int index = 0; index < types.size(); index++) {
             DBSPType columnType = types.get(index);
@@ -385,9 +408,12 @@ public class Monotonicity extends CircuitVisitor {
                 fieldType = NonMonotoneType.nonMonotone(columnType);
             fields.add(fieldType);
         }
-        IMaybeMonotoneType projection = new PartiallyMonotoneTuple(fields, false, false);
-        MonotoneExpression result = this.identity(node, projection, false);
-        this.set(node, result);
+        this.setRowWaterline(node, fields);
+    }
+
+    private void setRowWaterline(DBSPSimpleOperator node, List<IMaybeMonotoneType> fields) {
+        var projection = new PartiallyMonotoneTuple(fields, false, false);
+        this.set(node, this.identity(node, projection, false));
     }
 
     @Override
