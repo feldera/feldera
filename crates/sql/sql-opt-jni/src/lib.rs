@@ -732,6 +732,26 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let borrowed = edit.borrow_value(zero)?;
             feldera_sql_expr::apply_closure(&mut edit, *reader, &[borrowed], &mut warnings)?
         }
+        ("PullFilters/Map" | "PullFilters/MapIndex", [producer, filter]) => {
+            use feldera_sql_ir::OperatorKind;
+            let kind = if pass == "PullFilters/Map" {
+                OperatorKind::Map
+            } else {
+                OperatorKind::MapIndex
+            };
+            let function = feldera_sql_opt::pull_filter_through_map(
+                &mut edit, kind, *producer, *filter, &mut warnings,
+            )?;
+            return lowered_function_reply(&arena, &edit, function, next, warnings);
+        }
+        ("PullFilters/Aggregate", [input, output, filter]) => {
+            let input = edit.type_id(*input)?;
+            let output = edit.type_id(*output)?;
+            let function = feldera_sql_opt::pull_filter_through_aggregate(
+                &mut edit, input, output, *filter, &mut next, &mut warnings,
+            )?;
+            return lowered_function_reply(&arena, &edit, function, next, warnings);
+        }
         ("ComposeProjection" | "TryComposeProjection", [before, after]) => {
             let Some(closure) = feldera_sql_opt::compose_projection(
                 &mut edit, *before, *after, pass == "TryComposeProjection", &mut warnings,
@@ -1002,6 +1022,7 @@ fn transform(
         | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
@@ -1302,6 +1323,11 @@ fn transform(
                 edits.insert(discarded, json!({"kind": "Discard"}));
             }
             return Ok(serde_json::to_value(edits)?);
+        }
+        if name == "PullFilterVisitor" {
+            if let Some(sites) = feldera_sql_opt::pull_filter_sites(&circuit)? {
+                return Ok(json!({"pull_filters": sites}));
+            }
         }
         if name == "DeindexMaps" {
             let edits: BTreeMap<_, _> = feldera_sql_opt::deindex_operators(&circuit)?

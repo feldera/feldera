@@ -240,7 +240,7 @@ pub use operator_hashes::{
 pub use optimize_distinct::optimize_distinct;
 pub use output_integrators::share_output_integrators;
 pub use propagate_constants::propagate_constants;
-pub use pull_filters::pull_filters;
+pub use pull_filters::{pull_filter_sites, pull_filter_through_aggregate, pull_filter_through_map, pull_filters};
 pub use push_integrals::{flat_integral_edits, push_integrals, IntegralEdit};
 pub use recursive_views::{resolve_view_references, ViewReferences, ViewResolution};
 pub use regions::{conflicting_regions, tag_regions};

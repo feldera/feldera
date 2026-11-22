@@ -3,15 +3,77 @@ use crate::{
     fanout::expensive,
     left_joins::uses_missing_value,
     propagate_constants::evaluate_constant_input,
-    rebuild::{input_type, noop_function, ProjectionNames},
+    rebuild::{ProjectionNames, input_type, noop_function},
     stream_rewrites::{body_members, reader_counts},
 };
-use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
+use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field,
     InnerKind, NodeId, OperatorKind as Op, OutputPort, TypeId,
 };
 use std::collections::{BTreeMap, HashMap};
+
+/// Flat filter sites that need only a producer function or the two aggregate
+/// stream types. Other rewrites use the complete circuit, including its origins.
+#[derive(serde::Serialize)]
+pub enum PullFilterSite {
+    Map,
+    MapIndex,
+    Aggregate,
+}
+
+pub fn pull_filter_sites(
+    circuit: &Circuit,
+) -> Result<Option<BTreeMap<u64, PullFilterSite>>, Error> {
+    let members = body_members(circuit)?;
+    let readers = reader_counts(circuit, &members);
+    let mut sites = BTreeMap::new();
+    for (body, id) in members {
+        if body != circuit.root_id() {
+            return Ok(None);
+        }
+        let filter = circuit.node(id).expect("validated circuit member");
+        if filter.operator_kind() != Some(Op::Filter) {
+            continue;
+        }
+        let input = filter
+            .inputs()
+            .next()
+            .ok_or_else(|| Error::new("filter requires an input"))?;
+        if readers.get(&input.operator) != Some(&1) {
+            continue;
+        }
+        let producer = circuit
+            .node(input.operator)
+            .expect("validated filter input");
+        let site = match producer.operator_kind() {
+            Some(Op::Map) => PullFilterSite::Map,
+            Some(Op::MapIndex) => PullFilterSite::MapIndex,
+            Some(
+                Op::Aggregate
+                | Op::StreamAggregate
+                | Op::PartitionedRollingAggregate
+                | Op::ChainAggregate
+                | Op::AggregateLinearPostprocess,
+            ) => PullFilterSite::Aggregate,
+            // A filter can itself have been rewritten earlier in this pass.
+            Some(
+                Op::Filter
+                | Op::Constant
+                | Op::IncrementalConstant
+                | Op::Noop
+                | Op::Integrate
+                | Op::Differentiate,
+            ) => return Ok(None),
+            _ => continue,
+        };
+        let NodeId::Outer(id) = id else {
+            return Err(Error::new("expected an operator ID"));
+        };
+        sites.insert(id, site);
+    }
+    Ok(Some(sites))
+}
 
 fn output(operator: NodeId) -> OutputPort {
     OutputPort {
@@ -37,7 +99,7 @@ fn apply(
     edit.expression(result)
 }
 
-fn through_map(
+pub fn pull_filter_through_map(
     edit: &mut CircuitEditor,
     kind: Op,
     map: NodeId,
@@ -64,7 +126,7 @@ fn through_map(
 
 /// Substitute a sentinel for the aggregate result. A surviving reference
 /// means the predicate cannot run before aggregation.
-fn through_aggregate(
+pub fn pull_filter_through_aggregate(
     edit: &mut CircuitEditor,
     input: TypeId,
     result: TypeId,
@@ -260,7 +322,7 @@ pub fn pull_filters(
                     &mut warnings,
                 )?),
                 Op::Map | Op::MapIndex => {
-                    through_map(&mut edit, kind, function?, predicate, &mut warnings)?
+                    pull_filter_through_map(&mut edit, kind, function?, predicate, &mut warnings)?
                 }
                 Op::Aggregate
                 | Op::StreamAggregate
@@ -269,7 +331,7 @@ pub fn pull_filters(
                 | Op::AggregateLinearPostprocess => {
                     let input = input_type(&edit, upstream)?;
                     let result = input_type(&edit, source)?;
-                    through_aggregate(
+                    pull_filter_through_aggregate(
                         &mut edit,
                         input,
                         result,

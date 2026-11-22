@@ -2078,6 +2078,21 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    @Nullable
+    static DBSPClosureExpression pulledPredicate(DBSPCompiler compiler, FilterPullEdits.Site site,
+                                                 DBSPSimpleOperator producer, DBSPClosureExpression predicate) {
+        var reply = switch (site) {
+            case Map, MapIndex -> invokeLowering(compiler, "PullFilters/" + site, producer.getClosureFunction(), predicate);
+            case Aggregate -> invokeLowering(compiler, "PullFilters/Aggregate",
+                    producer.inputs.get(0).outputType(), producer.outputPort().outputType(), predicate);
+        };
+        var function = reply.value.required("function");
+        var result = function.isNull() ? null : expressionDecoder(reply.writer).decodeInner(function, DBSPClosureExpression.class);
+        // Even a rejected aggregate predicate can consume a variable name and emit warnings.
+        finishLowering(compiler, reply.value);
+        return result;
+    }
+
     private DBSPCircuit applyStreamEdits(DBSPCircuit circuit, JsonNode edits) {
         if (edits.isEmpty())
             return circuit;
@@ -3402,6 +3417,11 @@ public final class RustCircuitPass implements CircuitTransform {
                     };
                     JsonNode probe = this.invoke("Topology/" + this.nativeName, OptimizerTopology.encode(circuit, details),
                             initial, state);
+                    if (probe.has("pull_filters")) {
+                        Map<Long, FilterPullEdits.Site> sites = MAPPER.convertValue(probe.required("pull_filters"),
+                                new TypeReference<>() {});
+                        return sites.isEmpty() ? circuit : new FilterPullEdits(this.compiler, sites).apply(circuit);
+                    }
                     if (probe.has("integral_edits")) {
                         Map<Long, String> edits = MAPPER.convertValue(probe.required("integral_edits"), new TypeReference<>() {});
                         return edits.isEmpty() ? circuit : new IntegralPushEdits(this.compiler, edits).apply(circuit);
