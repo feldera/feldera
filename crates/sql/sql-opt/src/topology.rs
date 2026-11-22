@@ -116,14 +116,7 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
                 && n.data("literalPredicate").and_then(|v| v.as_bool()) != Some(false)
         }),
         "CSE" => !crate::cse_payloads(circuit)?.is_empty(),
-        "ComparatorDeclarations" => {
-            for id in order {
-                if crate::comparators::has_ordered_index(circuit, id)? {
-                    return Ok(true);
-                }
-            }
-            false
-        }
+        "ComparatorDeclarations" => !crate::ordered_indexes(circuit)?.is_empty(),
         "BalancedJoins" => {
             !crate::balanced_joins::eligible_joins(circuit)?.is_empty() || has_dead_code(true)?
         }

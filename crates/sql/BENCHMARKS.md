@@ -4,6 +4,14 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Comparator declarations, 2026-11-22
+
+Batching the selected index functions reduced median calling-thread CPU time
+on classic Nexmark from 82.18 ms to 5.72 ms for this pass. Nine alternating
+pairs ran in fresh JVMs on CPU 13 during full corpus and runtime replay.
+The medians use the final eight pairs.
+[Measurements and replay receipts](evidence/p3-ordered-index-functions.json)
+
 ## Scalar row waterlines, 2026-11-22
 
 On `b81436777`, all 69 cold pairs matched through classic source emission.

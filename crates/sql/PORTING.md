@@ -470,6 +470,12 @@ across compilers in both directions. Four-worker cancellation p95 measured
 33.67 ms during replay and 4.54 ms in isolation, against the 25 ms limit.
 [Scalar waterline comparisons and worker measurements](evidence/p3-scalar-row-waterlines.json)
 
+Rust rewrites custom-ordered index functions together, preserving shared
+comparator references and the order of new declarations. All 24 classic
+and 22 Gen-2 cases where the pass changed the graph matched Java at its
+boundary and through detached emission. COUNT and LATENESS checkpoints
+restored in both directions. [Comparator comparisons](evidence/p3-ordered-index-functions.json)
+
 Rust validates trace sharing against the operator topology and returns the
 stream substitutions and retention policies to discard. All 63 classic and
 215 Gen-2 frozen programs where the pass had changed the graph matched Java

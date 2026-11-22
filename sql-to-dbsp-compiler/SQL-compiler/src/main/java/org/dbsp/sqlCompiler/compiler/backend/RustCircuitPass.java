@@ -7,6 +7,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.util.RawValue;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComparatorItem;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.apache.calcite.util.Pair;
@@ -2439,6 +2442,55 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] discoverIndexes(byte[] snapshot, long next, byte[] visited, KeyEquality equality);
 
+    private DBSPCircuit declareComparators(DBSPCircuit circuit, long next) throws IOException {
+        byte[] types = OptimizerExpressions.encode(this.compiler, circuit, OptimizerExpressions.Roots.INDEX_TYPES);
+        long[] indexes = MAPPER.treeToValue(this.invoke("Topology/OrderedIndexes", types, next, EMPTY_CONTEXT), long[].class);
+        if (indexes.length == 0)
+            return circuit;
+
+        var operators = operatorsById(circuit);
+        var roots = new DBSPExpression[indexes.length];
+        for (int i = 0; i < indexes.length; i++)
+            roots[i] = operators.get(indexes[i]).to(DBSPUnaryOperator.class).getFunction();
+        var names = circuit.declarations.stream().map(DBSPDeclaration::getName).toList();
+        var reply = invokeLowering(this.compiler, "ComparatorDeclarations/Functions", MAPPER.writeValueAsBytes(names), roots);
+        var decoder = expressionDecoder(reply.writer);
+        var functions = reply.value.required("functions");
+        if (functions.size() != indexes.length)
+            throw new IllegalStateException("Expected one function per ordered index");
+        var replacements = new HashMap<Long, DBSPExpression>();
+        for (int i = 0; i < indexes.length; i++)
+            replacements.put(indexes[i], decoder.decodeInner(functions.required(i), DBSPExpression.class));
+        var items = new ArrayList<DBSPComparatorItem>();
+        for (var item : reply.value.required("items"))
+            items.add(decoder.decodeInner(item, DBSPComparatorItem.class));
+
+        return new CircuitCloneVisitor(this.compiler, false) {
+            @Override
+            public void replace(DBSPSimpleOperator operator) {
+                var function = replacements.get(operator.id);
+                if (function == null) {
+                    super.replace(operator);
+                    return;
+                }
+                var index = operator.to(DBSPUnaryOperator.class);
+                var input = this.mapped(index.input());
+                var type = index.getOutputIndexedZSetType();
+                if (index instanceof DBSPMapIndexOperator)
+                    this.map(index, new DBSPMapIndexOperator(index.getRelNode(), function, type, input));
+                else
+                    this.map(index, new DBSPFlatMapIndexOperator(index.getRelNode(), function, type, input));
+            }
+
+            @Override
+            public void postorder(DBSPCircuit circuit) {
+                for (var item : items)
+                    this.getUnderConstructionCircuit().addDeclaration(new DBSPDeclaration(item));
+                super.postorder(circuit);
+            }
+        }.apply(circuit);
+    }
+
     private void findSharedIndexes(DBSPCircuit circuit, long next, FindSharedIndexes find) throws IOException {
         var details = OptimizerTopology.Details.SHARED_INDEXES;
         var payloads = this.invoke("Topology/FindSharedIndexes", OptimizerTopology.encode(circuit, details), next, EMPTY_CONTEXT);
@@ -2938,12 +2990,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         initial, state);
                 case "NoConnectorMetadata" -> result = this.invoke(this.nativeName,
                         OptimizerExpressions.executableCalls(this.compiler, circuit), initial, state);
-                case "ComparatorDeclarations" -> {
-                    byte[] types = OptimizerExpressions.encode(this.compiler, circuit, OptimizerExpressions.Roots.INDEX_TYPES);
-                    if (!this.invoke("Topology/" + this.nativeName, types, initial, state)
-                            .required("needs_full_snapshot").booleanValue())
-                        return circuit;
-                }
+                case "ComparatorDeclarations" -> { return this.declareComparators(circuit, initial); }
                 case "CircuitStatistics" -> result = this.invoke(this.nativeName,
                         OptimizerTopology.statistics(this.compiler, circuit), initial, state);
                 case "CheckPersistentIds" -> {

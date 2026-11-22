@@ -387,6 +387,18 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             "next_generated_name": next, "warnings": pass_warnings(warnings)}));
     }
     let function = match (pass, roots.as_slice()) {
+        ("ComparatorDeclarations/Functions", functions) => {
+            let names = serde_json::from_slice(state)?;
+            let replacements = feldera_sql_opt::rewrite_index_functions(&mut edit, functions, names)?;
+            let items = edit.circuit().root().edges("declarations")?.into_iter()
+                .map(|id| edit.node(id)?.edge("item"))
+                .collect::<Result<Vec<_>, feldera_sql_ir::Error>>()?;
+            // Encode both lists in the same identity space. A declaration can refer
+            // to an original comparator that also appears in an untouched closure.
+            let mut encoded = edit.circuit().additional_inner_nodes(&arena, replacements.into_iter().chain(items))?;
+            let items = encoded.split_off(functions.len());
+            return Ok(json!({"functions": encoded, "items": items}));
+        }
         ("ExpandMetadataCasts/Initializer", [root]) => {
             let root = edit.expression(*root)?;
             feldera_sql_expr::prepare_column_default(&mut edit, root, &mut next)?
@@ -918,7 +930,7 @@ fn transform(
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds"
         | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
-        | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
+        | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/FixedColumns" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
@@ -1160,6 +1172,9 @@ fn transform(
         return Ok(json!(operator_numbers(candidates)));
     }
     if let Some(name) = pass.strip_prefix("Topology/") {
+        if name == "OrderedIndexes" {
+            return Ok(json!(operator_numbers(feldera_sql_opt::ordered_indexes(&circuit)?)));
+        }
         if name == "OptimizeIncrementalVisitor" {
             use feldera_sql_opt::IntegralEdit;
             if let Some(edits) = feldera_sql_opt::flat_integral_edits(&circuit)? {

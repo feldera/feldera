@@ -1,4 +1,4 @@
-use feldera_sql_expr::{contains_type, Rewrite, Transformation, Visit};
+use feldera_sql_expr::{Rewrite, Transformation, Visit, contains_type};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, NodeId,
     OperatorKind, TypeKind,
@@ -49,7 +49,7 @@ impl Transformation for DeclareComparators {
     }
 }
 
-pub(super) fn has_ordered_index(circuit: &Circuit, id: NodeId) -> Result<bool, Error> {
+fn has_ordered_index(circuit: &Circuit, id: NodeId) -> Result<bool, Error> {
     let op = circuit
         .node(id)
         .ok_or_else(|| Error::new("unknown index operator"))?;
@@ -62,11 +62,38 @@ pub(super) fn has_ordered_index(circuit: &Circuit, id: NodeId) -> Result<bool, E
     contains_type(circuit, op.edge("outputType")?, TypeKind::WithCustomOrd)
 }
 
+/// Index functions that can contain a comparator declaration, in visitor order.
+pub fn ordered_indexes(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
+    let mut ordered = Vec::new();
+    for id in circuit.operator_order(BodyOrder::Postorder)? {
+        if has_ordered_index(circuit, id)? {
+            ordered.push(id);
+        }
+    }
+    Ok(ordered)
+}
+
+/// Rewrite the selected functions together so shared comparators have one path.
+pub fn rewrite_index_functions(
+    editor: &mut CircuitEditor,
+    functions: &[NodeId],
+    declaration_names: HashSet<String>,
+) -> Result<Vec<NodeId>, Error> {
+    let mut rewrite = Rewrite::new(DeclareComparators {
+        declaration_names,
+        paths: HashMap::new(),
+    });
+    functions
+        .iter()
+        .map(|&id| rewrite.apply(editor, id))
+        .collect()
+}
+
 /// Move comparator definitions used by custom-ordered index keys into circuit declarations.
 pub fn declare_comparators(circuit: Circuit) -> Result<Circuit, Error> {
-    let operators = circuit.operator_order(BodyOrder::Postorder)?;
+    let operators = ordered_indexes(&circuit)?;
     let mut editor = CircuitEditor::new(circuit);
-    let mut rule = DeclareComparators::default();
+    let mut declaration_names = HashSet::new();
     for declaration in editor.circuit().root().edges("declarations")? {
         let item = editor.node(editor.node(declaration)?.edge("item")?)?;
         let (owner, field) = match item.class() {
@@ -81,18 +108,17 @@ pub fn declare_comparators(circuit: Circuit) -> Result<Circuit, Error> {
             .data(field)
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::new("circuit declaration has no name"))?;
-        rule.declaration_names.insert(name.to_owned());
+        declaration_names.insert(name.to_owned());
     }
-    let mut rewrite = Rewrite::new(rule);
-    for id in operators {
-        let op = editor.node(id)?;
-        if has_ordered_index(editor.circuit(), id)? {
-            let function = op.edge("function")?;
-            let replacement = rewrite.apply(&mut editor, function)?;
-            editor.clear_annotations(id)?;
-            if replacement != function {
-                editor.set_operator_field(id, "function", Field::Reference(replacement))?;
-            }
+    let functions = operators
+        .iter()
+        .map(|&id| editor.node(id)?.edge("function"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let replacements = rewrite_index_functions(&mut editor, &functions, declaration_names)?;
+    for ((id, original), replacement) in operators.into_iter().zip(functions).zip(replacements) {
+        editor.clear_annotations(id)?;
+        if replacement != original {
+            editor.set_operator_field(id, "function", Field::Reference(replacement))?;
         }
     }
     editor.finish()

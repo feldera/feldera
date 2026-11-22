@@ -1,0 +1,71 @@
+{
+  "base_commit": "c8f29995d",
+  "scope": "Rust selects custom-ordered indexes in traversal order, rewrites their functions in one expression arena, and returns the rewritten roots and new comparator items. The JVM installs them on the live operators.",
+  "artifacts_sha256": {
+    "compiler.jar": "ebff988f7d7c1da78dbf32dbcb6ecb7cd56c945be34b4b5fc76fd84d3db59115",
+    "test.jar": "4d8a014c6c30af13763abb18d2acf13b142999edf405c9e7581160b7199f0774",
+    "bin/libfeldera_sql_opt_jni.so": "086a4733e82f38d7088c3ce9fcd42874a968b60681ab589d709027db91726906",
+    "bin/sql2dbsp": "48c370ee07a8979bfdb9901cc31937e6a0adb7960968627abbded366bfdc4e07",
+    "bin/sql-difftest": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d"
+  },
+  "engines": {
+    "classic": {
+      "pass_result": "ComparatorDeclarations matched at 24 invocations across 24 cases",
+      "captures_sha256": {
+        "false": "1c5fcbcd77e3f009c842bfbb690f2292902a09481caa5b3c0942ab81c91a5255",
+        "true": "75c4d28af38540560345fd5fe3130c38dee7522510bf848a7c36c9060b9b4686"
+      },
+      "detached_cases": 24,
+      "detached_receipts_sha256": [
+        "046782ce3e4cb46774fd07b0caad8ecbae3c90452f7e486a1c47f547c30d3fda",
+        "87f8078b1c3b59bcea723637a60b27a55130ea84d46972d861dcae6101f3bd3e",
+        "8503fe552218ff43165583a09616909c45bffbfd43b730ec055c2409c08710ad",
+        "f2f1d306f3a12342b0a4ffc949e85499c0eb45424bda5f67932fe79c198db032"
+      ]
+    },
+    "gen2": {
+      "pass_result": "ComparatorDeclarations matched at 22 invocations across 22 cases",
+      "captures_sha256": {
+        "false": "dc2ebae79f00811b8b8d78c847291ae7e457c9f1f82cb540699deef12b812284",
+        "true": "75d862676ce2dee7503207b65c4fcab80ba3714a7146cd4820f09d750aedccab"
+      },
+      "detached_cases": 22,
+      "detached_receipts_sha256": [
+        "915ee8baf114d393ab17447577f4abcb21d47e1c84a5170809e37cad3c46a329",
+        "11f4cd190ae60703e4b2e75edfb6d1de156f8a0dfa74ded88d4755974fbf79f6",
+        "d5bd249aafbe671ed0dac1e57d1aa9b8c96abadc7a31203dc5f68f9b305832e8",
+        "cb2ff3ecab694b4c88e3e97c12c58fe1f17ebb98b1af1cc63560a760e2e05abf"
+      ]
+    }
+  },
+  "tests": {
+    "rust_passed": 217,
+    "maven_passed": 46,
+    "logs_sha256": {
+      "tests.log": "9311158bcc6a47be12df03fcb1af21c2d41af250203564c4df014925c29c2609",
+      "clippy.log": "c1d146da4f01173ba2d9b77ae24046c3c5c4c70e66d9b33e620d5501d7f8abf0",
+      "maven.log": "0b100414a17e26b3f4c1d9de1e83e45e0bedee8e41b1c91c6d802eedce48fbc3"
+    }
+  },
+  "checkpoint_restores": {
+    "count": "c63707792431a0774cbfa8fdc1517b52605f3d3fecd6aa47b4c1b30e4a499696",
+    "watermark": "24c61ce9c8b20b985255d4c100e9a827af25e50a12186d7876c574f1d36c9b34"
+  },
+  "nexmark_profile": {
+    "cpu": 13,
+    "warmup_pairs": 1,
+    "measured_pairs": 8,
+    "metric": "median calling-thread CPU milliseconds in ComparatorDeclarations",
+    "concurrent_work": "frozen compiler and runtime replay",
+    "results": {
+      "scalar-row-waterlines": {
+        "milliseconds": 82.175766,
+        "raw_sha256": "3d286d20bb8f53d019890563b58962cc776ffde6e7111e4a7c328e7447318388"
+      },
+      "ordered-index-functions": {
+        "milliseconds": 5.7219975,
+        "raw_sha256": "64d641dc9166f0e0d666bcec1abb7c8a92fc8c67ed2d64c2a900ba1d0cef66d9"
+      }
+    }
+  }
+}
