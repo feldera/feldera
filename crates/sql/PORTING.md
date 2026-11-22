@@ -462,6 +462,16 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+With `--correlatedColumns`, Rust traces comparisons to their source columns and
+reports columns that joins equate. All 8,571 classic and 8,527 Gen-2 report
+comparisons matched Java on stdout and exceptions. Rust produced 16,974
+successful reports. The other 62 entries per engine hit the Java diagnostic
+for missing lineage after a positive-weight operator. With the report enabled,
+all 16 selected detached compilations matched through artifact emission.
+Run the test utility `LineageOracle` with the frozen JSONL population and the JNI
+library on `java.library.path` to repeat the report comparison.
+[Report and replay results](evidence/p3-correlated-columns.json)
+
 Rust follows column lineage through deeply nested closures, references and
 shared tuples using explicit stacks. A 512-binding regression test preserves
 the input column. Across 228 selected programs, Rust and Java agreed on fixed

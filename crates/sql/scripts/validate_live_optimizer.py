@@ -96,7 +96,7 @@ def graph_cleanup_counts(case, record):
 def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCHEDULE, *,
                       validate_weights=False, cast_iterations=None, unused_field_iterations=None,
                       graph_cleanups=None, clock_scans=None, temporal_splits=None, temporal_merge_fallbacks=None, now_stream=None,
-                      outputs_are_sets=False, trim_inputs=False, asof_retention_moves=0, star_joins_enabled=True,
+                      outputs_are_sets=False, trim_inputs=False, correlated_columns=False, asof_retention_moves=0, star_joins_enabled=True,
                       window_sharing_enabled=True, linear_retention_graphs=None, noop_iterations=None,
                       native_limiter_placements=None, require_native_limiters=False):
     expected = dict(schedule)
@@ -144,6 +144,8 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
                 del expected[name]
     if trim_inputs:
         expected["TrimInputs"] = 1
+    if correlated_columns:
+        expected["Lineage"] = 1
     if outputs_are_sets:
         expected["EnsureDistinctOutputs"] = 1
         expected["MultisetAnalysis"] += 1
@@ -248,7 +250,8 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
             raise ValueError(f"Duplicate frozen case {key}")
         expected[key] = (row["input_sha256"], row["options"]["ioOptions"]["gen2"],
                          row["options"]["languageOptions"]["incrementalize"], row["options"]["ioOptions"]["nowStream"],
-                         row["options"]["languageOptions"]["outputsAreSets"], row["options"]["ioOptions"]["trimInputs"])
+                         row["options"]["languageOptions"]["outputsAreSets"], row["options"]["ioOptions"]["trimInputs"],
+                         row["options"]["ioOptions"].get("correlatedColumns", False))
     controls = {}
     for reference in references:
         for row in read_run(reference, "SQL", full_trace):
@@ -331,6 +334,7 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
                               clock_scans=clock_scans, temporal_splits=splits, temporal_merge_fallbacks=fallbacks,
                               now_stream=expected[key][3],
                               outputs_are_sets=expected[key][4], trim_inputs=expected[key][5],
+                              correlated_columns=expected[key][6],
                               native_limiter_placements=limiter_placements, require_native_limiters=require_native_limiters,
                               noop_iterations=noop_iterations, linear_retention_graphs=linear_graphs,
                               asof_retention_moves=asof_moves, star_joins_enabled=star_joins, window_sharing_enabled=sharing)

@@ -128,15 +128,30 @@ public class LineageTests extends BaseSQLTests {
                 CREATE LOCAL VIEW W AS SELECT T.X AS X, S.Y AS Y FROM T JOIN S ON T.X = S.X;
                 CREATE VIEW V AS SELECT X+1, Y, 2 FROM W WHERE X - 2 < Y AND x > 0;""";
         File file = createInputScript(sql);
+        String expected = """
+                [Correlated:] [s.x, t.x]
+                [Compared:] [ s.x > 0 ]
+                [Compared:] [ t.x > 0 ]
+                """;
+        Assert.assertEquals(expected, report(file, false));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLineage"))
+            Assert.assertEquals(expected, report(file, true));
+    }
+
+    private static String report(File input, boolean rust) throws SQLException {
+        List<String> options = new ArrayList<>(List.of("--noRust", "--correlatedColumns"));
+        if (rust)
+            options.add("--rust-optimizer-passes");
+        options.add(input.getPath());
         PrintStream save = System.out;
-        ByteArrayOutputStream capture = new ByteArrayOutputStream();
-        System.setOut(new PrintStream(capture));
-        CompilerMain.execute("--noRust", "--correlatedColumns", file.getPath());
-        System.setOut(save);
-        Assert.assertEquals("""
-                  [Correlated:] [s.x, t.x]
-                  [Compared:] [ s.x > 0 ]
-                  [Compared:] [ t.x > 0 ]
-                  """, capture.toString());
+        var capture = new ByteArrayOutputStream();
+        try (var stream = new PrintStream(capture)) {
+            System.setOut(stream);
+            var messages = CompilerMain.execute(options.toArray(String[]::new));
+            Assert.assertEquals(messages.toString(), 0, messages.exitCode);
+        } finally {
+            System.setOut(save);
+        }
+        return capture.toString();
     }
 }

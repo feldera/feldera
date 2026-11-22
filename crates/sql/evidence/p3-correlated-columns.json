@@ -1,0 +1,56 @@
+{
+  "base_commit": "199b748fb26facdae0f2510cc63ae589db6b482c",
+  "comparison": "Invoke Java Lineage and the hybrid pass on the same live circuit immediately before DeterministicFunctions. Compare stdout and exception class and message. Count a native result only when the Java diagnostic fallback was not called.",
+  "build": {
+    "bin/libfeldera_sql_opt_jni.so": "582cda99a5f721e721d9bc451ce03da40bfb106df1e728c21a4e9e62f6990451",
+    "report.jar": "d58b3b2d5ea0bb603d1cc3f39f943db0e2cce9fa574012bfe0ff290b68ebe684",
+    "tests.log": "37058d31c5d070a7c318bf472d6078142ff44f920706de364fb068cc46978edb",
+    "clippy.log": "56ef1f100d808ee2feaeb8757a326b0b66754a671be7864563a5eef6aabd164d",
+    "junit.log": "719e704b892ab0fa53af1f4301a721d1b3b4558095579a5c755976f8f324d598",
+    "LineageOracle.java": "cd2e92ad103b723e9e1caaf852b0555f4077eb6252932fb9042467268777a85c"
+  },
+  "rust_tests": 124,
+  "junit_tests": 3,
+  "engines": {
+    "classic": {
+      "programs": 8571,
+      "native_successes": 8509,
+      "matching_java_exceptions": 62,
+      "report_lines": 1666,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "report_sha256": "267eea7c75996c19b25ee9e984b0e42f4b3530021832d96e5a32a9dcfce744cc",
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "detached_shards": [
+        {
+          "manifest_sha256": "5f92c5acbe8bd654c0158b698c2f2d8f4d3eb98389b107a2fa91bb2eb5f81a2b",
+          "records_sha256": "1c99d5766d236904968dd975063536535486ad7a2c97c562c2ca0d190224c4a9"
+        },
+        {
+          "manifest_sha256": "8908dd1ab2c34269ce45875f83b5bd8a9b9c6ebc48315a601c55b149208a734d",
+          "records_sha256": "2bccdae65c2cb1000803f38d0ce68c0eb1090fdc143491ecb38bd1356b497a36"
+        }
+      ]
+    },
+    "gen2": {
+      "programs": 8527,
+      "native_successes": 8465,
+      "matching_java_exceptions": 62,
+      "report_lines": 1645,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "report_sha256": "5c8141ac9c7d341c49a44a8cfc44c91f4e77d0972870eba302aaf5ec0cf4cc6a",
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "detached_shards": [
+        {
+          "manifest_sha256": "d1275d09377f37bca20d6bb4cc0d484b407bb8c3e819ccb65c21945253ff3055",
+          "records_sha256": "cf194d1e879a4ab9e35c86da75b69e83a000851871f8345fda67298e92a70626"
+        },
+        {
+          "manifest_sha256": "a8d1727e0bd47b94245421a4cd2823a83780ac4aa0fec48ee73f6bb245491ba7",
+          "records_sha256": "a1774ccb95a0c27e91b5dffdafa3fce27db85772c9d7be1d579d878d0e782ad0"
+        }
+      ]
+    }
+  }
+}

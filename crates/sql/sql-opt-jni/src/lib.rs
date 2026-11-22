@@ -1001,6 +1001,10 @@ fn transform(
     } else {
         Circuit::from_json_bytes(input)?
     };
+    if pass == "Lineage" {
+        let edit = feldera_sql_ir::CircuitEditor::new(circuit);
+        return Ok(serde_json::to_value(feldera_sql_opt::correlated_columns(&edit)?)?);
+    }
     if live == Some("OptimizeIncrementalVisitor/Signatures") {
         let output = feldera_sql_opt::push_integrals(circuit.clone(), &mut next)?;
         return Ok(match output.retained_live_graph(&circuit) {

@@ -124,6 +124,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Lineage;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -196,6 +198,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private final String nativeName;
     @Nullable private final OptimizeProjectionVisitor outputProjections;
     public final boolean wrapsGraphOptimization;
+    @Nullable private final Lineage lineage;
     private final OptimizerSnapshots snapshots;
     @Nullable private final FindMapChains mapChains;
     @Nullable private final FindSharedIndexes sharedIndexes;
@@ -264,6 +267,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public RustCircuitPass(DBSPCompiler compiler, CircuitTransform original, OptimizerSnapshots snapshots) {
         this.compiler = compiler;
         this.name = original.getName();
+        this.lineage = original instanceof Lineage report ? report : null;
         this.wrapsGraphOptimization = original instanceof OptimizeWithGraph;
         this.temporalScan = original instanceof ReorderTemporalFilters.Scan scan ? scan : null;
         this.temporalOrder = original instanceof ReorderTemporalFilters.Reorder reorder ? reorder : null;
@@ -2678,6 +2682,33 @@ public final class RustCircuitPass implements CircuitTransform {
         analysis.restore(facts);
     }
 
+    private record LineageFinding(String kind, List<Lineage.TableColumn> columns, long comparison, long literal) {}
+
+    private DBSPCircuit reportLineage(DBSPCircuit circuit, Lineage report, long initial) throws IOException {
+        var writer = this.snapshots.writer();
+        var nodes = new HashMap<Long, IDBSPInnerNode>();
+        writer.innerVisitor.liveNodes = nodes;
+        writer.apply(circuit);
+        var result = this.invoke("Lineage", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
+                initial, EMPTY_CONTEXT);
+        if (result.isNull())
+            return report.apply(circuit);
+        for (var finding : MAPPER.treeToValue(result, LineageFinding[].class)) {
+            var columns = new java.util.TreeSet<>(finding.columns());
+            switch (finding.kind()) {
+                case "correlated" -> report.reportCorrelated(new Lineage.ColumnSet(columns));
+                case "compared" -> {
+                    var comparison = Utilities.getExists(nodes, finding.comparison()).to(DBSPBinaryExpression.class);
+                    var literal = Utilities.getExists(nodes, finding.literal()).to(DBSPLiteral.class);
+                    for (var column : columns)
+                        report.reportCompared(new Lineage.ColumnCompared(column, comparison.opcode, literal));
+                }
+                default -> throw new IllegalStateException("Unknown lineage finding " + finding.kind());
+            }
+        }
+        return circuit;
+    }
+
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         this.usedGeneralTemporalAnalysis = false;
@@ -2685,6 +2716,8 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             byte[] state = EMPTY_CONTEXT;
             ToJsonOuterVisitor writer = null;
+            if (this.lineage != null)
+                return this.reportLineage(circuit, this.lineage, initial);
             if (this.stages != null)
                 return this.stages.apply(circuit);
             if (this.outputProjections != null)

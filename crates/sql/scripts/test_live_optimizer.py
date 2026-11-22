@@ -30,6 +30,14 @@ class FrozenPlacements(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Rust placements"):
             verify_placements("missing conditional pass", BASE_COUNTS, True)
 
+    def test_lineage_runs_once_when_the_report_is_requested(self):
+        enabled = {**BASE_COUNTS, "Lineage": 1}
+        verify_placements("report requested", enabled, False, correlated_columns=True)
+        with self.assertRaisesRegex(ValueError, "Rust placements"):
+            verify_placements("report skipped", BASE_COUNTS, False, correlated_columns=True)
+        with self.assertRaisesRegex(ValueError, "Rust placements"):
+            verify_placements("report disabled", enabled, False)
+
     def test_limiter_insertion_follows_the_direct_compilers_input_graph(self):
         native = {**BASE_COUNTS, "InsertLimiters": 1}
         verify_placements("supported operators", native, False, native_limiter_placements=1)

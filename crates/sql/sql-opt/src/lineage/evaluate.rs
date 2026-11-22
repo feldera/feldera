@@ -1,5 +1,7 @@
 //! Evaluate children before their parents, with lexical bindings in effect at each read.
-use super::{AnalysisError, Interpreter, Scope, Source, preserves_cast, text};
+use super::{
+    AnalysisError, Interpreter, Merge, Scope, Source, preserves_cast, report::Finding, text,
+};
 use crate::lexical_scope::expression_children;
 use feldera_sql_ir::{Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId};
 use std::collections::HashSet;
@@ -135,6 +137,12 @@ impl<'a> Interpreter<'a> {
         scope: &Scope<'a>,
     ) -> Result<Source, AnalysisError> {
         let child = |name| self.value(node.edge(name)?);
+        let reporting = self.comparisons.is_some();
+        let intersection = if reporting {
+            Merge::CommonSources
+        } else {
+            Merge::CopiedColumns
+        };
         Ok(match node.inner_kind() {
             Some(InnerKind::Type(_)) => return Ok(Source::Unknown),
             Some(InnerKind::Expression(Expr::Return | Expr::Assignment)) => {
@@ -145,7 +153,14 @@ impl<'a> Interpreter<'a> {
                 .get(text(node, "variable")?)
                 .cloned()
                 .unwrap_or_default(),
-            Some(InnerKind::Expression(Expr::Borrow)) => Source::Ref(Rc::new(child("expression")?)),
+            Some(InnerKind::Expression(Expr::Borrow)) => {
+                let value = child("expression")?;
+                if reporting && matches!(value, Source::Unknown) {
+                    Source::Unknown
+                } else {
+                    Source::Ref(Rc::new(value))
+                }
+            }
             Some(InnerKind::Expression(Expr::Deref)) => match child("expression")? {
                 Source::Ref(inner) => (*inner).clone(),
                 _ => Source::Unknown,
@@ -169,7 +184,11 @@ impl<'a> Interpreter<'a> {
                         .into_iter()
                         .map(|f| self.value(f))
                         .collect::<Result<Vec<_>, _>>()?;
-                    Source::Tuple(fields.into())
+                    if reporting && fields.iter().all(|s| matches!(s, Source::Unknown)) {
+                        Source::Unknown
+                    } else {
+                        Source::Tuple(fields.into())
+                    }
                 } else if self.track_constants {
                     Source::Constant(id)
                 } else {
@@ -195,7 +214,7 @@ impl<'a> Interpreter<'a> {
             Some(InnerKind::Expression(Expr::If)) => {
                 let positive = child("positive")?;
                 if let Some(negative) = node.field("negative").and_then(Field::node_id) {
-                    positive.intersect(&self.value(negative)?, self.edit)?
+                    positive.combine(&self.value(negative)?, self.edit, intersection)?
                 } else {
                     Source::Unknown
                 }
@@ -203,7 +222,28 @@ impl<'a> Interpreter<'a> {
             Some(InnerKind::Expression(Expr::Binary))
                 if node.data("opcode").and_then(|v| v.as_str()) == Some("COALESCE") =>
             {
-                child("left")?.intersect(&child("right")?, self.edit)?
+                child("left")?.combine(&child("right")?, self.edit, intersection)?
+            }
+            Some(InnerKind::Expression(Expr::Binary)) if reporting => {
+                let opcode = text(node, "opcode")?;
+                if matches!(
+                    opcode,
+                    "LT" | "GT" | "LTE" | "GTE" | "EQ" | "NEQ" | "IS_DISTINCT"
+                ) {
+                    let left = child("left")?;
+                    let right = child("right")?;
+                    if let (Source::Constant(literal), Source::Tables(columns))
+                    | (Source::Tables(columns), Source::Constant(literal)) = (left, right)
+                    {
+                        if self.edit.node(literal)?.class().ends_with("Literal") {
+                            self.comparisons
+                                .as_mut()
+                                .expect("report enabled")
+                                .push(Finding::comparison(columns.as_ref(), id, literal)?);
+                        }
+                    }
+                }
+                Source::Unknown
             }
             Some(InnerKind::Expression(Expr::Closure)) => child("body")?,
             Some(InnerKind::Expression(Expr::Let)) => child("consumer")?,

@@ -2,8 +2,10 @@
 mod columns;
 mod equivalence;
 mod evaluate;
+mod report;
 pub use columns::{OutputShape, column_copies, fixed_columns};
 pub use equivalence::equal_computations;
+pub use report::correlated_columns;
 
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionKind as Expr, InnerKind, Node, NodeId, TypeKind as Ty,
@@ -39,11 +41,19 @@ struct ParameterColumn {
     column: Column,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Merge {
+    CopiedColumns,
+    CommonSources,
+    JoinSources,
+}
+
 #[derive(Clone, Default)]
 enum Source {
     #[default]
     Unknown,
     Column(ParameterColumn),
+    Tables(Rc<BTreeSet<report::TableColumn>>),
     Constant(NodeId),
     Ref(Rc<Source>),
     Tuple(Rc<[Source]>),
@@ -59,7 +69,7 @@ impl Source {
                 continue;
             }
             match source {
-                Self::Unknown | Self::Constant(_) => complete = false,
+                Self::Unknown | Self::Constant(_) | Self::Tables(_) => complete = false,
                 Self::Column(column) => {
                     columns.insert(*column);
                 }
@@ -70,18 +80,36 @@ impl Source {
         complete
     }
 
-    fn intersect(&self, other: &Self, edit: &CircuitEditor) -> Result<Self, AnalysisError> {
+    fn combine(
+        &self,
+        other: &Self,
+        edit: &CircuitEditor,
+        merge: Merge,
+    ) -> Result<Self, AnalysisError> {
         // Tuples can reuse the same computed field many times. Compare each
         // pair of source nodes once, preserving sharing in the result.
         type Pair = (*const Source, *const Source);
         let key = |a: &Source, b: &Source| -> Pair { (a, b) };
-        let mut cache = HashMap::new();
+        let mut cache = HashMap::<Pair, Source>::new();
         let mut pending = vec![(self, other, false)];
         while let Some((a, b, expanded)) = pending.pop() {
             if cache.contains_key(&key(a, b)) {
                 continue;
             }
             let value = match (a, b) {
+                (Source::Unknown, right) if merge == Merge::JoinSources => right.clone(),
+                (Source::Tables(left), Source::Tables(right)) => {
+                    let columns: BTreeSet<_> = if merge == Merge::JoinSources {
+                        left.union(right).cloned().collect()
+                    } else {
+                        left.intersection(right).cloned().collect()
+                    };
+                    if columns.is_empty() {
+                        Source::Unknown
+                    } else {
+                        Source::Tables(Rc::new(columns))
+                    }
+                }
                 (Source::Column(left), Source::Column(right)) if left == right => a.clone(),
                 (Source::Constant(left), Source::Constant(right)) => {
                     match crate::index_key_equivalence::equivalent_bodies(
@@ -90,19 +118,34 @@ impl Source {
                         Some(true) => a.clone(),
                         Some(false) => Source::Unknown,
                         None => {
-                            return Err(AnalysisError::Reference("unresolved constant equivalence"));
+                            return Err(AnalysisError::Reference(
+                                "unresolved constant equivalence",
+                            ));
                         }
                     }
                 }
-                (Source::Ref(l), Source::Ref(r)) if Rc::ptr_eq(l, r) => a.clone(),
-                (Source::Tuple(l), Source::Tuple(r)) if Rc::ptr_eq(l, r) => a.clone(),
+                (Source::Ref(l), Source::Ref(r))
+                    if merge == Merge::CopiedColumns && Rc::ptr_eq(l, r) =>
+                {
+                    a.clone()
+                }
+                (Source::Tuple(l), Source::Tuple(r))
+                    if merge == Merge::CopiedColumns && Rc::ptr_eq(l, r) =>
+                {
+                    a.clone()
+                }
                 (Source::Ref(l), Source::Ref(r)) => {
                     if !expanded {
                         pending.push((a, b, true));
                         pending.push((l, r, false));
                         continue;
                     }
-                    Source::Ref(Rc::new(Source::clone(&cache[&key(l, r)])))
+                    let inner = &cache[&key(l, r)];
+                    if merge != Merge::CopiedColumns && matches!(inner, Source::Unknown) {
+                        Source::Unknown
+                    } else {
+                        Source::Ref(Rc::new(inner.clone()))
+                    }
                 }
                 (Source::Tuple(l), Source::Tuple(r)) if l.len() == r.len() => {
                     if !expanded {
@@ -110,12 +153,18 @@ impl Source {
                         pending.extend(l.iter().zip(r.iter()).rev().map(|(l, r)| (l, r, false)));
                         continue;
                     }
-                    Source::Tuple(
-                        l.iter()
-                            .zip(r.iter())
-                            .map(|(l, r)| cache[&key(l, r)].clone())
-                            .collect(),
-                    )
+                    let fields: Rc<[Source]> = l
+                        .iter()
+                        .zip(r.iter())
+                        .map(|(l, r)| cache[&key(l, r)].clone())
+                        .collect();
+                    if merge != Merge::CopiedColumns
+                        && fields.iter().all(|s| matches!(s, Source::Unknown))
+                    {
+                        Source::Unknown
+                    } else {
+                        Source::Tuple(fields)
+                    }
                 }
                 _ => Source::Unknown,
             };
@@ -261,6 +310,7 @@ struct Interpreter<'a> {
     unhandled: bool,
     lossless_casts: bool,
     track_constants: bool,
+    comparisons: Option<Vec<report::Finding>>,
 }
 
 impl<'a> Interpreter<'a> {
@@ -271,6 +321,7 @@ impl<'a> Interpreter<'a> {
             values: HashMap::new(),
             unhandled: false,
             track_constants: false,
+            comparisons: None,
         }
     }
 
@@ -349,7 +400,7 @@ mod tests {
             .unwrap(),
         );
         let common = duplicate_fields(left, 40)
-            .intersect(&duplicate_fields(right, 40), &edit)
+            .combine(&duplicate_fields(right, 40), &edit, Merge::CopiedColumns)
             .unwrap();
         let mut columns = BTreeSet::new();
         assert!(!common.collect(&mut columns));

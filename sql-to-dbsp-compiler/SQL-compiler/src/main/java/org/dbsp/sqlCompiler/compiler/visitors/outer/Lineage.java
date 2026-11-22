@@ -647,13 +647,7 @@ public class Lineage extends CircuitVisitor {
                         @SuppressWarnings("unchecked")
                         Atom<ColumnSet> atom = (Atom<ColumnSet>) value;
                         ColumnSet set = atom.value();
-                        if (set.size() <= 1)
-                            continue;
-                        if (this.emitted.contains(set))
-                            continue;
-                        this.emitted.add(set);
-                        if (this.printReport)
-                            System.out.println("[Correlated:] " + set);
+                        this.reportCorrelated(set);
                     }
                 }
             }
@@ -683,8 +677,13 @@ public class Lineage extends CircuitVisitor {
         this.set(node.outputPort(), value);
     }
 
+    public void reportCorrelated(ColumnSet set) {
+        if (set.size() > 1 && this.emitted.add(set) && this.printReport)
+            System.out.println("[Correlated:] " + set);
+    }
+
     /** Report a column compared against a literal; each distinct comparison is reported once. */
-    void reportCompared(ColumnCompared compared) {
+    public void reportCompared(ColumnCompared compared) {
         if (!this.compared.add(compared))
             return;
         if (this.printReport)
