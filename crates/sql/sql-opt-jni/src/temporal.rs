@@ -37,7 +37,96 @@ pub(super) fn scalar_clock(
         &mut next,
     )?;
     let operators = edit.circuit().additional_operators(&arena, &operators)?;
-    Ok(json!({"input":clock, "operators":operators, "next_generated_name":next}))
+    Ok(json!({"inputs":[clock], "operators":operators, "next_generated_name":next}))
+}
+
+pub(super) fn window(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    use feldera_sql_opt::limiters::{Bound, Stream, StreamKind};
+    use feldera_sql_opt::{InitialBounds, TemporalStreams, WindowComparison, WindowKey};
+    #[derive(serde::Deserialize)]
+    struct Request {
+        #[serde(flatten)]
+        site: super::ExpressionSite,
+        comparisons: Vec<WindowComparison>,
+    }
+    let request: Request = serde_json::from_slice(state)?;
+    let rows = 1;
+    let clock = 2;
+    let inputs = [
+        json!({"class":"DBSPSourceMultisetOperator","id":rows,"inputs":[]}),
+        json!({"class":"DBSPWaterlineOperator","id":clock,"inputs":[]}),
+    ];
+    let (arena, roots) = request.site.arena_with_operators(input, &inputs)?;
+    let [
+        parameter,
+        collection,
+        scalar_type,
+        common,
+        key,
+        minimum_clock,
+        lower,
+        upper,
+        operands @ ..,
+    ] = roots.as_slice()
+    else {
+        return Err("missing temporal window input".into());
+    };
+    if request.comparisons.len() != operands.len() {
+        return Err("expected one expression for each temporal comparison".into());
+    }
+    let mut edit = CircuitEditor::new(arena.clone());
+    let stream = |id| OutputPort {
+        operator: NodeId::Outer(id),
+        number: 0,
+    };
+    let streams = TemporalStreams {
+        rows: Stream {
+            port: stream(rows),
+            ty: edit.type_id(*collection)?,
+            kind: StreamKind::Collection,
+        },
+        clock: Bound {
+            port: stream(clock),
+            ty: edit.type_id(*scalar_type)?,
+        },
+    };
+    let row = edit.type_id(edit.node(*collection)?.edge("elementType")?)?;
+    let key = WindowKey {
+        parameter: *parameter,
+        row,
+        expression: edit.expression(*common)?,
+        nonnull_type: edit.type_id(*key)?,
+    };
+    let key_type = key.nonnull_type;
+    let initial = InitialBounds {
+        minimum_clock: edit.expression(*minimum_clock)?,
+        lower: edit.expression(*lower)?,
+        upper: edit.expression(*upper)?,
+    };
+    let values = operands
+        .iter()
+        .map(|&id| edit.expression(id))
+        .collect::<Result<Vec<_>, _>>()?;
+    let functions = feldera_sql_opt::temporal_window(
+        &mut edit,
+        key,
+        initial,
+        request.comparisons.into_iter().zip(values),
+        &mut next,
+    )?;
+    let body = arena.root_id();
+    feldera_sql_opt::append_temporal_window(
+        &mut edit, body, body, streams, key_type, functions, &mut next,
+    )?;
+    let order = edit.circuit().root().edges("allOperators")?;
+    let operators = edit
+        .circuit()
+        .additional_operators(&arena, &order[inputs.len()..])?;
+    Ok(json!({"inputs":[rows,clock], "operators":operators, "next_generated_name":next}))
 }
 
 /// Encode all predicate roots together so consecutive residuals can share types.

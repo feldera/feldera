@@ -382,6 +382,18 @@ public class RewriteNow extends CircuitCloneVisitor {
         DBSPExpression common = comparisons.comparisons().get(0).noNow();
         // The index and the bounds must share this exact key type.
         DBSPType windowKeyType = common.getType().withMayBeNull(false);
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var terms = comparisons.comparisons();
+            var domain = windowKeyType.to(IsBoundedType.class);
+            boolean hasUpperBound = terms.stream().anyMatch(t -> !isGreater(t.opcode()));
+            var operators = RustCircuitPass.temporalWindow(this.compiler, relNode, source, scalarNow,
+                    comparisons.getParameter(), common, windowKeyType,
+                    ContainsNow.timestampType().getMinValue(), domain.getMinValue(),
+                    hasUpperBound ? domain.getMinValue() : domain.getMaxValue(),
+                    Linq.map(terms, TemporalFilter::opcode), Linq.map(terms, TemporalFilter::withNow));
+            operators.forEach(this::addOperator);
+            return Utilities.last(operators);
+        }
         var functions = this.windowFunctions(comparisons, inputType, common, windowKeyType);
         DBSPClosureExpression makeWindow = functions.bounds();
         DBSPSimpleOperator windowBounds = new DBSPApplyOperator(relNode, makeWindow, scalarNow.outputPort(), null);
@@ -431,15 +443,6 @@ public class RewriteNow extends CircuitCloneVisitor {
     private WindowFunctions windowFunctions(TemporalFilterList comparisons, DBSPTypeTupleBase inputType,
                                             DBSPExpression common, DBSPType keyType) {
         DBSPParameter param = comparisons.getParameter();
-        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-            var terms = comparisons.comparisons();
-            var domain = keyType.to(IsBoundedType.class);
-            boolean hasUpperBound = terms.stream().anyMatch(t -> !isGreater(t.opcode()));
-            return RustCircuitPass.temporalWindow(this.compiler, param, inputType, common, keyType,
-                    ContainsNow.timestampType().getMinValue(), domain.getMinValue(),
-                    hasUpperBound ? domain.getMinValue() : domain.getMaxValue(),
-                    Linq.map(terms, TemporalFilter::opcode), Linq.map(terms, TemporalFilter::withNow));
-        }
         WindowBounds bounds = comparisons.getWindowBounds(this.compiler);
         DBSPClosureExpression window = bounds.makeWindow(keyType);
         DBSPClosureExpression nonnull = common.getType().mayBeNull ? common.is_null().not().closure(param) : null;

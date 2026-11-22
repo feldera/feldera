@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust builds the window for each group of compatible clock comparisons. It
+filters nullable keys, indexes rows, differentiates the collection, applies
+the bounds and integrates the result. A final map restores a key column to
+its original position, or a deindex drops a computed key. All 133 frozen
+RewriteNow invocations matched Java. Detached replay also passed for the
+seven selected programs and both computed-key cases on each engine.
+[Temporal window operators](evidence/p3-temporal-window-operators.json)
+
 Rust constructs the differentiator and waterline that turn the clock
 collection into a scalar timestamp for temporal windows. The importer binds
 the live input and shares types and expressions across the new operators.

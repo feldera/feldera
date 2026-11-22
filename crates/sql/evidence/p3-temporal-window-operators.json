@@ -1,0 +1,48 @@
+{
+  "scope": "Rust builds the nullable-key filter when needed, indexes rows, applies the temporal window to changes and restores the row layout. Java reattaches live data and clock inputs and the relational origins.",
+  "compiler_jar_sha256": "9d64a016d605411155f4cfd69f9b2b890c60bfa5422a526770ddfa750e905bfa",
+  "optimizer_library_sha256": "6404620b279d0ff0149d5ff23c3af079701d069fb939291bc1ac0e4953879428",
+  "engines": {
+    "classic": {
+      "frozen": {
+        "cases_at_rewrite_now": 71,
+        "matched_invocations": 71,
+        "java_sha256": "a07dd17a03148544f312efea276074f7a21a95d25d293a6ed2baab0be8a40229",
+        "rust_sha256": "96f93e8d74fb92d406588917e6e921d61e7e17e02b3a635a3c7629211d3703e2",
+        "full_trace_cases": 7,
+        "full_trace_report_sha256": "ed80d1190708e0b28d4b3af0ee7bc20352397c3f971c473c1f9217a89f344a00"
+      },
+      "computed_key": {
+        "cases_at_rewrite_now": 2,
+        "matched_invocations": 2,
+        "java_sha256": "6ac4851c31582d658449a6031be56b420cbfa0dae00b95d21b27627e22187cdb",
+        "rust_sha256": "39490ed5a6fa8a39c39b5c4f1e58f5671442988cb6741a8372fbdef51a305f3f",
+        "full_trace_cases": 2,
+        "full_trace_report_sha256": "3ca2f347dd7fca1c65e2a03923ce8cd0b2a83947f2610448a8e80156e3587a23"
+      }
+    },
+    "gen2": {
+      "frozen": {
+        "cases_at_rewrite_now": 62,
+        "matched_invocations": 62,
+        "java_sha256": "a20040b82d4a2c6dc025885afd8c01cf5a9b3e9a25a868a30b164178692c72df",
+        "rust_sha256": "f8c26ed79bb4f331f2ebc8b402859b0a0fc3f0bba2a0aaf18a255a6bdf7b3c3f",
+        "full_trace_cases": 7,
+        "full_trace_report_sha256": "e7416ec59f4c98f2a31079b618f661d4dc4cb69e64724621e9faf6cc004c6f9c"
+      },
+      "computed_key": {
+        "cases_at_rewrite_now": 2,
+        "matched_invocations": 2,
+        "java_sha256": "6f0d77a09c84419bfacb38a7c9ce827834c9c732eaa116762b3ff33da5483ae1",
+        "rust_sha256": "5aa6eeb2696f26121033ccf05c5fed8cd597985771b505d0c0f4e36edb02515c",
+        "full_trace_cases": 2,
+        "full_trace_report_sha256": "d46a08bede3e4406c6c1470f13e7084510cf591e635d6b5c5e93feb23ee3a143"
+      }
+    }
+  },
+  "computed_key_fixture": {
+    "base": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#internalTest177/0",
+    "additional_sql": "CREATE TABLE T(x BIGINT);\nCREATE FUNCTION F(seconds BIGINT)\nRETURNS TIMESTAMP AS\nTIMESTAMPADD(SECOND, SECONDS, DATE '1970-01-01');\nCREATE VIEW V AS SELECT x FROM T WHERE x > 1 OR COALESCE(F(x), TIMESTAMP '2000-01-01 00:00:00') > NOW();\n",
+    "diagnostics": "Fresh direct Java control produced the TIMESTAMP precision warning. Detached runs compared both compilers against that diagnostic."
+  }
+}

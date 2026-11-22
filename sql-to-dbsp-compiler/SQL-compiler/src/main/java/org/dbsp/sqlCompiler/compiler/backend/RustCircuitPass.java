@@ -25,6 +25,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.FindSourcePositions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandMetadataCasts;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
@@ -85,7 +87,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.StrayGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor;
@@ -887,19 +888,36 @@ public final class RustCircuitPass implements CircuitTransform {
         return loweredClosurePair(invokeLowering(compiler, "RewriteNow/ClockAggregate", timestamp, weight));
     }
 
-    public static List<DBSPSimpleOperator> scalarClock(DBSPCompiler compiler, DBSPSimpleOperator clock,
-                                                       DBSPExpression minimum) {
-        var reply = invokeLowering(compiler, "RewriteNow/ScalarClock", clock.outputType, DBSPTypeRawTuple.EMPTY, minimum);
+    private static List<DBSPSimpleOperator> temporalOperators(DBSPCompiler compiler, LoweringReply reply,
+            CalciteRelNode origin, DBSPSimpleOperator... inputs) {
         var decoder = expressionDecoder(reply.writer);
-        decoder.outer.cache(reply.value.required("input").longValue(), clock);
+        var ports = reply.value.required("inputs");
+        if (ports.size() != inputs.length)
+            throw new IllegalStateException("Temporal fragment has the wrong number of inputs");
+        for (int i = 0; i < inputs.length; ++i)
+            decoder.outer.cache(ports.required(i).longValue(), inputs[i]);
         var result = new ArrayList<DBSPSimpleOperator>();
         for (var node : reply.value.required("operators")) {
             var operator = decoder.decodeOuter(node, DBSPSimpleOperator.class);
-            operator.restoreProvenance(clock.getRelNode());
+            if (operator instanceof DBSPWindowOperator window) {
+                var finder = new FindSourcePositions(compiler, false);
+                finder.apply(window.right().simpleNode().getFunction());
+                var windowOrigin = origin.copy();
+                windowOrigin.addSourcePositions(finder.positions);
+                operator.restoreProvenance(windowOrigin);
+            } else {
+                operator.restoreProvenance(origin);
+            }
             result.add(operator);
         }
         DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
         return result;
+    }
+
+    public static List<DBSPSimpleOperator> scalarClock(DBSPCompiler compiler, DBSPSimpleOperator clock,
+                                                       DBSPExpression minimum) {
+        var reply = invokeLowering(compiler, "RewriteNow/ScalarClock", clock.outputType, DBSPTypeRawTuple.EMPTY, minimum);
+        return temporalOperators(compiler, reply, clock.getRelNode(), clock);
     }
 
     public static DBSPClosureExpression rewriteClockClosure(DBSPCompiler compiler, DBSPClosureExpression closure,
@@ -917,24 +935,19 @@ public final class RustCircuitPass implements CircuitTransform {
         return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/DropClock", joinedRow));
     }
 
-    public static RewriteNow.WindowFunctions temporalWindow(DBSPCompiler compiler, DBSPParameter parameter,
-            DBSPType row, DBSPExpression key, DBSPType keyType, DBSPExpression clockMinimum, DBSPExpression lowerInitial,
+    public static List<DBSPSimpleOperator> temporalWindow(DBSPCompiler compiler, CalciteRelNode origin,
+            DBSPSimpleOperator rows, DBSPSimpleOperator clock, DBSPParameter parameter,
+            DBSPExpression key, DBSPType keyType, DBSPExpression clockMinimum, DBSPExpression lowerInitial,
             DBSPExpression upperInitial, List<DBSPOpcode> comparisons, List<DBSPExpression> bounds) {
-        var inputs = new ArrayList<IDBSPInnerNode>(List.of(parameter, row, key, keyType, clockMinimum, lowerInitial, upperInitial));
+        var inputs = new ArrayList<IDBSPInnerNode>(List.of(parameter, rows.outputType, clock.outputType,
+                key, keyType, clockMinimum, lowerInitial, upperInitial));
         inputs.addAll(bounds);
         try {
-            var reply = invokeLowering(compiler, "RewriteNow/Window", MAPPER.writeValueAsBytes(comparisons.stream()
-                    .map(Enum::name).toList()), inputs.toArray(IDBSPInnerNode[]::new));
-            var roots = reply.value.required("functions");
-            var decoder = expressionDecoder(reply.writer);
-            var window = decoder.decodeInner(roots.required(0), DBSPClosureExpression.class);
-            var nonnull = roots.required(1).isNull() ? null : decoder.decodeInner(roots.get(1), DBSPClosureExpression.class);
-            var index = decoder.decodeInner(roots.required(2), DBSPClosureExpression.class);
-            var restore = roots.required(3).isNull() ? null : decoder.decodeInner(roots.get(3), DBSPClosureExpression.class);
-            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
-            return new RewriteNow.WindowFunctions(window, nonnull, new RewriteNow.WindowProjection(index, restore),
-                    reply.value.required("lower_inclusive").booleanValue(), reply.value.required("upper_inclusive").booleanValue(),
-                    reply.value.required("lower_unbounded").booleanValue());
+            var request = expressionSite(origin);
+            request.set("comparisons", MAPPER.valueToTree(comparisons.stream().map(Enum::name).toList()));
+            var reply = invokeLowering(compiler, "RewriteNow/Window", MAPPER.writeValueAsBytes(request),
+                    inputs.toArray(IDBSPInnerNode[]::new));
+            return temporalOperators(compiler, reply, origin, rows, clock);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode temporal window comparisons", error);
         }

@@ -129,7 +129,7 @@ pub use clock_source::{clock_aggregate, clock_index, scalar_clock, scalar_clock_
 mod clock_join;
 pub use clock_join::{ClockClosure, clock_join_functions, drop_clock, rewrite_clock_closure};
 mod temporal_window;
-pub use temporal_window::{InitialBounds, WindowComparison, WindowFunctions, WindowKey, temporal_window};
+pub use temporal_window::{InitialBounds, TemporalStreams, WindowComparison, WindowFunctions, WindowKey, append_temporal_window, temporal_window};
 mod window_bounds;
 pub use window_bounds::{temporal_window_bounds, WindowEndpoint};
 mod window_projection;

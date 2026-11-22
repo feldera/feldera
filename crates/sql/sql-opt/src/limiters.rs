@@ -38,7 +38,7 @@ pub struct Bound {
 }
 
 impl Bound {
-    fn apply(
+    pub(crate) fn apply(
         self,
         edit: &mut CircuitEditor,
         body: NodeId,

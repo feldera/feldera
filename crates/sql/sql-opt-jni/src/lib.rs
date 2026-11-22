@@ -98,8 +98,12 @@ struct ExpressionSite {
 
 impl ExpressionSite {
     fn arena(self, input: &[u8]) -> Result<(Circuit, Vec<NodeId>), Box<dyn std::error::Error>> {
+        self.arena_with_operators(input, &[])
+    }
+
+    fn arena_with_operators(self, input: &[u8], operators: &[Value]) -> Result<(Circuit, Vec<NodeId>), Box<dyn std::error::Error>> {
         let mut header = json!({
-            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[], "sourceEmpty":self.empty
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":operators, "sourceEmpty":self.empty
         });
         if let Some(position) = self.position {
             header["position"] = position;
@@ -373,26 +377,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("RewriteNow/DropClock", [row]) => {
             let row = edit.type_id(*row)?;
             feldera_sql_opt::drop_clock(&mut edit, row, &mut next)?
-        }
-        ("RewriteNow/Window", [parameter, row, key, ty, clock, lower, upper, operands @ ..]) => {
-            let comparisons: Vec<feldera_sql_opt::WindowComparison> = serde_json::from_slice(state)?;
-            if comparisons.len() != operands.len() {
-                return Err("expected one expression for each temporal comparison".into());
-            }
-            let key = feldera_sql_opt::WindowKey { parameter: *parameter, row: edit.type_id(*row)?,
-                expression: edit.expression(*key)?, nonnull_type: edit.type_id(*ty)? };
-            let initial = feldera_sql_opt::InitialBounds { minimum_clock: edit.expression(*clock)?,
-                lower: edit.expression(*lower)?, upper: edit.expression(*upper)? };
-            let values = operands.iter().map(|&id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;
-            let window = feldera_sql_opt::temporal_window(&mut edit, key, initial,
-                comparisons.into_iter().zip(values), &mut next)?;
-            let slots = [Some(window.bounds), window.nonnull, Some(window.index), window.restore];
-            let roots: Vec<_> = slots.into_iter().flatten().collect();
-            let mut encoded = edit.circuit().additional_expressions(&arena, &roots)?.into_iter();
-            let functions = slots.map(|slot| slot.and_then(|_| encoded.next()));
-            return Ok(json!({"functions": functions, "next_generated_name": next,
-                "lower_inclusive": window.lower_inclusive, "upper_inclusive": window.upper_inclusive,
-                "lower_unbounded": window.lower_unbounded}));
         }
         ("TemporalGroups" | "MergeTemporalBounds", roots) => {
             return temporal::groups(&arena, &mut edit, roots, state, pass == "MergeTemporalBounds");
@@ -684,6 +668,9 @@ fn transform(
 ) -> Result<Value, Box<dyn std::error::Error>> {
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
+    if pass == "RewriteNow/Window" {
+        return temporal::window(input, state, next);
+    }
     if pass == "RewriteNow/ScalarClock" {
         return temporal::scalar_clock(input, next);
     }
@@ -800,7 +787,7 @@ fn transform(
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
-        | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
         | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
         | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"

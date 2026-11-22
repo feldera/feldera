@@ -1,7 +1,9 @@
 //! Build the functions of one SQL window from its compatible temporal comparisons.
-use crate::{WindowEndpoint, temporal_window_bounds, window_projection};
+use crate::limiters::{self, Bound, Stream, WindowBounds};
+use crate::{temporal_window_bounds, window_projection, WindowEndpoint};
 use feldera_sql_ir::{
-    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId,
+    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId,
+    OperatorKind as Op, OutputPort, TypeId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -83,6 +85,97 @@ pub struct WindowFunctions {
     pub lower_inclusive: bool,
     pub upper_inclusive: bool,
     pub lower_unbounded: bool,
+}
+
+pub struct TemporalStreams {
+    pub rows: Stream,
+    pub clock: Bound,
+}
+
+/// Apply temporal bounds to a collection and restore its original row layout.
+/// The indexed window consumes deltas. Its caller continues to see a collection.
+pub fn append_temporal_window(
+    edit: &mut CircuitEditor,
+    body: NodeId,
+    site: NodeId,
+    streams: TemporalStreams,
+    key: TypeId,
+    functions: WindowFunctions,
+    next: &mut u64,
+) -> Result<NodeId, Error> {
+    let control = streams.clock.apply(edit, body, site, functions.bounds)?;
+    let mut rows = streams.rows;
+    let output = |operator| OutputPort {
+        operator,
+        number: 0,
+    };
+    let link = Field::Reference;
+    if let Some(predicate) = functions.nonnull {
+        rows.port = output(edit.append_operator(
+            body,
+            site,
+            Op::Filter,
+            &[rows.port],
+            [
+                ("outputType", link(rows.ty.into())),
+                ("function", link(predicate.into())),
+            ],
+        )?);
+    }
+
+    let signature = edit.expression_type(functions.index)?;
+    let pair = edit.node(signature.into())?.edge("resultType")?;
+    let [_, value] = edit
+        .node(pair)?
+        .edges("tupFields")?
+        .try_into()
+        .map_err(|_| Error::new("temporal index must return a key and a value"))?;
+    let value = edit.type_id(value)?;
+    let indexed = edit.indexed_zset_type(site, key, value)?;
+    let index = edit.append_operator(
+        body,
+        site,
+        Op::MapIndex,
+        &[rows.port],
+        [
+            ("outputType", link(indexed.into())),
+            ("function", link(functions.index.into())),
+        ],
+    )?;
+    let bounds = WindowBounds {
+        lower_inclusive: functions.lower_inclusive,
+        upper_inclusive: functions.upper_inclusive,
+        lower_unbounded: functions.lower_unbounded,
+    };
+    let data = Stream {
+        port: output(index),
+        ty: indexed,
+        kind: rows.kind,
+    };
+    let (_, result) = limiters::window(edit, body, site, data, control, bounds)?;
+    let (kind, function, element) = if let Some(restore) = functions.restore {
+        (
+            Op::Map,
+            restore,
+            edit.type_id(edit.node(rows.ty.into())?.edge("elementType")?)?,
+        )
+    } else {
+        // The window has no function of its own. Java constructs the deindex
+        // closure at an empty source location, as for the closure signature.
+        let deindex = crate::rebuild::deindex_function(edit, signature.into(), key, value, next)?;
+        (Op::Deindex, deindex, value)
+    };
+    let collection = edit.zset_type(element)?;
+    edit.append_operator(
+        body,
+        site,
+        kind,
+        &[result.port],
+        [
+            ("outputType", link(collection.into())),
+            ("function", link(function.into())),
+        ],
+    )
 }
 
 pub fn temporal_window(
