@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `e6f389da0`, Rust handled 806 requests to narrow UNNEST inputs, including
+remapping the columns copied from each input. Both engines matched Java at
+all 756 pass invocations on the 373 affected frozen programs. All 337 selected
+detached compilations matched through emission, all 166 executable classic
+selections passed, and COUNT and LATENESS restored in both directions.
+[UNNEST input comparisons](evidence/p3-unnest-input-readers.json)
+
 On `2559510a7`, SQL compilation asked Rust to discover rank and tie columns
 1,918 times. Rust rebuilt 379 comparator pairs after narrowing. The earlier
 `0fcf9e21c` build called Java for discovery. All 1,870 pass invocations on
