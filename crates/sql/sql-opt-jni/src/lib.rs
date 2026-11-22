@@ -1,5 +1,6 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
+mod fragment;
 mod shared_indexes;
 mod star_join;
 mod temporal;
@@ -242,6 +243,37 @@ fn hop_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box
         &mut edit, arena.root_id(), row, output, request.timestamp_index, intervals, &mut next,
     )?;
     lowered_function_reply(&arena, &edit, Some(closure), next, Vec::new())
+}
+
+fn expand_stream_aggregate(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Request {
+        append_only: bool,
+        input_port: usize,
+        #[serde(flatten)]
+        site: ExpressionSite,
+    }
+    let request: Request = serde_json::from_slice(state)?;
+    let (fragment, roots) = fragment::Fragment::bind(request.site, [feldera_sql_ir::OperatorKind::MapIndex], input)?;
+    let [input_type, output_type, list, weight] = roots.as_slice() else {
+        return Err("expected indexed input and output types, aggregate list and row weight".into());
+    };
+    let mut edit = CircuitEditor::new(fragment.base.clone());
+    let aggregate = feldera_sql_opt::StreamAggregate {
+        input: OutputPort { number: request.input_port, ..fragment.inputs[0] },
+        input_type: edit.type_id(*input_type)?,
+        output_type: edit.type_id(*output_type)?,
+        list: *list,
+        append_only: request.append_only,
+        weight: edit.expression(*weight)?,
+    };
+    let body = fragment.base.root_id();
+    let mut warnings = Vec::new();
+    let output = aggregate.expand(&mut edit, body, body, &mut next, &mut warnings)?;
+    let mut reply = fragment.reply(&edit, next)?;
+    reply["output"] = operator_number(output).into();
+    reply["warnings"] = pass_warnings(warnings).into();
+    Ok(reply)
 }
 
 fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
@@ -642,6 +674,7 @@ fn transform(
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
     match pass {
+        "ExpandStreamAggregates/List" => return expand_stream_aggregate(input, state, next),
         "RewriteNow/BuiltinClock" => return temporal::builtin_clock(input, next),
         "RewriteNow/TableClock" => return temporal::table_clock(input, next),
         "RewriteNow/JoinedMap" => return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Map),

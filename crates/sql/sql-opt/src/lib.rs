@@ -178,7 +178,7 @@ pub use distinct_outputs::ensure_distinct_outputs;
 pub use empty_sources::{empty_stream_edits, propagate_empty_sources, EmptyStreamEdit};
 pub use error_consumers::{error_consumers, ErrorConsumerOrder};
 pub use error_wrappers::create_runtime_error_wrappers;
-pub use expand_aggregates::{expand_stream_aggregates, AggregateContext, ExpandedAggregates};
+pub use expand_aggregates::{expand_stream_aggregates, AggregateContext, ExpandedAggregates, StreamAggregate};
 pub use expression_visitor::{ensure_expression_trees, simplify_expressions};
 pub use fanout::{clone_operators_with_fanout, fanout_producers, fanout_readers, optimize_fanout};
 pub use feldera_sql_expr::adjust_sql_index;

@@ -104,6 +104,63 @@ struct ProjectionState {
 }
 
 impl Invocation {
+    /// A compiler can own the weight variable before the first operator uses it.
+    /// Compare its binding independently in each graph, including first use at exit.
+    fn attach_aggregate_state(&mut self) -> Result<(), String> {
+        let state = &mut self.placement.state;
+        let Some(weight) = state.remove("weight_id") else {
+            return Ok(());
+        };
+        let weight = weight.as_u64().ok_or("invalid aggregate weight ID")?;
+        let input_ids: Vec<u64> = serde_json::from_value(
+            state
+                .remove("append_only_inputs")
+                .ok_or("missing append-only inputs")?,
+        )
+        .map_err(|e| e.to_string())?;
+        let mut inputs: HashSet<_> = input_ids.iter().copied().collect();
+        if inputs.len() != input_ids.len() {
+            return Err("duplicate append-only input".into());
+        }
+        let name = state
+            .get("weight_name")
+            .and_then(Value::as_str)
+            .ok_or("missing aggregate weight name")?;
+        for (entry, wire) in [(true, &mut self.before), (false, &mut self.after)] {
+            let graph = Circuit::from_json(wire.clone()).map_err(|e| e.to_string())?;
+            if wire.get("aggregate_weight").is_some() || wire.get("append_only_inputs").is_some() {
+                return Err("aggregate state collides with circuit fields".into());
+            }
+            if let Some(node) = graph.node(NodeId::Inner(weight)) {
+                if node.class() != "DBSPVariablePath"
+                    || node.data("variable").and_then(Value::as_str) != Some(name)
+                {
+                    return Err("aggregate weight does not reference its named variable".into());
+                }
+                wire["aggregate_weight"] = serde_json::json!({"node":weight});
+            }
+            if entry {
+                let mut ports = Vec::with_capacity(inputs.len());
+                for operator in graph
+                    .operator_order(BodyOrder::Preorder)
+                    .map_err(|e| e.to_string())?
+                {
+                    let NodeId::Outer(id) = operator else {
+                        return Err("expected outer operator in append-only analysis".into());
+                    };
+                    if inputs.remove(&id) {
+                        ports.push(serde_json::json!({"operator":{"node":id},"outputNumber":0}));
+                    }
+                }
+                if !inputs.is_empty() {
+                    return Err("append-only input outside the aggregate entry graph".into());
+                }
+                wire["append_only_inputs"] = ports.into();
+            }
+        }
+        Ok(())
+    }
+
     /// Reader IDs belong to this entry graph. Resolve them with its operator
     /// references so allocator differences cannot hide a changed selection.
     fn attach_filter_readers(&mut self) -> Result<(), String> {
@@ -168,6 +225,8 @@ impl Invocation {
 }
 
 fn compare_invocation(i: usize, mut left: Invocation, mut right: Invocation) -> Result<(), String> {
+    left.attach_aggregate_state()?;
+    right.attach_aggregate_state()?;
     left.attach_projection_state()?;
     right.attach_projection_state()?;
     left.attach_filter_readers()?;
@@ -322,6 +381,40 @@ pub fn compare(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn aggregate_state_tracks_the_selected_input_and_the_first_weight_use() {
+        fn observed(input: u64, weight: u64) -> Invocation {
+            let mut graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+                {"class":"DBSPMapOperator","id":input,"inputs":[]},
+                {"class":"DBSPMapOperator","id":input+1,"inputs":[]}
+            ]});
+            let before = graph.clone();
+            graph["allOperators"][1]["function"] = json!({
+                "class":"DBSPVariablePath","id":weight,"variable":"w",
+                "type":{"class":"DBSPTypeWeight","id":weight+1}
+            });
+            serde_json::from_value(json!({
+                "before":before,"after":graph,"container":"ExpandAggregates","index":1,
+                "iteration":0,"instance":0,"names_before":0,"names_after":0,"diagnostics":[],
+                "weight_id":weight,"weight_name":"w","append_only_inputs":[input]
+            }))
+            .unwrap()
+        }
+        assert!(compare_invocation(0, observed(7, 11), observed(27, 31)).is_ok());
+        let mut wrong_weight = observed(27, 31);
+        wrong_weight
+            .placement
+            .state
+            .insert("weight_id".into(), 99.into());
+        assert!(compare_invocation(0, observed(7, 11), wrong_weight).is_err());
+        let mut wrong_input = observed(27, 31);
+        wrong_input
+            .placement
+            .state
+            .insert("append_only_inputs".into(), json!([28]));
+        assert!(compare_invocation(0, observed(7, 11), wrong_input).is_err());
+    }
 
     fn shared_projection(owner: u64, closure: u64, ty: u64) -> Invocation {
         let graph = json!({

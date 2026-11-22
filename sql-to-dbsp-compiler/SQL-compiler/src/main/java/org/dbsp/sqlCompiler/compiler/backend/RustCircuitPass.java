@@ -24,6 +24,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindSourcePositions;
@@ -887,7 +888,7 @@ public final class RustCircuitPass implements CircuitTransform {
         var origin = consumer.getRelNode();
         var joinOrigin = origin.copy();
         joinOrigin.addSourcePositions(List.of(call.getSourcePosition()));
-        return temporalOperators(reply, op -> op instanceof DBSPStreamJoinOperator ? joinOrigin : origin,
+        return decodeOperatorFragment(reply, op -> op instanceof DBSPStreamJoinOperator ? joinOrigin : origin,
                 rows, indexedClock);
     }
 
@@ -906,22 +907,22 @@ public final class RustCircuitPass implements CircuitTransform {
                 : invokeLowering(compiler, "RewriteNow/TableClock", timestamp, compiler.weightVar);
         var decoder = expressionDecoder(reply.writer);
         var inputs = table == null ? new DBSPSimpleOperator[0] : new DBSPSimpleOperator[]{table};
-        var operators = temporalOperators(decoder, reply, op -> origin, inputs);
+        var operators = decodeOperatorFragment(decoder, reply, op -> origin, inputs);
         return new ClockSource(operators,
                 decoder.outer.lookup(reply.value.required("collection").longValue(), DBSPSimpleOperator.class),
                 decoder.outer.lookup(reply.value.required("indexed").longValue(), DBSPSimpleOperator.class));
     }
 
-    private static List<DBSPSimpleOperator> temporalOperators(LoweringReply reply,
-            Function<DBSPSimpleOperator, CalciteRelNode> origin, DBSPSimpleOperator... inputs) {
-        return temporalOperators(expressionDecoder(reply.writer), reply, origin, inputs);
+    private static List<DBSPSimpleOperator> decodeOperatorFragment(LoweringReply reply,
+            Function<DBSPSimpleOperator, CalciteRelNode> origin, DBSPOperator... inputs) {
+        return decodeOperatorFragment(expressionDecoder(reply.writer), reply, origin, inputs);
     }
 
-    private static List<DBSPSimpleOperator> temporalOperators(JsonDecoder decoder, LoweringReply reply,
-            Function<DBSPSimpleOperator, CalciteRelNode> origin, DBSPSimpleOperator... inputs) {
+    private static List<DBSPSimpleOperator> decodeOperatorFragment(JsonDecoder decoder, LoweringReply reply,
+            Function<DBSPSimpleOperator, CalciteRelNode> origin, DBSPOperator... inputs) {
         var ports = reply.value.required("inputs");
         if (ports.size() != inputs.length)
-            throw new IllegalStateException("Temporal fragment has the wrong number of inputs");
+            throw new IllegalStateException("Operator fragment has the wrong number of inputs");
         for (int i = 0; i < inputs.length; ++i)
             decoder.outer.cache(ports.required(i).longValue(), inputs[i]);
         var result = new ArrayList<DBSPSimpleOperator>();
@@ -937,7 +938,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public static List<DBSPSimpleOperator> scalarClock(DBSPCompiler compiler, DBSPSimpleOperator clock,
                                                        DBSPExpression minimum) {
         var reply = invokeLowering(compiler, "RewriteNow/ScalarClock", clock.outputType, DBSPTypeRawTuple.EMPTY, minimum);
-        return temporalOperators(reply, op -> clock.getRelNode(), clock);
+        return decodeOperatorFragment(reply, op -> clock.getRelNode(), clock);
     }
 
     private static CalciteRelNode windowOrigin(DBSPCompiler compiler, CalciteRelNode origin, DBSPSimpleOperator op) {
@@ -962,7 +963,7 @@ public final class RustCircuitPass implements CircuitTransform {
             request.set("comparisons", MAPPER.valueToTree(comparisons.stream().map(Enum::name).toList()));
             var reply = invokeLowering(compiler, "RewriteNow/Window", MAPPER.writeValueAsBytes(request),
                     inputs.toArray(IDBSPInnerNode[]::new));
-            return temporalOperators(reply, op -> windowOrigin(compiler, origin, op), rows, clock);
+            return decodeOperatorFragment(reply, op -> windowOrigin(compiler, origin, op), rows, clock);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode temporal window comparisons", error);
         }
@@ -971,6 +972,34 @@ public final class RustCircuitPass implements CircuitTransform {
     public static DBSPClosureExpression mergeTemporalPredicates(DBSPCompiler compiler,
             DBSPClosureExpression source, DBSPClosureExpression filter) {
         return lowerFunction(compiler, "MergeFilters/Predicate", source, filter, DBSPClosureExpression.class);
+    }
+
+    private DBSPCircuit expandStreamAggregates(DBSPCircuit circuit, ExpandStreamAggregates pass) {
+        return new CircuitCloneVisitor(this.compiler, false) {
+            @Override
+            public void postorder(DBSPStreamAggregateOperator operator) {
+                if (operator.aggregateList == null) {
+                    super.postorder(operator);
+                    return;
+                }
+                var input = this.mapped(operator.input());
+                var site = expressionSite(operator.getRelNode());
+                site.put("append_only", pass.isAppendOnly(operator.input())).put("input_port", input.outputNumber);
+                try {
+                    var reply = invokeLowering(this.compiler, "ExpandStreamAggregates/List",
+                            MAPPER.writeValueAsBytes(site), input.outputType(), operator.outputType,
+                            operator.aggregateList, this.compiler.weightVar);
+                    var decoder = expressionDecoder(reply.writer);
+                    var operators = decodeOperatorFragment(decoder, reply, op -> operator.getRelNode(), input.node());
+                    operators.forEach(this::addOperator);
+                    var result = decoder.outer.lookup(reply.value.required("output").longValue(), DBSPSimpleOperator.class);
+                    this.map(operator, result, false);
+                    finishLowering(this.compiler, reply.value);
+                } catch (IOException error) {
+                    throw new UncheckedIOException("Could not encode stream aggregate inputs", error);
+                }
+            }
+        }.apply(circuit);
     }
 
     public static DBSPClosureExpression lowerJoinFilterMap(DBSPCompiler compiler, DBSPCircuit circuit,
@@ -1339,10 +1368,6 @@ public final class RustCircuitPass implements CircuitTransform {
         }
         if (this.asofRetention != null)
             return MAPPER.writeValueAsBytes(this.asofRetention.retentionJoins());
-        if (this.streamAggregates != null)
-            return MAPPER.writeValueAsBytes(Map.of("weight_id", this.compiler.weightVar.getId(),
-                    "weight_name", this.compiler.weightVar.variable,
-                    "append_only_inputs", this.streamAggregates.appendOnlyInputs()));
         if (this.nativeName.equals("LowerCircuitVisitor"))
             return CircuitLoweringTypes.encode(writer, circuit, this.compiler.options.ioOptions.gen2);
         if (this.nativeName.equals("IndexedInputs"))
@@ -2352,6 +2377,8 @@ public final class RustCircuitPass implements CircuitTransform {
             ToJsonOuterVisitor writer = null;
             if (this.stages != null)
                 return this.stages.apply(circuit);
+            if (this.streamAggregates != null)
+                return this.expandStreamAggregates(circuit, this.streamAggregates);
             if (this.arrayCandidates != null) {
                 var topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.AGGREGATE_RESULTS);
                 var probe = this.invoke("Topology/FindFusable", topology, initial, EMPTY_CONTEXT);
@@ -2706,7 +2733,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         OptimizerTopology.encode(circuit, OptimizerTopology.Details.VIEW_NAMES), initial, state);
                 case "CheckRetain", "ValidateRecursiveOperators", "NoIntegralVisitor", "CheckHints", "CompactNames", "TagRegions" ->
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
-                case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
+                case "LowerCircuitVisitor", "TrimWindows", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero",

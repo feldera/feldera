@@ -114,6 +114,10 @@ public class ExpandAggregates extends Passes {
             }).sorted().toArray();
         }
 
+        public boolean isAppendOnly(OutputPort input) {
+            return this.appendOnly.isAppendOnly(input);
+        }
+
         /** Implement one Min/Max/ArgMin/ArgMax aggregate for sources which are not append-only.
          * @param aggregationType Type of result produced by mm. */
         DBSPSimpleOperator implementOneMinMax(

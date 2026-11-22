@@ -10,11 +10,10 @@ impl Expansion<'_> {
         parts: &[NodeId],
         output: TypeId,
     ) -> Result<NodeId, Error> {
-        let input_ty = input_type(self.edit, self.input)?;
         let diff = self.operator(
             Op::Differentiate,
             self.input,
-            [("outputType", link(input_ty))],
+            [("outputType", link(self.input_type))],
         )?;
         let row = self
             .edit

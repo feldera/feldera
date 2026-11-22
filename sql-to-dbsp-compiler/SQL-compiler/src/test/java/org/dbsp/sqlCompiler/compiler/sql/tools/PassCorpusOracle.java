@@ -143,6 +143,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {
         // Replace just the observed analysis. Its Java prefix and the replacement
         // pass that consumes the finder stay in their original positions.
+        if (pass instanceof ExpandAggregates expand && this.passClass.equals("ExpandStreamAggregates")
+                && Boolean.getBoolean("feldera.optimizer.compareRustAggregateLists"))
+            this.replaceObservedPass(expand);
         if (pass instanceof ShareIndexes sharing && this.passClass.equals("FindSharedIndexes")
                 && Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes")) {
             this.replaceObservedPass(sharing);

@@ -117,7 +117,11 @@ impl Expansion<'_> {
             let pair = self.edit.tuple_expr(part, true, &[key, value])?;
             input = port(self.map_index(input, pair, var)?);
         }
-        let ty = input_type(self.edit, input)?;
+        let ty = if input == self.input {
+            self.input_type
+        } else {
+            input_type(self.edit, input)?
+        };
         let value = self
             .edit
             .type_id(self.edit.node(ty.into())?.edge("elementType")?)?;

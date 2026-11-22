@@ -4,12 +4,11 @@ mod linear;
 mod min_max;
 
 use crate::{
-    aggregate_groups,
-    rebuild::{input_type, ProjectionNames},
+    AggregateKind, aggregate_groups,
+    rebuild::{ProjectionNames, input_type},
     stream_rewrites::body_members,
-    AggregateKind,
 };
-use feldera_sql_expr::{copy_expression, flatten_tuple_fields, apply_closure, SimplifyWarning};
+use feldera_sql_expr::{SimplifyWarning, apply_closure, copy_expression, flatten_tuple_fields};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
     OperatorSite, OutputPort, TypeId, TypeKind as Ty,
@@ -36,6 +35,7 @@ struct Expansion<'a> {
     body: NodeId,
     site: NodeId,
     input: OutputPort,
+    input_type: TypeId,
     key: TypeId,
     value: TypeId,
 }
@@ -161,15 +161,13 @@ impl Expansion<'_> {
     fn expand(
         &mut self,
         list: NodeId,
+        output: TypeId,
         append_only: bool,
         weight: ExpressionId,
     ) -> Result<NodeId, Error> {
         let parts = self.edit.node(list)?.edges("aggregates")?;
         if parts.is_empty() {
-            let ty = self
-                .edit
-                .type_id(self.edit.node(self.site)?.edge("outputType")?)?;
-            return self.linear(list, &[], ty);
+            return self.linear(list, &[], output);
         }
         let kinds = parts
             .iter()
@@ -213,6 +211,43 @@ impl Expansion<'_> {
             self.next,
         )?;
         self.restore_order(combined, &permutation)
+    }
+}
+
+/// Live row and weight bindings for one snapshot aggregate.
+pub struct StreamAggregate {
+    pub input: OutputPort,
+    pub input_type: TypeId,
+    pub output_type: TypeId,
+    pub list: NodeId,
+    pub append_only: bool,
+    pub weight: ExpressionId,
+}
+
+impl StreamAggregate {
+    pub fn expand(
+        self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        site: NodeId,
+        next: &mut u64,
+        warnings: &mut Vec<SimplifyWarning>,
+    ) -> Result<NodeId, Error> {
+        let ix = edit.node(self.input_type.into())?;
+        let key = edit.type_id(ix.edge("keyType")?)?;
+        let value = edit.type_id(ix.edge("elementType")?)?;
+        Expansion {
+            edit,
+            body,
+            site,
+            next,
+            warnings,
+            input: self.input,
+            input_type: self.input_type,
+            key,
+            value,
+        }
+        .expand(self.list, self.output_type, self.append_only, self.weight)
     }
 }
 
@@ -291,27 +326,18 @@ pub fn expand_stream_aggregates(
             .next()
             .ok_or_else(|| Error::new("stream aggregate requires an input"))?;
         let input = *replacements.get(&original.operator).unwrap_or(&original);
-        let ty = input_type(&edit, input)?;
-        let ix = edit.node(ty.into())?;
-        let key = edit.type_id(ix.edge("keyType")?)?;
-        let value = edit.type_id(ix.edge("elementType")?)?;
         let body = bodies[&id];
         let before = edit.node(body)?.edges("allOperators")?.len();
-        let mut expansion = Expansion {
-            edit: &mut edit,
-            next: &mut counter,
-            warnings: &mut warnings,
-            body,
-            site: id,
+        let aggregate = StreamAggregate {
             input,
-            key,
-            value,
-        };
-        let result = expansion.expand(
+            input_type: input_type(&edit, input)?,
+            output_type: edit.type_id(n.edge("outputType")?)?,
             list,
-            original.number == 0 && matches!(original.operator, NodeId::Outer(id) if context.append_only_inputs.contains(&id)),
+            append_only: original.number == 0
+                && matches!(original.operator, NodeId::Outer(id) if context.append_only_inputs.contains(&id)),
             weight,
-        )?;
+        };
+        let result = aggregate.expand(&mut edit, body, id, &mut counter, &mut warnings)?;
         let first = edit.node(body)?.edges("allOperators")?[before];
         // The next expansion can refer to this relational origin before finish_forwarding.
         let origin = edit.node(id)?.data("provenance").cloned();

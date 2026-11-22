@@ -89,6 +89,11 @@ of the 12 pairs ran the full classic hybrid optimizer in fresh JVMs on CPU
 CPU ratio was 0.133–0.159. Corpus verification shared the VM during the run.
 [Waterline pass measurements](evidence/p3-waterline-root-transport.json)
 
+Sending the aggregate list and its live bindings reduced mean main-thread
+CPU in `ExpandStreamAggregates` from 271.54 ms to 27.88 ms on classic Nexmark.
+The 12 cold JVM pairs alternated build order on CPU 13 while corpus verification
+shared the VM. [Aggregate pass measurements](evidence/p3-stream-aggregate-lists.json)
+
 A chain-topology run at `72183b58e` overlapped ASOF corpus and runtime verification.
 All 69 pairs agreed on artifacts and diagnostics. Direct/hybrid p95 was
 6.752/12.263 s on the array subquery, 22.529/46.318 s on Nexmark and

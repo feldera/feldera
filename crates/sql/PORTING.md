@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The live optimizer expands each stream aggregate from its list, indexed input,
+output type and row weight. The pass matched Java on all 958 classic and 949
+Gen-2 frozen programs where expansion changed the circuit. The comparator
+checks the weight's identity at entry and exit and the append-only producer
+ports in the entry graph. Six programs per engine matched at every optimizer
+boundary through emission. COUNT and LATENESS checkpoints restored in both
+directions. [Aggregate expansion comparisons](evidence/p3-stream-aggregate-lists.json)
+
 Rust infers which side of a time comparison can supply a window bound for
 scalar row columns, NOW() and interval arithmetic. At RewriteNow entry, it
 handled 149 of 163 classic filters and 141 of 151 Gen-2 filters. The other

@@ -1,46 +1,10 @@
-use super::ExpressionSite;
-use feldera_sql_ir::{Circuit, CircuitEditor, NodeId, OperatorKind, OutputPort};
+use super::fragment::Fragment;
+use feldera_sql_ir::{Circuit, CircuitEditor, NodeId, OperatorKind};
 use feldera_sql_opt::TemporalPredicate;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
-/// A local operator sequence has one external port per live input, in call order.
-struct Fragment<const N: usize> {
-    base: Circuit,
-    inputs: [OutputPort; N],
-}
-
 impl<const N: usize> Fragment<N> {
-    fn bind(
-        site: ExpressionSite,
-        kinds: [OperatorKind; N],
-        bytes: &[u8],
-    ) -> Result<(Self, Vec<NodeId>), Box<dyn std::error::Error>> {
-        let inputs = std::array::from_fn(|i| OutputPort {
-            operator: NodeId::Outer(i as u64 + 1),
-            number: 0,
-        });
-        let headers: Vec<_> = kinds.into_iter().zip(inputs).map(|(kind, port)| json!({
-            "class":kind.wire_name(), "id":super::operator_number(port.operator), "inputs":[]
-        })).collect();
-        let (base, roots) = site.arena_with_operators(bytes, &headers)?;
-        Ok((Self { base, inputs }, roots))
-    }
-
-    fn at_empty_site(
-        kinds: [OperatorKind; N],
-        input: &[u8],
-    ) -> Result<(Self, Vec<NodeId>), Box<dyn std::error::Error>> {
-        Self::bind(
-            ExpressionSite {
-                empty: true,
-                position: None,
-            },
-            kinds,
-            input,
-        )
-    }
-
     fn clock_reply(
         &self,
         edit: &CircuitEditor,
@@ -51,18 +15,6 @@ impl<const N: usize> Fragment<N> {
         reply["collection"] = super::operator_number(clock.collection).into();
         reply["indexed"] = super::operator_number(clock.indexed).into();
         Ok(reply)
-    }
-
-    fn reply(&self, edit: &CircuitEditor, next: u64) -> Result<Value, Box<dyn std::error::Error>> {
-        let order = edit.circuit().root().edges("allOperators")?;
-        let inputs = self.inputs.map(|port| port.operator);
-        let added = order
-            .strip_prefix(inputs.as_slice())
-            .ok_or("temporal rewrite changed an external input")?;
-        let operators = edit.circuit().additional_operators(&self.base, added)?;
-        Ok(
-            json!({"inputs":inputs.map(super::operator_number).as_slice(), "operators":operators, "next_generated_name":next}),
-        )
     }
 }
 
