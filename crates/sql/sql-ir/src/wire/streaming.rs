@@ -22,6 +22,7 @@ struct Text<'a>(#[serde(borrow)] Cow<'a, str>);
 #[derive(Default)]
 pub struct LiveCircuitDecoder {
     previous: HashMap<Box<str>, Fragment>,
+    last_snapshot: Option<(Box<[u8]>, Circuit)>,
 }
 
 struct Fragment {
@@ -37,6 +38,14 @@ struct Fragments {
 
 impl LiveCircuitDecoder {
     pub fn decode(&mut self, bytes: &[u8]) -> Result<Circuit, Error> {
+        // Consecutive passes can receive the exact same graph with different pass
+        // state. Circuit clones share the validated arena until a pass edits it.
+        if let Some((previous, circuit)) = &self.last_snapshot {
+            if previous.as_ref() == bytes {
+                return Ok(circuit.clone());
+            }
+        }
+        self.last_snapshot = None;
         // Large one-off snapshots should not keep their arenas alive between calls.
         if bytes.len() > 4 * 1024 * 1024 {
             self.previous = HashMap::new();
@@ -56,6 +65,7 @@ impl LiveCircuitDecoder {
             )?,
         };
         circuit.live_relations = true;
+        self.last_snapshot = Some((bytes.into(), circuit.clone()));
         Ok(circuit)
     }
 }
@@ -393,6 +403,18 @@ mod tests {
         ] {
             assert!(base.clone().with_inner_roots_bytes(invalid).is_err());
         }
+    }
+
+    #[test]
+    fn consecutive_snapshots_share_the_arena_only_when_the_bytes_match() {
+        let mut decoder = LiveCircuitDecoder::default();
+        let graph = br#"{"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}"#;
+        let first = decoder.decode(graph).unwrap();
+        let second = decoder.decode(graph).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&first.nodes.0, &second.nodes.0));
+        assert!(decoder.decode(&graph[..graph.len() - 1]).is_err());
+        let recovered = decoder.decode(graph).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first.nodes.0, &recovered.nodes.0));
     }
 
     #[test]
