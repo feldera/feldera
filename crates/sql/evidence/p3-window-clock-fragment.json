@@ -1,0 +1,56 @@
+{
+  "scope": "A single Rust window fragment builds the differentiator, clock waterline, index, window and output projection. Isolated RewriteNow comparisons include diagnostic positions, graph sharing and generated names.",
+  "compiler_jar_sha256": "3cd1ce9be9299f493c3b284aa8176abe55ef82132f05c4a79fef63b4a2c73033",
+  "test_jar_sha256": "f797a56ee25292d1790d2441987ea7e2e09ab30c201966f47ad94d250f6cf54a",
+  "optimizer_library_sha256": "f846c507e56f5c1a123a0fc1dbb10a94370fe5830eed3989e56a4da8d817a86f",
+  "engines": {
+    "classic": {
+      "matched_rewrite_now_invocations": 71,
+      "input_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_stream_sha256": "3e664fe4c4e0ffa69084b6f6f15c14d072019d90b99982f09e1ebaf31f89b80b",
+      "hybrid_stream_sha256": "cb8808c1cc8824034eafd35d83e24e3d72d473e7cdab7b42f080e7ef2661511c",
+      "detached_full_trace_cases": 7,
+      "detached_report_sha256": "91321e5ccac32462413cd35bfd349ca38f181b0ddbd401a45461874b0386e777"
+    },
+    "gen2": {
+      "matched_rewrite_now_invocations": 62,
+      "input_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_stream_sha256": "2bb158d946fbc67387d8b7d4159750eda56ac6f17b97cc6dd93044c854a53b33",
+      "hybrid_stream_sha256": "204d6afc5c0dbb29abc14ff94134f0cdf01bcd0c47ce4dd520f877d7ec8701fe",
+      "detached_full_trace_cases": 7,
+      "detached_report_sha256": "d4dff51aa30151dc93ed8c852fc38a8f3fb7cbc7c87b7722b3e880507ac2fe7b"
+    }
+  },
+  "worker_limits": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      5.859886,
+      5.723552,
+      5.935011,
+      5.852969,
+      5.40526,
+      5.483343,
+      5.393927,
+      5.574219,
+      7.376014,
+      7.606431,
+      7.684765,
+      7.591014,
+      5.980136,
+      5.584386,
+      5.529552,
+      5.633761,
+      5.773427,
+      5.605761,
+      6.31172,
+      5.896094
+    ],
+    "p95_ms": 7.606431,
+    "largest_driver_plus_front_end_rss_bytes": 75796480,
+    "compiler_sha256": "9573c8b10ffba16bb4d25b356da5f685c519d9db0024bbb520bc37974740b8b4",
+    "report_sha256": "e5a43b880f84955f02f003a8239a8dec9814f7b0a395fb37b987583abd293745"
+  }
+}

@@ -149,6 +149,8 @@ import java.util.Map;
 import java.util.List;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.FindWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ImplementWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.NativeWindowGroups;
@@ -946,13 +948,11 @@ public final class RustCircuitPass implements CircuitTransform {
         return result;
     }
 
-    public static List<DBSPSimpleOperator> scalarClock(DBSPCompiler compiler, DBSPSimpleOperator clock,
-                                                       DBSPExpression minimum) {
-        var reply = invokeLowering(compiler, "RewriteNow/ScalarClock", clock.outputType, DBSPTypeRawTuple.EMPTY, minimum);
-        return decodeOperatorFragment(reply, op -> clock.getRelNode(), clock);
-    }
-
-    private static CalciteRelNode windowOrigin(DBSPCompiler compiler, CalciteRelNode origin, DBSPSimpleOperator op) {
+    private static CalciteRelNode windowOrigin(DBSPCompiler compiler, CalciteRelNode origin,
+                                                DBSPSimpleOperator clock, DBSPSimpleOperator op) {
+        if (op instanceof DBSPWaterlineOperator
+                || (op instanceof DBSPDifferentiateOperator diff && diff.input().node() == clock))
+            return clock.getRelNode();
         if (!(op instanceof DBSPWindowOperator window))
             return origin;
         var finder = new FindSourcePositions(compiler, false);
@@ -964,17 +964,17 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public static List<DBSPSimpleOperator> temporalWindow(DBSPCompiler compiler, CalciteRelNode origin,
             DBSPSimpleOperator rows, DBSPSimpleOperator clock, DBSPParameter parameter,
-            DBSPExpression key, DBSPType keyType, DBSPExpression clockMinimum, DBSPExpression lowerInitial,
+            DBSPExpression key, DBSPType keyType, DBSPType clockType, DBSPExpression lowerInitial,
             DBSPExpression upperInitial, List<DBSPOpcode> comparisons, List<DBSPExpression> bounds) {
         var inputs = new ArrayList<IDBSPInnerNode>(List.of(parameter, rows.outputType, clock.outputType,
-                key, keyType, clockMinimum, lowerInitial, upperInitial));
+                DBSPTypeRawTuple.EMPTY, clockType, key, keyType, lowerInitial, upperInitial));
         inputs.addAll(bounds);
         try {
             var request = expressionSite(origin);
             request.set("comparisons", MAPPER.valueToTree(comparisons.stream().map(Enum::name).toList()));
             var reply = invokeLowering(compiler, "RewriteNow/Window", MAPPER.writeValueAsBytes(request),
                     inputs.toArray(IDBSPInnerNode[]::new));
-            return decodeOperatorFragment(reply, op -> windowOrigin(compiler, origin, op), rows, clock);
+            return decodeOperatorFragment(reply, op -> windowOrigin(compiler, origin, clock, op), rows, clock);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode temporal window comparisons", error);
         }

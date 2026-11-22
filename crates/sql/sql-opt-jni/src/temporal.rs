@@ -61,40 +61,12 @@ pub(super) fn table_clock(
     fragment.clock_reply(&edit, clock, next)
 }
 
-/// Bind the clock stream as an external port. Its upstream circuit and
-/// Calcite origin remain live in the calling JVM.
-pub(super) fn scalar_clock(
-    input: &[u8],
-    mut next: u64,
-) -> Result<Value, Box<dyn std::error::Error>> {
-    let (fragment, roots) = Fragment::at_empty_site([OperatorKind::Now], input)?;
-    let [collection, empty_key, minimum] = roots.as_slice() else {
-        return Err(
-            "scalar clock needs a clock collection, an empty key and an initial timestamp".into(),
-        );
-    };
-    let mut edit = CircuitEditor::new(fragment.base.clone());
-    let collection = edit.type_id(*collection)?;
-    let empty_key = edit.type_id(*empty_key)?;
-    let minimum = edit.expression(*minimum)?;
-    feldera_sql_opt::scalar_clock_operators(
-        &mut edit,
-        fragment.base.root_id(),
-        fragment.inputs[0],
-        collection,
-        empty_key,
-        minimum,
-        &mut next,
-    )?;
-    fragment.reply(&edit, next)
-}
-
 pub(super) fn window(
     input: &[u8],
     state: &[u8],
     mut next: u64,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    use feldera_sql_opt::limiters::{Bound, Stream, StreamKind};
+    use feldera_sql_opt::limiters::{Stream, StreamKind};
     use feldera_sql_opt::{InitialBounds, TemporalStreams, WindowComparison, WindowKey};
     #[derive(serde::Deserialize)]
     struct Request {
@@ -105,16 +77,17 @@ pub(super) fn window(
     let request: Request = serde_json::from_slice(state)?;
     let (fragment, roots) = Fragment::bind(
         request.site,
-        [OperatorKind::SourceMultiset, OperatorKind::Waterline],
+        [OperatorKind::SourceMultiset, OperatorKind::Now],
         input,
     )?;
     let [
         parameter,
         collection,
-        scalar_type,
+        clock_collection,
+        empty_key,
+        timestamp,
         common,
         key,
-        minimum_clock,
         lower,
         upper,
         operands @ ..,
@@ -126,16 +99,27 @@ pub(super) fn window(
         return Err("expected one expression for each temporal comparison".into());
     }
     let mut edit = CircuitEditor::new(fragment.base.clone());
+    let body = fragment.base.root_id();
+    let clock_collection = edit.type_id(*clock_collection)?;
+    let empty_key = edit.type_id(*empty_key)?;
+    let timestamp = edit.type_id(*timestamp)?;
+    let minimum = edit.minimum_value(timestamp)?;
+    let clock = feldera_sql_opt::scalar_clock_operators(
+        &mut edit,
+        body,
+        fragment.inputs[1],
+        clock_collection,
+        empty_key,
+        minimum,
+        &mut next,
+    )?;
     let streams = TemporalStreams {
         rows: Stream {
             port: fragment.inputs[0],
             ty: edit.type_id(*collection)?,
             kind: StreamKind::Collection,
         },
-        clock: Bound {
-            port: fragment.inputs[1],
-            ty: edit.type_id(*scalar_type)?,
-        },
+        clock,
     };
     let row = edit.type_id(edit.node(*collection)?.edge("elementType")?)?;
     let key = WindowKey {
@@ -146,7 +130,7 @@ pub(super) fn window(
     };
     let key_type = key.nonnull_type;
     let initial = InitialBounds {
-        minimum_clock: edit.expression(*minimum_clock)?,
+        minimum_clock: edit.minimum_value(timestamp)?,
         lower: edit.expression(*lower)?,
         upper: edit.expression(*upper)?,
     };
@@ -161,7 +145,6 @@ pub(super) fn window(
         request.comparisons.into_iter().zip(values),
         &mut next,
     )?;
-    let body = fragment.base.root_id();
     feldera_sql_opt::append_temporal_window(
         &mut edit, body, body, streams, key_type, functions, &mut next,
     )?;

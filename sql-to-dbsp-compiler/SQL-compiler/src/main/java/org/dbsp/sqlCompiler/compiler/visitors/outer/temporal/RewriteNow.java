@@ -326,11 +326,6 @@ public class RewriteNow extends CircuitCloneVisitor {
      */
     DBSPSimpleOperator scalarNow() {
         DBSPSimpleOperator source = this.getNow();
-        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-            var operators = RustCircuitPass.scalarClock(this.compiler, source, ContainsNow.timestampType().getMinValue());
-            operators.forEach(this::addOperator);
-            return Utilities.last(operators);
-        }
         DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(source.getRelNode(), source.outputPort());
         this.addOperator(diff);
 
@@ -387,7 +382,6 @@ public class RewriteNow extends CircuitCloneVisitor {
                                                TemporalFilterList comparisons) {
         // Now input comes from here
         CalciteRelNode relNode = operator.getRelNode();
-        DBSPSimpleOperator scalarNow = this.scalarNow();
         DBSPTypeTupleBase inputType = source.getOutputZSetElementType().to(DBSPTypeTupleBase.class);
         DBSPExpression common = comparisons.comparisons().get(0).noNow();
         // The index and the bounds must share this exact key type.
@@ -396,14 +390,15 @@ public class RewriteNow extends CircuitCloneVisitor {
             var terms = comparisons.comparisons();
             var domain = windowKeyType.to(IsBoundedType.class);
             boolean hasUpperBound = terms.stream().anyMatch(t -> !isGreater(t.opcode()));
-            var operators = RustCircuitPass.temporalWindow(this.compiler, relNode, source, scalarNow,
+            var operators = RustCircuitPass.temporalWindow(this.compiler, relNode, source, this.getNow(),
                     comparisons.getParameter(), common, windowKeyType,
-                    ContainsNow.timestampType().getMinValue(), domain.getMinValue(),
+                    ContainsNow.timestampType(), domain.getMinValue(),
                     hasUpperBound ? domain.getMinValue() : domain.getMaxValue(),
                     Linq.map(terms, TemporalFilter::opcode), Linq.map(terms, TemporalFilter::withNow));
             operators.forEach(this::addOperator);
             return Utilities.last(operators);
         }
+        DBSPSimpleOperator scalarNow = this.scalarNow();
         var functions = this.windowFunctions(comparisons, inputType, common, windowKeyType);
         DBSPClosureExpression makeWindow = functions.bounds();
         DBSPSimpleOperator windowBounds = new DBSPApplyOperator(relNode, makeWindow, scalarNow.outputPort(), null);

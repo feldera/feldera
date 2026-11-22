@@ -226,7 +226,7 @@ pub fn scalar_clock_operators(
     empty_key: TypeId,
     minimum: ExpressionId,
     next: &mut u64,
-) -> Result<[NodeId; 2], Error> {
+) -> Result<crate::limiters::Bound, Error> {
     let row = edit.type_id(edit.node(collection.into())?.edge("elementType")?)?;
     let [initial, extract, maximum] = scalar_clock(edit, row, empty_key, minimum, next)?;
     let result =
@@ -253,5 +253,8 @@ pub fn scalar_clock_operators(
             ("extractTs", Field::Reference(extract.into())),
         ],
     )?;
-    Ok([changes, waterline])
+    Ok(crate::limiters::Bound {
+        port: port(waterline),
+        ty: result,
+    })
 }

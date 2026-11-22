@@ -536,6 +536,12 @@ All 133 frozen RewriteNow invocations matched Java. Fourteen detached cases
 also matched at each S4 boundary and through emission.
 [Scalar clock operators](evidence/p3-scalar-clock-operators.json)
 
+Each window now consumes the clock collection in the same Rust call that
+builds its scalar waterline and row index. Both engine populations matched
+Java in all 133 isolated clock-pass comparisons and 14 detached replays.
+Four waiting workers cancelled in 7.61 ms at p95 during corpus replay.
+[Window and clock comparisons](evidence/p3-window-clock-fragment.json)
+
 The DISTINCT pass uses operator kinds, ports and known stream multiplicities
 to check whether it needs the full circuit. It requests expression data when
 an unresolved multiplicity could change the result. The reduced path skipped
@@ -548,6 +554,8 @@ metadata visitor attaches the result to its column, so this pass no longer
 serializes the entire circuit. All eight frozen programs with changed
 initializers matched at every S4 boundary and through emission on both
 engines. The 20 classic ATAN2 regressions also passed on this build.
+The classic runtime suite on this revision passed all 8,256 executable cases
+across 11,407 commands, including 232 expected errors.
 [Column initializer replay](evidence/p3-metadata-initializers.json)
 
 Rust selects the clock calls that require temporal map and filter rewrites.

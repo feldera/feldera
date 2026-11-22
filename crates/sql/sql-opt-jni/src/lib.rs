@@ -692,9 +692,6 @@ fn transform(
     if pass == "RewriteNow/Window" {
         return temporal::window(input, state, next);
     }
-    if pass == "RewriteNow/ScalarClock" {
-        return temporal::scalar_clock(input, next);
-    }
     if pass == "RewriteNow/ClockSites" {
         let calls = serde_json::from_slice(input)?;
         return Ok(serde_json::to_value(feldera_sql_opt::temporal_clock_sites(calls))?);
