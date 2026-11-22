@@ -9,14 +9,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 
-/** Send deep closure bodies as a batch of shallow definitions in one node-ID space. */
-final class WaterlineArguments extends ToJsonInnerVisitor {
+/** Send deep optimizer expressions as a batch of shallow definitions in one node-ID space. */
+class LoweringArguments extends ToJsonInnerVisitor {
     // Node bodies can also contain JSON arrays and source metadata. Leave room
     // for those containers within the decoder's 128-level document limit.
     private static final int MAX_INLINE_NODES = 32;
     private final ArrayDeque<IDBSPInnerNode> deferred = new ArrayDeque<>();
 
-    WaterlineArguments(DBSPCompiler compiler) {
+    LoweringArguments(DBSPCompiler compiler) {
         super(compiler, JsonStream.compactCircuit(), 1, true);
         this.liveNodes = new HashMap<>();
     }
@@ -32,8 +32,13 @@ final class WaterlineArguments extends ToJsonInnerVisitor {
 
     byte[] encode(IDBSPInnerNode[] arguments) {
         this.stream.beginArray();
-        for (var node : arguments)
-            node.accept(this);
+        int count = 0;
+        for (var node : arguments) {
+            if (node != null) {
+                node.accept(this);
+                count++;
+            }
+        }
         if (this.deferred.isEmpty())
             return this.stream.endArray().toString().getBytes(StandardCharsets.UTF_8);
 
@@ -42,7 +47,7 @@ final class WaterlineArguments extends ToJsonInnerVisitor {
             if (!this.serialized.contains(node.getId()))
                 node.accept(this);
         }
-        String batch = "{\"arguments\":" + arguments.length + ",\"nodes\":" + this.stream.endArray() + "}";
+        String batch = "{\"arguments\":" + count + ",\"nodes\":" + this.stream.endArray() + "}";
         return batch.getBytes(StandardCharsets.UTF_8);
     }
 }

@@ -3,17 +3,16 @@ package org.dbsp.sqlCompiler.compiler.backend;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
-import org.dbsp.util.JsonStream;
 import org.dbsp.util.Shuffle;
 
 import java.util.IdentityHashMap;
 
 /** Include the bindings and object identities used by temporal key equivalence. */
-final class TemporalKeyWriter extends ToJsonInnerVisitor {
+final class TemporalKeyWriter extends LoweringArguments {
     private final IdentityHashMap<Shuffle, Long> shuffles = new IdentityHashMap<>();
 
-    TemporalKeyWriter(DBSPCompiler compiler, JsonStream json) {
-        super(compiler, json, 1, true);
+    TemporalKeyWriter(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     @Override

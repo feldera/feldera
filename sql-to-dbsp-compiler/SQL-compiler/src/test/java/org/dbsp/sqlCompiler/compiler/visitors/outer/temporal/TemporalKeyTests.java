@@ -94,6 +94,33 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void deepClockBindingsKeepTheOriginalWindowKey() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var builder = new ExpressionBuilder();
+        var timestamp = DBSPTypeTimestamp.INSTANCE;
+        var row = builder.refVar(builder.tup(timestamp));
+        var key = builder.field(row, 0);
+        DBSPExpression clock = new DBSPApplyExpression("now", timestamp);
+        for (int i = 0; i < 180; i++) {
+            var alias = new DBSPVariablePath("t" + i, timestamp);
+            clock = new DBSPLetExpression(alias, clock, alias.deepCopy());
+        }
+        var predicate = builder.binary(DBSPOpcode.GTE, key, clock);
+        var filter = predicate.closure(row);
+        var windows = RustCircuitPass.conjunctWindows(compiler, filter);
+        Assert.assertNotNull(windows);
+        Assert.assertEquals(1, windows.size());
+        Assert.assertSame(key, windows.get(0).key());
+        Assert.assertTrue(windows.get(0).lower());
+        var terms = RustCircuitPass.inferTemporalPredicates(compiler, filter.parameters[0], predicate);
+        Assert.assertNotNull(terms);
+        Assert.assertEquals(1, terms.size());
+        Assert.assertSame(key, terms.get(0).expression());
+        Assert.assertSame(clock, terms.get(0).clock());
+    }
+
+    @Test
     public void temporalBoundsCompareLocalDeclarationsInScope() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var first = key("r", "r", "x", false);
