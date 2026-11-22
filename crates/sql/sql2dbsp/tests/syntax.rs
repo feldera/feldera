@@ -80,6 +80,56 @@ fn refuses_the_wrong_stage_version_and_engine_before_emission() {
 }
 
 #[test]
+fn deep_checkpoint_artifacts_preserve_definitions_and_exact_literals() {
+    // Node headers can arrive after their children. The last literal's type
+    // refers back to a definition outside the nested subtree.
+    let literal = r#"{"id":2,"value":12345678901234567890.000001,"type":{"node":1},"class":"DBSPDecimalLiteral"}"#;
+    let mut expression = literal.to_owned();
+    for id in 3..173 {
+        expression =
+            format!(r#"{{"source":{expression},"class":"DBSPCloneExpression","id":{id}}}"#);
+    }
+    let graph = format!(
+        r#"{{"class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[],"metadata":{{"inputs":[],"outputs":[]}},"ty":{{"class":"DBSPTypeDecimal","id":1}},"expression":{expression}}}"#
+    );
+    let checkpoint = |graph: &str, gen2: bool| {
+        format!(
+            r#"{{"schema_version":4,"stage":"S3-subset","options":{{"ioOptions":{{"gen2":{gen2}}}}},"sources":{{"lines":[]}},"calcite_plan":{{}},"diagnostics":{{"messages":[]}},"circuit":{graph}}}"#
+        )
+    };
+    for gen2 in [false, true] {
+        let result = invoke("--s3-to-artifacts", &checkpoint(&graph, gen2));
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let artifacts = feldera_sql_ir::parse_circuit_json(&result.stdout).unwrap();
+        let circuit = if gen2 {
+            &artifacts["circuit"]
+        } else {
+            &artifacts["checkpoint"]["circuit"]
+        };
+        let mut node = &circuit["expression"];
+        for id in (3..173).rev() {
+            assert_eq!(node["id"], id);
+            node = &node["source"];
+        }
+        assert_eq!(node["value"].to_string(), "12345678901234567890.000001");
+        assert_eq!(node["type"]["node"], 1);
+    }
+    let duplicate = graph.replace(r#""value":"#, r#""value":0,"value":"#);
+    for mode in ["--s3-to-artifacts", "--s3-to-diagnostics"] {
+        let result = invoke(mode, &checkpoint(&duplicate, true));
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("duplicate"));
+    }
+    let missing_type = graph.replace(r#"{"node":1}"#, r#"{"node":999}"#);
+    let result = invoke("--s3-to-artifacts", &checkpoint(&missing_type, false));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("undefined node"));
+}
+
+#[test]
 fn binding_submissions_preserves_the_api_source_and_batch_boundary() {
     use serde_json::{json, Value};
 

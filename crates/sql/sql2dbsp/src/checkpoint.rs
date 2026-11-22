@@ -1,8 +1,43 @@
 //! Adapt the versioned S3 checkpoint to the public Gen-2 and profiler contracts.
 
 use feldera_sql_ir::{Circuit, Field};
-use serde_json::{json, Value};
+use serde::de::{self, Deserializer, MapAccess, Visitor};
+use serde_json::{Value, json, value::RawValue};
 use std::{error::Error, ffi::OsStr};
+
+/// Only the circuit may contain deep inline expression definitions. Parse
+/// the other envelope fields with the ordinary compiler JSON limits.
+pub(super) fn read(bytes: &[u8]) -> Result<Value, serde_json::Error> {
+    struct Envelope;
+    impl<'de> Visitor<'de> for Envelope {
+        type Value = Value;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a compiler checkpoint object")
+        }
+
+        fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Value, M::Error> {
+            let mut fields = serde_json::Map::new();
+            while let Some(name) = map.next_key::<String>()? {
+                let serde_json::map::Entry::Vacant(slot) = fields.entry(name) else {
+                    return Err(de::Error::custom("duplicate checkpoint field"));
+                };
+                let raw: &RawValue = map.next_value()?;
+                let decode = if slot.key() == "circuit" {
+                    feldera_sql_ir::parse_circuit_json
+                } else {
+                    feldera_sql_ir::parse_json
+                };
+                slot.insert(decode(raw.get().as_bytes()).map_err(de::Error::custom)?);
+            }
+            Ok(Value::Object(fields))
+        }
+    }
+    let mut input = serde_json::Deserializer::from_slice(bytes);
+    let envelope = (&mut input).deserialize_map(Envelope)?;
+    input.end()?;
+    Ok(envelope)
+}
 
 pub enum Output {
     Circuit,
@@ -23,7 +58,7 @@ impl Output {
     }
 
     pub fn emit(&self, input: &str) -> Result<Value, Box<dyn Error>> {
-        self.emit_checkpoint(feldera_sql_ir::parse_json(input.as_bytes())?)
+        self.emit_checkpoint(read(input.as_bytes())?)
     }
 
     pub(super) fn emit_checkpoint(&self, mut checkpoint: Value) -> Result<Value, Box<dyn Error>> {
@@ -42,7 +77,7 @@ impl Output {
         if matches!(self, Self::Circuit) && !gen2 {
             return Err("expected Gen-2 compiler options in the S3 checkpoint".into());
         }
-        let graph = Circuit::from_json(checkpoint["circuit"].take())?;
+        let graph = Circuit::from_checkpoint_json(checkpoint["circuit"].take())?;
         if matches!(self, Self::Circuit) {
             return Ok(graph.to_gen2_json()?);
         }

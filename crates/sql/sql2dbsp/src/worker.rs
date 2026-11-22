@@ -18,7 +18,7 @@ fn write_file(dir: &Path, name: &str, document: &Value) -> io::Result<()> {
 
 fn emit(input: &Path, producer: &str, runtime: &str) -> Result<Value, Box<dyn Error>> {
     let input = fs::read(input)?;
-    let checkpoint = feldera_sql_ir::parse_json(&input)?;
+    let checkpoint = crate::checkpoint::read(&input)?;
     if producer.is_empty()
         || runtime.is_empty()
         || checkpoint["producer_commit"] != producer

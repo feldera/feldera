@@ -19,9 +19,21 @@ impl fmt::Display for Error {
 }
 
 pub fn read(path: &Path) -> Result<Value, Error> {
+    read_with(path, parse_json)
+}
+
+/// The graph comparator checks structure and identity independently of the production IR reader.
+pub fn read_circuit(path: &Path) -> Result<Value, Error> {
+    read_with(path, feldera_sql_ir::parse_circuit_json)
+}
+
+fn read_with(
+    path: &Path,
+    decode: fn(&[u8]) -> Result<Value, serde_json::Error>,
+) -> Result<Value, Error> {
     let bytes = fs::read(path)
         .map_err(|error| Error::Input(format!("cannot read {}: {error}", path.display())))?;
-    parse_json(&bytes)
+    decode(&bytes)
         .map_err(|error| Error::Input(format!("invalid JSON in {}: {error}", path.display())))
 }
 
@@ -109,7 +121,7 @@ impl Capture {
 
     fn observation(&self, directory: &Path, sequence: u64) -> Result<Value, Error> {
         let file = directory.join(self.file_name(sequence));
-        let dump = read(&file)?;
+        let dump = read_circuit(&file)?;
         if dump["observation"]["sequence"].as_u64() != Some(sequence)
             || dump["observation"]["stage"].as_str() != Some(self.stage(sequence))
         {

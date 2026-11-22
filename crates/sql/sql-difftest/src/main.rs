@@ -12,7 +12,7 @@ mod optimizer_trace;
 mod pass_observations;
 mod probe_files;
 mod roundtrip;
-use files::{read, Error};
+use files::{Error, read};
 use probe_files::DiagnosticPolicy;
 
 fn main() -> ExitCode {
@@ -138,6 +138,7 @@ fn main() -> ExitCode {
             Err(error) => failure(error),
         };
     }
+    let read = if zsets { read } else { files::read_circuit };
     let values = read(Path::new(&args[0]))
         .and_then(|expected| read(Path::new(&args[1])).map(|actual| (expected, actual)));
     match values {

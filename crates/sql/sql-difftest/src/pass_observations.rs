@@ -1,7 +1,7 @@
 //! Compare two PassCorpusOracle streams against the population that produced them.
 use crate::files::Error;
-use feldera_sql_difftest::{compare_circuits, parse_json};
-use feldera_sql_ir::{BodyOrder, Circuit, NodeId};
+use feldera_sql_difftest::compare_circuits;
+use feldera_sql_ir::{BodyOrder, Circuit, NodeId, parse_circuit_json};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -44,7 +44,7 @@ impl<'a> Records<'a> {
         {
             return Ok(None);
         }
-        parse_json(&self.line).map(Some).map_err(|e| invalid(&e))
+        parse_circuit_json(&self.line).map(Some).map_err(|e| invalid(&e))
     }
 }
 
@@ -145,7 +145,7 @@ impl Invocation {
         }
         let mut selected = Vec::with_capacity(choices.len());
         if !choices.is_empty() {
-            let graph = Circuit::from_json(self.after.clone()).map_err(|e| e.to_string())?;
+            let graph = Circuit::from_checkpoint_json(self.after.clone()).map_err(|e| e.to_string())?;
             let mut seen = HashSet::new();
             for (filter, conjunct) in choices {
                 if !seen.insert(filter) {
@@ -193,7 +193,7 @@ impl Invocation {
             .and_then(Value::as_str)
             .ok_or("missing aggregate weight name")?;
         for (entry, wire) in [(true, &mut self.before), (false, &mut self.after)] {
-            let graph = Circuit::from_json(wire.clone()).map_err(|e| e.to_string())?;
+            let graph = Circuit::from_checkpoint_json(wire.clone()).map_err(|e| e.to_string())?;
             if wire.get("aggregate_weight").is_some() || wire.get("append_only_inputs").is_some() {
                 return Err("aggregate state collides with circuit fields".into());
             }
@@ -261,7 +261,7 @@ impl Invocation {
         if state.inputs.is_empty() && state.outputs.is_empty() {
             return Ok(());
         }
-        let graph = Circuit::from_json(self.before.clone()).map_err(|e| e.to_string())?;
+        let graph = Circuit::from_checkpoint_json(self.before.clone()).map_err(|e| e.to_string())?;
         let order = graph
             .operator_order(BodyOrder::Preorder)
             .map_err(|e| e.to_string())?;

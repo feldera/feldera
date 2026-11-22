@@ -132,9 +132,123 @@ pub fn parse_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
     }
 }
 
+// Jackson's default checkpoint reader accepts at most 1,000 nested containers.
+pub(crate) const MAX_CIRCUIT_DEPTH: usize = 1000;
+
+/// Decode a compiler graph with deep inline definitions. Ordinary artifacts
+/// use the same checked decoder as before. The deep path keeps its traversal
+/// on the heap, including for producers that reorder node headers.
+pub fn parse_circuit_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
+    if let Ok(value) = parse_json(bytes) {
+        return Ok(value);
+    }
+    use serde_json::value::RawValue;
+
+    struct Members;
+    impl<'de> Visitor<'de> for Members {
+        type Value = indexmap::IndexMap<String, &'de RawValue>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("a JSON object with unique keys")
+        }
+
+        fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+            let mut fields = Self::Value::new();
+            while let Some((name, raw)) = map.next_entry()? {
+                if fields.insert(name, raw).is_some() {
+                    return Err(de::Error::custom("duplicate JSON object key"));
+                }
+            }
+            Ok(fields)
+        }
+    }
+
+    enum Step<'a> {
+        Read(&'a RawValue, usize),
+        Array(usize),
+        Object(Vec<String>),
+    }
+    let root: &RawValue = serde_json::from_slice(bytes)?;
+    let mut steps = vec![Step::Read(root, 0)];
+    let mut values = Vec::new();
+    while let Some(step) = steps.pop() {
+        let value = match step {
+            Step::Read(raw, depth) => {
+                let bytes = raw.get().as_bytes();
+                let container = matches!(bytes.first(), Some(b'{' | b'['));
+                if container && depth >= MAX_CIRCUIT_DEPTH {
+                    return Err(de::Error::custom("circuit exceeds 1000 nested containers"));
+                }
+                // A fragment under 256 bytes contains at most 127 nested containers.
+                // Near the overall limit, count even these small containers individually.
+                if !container || (bytes.len() < 256 && depth <= MAX_CIRCUIT_DEPTH - 128) {
+                    values.push(parse_json(bytes)?);
+                    continue;
+                }
+                match bytes[0] {
+                    b'{' => {
+                        let fields =
+                            serde_json::Deserializer::from_slice(bytes).deserialize_map(Members)?;
+                        if fields
+                            .first()
+                            .is_some_and(|(k, _)| k.starts_with("$serde_json::private::"))
+                        {
+                            // Preserve the configured codec's interpretation of its reserved fields.
+                            parse_json(bytes)?
+                        } else {
+                            let (keys, children): (Vec<_>, Vec<_>) = fields.into_iter().unzip();
+                            steps.push(Step::Object(keys));
+                            steps.extend(
+                                children
+                                    .into_iter()
+                                    .rev()
+                                    .map(|raw| Step::Read(raw, depth + 1)),
+                            );
+                            continue;
+                        }
+                    }
+                    b'[' => {
+                        let children: Vec<&RawValue> = serde_json::from_slice(bytes)?;
+                        steps.push(Step::Array(children.len()));
+                        steps.extend(
+                            children
+                                .into_iter()
+                                .rev()
+                                .map(|raw| Step::Read(raw, depth + 1)),
+                        );
+                        continue;
+                    }
+                    _ => unreachable!("checked container"),
+                }
+            }
+            Step::Array(len) => Value::Array(values.split_off(values.len() - len)),
+            Step::Object(keys) => {
+                let fields = values.drain(values.len() - keys.len()..);
+                Value::Object(keys.into_iter().zip(fields).collect())
+            }
+        };
+        values.push(value);
+    }
+    Ok(values.pop().expect("one JSON root"))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_json;
+    use super::{MAX_CIRCUIT_DEPTH, parse_circuit_json, parse_json};
+
+    #[test]
+    fn circuit_reader_counts_containers_instead_of_brackets_in_string_values() {
+        fn document(depth: usize) -> String {
+            format!(r#"{}"text with [ and \"{{"{}"#, "[".repeat(depth), "]".repeat(depth))
+        }
+        let mut value = parse_circuit_json(document(MAX_CIRCUIT_DEPTH).as_bytes()).unwrap();
+        for _ in 0..MAX_CIRCUIT_DEPTH {
+            value = value.as_array_mut().unwrap().pop().unwrap();
+        }
+        assert_eq!(value, "text with [ and \"{");
+        let err = parse_circuit_json(document(MAX_CIRCUIT_DEPTH + 1).as_bytes()).unwrap_err();
+        assert!(err.to_string().contains("1000 nested containers"));
+    }
 
     #[test]
     fn duplicate_keys_cannot_hide_definitions_or_differences() {
@@ -142,10 +256,12 @@ mod tests {
             r#"{"type": {"id": 1}, "type": {"node": 1}}"#,
             r#"[{"x": 1, "\u0078": 2}]"#,
         ] {
-            assert!(parse_json(input.as_bytes())
-                .unwrap_err()
-                .to_string()
-                .contains("duplicate"));
+            assert!(
+                parse_json(input.as_bytes())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("duplicate")
+            );
         }
     }
 

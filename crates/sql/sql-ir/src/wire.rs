@@ -83,6 +83,26 @@ pub(super) fn validated(root: NodeId, nodes: Arena) -> Result<Circuit, Error> {
 }
 
 impl Circuit {
+    /// Decode a checkpoint into the arena in short runs. Only an inner
+    /// definition starts a new run, so deeply nested expressions preserve the
+    /// wire definition sites and ordinary JSON fields retain their depth limit.
+    pub fn from_checkpoint_json(value: Value) -> Result<Self, Error> {
+        let mut nodes = Arena::new();
+        let mut deferred = Vec::new();
+        let Field::Definition(root) = read_field(value, true, &mut nodes, 0, Some(&mut deferred))?
+        else {
+            return Err(Error::new("expected a circuit root definition"));
+        };
+        if nodes[&root].class() != "DBSPCircuit" {
+            return Err(Error::new("expected a DBSPCircuit root"));
+        }
+        while let Some(value) = deferred.pop() {
+            // Only the actual circuit root owns opaque schema metadata.
+            read_field(value, false, &mut nodes, 1, Some(&mut deferred))?;
+        }
+        validated(root, nodes)
+    }
+
     pub(super) fn attach_inner_roots(
         mut self,
         mut extra: Arena,
@@ -145,6 +165,33 @@ fn opaque_field(key: &str, depth: usize, outer_node: bool) -> bool {
     key == "annotations" || (key == "metadata" && depth == 0) || (key == "provenance" && outer_node)
 }
 
+fn check_container_depth(depth: usize) -> Result<(), Error> {
+    if depth >= 127 {
+        return Err(Error::new("recursion limit exceeded in checkpoint field"));
+    }
+    Ok(())
+}
+
+// Opaque fields are copied as plain JSON. Keep their local depth bounded
+// even when another part of a checkpoint contains a deep expression chain.
+fn check_opaque_depth(value: &Value, depth: usize) -> Result<(), Error> {
+    let mut pending = vec![(value, depth)];
+    while let Some((value, depth)) = pending.pop() {
+        match value {
+            Value::Array(items) => {
+                check_container_depth(depth)?;
+                pending.extend(items.iter().map(|child| (child, depth + 1)));
+            }
+            Value::Object(fields) => {
+                check_container_depth(depth)?;
+                pending.extend(fields.values().map(|child| (child, depth + 1)));
+            }
+            _ => (),
+        }
+    }
+    Ok(())
+}
+
 fn outer_child(key: &str, port: bool) -> bool {
     matches!(key, "declarations" | "allOperators") || (key == "operator" && port)
 }
@@ -155,12 +202,25 @@ pub(super) fn read(
     nodes: &mut Arena,
     depth: usize,
 ) -> Result<Field, Error> {
+    read_field(value, outer, nodes, depth, None)
+}
+
+fn read_field(
+    value: Value,
+    outer: bool,
+    nodes: &mut Arena,
+    depth: usize,
+    mut deferred: Option<&mut Vec<Value>>,
+) -> Result<Field, Error> {
     check_depth(depth)?;
+    if deferred.is_some() && (value.is_object() || value.is_array()) {
+        check_container_depth(depth)?;
+    }
     let mut object = match value {
         Value::Array(values) => {
             return values
                 .into_iter()
-                .map(|v| read(v, outer, nodes, depth + 1))
+                .map(|v| read_field(v, outer, nodes, depth + 1, deferred.as_deref_mut()))
                 .collect::<Result<_, _>>()
                 .map(Field::Array);
         }
@@ -185,6 +245,15 @@ pub(super) fn read(
         }
     }
 
+    if !outer && depth >= 48 && object.contains_key("class") {
+        if let (Some(queue), Some(number)) =
+            (deferred.as_mut(), object.get("id").and_then(Value::as_u64))
+        {
+            queue.push(Value::Object(object));
+            return Ok(Field::Definition(NodeId::Inner(number)));
+        }
+    }
+
     let header = if object.contains_key("class") && object.contains_key("id") {
         let Some(Value::String(class)) = object.shift_remove("class") else {
             return Err(Error("node class must be a string".into()));
@@ -197,9 +266,18 @@ pub(super) fn read(
     let mut fields = IndexMap::new();
     for (key, value) in object {
         let field = if opaque_field(&key, depth, outer && header.is_some()) {
+            if deferred.is_some() {
+                check_opaque_depth(&value, depth + 1)?;
+            }
             Field::Data(value)
         } else {
-            read(value, outer_child(&key, port), nodes, depth + 1)?
+            read_field(
+                value,
+                outer_child(&key, port),
+                nodes,
+                depth + 1,
+                deferred.as_deref_mut(),
+            )?
         };
         fields.insert(key, field);
     }
