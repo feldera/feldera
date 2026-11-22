@@ -462,6 +462,18 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+When narrowing joins, Rust built 2,089 input projections across both frozen
+populations on `0a95d4f7b`. All 3,916 invocations of `RemoveUnusedFields` on
+the 825 programs that exercised the change matched Java. All 296 selected
+detached compilations matched through emission. The 148 executable classic
+selections passed, and COUNT and LATENESS restored in both directions.
+[Join input projections](evidence/p3-join-input-projection.json)
+
+On `ebf489c23`, Rust preserved indexed keys while projecting values for
+aggregates and TopK. Java agreed at all 5,595 pass invocations on the 1,565
+programs that exercised this code. The 296 selected detached compilations
+matched through emission. [Indexed value projections](evidence/p3-indexed-value-projection.json)
+
 On `813ee9a19`, Rust classified map and index projection rewrites at 190,767
 producer visits. Across both frozen populations, all 86,472 invocations of
 `OptimizeProjections` matched direct Java. All 296 selected detached
