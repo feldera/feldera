@@ -1,6 +1,7 @@
 //! Select bounded windows that can use the same indexed input. Java supplies
 //! canonical closure text while it owns the expression printer.
 mod implement;
+mod key;
 mod reorder;
 mod scan;
 mod source;
