@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust now builds the map or residual filter with its clock join in one call.
+After a residual filter runs, a projection removes the timestamp. All 133
+frozen invocations matched the preceding Java build. Fourteen detached
+cases matched through emission, and both engines preserved the diagnostics
+for unsupported clock calls inside map and filter lambdas.
+[Clock join consumers](evidence/p3-clock-join-consumers.json)
+
 Rust indexes rows and joins them to the indexed clock when a map or residual
 filter needs NOW(). All 133 frozen invocations matched Java. Seven programs
 per engine matched through detached replay and emission. The COUNT and

@@ -871,10 +871,19 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static List<DBSPSimpleOperator> clockJoin(DBSPCompiler compiler, DBSPSimpleOperator rows,
-            DBSPSimpleOperator indexedClock, DBSPType timestamp, CalciteRelNode origin, DBSPExpression call) {
-        var reply = invokeLowering(compiler, "RewriteNow/Join", rows.getOutputZSetElementType(),
-                DBSPTypeTuple.EMPTY, timestamp);
+    public static List<DBSPSimpleOperator> clockJoin(DBSPCompiler compiler, DBSPUnaryOperator consumer,
+            DBSPSimpleOperator rows, DBSPSimpleOperator indexedClock, DBSPClosureExpression function,
+            DBSPType timestamp, DBSPExpression call) {
+        String pass = consumer instanceof DBSPFilterOperator ? "RewriteNow/JoinedFilter" : "RewriteNow/JoinedMap";
+        var reply = invokeLowering(compiler, pass, rows.getOutputZSetElementType(), DBSPTypeTuple.EMPTY,
+                timestamp, function, consumer.getOutputZSetType());
+        var unsupported = reply.value.get("unsupported_lambda");
+        if (unsupported != null) {
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            var lambda = expressionDecoder(reply.writer).decodeInner(unsupported, DBSPClosureExpression.class);
+            throw new CompilationError("NOW() is not supported inside a lambda expression", lambda.getNode());
+        }
+        var origin = consumer.getRelNode();
         var joinOrigin = origin.copy();
         joinOrigin.addSourcePositions(List.of(call.getSourcePosition()));
         return temporalOperators(reply, op -> op instanceof DBSPStreamJoinOperator ? joinOrigin : origin,
@@ -917,21 +926,6 @@ public final class RustCircuitPass implements CircuitTransform {
                                                        DBSPExpression minimum) {
         var reply = invokeLowering(compiler, "RewriteNow/ScalarClock", clock.outputType, DBSPTypeRawTuple.EMPTY, minimum);
         return temporalOperators(reply, op -> clock.getRelNode(), clock);
-    }
-
-    public static DBSPClosureExpression rewriteClockClosure(DBSPCompiler compiler, DBSPClosureExpression closure,
-                                                           DBSPType timestamp) {
-        var reply = invokeLowering(compiler, "RewriteNow/Closure", closure, timestamp);
-        var unsupported = reply.value.get("unsupported_lambda");
-        if (unsupported != null) {
-            var lambda = expressionDecoder(reply.writer).decodeInner(unsupported, DBSPClosureExpression.class);
-            throw new CompilationError("NOW() is not supported inside a lambda expression", lambda.getNode());
-        }
-        return loweredClosure(compiler, reply);
-    }
-
-    public static DBSPClosureExpression dropClock(DBSPCompiler compiler, DBSPType joinedRow) {
-        return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/DropClock", joinedRow));
     }
 
     private static CalciteRelNode windowOrigin(DBSPCompiler compiler, CalciteRelNode origin, DBSPSimpleOperator op) {

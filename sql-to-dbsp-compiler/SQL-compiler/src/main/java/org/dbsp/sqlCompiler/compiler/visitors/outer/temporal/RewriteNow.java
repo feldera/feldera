@@ -192,12 +192,6 @@ public class RewriteNow extends CircuitCloneVisitor {
      * and {@code nowCall} the NOW() call that requires the join. */
     DBSPSimpleOperator createJoin(DBSPSimpleOperator input, DBSPUnaryOperator operator,
                                   DBSPExpression nowCall) {
-        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-            var operators = RustCircuitPass.clockJoin(this.compiler, input, Objects.requireNonNull(this.nowIndexed),
-                    ContainsNow.timestampType(), operator.getRelNode(), nowCall);
-            operators.forEach(this::addOperator);
-            return Utilities.last(operators);
-        }
         DBSPType inputType = input.getOutputZSetElementType();
         var functions = clockJoinFunctions(inputType);
         DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getRelNode(), functions.left,
@@ -235,10 +229,26 @@ public class RewriteNow extends CircuitCloneVisitor {
         return new DBSPTupleExpression(fields, false).closure(var);
     }
 
-    private DBSPClosureExpression rewriteClockClosure(DBSPClosureExpression closure) {
-        if (this.compiler.options.ioOptions.rustOptimizerPasses)
-            return RustCircuitPass.rewriteClockClosure(this.compiler, closure, ContainsNow.timestampType());
-        return new RewriteNowClosure(this.compiler()).apply(closure).to(DBSPClosureExpression.class);
+    private DBSPSimpleOperator applyClockJoin(DBSPSimpleOperator rows, DBSPUnaryOperator consumer,
+            DBSPClosureExpression function, DBSPExpression call) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var operators = RustCircuitPass.clockJoin(this.compiler, consumer, rows, Objects.requireNonNull(this.nowIndexed),
+                    function, ContainsNow.timestampType(), call);
+            operators.forEach(this::addOperator);
+            return Utilities.last(operators);
+        }
+        var join = this.createJoin(rows, consumer, call);
+        var rewritten = new RewriteNowClosure(this.compiler()).apply(function).to(DBSPClosureExpression.class);
+        OutputPort input = join.outputPort();
+        if (consumer instanceof DBSPFilterOperator) {
+            var filter = new DBSPFilterOperator(consumer.getRelNode(), rewritten, input);
+            this.addOperator(filter);
+            input = filter.outputPort();
+            rewritten = dropClock(filter.getOutputZSetElementType());
+        }
+        var result = new DBSPMapOperator(consumer.getRelNode(), rewritten, consumer.getOutputZSetType(), input);
+        this.addOperator(result);
+        return result;
     }
 
     void warnExpensive(@Nullable DBSPExpression expression) {
@@ -264,11 +274,8 @@ public class RewriteNow extends CircuitCloneVisitor {
         if (call != null) {
             OutputPort input = this.mapped(operator.input());
             this.warnExpensive(call);
-            DBSPSimpleOperator join = this.createJoin(input.simpleNode(), operator, call);
-            function = this.rewriteClockClosure(function.to(DBSPClosureExpression.class));
-            DBSPSimpleOperator result = new DBSPMapOperator(
-                    operator.getRelNode(), function, operator.getOutputZSetType(), join.outputPort());
-            this.map(operator, result);
+            var result = this.applyClockJoin(input.simpleNode(), operator, function.to(DBSPClosureExpression.class), call);
+            this.map(operator, result, false);
         } else {
             super.postorder(operator);
         }
@@ -559,17 +566,9 @@ public class RewriteNow extends CircuitCloneVisitor {
             // Decomposition can combine several residual terms into a fresh expression.
             var call = this.clockSites == null ? this.clockCall(filterBody) :
                     RustCircuitPass.temporalClockSites(this.compiler, List.of(filterBody)).get(filterBody.getId());
-            DBSPSimpleOperator join = this.createJoin(result, operator, Objects.requireNonNull(call));
             this.warnExpensive(filterBody);
-            function = this.rewriteClockClosure(filterBody.closure(function.parameters));
-            DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getRelNode(), function, join.outputPort());
-            this.addOperator(filter);
-            // Drop the extra field
-            DBSPType joinedRow = filter.getOutputZSetElementType();
-            DBSPExpression drop = this.compiler.options.ioOptions.rustOptimizerPasses
-                    ? RustCircuitPass.dropClock(this.compiler, joinedRow) : dropClock(joinedRow);
-            result = new DBSPMapOperator(operator.getRelNode(), drop, operator.getOutputZSetType(), filter.outputPort());
-            this.addOperator(result);
+            result = this.applyClockJoin(result, operator, filterBody.closure(function.parameters),
+                    Objects.requireNonNull(call));
         }
         this.map(operator.outputPort(), result.outputPort(), false);
     }

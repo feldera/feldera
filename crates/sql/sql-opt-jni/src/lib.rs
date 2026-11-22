@@ -357,21 +357,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let functions = edit.circuit().additional_expressions(&arena, &roots)?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
-        ("RewriteNow/Closure", [closure, timestamp]) => {
-            let closure = edit.expression(*closure)?;
-            let timestamp = edit.type_id(*timestamp)?;
-            match feldera_sql_opt::rewrite_clock_closure(&mut edit, closure, timestamp)? {
-                feldera_sql_opt::ClockClosure::Rewritten(function) => function,
-                feldera_sql_opt::ClockClosure::UnsupportedLambda(lambda) => {
-                    let functions = edit.circuit().additional_expressions(&arena, &[lambda])?;
-                    return Ok(json!({"unsupported_lambda": functions[0]}));
-                }
-            }
-        }
-        ("RewriteNow/DropClock", [row]) => {
-            let row = edit.type_id(*row)?;
-            feldera_sql_opt::drop_clock(&mut edit, row, &mut next)?
-        }
         ("TemporalGroups" | "MergeTemporalBounds", roots) => {
             return temporal::groups(&arena, &mut edit, roots, state, pass == "MergeTemporalBounds");
         }
@@ -662,8 +647,10 @@ fn transform(
 ) -> Result<Value, Box<dyn std::error::Error>> {
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
-    if pass == "RewriteNow/Join" {
-        return temporal::clock_join(input, next);
+    match pass {
+        "RewriteNow/JoinedMap" => return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Map),
+        "RewriteNow/JoinedFilter" => return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Filter),
+        _ => {}
     }
     if pass == "RewriteNow/Window" {
         return temporal::window(input, state, next);
@@ -784,7 +771,7 @@ fn transform(
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
-        | "RewriteNow/Closure" | "RewriteNow/DropClock" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
         | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
         | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"

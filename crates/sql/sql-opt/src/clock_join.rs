@@ -1,6 +1,6 @@
 //! Append the clock to a row for NOW expressions that require a stream join.
 use crate::function_calls::{contains_now, function_name, is_clock_call};
-use feldera_sql_expr::{flatten_tuple_fields, parameter_paths, Rewrite, Transformation, Visit};
+use feldera_sql_expr::{Rewrite, Transformation, Visit, flatten_tuple_fields, parameter_paths};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,
     OperatorKind, OutputPort, TypeId,
@@ -67,7 +67,7 @@ pub fn append_clock_join(
     )
 }
 
-pub fn clock_join_functions(
+fn clock_join_functions(
     edit: &mut CircuitEditor,
     row: TypeId,
     empty_key: TypeId,
@@ -97,7 +97,7 @@ pub fn clock_join_functions(
     ])
 }
 
-pub fn drop_clock(
+fn drop_clock(
     edit: &mut CircuitEditor,
     joined_row: TypeId,
     next: &mut u64,
@@ -114,8 +114,8 @@ pub fn drop_clock(
 
 /// A clock call in a nested lambda refers to a row outside that lambda's scope.
 /// Return the original lambda so the caller can report its SQL location.
-pub enum ClockClosure {
-    Rewritten(ExpressionId),
+pub enum ClockRewrite<T> {
+    Rewritten(T),
     UnsupportedLambda(ExpressionId),
 }
 
@@ -154,11 +154,11 @@ impl Transformation for JoinedClock {
 }
 
 /// Widen the input parameter by one timestamp and read NOW() from that column.
-pub fn rewrite_clock_closure(
+fn rewrite_clock_closure(
     edit: &mut CircuitEditor,
     closure: ExpressionId,
     timestamp: TypeId,
-) -> Result<ClockClosure, Error> {
+) -> Result<ClockRewrite<ExpressionId>, Error> {
     let node = edit.node(closure.into())?;
     let body = node.edge("body")?;
     let [parameter] = node
@@ -192,9 +192,72 @@ pub fn rewrite_clock_closure(
     });
     let body = rewrite.apply(edit, body)?;
     match rewrite.rule.unsupported {
-        Some(lambda) => Ok(ClockClosure::UnsupportedLambda(lambda)),
-        None => Ok(ClockClosure::Rewritten(
+        Some(lambda) => Ok(ClockRewrite::UnsupportedLambda(lambda)),
+        None => Ok(ClockRewrite::Rewritten(
             edit.closure_from_variables(edit.expression(body)?, &[row])?,
         )),
     }
+}
+
+#[derive(Clone, Copy)]
+pub enum ClockConsumer {
+    Map,
+    Filter,
+}
+
+pub struct ClockProjection {
+    pub consumer: ClockConsumer,
+    pub function: ExpressionId,
+    pub output: TypeId,
+}
+
+/// A map reads NOW() from the widened row. A filter keeps the widened row
+/// until its predicate has run, then projects away the extra timestamp.
+pub fn apply_joined_clock(
+    edit: &mut CircuitEditor,
+    body: NodeId,
+    join: NodeId,
+    projection: ClockProjection,
+    timestamp: TypeId,
+    next: &mut u64,
+) -> Result<ClockRewrite<NodeId>, Error> {
+    let function = match rewrite_clock_closure(edit, projection.function, timestamp)? {
+        ClockRewrite::Rewritten(function) => function,
+        ClockRewrite::UnsupportedLambda(lambda) => {
+            return Ok(ClockRewrite::UnsupportedLambda(lambda));
+        }
+    };
+    let mut input = OutputPort {
+        operator: join,
+        number: 0,
+    };
+    let function = match projection.consumer {
+        ClockConsumer::Map => function,
+        ClockConsumer::Filter => {
+            let joined_type = edit.node(join)?.edge("outputType")?;
+            let joined_row = edit.type_id(edit.node(joined_type)?.edge("elementType")?)?;
+            input.operator = edit.append_operator(
+                body,
+                join,
+                OperatorKind::Filter,
+                &[input],
+                [
+                    ("outputType", Field::Reference(joined_type)),
+                    ("function", Field::Reference(function.into())),
+                ],
+            )?;
+            drop_clock(edit, joined_row, next)?
+        }
+    };
+    let result = edit.append_operator(
+        body,
+        join,
+        OperatorKind::Map,
+        &[input],
+        [
+            ("outputType", Field::Reference(projection.output.into())),
+            ("function", Field::Reference(function.into())),
+        ],
+    )?;
+    Ok(ClockRewrite::Rewritten(result))
 }

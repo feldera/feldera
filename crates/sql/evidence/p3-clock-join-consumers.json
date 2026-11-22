@@ -1,0 +1,25 @@
+{
+  "scope": "Rust builds the joined map or the residual filter and its projection in one JNI call. Compared with the preceding Java oracle, including nested-lambda diagnostics.",
+  "compiler_jar_sha256": "07555a859a4ffbc6263f472fc93ea0db9828d875b3e0d09eda378111f3b8c937",
+  "optimizer_library_sha256": "5af47841c2dd9c2fc6011b24e975cb43313549608582994889d1b6bdec56ea14",
+  "engines": {
+    "classic": {
+      "matched_rewrite_now_invocations": 71,
+      "previous_java_gzip_sha256": "a07dd17a03148544f312efea276074f7a21a95d25d293a6ed2baab0be8a40229",
+      "rust_gzip_sha256": "bb334fec7e9336d81effdf2b406a872e38dab1e0d9ca8a121f59478feb46c507",
+      "detached_cases": 7,
+      "detached_report_sha256": "c3ac117e75c89f89d5bb3b7ef4c3bd4e90d1983d0f1b3399db8152c1c0fd9ee2",
+      "map_nested_lambda_diagnostics_sha256": "c129ed6e0398a5e75e3e54f31282d0a447f64ee1cb630348297e7500f1140a12",
+      "filter_nested_lambda_diagnostics_sha256": "e0412155e07e0e4eb164c761c558d6d98ba5052ac14b1b68b546aa1befeb404f"
+    },
+    "gen2": {
+      "matched_rewrite_now_invocations": 62,
+      "previous_java_gzip_sha256": "a20040b82d4a2c6dc025885afd8c01cf5a9b3e9a25a868a30b164178692c72df",
+      "rust_gzip_sha256": "181ae6b5752166ded1cd4c0ee3668d31b821fe0fbdb473410e10112bf3e160a8",
+      "detached_cases": 7,
+      "detached_report_sha256": "ed489c7f2df09f840aecbaff06867886bd8667f17437464dbc33ae1568cbde30",
+      "map_nested_lambda_diagnostics_sha256": "c129ed6e0398a5e75e3e54f31282d0a447f64ee1cb630348297e7500f1140a12",
+      "filter_nested_lambda_diagnostics_sha256": "e0412155e07e0e4eb164c761c558d6d98ba5052ac14b1b68b546aa1befeb404f"
+    }
+  }
+}

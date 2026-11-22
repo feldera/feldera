@@ -151,7 +151,11 @@ pub(super) fn window(
     fragment.reply(&edit, next)
 }
 
-pub(super) fn clock_join(input: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+pub(super) fn clock_join(
+    input: &[u8],
+    mut next: u64,
+    consumer: feldera_sql_opt::ClockConsumer,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let site = ExpressionSite {
         empty: true,
         position: None,
@@ -161,8 +165,11 @@ pub(super) fn clock_join(input: &[u8], mut next: u64) -> Result<Value, Box<dyn s
         [OperatorKind::SourceMultiset, OperatorKind::MapIndex],
         input,
     )?;
-    let [row, key, timestamp] = roots.as_slice() else {
-        return Err("clock join requires a row, an empty key and a timestamp type".into());
+    let [row, key, timestamp, function, output] = roots.as_slice() else {
+        return Err(
+            "clock join requires a row, an empty key, a timestamp, a closure and an output type"
+                .into(),
+        );
     };
     let mut edit = CircuitEditor::new(fragment.base.clone());
     let body = fragment.base.root_id();
@@ -174,8 +181,25 @@ pub(super) fn clock_join(input: &[u8], mut next: u64) -> Result<Value, Box<dyn s
     };
     let key = edit.type_id(*key)?;
     let timestamp = edit.type_id(*timestamp)?;
-    feldera_sql_opt::append_clock_join(&mut edit, body, body, inputs, key, timestamp, &mut next)?;
-    fragment.reply(&edit, next)
+    let join = feldera_sql_opt::append_clock_join(
+        &mut edit, body, body, inputs, key, timestamp, &mut next,
+    )?;
+    let projection = feldera_sql_opt::ClockProjection {
+        consumer,
+        function: edit.expression(*function)?,
+        output: edit.type_id(*output)?,
+    };
+    match feldera_sql_opt::apply_joined_clock(
+        &mut edit, body, join, projection, timestamp, &mut next,
+    )? {
+        feldera_sql_opt::ClockRewrite::Rewritten(_) => fragment.reply(&edit, next),
+        feldera_sql_opt::ClockRewrite::UnsupportedLambda(lambda) => {
+            let functions = edit
+                .circuit()
+                .additional_expressions(&fragment.base, &[lambda])?;
+            Ok(json!({"unsupported_lambda": functions[0], "next_generated_name": next}))
+        }
+    }
 }
 
 /// Encode all predicate roots together so consecutive residuals can share types.
