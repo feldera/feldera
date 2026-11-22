@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust handled all 7,288 binary and star join input-narrowing requests across
+the two frozen populations on `4cb050b1e`. Both engines matched Java at
+all 6,029 pass invocations on the 1,945 affected cases. All 425 selected
+detached compilations matched through emission, and 210 classic programs
+passed at runtime. On `90144d092`, all 197 ASOF input rewrites ran in Rust.
+All 46 affected cases matched both at the pass boundary and through detached
+emission. COUNT and LATENESS restored in both compiler directions on each build.
+[Binary and star joins](evidence/p3-binary-and-star-join-inputs.json) · [ASOF joins](evidence/p3-asof-input-rewrite.json)
+
 On `e6f389da0`, Rust handled 806 requests to narrow UNNEST inputs, including
 remapping the columns copied from each input. Both engines matched Java at
 all 756 pass invocations on the 373 affected frozen programs. All 337 selected
