@@ -14,7 +14,19 @@
       "detached_smoke_cases": 7,
       "detached_report_sha256": "6fd85c2e73a29dd522eb095332a2da0c4bd1c7a86394e5641b6364b618e952c3",
       "map_lambda_diagnostics_sha256": "c129ed6e0398a5e75e3e54f31282d0a447f64ee1cb630348297e7500f1140a12",
-      "filter_lambda_diagnostics_sha256": "e0412155e07e0e4eb164c761c558d6d98ba5052ac14b1b68b546aa1befeb404f"
+      "filter_lambda_diagnostics_sha256": "e0412155e07e0e4eb164c761c558d6d98ba5052ac14b1b68b546aa1befeb404f",
+      "full_detached_trace_shards": [
+        {
+          "cases": 36,
+          "s4_observations": 17712,
+          "report_sha256": "6e9060a274beb47f1e2b8c04b5707757a81fdc75fa8ee0ed46e48bf6438a3f9e"
+        },
+        {
+          "cases": 35,
+          "s4_observations": 20569,
+          "report_sha256": "5082ac158a9da75e6688728ab2fe5ebf045d45400d55d2a2eeee6dd73feda3f7"
+        }
+      ]
     },
     "gen2": {
       "matched_rewrite_now_invocations": 62,
@@ -25,7 +37,19 @@
       "detached_smoke_cases": 7,
       "detached_report_sha256": "d83be97af5f2604b189df774268cd0d71aee31790eeb7e17c86bfcd294be48d1",
       "map_lambda_diagnostics_sha256": "c129ed6e0398a5e75e3e54f31282d0a447f64ee1cb630348297e7500f1140a12",
-      "filter_lambda_diagnostics_sha256": "e0412155e07e0e4eb164c761c558d6d98ba5052ac14b1b68b546aa1befeb404f"
+      "filter_lambda_diagnostics_sha256": "e0412155e07e0e4eb164c761c558d6d98ba5052ac14b1b68b546aa1befeb404f",
+      "full_detached_trace_shards": [
+        {
+          "cases": 31,
+          "s4_observations": 16532,
+          "report_sha256": "47de3cb1a3e63a740a5ece0ac68c2941d664e47a8b1c754ae8afadc0660328ac"
+        },
+        {
+          "cases": 31,
+          "s4_observations": 17609,
+          "report_sha256": "4dbcde6216bdf16a54aab73cb382e2c1cb3dc347417106cde9e9761a658d4bfa"
+        }
+      ]
     }
   },
   "count_checkpoint": {

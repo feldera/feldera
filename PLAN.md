@@ -72,6 +72,11 @@ Path prefixes used in this document:
   69 cold SQL-to-artifact pairs. With corpus verification sharing the VM,
   Nexmark measured 2.425× direct Java p95.
   [Temporal comparisons](crates/sql/evidence/p3-clock-scalar-bounds.json) · [Cold compilation](crates/sql/evidence/p3-clock-source-cold-latency.json)
+- 2026-11-22. Rust lowered all 314 frozen clock filters. All 133 clock programs
+  matched direct Java from detached S2 through every S4 boundary and emission
+  on `32d585d40`. On the preceding window and clock build, the Nexmark hybrid
+  measured 2.280× Java p95 while corpus verification shared the VM.
+  [Clock filter replays](crates/sql/evidence/p3-clock-filter-graphs.json) · [Cold compilation](crates/sql/evidence/p3-window-clock-cold-latency.json)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across
   17,098 classic and Gen-2 cases. CSE, ARRAY_AGG fusion and the representative
   limiter slice matched 296 Java S4 results and four Gen-2 refusals. The

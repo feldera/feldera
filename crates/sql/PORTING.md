@@ -547,6 +547,9 @@ residual clock join in one call. All 163 classic and 151 Gen-2 clock filters
 in the frozen programs used this path. Every isolated `RewriteNow` invocation
 matched Java, including generated names and source positions. Both engines
 also preserved the warning and refusal for a clock call in a nested lambda.
+All 71 classic and 62 Gen-2 clock programs matched direct SQL compilation
+from detached S2 through every S4 observation, S3, schema, hash inputs and
+emitted artifacts on `32d585d40`.
 Java still traverses the circuit and handles expressions outside the Rust
 classifier. [Clock filter graphs and checkpoint results](evidence/p3-clock-filter-graphs.json)
 

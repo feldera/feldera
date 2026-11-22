@@ -28,6 +28,12 @@ artifacts matched. Java/hybrid p95 was 3.793/4.516 s for the array subquery
 (1.191×), 7.429/18.016 s for Nexmark (2.425×), and 3.072/3.733 s for the
 outer join (1.215×). [Paired measurements](evidence/p3-clock-source-cold-latency.json)
 
+On the window and clock build (`2c8dd594e`), all 69 cold pairs matched again.
+Frozen-corpus verification shared the VM. Java/hybrid p95 was 3.520/3.757 s
+for the array subquery (1.067×), 6.578/14.999 s for Nexmark (2.280×), and
+2.970/3.997 s for the outer join (1.346×).
+[Window and clock build timings](evidence/p3-window-clock-cold-latency.json)
+
 ## Packaged mixed optimizer, 2026-11-21
 
 The opt-in compiler ran 106 Rust pass kinds. Each timing starts a fresh
