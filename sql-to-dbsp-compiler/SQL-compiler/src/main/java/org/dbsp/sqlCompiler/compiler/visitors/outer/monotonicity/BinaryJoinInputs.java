@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
@@ -13,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinDeltaExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinFilterMapExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinIndexDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.LeftJoinDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.LeftJoinFilterMapExpansion;
@@ -26,23 +28,31 @@ import java.util.Map;
 /** The three terms of the incremental join, in visitor order. The sum can read them in a different order. */
 record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOperator right,
                         List<DBSPJoinBaseOperator> terms, DBSPSumOperator sum,
-                        @Nullable LeftJoinDeltaExpansion outer) {
+                        @Nullable LeftJoinDeltaExpansion outer, List<DBSPFilterOperator> filters) {
     static boolean supports(Class<?> operator) {
         return operator == DBSPJoinOperator.class || operator == DBSPJoinIndexOperator.class
                 || operator == DBSPLeftJoinOperator.class || operator == DBSPLeftJoinIndexOperator.class
-                || operator == DBSPLeftJoinFilterMapOperator.class;
+                || operator == DBSPLeftJoinFilterMapOperator.class || operator == DBSPJoinFilterMapOperator.class;
     }
     @Nullable
     static BinaryJoinInputs from(@Nullable OperatorDeltaExpansion expansion) {
         if (expansion instanceof JoinDeltaExpansion join)
             return new BinaryJoinInputs(join.leftIntegrator, join.rightIntegrator,
-                    List.of(join.leftDelta, join.rightDelta, join.both), join.sum, null);
+                    List.of(join.leftDelta, join.rightDelta, join.both), join.sum, null, List.of());
         if (expansion instanceof JoinIndexDeltaExpansion join)
             return new BinaryJoinInputs(join.leftIntegrator, join.rightIntegrator,
-                    List.of(join.leftDelta, join.rightDelta, join.both), join.sum, null);
-        if (expansion instanceof LeftJoinDeltaExpansion join)
+                    List.of(join.leftDelta, join.rightDelta, join.both), join.sum, null, List.of());
+        if (expansion instanceof JoinFilterMapExpansion join)
             return new BinaryJoinInputs(join.leftIntegrator, join.rightIntegrator,
-                    List.of(join.leftDelta, join.rightDelta, join.join), join.sum, join);
+                    List.of(join.leftDelta, join.rightDelta, join.both), join.sum, null,
+                    List.of(join.filter, join.leftFilter, join.rightFilter));
+        if (expansion instanceof LeftJoinDeltaExpansion join) {
+            var filters = join instanceof LeftJoinFilterMapExpansion filtered
+                    ? List.of(filtered.leftFilter, filtered.rightFilter, filtered.filter, filtered.mapFilter)
+                    : List.<DBSPFilterOperator>of();
+            return new BinaryJoinInputs(join.leftIntegrator, join.rightIntegrator,
+                    List.of(join.leftDelta, join.rightDelta, join.join), join.sum, join, filters);
+        }
         return null;
     }
 
@@ -50,12 +60,6 @@ record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOpe
         var value = pass.expansionMonotoneValues.get(port);
         if (value != null && value.mayBeMonotone())
             record.set(name, LimiterInputs.projection(Monotonicity.getBodyType(value)));
-    }
-
-    private List<DBSPFilterOperator> filters() {
-        if (this.outer instanceof LeftJoinFilterMapExpansion filtered)
-            return List.of(filtered.leftFilter, filtered.rightFilter, filtered.filter, filtered.mapFilter);
-        return List.of();
     }
 
     void capture(InsertLimiters pass, ObjectNode join, ObjectNode owner) {

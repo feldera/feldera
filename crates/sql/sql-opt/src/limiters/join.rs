@@ -1,4 +1,5 @@
 //! Combine compacted bounds from the two indexed inputs of a join.
+mod filtered;
 
 use super::pass::{apply_bound, apply_bound_pair, projected_bound, projected_minimum};
 use super::{Bound, Projection, apply_waterlines, retention::retain_keys};
@@ -260,28 +261,54 @@ impl BinaryJoinExpansion {
             let Some(projection) = &filter.output else {
                 continue;
             };
-            let (input, _) = results.get(&filter.input)
+            let (input, _) = results
+                .get(&filter.input)
                 .ok_or_else(|| Error::new("bounded join filter needs an input waterline"))?;
-            let transfer = join.functions.get(&filter.id)
+            let transfer = join
+                .functions
+                .get(&filter.id)
                 .ok_or_else(|| Error::new("missing waterline transfer for join filter"))?;
             let function = apply_waterlines(edit, *transfer, &[input.ty], next, warnings)?;
             let bound = apply_bound(edit, body, *input, function)?;
             edit.place_before(body, bound.port.operator, join.owner)?;
             results.insert(filter.id, (bound, projection));
         }
-        let Some(dst) = output else {
-            return Ok(None);
-        };
         let inputs = self
             .sum_inputs
             .iter()
             .map(|id| results.get(id).copied())
             .collect::<Option<Vec<_>>>();
-        let Some(inputs) = inputs else {
-            return Ok(None);
+        let result = match (output, inputs) {
+            (Some(dst), Some(inputs)) => {
+                Some((projected_minimum(edit, join.owner, inputs, dst, next)?, dst))
+            }
+            _ => None,
         };
-        let result = projected_minimum(edit, join.owner, inputs, dst, next)?;
-        Ok(Some((result, dst)))
+        if edit.node(join.owner)?.operator_kind()
+            == Some(feldera_sql_ir::OperatorKind::JoinFilterMap)
+        {
+            let [both, left, right] = self.filters.as_slice() else {
+                return Err(Error::new(
+                    "filtered join requires its three delta predicates",
+                ));
+            };
+            if [left.input, right.input, both.input] != self.terms.each_ref().map(|term| term.id) {
+                return Err(Error::new(
+                    "expanded join filters read the wrong delta terms",
+                ));
+            }
+            filtered::retain_values(
+                edit,
+                join,
+                [
+                    results.get(&right.id).copied(),
+                    results.get(&left.id).copied(),
+                ],
+                next,
+                warnings,
+            )?;
+        }
+        Ok(result)
     }
 }
 

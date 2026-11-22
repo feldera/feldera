@@ -8,31 +8,6 @@ use feldera_sql_ir::{
     OutputPort, TypeId,
 };
 
-/// Project the declared data types. A bound from the producer can have an
-/// equivalent type with a different identity from this closure's row binding.
-fn projected_type(
-    edit: &mut CircuitEditor,
-    ty: TypeId,
-    shape: &Projection,
-) -> Result<TypeId, Error> {
-    let Projection::Tuple { fields, raw, .. } = shape else {
-        return edit.with_nullability(ty, false);
-    };
-    let members = edit.node(ty.into())?.edges("tupFields")?;
-    if members.len() != fields.len() {
-        return Err(Error::new(
-            "rolling input type and projection have different arities",
-        ));
-    }
-    let mut kept = Vec::new();
-    for (field, member) in fields.iter().zip(members) {
-        if field.monotone() {
-            kept.push(projected_type(edit, edit.type_id(member)?, field)?.into());
-        }
-    }
-    edit.tuple_type(ty.into(), *raw, kept)
-}
-
 struct RollingKey<'a> {
     name: String,
     fields: [(TypeId, &'a Projection); 2],
@@ -52,7 +27,7 @@ impl RollingKey<'_> {
         let mut references = Vec::new();
         for (ty, shape) in self.fields {
             if shape.monotone() {
-                let projected = projected_type(edit, ty, shape)?;
+                let projected = shape.projected_type(edit, ty)?;
                 types.push(projected.into());
                 references.push(edit.reference_type(projected)?.into());
             }

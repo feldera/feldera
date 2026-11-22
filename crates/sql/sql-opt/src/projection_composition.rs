@@ -33,7 +33,7 @@ pub(crate) fn should_inline(
                 if row.field("fields").is_some() {
                     let items = row.edges("fields")?;
                     let mut used = HashSet::new();
-                    for index in indices {
+                    for (_, index) in indices {
                         if !used.insert(index)
                             && expensive(
                                 edit.circuit(),

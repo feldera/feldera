@@ -4,7 +4,8 @@ use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, Field, NodeId
 pub(super) enum Projection {
     Other,
     Nested,
-    Fields(Vec<usize>),
+    /// (closure parameter, input field) for each output field.
+    Fields(Vec<(usize, usize)>),
 }
 
 pub(super) fn simple_tuple(edit: &CircuitEditor, ty: NodeId) -> Result<bool, Error> {
@@ -42,7 +43,21 @@ pub(super) fn projection(
     body: NodeId,
     parameter: NodeId,
 ) -> Result<Projection, Error> {
-    classify(edit, body, parameter, true)
+    classify(edit, body, &[parameter], true)
+}
+
+pub(super) fn join_projection(
+    edit: &CircuitEditor,
+    closure: NodeId,
+) -> Result<Vec<(usize, usize)>, Error> {
+    let node = edit.node(closure)?;
+    let params = node.edges("parameters")?;
+    let Projection::Fields(fields) = classify(edit, node.edge("body")?, &params, true)? else {
+        return Err(Error::new(
+            "filtered join requires a projection of its input fields",
+        ));
+    };
+    Ok(fields)
 }
 
 /// The strict projection visitor requires a flat result and rejects casts,
@@ -56,7 +71,7 @@ pub(super) fn strict_projection(
         return Ok(false);
     }
     Ok(!matches!(
-        classify(edit, body, parameter, false)?,
+        classify(edit, body, &[parameter], false)?,
         Projection::Other
     ))
 }
@@ -87,10 +102,18 @@ pub fn is_map_projection(
 fn classify(
     edit: &CircuitEditor,
     body: NodeId,
-    parameter: NodeId,
+    parameters: &[NodeId],
     allow_noop_casts: bool,
 ) -> Result<Projection, Error> {
-    let name = edit.node(parameter)?.data("name");
+    let parameter_index = |var: &feldera_sql_ir::Node| {
+        let name = var.data("variable")?;
+        parameters.iter().position(|id| {
+            edit.circuit()
+                .node(*id)
+                .and_then(|parameter| parameter.data("name"))
+                == Some(name)
+        })
+    };
     enum Visit {
         Expression(NodeId),
         RecordField(NodeId),
@@ -112,13 +135,15 @@ fn classify(
                     if edit.expr_kind(edit.expression(base)?)? != Expr::VariablePath {
                         return Ok(Projection::Other);
                     }
-                    indices.push(
-                        field
-                            .data("fieldNo")
-                            .and_then(|v| v.as_u64())
-                            .and_then(|v| usize::try_from(v).ok())
-                            .ok_or_else(|| Error::new("invalid projection index"))?,
-                    );
+                    let Some(input) = parameter_index(edit.node(base)?) else {
+                        return Ok(Projection::Other);
+                    };
+                    let column = field
+                        .data("fieldNo")
+                        .and_then(|v| v.as_u64())
+                        .and_then(|v| usize::try_from(v).ok())
+                        .ok_or_else(|| Error::new("invalid projection index"))?;
+                    indices.push((input, column));
                 }
                 continue;
             }
@@ -126,7 +151,7 @@ fn classify(
         let node = edit.node(id)?;
         let kind = edit.expr_kind(edit.expression(id)?)?;
         match kind {
-            Expr::VariablePath if node.data("variable") == name => {}
+            Expr::VariablePath if parameter_index(node).is_some() => {}
             Expr::RawTuple | Expr::Tuple => {
                 if node.field("fields").is_none() {
                     continue;

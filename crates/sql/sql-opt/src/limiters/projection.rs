@@ -48,6 +48,31 @@ fn read_field(
 }
 
 impl Projection {
+    /// Project the analyzed row's types. Equal upstream waterline types can
+    /// have different identities when a nullable field becomes nonnullable.
+    pub(super) fn projected_type(
+        &self,
+        edit: &mut CircuitEditor,
+        ty: TypeId,
+    ) -> Result<TypeId, Error> {
+        let Self::Tuple { fields, raw, .. } = self else {
+            return edit.with_nullability(ty, false);
+        };
+        let members = edit.node(ty.into())?.edges("tupFields")?;
+        if members.len() != fields.len() {
+            return Err(Error::new(
+                "analyzed row and waterline projection differ in width",
+            ));
+        }
+        let mut kept = Vec::new();
+        for (field, member) in fields.iter().zip(members) {
+            if field.monotone() {
+                kept.push(field.projected_type(edit, edit.type_id(member)?)?.into());
+            }
+        }
+        edit.tuple_type(ty.into(), *raw, kept)
+    }
+
     pub(super) fn with_unbounded_value_from(&self, right: &Self) -> Result<Self, Error> {
         fn clear_fields(p: &Projection) -> Projection {
             match p {

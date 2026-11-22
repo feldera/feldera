@@ -479,6 +479,17 @@ snapshot cases and 25 filtered left joins. A snapshot DISTINCT and GROUP BY
 over a table with LATENESS matched at all 446 classic and 448 Gen-2 observations.
 [Snapshot and filtered left join replay](evidence/p3-snapshot-filtered-left-limiters.json)
 
+For filtered inner joins, Rust uses the bound from each filtered delta to retain
+values on the opposite input. All 36 classic and 130 Gen-2 cases that this
+change enabled matched Java at limiter entry and exit. Seven Gen-2 programs
+including bounded self-joins also matched through all optimizer observations
+and emitted artifacts. [Filtered inner join replay](evidence/p3-filtered-inner-joins.json)
+
+Cast expansion preserves a written IS NULL when a nullable cast becomes a
+`Some` expression. The two engines matched Java across all optimizer observations
+on the streaming regression and four Gen-2 UNPIVOT cases.
+[Cast expansion regressions](evidence/p3-cast-expansion-null-tests.json)
+
 At `2a2398a2a`, Rust lowered trace-key retention for DISTINCT, positive
 weights and linear aggregates. Each trace receives the preceding step's
 waterline. Raw tuple and scalar bounds pass through a typed tuple so DBSP

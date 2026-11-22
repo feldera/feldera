@@ -482,7 +482,14 @@ pub fn insert_limiters_with_warnings(
                     );
                 }
             }
-            Some(Op::Join | Op::JoinIndex | Op::LeftJoin | Op::LeftJoinIndex | Op::LeftJoinFilterMap) => {
+            Some(
+                Op::Join
+                | Op::JoinIndex
+                | Op::JoinFilterMap
+                | Op::LeftJoin
+                | Op::LeftJoinIndex
+                | Op::LeftJoinFilterMap,
+            ) => {
                 let [left, right] = inputs.as_slice() else {
                     return Err(Error::new("incremental join requires two inputs").into());
                 };

@@ -1,0 +1,49 @@
+{
+  "scope": "Filtered inner joins that became eligible for whole-pass Rust limiter insertion. Entry, exit, diagnostics and generated-name counters are compared on the same detached S2.",
+  "shards": [
+    {
+      "engine": "classic",
+      "cases": 21,
+      "population_sha256": "36ba57da31c10530df3efd9512067f2b629d90609ce369bcdbb667b58f90dd00",
+      "java_stream_sha256": "b6bc1a65528fbc336a54d17f4b9d02346c52fe098063b4cf124e0785df3261a2",
+      "hybrid_stream_sha256": "07351240bf4146a3a632ee58a4d0c2c1e2163f42890bfb4ae48c42ee6ec6dd05"
+    },
+    {
+      "engine": "classic",
+      "cases": 15,
+      "population_sha256": "9826881a8be82f95469025592643f3bfa45a3e78b4790e98899c0c1f56391d92",
+      "java_stream_sha256": "9afc41ba6bffc7c7bbc6b73f3f7c32826f7823375e36073ebb83892314e928fb",
+      "hybrid_stream_sha256": "d2e8507dd026bc14fda8298e0389baf7f3e4e95d9897d1e376f72ac6e40aee17"
+    },
+    {
+      "engine": "gen2",
+      "cases": 56,
+      "population_sha256": "ccb8732024cf914e0cb5b66e17ce2c731579a76b78f76297c1dd6c2498f67f6f",
+      "java_stream_sha256": "af3556d8f97c0b327e2b839dc9276b69378e0ec78bf9b50894da47c9ae5c2a7a",
+      "hybrid_stream_sha256": "342576d13e8675b9b0debe316b046c1510b2f485e8ecd16273fc52858280af7f"
+    },
+    {
+      "engine": "gen2",
+      "cases": 74,
+      "population_sha256": "af2d9cf3059509731a33ae332bc8551ab4f8baada5f7b332be92a00967b6f098",
+      "java_stream_sha256": "70ebf9d3245a2d1edd6ec1856e64d2bfe14643ec62d59f79c3acf9af559bb123",
+      "hybrid_stream_sha256": "489380103fc9b7b43445841938e1c2afc4e040dd513994d3de6b96975916d696"
+    }
+  ],
+  "gen2_bounded_join_trace": {
+    "cases": 7,
+    "input_sha256": "e971d69b0027e14e2be20970fb000362397d2978076a9cecd66c42b2fa7788be",
+    "mismatches": 0,
+    "optimizer_library_sha256": "5ab493f8bf9b8e530ceb8f900ece8264efc6b34ea18408c5e3630b2794e6afd1",
+    "shards": [
+      {
+        "manifest_sha256": "c618da143e22272d23ff4099cec80c9d8907cdb14a270a1f530cae6139a5a57c",
+        "records_sha256": "fdf0f2475b0c92d3fb1a8ed5e277fec34cc019c963f89a7aed05ff7cc00949c6"
+      },
+      {
+        "manifest_sha256": "417a43116ccff60e2ca63f92de130047c8ebfe7cf50dd93b7ff25a7a48eb5e7c",
+        "records_sha256": "d49c8d1432aa24ca6bc86c203ddf8e4ddf5146bbec72ddde4451b35dc3d53007"
+      }
+    ]
+  }
+}
