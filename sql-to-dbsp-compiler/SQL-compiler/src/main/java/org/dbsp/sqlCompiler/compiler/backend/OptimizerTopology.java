@@ -28,6 +28,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySources;
@@ -44,7 +46,7 @@ import java.util.Set;
 
 /** Circuit projection for passes that read only operator kinds, edges and annotations. */
 final class OptimizerTopology {
-    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, SHARED_INDEXES, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, MONOTONICITY, STATE_BOUNDS, AGGREGATE_RESULTS, CHAIN_FUNCTIONS }
+    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, SHARED_INDEXES, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, MONOTONICITY, STREAM_KINDS, STATE_BOUNDS, AGGREGATE_RESULTS, CHAIN_FUNCTIONS }
 
     private OptimizerTopology() {}
 
@@ -137,7 +139,7 @@ final class OptimizerTopology {
     private static byte[] encode(DBSPCircuit circuit, Details details, @Nullable DBSPCompiler typeContext) {
         var json = JsonStream.compactCircuit();
         json.beginObject().appendClass(circuit).label("id").append(circuit.id);
-        if (details == Details.STATE_BOUNDS || details == Details.EMPTY_LITERALS)
+        if (details == Details.STATE_BOUNDS || details == Details.EMPTY_LITERALS || details == Details.STREAM_KINDS)
             json.label("incremental").append(circuit.incremental);
         json.label("declarations").beginArray();
         json.endArray();
@@ -254,7 +256,13 @@ final class OptimizerTopology {
                 json.label("metadata").beginObject().label("viewKind").append(sink.metadata.viewKind.name()).endObject();
             if ((details == Details.TRACE_RETENTION || details == Details.GC_GROUPS) && op instanceof DBSPIntegrateTraceRetainKeysOperator retainer)
                 json.label("accumulate").append(retainer.accumulate);
-            if (details == Details.PERSISTENT_IDS && op instanceof DBSPSinkOperator sink)
+            if (details == Details.STREAM_KINDS) {
+                if (op instanceof DBSPSourceBaseOperator source)
+                    json.label("sourceKind").append(source.kind.name());
+                else if (op instanceof DBSPInputMapWithWaterlineOperator source)
+                    json.label("sourceKind").append(source.kind.name());
+            }
+            if ((details == Details.PERSISTENT_IDS || details == Details.STREAM_KINDS) && op instanceof DBSPSinkOperator sink)
                 json.label("metadata").beginObject().label("system").append(sink.metadata.system).endObject();
             if (details == Details.MONOTONICITY) {
                 if (op instanceof DBSPSourceMultisetOperator table) {
@@ -308,8 +316,10 @@ final class OptimizerTopology {
                     op.outputType(i).accept(types);
                 json.endArray();
             }
-            json.label("annotations");
-            op.annotations.asJson(json, true);
+            if (details != Details.STREAM_KINDS) {
+                json.label("annotations");
+                op.annotations.asJson(json, true);
+            }
             json.label("inputs").beginArray();
             for (var port : op.inputs)
                 writePort(json, port);

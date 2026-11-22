@@ -27,7 +27,7 @@ pub use inner::{ExpressionKind, InnerKind, TypeKind};
 pub use json::parse_json;
 pub use operator::OperatorKind;
 mod stream;
-pub use stream::{OutputClocks, StreamKind};
+pub use stream::{OutputClocks, StreamKind, StreamViolation};
 
 use indexmap::IndexMap;
 use serde_json::Value;

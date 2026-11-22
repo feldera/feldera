@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust validates stream kinds after every top-level hybrid optimizer pass. Detached
+compilations of 36 classic and 33 Gen-2 programs matched Java at all 34,152
+ordered pass observations and on emitted artifacts. In a shared devcontainer,
+the hybrid/direct p95 ratios for cold SQL-to-artifact compilation were 0.837
+for the array subquery, 1.083 for Nexmark and 0.780 for the outer join.
+[Stream validation and cold compilation results](evidence/p3-post-pass-streams.json)
+
 Rust tracks block-local waterlines through mutable declarations, discarded
 statements and indirect calls. All 6,600 row projections in the frozen
 monotonicity selection completed in Rust. The 550 monotonicity comparisons,

@@ -2313,6 +2313,50 @@ public final class RustCircuitPass implements CircuitTransform {
     public record MonotonicityTransfer(DBSPOperator operator, TransferRule rule, int input,
                                        @Nullable List<Boolean> lateness) {}
 
+    /** Validate the graph after each pass. Consecutive passes often leave its ports,
+     * source kinds and sink modes identical, even when they rewrite expressions. */
+    public static final class StreamValidator {
+        @Nullable private byte[] previous;
+
+        public void validate(DBSPCircuit circuit) {
+            byte[] topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.STREAM_KINDS);
+            if (java.util.Arrays.equals(this.previous, topology))
+                return;
+            try {
+                var finding = MAPPER.readTree(transformWithContext(
+                        "Topology/ValidateStreamKinds", topology, 0, "", EMPTY_CONTEXT));
+                if (!finding.isNull())
+                    report(circuit, finding);
+                this.previous = topology;
+            } catch (IOException error) {
+                throw new UncheckedIOException("Invalid stream-kind validation result", error);
+            }
+        }
+
+        private static void report(DBSPCircuit circuit, JsonNode finding) {
+            var operator = Objects.requireNonNull(findOperator(circuit.allOperators, finding.required("operator").longValue()));
+            switch (finding.required("reason").textValue()) {
+                case "no_inputs" -> Utilities.fail("Operator " + operator + " has no inputs to derive its stream kind from");
+                case "input" -> {
+                    int slot = finding.required("input").intValue();
+                    var kinds = MAPPER.convertValue(finding.required("expected"), StreamKind[].class);
+                    Utilities.fail("Operator " + operator + " requires input " + slot + " to be one of " +
+                            List.of(kinds) + ", but " + operator.inputs.get(slot) + " produces " + finding.required("actual").textValue());
+                }
+                case "table" -> throw new InternalCompilerError("Table " + operator + " produces a stream of " +
+                        finding.required("actual").textValue() + " in a circuit whose tables must produce " +
+                        finding.required("expected").textValue(), operator);
+                case "output" -> {
+                    var sink = operator.to(DBSPSinkOperator.class);
+                    throw new InternalCompilerError("Output " + sink.viewName.singleQuote() + " receives a stream of " +
+                            finding.required("actual").textValue() + " but the circuit must produce " +
+                            finding.required("expected").textValue(), sink);
+                }
+                default -> throw new IllegalStateException("Unknown stream-kind violation " + finding);
+            }
+        }
+    }
+
     /** Reconnect the transfer schedule to the live expressions of the expanded circuit. */
     public static List<MonotonicityTransfer> monotonicityTransfers(DBSPCircuit circuit) {
         record Step(long operator, TransferRule rule, int input, @Nullable List<Boolean> lateness) {}

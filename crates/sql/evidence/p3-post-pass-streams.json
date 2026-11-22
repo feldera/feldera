@@ -1,0 +1,107 @@
+{
+  "base_commit": "507099263cb8aa14daa27d4c2bcc24a2e0fbb7f6",
+  "scope": "Validate the stream kinds of the live circuit after each optimizer pass. Only identical successful topology projections share the previous result.",
+  "source_patch_sha256": "e4c5971f6cc31841fabfdbdcc5a424ca2c16e87e65446a1234ec6316817e38db",
+  "optimizer_sha256": "d8b74ab0f210a5fac3d5d0317d625da1316d8ac74abd417b0223beb9515cde0c",
+  "java_classpath_sha256": {
+    "/stage/p3-verified-u0m6raxd/rolling-s4/stream-validation/validator.jar": "56c15324ee43c2baf9ee8724015c18430163dc6474e1635a3a6b7d48cb6cf095",
+    "/stage/p3-verified-u0m6raxd/rolling-s4/block-waterlines/waterline-classes.jar": "12052a04b09c10a7a96c8db6a665a45a5d7fbd42e22a6425fb1bac8fcb4c97a1",
+    "/stage/p3-verified-u0m6raxd/rolling-s4/asof-join-projections/test.jar": "5f1166fc28e097a417d6cb63277b2e0e6a78baed0ad32a50e4de085b498187d2",
+    "/stage/p3-verified-u0m6raxd/rolling-s4/asof-join-projections/compiler.jar": "24f429997317b8b3c8e1a406c0507482ecc95a30014c25e57d267f20051834bb",
+    "/stage/p3-verified-u0m6raxd/rolling-trace-bounds/maven/sql-compiler.jar": "e118bea16e253e655068e3ef5638da948da6b3fe503a95c87e020b666731acfd"
+  },
+  "devcontainer": "p3-limiter-verify",
+  "rust_tests": 224,
+  "rust_tests_log_sha256": "8a72c1efa4a37bee4d9bf4aa0b3af6620a13aac9f3230b18083b6d57a814cba8",
+  "clippy_log_sha256": "6c51fb7937b74ddf9adab7c806f388b0ee35825b1099cc672e3fc2a0c445f26d",
+  "java_tests": {
+    "java": {
+      "passed": 2,
+      "log_sha256": "6a12c3de837703618ad4042957e5e94db8c0a70909ba8f786914b25c19416b6f"
+    },
+    "java_and_rust": {
+      "passed": 2,
+      "log_sha256": "4e867a394f7e65e8f8a84e0796feff532b87f027cabff0cf4f6dc69b5dbab73c"
+    }
+  },
+  "detached_replay": {
+    "classic": {
+      "programs": 36,
+      "ordered_s4_observations": 17723,
+      "input_sha256": "e93bd0da95c35b365858c3b2b3cc1efd7b7812b01d6b3cb4aa971daf5b88dd62",
+      "receipt_sha256": "bd731b8c3de6ad5a2737f6d1521802b2a30cf815f9b80dfa896ce1bc57c16aff",
+      "mismatches": 0
+    },
+    "gen2": {
+      "programs": 33,
+      "ordered_s4_observations": 16429,
+      "input_sha256": "19eb27ad0bfd24ccfd6af1e1ee82e57807dae275b56d0a12663f4e4403d7bfd1",
+      "receipt_sha256": "9c9f41119889aa274f995d26eeade6bf0882b0bcd2c466ee22afde5e19abc8a8",
+      "mismatches": 0
+    }
+  },
+  "cold_compilation": {
+    "pairs": 69,
+    "measured_pairs_per_workload": 21,
+    "warmup_pairs_per_workload": 2,
+    "concurrent_work": "Other compiler verification and a decoder campaign shared the devcontainer VM.",
+    "artifact_endpoint": "SQL through publication of classic source, schema, diagnostics and dataflow",
+    "affinity": [
+      15
+    ],
+    "raw_pairs_sha256": "1209068574eb7fdecfa7fb9f0e83edae8f2cf8ab7bdd2ceb2188247382315a0b",
+    "results": {
+      "array-subquery.sql": {
+        "hybrid": {
+          "samples": 21,
+          "p50_seconds": 2.7799261,
+          "empirical_p95_seconds": 3.299908987
+        },
+        "direct": {
+          "samples": 21,
+          "p50_seconds": 3.369414434,
+          "empirical_p95_seconds": 3.941517468
+        },
+        "p95_ratio": 0.8372179024426437,
+        "mean_ratio_paired_95pct_interval": [
+          0.8019325287095569,
+          0.8481838280239979
+        ]
+      },
+      "nexmark-suite.sql": {
+        "hybrid": {
+          "samples": 21,
+          "p50_seconds": 8.378993907,
+          "empirical_p95_seconds": 9.808690631
+        },
+        "direct": {
+          "samples": 21,
+          "p50_seconds": 7.40358197,
+          "empirical_p95_seconds": 9.057396079
+        },
+        "p95_ratio": 1.0829481835007648,
+        "mean_ratio_paired_95pct_interval": [
+          1.0870744178154563,
+          1.145780888298816
+        ]
+      },
+      "outer-join.sql": {
+        "hybrid": {
+          "samples": 21,
+          "p50_seconds": 2.512932381,
+          "empirical_p95_seconds": 3.04338982
+        },
+        "direct": {
+          "samples": 21,
+          "p50_seconds": 3.316084016,
+          "empirical_p95_seconds": 3.904279985
+        },
+        "p95_ratio": 0.7795009148146428,
+        "mean_ratio_paired_95pct_interval": [
+          0.7589850546471175,
+          0.802604113209132
+        ]
+      }
+    }
+  }
+}

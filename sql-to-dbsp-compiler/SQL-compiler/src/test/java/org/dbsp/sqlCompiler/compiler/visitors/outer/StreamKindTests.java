@@ -9,6 +9,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
@@ -48,6 +52,34 @@ public class StreamKindTests extends StreamingTestBase {
             Assert.fail("Operator " + operator + " should reject the kinds of its inputs");
         } catch (InternalCompilerError expected) {
             Assert.assertTrue(expected.getMessage(), expected.getMessage().contains("requires input"));
+        }
+    }
+
+    @Test
+    public void validateEachPassResultIncludingChangesToTheSameCircuit() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var compiled = this.getCC(PROGRAM).getCircuit();
+        var source = operators(compiled, DBSPSourceBaseOperator.class).get(0);
+        var validator = new RustCircuitPass.StreamValidator();
+        var circuit = new DBSPCircuit(new ProgramMetadata(), true);
+        circuit.addOperator(source);
+        new ValidateStreamKinds(compiler).apply(circuit);
+        boolean compareRust = Boolean.getBoolean("feldera.optimizer.compareRustStreamKinds");
+        if (compareRust)
+            validator.validate(circuit);
+
+        var integrated = new DBSPIntegrateOperator(CalciteEmptyRel.INSTANCE, source.outputPort());
+        circuit.addOperator(integrated);
+        circuit.addOperator(new DBSPSumOperator(CalciteEmptyRel.INSTANCE, source.outputPort(), integrated.outputPort()));
+        var wrongMode = new DBSPCircuit(new ProgramMetadata(), false);
+        wrongMode.addOperator(source);
+        for (var invalid : List.of(circuit, wrongMode)) {
+            var expected = Assert.assertThrows(InternalCompilerError.class,
+                    () -> new ValidateStreamKinds(compiler).apply(invalid));
+            if (compareRust) {
+                var actual = Assert.assertThrows(InternalCompilerError.class, () -> validator.validate(invalid));
+                Assert.assertEquals(expected.getMessage().lines().findFirst(), actual.getMessage().lines().findFirst());
+            }
         }
     }
 

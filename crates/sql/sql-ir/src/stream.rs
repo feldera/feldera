@@ -1,8 +1,10 @@
 //! Stream clocks on a decoded circuit. Source clocks are implicit in the wire format.
 use crate::{Circuit, Error, NodeId, OperatorKind as Op, OutputPort};
+mod validate;
 use std::collections::{BTreeMap, BTreeSet};
+pub use validate::StreamViolation;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum StreamKind {
     Collection,
@@ -60,7 +62,7 @@ impl<'a> OutputClocks<'a> {
                 .ok_or_else(|| Error::new("clock producer must be an operator"))?
             {
                 Op::ControlledKeyFilter | Op::InputMapWithWaterline if port.number == 1 => {
-                    break Delta
+                    break Delta;
                 }
                 Op::InputMapWithWaterline if port.number == 2 => break Waterline,
                 Op::SourceMultiset
@@ -68,11 +70,17 @@ impl<'a> OutputClocks<'a> {
                 | Op::SourceLazyMap
                 | Op::ViewDeclaration
                 | Op::InputMapWithWaterline => {
+                    // The live validator carries the actual source kind. A saved S2
+                    // or S4 omits it and reconstructs it from the enclosing clock.
+                    if let Some(declared) = node.data("sourceKind") {
+                        break serde::Deserialize::deserialize(declared)
+                            .map_err(|_| Error::new("invalid source stream kind"))?;
+                    }
                     break if self.snapshot_sources.contains(&port.operator) {
                         Collection
                     } else {
                         Delta
-                    }
+                    };
                 }
                 Op::Constant
                 | Op::Now

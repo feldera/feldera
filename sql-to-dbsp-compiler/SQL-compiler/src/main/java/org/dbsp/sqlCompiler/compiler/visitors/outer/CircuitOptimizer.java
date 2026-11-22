@@ -359,11 +359,16 @@ public class CircuitOptimizer extends Passes {
         this.add(new CircuitStatistics(compiler));
     }
 
+    private final RustCircuitPass.StreamValidator streamValidator = new RustCircuitPass.StreamValidator();
+
     /** Every pass must leave a circuit with consistent stream kinds; when the testing option
      * asks for it, the circuit must also survive a round trip through JSON. */
     @Override
     protected void afterPass(DBSPCircuit circuit) {
-        new ValidateStreamKinds(this.compiler).apply(circuit);
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            this.streamValidator.validate(circuit);
+        else
+            new ValidateStreamKinds(this.compiler).apply(circuit);
         if (this.compiler.options.ioOptions.checkSerialization)
             new TestSerialize(this.compiler).apply(circuit);
     }

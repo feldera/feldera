@@ -1076,6 +1076,10 @@ fn transform(
             &circuit
         )?));
     }
+    if pass == "Topology/ValidateStreamKinds" {
+        let violation = feldera_sql_ir::OutputClocks::new(&circuit)?.validate()?;
+        return Ok(serde_json::to_value(violation)?);
+    }
     if pass == "Topology/Monotonicity" {
         #[derive(serde::Serialize)]
         struct Step {
