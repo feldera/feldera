@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | On `4f84a9cf6`, all 8,571 classic and 8,527 Gen-2 programs matched direct Java through every ordered S4 observation, final S3, persistent-ID inputs and engine output. Rust performed limiter insertion on every program. All 8,256 executable classic cases passed on the same build. [Frozen corpus and runtime](evidence/p3-metadata-initializers.json) | Port the remaining Java optimizer logic, including general monotonicity analysis and temporal fallbacks. Repeat the phase gates on the finished build. The cold compilation profile passed on `b81436777`. The field-shadow window remains open. [Latency](BENCHMARKS.md#scalar-row-waterlines-2026-11-22) |
+| P3 | On `4f84a9cf6`, all 8,571 classic and 8,527 Gen-2 programs matched direct Java through every ordered S4 observation, final S3, persistent-ID inputs and engine output. Rust performed limiter insertion on every program. All 8,256 executable classic cases passed on the same build. [Frozen corpus and runtime](evidence/p3-metadata-initializers.json) | Port the remaining Java optimizer logic, including general monotonicity analysis and temporal fallbacks. Repeat the phase gates on the finished build. The fixed-point scheduler build met the 1.2× cold compile limit on all three workloads. The field-shadow window remains open. [Latency](BENCHMARKS.md#fixed-point-scheduling-2026-11-22) |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -461,6 +461,13 @@ The result in `/campaign/results/decoder.json` records whether the worker
 reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
+
+Rust selects the top-level hybrid pass order and controls fixed-point iteration.
+The packaged compiler matched Java's pass order for snapshot and incremental
+compilation under both set and multiset output semantics. All 16 selected
+direct compilations also matched the pre-refactor Java records. Both builds
+restored COUNT and LATENESS checkpoints in both directions.
+[Optimizer order](evidence/p3-optimizer-order.json) · [Fixed-point scheduling](evidence/p3-repeat-scheduler.json)
 
 Rust projects partially bounded rows through references and preserves the
 constructor type of non-NULL `isize` and `usize` literals in waterlines.

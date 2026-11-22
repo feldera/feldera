@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Fixed-point scheduling, 2026-11-22
+
+On `a291991c6`, the hybrid compiler ran repeated optimizer passes under Rust
+control. Both paths used the same packaged jar and CPU 15 on the shared Linux
+ARM64 verification VM. Each workload ran two warmup pairs and 21 measured
+pairs. All 69 pairs produced matching classic artifacts. Timing ends before Cargo.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.485 | 2.117 | 0.852× |
+| Nexmark suite | 5.929 | 7.008 | 1.182× |
+| Outer join | 2.315 | 1.856 | 0.802× |
+
+[Paired timings and build identities](evidence/p3-repeat-scheduler-cold.json)
+
 ## Positive column lineage, 2026-11-22
 
 On `61105fd2c`, all 69 cold pairs matched through classic artifact emission.

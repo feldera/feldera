@@ -1,0 +1,130 @@
+{
+  "scope": "Run fixed-point scheduling for live hybrid compiler passes in Rust.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "21df026ddf87660a38aa8a429d6087015363f991bb4d45fea72a5c567428669c",
+    "maven/sql-compiler.jar": "0a1148f607af408adc69d7fc83f21fb7dedfc8e0af62c4a169f756404afe5e40",
+    "tests.log": "301726f51164b3a2ec1645528d2cb96783596782984bf941ad0666039cd7b0f0",
+    "clippy.log": "e1f498eb7789a4ca5f46c4a241f2b606399fb1da2d8a2cf79149e1f88255d15a",
+    "build.log": "046a9cfdc2551e6252c652ca0ba25315bf58c5ea25d013028cc88c014c67fb61",
+    "packaged-junit.log": "2f5c968b2da05bf0d2de17ee8e8cdee4cf3188a6d669255659e06ee30da2bcca",
+    "maven/tests.jar": "6cf5d9da131a05a30a9514f0f90833e1ced053f39e788bb0ada046c98c087a80",
+    "maven/build.log": "78703144fbb00f413cf741ccf5385aaa7156cff0a08a203fa9fe113a67da4298"
+  },
+  "rust_tests": 172,
+  "junit_tests": 27,
+  "engines": {
+    "classic": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "mismatches": 0,
+      "receipt_sha256": "44e1b321da246c7ea89adfd7504da75e3ba978426ab2d7951d88cdeb365d425a"
+    },
+    "gen2": {
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "mismatches": 0,
+      "receipt_sha256": "a600f5717669e4903301974384688e1e4dc67f1e1185e9c80eacc807d16e3855"
+    }
+  },
+  "maven": {
+    "passed": 110,
+    "skipped": 2,
+    "jni_enabled_junit_tests": 27
+  },
+  "checkpoints": {
+    "count": {
+      "restore_receipt_sha256": "a247cd66e1ff0435431c8ccb2a2219cece3dcf1a94269d358244a0524784f37c",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a203ee-6b9e-7191-891e-724acceab0a3",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a203ee-6bb7-73b1-9c0a-dc30712c3e4f",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "restore_receipt_sha256": "760314455461e0c838c99521f78f6b5b18403c8bd47cf3a8c97414c9fb3ea02f",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a203ef-3f16-7852-9e2e-26156964a029",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a203ef-3f32-7223-b84f-f5889192bb55",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}
