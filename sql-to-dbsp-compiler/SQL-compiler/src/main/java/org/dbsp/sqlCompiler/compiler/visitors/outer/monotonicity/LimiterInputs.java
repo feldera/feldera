@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
@@ -46,6 +47,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.util.Utilities;
 
@@ -70,7 +72,7 @@ public final class LimiterInputs {
             DBSPApplyOperator.class, DBSPWaterlineOperator.class, DBSPWindowOperator.class,
             DBSPDifferentiateOperator.class, DBSPIntegrateOperator.class, DBSPIndexedTopKOperator.class,
             DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class,
-            DBSPAntiJoinOperator.class, DBSPNowOperator.class);
+            DBSPAntiJoinOperator.class, DBSPNowOperator.class, DBSPPartitionedRollingAggregateOperator.class);
 
     /** Whole-pass lowering uses the expansion facts for these operators. */
     public static boolean canLowerCircuit(DBSPCircuit circuit) {
@@ -97,7 +99,7 @@ public final class LimiterInputs {
         return node;
     }
 
-    private static void recordTransfer(Map<Long, DBSPClosureExpression> functions, long id,
+    private static void recordTransfer(Map<Long, IDBSPInnerNode> functions, long id,
                                        InsertLimiters pass, DBSPSimpleOperator source) {
         var value = pass.expansionMonotoneValues.get(source);
         if (value != null)
@@ -105,9 +107,10 @@ public final class LimiterInputs {
     }
 
     /** A stateful aggregate has an intermediate reduction and an output upsert.
-     * Keep both closures in the circuit writer's shared inner-node namespace. */
-    public static Map<Long, DBSPClosureExpression> transferFunctions(InsertLimiters pass, DBSPCircuit original) {
-        var functions = new LinkedHashMap<Long, DBSPClosureExpression>();
+     * A rolling aggregate needs the analyzed input type to bind its ordering key.
+     * Preserve identities shared by those roots and the circuit. */
+    public static Map<Long, IDBSPInnerNode> transferRoots(InsertLimiters pass, DBSPCircuit original) {
+        var functions = new LinkedHashMap<Long, IDBSPInnerNode>();
         for (var operator : original.allOperators) {
             if (BinaryJoinInputs.supports(operator.getClass())) {
                 var join = BinaryJoinInputs.from(pass.expandedInto.get(operator.to(DBSPSimpleOperator.class)));
@@ -119,6 +122,15 @@ public final class LimiterInputs {
                     && pass.expandedInto.get(aggregate) instanceof AggregateDeltaExpansion expansion) {
                 recordTransfer(functions, expansion.aggregator.id, pass, expansion.aggregator);
                 recordTransfer(functions, aggregate.id, pass, expansion.upsert);
+                continue;
+            }
+            if (operator instanceof DBSPPartitionedRollingAggregateOperator rolling) {
+                var expansion = pass.getReplacement(rolling);
+                if (expansion != null) {
+                    var input = pass.expansionMonotoneValues.get(expansion.replacement.inputs.get(0));
+                    if (input != null)
+                        functions.put(operator.id, Monotonicity.getBodyType(input).getType());
+                }
                 continue;
             }
             if (!TRANSFER_OPERATORS.contains(operator.getClass()))
@@ -133,7 +145,7 @@ public final class LimiterInputs {
         return functions;
     }
 
-    public static String encodeTransfers(ToJsonOuterVisitor circuit, Map<Long, DBSPClosureExpression> functions) {
+    public static String encodeTransferRoots(ToJsonOuterVisitor circuit, Map<Long, IDBSPInnerNode> functions) {
         var writer = circuit.additionalInnerNodes();
         writer.stream.beginObject();
         functions.forEach((id, function) -> {
@@ -163,7 +175,7 @@ public final class LimiterInputs {
                 if (value != null)
                     entry.set("projection", projection(Monotonicity.getBodyType(value)));
                 entry.put("expanded_id", replacement.getId());
-                if (operator instanceof DBSPLagOperator) {
+                if (operator instanceof DBSPLagOperator || operator instanceof DBSPPartitionedRollingAggregateOperator) {
                     var input = pass.expansionMonotoneValues.get(replacement.inputs.get(0));
                     if (input != null)
                         entry.set("input_projection", projection(Monotonicity.getBodyType(input)));

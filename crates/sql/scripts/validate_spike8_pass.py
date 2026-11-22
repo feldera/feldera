@@ -20,8 +20,9 @@ def singleton_ids(value):
 
 def write_limiter_inputs(checkpoint, state, sidecar):
     inputs = {key: state[key] for key in ("operators", "next_generated_name", "gen2")}
-    if "transfer_functions" in state:
-        inputs["transfer_functions"] = state["transfer_functions"]
+    for key in ("transfer_roots", "transfer_functions"):
+        if key in state:
+            inputs[key] = state[key]
     inputs["singletons"] = [*singleton_ids(json.loads(checkpoint.read_bytes())), state["weight_type"]]
     sidecar.write_text(json.dumps(inputs))
 

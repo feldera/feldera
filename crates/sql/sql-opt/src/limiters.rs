@@ -14,6 +14,7 @@ pub use keyed::KeyProjection;
 pub use pass::{insert_limiters, insert_limiters_with_warnings, LimiterError, LimiterInputs};
 mod projection;
 mod retention;
+mod rolling;
 mod source;
 pub(crate) use source::timestamp_max;
 mod streams;

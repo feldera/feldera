@@ -74,7 +74,7 @@ record BinaryJoinInputs(DBSPDelayedIntegralOperator left, DBSPDelayedIntegralOpe
         }
     }
 
-    void recordTransfers(InsertLimiters pass, Map<Long, DBSPClosureExpression> functions) {
+    void recordTransfers(InsertLimiters pass, Map<Long, ? super DBSPClosureExpression> functions) {
         for (var term : this.terms) {
             var value = pass.expansionMonotoneValues.get(term);
             if (value != null && value.mayBeMonotone())

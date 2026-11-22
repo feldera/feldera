@@ -1232,10 +1232,10 @@ public final class RustCircuitPass implements CircuitTransform {
             state.put("gen2", this.compiler.options.ioOptions.gen2);
             state.putArray("singletons");
             state.set("operators", LimiterInputs.capture(this.insertLimiters, circuit));
-            var functions = LimiterInputs.transferFunctions(this.insertLimiters, circuit);
+            var functions = LimiterInputs.transferRoots(this.insertLimiters, circuit);
             if (!functions.isEmpty())
-                state.putObject("transfer_functions").putRawValue("checkpoint",
-                        new RawValue(LimiterInputs.encodeTransfers(writer, functions)));
+                state.putObject("transfer_roots").putRawValue("checkpoint",
+                        new RawValue(LimiterInputs.encodeTransferRoots(writer, functions)));
             return MAPPER.writeValueAsBytes(state);
         }
         if (this.asofRetention != null)

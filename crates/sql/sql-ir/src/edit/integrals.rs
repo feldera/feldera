@@ -3,6 +3,34 @@ use super::CircuitEditor;
 use crate::{Error, Field, NodeClass, NodeId, OperatorKind as Op, OutputPort, TypeId};
 
 impl CircuitEditor {
+    pub fn bound_rolling_aggregate(
+        &mut self,
+        id: NodeId,
+        data: OutputPort,
+        control: OutputPort,
+    ) -> Result<(), Error> {
+        if self.node(id)?.operator_kind() != Some(Op::PartitionedRollingAggregate) {
+            return Err(Error::new("expected a rolling aggregate"));
+        }
+        self.check_ports([data, control])?;
+        self.clear_annotations(id)?;
+        let op = self
+            .circuit
+            .nodes
+            .get_mut(&id)
+            .expect("validated aggregate");
+        op.class = NodeClass::Operator(Op::PartitionedRollingAggregateWithWaterline);
+        if let Some(aggregate) = op.fields.shift_remove("aggregate") {
+            op.fields.insert("aggregateList".into(), aggregate);
+        }
+        op.fields.insert(
+            "inputs".into(),
+            Field::Array(vec![data.as_field(), control.as_field()]),
+        );
+        self.changed.insert(id);
+        Ok(())
+    }
+
     /// Insert a trace boundary. Its identity projection and inherited type are
     /// built in circuit order alongside the closures of other rewired operators.
     pub fn insert_trace_noop(

@@ -25,12 +25,30 @@ impl Ty {
 impl CircuitEditor {
     /// The erased waterline output of a keyed input has type TypedBox<T, DynData>.
     pub fn dynamic_box_type(&mut self, output: TypeId) -> Result<TypeId, Error> {
+        self.box_data_type(output, "DynData", Vec::new())
+    }
+
+    /// A rolling trace reads its ordering key through TypedBox<T, DynDataTyped<T>>.
+    pub fn typed_box_type(&mut self, output: TypeId) -> Result<TypeId, Error> {
+        self.box_data_type(
+            output,
+            "DynDataTyped",
+            vec![Field::Reference(output.into())],
+        )
+    }
+
+    fn box_data_type(
+        &mut self,
+        output: TypeId,
+        name: &str,
+        args: Vec<Field>,
+    ) -> Result<TypeId, Error> {
         let dynamic = self.inner_at(
             output.into(),
             InnerKind::Type(Ty::User),
             [
-                ("name", Field::Data("DynData".into())),
-                ("typeArgs", Field::Array(vec![])),
+                ("name", Field::Data(name.into())),
+                ("typeArgs", Field::Array(args)),
                 ("code", Field::Data("USER".into())),
                 ("mayBeNull", Field::Data(false.into())),
             ],

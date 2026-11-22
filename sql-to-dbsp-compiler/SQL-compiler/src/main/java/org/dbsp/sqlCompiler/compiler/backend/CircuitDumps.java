@@ -160,13 +160,13 @@ public final class CircuitDumps {
                 state.set("operators", LimiterInputs.capture(limiters, circuit));
                 state.put("gen2", this.compiler.options.ioOptions.gen2);
                 var checkpoint = this.writeLimiterCheckpoint("input", circuit);
-                var functions = LimiterInputs.transferFunctions(limiters, circuit);
+                var functions = LimiterInputs.transferRoots(limiters, circuit);
                 if (!functions.isEmpty()) {
                     var observation = ToJsonOuterVisitor.create(this.compiler, 1);
                     observation.apply(circuit);
-                    var transfers = state.putObject("transfer_functions");
-                    transfers.putRawValue("checkpoint", new RawValue(LimiterInputs.encodeTransfers(checkpoint, functions)));
-                    transfers.putRawValue("observation", new RawValue(LimiterInputs.encodeTransfers(observation, functions)));
+                    var transfers = state.putObject("transfer_roots");
+                    transfers.putRawValue("checkpoint", new RawValue(LimiterInputs.encodeTransferRoots(checkpoint, functions)));
+                    transfers.putRawValue("observation", new RawValue(LimiterInputs.encodeTransferRoots(observation, functions)));
                 }
                 state.put("weight_type", org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight.INSTANCE.getId());
             }

@@ -28,14 +28,14 @@ struct DistinctFacts {
 }
 
 #[derive(Default, Deserialize)]
-struct TransferFunctions {
+struct TransferRoots {
     checkpoint: BTreeMap<u64, serde_json::Value>,
-    // A live compiler sends only the closures in its checkpoint's identity space.
+    // A live compiler sends roots in its checkpoint's identity space.
     #[serde(default)]
     observation: BTreeMap<u64, serde_json::Value>,
 }
 
-impl TransferFunctions {
+impl TransferRoots {
     fn attach(self, circuit: Circuit) -> Result<(Circuit, BTreeMap<u64, NodeId>), Error> {
         let checkpoint = circuit
             .operators()
@@ -56,8 +56,8 @@ pub struct LimiterInputs {
     pub next_generated_name: u64,
     gen2: bool,
     singletons: Vec<u64>,
-    #[serde(default)]
-    transfer_functions: TransferFunctions,
+    #[serde(default, alias = "transfer_functions")]
+    transfer_roots: TransferRoots,
     operators: BTreeMap<u64, OperatorFacts>,
 }
 
@@ -274,7 +274,7 @@ pub fn insert_limiters_with_warnings(
         return Err(Error::new("limiter facts and circuit have different populations").into());
     }
     let clocks = relation_clocks(&circuit, &state.operators)?;
-    let (circuit, functions) = state.transfer_functions.attach(circuit)?;
+    let (circuit, functions) = state.transfer_roots.attach(circuit)?;
     let mut edit = CircuitEditor::new(circuit);
     for number in state.singletons {
         let id = NodeId::Inner(number);
@@ -502,6 +502,39 @@ pub fn insert_limiters_with_warnings(
                         expansion.insert(&mut edit, &inputs, projection, &mut next, warnings)?
                     {
                         bounds.insert(output, result);
+                    }
+                }
+            }
+            Some(Op::PartitionedRollingAggregate) => {
+                let [source] = inputs.as_slice() else {
+                    return Err(Error::new("rolling aggregate requires one input").into());
+                };
+                if let (Some(shape @ Projection::Tuple { fields, .. }), Some(&(bound, _))) =
+                    (&facts.input_projection, bounds.get(source))
+                {
+                    if fields.first().is_some_and(Projection::monotone) {
+                        let input = super::rolling::RollingInput {
+                            data: data.get(source).map_or(*source, |s| s.port),
+                            bound,
+                            projection: shape,
+                            analyzed_type: edit.type_id(*functions.get(&number).ok_or_else(
+                                || Error::new("missing analyzed rolling aggregate input type"),
+                            )?)?,
+                        };
+                        if let Some(dst) = super::rolling::insert(
+                            &mut edit,
+                            id,
+                            input,
+                            projection.is_some(),
+                            &mut next,
+                            warnings,
+                        )?
+                        .zip(projection)
+                        {
+                            bounds.insert(output, dst);
+                        }
+                        names.replaced(id);
+                        continue;
                     }
                 }
             }
