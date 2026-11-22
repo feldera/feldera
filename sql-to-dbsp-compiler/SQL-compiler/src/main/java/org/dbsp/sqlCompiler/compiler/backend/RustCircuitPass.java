@@ -887,14 +887,17 @@ public final class RustCircuitPass implements CircuitTransform {
         return loweredClosurePair(invokeLowering(compiler, "RewriteNow/ClockAggregate", timestamp, weight));
     }
 
-    public static RewriteNow.ClockWaterline scalarClock(DBSPCompiler compiler, DBSPType row, DBSPExpression minimum) {
-        var reply = invokeLowering(compiler, "RewriteNow/ScalarClock", row, DBSPTypeRawTuple.EMPTY, minimum);
-        var functions = reply.value.required("functions");
+    public static List<DBSPSimpleOperator> scalarClock(DBSPCompiler compiler, DBSPSimpleOperator clock,
+                                                       DBSPExpression minimum) {
+        var reply = invokeLowering(compiler, "RewriteNow/ScalarClock", clock.outputType, DBSPTypeRawTuple.EMPTY, minimum);
         var decoder = expressionDecoder(reply.writer);
-        var result = new RewriteNow.ClockWaterline(
-                decoder.decodeInner(functions.required(0), DBSPClosureExpression.class),
-                decoder.decodeInner(functions.required(1), DBSPClosureExpression.class),
-                decoder.decodeInner(functions.required(2), DBSPClosureExpression.class));
+        decoder.outer.cache(reply.value.required("input").longValue(), clock);
+        var result = new ArrayList<DBSPSimpleOperator>();
+        for (var node : reply.value.required("operators")) {
+            var operator = decoder.decodeOuter(node, DBSPSimpleOperator.class);
+            operator.restoreProvenance(clock.getRelNode());
+            result.add(operator);
+        }
         DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
         return result;
     }

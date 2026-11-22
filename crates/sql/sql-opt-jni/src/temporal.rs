@@ -1,7 +1,44 @@
-use feldera_sql_ir::{Circuit, CircuitEditor, NodeId};
+use feldera_sql_ir::{Circuit, CircuitEditor, NodeId, OutputPort};
 use feldera_sql_opt::TemporalPredicate;
 use serde_json::{Value, json};
 use std::collections::HashSet;
+
+/// Bind the clock stream as an external port. Its upstream circuit and
+/// Calcite origin remain live in the calling JVM.
+pub(super) fn scalar_clock(
+    input: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let clock = 1;
+    let header = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+        {"class":"DBSPNowOperator","id":clock,"inputs":[]}
+    ]});
+    let (arena, roots) = Circuit::from_json(header)?.with_inner_roots_bytes(input)?;
+    let [collection, empty_key, minimum] = roots.as_slice() else {
+        return Err(
+            "scalar clock needs a clock collection, an empty key and an initial timestamp".into(),
+        );
+    };
+    let mut edit = CircuitEditor::new(arena.clone());
+    let collection = edit.type_id(*collection)?;
+    let empty_key = edit.type_id(*empty_key)?;
+    let minimum = edit.expression(*minimum)?;
+    let source = OutputPort {
+        operator: NodeId::Outer(clock),
+        number: 0,
+    };
+    let operators = feldera_sql_opt::scalar_clock_operators(
+        &mut edit,
+        arena.root_id(),
+        source,
+        collection,
+        empty_key,
+        minimum,
+        &mut next,
+    )?;
+    let operators = edit.circuit().additional_operators(&arena, &operators)?;
+    Ok(json!({"input":clock, "operators":operators, "next_generated_name":next}))
+}
 
 /// Encode all predicate roots together so consecutive residuals can share types.
 pub(super) fn classify(

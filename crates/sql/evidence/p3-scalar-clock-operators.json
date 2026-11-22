@@ -1,0 +1,21 @@
+{
+  "scope": "Rust constructs the differentiator and waterline that convert the clock collection to scalar maxima for temporal windows. The live importer shares expression and type definitions across both operators and preserves the clock source origin.",
+  "compiler_jar_sha256": "8531f11e4c8f2371cd28d8e7a558474b26a5a00e432c9cbec5e5e4d1b091c3c3",
+  "optimizer_library_sha256": "35efb9af39c9bb9bc8bb0a75ef18cd2563b00960628d1df20a0a324030fc2fb1",
+  "engines": {
+    "classic": {
+      "matched_rewrite_now_invocations": 71,
+      "uninterrupted_java_sha256": "a07dd17a03148544f312efea276074f7a21a95d25d293a6ed2baab0be8a40229",
+      "rust_stream_sha256": "a0630029598abfa338da5ad146d8afedb1b1bbfbbc9d4725c9aa829d94f52bc2",
+      "detached_cases": 7,
+      "detached_report_sha256": "5555d5aaceb80b49244da75a4ea541a4c97c39fdb56512a84e901aaa34ba25e3"
+    },
+    "gen2": {
+      "matched_rewrite_now_invocations": 62,
+      "uninterrupted_java_sha256": "a20040b82d4a2c6dc025885afd8c01cf5a9b3e9a25a868a30b164178692c72df",
+      "rust_stream_sha256": "8278002cf0a280e6ed79031fb0588b1980c39b6d53529019877eeb43443b5325",
+      "detached_cases": 7,
+      "detached_report_sha256": "4ec71969ce3cda96b12202ee2facb0edc2ec173b06a2ecf057a12cdcccee6fbb"
+    }
+  }
+}

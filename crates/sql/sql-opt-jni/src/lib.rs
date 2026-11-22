@@ -353,14 +353,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let functions = edit.circuit().additional_expressions(&arena, &roots)?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
-        ("RewriteNow/ScalarClock", [row, empty_key, minimum]) => {
-            let row = edit.type_id(*row)?;
-            let key = edit.type_id(*empty_key)?;
-            let minimum = edit.expression(*minimum)?;
-            let roots = feldera_sql_opt::scalar_clock(&mut edit, row, key, minimum, &mut next)?;
-            let functions = edit.circuit().additional_expressions(&arena, &roots)?;
-            return Ok(json!({"functions": functions, "next_generated_name": next}));
-        }
         ("RewriteNow/Closure", [closure, timestamp]) => {
             let closure = edit.expression(*closure)?;
             let timestamp = edit.type_id(*timestamp)?;
@@ -692,6 +684,9 @@ fn transform(
 ) -> Result<Value, Box<dyn std::error::Error>> {
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
+    if pass == "RewriteNow/ScalarClock" {
+        return temporal::scalar_clock(input, next);
+    }
     if pass == "RewriteNow/ClockSites" {
         let calls = serde_json::from_slice(input)?;
         return Ok(serde_json::to_value(feldera_sql_opt::temporal_clock_sites(calls))?);
@@ -803,7 +798,7 @@ fn transform(
         "Monotonicity/Hop" => return hop_waterline(input, state, next),
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
+        "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"

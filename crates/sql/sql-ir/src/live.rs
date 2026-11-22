@@ -118,6 +118,39 @@ impl Circuit {
             .collect()
     }
 
+    /// Serialize a new operator sequence for a caller that owns its inputs.
+    /// Each input must already exist in the input graph or precede its reader in
+    /// the sequence. Share newly built inner objects across the entire sequence.
+    pub fn additional_operators(
+        &self,
+        input: &Self,
+        operators: &[NodeId],
+    ) -> Result<Vec<Value>, crate::Error> {
+        let mut emitted = BTreeSet::new();
+        let mut result = Vec::with_capacity(operators.len());
+        for &id in operators {
+            let node = self
+                .node(id)
+                .filter(|n| n.operator_kind().is_some())
+                .ok_or_else(|| crate::Error::new("expected a fragment operator"))?;
+            if input.node(id).is_some() || emitted.contains(&id) {
+                return Err(crate::Error::new("fragment operator is already defined"));
+            }
+            let mut object = serde_json::Map::new();
+            object.insert("class".into(), node.class().into());
+            object.insert("id".into(), id.number().into());
+            for (key, field) in node.fields() {
+                object.insert(
+                    key.into(),
+                    self.additional_field(field, input, &mut emitted, 1)?,
+                );
+            }
+            emitted.insert(id);
+            result.push(Value::Object(object));
+        }
+        Ok(result)
+    }
+
     fn additional_field(
         &self,
         field: &Field,
@@ -133,7 +166,7 @@ impl Circuit {
                 }
                 if !matches!(id, NodeId::Inner(_)) {
                     return Err(crate::Error::new(
-                        "analysis expression introduces an outer operator",
+                        "reference to an outer operator that has not been supplied",
                     ));
                 }
                 let node = self
@@ -167,5 +200,36 @@ impl Circuit {
                 .collect::<Result<_, _>>()
                 .map(Value::Object),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{CircuitEditor, OperatorKind, OutputPort};
+    use serde_json::json;
+
+    #[test]
+    fn operator_fragment_requires_each_input_before_its_reader() -> Result<(), crate::Error> {
+        let base = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+                {"class":"DBSPNowOperator","id":1,"inputs":[]}
+            ]
+        }))?;
+        let mut edit = CircuitEditor::new(base.clone());
+        let clock = NodeId::Outer(1);
+        let mut append = |kind, producer| edit.append_operator(
+            base.root_id(), clock, kind, &[OutputPort { operator: producer, number: 0 }], [],
+        );
+        let changes = append(OperatorKind::Differentiate, clock)?;
+        let values = append(OperatorKind::Integrate, changes)?;
+        let graph = edit.circuit();
+        let wire = graph.additional_operators(&base, &[changes, values])?;
+        assert_eq!(wire[0]["inputs"][0]["operator"], json!({"node":1}));
+        assert_eq!(wire[1]["inputs"][0]["operator"]["node"], wire[0]["id"]);
+        assert!(graph.additional_operators(&base, &[values, changes]).is_err());
+        assert!(graph.additional_operators(&base, &[changes, changes]).is_err());
+        assert!(graph.additional_operators(&base, &[clock]).is_err());
+        Ok(())
     }
 }

@@ -316,13 +316,15 @@ public class RewriteNow extends CircuitCloneVisitor {
      */
     DBSPSimpleOperator scalarNow() {
         DBSPSimpleOperator source = this.getNow();
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var operators = RustCircuitPass.scalarClock(this.compiler, source, ContainsNow.timestampType().getMinValue());
+            operators.forEach(this::addOperator);
+            return Utilities.last(operators);
+        }
         DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(source.getRelNode(), source.outputPort());
         this.addOperator(diff);
 
-        DBSPType row = source.getOutputZSetElementType();
-        ClockWaterline functions = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.scalarClock(this.compiler, row, ContainsNow.timestampType().getMinValue())
-                : scalarClock(source);
+        ClockWaterline functions = scalarClock(source);
         DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(source.getRelNode(),
                 functions.initial(), functions.extract(), functions.maximum(), diff.outputPort());
         this.addOperator(waterline);

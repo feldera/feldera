@@ -1,6 +1,9 @@
 //! Expressions for the built-in clock and the table-backed clock used during replay.
 use crate::limiters::timestamp_max;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, TypeId};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, OperatorKind, OutputPort,
+    TypeId,
+};
 
 /// The clock relation contains one timestamp column.
 fn read_timestamp(
@@ -86,4 +89,44 @@ pub fn scalar_clock(
     let key = edit.variable(key, next)?;
     let extract = edit.closure_from_variables(value, &[input, key])?;
     Ok([initial, extract, maximum])
+}
+
+/// Turn a clock collection into successive scalar maxima for temporal windows.
+/// The differentiator and the waterline inherit the clock producer's origin.
+pub fn scalar_clock_operators(
+    edit: &mut CircuitEditor,
+    body: NodeId,
+    source: OutputPort,
+    collection: TypeId,
+    empty_key: TypeId,
+    minimum: ExpressionId,
+    next: &mut u64,
+) -> Result<[NodeId; 2], Error> {
+    let row = edit.type_id(edit.node(collection.into())?.edge("elementType")?)?;
+    let [initial, extract, maximum] = scalar_clock(edit, row, empty_key, minimum, next)?;
+    let result =
+        edit.expression_type(edit.expression(edit.node(maximum.into())?.edge("body")?)?)?;
+    let changes = edit.append_operator(
+        body,
+        source.operator,
+        OperatorKind::Differentiate,
+        &[source],
+        [("outputType", Field::Reference(collection.into()))],
+    )?;
+    let waterline = edit.append_operator(
+        body,
+        source.operator,
+        OperatorKind::Waterline,
+        &[OutputPort {
+            operator: changes,
+            number: 0,
+        }],
+        [
+            ("outputType", Field::Reference(result.into())),
+            ("function", Field::Reference(maximum.into())),
+            ("init", Field::Reference(initial.into())),
+            ("extractTs", Field::Reference(extract.into())),
+        ],
+    )?;
+    Ok([changes, waterline])
 }

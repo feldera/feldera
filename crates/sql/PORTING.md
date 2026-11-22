@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust constructs the differentiator and waterline that turn the clock
+collection into a scalar timestamp for temporal windows. The importer binds
+the live input and shares types and expressions across the new operators.
+All 133 frozen RewriteNow invocations matched Java. Fourteen detached cases
+also matched at each S4 boundary and through emission.
+[Scalar clock operators](evidence/p3-scalar-clock-operators.json)
+
 The DISTINCT pass uses operator kinds, ports and known stream multiplicities
 to check whether it needs the full circuit. It requests expression data when
 an unresolved multiplicity could change the result. The reduced path skipped
