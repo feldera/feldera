@@ -140,7 +140,14 @@ impl Circuit {
         input: &Self,
         root: crate::ExpressionId,
     ) -> Result<Value, crate::Error> {
-        let root = NodeId::from(root);
+        self.live_inner_node(input, root.into())
+    }
+
+    /// Rewrites can return declarations and types as well as expressions.
+    pub fn live_inner_node(&self, input: &Self, root: NodeId) -> Result<Value, crate::Error> {
+        if !matches!(root, NodeId::Inner(_)) {
+            return Err(crate::Error::new("expected an inner node"));
+        }
         let mut emitted = BTreeSet::new();
         if let Ok(inline) = self.additional_field(&Field::Reference(root), input, &mut emitted, 0) {
             return Ok(inline);

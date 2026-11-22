@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 
 /** Temporal comparisons inspect loop bodies without first reducing the keys. */
-final class TemporalKeyWriter extends LoweringArguments {
+final class TemporalKeyWriter extends OptimizerExpressionWriter {
     TemporalKeyWriter(DBSPCompiler compiler) {
         super(compiler);
         this.includeShuffleIdentities();

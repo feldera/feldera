@@ -9,16 +9,24 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 
-/** Send deep optimizer expressions as a batch of shallow definitions in one node-ID space. */
-class LoweringArguments extends ToJsonInnerVisitor {
+/** Encodes optimizer expressions using shallow definitions that share one node-ID space. */
+class OptimizerExpressionWriter extends ToJsonInnerVisitor {
     // Node bodies can also contain JSON arrays and source metadata. Leave room
     // for those containers within the decoder's 128-level document limit.
     private static final int MAX_INLINE_NODES = 32;
     private final ArrayDeque<IDBSPInnerNode> deferred = new ArrayDeque<>();
 
-    LoweringArguments(DBSPCompiler compiler) {
-        super(compiler, JsonStream.compactCircuit(), 1, true);
+    OptimizerExpressionWriter(DBSPCompiler compiler) {
+        this(compiler, true);
+    }
+
+    OptimizerExpressionWriter(DBSPCompiler compiler, boolean replayMetadata) {
+        this(compiler, JsonStream.compactCircuit(), replayMetadata ? 1 : 0, replayMetadata);
         this.liveNodes = new HashMap<>();
+    }
+
+    OptimizerExpressionWriter(DBSPCompiler compiler, JsonStream stream, int verbosity, boolean replayMetadata) {
+        super(compiler, stream, verbosity, replayMetadata);
     }
 
     @Override
@@ -30,7 +38,7 @@ class LoweringArguments extends ToJsonInnerVisitor {
         return VisitDecision.STOP;
     }
 
-    byte[] encode(IDBSPInnerNode[] arguments) {
+    byte[] encode(IDBSPInnerNode... arguments) {
         this.stream.beginArray();
         int count = 0;
         for (var node : arguments) {
@@ -42,12 +50,25 @@ class LoweringArguments extends ToJsonInnerVisitor {
         if (this.deferred.isEmpty())
             return this.stream.endArray().toString().getBytes(StandardCharsets.UTF_8);
 
+        this.writeDeferred();
+        String batch = "{\"arguments\":" + count + ",\"nodes\":" + this.stream.endArray() + "}";
+        return batch.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** Append definitions for deep operands after all roots have been written. */
+    void writeDeferredDefinitions() {
+        if (this.deferred.isEmpty())
+            return;
+        this.stream.label("expressionDefinitions").beginArray();
+        this.writeDeferred();
+        this.stream.endArray();
+    }
+
+    private void writeDeferred() {
         while (!this.deferred.isEmpty()) {
             var node = this.deferred.removeFirst();
             if (!this.serialized.contains(node.getId()))
                 node.accept(this);
         }
-        String batch = "{\"arguments\":" + count + ",\"nodes\":" + this.stream.endArray() + "}";
-        return batch.getBytes(StandardCharsets.UTF_8);
     }
 }

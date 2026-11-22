@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.util.IJson;
@@ -121,13 +122,14 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         }
 
         public ToJsonOuterVisitor writer(boolean retainOriginIdentities) {
-            return this.configure(compactWriter(this.compiler), retainOriginIdentities);
+            var inner = new OptimizerExpressionWriter(this.compiler, JsonStream.compactCircuit(), 1, true);
+            return this.configure(new ToJsonOuterVisitor(this.compiler, 1, inner), retainOriginIdentities);
         }
 
         /** Integral pushing inspects function types and source positions. The
          * caller keeps the original closures alive until it imports the edits. */
         ToJsonOuterVisitor integralPushWriter() {
-            var inner = new ToJsonInnerVisitor(this.compiler, JsonStream.compactCircuit(), 1, true) {
+            var inner = new OptimizerExpressionWriter(this.compiler, JsonStream.compactCircuit(), 1, true) {
                 @Override
                 public VisitDecision preorder(DBSPClosureExpression closure) {
                     if (!super.preorder(closure).stop()) {
@@ -543,6 +545,8 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     @Override
     public void postorder(DBSPCircuit circuit) {
         super.postorder(circuit);
+        if (this.innerVisitor instanceof OptimizerExpressionWriter inner)
+            inner.writeDeferredDefinitions();
         this.stream.endObject();
     }
 
@@ -558,6 +562,23 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         inner.serialized.addAll(this.innerVisitor.serialized);
         inner.liveShuffles = this.innerVisitor.liveShuffles;
         return inner;
+    }
+
+    /** Waterlines computed on the expanded graph may share nodes with the original circuit. */
+    String liveTransferRoots(Map<Long, IDBSPInnerNode> functions) {
+        var json = JsonStream.compactCircuit();
+        var inner = new OptimizerExpressionWriter(this.compiler, json, this.verbosity, true);
+        inner.serialized.addAll(this.innerVisitor.serialized);
+        inner.liveShuffles = this.innerVisitor.liveShuffles;
+        json.beginObject().label("checkpoint").beginObject();
+        functions.forEach((id, function) -> {
+            json.label(Long.toString(id));
+            function.accept(inner);
+        });
+        json.endObject();
+        inner.writeDeferredDefinitions();
+        json.endObject();
+        return json.toString();
     }
 
     public String getJsonString() {

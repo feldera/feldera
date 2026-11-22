@@ -367,6 +367,32 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void deepSqlProjectionCompilesThroughTheHybridOptimizer() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var expression = new StringBuilder("v");
+        for (int i = 1; i <= 160; i++)
+            expression.append(i % 2 == 0 ? " - " : " + ").append(i);
+        String sql = "CREATE TABLE t(v BIGINT NOT NULL LATENESS 10);"
+                + "CREATE VIEW result AS SELECT " + expression + " AS x FROM t;";
+        var direct = compileIncrementally(sql, false);
+        var hybrid = compileIncrementally(sql, true);
+        Assert.assertEquals(direct.getOutputViews(), hybrid.getOutputViews());
+        Assert.assertTrue(direct.getSingleOutputType().sameType(hybrid.getSingleOutputType()));
+    }
+
+    private static DBSPCircuit compileIncrementally(String sql, boolean hybrid) {
+        var options = new CompilerOptions();
+        options.languageOptions.incrementalize = true;
+        options.ioOptions.rustOptimizerPasses = hybrid;
+        var compiler = new DBSPCompiler(options);
+        compiler.submitStatementsForCompilation(sql);
+        var circuit = compiler.getFinalCircuit(false);
+        compiler.throwIfErrorsOccurred();
+        Assert.assertNotNull(circuit);
+        return circuit;
+    }
+
+    @Test
     public void deepBindingsRetainTheWaterlineOfTheOuterInput() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var node = CalciteEmptyRel.INSTANCE;

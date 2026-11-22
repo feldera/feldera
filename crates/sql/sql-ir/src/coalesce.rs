@@ -2,9 +2,9 @@
 //! A removed operator may own the first definition of a surviving type or
 //! relational origin. Emit those definitions at their first surviving use.
 
-use super::{wire, BodyOrder, Circuit, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort};
+use super::{BodyOrder, Circuit, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort, wire};
 use indexmap::IndexMap;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// Surviving operators whose input changed, in constructor order. Some
@@ -427,7 +427,9 @@ fn chain_only_filters(node: &Node) -> Result<bool, Error> {
     let Some(Field::Array(kinds)) = node.field("kinds") else {
         return Err(Error::new("missing chain computations"));
     };
-    Ok(kinds.iter().all(|kind| matches!(kind, Field::Data(k) if k == "Filter")))
+    Ok(kinds
+        .iter()
+        .all(|kind| matches!(kind, Field::Data(k) if k == "Filter")))
 }
 
 struct Writer<'a> {
@@ -445,6 +447,11 @@ impl Writer<'_> {
     fn node(&mut self, id: NodeId, depth: usize) -> Result<Field, Error> {
         wire::check_depth(depth)?;
         let id = self.aliases.get(&id).map_or(id, |r| r.operator());
+        // Live expression definitions can arrive in shallow batches. Place the
+        // first definition at its first surviving use even across batch boundaries.
+        if self.circuit.live_relations && depth >= 48 && matches!(id, NodeId::Inner(_)) {
+            return self.deep_inner_node(id);
+        }
         if !self.emitted.insert(id) {
             return Ok(Field::Reference(id));
         }
@@ -458,7 +465,7 @@ impl Writer<'_> {
             let mut rebuilt = node.clone();
             for (name, field) in node.fields.iter() {
                 if name != "annotations" {
-                    if let Some(value) = self.relocated(field, depth + 1)? {
+                    if let Some(value) = self.relocated(field, depth + 1, &mut Self::node)? {
                         rebuilt.fields.insert(name.clone(), value);
                     }
                 }
@@ -469,6 +476,11 @@ impl Writer<'_> {
         let mut fields = IndexMap::with_capacity(node.fields.len());
         for (name, field) in node.fields.iter() {
             let value = match (name.as_str(), field) {
+                ("expressionDefinitions", _)
+                    if id == self.circuit.root && self.circuit.live_relations =>
+                {
+                    continue;
+                }
                 ("inputs", _) if node.operator_kind() == Some(Op::Nested) => {
                     let mut inputs = Vec::new();
                     for delta in node.edges("allOperators")? {
@@ -514,14 +526,74 @@ impl Writer<'_> {
         Ok(Field::Definition(id))
     }
 
+    fn deep_inner_node(&mut self, root: NodeId) -> Result<Field, Error> {
+        enum Step {
+            Visit(NodeId),
+            Rebuild(NodeId, usize),
+        }
+        let mut pending = vec![Step::Visit(root)];
+        let mut placements = Vec::new();
+        let mut edges = Vec::new();
+        while let Some(step) = pending.pop() {
+            match step {
+                Step::Visit(id) => {
+                    if !self.emitted.insert(id) {
+                        placements.push(Field::Reference(id));
+                        continue;
+                    }
+                    let node = self
+                        .circuit
+                        .node(id)
+                        .ok_or_else(|| Error::new("missing inner node"))?;
+                    pending.push(Step::Rebuild(id, placements.len()));
+                    for (name, field) in node.fields() {
+                        if name != "annotations" {
+                            field.collect_inner_edges(&mut edges);
+                        }
+                    }
+                    pending.extend(edges.drain(..).rev().map(Step::Visit));
+                }
+                Step::Rebuild(id, start) => {
+                    let node = self.circuit.node(id).expect("visited inner node");
+                    let mut rebuilt = node.clone();
+                    let mut children = placements.drain(start..);
+                    for (name, field) in node.fields().filter(|(name, _)| *name != "annotations") {
+                        let mut placement = |_: &mut Self, id, _| {
+                            let child = children.next().expect("visited inner edge");
+                            debug_assert_eq!(child.node_id(), Some(id));
+                            Ok(child)
+                        };
+                        if let Some(value) = self.relocated(field, 0, &mut placement)? {
+                            rebuilt.fields.insert(name.to_owned(), value);
+                        }
+                    }
+                    debug_assert_eq!(children.len(), 0);
+                    drop(children);
+                    wire::insert_node(&mut self.nodes, id, rebuilt)?;
+                    placements.push(Field::Definition(id));
+                }
+            }
+        }
+        Ok(placements.pop().expect("placement of the root"))
+    }
+
     /// Visit an inner property and return its new representation only if it changed.
-    fn relocated(&mut self, field: &Field, depth: usize) -> Result<Option<Field>, Error> {
+    fn relocated(
+        &mut self,
+        field: &Field,
+        depth: usize,
+        place: &mut impl FnMut(&mut Self, NodeId, usize) -> Result<Field, Error>,
+    ) -> Result<Option<Field>, Error> {
         wire::check_depth(depth)?;
         match field {
+            Field::Reference(id @ NodeId::Inner(_)) | Field::Definition(id @ NodeId::Inner(_)) => {
+                let placement = place(self, *id, depth)?;
+                Ok((placement != *field).then_some(placement))
+            }
             Field::Array(items) => {
                 let mut edited = None;
                 for (i, item) in items.iter().enumerate() {
-                    if let Some(value) = self.relocated(item, depth + 1)? {
+                    if let Some(value) = self.relocated(item, depth + 1, place)? {
                         edited.get_or_insert_with(|| items.clone())[i] = value;
                     }
                 }
@@ -530,7 +602,7 @@ impl Writer<'_> {
             Field::Object(fields) if OutputPort::from_field(field).is_none() => {
                 let mut edited = None;
                 for (i, child) in fields.values().enumerate() {
-                    if let Some(value) = self.relocated(child, depth + 1)? {
+                    if let Some(value) = self.relocated(child, depth + 1, place)? {
                         edited.get_or_insert_with(|| fields.clone())[i] = value;
                     }
                 }

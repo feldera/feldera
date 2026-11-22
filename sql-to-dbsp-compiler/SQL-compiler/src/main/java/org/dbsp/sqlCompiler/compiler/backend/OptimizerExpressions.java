@@ -216,7 +216,7 @@ final class OptimizerExpressions {
     /** Emit the closure roots in one IR identity space. Field-use analysis never follows input edges. */
     static byte[] mapFunctions(DBSPCompiler compiler, DBSPCircuit circuit, Iterable<DBSPUnaryOperator> readers) {
         var json = JsonStream.compactCircuit();
-        var inner = new ToJsonInnerVisitor(compiler, json, 0);
+        var inner = new OptimizerExpressionWriter(compiler, json, 0, false);
         json.beginObject().appendClass(circuit).label("id").append(circuit.id);
         json.label("declarations").beginArray();
         json.endArray().label("allOperators").beginArray();
@@ -225,13 +225,15 @@ final class OptimizerExpressions {
             reader.getFunction().accept(inner);
             json.endObject();
         }
-        json.endArray().endObject();
+        json.endArray();
+        inner.writeDeferredDefinitions();
+        json.endObject();
         return json.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     static byte[] encode(DBSPCompiler compiler, DBSPCircuit circuit, Roots roots) {
         var json = JsonStream.compactCircuit();
-        var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
+        var inner = new OptimizerExpressionWriter(compiler, json, 1, true);
         json.beginObject().appendClass(circuit).label("id").append(circuit.id);
         json.label("declarations").beginArray();
         for (var declaration : circuit.declarations) {
@@ -245,7 +247,9 @@ final class OptimizerExpressions {
         json.endArray().label("allOperators").beginArray();
         if (roots != Roots.DECLARED_FUNCTIONS)
             writeOperators(circuit.getAllOperators(), roots, inner);
-        json.endArray().endObject();
+        json.endArray();
+        inner.writeDeferredDefinitions();
+        json.endObject();
         return json.toString().getBytes(StandardCharsets.UTF_8);
     }
 

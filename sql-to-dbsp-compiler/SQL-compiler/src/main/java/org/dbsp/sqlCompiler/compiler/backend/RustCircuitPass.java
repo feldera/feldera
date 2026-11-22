@@ -430,7 +430,7 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @Nullable
-    private static <T extends DBSPExpression> T decodeWaterline(ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
+    private static <T extends IDBSPInnerNode> T decodeLiveRoot(ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
         if (result.isNull())
             return null;
         var decoder = expressionDecoder(writer);
@@ -493,7 +493,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var result = WaterlineProjection.resolveType(reply.value.required("row_type"),
                     id -> Utilities.getExists(nodes, id).to(DBSPType.class), parameters);
             var reduced = reply.value.required("bound");
-            return new MonotoneExpression(body, result, decodeWaterline(reply.writer, reduced, DBSPExpression.class));
+            return new MonotoneExpression(body, result, decodeLiveRoot(reply.writer, reduced, DBSPExpression.class));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode a row waterline projection", error);
         }
@@ -522,7 +522,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var type = WaterlineProjection.resolveType(reply.value.required("row_type"),
                     id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes);
             var closure = reply.value.required("closure");
-            return new ProjectedWaterline(type, decodeWaterline(reply.writer, closure, DBSPClosureExpression.class));
+            return new ProjectedWaterline(type, decodeLiveRoot(reply.writer, closure, DBSPClosureExpression.class));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode a waterline closure", error);
         }
@@ -1324,7 +1324,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass, byte[] state, IDBSPInnerNode... inputs) {
         var inner = switch (pass) {
             case "MergeTemporalBounds", "TemporalGroups" -> new TemporalKeyWriter(compiler);
-            default -> new LoweringArguments(compiler);
+            default -> new OptimizerExpressionWriter(compiler);
         };
         if (pass.equals("SharedIndexes/Split") || pass.equals("SharedIndexes/WideFields"))
             inner.includeShuffleIdentities();
@@ -1558,7 +1558,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public static DBSPClosureExpression lowerJoinFilterMap(DBSPCompiler compiler, DBSPCircuit circuit,
             DBSPSimpleOperator operator, DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
         var json = JsonStream.compactCircuit();
-        var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
+        var inner = new OptimizerExpressionWriter(compiler, json, 1, true);
         inner.liveNodes = new HashMap<>();
         json.beginObject().appendClass(circuit).label("id").append(circuit.id)
                 .label("declarations").beginArray();
@@ -1573,7 +1573,9 @@ public final class RustCircuitPass implements CircuitTransform {
             map.accept(inner);
         }
         json.endObject();
-        json.endArray().endObject();
+        json.endArray();
+        inner.writeDeferredDefinitions();
+        json.endObject();
         try {
             byte[] reply = transformWithContext("LowerJoinFilterMap", json.toString().getBytes(StandardCharsets.UTF_8),
                     0, "", EMPTY_CONTEXT);
@@ -1639,11 +1641,8 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private record ClosureSnapshot(byte[] graph, Map<Long, IDBSPInnerNode> nodes) {
         static ClosureSnapshot capture(DBSPCompiler compiler, DBSPClosureExpression function) {
-            var writer = new ToJsonInnerVisitor(compiler, JsonStream.compactCircuit(), 0);
-            var nodes = new HashMap<Long, IDBSPInnerNode>();
-            writer.liveNodes = nodes;
-            function.accept(writer);
-            return new ClosureSnapshot(writer.stream.toString().getBytes(StandardCharsets.UTF_8), nodes);
+            var writer = new OptimizerExpressionWriter(compiler, false);
+            return new ClosureSnapshot(writer.encode(function), Objects.requireNonNull(writer.liveNodes));
         }
 
         byte[] analyze(String pass) {
@@ -1981,8 +1980,7 @@ public final class RustCircuitPass implements CircuitTransform {
             state.set("operators", LimiterInputs.capture(this.insertLimiters, circuit));
             var functions = LimiterInputs.transferRoots(this.insertLimiters, circuit);
             if (!functions.isEmpty())
-                state.putObject("transfer_roots").putRawValue("checkpoint",
-                        new RawValue(LimiterInputs.encodeTransferRoots(writer, functions)));
+                state.putRawValue("transfer_roots", new RawValue(writer.liveTransferRoots(functions)));
             return MAPPER.writeValueAsBytes(state);
         }
         if (this.asofRetention != null)
@@ -2856,11 +2854,8 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     private static <T> T exchangeKeyClosure(DBSPCompiler compiler, String pass, DBSPClosureExpression closure,
                                             Object request, TypeReference<T> type) {
-        var json = JsonStream.compactCircuit();
-        json.beginArray();
-        closure.accept(new ToJsonInnerVisitor(compiler, json, 0));
         try {
-            var graph = json.endArray().toString().getBytes(StandardCharsets.UTF_8);
+            var graph = new OptimizerExpressionWriter(compiler, false).encode(closure);
             var reply = transformWithContext(pass, graph, 0, "", MAPPER.writeValueAsBytes(request));
             return MAPPER.readValue(reply, type);
         } catch (IOException error) {
@@ -3021,7 +3016,7 @@ public final class RustCircuitPass implements CircuitTransform {
         if (root instanceof DBSPType)
             return root;
         var reply = invokeLowering(compiler, pass, root);
-        var result = expressionDecoder(reply.writer).decodeInner(reply.value.required("root"), IDBSPInnerNode.class);
+        var result = Objects.requireNonNull(decodeLiveRoot(reply.writer, reply.value.required("root"), IDBSPInnerNode.class));
         finishLowering(compiler, reply.value);
         return result;
     }

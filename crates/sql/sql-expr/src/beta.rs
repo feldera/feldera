@@ -60,61 +60,86 @@ fn has_declaration(edit: &CircuitEditor, root: NodeId) -> Result<bool, Error> {
 /// the enclosing binding and its consumer reads the newly introduced binding.
 fn resolve<'a>(
     edit: &'a CircuitEditor,
-    id: NodeId,
-    scope: &HashMap<&'a str, usize>,
-    uses: &mut HashMap<NodeId, usize>,
-    depth: usize,
-) -> Result<(), Error> {
-    if depth > 128 {
-        return Err(Error::new("closure exceeds the expression nesting limit"));
+    root: NodeId,
+    mut scope: HashMap<&'a str, usize>,
+) -> Result<HashMap<NodeId, usize>, Error> {
+    enum Step<'a> {
+        Enter(NodeId),
+        Leave(NodeId),
+        Hide(&'a str),
+        Restore(usize),
     }
-    let node = edit.node(id)?;
-    match node.inner_kind() {
-        Some(InnerKind::Type(_)) => (),
-        Some(InnerKind::Expression(Expr::VariablePath)) => {
-            if let Some(&index) = scope.get(name(node, "variable")?) {
-                uses.insert(id, index);
+
+    let mut uses = HashMap::new();
+    let mut hidden = Vec::new();
+    let mut active = HashSet::new();
+    let mut pending = vec![Step::Enter(root)];
+    while let Some(step) = pending.pop() {
+        let id = match step {
+            Step::Enter(id) => id,
+            Step::Leave(id) => {
+                active.remove(&id);
+                continue;
             }
-        }
-        Some(InnerKind::Expression(Expr::Closure)) => {
-            let mut inner = scope.clone();
-            for parameter in node.edges("parameters")? {
-                inner.remove(name(edit.node(parameter)?, "name")?);
+            Step::Hide(name) => {
+                if let Some(binding) = scope.remove_entry(name) {
+                    hidden.push(binding);
+                }
+                continue;
             }
-            resolve(edit, node.edge("body")?, &inner, uses, depth + 1)?;
+            Step::Restore(mark) => {
+                scope.extend(hidden.drain(mark..));
+                continue;
+            }
+        };
+        if !active.insert(id) {
+            return Err(Error::new("cycle in a closure body"));
         }
-        Some(InnerKind::Expression(Expr::For)) => {
-            resolve(edit, node.edge("iterated")?, scope, uses, depth + 1)?;
-            let mut inner = scope.clone();
-            inner.remove(name(node, "variable")?);
-            resolve(edit, node.edge("block")?, &inner, uses, depth + 1)?;
-        }
-        Some(InnerKind::Expression(Expr::Let)) => {
-            resolve(edit, node.edge("initializer")?, scope, uses, depth + 1)?;
-            let mut inner = scope.clone();
-            inner.remove(name(edit.node(node.edge("variable")?)?, "variable")?);
-            resolve(edit, node.edge("consumer")?, &inner, uses, depth + 1)?;
-        }
-        Some(InnerKind::Expression(Expr::Block)) => {
-            let mut inner = scope.clone();
-            for statement in node.edges("contents")? {
-                resolve(edit, statement, &inner, uses, depth + 1)?;
-                let statement = edit.node(statement)?;
-                if statement.class() == "DBSPLetStatement" {
-                    inner.remove(name(statement, "variable")?);
+        pending.push(Step::Leave(id));
+        let node = edit.node(id)?;
+        match node.inner_kind() {
+            Some(InnerKind::Type(_)) => (),
+            Some(InnerKind::Expression(Expr::VariablePath)) => {
+                if let Some(&index) = scope.get(name(node, "variable")?) {
+                    uses.insert(id, index);
                 }
             }
-            if let Some(last) = node.field("lastExpression").and_then(Field::node_id) {
-                resolve(edit, last, &inner, uses, depth + 1)?;
+            Some(InnerKind::Expression(Expr::Closure)) => {
+                pending.push(Step::Restore(hidden.len()));
+                pending.push(Step::Enter(node.edge("body")?));
+                for parameter in node.edges("parameters")? {
+                    pending.push(Step::Hide(name(edit.node(parameter)?, "name")?));
+                }
             }
-        }
-        _ => {
-            for child in children(node) {
-                resolve(edit, child, scope, uses, depth + 1)?;
+            Some(InnerKind::Expression(Expr::For)) => {
+                pending.push(Step::Restore(hidden.len()));
+                pending.push(Step::Enter(node.edge("block")?));
+                pending.push(Step::Hide(name(node, "variable")?));
+                pending.push(Step::Enter(node.edge("iterated")?));
             }
+            Some(InnerKind::Expression(Expr::Let)) => {
+                pending.push(Step::Restore(hidden.len()));
+                pending.push(Step::Enter(node.edge("consumer")?));
+                pending.push(Step::Hide(name(edit.node(node.edge("variable")?)?, "variable")?));
+                pending.push(Step::Enter(node.edge("initializer")?));
+            }
+            Some(InnerKind::Expression(Expr::Block)) => {
+                pending.push(Step::Restore(hidden.len()));
+                if let Some(last) = node.field("lastExpression").and_then(Field::node_id) {
+                    pending.push(Step::Enter(last));
+                }
+                for statement in node.edges("contents")?.into_iter().rev() {
+                    let node = edit.node(statement)?;
+                    if node.class() == "DBSPLetStatement" {
+                        pending.push(Step::Hide(name(node, "variable")?));
+                    }
+                    pending.push(Step::Enter(statement));
+                }
+            }
+            _ => pending.extend(children(node).into_iter().rev().map(Step::Enter)),
         }
     }
-    Ok(())
+    Ok(uses)
 }
 
 struct Substitute {
@@ -237,9 +262,7 @@ pub fn parameter_bindings(
     for (i, &parameter) in parameters.iter().enumerate() {
         scope.insert(name(edit.node(parameter)?, "name")?, i);
     }
-    let mut uses = HashMap::new();
-    resolve(edit, body, &scope, &mut uses, 0)?;
-    Ok(uses)
+    resolve(edit, body, scope)
 }
 
 pub fn substitute_arguments(

@@ -114,12 +114,6 @@ fn multiplicities(facts: feldera_sql_opt::Multiplicities) -> Value {
     json!(operators)
 }
 
-fn expression_arena(roots: impl IntoIterator<Item = Value>) -> Result<(Circuit, Vec<NodeId>), feldera_sql_ir::Error> {
-    Circuit::from_json(json!({
-        "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
-    }))?.with_inner_roots(roots)
-}
-
 #[derive(serde::Deserialize)]
 struct ExpressionSite {
     empty: bool,
@@ -506,11 +500,17 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 }
             });
         }
-        let mut encoded = edit.circuit().additional_inner_nodes(&arena, [result])?;
-        return Ok(json!({"root": encoded.pop().expect("one result root"),
+        let encoded = edit.circuit().live_inner_node(&arena, result)?;
+        return Ok(json!({"root": encoded,
             "next_generated_name": next, "warnings": pass_warnings(warnings)}));
     }
     let function = match (pass, roots.as_slice()) {
+        ("FuseExpensiveMaps/Fragments", [closure]) => {
+            return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_fragments(&arena, *closure)?)?);
+        }
+        ("ImplementStatics/Candidates", [closure]) => {
+            return Ok(serde_json::to_value(feldera_sql_opt::static_candidates(&arena, *closure)?)?);
+        }
         ("ComparatorDeclarations/Functions", functions) => {
             let names = serde_json::from_slice(state)?;
             let replacements = feldera_sql_opt::rewrite_index_functions(&mut edit, functions, names)?;
@@ -1202,16 +1202,9 @@ fn transform(
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
-        | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
+        | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
+        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {
             return lower_function(pass, input, state, next);
-        }
-        "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {
-            let (arena, roots) = expression_arena([feldera_sql_ir::parse_json(input)?])?;
-            return if pass == "ImplementStatics/Candidates" {
-                Ok(serde_json::to_value(feldera_sql_opt::static_candidates(&arena, roots[0])?)?)
-            } else {
-                Ok(serde_json::to_value(feldera_sql_opt::map_fusion_fragments(&arena, roots[0])?)?)
-            };
         }
         "FuseExpensiveMaps/Groups" => {
             let fingerprints: Vec<Vec<usize>> = serde_json::from_slice(input)?;

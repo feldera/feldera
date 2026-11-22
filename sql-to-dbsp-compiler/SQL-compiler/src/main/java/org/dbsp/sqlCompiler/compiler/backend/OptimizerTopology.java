@@ -155,8 +155,10 @@ final class OptimizerTopology {
         json.label("declarations").beginArray();
         json.endArray();
         json.label("allOperators");
-        var types = typeContext == null ? null : new ToJsonInnerVisitor(typeContext, json, details == Details.CANDIDATE_KEYS ? 0 : 1);
+        var types = typeContext == null ? null : new OptimizerExpressionWriter(typeContext, json, details == Details.CANDIDATE_KEYS ? 0 : 1, false);
         writeBody(json, circuit.getAllOperators(), details, types, null);
+        if (types != null)
+            types.writeDeferredDefinitions();
         json.endObject();
         return json.toString().getBytes(StandardCharsets.UTF_8);
     }
@@ -181,13 +183,13 @@ final class OptimizerTopology {
     static ToJsonOuterVisitor selectedExpressions(DBSPCompiler compiler, DBSPCircuit circuit,
                                                   Set<Long> selected, Details details) {
         return selectedExpressions(compiler, circuit, selected, details,
-                new ToJsonInnerVisitor(compiler, JsonStream.compactCircuit(), 0));
+                new OptimizerExpressionWriter(compiler, JsonStream.compactCircuit(), 0, false));
     }
 
     /** Keep source ranges and object identities when a pass returns rewritten closures. */
     static ToJsonOuterVisitor selectedForRewrite(DBSPCompiler compiler, DBSPCircuit circuit,
                                                  Set<Long> selected, Details details) {
-        var inner = new ToJsonInnerVisitor(compiler, JsonStream.compactCircuit(), 1, true);
+        var inner = new OptimizerExpressionWriter(compiler, JsonStream.compactCircuit(), 1, true);
         if (details == Details.SHARED_INDEXES)
             inner.includeShuffleIdentities();
         inner.liveNodes = new HashMap<>();
@@ -195,7 +197,7 @@ final class OptimizerTopology {
     }
 
     private static ToJsonOuterVisitor selectedExpressions(DBSPCompiler compiler, DBSPCircuit circuit,
-                                                          Set<Long> selected, Details details, ToJsonInnerVisitor inner) {
+                                                          Set<Long> selected, Details details, OptimizerExpressionWriter inner) {
         var json = inner.stream;
         inner.liveShuffles = new HashMap<>();
         var writer = new ToJsonOuterVisitor(compiler, 0, inner);
@@ -203,6 +205,7 @@ final class OptimizerTopology {
         json.label("declarations").beginArray();
         json.endArray().label("allOperators");
         writeBody(json, circuit.getAllOperators(), details, null, new SelectedPayloads(selected, writer));
+        inner.writeDeferredDefinitions();
         json.endObject();
         return writer;
     }

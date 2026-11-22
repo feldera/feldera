@@ -33,6 +33,9 @@ struct DistinctFacts {
 #[derive(Default, Deserialize)]
 struct TransferRoots {
     checkpoint: BTreeMap<u64, serde_json::Value>,
+    // Deep live roots refer to additional definitions in checkpoint ID space.
+    #[serde(default, rename = "expressionDefinitions")]
+    expression_definitions: Vec<serde_json::Value>,
     // A live compiler sends roots in its checkpoint's identity space.
     #[serde(default)]
     observation: BTreeMap<u64, serde_json::Value>,
@@ -48,7 +51,10 @@ impl TransferRoots {
         } else {
             self.observation
         };
-        let (operators, definitions): (Vec<_>, Vec<_>) = functions.into_iter().unzip();
+        let (operators, mut definitions): (Vec<_>, Vec<_>) = functions.into_iter().unzip();
+        if checkpoint {
+            definitions.extend(self.expression_definitions);
+        }
         let (circuit, roots) = circuit.with_inner_roots(definitions)?;
         Ok((circuit, operators.into_iter().zip(roots).collect()))
     }
