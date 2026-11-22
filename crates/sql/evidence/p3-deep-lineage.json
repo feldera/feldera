@@ -1,0 +1,46 @@
+{
+  "base_commit": "7d54ab029d971294e5dd91ea3d1864fcd264dbae",
+  "scope": "Use an explicit postorder stack for column provenance, iterative intersections for shared tuple and reference values, and iterative traversal for reference parameter types.",
+  "build": {
+    "bin/libfeldera_sql_opt_jni.so": "4a4169b7cb2f3a8dc70da9c64cc2e11efea24f6fa0558b4d4503d541a27d5fe7",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "bin/sql-difftest": "716805e76ccd99a350f0840fc1e675544b95a6b1a103fca264f0377e95645f9d",
+    "tests.log": "de2c29e93aeeb00da6da62e3797a63c314b926c4aa0b5651d20f9e833487f981",
+    "clippy.log": "bf1a0b8aeab1e781d12c164084da0a451410ad7fe3882a694c3449fcba37202e",
+    "ColumnCopyOracle.java": "0fbb9f0440ef748498ed1629e19b232b933ec1ff99f564e6264477b9541287b2",
+    "ProvenanceCheck.java": "9733eb1da5590c941ef1383a09def05785779caa5c6eba27c5fd44e200dca6cb",
+    "classpath": {
+      "/stage/p3-verified-u0m6raxd/rolling-s4/shared-value-numbers/numbering.jar": "6d15a443bf257949a843da2d09238c2f1db0a07060c4ff4dec8551ee0719f374",
+      "/stage/p3-verified-u0m6raxd/rolling-s4/stream-validation/validator.jar": "56c15324ee43c2baf9ee8724015c18430163dc6474e1635a3a6b7d48cb6cf095",
+      "/stage/p3-verified-u0m6raxd/rolling-s4/block-waterlines/waterline-classes.jar": "12052a04b09c10a7a96c8db6a665a45a5d7fbd42e22a6425fb1bac8fcb4c97a1",
+      "/stage/p3-verified-u0m6raxd/rolling-s4/asof-join-projections/test.jar": "5f1166fc28e097a417d6cb63277b2e0e6a78baed0ad32a50e4de085b498187d2",
+      "/stage/p3-verified-u0m6raxd/rolling-s4/asof-join-projections/compiler.jar": "24f429997317b8b3c8e1a406c0507482ecc95a30014c25e57d267f20051834bb",
+      "/stage/p3-verified-u0m6raxd/rolling-trace-bounds/maven/sql-compiler.jar": "e118bea16e253e655068e3ef5638da948da6b3fe503a95c87e020b666731acfd"
+    }
+  },
+  "checks": {
+    "classic": {
+      "closures": 0,
+      "filters": 104,
+      "ports": 4681,
+      "programs": 114,
+      "population_sha256": "d5ed5d30899ddb41c68b7940524b478f1305076083cb2816e281e42ff4ceaa0b",
+      "observations_sha256": "29a7d3e509d6323cc0f790b2eb5938e791dfa73d6834738af6387ce4568d9fc4",
+      "detached_programs": 17,
+      "ordered_s4_observations": 7604,
+      "detached_receipt_sha256": "d75e5f803fa48521641f77f8aec3f0ff65fa8d130a6b55b56249851fac6c5f35"
+    },
+    "gen2": {
+      "closures": 0,
+      "filters": 99,
+      "ports": 4581,
+      "programs": 114,
+      "population_sha256": "0bf91baf6aaea98a00b53ae68e8ad905412586df9432d516199f6074730113c2",
+      "observations_sha256": "6d0ec0e2caef9197b9a8a88c8f9a4f52cabc0f42ad0569865e60f25d8d769a0b",
+      "detached_programs": 16,
+      "ordered_s4_observations": 7122,
+      "detached_receipt_sha256": "6fe370ab1d58f2291ba3c064ccdf71978966ad5470d1a13a5a65d2287e7ce802"
+    }
+  },
+  "rust_tests": 124
+}

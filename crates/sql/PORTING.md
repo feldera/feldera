@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust follows column lineage through deeply nested closures, references and
+shared tuples using explicit stacks. A 512-binding regression test preserves
+the input column. Across 228 selected programs, Rust and Java agreed on fixed
+columns at 203 filters and on keys at 9,262 ports. All 33 detached compilations
+matched through emission. [Column-lineage results](evidence/p3-deep-lineage.json)
+
 Rust interns common subexpressions and decides which uses within each closure
 share a computation. All 550 selected pass invocations and 33 detached
 compilations matched Java. COUNT and LATENESS checkpoints restored in both
