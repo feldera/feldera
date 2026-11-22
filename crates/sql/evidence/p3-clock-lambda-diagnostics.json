@@ -1,0 +1,45 @@
+{
+  "implementation_commit": "480bb701d",
+  "scope": "The RewriteNow filter lowering returns the rejected lambda and its enclosing residual predicate in one native result. The live compiler uses the predicate for the warning and the lambda for the subsequent error.",
+  "build": {
+    "bin/libfeldera_sql_opt_jni.so": "4dbef9f485cb6782938c1cab69ba21e16016f3f5d08e2eda66a1cada45a10a5a",
+    "compiler.jar": "8448ece362d045739901cf86750ba1343092ed37240c15177ad925c9d27b61a9",
+    "maven/sql-compiler.jar": "40770f71589af738d41423e43d059ccff4b98de2613d5a503a13a4ce20ff8733"
+  },
+  "engines": {
+    "classic": {
+      "comparison": "RewriteNow matched at 71 invocations across 71 cases",
+      "diagnostics": {
+        "map": {
+          "sql": "CREATE TABLE T(x BIGINT ARRAY, ts TIMESTAMP NOT NULL);\nCREATE VIEW V AS SELECT TRANSFORM(x, e -> e + EXTRACT(EPOCH FROM NOW())) FROM T;",
+          "diagnostics_sha256": "4bc2e3764b614923a19a25134b393b1dc2337bb20ec73cc854b080af21e65768"
+        },
+        "filter": {
+          "sql": "CREATE TABLE T(x BIGINT ARRAY, ts TIMESTAMP NOT NULL);\nCREATE VIEW V AS SELECT * FROM T WHERE ARRAY_EXISTS(x, e -> e > EXTRACT(EPOCH FROM NOW()));",
+          "diagnostics_sha256": "979018b8f16292b224aea3c591218c07ba7139331cc6eb36a1a841bc92e3bb32"
+        },
+        "window-filter": {
+          "sql": "CREATE TABLE T(x BIGINT ARRAY, ts TIMESTAMP NOT NULL);\nCREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() AND ARRAY_EXISTS(x, e -> e > EXTRACT(EPOCH FROM NOW()));",
+          "diagnostics_sha256": "74d0407dee1e23e0e5256ed7cea547ee79c2b42d0ad2b5fdd515579e819bf8c1"
+        }
+      }
+    },
+    "gen2": {
+      "comparison": "RewriteNow matched at 62 invocations across 62 cases",
+      "diagnostics": {
+        "map": {
+          "sql": "CREATE TABLE T(x BIGINT ARRAY, ts TIMESTAMP NOT NULL);\nCREATE VIEW V AS SELECT TRANSFORM(x, e -> e + EXTRACT(EPOCH FROM NOW())) FROM T;",
+          "diagnostics_sha256": "4bc2e3764b614923a19a25134b393b1dc2337bb20ec73cc854b080af21e65768"
+        },
+        "filter": {
+          "sql": "CREATE TABLE T(x BIGINT ARRAY, ts TIMESTAMP NOT NULL);\nCREATE VIEW V AS SELECT * FROM T WHERE ARRAY_EXISTS(x, e -> e > EXTRACT(EPOCH FROM NOW()));",
+          "diagnostics_sha256": "979018b8f16292b224aea3c591218c07ba7139331cc6eb36a1a841bc92e3bb32"
+        },
+        "window-filter": {
+          "sql": "CREATE TABLE T(x BIGINT ARRAY, ts TIMESTAMP NOT NULL);\nCREATE VIEW V AS SELECT * FROM T WHERE ts > NOW() AND ARRAY_EXISTS(x, e -> e > EXTRACT(EPOCH FROM NOW()));",
+          "diagnostics_sha256": "74d0407dee1e23e0e5256ed7cea547ee79c2b42d0ad2b5fdd515579e819bf8c1"
+        }
+      }
+    }
+  }
+}

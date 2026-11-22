@@ -462,6 +462,18 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust builds binary and multiway join derivatives, including filtered joins and
+null padding for left joins. All 550 binary and 30 multiway pass comparisons
+matched Java. The multiway cases covered three to fourteen inputs. Both engines
+also matched on all 61 detached programs selected for multiway replay.
+[Binary join graphs](evidence/p3-binary-delta-graph.json) · [Multiway join graphs](evidence/p3-star-delta-graph.json)
+
+A rejected `NOW()` inside a filter lambda carries its residual predicate and the
+lambda through native lowering. All 133 selected clock pass comparisons matched.
+The direct and hybrid CLIs emitted the same ordered warning and error, including
+source ranges and snippets, in six negative compilations.
+[Clock diagnostics](evidence/p3-clock-lambda-diagnostics.json)
+
 Rust expands aggregates, DISTINCT, and positive weights into their delta graphs.
 All 550 selected pass comparisons and 16 detached compilations matched Java.
 COUNT and LATENESS checkpoints restored in both directions.

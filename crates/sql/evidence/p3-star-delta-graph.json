@@ -1,0 +1,75 @@
+{
+  "implementation_commit": "480bb701d",
+  "scope": "Rust constructs the delayed integrals, indexed join tree and projection of each multiway derivative term, followed by the sum and any fused filter and map.",
+  "build": {
+    "bin/libfeldera_sql_opt_jni.so": "fa3f00e4ec4351590dc9e1afd329abf884734159ee9d5816bc797da10489a6d9",
+    "compiler.jar": "497abd7d42d9a9b8abf780c4420d816df6d3033c840cdd5912f5846baca89069",
+    "maven/sql-compiler.jar": "11f6227c4f21c56d34b70b6eecf155ec4cf7cbf20a9d9c6672ebf4abb276addb",
+    "maven/tests.jar": "68b1d9a3df0bdf14440b515fd8726f36d23d7196c92daf0242e5ffdfb34ddde3"
+  },
+  "rust_tests": 132,
+  "maven_tests": 103,
+  "native_multiway_tests": 4,
+  "engines": {
+    "classic": {
+      "comparison": "DeltaExpandOperators matched at 15 invocations across 15 cases",
+      "join_arities": [
+        3,
+        4,
+        5,
+        14
+      ],
+      "star_operators_observed": 22,
+      "observations_sha256": {
+        "false": "a998607c3f8b66ad2d7502406ed0fb728084d9858b899c4ec94b7ee685745e4a",
+        "true": "ed91ac9e95e7a21f858523c745e6f7703cfc482ab6b5fb63a7c4a8c94e671015"
+      },
+      "detached": {
+        "cases": 61,
+        "receipt_sha256": "adb497268e20159e278d23b34f5ff6ece15b8bf16527cf8973c8e2168b9adae5"
+      },
+      "packaged": {
+        "cases": 8,
+        "receipt_sha256": "191495d5ce6fff3e86caeda397fd8fb01e6adbbe5d6bc42a6dc404c870df9190"
+      }
+    },
+    "gen2": {
+      "comparison": "DeltaExpandOperators matched at 15 invocations across 15 cases",
+      "join_arities": [
+        3,
+        4,
+        5,
+        14
+      ],
+      "star_operators_observed": 22,
+      "observations_sha256": {
+        "false": "bbce619f6bc0e9cbd9f87f69d96938d3b13ff8eb04668a04c72ea8301ee254a5",
+        "true": "d5e2448761b77f4738cade7f9ad0646d7b39955f450c2fb5c624b0c8ad6f2116"
+      },
+      "detached": {
+        "cases": 61,
+        "receipt_sha256": "ae5a051103e9c168fd11124bbc8c22431b6809f5efbddb2b4b5ad6c29526fc84"
+      },
+      "packaged": {
+        "cases": 8,
+        "receipt_sha256": "7ff2328e0659d82a281028de808495fdf53bd3487d25acd4709118b7bd988adb"
+      }
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ],
+      "receipt_sha256": "4397deedf98cd8c73a6cd93f378d08b1a9765d920151ce7ccfda128e09293840"
+    },
+    "watermark": {
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ],
+      "receipt_sha256": "3e82bf94e0be661e6de81a1351bdffb46406f1dfd31845ce16eca047757212d4"
+    }
+  }
+}

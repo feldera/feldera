@@ -1,0 +1,60 @@
+{
+  "implementation_commit": "9c8c58df0",
+  "scope": "Rust constructs the binary derivative graph for inner and left joins, including indexed output, filters on each product, anti-joins and null padding. Java reconnects the live ports, integral annotations and per-term correspondence for limiter insertion.",
+  "build": {
+    "bin/libfeldera_sql_opt_jni.so": "4a698afd9ccb49b7ffa6d33fd74f857afede6643543e6b4e7bebdcb00b018a41",
+    "compiler.jar": "35469c690ec79942fbd54096b6f1782b11f9ecf412bd797fb85c954085347d50",
+    "maven/sql-compiler.jar": "3677b0218410e930097cf8950711c1b7bc7fb15f70ab083603c448ca624d6988",
+    "maven/tests.jar": "a377a3b6b069a285a99f7f469a04b9bda3aeb72042bf1c816424612c4c61a5e7"
+  },
+  "rust_tests": 132,
+  "maven_tests": 103,
+  "engines": {
+    "classic": {
+      "comparison": "DeltaExpandOperators matched at 291 invocations across 291 cases",
+      "detached": {
+        "cases": 8,
+        "receipt_sha256": "9ac765e821d0da4fc8558d0b173c793749666e62aca65f4fd38d3afd69d15bfc"
+      },
+      "observations_sha256": {
+        "false": "1668ce338b1a55a69c88537ee2e9a4dedaacabd3bfe5913af3d71126c5d8ff3c",
+        "true": "de949b66d1a2e04c5b14f52cc4134134448d974b50a6e52707a9334483f9b020"
+      },
+      "packaged": {
+        "cases": 8,
+        "receipt_sha256": "d889ac0028ccc72d47722cccd0af81e8f031723ba4a937af2a1af308cd695b35"
+      }
+    },
+    "gen2": {
+      "comparison": "DeltaExpandOperators matched at 259 invocations across 259 cases",
+      "detached": {
+        "cases": 8,
+        "receipt_sha256": "4261f1a5a0cf2ee54ddfcf669ee0c3058eac5d2f2651103f745fffe48f4d1d2c"
+      },
+      "observations_sha256": {
+        "false": "bf391d1a4c62c790671bae890e90489fe484166584b639bf752e0f49ba7d61dd",
+        "true": "8d6e430b7d8d9108b1f5039867a519b879015ca1b22054e79f009cc54bd021f2"
+      },
+      "packaged": {
+        "cases": 8,
+        "receipt_sha256": "ba5c640b364da7f60ed36748de47f8dcaa42ddedce7e14ecbcfaefb1715f73b4"
+      }
+    }
+  },
+  "restores": {
+    "count": {
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ],
+      "receipt_sha256": "432a023620a4541e99edb70ddc6e762f9c1708d8cdae45c724d1ef80c425513e"
+    },
+    "watermark": {
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ],
+      "receipt_sha256": "ac84573a829c7102791a76c987bb892e43be184eecb8875a2e8b48d971abe525"
+    }
+  }
+}
