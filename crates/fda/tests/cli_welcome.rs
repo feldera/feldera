@@ -151,7 +151,8 @@ mod tty {
                 .stderr(stdio())
                 .spawn()
                 .expect("run fda");
-            // Only fda has the other side open now, so the reader ends when fda exits.
+            // After this drop, only fda has the other side open. The reader ends
+            // when fda exits.
             drop(slave);
             let output = Arc::new(Mutex::new(Vec::new()));
             let mut source = terminal.try_clone().expect("clone the terminal");
@@ -393,5 +394,37 @@ mod tty {
                 "the first run is claimed with {flag}"
             );
         }
+    }
+
+    #[test]
+    fn first_run_waits_for_a_terminal_that_holds_the_window() {
+        let home = tempfile::tempdir().expect("temp dir");
+        let host = closed_host();
+        let args = ["--host", &host, "--retries", "0", "pipelines"];
+
+        // At 80 columns the window needs 31 rows.
+        let mut small = Session::start(80, 30, home.path(), &args);
+        small.finish();
+        assert!(
+            !small.text().contains("GET STARTED"),
+            "the animation played in 30 rows"
+        );
+        assert!(
+            !has_marker(home.path()),
+            "the first run is claimed in 30 rows"
+        );
+
+        let mut large = Session::start(80, 31, home.path(), &args);
+        large.wait_for(ANIMATION_STARTED);
+        large.send(b" ");
+        large.finish();
+        assert!(
+            large.text().contains("GET STARTED"),
+            "no animation in 31 rows"
+        );
+        assert!(
+            has_marker(home.path()),
+            "the first run is not claimed in 31 rows"
+        );
     }
 }
