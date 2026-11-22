@@ -368,4 +368,42 @@ mod tests {
         std::fs::write(&blocked, b"").unwrap();
         assert!(!claim_first_run(&blocked.join("fda")));
     }
+
+    #[test]
+    fn window_width_stays_between_60_and_100_columns() {
+        // (terminal columns, width between the side borders)
+        let cases = [
+            (0, 60),
+            (64, 60),
+            (65, 61),
+            (80, 76),
+            (104, 100),
+            (105, 100),
+            (500, 100),
+        ];
+        for (cols, inner) in cases {
+            assert_eq!(inner_width(cols), inner, "{cols} columns");
+        }
+        // A terminal wider than the largest window needs the rows of that window.
+        let need = Window::FILM_TOP + Film::rows(100) + Window::BELOW_FILM;
+        assert!(!fits(500, need) && fits(500, need + 1));
+    }
+
+    #[test]
+    fn smooth_rises_from_0_to_1_between_its_edges() {
+        for (x, y) in [
+            (1.0, 0.0),
+            (2.0, 0.0),
+            (2.5, 0.15625),
+            (3.0, 0.5),
+            (4.0, 1.0),
+            (9.0, 1.0),
+        ] {
+            assert_eq!(smooth(2.0, 4.0, x), y, "x = {x}");
+        }
+        let ys: Vec<f64> = (0..=20)
+            .map(|i| smooth(2.0, 4.0, 2.0 + i as f64 / 10.0))
+            .collect();
+        assert!(ys.windows(2).all(|w| w[0] < w[1]), "not rising: {ys:?}");
+    }
 }

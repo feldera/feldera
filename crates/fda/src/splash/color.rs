@@ -210,12 +210,14 @@ mod tests {
         }
     }
 
+    /// Returns the squared distance between two colors.
+    fn dist(a: Rgb, b: Rgb) -> i32 {
+        let d = |x: u8, y: u8| (x as i32 - y as i32).pow(2);
+        d(a.0, b.0) + d(a.1, b.1) + d(a.2, b.2)
+    }
+
     #[test]
     fn brand_colors_survive_256_color_terminals() {
-        let dist = |a: Rgb, b: Rgb| {
-            let d = |x: u8, y: u8| (x as i32 - y as i32).pow(2);
-            d(a.0, b.0) + d(a.1, b.1) + d(a.2, b.2)
-        };
         let brand = [
             VIOLET,
             STEEL,
@@ -280,5 +282,70 @@ mod tests {
         let complete = b"\x1b]11;rgb:7800/7800/e000\x07";
         assert_eq!(Theme::from_osc11(complete), Some(Theme::Dark));
         assert_eq!(Theme::from_osc11(&complete[..complete.len() - 4]), None);
+    }
+
+    #[test]
+    fn escape_sequences_match_the_color_mode() {
+        let c = (1, 2, 3);
+        assert_eq!(ColorMode::TrueColor.fg(c), "\x1b[38;2;1;2;3m");
+        assert_eq!(ColorMode::TrueColor.bg(c), "\x1b[48;2;1;2;3m");
+        let violet = ansi256(VIOLET);
+        assert_eq!(
+            ColorMode::Ansi256.fg(VIOLET),
+            format!("\x1b[38;5;{violet}m")
+        );
+        assert_eq!(ColorMode::Ansi256.reset(), "\x1b[0m");
+        let off = ColorMode::Off;
+        assert_eq!(off.fg(c) + &off.bg(c) + off.reset(), "");
+    }
+
+    #[test]
+    fn ansi256_returns_the_nearest_entry_across_the_color_space() {
+        let levels = || (0..=255u8).step_by(17);
+        for r in levels() {
+            for g in levels() {
+                for b in levels() {
+                    let c = (r, g, b);
+                    let best = (16..=255u8).map(|i| dist(c, xterm_rgb(i))).min().unwrap();
+                    assert_eq!(dist(c, xterm_rgb(ansi256(c))), best, "{c:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn theme_parsers_accept_each_valid_form_and_reject_the_others() {
+        assert_eq!(Theme::from_colorfgbg("7"), Some(Theme::Light));
+        assert_eq!(Theme::from_colorfgbg("0; 15 "), Some(Theme::Light));
+        for bad in ["", "0;16", "15;0;", "0;x"] {
+            assert_eq!(Theme::from_colorfgbg(bad), None, "{bad:?}");
+        }
+
+        // 1 to 4 hex digits per channel, and a typed key before the reply.
+        let light: [&[u8]; 3] = [
+            b"\x1b]11;rgb:f/f/f\x07",
+            b"\x1b]11;rgb:8080/8080/8080\x07",
+            b"q\x1b]11;rgb:ffff/ffff/ffff\x1b\\",
+        ];
+        for reply in light {
+            assert_eq!(Theme::from_osc11(reply), Some(Theme::Light), "{reply:?}");
+        }
+        let dark: [&[u8]; 2] = [
+            b"\x1b]11;rgb:00/00/00\x07",
+            b"\x1b]11;rgb:7f7f/7f7f/7f7f\x07",
+        ];
+        for reply in dark {
+            assert_eq!(Theme::from_osc11(reply), Some(Theme::Dark), "{reply:?}");
+        }
+        let bad: [&[u8]; 5] = [
+            b"\x1b]11;rgb:zz/00/00\x07",
+            b"\x1b]11;rgb:ff/ff\x07",
+            b"\x1b]11;rgb:f/f/f/f\x07",
+            b"\x1b]11;rgb:fffffffff/0/0\x07",
+            b"\xff\xfe",
+        ];
+        for reply in bad {
+            assert_eq!(Theme::from_osc11(reply), None, "{reply:?}");
+        }
     }
 }

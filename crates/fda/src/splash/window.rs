@@ -344,4 +344,82 @@ mod tests {
             assert!(!all.contains("https://"));
         }
     }
+
+    #[test]
+    fn fit_cuts_long_text_and_marks_the_cut() {
+        for (s, max, want) in [
+            ("abc", 3, "abc"),
+            ("abcd", 3, "ab…"),
+            ("abcd", 1, "…"),
+            ("", 3, ""),
+        ] {
+            assert_eq!(fit(s, max), want, "{s:?} in {max} columns");
+        }
+    }
+
+    #[test]
+    fn display_host_drops_the_scheme_and_the_last_slash() {
+        let cases = [
+            ("https://try.feldera.com/", "try.feldera.com"),
+            ("http://localhost:8080", "localhost:8080"),
+            ("try.feldera.com", "try.feldera.com"),
+            ("https://a.b/c/", "a.b/c"),
+            ("", ""),
+        ];
+        for (host, want) in cases {
+            assert_eq!(display_host(host), want);
+        }
+    }
+
+    #[test]
+    fn row_width_counts_only_visible_characters() {
+        let row = Row::new("<r>").push("ab", "<s>").push("c", "").pad_to(5);
+        assert_eq!((row.text.as_str(), row.width), ("<s>ab<r>c  ", 5));
+        // A row that is wider than `col` does not change.
+        assert_eq!(row.pad_to(2).width, 5);
+    }
+
+    #[test]
+    fn rows_line_up_for_a_long_host_and_for_no_host() {
+        let long = format!("https://{}", "long-name.".repeat(30));
+        for host in [long, String::new()] {
+            let cut = !host.is_empty();
+            let window = Window {
+                inner: 60,
+                color: ColorMode::Off,
+                host,
+                muted: STEEL,
+            };
+            let rows = window.rows(&vec![" ".repeat(60); 3], true);
+            assert!(
+                rows.iter().all(|row| row.chars().count() == 62),
+                "ragged rows"
+            );
+            assert_eq!(rows.concat().contains('…'), cut);
+        }
+    }
+
+    #[test]
+    fn intro_starts_with_one_mark_and_ends_as_the_empty_window() {
+        for cols in [60, 80, 100] {
+            let window = Window {
+                inner: cols,
+                color: ColorMode::Off,
+                host: String::new(),
+                muted: STEEL,
+            };
+            let film_h = Film::rows(cols);
+            assert_eq!(window.intro_rows(film_h, 0.0).concat().trim(), "+");
+            for step in 0..=20 {
+                let rows = window.intro_rows(film_h, step as f64 / 20.0);
+                assert_eq!(rows.len(), Window::FILM_TOP + film_h + Window::BELOW_FILM);
+                assert!(
+                    rows.iter().all(|row| row.chars().count() == cols + 2),
+                    "ragged intro at {cols} columns, step {step}"
+                );
+            }
+            let blank = vec![" ".repeat(cols); film_h];
+            assert_eq!(window.intro_rows(film_h, 1.0), window.rows(&blank, false));
+        }
+    }
 }

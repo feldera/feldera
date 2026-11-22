@@ -781,7 +781,7 @@ mod tests {
             y.abs() < 0.3 && pitch.abs() < 0.03 && bend.abs() < 0.03,
             "not settled: y {y:.2}, pitch {pitch:.3}, tail {bend:.3}"
         );
-        // The wings stop at a phase that is a multiple of 2 pi, which is the logo pose.
+        // The wings stop at a phase that is a multiple of 2 pi, the top of a wingbeat.
         let turns = closed.unwrap() / (2.0 * PI);
         assert!(
             (turns - turns.round()).abs() < 1e-9,
@@ -812,5 +812,102 @@ mod tests {
             "tail does not sway: {left:.3}..{right:.3}"
         );
         assert!(landing < 1e-9, "tail still sways on landing: {landing:.3}");
+    }
+
+    #[test]
+    fn the_same_seed_gives_the_same_film() {
+        let film = Film::new(80, ColorMode::Off);
+        let render = |seed| {
+            let mut reel = Reel::new(seed);
+            let frames = (0..Reel::frame_count()).map(|i| reel.frame(&film, i));
+            frames.collect::<Vec<_>>()
+        };
+        let first = render(5);
+        assert!(first == render(5), "two films with one seed differ");
+        // Seed 0 is valid. Its particles differ from the particles of seed 5.
+        assert!(first != render(0), "two seeds give one film");
+    }
+
+    #[test]
+    fn each_frame_fills_the_frame_rows() {
+        for cols in [60, 100] {
+            let film = Film::new(cols, ColorMode::Off);
+            let mut reel = Reel::new(9);
+            let check = |frame: Vec<String>| {
+                assert_eq!(frame.len(), film.h);
+                assert!(
+                    frame.iter().all(|row| row.chars().count() == cols),
+                    "ragged frame at {cols} columns"
+                );
+            };
+            for i in 0..Reel::frame_count() {
+                check(reel.frame(&film, i));
+            }
+            for step in 0..=10 {
+                check(reel.flap_frame(&film, step as f64 / 10.0));
+            }
+        }
+    }
+
+    #[test]
+    fn random_numbers_stay_in_their_ranges() {
+        let mut rng = Rng(1);
+        for _ in 0..10_000 {
+            let (x, y, i) = (rng.next(), rng.range(2.0, 5.0), rng.index(7));
+            assert!(
+                (0.0..1.0).contains(&x) && (2.0..5.0).contains(&y) && i < 7,
+                "{x} {y} {i}"
+            );
+        }
+        assert_eq!(rng.index(1), 0);
+    }
+
+    #[test]
+    fn landing_math_matches_its_definitions() {
+        assert_eq!(lowpass(0.0, 10.0, 0.25), 2.5);
+        // A spring on its target with no velocity has no acceleration.
+        assert_eq!(spring(1.0, 0.0, 1.0, 9.0, 1.0), 0.0);
+        assert!(
+            spring(0.0, 0.0, 1.0, 9.0, 1.0) > 0.0,
+            "no pull to the target"
+        );
+        assert!(
+            spring(1.0, 2.0, 1.0, 9.0, 1.0) < 0.0,
+            "damping does not oppose the velocity"
+        );
+        assert_eq!(ease_to_zero(-2.5, 4.0, 0.0), (-2.5, 4.0));
+        assert_eq!(ease_to_zero(-2.5, 4.0, 1.0), (0.0, 0.0));
+        for (phase, top) in [(0.0, 0.0), (1.0, 2.0 * PI), (2.0 * PI, 2.0 * PI)] {
+            assert_eq!(next_rest(phase), top, "phase {phase}");
+        }
+    }
+
+    #[test]
+    fn skip_hint_shows_until_touchdown() {
+        let film = Film::new(80, ColorMode::Off);
+        let mut reel = Reel::new(1);
+        for i in 0..Reel::frame_count() {
+            let frame = reel.frame(&film, i).concat();
+            let before_touchdown = (i as f64 / FPS) < TOUCHDOWN;
+            assert_eq!(
+                frame.contains("press any key to skip"),
+                before_touchdown,
+                "frame {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn registration_marks_appear_one_after_the_other() {
+        let film = Film::new(80, ColorMode::Off);
+        let mut reel = Reel::new(1);
+        let marks: Vec<usize> = (0..12)
+            .map(|i| reel.frame(&film, i).concat().matches('+').count())
+            .collect();
+        assert_eq!((marks[0], marks[11]), (0, 4), "{marks:?}");
+        assert!(
+            marks.windows(2).all(|w| w[1] == w[0] || w[1] == w[0] + 1),
+            "{marks:?}"
+        );
     }
 }

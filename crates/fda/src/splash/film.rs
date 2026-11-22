@@ -854,13 +854,170 @@ mod tests {
         film.near.pose(0.0, 1.0, &mut a);
         let mut b = Vec::new();
         film.near.pose(PI, 1.0, &mut b);
-        // Phase 0 is the logo pose. At phase pi the wing is at its lowest
-        // position, which is below the logo pose.
+        // Phase 0 is the top of the wingbeat. At phase pi the wing is at its
+        // lowest position, which is below the logo pose.
         let rest_y: f64 = a.iter().map(|p| p[1]).sum::<f64>() / a.len() as f64;
         let down_y: f64 = b.iter().map(|p| p[1]).sum::<f64>() / b.len() as f64;
         assert!(
             down_y > rest_y + 50.0,
             "wing did not fold: {rest_y} -> {down_y}"
         );
+    }
+
+    #[test]
+    fn lanczos_weights_sum_to_1_and_stay_inside_the_source() {
+        // (source samples, output samples) for a smaller, an equal and a larger output.
+        for (src, dst) in [(2000, 128), (875, 56), (100, 100), (10, 40)] {
+            for (lo, ws) in lanczos_weights(src, dst, src as f64) {
+                let sum: f64 = ws.iter().sum();
+                assert!((sum - 1.0).abs() < 1e-9, "{src} to {dst}: sum {sum}");
+                assert!(!ws.is_empty() && lo + ws.len() <= src, "{src} to {dst}");
+            }
+        }
+    }
+
+    #[test]
+    fn path_runs_from_its_first_to_its_last_point_at_a_constant_speed() {
+        let q = [[0.0, 0.0], [10.0, 40.0], [60.0, -20.0], [100.0, 0.0]];
+        let path = Path::new(q);
+        let far = |a: Pt, b: Pt| ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt();
+        assert!(far(path.at(0.0), q[0]) < 1e-9 && far(path.at(1.0), q[3]) < 1e-9);
+        let steps: Vec<f64> = (0..50)
+            .map(|i| far(path.at(i as f64 / 50.0), path.at((i + 1) as f64 / 50.0)))
+            .collect();
+        let mean = steps.iter().sum::<f64>() / steps.len() as f64;
+        assert!(
+            steps.iter().all(|s| (s / mean - 1.0).abs() < 0.05),
+            "uneven steps: {steps:.2?}"
+        );
+    }
+
+    #[test]
+    fn hinge_coordinates_convert_back_to_the_point() {
+        let hinge = Hinge::new(NEAR_HINGE);
+        for p in [[0.0, 0.0], [1500.0, 200.0], [1700.5, 33.25]] {
+            let (s, d) = hinge.coords(p);
+            let q = hinge.point(s, d);
+            assert!(
+                (q[0] - p[0]).abs() < 1e-9 && (q[1] - p[1]).abs() < 1e-9,
+                "{p:?} -> {q:?}"
+            );
+        }
+        // On the screen, y grows downward. A point above the hinge is out from it.
+        let above = [hinge.origin[0], hinge.origin[1] - 10.0];
+        assert!(hinge.coords(above).1 > 0.0);
+    }
+
+    #[test]
+    fn wing_without_a_wingbeat_is_in_the_logo_pose() {
+        let film = Film::new(80, ColorMode::Off);
+        let wing = &film.near;
+        let logo: Vec<Pt> = (0..wing.s.len())
+            .map(|i| wing.hinge.point(wing.s[i], wing.d[i]))
+            .collect();
+        let mut pose = Vec::new();
+        wing.pose_with(wing.kmin, |_| 1.0, &mut pose);
+        assert_eq!(pose, logo);
+        for phase in [0.0, 1.0, PI] {
+            wing.pose(phase, 0.0, &mut pose);
+            assert_eq!(pose, logo, "phase {phase}");
+        }
+    }
+
+    #[test]
+    fn frames_fit_at_each_window_width() {
+        // Up to 74 columns the logo grows with the window.
+        for cols in [60, 61, 73, 74, 75, 76, 99, 100] {
+            let film = Film::new(cols, ColorMode::Off);
+            assert_eq!((film.w, film.h), (cols, Film::rows(cols)));
+            assert!(
+                film.logo_x + film.logo_w <= film.wd,
+                "the logo is cut at {cols} columns"
+            );
+            assert!(
+                film.marks.iter().all(|&(x, y)| x < film.w && y < film.h),
+                "a mark is outside the frame at {cols} columns"
+            );
+            let frame = film.final_frame();
+            assert_eq!(frame.len(), film.h);
+            assert!(
+                frame.iter().all(|row| row.chars().count() == cols),
+                "ragged frame at {cols} columns"
+            );
+        }
+    }
+
+    #[test]
+    fn tail_bend_and_sway_move_only_the_tail() {
+        let film = Film::new(80, ColorMode::Off);
+        assert!(matches!(film.body_points(0.0, 0.0), Cow::Borrowed(_)));
+        let tip = (0..film.statics.len())
+            .max_by(|&a, &b| film.tail_w[a].total_cmp(&film.tail_w[b]))
+            .unwrap();
+        let still = film.statics[tip];
+        let bent = film.body_points(-0.2, 0.0);
+        let swayed = film.body_points(0.0, 0.2);
+        for (i, p) in film.statics.iter().enumerate() {
+            if film.tail_w[i] == 0.0 {
+                assert_eq!((bent[i], swayed[i]), (*p, *p), "body point {i} moved");
+            }
+        }
+        // On the screen, y grows downward. A negative bend lowers the tip.
+        assert!(
+            bent[tip][1] > still[1] + 1.0,
+            "{still:?} -> {:?}",
+            bent[tip]
+        );
+        // A positive sway moves the tip away from the root, to the left.
+        let moved = swayed[tip];
+        assert!(
+            moved[0] < still[0] - 1.0 && (moved[1] - still[1]).abs() < 1e-9,
+            "{still:?} -> {moved:?}"
+        );
+    }
+
+    /// Composes a frame without a bird, and returns its rows as one string.
+    fn compose_without_bird(film: &Film, word: Word, marks: usize, hint: bool) -> String {
+        let empty = vec![false; film.hd * film.wd];
+        let shot = Shot {
+            body: &empty,
+            far: &empty,
+            bird_color: None,
+            landed: false,
+            word,
+            marks,
+            hint,
+        };
+        film.compose(&shot, &[], &[]).concat()
+    }
+
+    #[test]
+    fn registration_marks_and_hint_show_on_request() {
+        let film = Film::new(80, ColorMode::Off);
+        assert_eq!(
+            compose_without_bird(&film, Word::Hidden, 0, false).trim(),
+            ""
+        );
+        let three = compose_without_bird(&film, Word::Hidden, 3, false);
+        assert_eq!(three.matches('+').count(), 3);
+        let hint = compose_without_bird(&film, Word::Hidden, 4, true);
+        assert!(hint.contains("press any key to skip"));
+    }
+
+    #[test]
+    fn wordmark_appears_from_left_to_right() {
+        let film = Film::new(80, ColorMode::Off);
+        let cells = |word| {
+            let frame = compose_without_bird(&film, word, 0, false);
+            frame.chars().filter(|c| *c != ' ').count()
+        };
+        let full = cells(Word::Full);
+        assert_eq!((cells(Word::Hidden), cells(Word::Sweep(0.0))), (0, 0));
+        let half = cells(Word::Sweep(0.5));
+        assert!(
+            0 < half && half < full,
+            "{half} of {full} cells at half of the sweep"
+        );
+        assert_eq!(cells(Word::Sweep(1.0)), full);
     }
 }

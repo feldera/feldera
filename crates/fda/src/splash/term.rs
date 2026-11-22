@@ -158,7 +158,7 @@ mod sys {
 }
 
 /// How the viewer stopped the animation.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Stop {
     /// A key press. The animation skips to the final frame.
     Skip,
@@ -166,17 +166,23 @@ pub(super) enum Stop {
     Interrupt,
 }
 
+impl Stop {
+    /// Returns how the key bytes `bytes` stop the animation. In raw mode,
+    /// Ctrl-C arrives as the byte 0x03.
+    fn from_keys(bytes: &[u8]) -> Stop {
+        if bytes.contains(&0x03) {
+            Stop::Interrupt
+        } else {
+            Stop::Skip
+        }
+    }
+}
+
 impl Keys {
     /// Returns how the viewer stopped the animation since the last call, or
     /// `None` if the viewer pressed no key.
     pub(super) fn stop(&self) -> Option<Stop> {
-        let bytes = self.pressed()?;
-        // In raw mode, Ctrl-C arrives as the byte 0x03.
-        Some(if bytes.contains(&0x03) {
-            Stop::Interrupt
-        } else {
-            Stop::Skip
-        })
+        Some(Stop::from_keys(&self.pressed()?))
     }
 
     /// Asks the terminal for its background color with an OSC 11 query. Waits up to 150 ms,
@@ -221,5 +227,22 @@ impl Drop for Cursor {
         let mut out = stdout().lock();
         let _ = write!(out, "\x1b[0m\x1b[?25h");
         let _ = out.flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ctrl_c_interrupts_and_other_keys_skip() {
+        assert_eq!(Stop::from_keys(b" "), Stop::Skip);
+        assert_eq!(Stop::from_keys(b"\x1b[A"), Stop::Skip, "arrow key");
+        assert_eq!(Stop::from_keys(b"\x03"), Stop::Interrupt);
+        assert_eq!(
+            Stop::from_keys(b"q\x03"),
+            Stop::Interrupt,
+            "Ctrl-C after a key"
+        );
     }
 }
