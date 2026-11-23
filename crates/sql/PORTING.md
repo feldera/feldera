@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Temporal classification and grouping preserve the order and identity of all
+192 leaves in a deep conjunction. Both operations exceeded the inline
+snapshot limit on the preceding build. The corrected build passed 169 JUnit
+tests and matched direct Java on 20 selected compilations through 8,778
+ordered S4 observations and emission. [Temporal conjunction replay](evidence/p3-temporal-conjunctions.json)
+
 Waterline analysis reports the first unsupported nested field before examining
 the arguments of a registered function. Both visitor modes retain facts from
 earlier expressions. The preceding build failed the directed test. The corrected

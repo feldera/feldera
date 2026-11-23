@@ -78,6 +78,49 @@ import java.util.TimeZone;
 import java.util.function.Consumer;
 
 public class TemporalKeyTests {
+    private static List<BooleanExpression> longPredicate() {
+        var b = new ExpressionBuilder();
+        var shared = b.call(b.bool(), "shared");
+        var terms = new ArrayList<BooleanExpression>();
+        for (int i = 0; i < 192; i++)
+            terms.add(new NoNow(i % 2 == 0 ? shared : b.call(b.bool(), "predicate", b.lit(i))));
+        return terms;
+    }
+
+    private static NoNow combinedPredicate(List<BooleanExpression> terms) {
+        Assert.assertEquals(1, terms.size());
+        return terms.get(0).to(NoNow.class);
+    }
+
+    private static void assertSameConjuncts(DBSPExpression expected, DBSPExpression actual) {
+        var left = expected.conjuncts();
+        var right = actual.conjuncts();
+        Assert.assertEquals(left.size(), right.size());
+        for (int i = 0; i < left.size(); i++)
+            Assert.assertSame(left.get(i), right.get(i));
+    }
+
+    @Test
+    public void groupingReturnsEveryLeafOfALongTemporalConjunction() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var terms = longPredicate();
+        var direct = combinedPredicate(RewriteNow.combineExpressions(terms));
+        var hybrid = combinedPredicate(NativeTemporalComparisons.combine(compiler, terms));
+        assertSameConjuncts(direct.noNow(), hybrid.noNow());
+    }
+
+    @Test
+    public void classificationRebuildsALongClockFreeSuffix() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var body = combinedPredicate(RewriteNow.combineExpressions(longPredicate())).noNow();
+        var parts = RustCircuitPass.classifyTemporalPredicates(compiler, body, Set.of());
+        Assert.assertEquals(1, parts.size());
+        Assert.assertEquals(RustCircuitPass.PredicateKind.NoNow, parts.get(0).kind());
+        assertSameConjuncts(body, parts.get(0).expression());
+    }
+
     @Test
     public void clockSitesUseTheLastOccurrenceInEachExpression() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));

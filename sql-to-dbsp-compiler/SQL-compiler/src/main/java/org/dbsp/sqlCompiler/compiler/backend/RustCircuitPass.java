@@ -1676,7 +1676,7 @@ public final class RustCircuitPass implements CircuitTransform {
         var unsupported = reply.value.get("unsupported_lambda");
         if (unsupported != null) {
             DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
-            var lambda = expressionDecoder(reply.writer).decodeInner(unsupported, DBSPClosureExpression.class);
+            var lambda = decodeLiveRoot(expressionDecoder(reply.writer), unsupported, DBSPClosureExpression.class);
             throw new CompilationError("NOW() is not supported inside a lambda expression", lambda.getNode());
         }
         var origin = consumer.getRelNode();
@@ -1783,14 +1783,14 @@ public final class RustCircuitPass implements CircuitTransform {
             var rejection = reply.value.get("rejected_lambda");
             if (rejection != null) {
                 var decoder = expressionDecoder(reply.writer);
-                var predicate = decoder.decodeInner(rejection.required(0), DBSPExpression.class);
-                var lambda = decoder.decodeInner(rejection.required(1), DBSPClosureExpression.class);
+                var predicate = decodeLiveRoot(decoder, rejection.required(0), DBSPExpression.class);
+                var lambda = decodeLiveRoot(decoder, rejection.required(1), DBSPClosureExpression.class);
                 DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
                 return new ClockFilter(List.of(), predicate, lambda);
             }
             var warning = reply.value.get("warning_predicate");
             DBSPExpression predicate = warning == null ? null :
-                    expressionDecoder(reply.writer).decodeInner(warning, DBSPExpression.class);
+                    decodeLiveRoot(reply.writer, warning, DBSPExpression.class);
             var join = predicate == null ? origin : clockJoinOrigin(origin,
                     Objects.requireNonNull(temporalClockSites(compiler, List.of(predicate)).get(predicate.getId())));
             return new ClockFilter(decodeOperatorFragment(reply,
@@ -2238,8 +2238,8 @@ public final class RustCircuitPass implements CircuitTransform {
         var parts = new ArrayList<TemporalComparison>(reply.value.size());
         for (var part : reply.value) {
             var kind = PredicateKind.valueOf(part.required("kind").textValue());
-            var expression = decoder.decodeInner(part.required("expression"), DBSPExpression.class);
-            var clock = part.has("clock") ? decoder.decodeInner(part.required("clock"), DBSPExpression.class) : null;
+            var expression = decodeLiveRoot(decoder, part.required("expression"), DBSPExpression.class);
+            var clock = part.has("clock") ? decodeLiveRoot(decoder, part.required("clock"), DBSPExpression.class) : null;
             parts.add(new TemporalComparison(kind, expression, clock));
         }
         return parts;
@@ -2258,7 +2258,7 @@ public final class RustCircuitPass implements CircuitTransform {
         for (var group : reply.value) {
             var value = group.required("expression");
             groups.add(new TemporalGroup(group.required("first").intValue(), group.required("count").intValue(),
-                    value.isNull() ? null : decoder.decodeInner(value, DBSPExpression.class)));
+                    value.isNull() ? null : decodeLiveRoot(decoder, value, DBSPExpression.class)));
         }
         return groups;
     }

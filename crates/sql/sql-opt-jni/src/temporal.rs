@@ -167,7 +167,7 @@ pub(super) fn filter(
     if let LoweredClockFilter::UnsupportedLambda { predicate, lambda } = result {
         let sites = edit
             .circuit()
-            .additional_expressions(&fragment.base, &[predicate, lambda])?;
+            .live_inner_roots(&fragment.base, &[predicate.into(), lambda.into()])?;
         return Ok(json!({"rejected_lambda": sites, "next_generated_name": next}));
     }
     let mut reply = fragment.reply(&edit, next)?;
@@ -175,8 +175,7 @@ pub(super) fn filter(
         // This expression is read only for source positions. It carries its own node definitions.
         reply["warning_predicate"] = edit
             .circuit()
-            .additional_expressions(&fragment.base, &[predicate])?
-            .remove(0);
+            .live_expression(&fragment.base, predicate)?;
     }
     Ok(reply)
 }
@@ -287,10 +286,8 @@ pub(super) fn clock_join(
     )? {
         feldera_sql_opt::ClockRewrite::Rewritten(_) => fragment.reply(&edit, next),
         feldera_sql_opt::ClockRewrite::UnsupportedLambda(lambda) => {
-            let functions = edit
-                .circuit()
-                .additional_expressions(&fragment.base, &[lambda])?;
-            Ok(json!({"unsupported_lambda": functions[0], "next_generated_name": next}))
+            let function = edit.circuit().live_expression(&fragment.base, lambda)?;
+            Ok(json!({"unsupported_lambda": function, "next_generated_name": next}))
         }
     }
 }
@@ -338,15 +335,12 @@ pub(super) fn classify(
                 comparison,
             } => (json!(comparison), key, Some(clock)),
         };
-        roots.push(expression);
-        roots.extend(clock);
+        roots.push(NodeId::from(expression));
+        roots.extend(clock.map(NodeId::from));
         headers.push((kind, clock.is_some()));
     }
 
-    let mut expressions = edit
-        .circuit()
-        .additional_expressions(input, &roots)?
-        .into_iter();
+    let mut expressions = edit.circuit().live_inner_roots(input, &roots)?.into_iter();
     let mut next = || expressions.next().expect("one encoded expression per root");
     Ok(Value::Array(
         headers
@@ -418,11 +412,11 @@ fn group_predicates(
     };
     let expressions = groups
         .iter()
-        .filter_map(|g| g.predicate)
+        .filter_map(|g| g.predicate.map(NodeId::from))
         .collect::<Vec<_>>();
     let mut encoded = edit
         .circuit()
-        .additional_expressions(input, &expressions)?
+        .live_inner_roots(input, &expressions)?
         .into_iter();
     Ok(Value::Array(
         groups

@@ -1,0 +1,41 @@
+{
+  "scope": "Preserve shared leaf identities while grouping and classifying 192-term temporal predicates, and carry deep diagnostic expressions on the same live-root protocol.",
+  "source_base": "cd0b71efcd3c4ebbd75bc0aef77e9614fa6ff01e",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/temporal.rs": "4599f1266e9277616e43fc29d5bbe053d13a5d05003958fa69ebf2b8c7908932",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "df44fdf2098c89746cb4f7df6816df06532d4de22ea4fa03e57bf612da6c4b56",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "cffb655c15d6628d1b4260ba379fcd8d1dcd7e7136244706bdf89dac99e2d4b8"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "096404fe5e91f0543a328ba0cd310038a3bf337d19096eb049703aedc74c6bf1",
+    "bin/sql-difftest": "a43db492f6783fa3d688a25a4e2277374575b52b7e23357244b7c99032cbc70b",
+    "maven/tests.jar": "a7f5d57a6e91cd05dc365c6ef38d18315365c11d79ca9918d39beef411db3e32",
+    "maven/sql-compiler.jar": "dc0d49936aaaa2cda1ca05572b239a352e7f5de657512afe704c5120add49ffc"
+  },
+  "negative_control": {
+    "library_sha256": "af425baf113fbc4318761516de9ee6d191b76edc6519896a981b023de631d795",
+    "failed_tests": [
+      "groupingReturnsEveryLeafOfALongTemporalConjunction",
+      "classificationRebuildsALongClockFreeSuffix"
+    ]
+  },
+  "rust_tests": 225,
+  "junit_tests": 169,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "c6265e7fd4de593ba03e62f2dab6e9bac35c0cd73acdfc96830a31001c841102"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "692c12dfa2acc149902c598375a7ce4205c7b32421b141f2d0c1482ca0f22e41"
+    }
+  }
+}
