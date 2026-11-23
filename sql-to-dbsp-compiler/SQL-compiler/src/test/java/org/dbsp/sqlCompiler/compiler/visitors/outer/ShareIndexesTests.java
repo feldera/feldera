@@ -23,6 +23,7 @@ import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -34,6 +35,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ReplaceSharedIn
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -65,6 +68,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Tests for {@link ShareIndexes} and {@link ShareOutputIntegrators}. */
@@ -651,6 +655,74 @@ public class ShareIndexesTests extends StreamingTestBase {
                         "SharedIndexes/Split", "SharedIndexes/WideFields")));
             }
         }
+    }
+
+    @Test
+    public void sharedIndexColumnErrorPreservesTheComparisonPrefix() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes"));
+        var compiler = this.testCompiler();
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var source = table(circuit, "T", "k");
+        var inputs = new ArrayList<OutputPort>();
+        for (int i = 0; i < 2; i++) {
+            var row = source.getOutputZSetElementType().ref().var();
+            // A projected column can retain a free path. Comparing distinct
+            // paths in the empty index-field scope diagnoses the new one first.
+            var path = new DBSPVariablePath("free" + i, INT);
+            var divided = new DBSPBinaryExpression(CalciteObject.EMPTY, INT, i == 0 ? DBSPOpcode.DIV : DBSPOpcode.MOD,
+                    new DBSPI32Literal(i + 1), new DBSPI32Literal(0));
+            var value = i == 0 ? new DBSPTupleExpression(divided, path) : new DBSPTupleExpression(path, divided);
+            var function = new DBSPRawTupleExpression(new DBSPTupleExpression(row.deref().field(0)), value).closure(row);
+            var index = new DBSPMapIndexOperator(CalciteEmptyRel.INSTANCE, function, source.outputPort());
+            circuit.addOperator(index);
+            inputs.add(index.outputPort());
+        }
+        var reader = firstFields(inputs);
+        var join = new DBSPJoinOperator(CalciteEmptyRel.INSTANCE, new DBSPTypeZSet(reader.getResultType()),
+                reader, inputs.get(0), inputs.get(1), false);
+        circuit.addOperator(join);
+        var left = inputs.get(0).node();
+        var right = inputs.get(1).node();
+        // Supply the finder result at the replacement boundary so both passes
+        // see the same malformed value columns before either tries to widen them.
+        var find = new FindSharedIndexes(compiler, new Graph(compiler).getGraphs());
+        find.record(new FindSharedIndexes.IndexReader[][]{{
+                new FindSharedIndexes.IndexReader(left.id, join.id, 0),
+                new FindSharedIndexes.IndexReader(right.id, join.id, 1)}},
+                new long[0], Map.of(left.id, left, right.id, right, join.id, join));
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(InternalCompilerError.class,
+                () -> new ReplaceSharedIndexes(compiler, find).apply(circuit));
+        String diagnostic = direct.getMessage().lines().findFirst().orElseThrow();
+        Assert.assertEquals("Declaration for variable 'free1' not found", diagnostic);
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        var warnings = compiler.messages.replaySnapshot();
+        Assert.assertTrue(compiler.messages.warningCount() > 0);
+
+        var hybridCompiler = this.testCompiler();
+        hybridCompiler.options.ioOptions.rustOptimizerPasses = true;
+        var decisions = new ArrayList<String>();
+        hybridCompiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void nativeDecision(String operation, boolean answered) {
+                decisions.add(operation + "=" + answered);
+            }
+
+            @Override
+            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
+
+            @Override
+            public void after(String parent, int index, int iteration, CircuitTransform pass,
+                              DBSPCircuit circuit, boolean completed) {}
+        };
+        start = DBSPVariablePath.nextGeneratedName();
+        var hybrid = Assert.assertThrows(direct.getClass(), () -> new RustCircuitPass(
+                hybridCompiler, new ReplaceSharedIndexes(hybridCompiler, find), new OptimizerSnapshots(hybridCompiler)).apply(circuit));
+        Assert.assertEquals(diagnostic, hybrid.getMessage().lines().findFirst().orElseThrow());
+        Assert.assertEquals(direct.getPositionRange(), hybrid.getPositionRange());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertEquals(warnings, hybridCompiler.messages.replaySnapshot());
+        Assert.assertEquals(List.of("ReplaceSharedIndexes=false"), decisions);
     }
 
     /** Two joins read indexes of T whose values are {@code first} and {@code second}.

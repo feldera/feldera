@@ -1,6 +1,7 @@
 //! Delegate a single unresolved expression comparison to the live compiler.
 use crate::{BridgeError, MAX_BYTES, decode_live_circuit, pass_warnings};
-use feldera_sql_ir::Error;
+use feldera_sql_expr::SimplifyWarning;
+use feldera_sql_ir::{Circuit, Error, NodeId};
 use jni::{
     Env, EnvUnowned, JValue,
     errors::ThrowRuntimeExAndDefault,
@@ -25,6 +26,21 @@ pub(super) fn compare(env: &mut Env, equality: &JObject, payload: &Value) -> Res
         .z()
     })
     .map_err(|e| Error::new(e.to_string()))
+}
+
+/// Encode all operands with one ID namespace. On failure the Java callback
+/// publishes the warnings and allocator position preceding this comparison.
+pub(super) fn column_request(
+    graph: &Circuit,
+    input: &Circuit,
+    fields: &[NodeId],
+    warnings: &[SimplifyWarning],
+    next_name: u64,
+) -> Result<Value, Error> {
+    let roots = graph.live_inner_roots(input, fields)?;
+    Ok(
+        json!({"roots":roots, "warnings":pass_warnings(warnings.to_vec()), "next_generated_name":next_name}),
+    )
 }
 
 fn fusion_error(error: impl std::fmt::Display) -> BridgeError {
@@ -57,8 +73,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             circuit.clone(), clusters, &mut next, &mut warnings, |site| {
                 native_columns = false;
                 let [left, right] = site.fields;
-                let roots = site.graph.live_inner_roots(site.input, &[site.row.into(), left.into(), right.into()])?;
-                let request = json!({"roots":roots, "warnings":pass_warnings(site.warnings.to_vec()), "next_generated_name":site.next_name});
+                let request = column_request(site.graph, site.input, &[site.row.into(), left.into(), right.into()], site.warnings, site.next_name)?;
                 compare(env, &equality, &request).map(Some)
             },
         ).map_err(fusion_error)?.ok_or_else(|| fusion_error("unanswered column comparison"))?;

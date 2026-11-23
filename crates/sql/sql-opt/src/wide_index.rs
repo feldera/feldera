@@ -1,15 +1,15 @@
 //! Project the common key and every narrow value onto one shared row variable.
 use crate::index_key_equivalence::equivalent_bodies;
-use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
+use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId,
+    Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId,
     TypeKind as Ty,
 };
 
-pub struct WideIndexFields {
+pub struct WideIndexFields<T = ExpressionId> {
     pub variable: ExpressionId,
     pub key: ExpressionId,
-    pub rows: Vec<Vec<ExpressionId>>,
+    pub rows: Vec<Vec<T>>,
     pub nullable: bool,
 }
 
@@ -37,6 +37,26 @@ pub fn wide_index_fields(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<WideIndexFields, Error> {
+    project_fields(edit, functions, next, warnings, |_, field, _, _| {
+        Ok(Some(field))
+    })?
+    .ok_or_else(|| Error::new("missing projected shared-index field"))
+}
+
+/// Visit each reduced field before projecting the next one. A live equality
+/// error must see exactly the warnings produced up to the failing comparison.
+fn project_fields<T>(
+    edit: &mut CircuitEditor,
+    functions: &[NodeId],
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+    mut project: impl FnMut(
+        &CircuitEditor,
+        ExpressionId,
+        u64,
+        &[SimplifyWarning],
+    ) -> Result<Option<T>, Error>,
+) -> Result<Option<WideIndexFields<T>>, Error> {
     let &[first, _, ..] = functions else {
         return Err(Error::new("a wide index needs at least two input indexes"));
     };
@@ -83,16 +103,20 @@ pub fn wide_index_fields(
                     ],
                 )?;
             }
-            fields.push(reduce(edit, field, warnings)?);
+            let field = reduce(edit, field, warnings)?;
+            let Some(value) = project(edit, field, *next, warnings)? else {
+                return Ok(None);
+            };
+            fields.push(value);
         }
         rows.push(fields);
     }
-    Ok(WideIndexFields {
+    Ok(Some(WideIndexFields {
         variable,
         key,
         rows,
         nullable,
-    })
+    }))
 }
 
 /// The first equal expression owns a wide column. Each narrow row retains an
@@ -102,33 +126,97 @@ pub struct WideIndexLayout {
     pub positions: Vec<Vec<usize>>,
 }
 
+/// Two projected fields whose equality needs the live compiler. Java compares
+/// these roots in an empty declaration scope, with the new field on the left.
+pub struct IndexComparison<'a> {
+    pub graph: &'a Circuit,
+    pub fields: [ExpressionId; 2],
+    pub next_name: u64,
+    pub warnings: &'a [SimplifyWarning],
+}
+
+pub(super) type CompareColumn<'a> =
+    dyn FnMut(IndexComparison<'_>) -> Result<Option<bool>, Error> + 'a;
+
+fn column_position(
+    edit: &CircuitEditor,
+    columns: &mut Vec<ExpressionId>,
+    field: ExpressionId,
+    mut unresolved: impl FnMut([ExpressionId; 2]) -> Result<Option<bool>, Error>,
+) -> Result<Option<usize>, Error> {
+    for (i, &column) in columns.iter().enumerate() {
+        let equal = match equivalent_bodies(edit, field.into(), column.into(), None)? {
+            None => unresolved([field, column])?,
+            known => known,
+        };
+        match equal {
+            Some(true) => return Ok(Some(i)),
+            Some(false) => {}
+            None => return Ok(None),
+        }
+    }
+    columns.push(field);
+    Ok(Some(columns.len() - 1))
+}
+
 impl WideIndexFields {
     pub fn layout(&self, edit: &CircuitEditor) -> Result<Option<WideIndexLayout>, Error> {
-        let mut columns: Vec<ExpressionId> = Vec::new();
+        let mut columns = Vec::new();
         let mut positions = Vec::with_capacity(self.rows.len());
         for row in &self.rows {
             let mut mapping = Vec::with_capacity(row.len());
-            for &expression in row {
-                let mut index = columns.len();
-                for (i, &column) in columns.iter().enumerate() {
-                    match equivalent_bodies(edit, expression.into(), column.into(), None)? {
-                        Some(true) => {
-                            index = i;
-                            break;
-                        }
-                        Some(false) => {}
-                        None => return Ok(None),
-                    }
-                }
-                if index == columns.len() {
-                    columns.push(expression);
-                }
-                mapping.push(index);
+            for &field in row {
+                let Some(i) = column_position(edit, &mut columns, field, |_| Ok(None))? else {
+                    return Ok(None);
+                };
+                mapping.push(i);
             }
             positions.push(mapping);
         }
         Ok(Some(WideIndexLayout { columns, positions }))
     }
+}
+
+pub(super) struct ProjectedIndex {
+    pub variable: ExpressionId,
+    pub key: ExpressionId,
+    pub nullable: bool,
+    pub layout: WideIndexLayout,
+}
+
+pub(super) fn project_index(
+    edit: &mut CircuitEditor,
+    functions: &[NodeId],
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+    compare: &mut CompareColumn,
+) -> Result<Option<ProjectedIndex>, Error> {
+    let mut columns = Vec::new();
+    let fields = project_fields(
+        edit,
+        functions,
+        next,
+        warnings,
+        |edit, field, next_name, warnings| {
+            column_position(edit, &mut columns, field, |fields| {
+                compare(IndexComparison {
+                    graph: edit.circuit(),
+                    fields,
+                    next_name,
+                    warnings,
+                })
+            })
+        },
+    )?;
+    Ok(fields.map(|fields| ProjectedIndex {
+        variable: fields.variable,
+        key: fields.key,
+        nullable: fields.nullable,
+        layout: WideIndexLayout {
+            columns,
+            positions: fields.rows,
+        },
+    }))
 }
 
 /// Try fixed-width consumers first, widest first. A trial is viable only if
@@ -139,6 +227,31 @@ pub fn split_shared_indexes(
     fixed: &[bool],
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
+) -> Result<Option<Vec<Vec<usize>>>, Error> {
+    let mut generated = *next;
+    let mut emitted = Vec::new();
+    let groups = split_with(
+        arena,
+        functions,
+        fixed,
+        &mut generated,
+        &mut emitted,
+        &mut |_| Ok(None),
+    )?;
+    if groups.is_some() {
+        *next = generated;
+        warnings.extend(emitted);
+    }
+    Ok(groups)
+}
+
+pub(super) fn split_with(
+    arena: &Circuit,
+    functions: &[NodeId],
+    fixed: &[bool],
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+    compare: &mut CompareColumn,
 ) -> Result<Option<Vec<Vec<usize>>>, Error> {
     if functions.len() != fixed.len() {
         return Err(Error::new("missing fixed-index requirement"));
@@ -166,8 +279,6 @@ pub fn split_shared_indexes(
     remaining.sort_by_key(|&(_, width)| std::cmp::Reverse(width));
     let mut remaining: Vec<_> = remaining.into_iter().map(|(i, _)| i).collect();
     let mut groups = Vec::new();
-    let mut generated = *next;
-    let mut emitted = Vec::new();
     while !remaining.is_empty() {
         let mut group = vec![remaining.remove(0)];
         let mut i = 0;
@@ -178,10 +289,11 @@ pub fn split_shared_indexes(
             // Trial projections never escape. Drop their arena before testing
             // another member, retaining just the diagnostics and name counter.
             let mut trial = CircuitEditor::new(arena.clone());
-            let fields = wide_index_fields(&mut trial, &functions, &mut generated, &mut emitted)?;
-            let Some(layout) = fields.layout(&trial)? else {
+            let Some(index) = project_index(&mut trial, &functions, next, warnings, compare)?
+            else {
                 return Ok(None);
             };
+            let layout = index.layout;
             let compatible = group.iter().zip(&layout.positions).all(|(&member, row)| {
                 !fixed[member] || row.iter().copied().eq(0..layout.columns.len())
             });
@@ -196,8 +308,6 @@ pub fn split_shared_indexes(
             groups.push(group);
         }
     }
-    *next = generated;
-    warnings.extend(emitted);
     Ok(Some(groups))
 }
 
@@ -208,8 +318,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn fixed_consumers_keep_their_column_order_when_a_wider_seed_is_tried_first(
-    ) -> Result<(), Error> {
+    fn fixed_consumers_keep_their_column_order_when_a_wider_seed_is_tried_first()
+    -> Result<(), Error> {
         let circuit = Circuit::from_json(json!({
             "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
         }))?;

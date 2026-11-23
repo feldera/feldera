@@ -987,6 +987,42 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void nullableReferencesStopWaterlineAnalysisAtTheRead() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(1).getType();
+        var op = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        for (boolean nullableRow : List.of(false, true)) {
+            var reference = new MonotoneRefType(new MonotoneType(integer));
+            var shape = new PartiallyMonotoneTuple(List.of(reference), false, nullableRow);
+            var input = shape.getType().ref().var();
+            var read = input.deref().field(0);
+            var invalid = nullableRow ? read : read.some();
+            var before = new DBSPI32Literal(2);
+            var later = new DBSPI32Literal(3);
+            var body = new DBSPBlockExpression(List.of(before.toStatement(), invalid.toStatement()), later);
+            var closure = body.closure(input);
+            var direct = new MonotoneTransferFunctions(compiler, op, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+            var expected = Assert.assertThrows(UnsupportedException.class, () -> direct.apply(closure));
+
+            for (boolean resultOnly : List.of(false, true)) {
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var failure = Assert.assertThrows(UnsupportedException.class, () ->
+                        RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                                new DBSPType[]{shape.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                                false, resultOnly, facts::put));
+                Assert.assertEquals(expected.getMessage(), failure.getMessage());
+                Assert.assertEquals(expected.getPositionRange(), failure.getPositionRange());
+                Assert.assertTrue(facts.get(before).mayBeMonotone());
+                Assert.assertEquals(!nullableRow, facts.containsKey(read));
+                Assert.assertFalse(facts.containsKey(invalid));
+                Assert.assertFalse(facts.containsKey(later));
+            }
+        }
+    }
+
+    @Test
     public void unsupportedWaterlineTypesPreserveTheFirstFieldAndEarlierFacts() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

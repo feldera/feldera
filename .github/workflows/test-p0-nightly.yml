@@ -429,6 +429,9 @@ jobs:
             InliningTests JoinInputProjectionTests LeftJoinChainsTests LineageTests OptimizerOrderTests
             ProjectionCompositionTests RepeatTests ResolveReferencesTests StaticCandidatesTests
             ShareIndexesTests#sharedIndexesCompareShuffleIdentity
+            ShareIndexesTests#aDeepSharedIndexReaderUsesTheRemappedColumn
+            ShareIndexesTests#wideIndexFieldsShareADeepProjectionAcrossNarrowIndexes
+            ShareIndexesTests#sharedIndexColumnErrorPreservesTheComparisonPrefix
             StreamKindTests#validateEachPassResultIncludingChangesToTheSameCircuit
             TemporalKeyTests WaterlineProjectionTests
           )

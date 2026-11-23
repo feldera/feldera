@@ -423,6 +423,12 @@ pub enum WaterlineError {
     MissingOperand(ExpressionId),
     TargetMaximum(ExpressionId),
     UnsupportedType(TypeId),
+    /// Adding nullability to a reference fails at the live reference type's
+    /// source location. A nullable tuple also lifts each field as it is read.
+    NullableReference {
+        source: RowType,
+        field: Option<usize>,
+    },
 }
 
 pub enum ClosureAnalysis {

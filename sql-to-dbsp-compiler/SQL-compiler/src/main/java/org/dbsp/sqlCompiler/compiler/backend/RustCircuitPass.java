@@ -65,6 +65,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ReplaceSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
@@ -732,6 +733,13 @@ public final class RustCircuitPass implements CircuitTransform {
             if ("UnsupportedType".equals(failure.required("kind").textValue()))
                 throw NonMonotoneType.unsupportedType(Utilities.getExists(nodes,
                         failure.required("type").longValue()).to(DBSPType.class));
+            if ("NullableReference".equals(failure.required("kind").textValue())) {
+                var source = WaterlineProjection.resolveFactType(failure.required("source"),
+                        id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes, facts);
+                var field = failure.required("field");
+                var reference = field.isNull() ? source : source.to(PartiallyMonotoneTuple.class).getFieldType(field.intValue());
+                throw new UnsupportedException(reference.getType().getNode());
+            }
             var kind = WaterlineError.valueOf(failure.required("kind").textValue());
             var expression = Utilities.getExists(nodes, failure.required("expression").longValue());
             return new FailedWaterline(kind, expression.to(DBSPExpression.class));
@@ -3507,6 +3515,8 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] discoverIndexes(byte[] snapshot, long next, byte[] visited, KeyEquality equality);
 
+    private static native byte[] replaceIndexes(byte[] snapshot, long next, byte[] groups, KeyEquality equality);
+
     private static native byte[] fuseMaps(byte[] snapshot, long next, byte[] clusters, KeyEquality equality);
 
     @FunctionalInterface
@@ -3561,6 +3571,28 @@ public final class RustCircuitPass implements CircuitTransform {
         var reply = MAPPER.readTree(result);
         if (this.compiler.stateObserver != null)
             this.compiler.stateObserver.nativeDecision("FuseExpensiveMaps/Columns", reply.required("native_columns").booleanValue());
+        return reply;
+    }
+
+    private JsonNode replaceIndexGroups(ToJsonOuterVisitor writer, byte[] snapshot, long next, byte[] groups) throws IOException {
+        byte[] result = replaceIndexes(snapshot, next, groups, bytes -> {
+            var request = MAPPER.readTree(bytes);
+            var roots = request.required("roots");
+            var decoder = expressionDecoder(writer.innerVisitor);
+            var field = decodeLiveRoot(decoder, roots.required(0), DBSPExpression.class);
+            var prior = decodeLiveRoot(decoder, roots.required(1), DBSPExpression.class);
+            try {
+                return EquivalenceContext.equiv(field, prior);
+            } catch (RuntimeException failure) {
+                finishLowering(this.compiler, request);
+                if (this.compiler.stateObserver != null)
+                    this.compiler.stateObserver.nativeDecision("ReplaceSharedIndexes", false);
+                throw failure;
+            }
+        });
+        var reply = MAPPER.readTree(result);
+        if (this.compiler.stateObserver != null)
+            this.compiler.stateObserver.nativeDecision("ReplaceSharedIndexes", reply.required("native_columns").booleanValue());
         return reply;
     }
 
@@ -4259,7 +4291,9 @@ public final class RustCircuitPass implements CircuitTransform {
                 writer.innerVisitor.liveNodes = new HashMap<>();
                 writer.apply(circuit);
                 byte[] snapshot = writer.getJsonString().getBytes(StandardCharsets.UTF_8);
-                if (this.mapFusion != null) {
+                if (this.replaceSharedIndexes != null) {
+                    result = this.replaceIndexGroups(writer, snapshot, initial, state);
+                } else if (this.mapFusion != null) {
                     result = this.fuseMapClusters(writer, snapshot, initial);
                 } else if (this.mergeFilters != null) {
                     result = this.mergeTemporalFilters(circuit, writer, snapshot, initial);
@@ -4271,8 +4305,6 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             if (this.mergeFilters != null && !this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
                 this.compiler.stateObserver.nativeDecision("MergeFilters", true);
-            if (this.replaceSharedIndexes != null && !answered(this.compiler, "ReplaceSharedIndexes", result))
-                return this.replaceSharedIndexes.apply(circuit);
             JsonNode counter = result.required("next_generated_name");
             if (!counter.isIntegralNumber() || !counter.canConvertToLong()
                     || counter.longValue() < initial || counter.longValue() == Long.MAX_VALUE)

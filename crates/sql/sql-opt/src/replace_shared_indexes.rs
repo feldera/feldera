@@ -1,10 +1,10 @@
 //! Replace narrow indexes with a common index at the first consumer that needs it.
-use crate::index_reader::{rewrite_index_reader, IndexParameter};
+use crate::index_reader::{IndexParameter, rewrite_index_reader};
 use crate::rebuild::ProjectionNames;
 use crate::shared_index_candidates::IndexReader;
 use crate::shared_indexes::is_indexed_join;
 use crate::stream_rewrites::{append_map, body_members};
-use crate::wide_index::{split_shared_indexes, wide_index_fields};
+use crate::wide_index::{CompareColumn, IndexComparison, project_index, split_with};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, Node, NodeId,
@@ -146,6 +146,7 @@ impl Sharing {
         candidates: &[Vec<IndexReader>],
         next: &mut u64,
         warnings: &mut Vec<SimplifyWarning>,
+        compare: &mut CompareColumn,
     ) -> Result<Option<Self>, Error> {
         let mut result = Self {
             indexes: Vec::new(),
@@ -166,16 +167,16 @@ impl Sharing {
                 fixed.push(fixed_index(consumer, member.slot)?);
             }
             let Some(groups) =
-                split_shared_indexes(edit.circuit(), &functions, &fixed, next, warnings)?
+                split_with(edit.circuit(), &functions, &fixed, next, warnings, compare)?
             else {
                 return Ok(None);
             };
             for accepted in groups {
                 let closures = accepted.iter().map(|&i| functions[i]).collect::<Vec<_>>();
-                let fields = wide_index_fields(edit, &closures, next, warnings)?;
-                let Some(layout) = fields.layout(edit)? else {
+                let Some(fields) = project_index(edit, &closures, next, warnings, compare)? else {
                     return Ok(None);
                 };
+                let layout = fields.layout;
                 let site = NodeId::Outer(group[accepted[0]].index);
                 let ty = WideIndex::row_type(edit, site, &layout.columns, fields.nullable)?;
                 let value = edit.tuple_with_type(ty, &layout.columns)?;
@@ -274,13 +275,31 @@ pub fn replace_shared_indexes(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<Circuit>, Error> {
+    replace_shared_indexes_with(circuit, candidates, next, warnings, |_| Ok(None))
+}
+
+/// Keep candidate selection, column layout and reader rewrites in Rust when
+/// the live compiler supplies equality for an individual projected field.
+pub fn replace_shared_indexes_with(
+    circuit: Circuit,
+    candidates: &[Vec<IndexReader>],
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+    mut compare: impl FnMut(IndexComparison<'_>) -> Result<Option<bool>, Error>,
+) -> Result<Option<Circuit>, Error> {
     if candidates.is_empty() {
         return Ok(Some(circuit));
     }
     let mut edit = CircuitEditor::new(circuit);
     let mut counter = *next;
     let mut emitted = Vec::new();
-    let Some(mut sharing) = Sharing::prepare(&mut edit, candidates, &mut counter, &mut emitted)?
+    let Some(mut sharing) = Sharing::prepare(
+        &mut edit,
+        candidates,
+        &mut counter,
+        &mut emitted,
+        &mut compare,
+    )?
     else {
         return Ok(None);
     };

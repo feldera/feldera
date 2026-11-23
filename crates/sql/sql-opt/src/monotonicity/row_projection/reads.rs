@@ -1,6 +1,6 @@
 //! Project a field read or value wrapper against its operand waterline.
 use super::evaluate::Evaluation;
-use super::{ProjectedValue, RowType, Shape, unbounded_type};
+use super::{ProjectedValue, RowType, Shape, WaterlineError, unbounded_type};
 use crate::limiters::Projection;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId};
 
@@ -67,6 +67,12 @@ impl RowRead {
             }
             Self::Some | Self::Unwrap => {
                 let nullable = matches!(self, Self::Some);
+                if nullable && matches!(value.shape, Shape::Reference(_)) {
+                    return Ok(Evaluation::Failed(WaterlineError::NullableReference {
+                        source: value.row_type,
+                        field: None,
+                    }));
+                }
                 // A closure has no withMaybeNull operation. Preserve the diagnostic
                 // at the live expression even when its result is later discarded.
                 if matches!(value.shape, Shape::Opaque(_)) {
@@ -124,6 +130,12 @@ impl RowRead {
                 let Some(field) = fields.get(index) else {
                     return Ok(Evaluation::NeedsVisitor);
                 };
+                if nullable && matches!(field, Shape::Reference(_)) {
+                    return Ok(Evaluation::Failed(WaterlineError::NullableReference {
+                        source: value.row_type,
+                        field: Some(index),
+                    }));
+                }
                 if nullable && matches!(field, Shape::Opaque(_)) {
                     return Ok(Evaluation::NeedsVisitor);
                 }
