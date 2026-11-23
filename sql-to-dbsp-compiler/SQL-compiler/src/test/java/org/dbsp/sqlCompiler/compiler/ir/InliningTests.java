@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
@@ -135,5 +136,18 @@ public class InliningTests {
         // The two copies of the lambda must not share parameter objects;
         // CanonicalForm crashes if they do
         new CanonicalForm(compiler).apply(tree);
+        if (Boolean.getBoolean("feldera.optimizer.compareRustCanonicalForm")) {
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var nativeTree = function.ensureTree(compiler).to(DBSPClosureExpression.class);
+            Assert.assertTrue(tree.equivalent(nativeTree));
+            Assert.assertSame(function.parameters[0], nativeTree.parameters[0]);
+            var fields = nativeTree.body.to(DBSPTupleExpression.class);
+            var first = fields.get(0).to(DBSPApplyExpression.class).arguments[0].to(DBSPClosureExpression.class);
+            var second = fields.get(1).to(DBSPApplyExpression.class).arguments[0].to(DBSPClosureExpression.class);
+            Assert.assertNotSame(first.parameters[0], second.parameters[0]);
+            Assert.assertNotSame(lambda.parameters[0], first.parameters[0]);
+            Assert.assertSame(nativeTree, nativeTree.ensureTree(compiler));
+            Assert.assertSame(lambda, lambda.ensureTree(compiler));
+        }
     }
 }

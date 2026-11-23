@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -387,23 +388,24 @@ public abstract class DBSPExpression
     /** Cache here expressions which we know are trees, to avoid re-analyzing them */
     static final AnalyzedSet<DBSPExpression> treeExpressions = new AnalyzedSet<>();
 
-    /** If this expression is a DAG, convert it to a tree, otherwise it leave it unchanged */
+    /** Return a tree with the same root parameters, copying shared subexpressions when necessary. */
     public DBSPExpression ensureTree(DBSPCompiler compiler) {
         if (treeExpressions.contains(this))
             return this;
-        RepeatedExpressions repeated = new RepeatedExpressions(compiler, true, false);
-        repeated.apply(this);
-        DBSPExpression result = this;
-        if (repeated.hasDuplicate()) {
-            result = this.deepCopy();
-            // A duplicated subtree may contain a closure, whose copies share
-            // parameter objects; each closure in the tree must get its own.
-            // The root closure's parameters are preserved: callers key analysis
-            // results by them.
-            result = FreshenParameters.freshenNested(compiler, result);
-        }
+        DBSPExpression result = compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.ensureExpressionTree(compiler, this) : this.ensureTreeInJava(compiler);
         treeExpressions.done(result);
         return result;
+    }
+
+    private DBSPExpression ensureTreeInJava(DBSPCompiler compiler) {
+        var repeated = new RepeatedExpressions(compiler, true, false);
+        repeated.apply(this);
+        if (!repeated.hasDuplicate())
+            return this;
+        // Each copy of a nested closure needs its own parameters. Analyses use
+        // the outer closure's original parameters as map keys.
+        return FreshenParameters.freshenNested(compiler, this.deepCopy());
     }
 
     public static DBSPType getJsonType(JsonNode node, JsonDecoder decoder) {

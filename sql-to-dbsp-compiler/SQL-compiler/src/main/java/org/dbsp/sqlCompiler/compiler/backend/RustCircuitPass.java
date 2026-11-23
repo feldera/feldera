@@ -637,6 +637,10 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static DBSPExpression ensureExpressionTree(DBSPCompiler compiler, DBSPExpression root) {
+        return lowerFunction(compiler, "EnsureExpressionTree", root, null, DBSPExpression.class);
+    }
+
     public static DBSPExpression clockWaterline(DBSPCompiler compiler, DBSPApplyExpression call) {
         var clock = lowerFunction(compiler, "Monotonicity/Clock", call, null, DBSPApplyExpression.class);
         if (compiler.stateObserver != null)

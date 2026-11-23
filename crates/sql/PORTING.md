@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+When an optimizer pass needs an expression tree, Rust copies each shared
+subtree and gives each nested closure its own parameters. The outer closure
+keeps its original parameter objects. The identity checks passed in the
+103-test JUnit run. All 94 detached compilations matched direct Java through
+46,351 ordered S4 observations and emission.
+[Live expression-tree replay](evidence/p3-live-tree-conversion.json)
+
 Rust resolves CSE variable reads and mutable borrows before assigning value
 numbers. Free reads and conflicting declarations retain their Java diagnostics.
 All 103 targeted JUnit tests passed. Across 94 detached compilations, Rust
