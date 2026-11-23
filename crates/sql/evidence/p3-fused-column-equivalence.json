@@ -1,0 +1,42 @@
+{
+  "scope": "Deduplicate fused output columns by compiler expression equivalence. The Java and hybrid rewriters share the first spelling of an equivalent zoned instant.",
+  "source_base": "3e07293dbb8339b97ba8ecc7298c8089691ee6a4",
+  "source_files_sha256": {
+    "crates/sql/sql-difftest/examples/check_pass_corpus.rs": "636f435a4a94456d1a83e72efe05390a1fb8ff410dfd3f18a5051bee4ef290ea",
+    "crates/sql/sql-opt-jni/src/lib.rs": "38a6ab98344c92526fff107def7ecc72fbc01fb26362d0425696165f38ac2040",
+    "crates/sql/sql-opt/src/map_fusion.rs": "95938b2a412d38404a93ab10ba037d0293bdb0f41187ce6d7fb57d7044556539",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "5c67135fe6d18596c30a2669999ea36a538365f94c35aca6f87b131ed682c932",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "03332c6afb9822336320e8637a10cb8a1c4b466311f474d1408fd6ff8544ee36"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "3f5402fe839fb78e231f4ed9c2714bd4395b27689fecd2e12b932a9f03c6f518",
+    "bin/sql-difftest": "53dbb2dd2cda85eb7255cb3861ec0c3f3fdb7fb9f3f5369e89d688bbf5418e3c",
+    "maven/tests.jar": "c925c14a83bc781fc83785cd0d66882a163068d0be4b1eae3f3110a19ed44b1a",
+    "maven/sql-compiler.jar": "1fb972fb84fa9842974dcc8d592cfe39fda34f3e5eb7b602e7fb7a71d9328210"
+  },
+  "negative_control": {
+    "library_sha256": "a268a6e42fbd94ed0624129eb2ce8b23a87489f64d86e18a0d4aa3662d7ab023",
+    "expected_columns": 3,
+    "actual_columns": 4
+  },
+  "rust_tests": 220,
+  "junit_tests": 139,
+  "engines": {
+    "classic": {
+      "cases": 6,
+      "native_column_rewrites": 5,
+      "ordered_s4_observations": 2375,
+      "mismatches": 0,
+      "population_sha256": "77119c444566bc487149db0ced29097eb55a59f719a065eed13249b3ab532c46",
+      "receipt_sha256": "5cf3848416e544d7757e111149f71f2520ce271af493c95b9e79eb476d33e121"
+    },
+    "gen2": {
+      "cases": 6,
+      "native_column_rewrites": 5,
+      "ordered_s4_observations": 2399,
+      "mismatches": 0,
+      "population_sha256": "dd60ea2d81d994f76576b3475e3ec6b47bf87c88f1d5f15214f1e331a3244457",
+      "receipt_sha256": "67f542ae5ea21e976bacfa48bc8cb3cbaa2f032bd69cd7ed6b9d0a9787fb118f"
+    }
+  }
+}

@@ -1,11 +1,14 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.MapInfo;
@@ -18,11 +21,14 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -66,6 +72,42 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
             Assert.assertSame(candidate.body().get(0), candidate.minimal().get(0));
             Assert.assertSame(candidate.body().get(1), candidate.minimal().get(1));
             Assert.assertEquals(List.of(candidate), scan.clusters.get(selected));
+        }
+    }
+
+    @Test
+    public void fusedColumnsUseTheFirstEquivalentInstant() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
+        var row = b.refVar(this.pair);
+        var call = b.call("costly", b.field(row, 0));
+        var fields = new ArrayList<DBSPExpression>(List.of(call, call.deepCopy()));
+        for (var time : List.of("2020-07-15 12:00:00 CST", "2020-07-15 17:00:00 UTC", "2020-07-15 18:00:00 UTC"))
+            fields.add(new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
+                    new TimestampWithTimeZoneString(time)));
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(input);
+        circuit.addOperator(new DBSPMapOperator(site, b.tuple(fields.toArray(DBSPExpression[]::new)).closure(row),
+                input.outputPort()));
+
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = this.testCompiler();
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var scan = new FuseExpensiveMaps.FindFusableMaps(compiler);
+            scan.apply(circuit);
+            var fuse = new FuseExpensiveMaps.Fuse(compiler, scan);
+            var result = hybrid ? new RustCircuitPass(compiler, fuse, new OptimizerSnapshots(compiler)).apply(circuit)
+                    : fuse.apply(circuit);
+            var maps = result.allOperators.stream().filter(DBSPMapOperator.class::isInstance)
+                    .map(DBSPMapOperator.class::cast).toList();
+            Assert.assertEquals(2, maps.size());
+            var fused = maps.get(0).getClosureFunction().body.to(DBSPTupleExpression.class);
+            Assert.assertEquals(3, fused.size());
+            Assert.assertEquals("2020-07-15 12:00:00 CST", fused.get(1).to(DBSPTimestampTzLiteral.class).getTimestampTzString().toString());
+            var projection = maps.get(1).getClosureFunction().body.to(DBSPTupleExpression.class);
+            Assert.assertArrayEquals(new int[]{0, 0, 1, 1, 2},
+                    java.util.Arrays.stream(projection.fields).mapToInt(f -> f.to(DBSPFieldExpression.class).fieldNo).toArray());
         }
     }
 

@@ -4134,7 +4134,7 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             if (result == null) {
                 writer = this.snapshots.writer(this.reusesOperators());
-                if (this.replaceSharedIndexes != null)
+                if (this.replaceSharedIndexes != null || this.mapFusion != null)
                     writer.innerVisitor.includeShuffleIdentities();
                 writer.innerVisitor.liveNodes = new HashMap<>();
                 writer.apply(circuit);
@@ -4149,6 +4149,8 @@ public final class RustCircuitPass implements CircuitTransform {
                 this.usedGeneralTemporalAnalysis = true;
                 return this.mergeFilters.apply(circuit);
             }
+            if (this.mapFusion != null && !answered(this.compiler, "FuseExpensiveMaps/Columns", result))
+                return this.mapFusion.apply(circuit);
             if (this.replaceSharedIndexes != null && !answered(this.compiler, "ReplaceSharedIndexes", result))
                 return this.replaceSharedIndexes.apply(circuit);
             JsonNode counter = result.required("next_generated_name");

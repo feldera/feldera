@@ -232,9 +232,13 @@ fn compare_invocation(
                         feldera_sql_opt::expand_stream_aggregates(input, &context, &mut next)?;
                     (expanded.circuit, expanded.warnings)
                 }
-                "Fuse" => feldera_sql_opt::fuse_expensive_maps(
-                    input, serde_json::from_value(invocation["map_clusters"].clone())?, &mut next,
-                )?,
+                "Fuse" => {
+                    let mut warnings = Vec::new();
+                    let clusters = serde_json::from_value(invocation["map_clusters"].clone())?;
+                    let circuit = feldera_sql_opt::fuse_expensive_maps(input, clusters, &mut next, &mut warnings)?
+                        .ok_or("Cannot compare fused map columns from this snapshot")?;
+                    (circuit, warnings)
+                }
                 "Simplify" => feldera_sql_opt::simplify_expressions(input, &mut next)?,
                 "OptimizeProjectionVisitor" => feldera_sql_opt::project_outputs(input, &mut next)?,
                 "PullFilterVisitor" => feldera_sql_opt::pull_filters(input, &mut next)?,

@@ -2145,9 +2145,14 @@ fn transform(
                     (result, warnings)
                 }
                 "RemoveStarJoins" => feldera_sql_opt::remove_star_joins(circuit, &mut next)?,
-                "Fuse" => feldera_sql_opt::fuse_expensive_maps(
-                    circuit, serde_json::from_slice(state)?, &mut next,
-                )?,
+                "Fuse" => {
+                    let mut warnings = Vec::new();
+                    let clusters = serde_json::from_slice(state)?;
+                    let Some(output) = feldera_sql_opt::fuse_expensive_maps(circuit, clusters, &mut next, &mut warnings)? else {
+                        return Ok(Value::Null);
+                    };
+                    (output, warnings)
+                }
                 "OptimizeProjectionVisitor" => {
                     feldera_sql_opt::project_outputs(circuit, &mut next)?
                 }

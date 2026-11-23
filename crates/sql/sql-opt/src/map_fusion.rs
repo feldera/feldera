@@ -3,16 +3,21 @@ mod fragments;
 mod groups;
 
 pub use fragments::{has_duplicate_expensive_field, map_fusion_candidate, map_fusion_fragments};
-pub use groups::{map_fusion_groups, scan_map_fusion, sibling_map_groups, FusionCandidate, FusionScan};
+pub use groups::{
+    FusionCandidate, FusionScan, map_fusion_groups, scan_map_fusion, sibling_map_groups,
+};
 
-use crate::{rebuild::ProjectionNames, stream_rewrites::body_members, terms::Terms};
-use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
+use crate::{
+    index_key_equivalence::compare_expressions, rebuild::ProjectionNames,
+    stream_rewrites::body_members,
+};
+use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind, Field, InnerKind,
     NodeId, OperatorKind, OutputPort,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 
 /// The analysis simplifies each member's closure before deciding which siblings to fuse.
@@ -49,6 +54,33 @@ fn append_map(
     })
 }
 
+#[derive(Default)]
+struct FusionColumns {
+    fields: Vec<ExpressionId>,
+    projections: Vec<Vec<usize>>,
+}
+
+impl FusionColumns {
+    fn position(
+        &mut self,
+        edit: &CircuitEditor,
+        field: ExpressionId,
+        row_name: &str,
+    ) -> Result<Option<usize>, Error> {
+        for (index, &previous) in self.fields.iter().enumerate() {
+            match compare_expressions(edit, previous.into(), field.into(), [(row_name, row_name)])?
+            {
+                Some(true) => return Ok(Some(index)),
+                Some(false) => {}
+                None => return Ok(None),
+            }
+        }
+        let index = self.fields.len();
+        self.fields.push(field);
+        Ok(Some(index))
+    }
+}
+
 /// Assign each equivalent field one column, in order of first use. Every member
 /// is evaluated with the same parameter, so its fields share a lexical scope.
 fn collect_columns(
@@ -56,11 +88,8 @@ fn collect_columns(
     members: &[(NodeId, NodeId)],
     row: ExpressionId,
     warnings: &mut Vec<SimplifyWarning>,
-) -> Result<(Vec<ExpressionId>, Vec<Vec<usize>>), Error> {
-    let mut terms = Terms::default();
-    let mut columns = Vec::new();
-    let mut indices = HashMap::new();
-    let mut projections = Vec::with_capacity(members.len());
+) -> Result<Option<FusionColumns>, Error> {
+    let mut columns = FusionColumns::default();
     let name = edit
         .node(row.into())?
         .data("variable")
@@ -85,22 +114,14 @@ fn collect_columns(
         }
         let mut projection = Vec::new();
         for field in tuple.edges("fields")? {
-            let shape = terms.field(
-                edit.circuit(),
-                &Field::Reference(field),
-                std::slice::from_ref(&name),
-            );
-            let expression = edit.expression(field)?;
-            let index = *indices.entry(shape).or_insert_with(|| {
-                let index = columns.len();
-                columns.push(expression);
-                index
-            });
+            let Some(index) = columns.position(edit, edit.expression(field)?, &name)? else {
+                return Ok(None);
+            };
             projection.push(index);
         }
-        projections.push(projection);
+        columns.projections.push(projection);
     }
-    Ok((columns, projections))
+    Ok(Some(columns))
 }
 
 fn fuse_cluster(
@@ -110,7 +131,7 @@ fn fuse_cluster(
     next: &mut u64,
     replacements: &mut BTreeMap<NodeId, OutputPort>,
     warnings: &mut Vec<SimplifyWarning>,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     let (first, function) = members[0];
     let [parameter] = edit.node(function)?.edges("parameters")?[..] else {
         return Err(Error::new("fused map requires one input parameter"));
@@ -122,7 +143,13 @@ fn fuse_cluster(
         .ok_or_else(|| Error::new("fused map has no input"))?;
     let parameter_type = edit.type_id(edit.node(parameter)?.edge("type")?)?;
     let row = edit.variable(parameter_type, next)?;
-    let (columns, projections) = collect_columns(edit, members, row, warnings)?;
+    let Some(FusionColumns {
+        fields: columns,
+        projections,
+    }) = collect_columns(edit, members, row, warnings)?
+    else {
+        return Ok(false);
+    };
     let fused_tuple = edit.tuple_expr(row.into(), false, &columns)?;
     let fused = append_map(edit, body, first, input, fused_tuple, row)?;
     for (&(member, _), indices) in members.iter().zip(projections) {
@@ -151,18 +178,20 @@ fn fuse_cluster(
             return Err(Error::new("map occurs in more than one fusion cluster"));
         }
     }
-    edit.place_before(body, fused.operator, first)
+    edit.place_before(body, fused.operator, first)?;
+    Ok(true)
 }
 
 pub fn fuse_expensive_maps(
     circuit: Circuit,
     clusters: Vec<Vec<FusionMember>>,
     next: &mut u64,
-) -> Result<(Circuit, Vec<SimplifyWarning>), Error> {
-    let mut warnings = Vec::new();
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<Option<Circuit>, Error> {
     if clusters.is_empty() {
-        return Ok((circuit, warnings));
+        return Ok(Some(circuit));
     }
+    let mut emitted = Vec::new();
     // Decode the additional closures together. They can share circuit nodes and one another's types.
     let mut roots = Vec::new();
     let mut groups = Vec::with_capacity(clusters.len());
@@ -214,14 +243,16 @@ pub fn fuse_expensive_maps(
     for id in order {
         projections.visit(id, edit.node(id)?, &mut names)?;
         if let Some(members) = plans.remove(&id) {
-            fuse_cluster(
+            if !fuse_cluster(
                 &mut edit,
                 bodies[&id],
                 &members,
                 &mut names,
                 &mut replacements,
-                &mut warnings,
-            )?;
+                &mut emitted,
+            )? {
+                return Ok(None);
+            }
             for (member, _) in members {
                 projections.replaced(member);
             }
@@ -229,5 +260,6 @@ pub fn fuse_expensive_maps(
     }
     let circuit = projections.finish(edit.finish_forwarding(&replacements)?)?;
     *next = names;
-    Ok((circuit, warnings))
+    warnings.extend(emitted);
+    Ok(Some(circuit))
 }
