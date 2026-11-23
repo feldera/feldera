@@ -564,12 +564,17 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         return inner;
     }
 
+    OptimizerExpressionWriter additionalOptimizerExpressions() {
+        var inner = new OptimizerExpressionWriter(this.compiler, JsonStream.compactCircuit(),
+                this.verbosity, this.innerVisitor.replayMetadata);
+        inner.continueSnapshot(this.innerVisitor);
+        return inner;
+    }
+
     /** Waterlines computed on the expanded graph may share nodes with the original circuit. */
     String liveTransferRoots(Map<Long, IDBSPInnerNode> functions) {
-        var json = JsonStream.compactCircuit();
-        var inner = new OptimizerExpressionWriter(this.compiler, json, this.verbosity, true);
-        inner.serialized.addAll(this.innerVisitor.serialized);
-        inner.liveShuffles = this.innerVisitor.liveShuffles;
+        var inner = this.additionalOptimizerExpressions();
+        var json = inner.stream;
         json.beginObject().label("checkpoint").beginObject();
         functions.forEach((id, function) -> {
             json.label(Long.toString(id));

@@ -26,6 +26,8 @@ use std::collections::{BTreeMap, HashMap};
 pub struct FusionMember {
     operator: u64,
     function: Value,
+    #[serde(default, rename = "expressionDefinitions")]
+    definitions: Vec<Value>,
 }
 
 fn append_map(
@@ -194,6 +196,7 @@ pub fn fuse_expensive_maps(
     let mut emitted = Vec::new();
     // Decode the additional closures together. They can share circuit nodes and one another's types.
     let mut roots = Vec::new();
+    let mut definitions = Vec::new();
     let mut groups = Vec::with_capacity(clusters.len());
     for cluster in clusters {
         if cluster.is_empty() {
@@ -204,12 +207,15 @@ pub fn fuse_expensive_maps(
                 .into_iter()
                 .map(|member| {
                     roots.push(member.function);
+                    definitions.extend(member.definitions);
                     NodeId::Outer(member.operator)
                 })
                 .collect::<Vec<_>>(),
         );
     }
-    let (circuit, functions) = circuit.with_inner_roots(roots)?;
+    // Decode all referenced definitions in the same arena. Only the first
+    // root per member denotes a function; later roots supply its dependencies.
+    let (circuit, functions) = circuit.with_inner_roots(roots.into_iter().chain(definitions))?;
     let mut functions = functions.into_iter();
     let mut plans = HashMap::new();
     let bodies: HashMap<_, _> = body_members(&circuit)?

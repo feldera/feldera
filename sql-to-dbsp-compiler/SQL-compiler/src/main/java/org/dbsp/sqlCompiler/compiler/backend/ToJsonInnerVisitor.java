@@ -103,6 +103,14 @@ public class ToJsonInnerVisitor extends InnerVisitor {
         this.keyShuffles = new IdentityHashMap<>();
     }
 
+    /** Additional roots may reference circuit nodes and may reuse a shuffle first seen in the circuit. */
+    void continueSnapshot(ToJsonInnerVisitor circuit) {
+        this.serialized.addAll(circuit.serialized);
+        this.keyShuffles = circuit.keyShuffles;
+        this.liveShuffles = circuit.liveShuffles;
+        this.liveNodes = circuit.liveNodes;
+    }
+
     boolean checkDone(IDBSPInnerNode node, boolean silent) {
         if (this.serialized.contains(node.getId())) {
             if (silent)

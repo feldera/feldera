@@ -9,13 +9,14 @@ public final class MapFusionState {
     private MapFusionState() {}
 
     public static byte[] encode(ToJsonOuterVisitor circuit, FuseExpensiveMaps.Fuse pass) {
-        var writer = circuit.additionalInnerNodes();
+        var writer = circuit.additionalOptimizerExpressions();
         writer.stream.beginArray();
         for (var cluster : pass.clusters()) {
             writer.stream.beginArray();
             for (var member : cluster) {
                 writer.stream.beginObject().label("operator").append(member.operator().id).label("function");
                 member.function().accept(writer);
+                writer.writeDeferredDefinitions();
                 writer.stream.endObject();
             }
             writer.stream.endArray();

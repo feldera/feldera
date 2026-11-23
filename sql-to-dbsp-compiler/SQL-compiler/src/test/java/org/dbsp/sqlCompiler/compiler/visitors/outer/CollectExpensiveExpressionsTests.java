@@ -89,6 +89,46 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
     }
 
     @Test
+    public void mapFusionImportsDeepSimplifiedFunctions() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var row = b.refVar(this.pair);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
+        // Removing the redundant tuple access rebuilds the entire chain. Its
+        // simplified ancestors are new to the circuit's serialization context.
+        DBSPExpression value = new DBSPFieldExpression(site, b.tuple(b.field(row, 0)), 0);
+        for (int i = 0; i < 96; i++)
+            value = b.call("costly", value);
+        var map = new DBSPMapOperator(site, b.tuple(value, value).closure(row), input.outputPort());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(input);
+        circuit.addOperator(map);
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = this.testCompiler();
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var scan = new FuseExpensiveMaps.FindFusableMaps(compiler);
+            scan.apply(circuit);
+            Assert.assertNotSame(value, scan.clusters.get(map).get(0).body().get(0));
+            var fuse = new FuseExpensiveMaps.Fuse(compiler, scan);
+            var result = hybrid ? new RustCircuitPass(compiler, fuse, new OptimizerSnapshots(compiler)).apply(circuit)
+                    : fuse.apply(circuit);
+            var maps = result.allOperators.stream().filter(DBSPMapOperator.class::isInstance)
+                    .map(DBSPMapOperator.class::cast).toList();
+            Assert.assertEquals(2, maps.size());
+            var fused = maps.get(0).getClosureFunction().body.to(DBSPTupleExpression.class);
+            Assert.assertEquals(1, fused.size());
+            var field = fused.get(0);
+            for (int i = 0; i < 96; i++)
+                field = field.to(DBSPApplyExpression.class).arguments[0];
+            Assert.assertEquals(0, field.to(DBSPFieldExpression.class).fieldNo);
+            var projection = maps.get(1).getClosureFunction().body.to(DBSPTupleExpression.class);
+            Assert.assertEquals(2, projection.size());
+            for (var projected : projection.fields)
+                Assert.assertEquals(0, projected.to(DBSPFieldExpression.class).fieldNo);
+        }
+    }
+
+    @Test
     public void fusedColumnsUseTheFirstEquivalentInstant() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
         var site = CalciteEmptyRel.INSTANCE;
