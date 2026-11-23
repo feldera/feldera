@@ -984,6 +984,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                             binding_conflict(variable, previous, current),
                         WaterlineError::RepeatedExpression(path) =>
                             json!({"repeated":path.into_iter().map(inner_number).collect::<Vec<_>>()}),
+                        WaterlineError::VariableTypeMismatch(id) => json!({"kind":"VariableTypeMismatch", "expression":inner_number(id.into())}),
                         WaterlineError::MissingReference(id) => json!({"kind":"MissingReference", "expression":inner_number(id.into())}),
                         WaterlineError::MissingOperand(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
                         WaterlineError::TargetMaximum(id) => json!({"kind":"TargetMaximum", "expression":inner_number(id.into())}),

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -30,6 +31,14 @@ public class MonotoneExpression {
         DBSPType monotoneType = type.getType();
         Utilities.enforce(expressionType.sameType(monotoneType),
                 () -> "Types differ\n" + expressionType + " and\n" + monotoneType);
+    }
+
+    /** A read reuses its declaration's fact and must agree with its original expression type. */
+    public void checkVariableType(DBSPVariablePath variable) {
+        Utilities.enforce(this.expression.getType().sameType(variable.getType()),
+                () -> "Variable " + variable.variable + "(" + variable.getId() + ") type " + variable.getType() +
+                " does not match expected type in expression " + this.expression +
+                "(" + this.expression.getId() + ")" + " with type " + this.expression.getType());
     }
 
     public DBSPExpression getReducedExpression() {

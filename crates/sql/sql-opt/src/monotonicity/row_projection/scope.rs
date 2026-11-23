@@ -11,6 +11,7 @@ pub(super) struct Local {
 
 pub(super) enum VariableRead {
     Projected(ProjectedValue),
+    TypeMismatch(ProjectedValue),
     Uninitialized,
     NeedsVisitor,
 }
@@ -170,7 +171,7 @@ impl Row {
         let Some(name) = node.data("variable").and_then(|v| v.as_str()) else {
             return Ok(VariableRead::NeedsVisitor);
         };
-        let (shape, row_type, reduced) = if let Some((index, local)) = self
+        let (shape, row_type, reduced, declared) = if let Some((index, local)) = self
             .locals
             .iter()
             .enumerate()
@@ -180,14 +181,11 @@ impl Row {
             let Some(local) = &local.initializer else {
                 return Ok(VariableRead::Uninitialized);
             };
-            if !edit.same_type(edit.expression_type(expression)?, local.ty)? {
-                return Ok(VariableRead::NeedsVisitor);
-            }
             let ty = match &local.row_type {
                 RowType::Prior { index } => RowType::Prior { index: *index },
                 _ => RowType::Local { index },
             };
-            (&local.shape, ty, local.reduced)
+            (&local.shape, ty, local.reduced, Some(local.ty))
         } else if let Some((index, parameter)) = self
             .bindings
             .iter()
@@ -195,24 +193,26 @@ impl Row {
             .rev()
             .find(|(_, p)| p.name == name)
         {
-            if let Some(declared) = parameter.declared_type {
-                if !edit.same_type(edit.expression_type(expression)?, declared)? {
-                    return Ok(VariableRead::NeedsVisitor);
-                }
-            }
             (
                 &parameter.shape,
                 RowType::Parameter { index },
                 parameter.shape.monotone().then_some(parameter.variable),
+                parameter.declared_type,
             )
         } else {
             return Ok(VariableRead::NeedsVisitor);
         };
-        Ok(VariableRead::Projected(ProjectedValue {
+        let value = ProjectedValue {
             shape: shape.clone(),
             row_type,
             reduced,
             constant: false,
-        }))
+        };
+        if let Some(declared) = declared {
+            if !edit.same_type(edit.expression_type(expression)?, declared)? {
+                return Ok(VariableRead::TypeMismatch(value));
+            }
+        }
+        Ok(VariableRead::Projected(value))
     }
 }

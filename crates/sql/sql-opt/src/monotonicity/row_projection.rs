@@ -486,6 +486,7 @@ pub enum WaterlineError {
         current: NodeId,
     },
     RepeatedExpression(Vec<NodeId>),
+    VariableTypeMismatch(ExpressionId),
     MissingReference(ExpressionId),
     MissingOperand(ExpressionId),
     TargetMaximum(ExpressionId),

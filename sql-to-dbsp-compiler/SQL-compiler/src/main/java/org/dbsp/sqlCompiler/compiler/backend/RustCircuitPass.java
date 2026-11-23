@@ -748,6 +748,11 @@ public final class RustCircuitPass implements CircuitTransform {
             checkBindingErrors(reply.writer, failure);
             if (failure.has("repeated"))
                 throw repeatedExpressionError(repeatedPath(reply.writer, failure.required("repeated")));
+            if ("VariableTypeMismatch".equals(failure.required("kind").textValue())) {
+                var read = Utilities.getExists(nodes, failure.required("expression").longValue()).to(DBSPVariablePath.class);
+                Utilities.last(facts).checkVariableType(read);
+                throw new IllegalStateException("Expected the recorded variable type mismatch for " + read);
+            }
             if ("MissingReference".equals(failure.required("kind").textValue()))
                 throw Utilities.missingKey(Utilities.getExists(nodes, failure.required("expression").longValue()));
             if ("UnsupportedType".equals(failure.required("kind").textValue()))

@@ -346,6 +346,12 @@ impl Row {
                         }
                         Expr::VariablePath => match self.variable(edit, id)? {
                             VariableRead::Projected(value) => (id, Some(value)),
+                            VariableRead::TypeMismatch(mut declaration) => {
+                                // The visitor records the declaration's fact at the read
+                                // before checking the path's annotated type.
+                                self.observe(edit, id, &mut declaration)?;
+                                return Ok(Evaluation::Failed(WaterlineError::VariableTypeMismatch(id)));
+                            }
                             VariableRead::Uninitialized => {
                                 work.push(Step::NoFact(id));
                                 continue;

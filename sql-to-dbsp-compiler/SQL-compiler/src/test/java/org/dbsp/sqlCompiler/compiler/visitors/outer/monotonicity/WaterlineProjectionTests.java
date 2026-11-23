@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -316,9 +317,13 @@ public class WaterlineProjectionTests {
                     direct = failure;
                 } else {
                     Assert.assertEquals(direct.getClass(), failure.getClass());
-                    // The projected parameter is fresh on each invocation.
-                    Assert.assertEquals(direct.getMessage().replaceAll("\\(\\d+\\) with type", "(id) with type"),
-                            failure.getMessage().replaceAll("\\(\\d+\\) with type", "(id) with type"));
+                    if (direct.getMessage().startsWith("Variable ")) {
+                        Assert.assertEquals(variableTypeDiagnostic(direct), variableTypeDiagnostic(failure));
+                        Assert.assertEquals(((InternalCompilerError) direct).getPositionRange(),
+                                ((InternalCompilerError) failure).getPositionRange());
+                    } else {
+                        Assert.assertEquals(direct.getMessage(), failure.getMessage());
+                    }
                 }
             }
         }
@@ -1485,6 +1490,50 @@ public class WaterlineProjectionTests {
             var error = Assert.assertThrows(RuntimeException.class, () -> analyzer.apply(visited));
             Assert.assertTrue(error.getMessage().contains("Variable row(" + mistyped.getId() + ") type"));
             Assert.assertTrue(error.getMessage().contains("does not match expected type"));
+        }
+    }
+
+    private static String variableTypeDiagnostic(RuntimeException error) {
+        // The assertion appends the executing visitor's Java stack, and each
+        // analysis constructs a fresh variable to represent a closure parameter.
+        return error.getMessage().lines().findFirst().orElseThrow().replaceAll("\\(\\d+\\) with type", "(id) with type");
+    }
+
+    @Test
+    public void mistypedWaterlineReadsPublishTheirDeclarationFactBeforeFailing() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var initial = new DBSPI32Literal(5);
+        var shape = new MonotoneType(initial.getType());
+        var input = new DBSPVariablePath("row", initial.getType().ref());
+        var local = new DBSPLetStatement("local", initial);
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(initial.getType()));
+        for (String name : List.of("local", "row")) {
+            var bad = new DBSPVariablePath(name, DBSPTypeBool.create(false));
+            var later = new DBSPI32Literal(7);
+            var body = new DBSPBlockExpression(List.of(local, bad.toStatement()), later);
+            var closure = body.closure(input);
+            var direct = new MonotoneTransferFunctions(compiler, op, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+            var expected = Assert.assertThrows(RuntimeException.class, () -> direct.apply(closure));
+            Assert.assertTrue(expected.getMessage().contains("Variable " + name + "(" + bad.getId() + ") type"));
+            for (boolean resultOnly : List.of(false, true)) {
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var failure = Assert.assertThrows(expected.getClass(), () -> RustCircuitPass.projectWaterlineClosure(
+                        compiler, body, closure.parameters, new DBSPType[]{initial.getType()},
+                        new IMaybeMonotoneType[]{new MonotoneRefType(shape)}, false, resultOnly, facts::put));
+                Assert.assertTrue(facts.containsKey(initial));
+                Assert.assertFalse(facts.containsKey(later));
+                var recorded = facts.get(bad);
+                Assert.assertNotNull(recorded);
+                Assert.assertTrue(direct.get(bad).getMonotoneType().getType().sameType(recorded.getMonotoneType().getType()));
+                String message = failure.getMessage().lines().findFirst().orElseThrow();
+                if (name.equals("local")) {
+                    Assert.assertSame(facts.get(initial), recorded);
+                    Assert.assertEquals(expected.getMessage().lines().findFirst().orElseThrow(), message);
+                } else {
+                    Assert.assertEquals(variableTypeDiagnostic(expected), variableTypeDiagnostic(failure));
+                }
+            }
         }
     }
 
