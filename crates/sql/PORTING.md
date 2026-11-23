@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `e9ec5cf98`, Rust grouped window inputs with TIME, DATE, TIMESTAMP and
+TIMESTAMP WITH TIME ZONE literals. All 423 pass comparisons matched Java
+across 133 frozen clock programs and eight directed compilations. The eight
+compilations previously fell back to Java 16 times and now match through
+4,824 ordered S4 observations and artifact emission.
+[Temporal literal window comparisons](evidence/p3-temporal-literal-window-keys.json)
+
 On `42d63cb45`, all 17,098 frozen SimplifyConditionals results matched Java.
 A CASE with 144 nested SIGN calls previously failed in the hybrid while direct
 Java emitted code. Classic and Gen-2 now match on both that query and its

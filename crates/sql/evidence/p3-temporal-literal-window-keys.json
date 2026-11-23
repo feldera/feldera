@@ -1,0 +1,176 @@
+{
+  "commit": "e9ec5cf98b664c46912720eac0dedd35f15787da",
+  "scope": "Shared SQL window inputs with TIME, DATE, TIMESTAMP and TIMESTAMP WITH TIME ZONE thresholds. Each directed case has two matching keys and one different key. The DATE and TIMESTAMP pairs cross the Unix epoch.",
+  "baseline_commit": "805dafc3b4f9d95cc01ee0cbb882b98d96587a19",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "e17d831c2d54112bc0de081feebf537ac0ce7a06884b2afe4cc2cde98861ed15",
+    "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+    "maven/tests.jar": "3a94fd40303ad819193042e9e7299c453283c30d1d43f08f443b80bfe32da461",
+    "maven/sql-compiler.jar": "0f7cc9f1dccc5d62e6062dffb290375e38d72bb4ffe97e47279249c77c8507a3"
+  },
+  "rust_tests": 159,
+  "packaged_junit_tests": 68,
+  "engines": {
+    "classic": {
+      "ordered_s4_observations": 2400,
+      "detached_cases": 4,
+      "detached_receipt_sha256": "56ffecd42999a59e8a8e4e8cd3dee73b979dcb180791744366d8110f08dfab14",
+      "previous_fallbacks": {
+        "WindowGroups/Scan": 4,
+        "WindowGroups/Reorder": 4,
+        "WindowGroups/Indexes": 0
+      },
+      "directed": {
+        "programs": 4,
+        "observations_sha256": "60b37bb4800700f8d718179231aae5409598a8eb51d7714c90f1f66c15113333",
+        "passes": {
+          "Scan": {
+            "matched": 4,
+            "direct_sha256": "d93cac00a97335b85e3b2472e0a75704b6c74d2958b115bc7381ff396ad8beb8",
+            "hybrid_sha256": "b2a4c5bcd830fdb6fc30f711eec1881f2f492e0d6845e62da05b7d9d3e01659a"
+          },
+          "Reorder": {
+            "matched": 4,
+            "direct_sha256": "efdde4fe25c86dd21bdfc86b22bd480d0130b641c0648a7ee5937b6516ea36b0",
+            "hybrid_sha256": "f291266a0fab1e7f3d20e762ed19bfab8874b403ec4351d1589290e59eaaab09"
+          },
+          "FindWindowGroups": {
+            "matched": 4,
+            "direct_sha256": "7e84691efc3ad7601262b53ed44aa93a9395dbb0e2251d481168b7792ee2f176",
+            "hybrid_sha256": "7e84691efc3ad7601262b53ed44aa93a9395dbb0e2251d481168b7792ee2f176"
+          }
+        },
+        "native_decisions": {
+          "Scan": {
+            "calls": 4,
+            "fallbacks": 0
+          },
+          "Reorder": {
+            "calls": 4,
+            "fallbacks": 0
+          },
+          "Indexes": {
+            "calls": 4,
+            "fallbacks": 0
+          }
+        }
+      },
+      "frozen": {
+        "programs": 71,
+        "observations_sha256": "2120cf4845497be74c5a92e7084cc576fe9a0d23c42113e2d85771eba74af92f",
+        "passes": {
+          "Scan": {
+            "matched": 71,
+            "direct_sha256": "253b2bc45df4a392dad95196641ef7446afacf6fb63c18bb98813d18d44a11b8",
+            "hybrid_sha256": "549f4aa482f37f2c4341c8611a21a790afce16a22515ee1a8c3387dc63af496b"
+          },
+          "Reorder": {
+            "matched": 71,
+            "direct_sha256": "18b8f9a2dde60ffe0503bb2e9155227c0643c4153036ccde8daef44b0fbd026e",
+            "hybrid_sha256": "aaad58ee536a58d649547c50af6c7d1f3c3cf8c1ae63793f2909054ee648baa9"
+          },
+          "FindWindowGroups": {
+            "matched": 71,
+            "direct_sha256": "521d6b5bfd048cf4efe3fe4a31e28e5b4995ce6a4984f16372598d12dd86d4ee",
+            "hybrid_sha256": "c95424c15ad1001b8dc6a870e9c88bcdd65deb830bbff794afc08b4b91c91172"
+          }
+        },
+        "native_decisions": {
+          "Scan": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "Reorder": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "Indexes": {
+            "calls": 64,
+            "fallbacks": 0
+          }
+        }
+      }
+    },
+    "gen2": {
+      "ordered_s4_observations": 2424,
+      "detached_cases": 4,
+      "detached_receipt_sha256": "1689d51c0e34ca79bd24d3f2eac0bb2c0524eb6920a1bd4447c1d40fcc700959",
+      "previous_fallbacks": {
+        "WindowGroups/Scan": 4,
+        "WindowGroups/Reorder": 4,
+        "WindowGroups/Indexes": 4
+      },
+      "directed": {
+        "programs": 4,
+        "observations_sha256": "ac452f59ed2221fae597618d8b323a7a05a1e8696ecb4f61506d899b5dbbba6a",
+        "passes": {
+          "Scan": {
+            "matched": 4,
+            "direct_sha256": "bf8d87643bd4ecf01d03e2601afb6545d0a636db2cdd9683308df600433fa0fe",
+            "hybrid_sha256": "8729a9daff2568320e3ffa6e206d3e0a3cce33cda2c4c51882a5df0910aaebbd"
+          },
+          "Reorder": {
+            "matched": 4,
+            "direct_sha256": "92421af87755a2bf444026f0595c83a3a5a37357a747f13691f4f2ea07a99522",
+            "hybrid_sha256": "0d8a1962394f83120b0538fedede0e39221c04cff1d7f0e6085478dbcec96e0f"
+          },
+          "FindWindowGroups": {
+            "matched": 4,
+            "direct_sha256": "c00246e4621773b1941bab9585d2be451abf01d3b2daef6583bd8ef07d4436f6",
+            "hybrid_sha256": "413750e61b9584c195c8fdaa7d9bb5973e934398b750b1ca01d432fd0f502ce8"
+          }
+        },
+        "native_decisions": {
+          "Scan": {
+            "calls": 4,
+            "fallbacks": 0
+          },
+          "Reorder": {
+            "calls": 4,
+            "fallbacks": 0
+          },
+          "Indexes": {
+            "calls": 4,
+            "fallbacks": 0
+          }
+        }
+      },
+      "frozen": {
+        "programs": 62,
+        "observations_sha256": "e4805183665613f9dd3e005092c3972dd164c0446056cd7602ea9ec21c29beee",
+        "passes": {
+          "Scan": {
+            "matched": 62,
+            "direct_sha256": "d8392c82b40194e1bf1c9d54344b4be12564de341fd58922a165f41ec9241ccf",
+            "hybrid_sha256": "cffc06d9493eec994ffc6e2c173e6a2b38313b261a233490cf484c66c5b5ab01"
+          },
+          "Reorder": {
+            "matched": 62,
+            "direct_sha256": "f0d6b56c7a749372288f1125cda85bc3a820690b58b67824079f76cc828f94f8",
+            "hybrid_sha256": "87625216b50533ae608c0673d163bb2ef968ff1eb3d18d7240aa64b6c69c62f7"
+          },
+          "FindWindowGroups": {
+            "matched": 62,
+            "direct_sha256": "387e330449c3468e7ed8e3ff09e90adcfed48acd299babb2caeacc548393a161",
+            "hybrid_sha256": "940c246fc92768e2b6997eedc0001d8af33f15030d9a6c9b7e74337bc94a0ac7"
+          }
+        },
+        "native_decisions": {
+          "Scan": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "Reorder": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "Indexes": {
+            "calls": 55,
+            "fallbacks": 0
+          }
+        }
+      }
+    }
+  },
+  "clippy": "passed"
+}
