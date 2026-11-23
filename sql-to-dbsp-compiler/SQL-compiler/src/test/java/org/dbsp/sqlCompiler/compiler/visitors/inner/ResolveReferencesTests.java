@@ -102,6 +102,26 @@ public class ResolveReferencesTests extends BaseSQLTests {
         }
     }
 
+    @Test
+    public void mutableBorrowDistinguishesAFieldFromAComputedValue() {
+        var compiler = this.testCompiler();
+        var row = b.refVar(b.tup(b.i32()));
+        var field = b.field(row, 0);
+        var read = b.call("f", field);
+        for (var place : java.util.List.of(field, read)) {
+            var closure = b.tuple(read, place.borrow(true), read.deepCopy()).closure(row);
+            for (boolean nativePass : java.util.List.of(false, true)) {
+                if (nativePass && !Boolean.getBoolean("feldera.optimizer.compareRustValueNumbers"))
+                    continue;
+                compiler.options.ioOptions.rustOptimizerPasses = nativePass;
+                var numbering = new ValueNumbering(compiler);
+                numbering.apply(closure);
+                Assert.assertEquals(place == read, numbering.foundAssignment);
+                Assert.assertEquals(place == read, numbering.canonical.containsKey(read));
+            }
+        }
+    }
+
     /** A let initializer resolves in the scope outside the let:
      * in let x = 1; let x = x + 1; x
      * the second initializer sees the first x, the consumer the second. */

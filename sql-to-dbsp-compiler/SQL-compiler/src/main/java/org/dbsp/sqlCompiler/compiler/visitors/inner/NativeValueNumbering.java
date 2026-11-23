@@ -51,6 +51,7 @@ public final class NativeValueNumbering extends InnerVisitor {
                         List<Long> occurrences, List<Integer> users, Set<Long> shared) {}
 
     private final List<Event> events = new ArrayList<>();
+    private final List<DBSPExpression> mutableBorrows = new ArrayList<>();
     private final List<ValueNumbering.ExpressionUser> users = new ArrayList<>();
     private final Map<Long, DBSPExpression> expressions = new HashMap<>();
     private final Map<Long, IDBSPDeclaration> bindings = new HashMap<>();
@@ -169,15 +170,10 @@ public final class NativeValueNumbering extends InnerVisitor {
 
     @Override
     public void postorder(DBSPBorrowExpression e) {
-        if (!e.mut) {
+        if (!e.mut)
             this.define(e, new Simple(Operator.Borrow), e.expression);
-        } else {
-            var base = this.analysis.baseDeclaration(e.expression);
-            if (base == null)
-                this.analysis.foundAssignment = true;
-            else
-                this.analysis.mutable.add(base);
-        }
+        else
+            this.mutableBorrows.add(e.expression);
     }
 
     @Override
@@ -224,6 +220,14 @@ public final class NativeValueNumbering extends InnerVisitor {
 
     void finish(Map<DBSPExpression, ValueNumbering.CanonicalExpression> numbers,
                 Set<IDBSPDeclaration> mutable, boolean rewrite) {
+        if (!this.mutableBorrows.isEmpty()) {
+            for (var variable : RustCircuitPass.borrowedVariables(this.compiler, this.mutableBorrows)) {
+                if (variable == null)
+                    this.analysis.foundAssignment = true;
+                else
+                    mutable.add(this.analysis.resolver.reference.getDeclaration(variable));
+            }
+        }
         if (this.expressions.isEmpty() || (rewrite && this.users.size() < 2))
             return;
         var writes = new HashSet<Long>();

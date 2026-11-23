@@ -1749,6 +1749,23 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    /** For each mutable borrow, return its original variable or null for a computed place. */
+    public static DBSPVariablePath[] borrowedVariables(DBSPCompiler compiler, List<DBSPExpression> places) {
+        String pass = "InnerCSE/BorrowedVariables";
+        var reply = invokeLowering(compiler, pass, places.toArray(DBSPExpression[]::new));
+        var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+        Utilities.enforce(reply.value.isArray() && reply.value.size() == places.size());
+        var variables = new DBSPVariablePath[places.size()];
+        for (int i = 0; i < variables.length; i++) {
+            var id = reply.value.required(i);
+            if (!id.isNull())
+                variables[i] = Utilities.getExists(nodes, id.longValue()).to(DBSPVariablePath.class);
+        }
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision(pass, true);
+        return variables;
+    }
+
     public static NativeValueNumbering.Group[] numberValues(NativeValueNumbering.Request request) {
         try {
             byte[] reply = transformWithContext("InnerCSE/NumberValues", MAPPER.writeValueAsBytes(request),

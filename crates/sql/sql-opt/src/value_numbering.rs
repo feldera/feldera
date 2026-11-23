@@ -4,10 +4,44 @@ mod key;
 
 use self::key::{Form, Key, Number};
 use crate::expression_uses::{shared_expression_uses, NumberedExpression, OperandUse};
-use feldera_sql_ir::Error;
+use feldera_sql_ir::{Circuit, Error, ExpressionKind, InnerKind, NodeId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
+
+/// Find the variable whose stored value can change through a mutable borrow.
+/// A borrow of a computed value has no known declaration and disables CSE for
+/// the entire expression. A field access or dereference preserves the base.
+pub fn borrowed_variables(circuit: &Circuit, places: &[NodeId]) -> Result<Vec<Option<u64>>, Error> {
+    places
+        .iter()
+        .map(|&place| {
+            let mut current = place;
+            let mut seen = HashSet::new();
+            loop {
+                if !seen.insert(current) {
+                    return Err(Error::new("cycle in a mutably borrowed expression"));
+                }
+                let node = circuit
+                    .node(current)
+                    .ok_or_else(|| Error::new("missing mutably borrowed expression"))?;
+                match node.inner_kind() {
+                    Some(InnerKind::Expression(ExpressionKind::Field | ExpressionKind::Deref)) => {
+                        current = node.edge("expression")?;
+                    }
+                    Some(InnerKind::Expression(ExpressionKind::VariablePath)) => {
+                        let NodeId::Inner(id) = current else {
+                            unreachable!("variable has an inner identity")
+                        };
+                        return Ok(Some(id));
+                    }
+                    Some(InnerKind::Expression(_)) => return Ok(None),
+                    _ => return Err(Error::new("mutable borrow requires an expression")),
+                }
+            }
+        })
+        .collect()
+}
 
 #[derive(Deserialize)]
 pub struct NumberingInput {

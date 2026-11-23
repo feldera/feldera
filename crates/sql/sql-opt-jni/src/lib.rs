@@ -819,6 +819,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let row = edit.type_id(*row)?;
             feldera_sql_opt::filter_transfer(&mut edit, arena.root_id(), closure, row)?
         }
+        ("InnerCSE/BorrowedVariables", places) => {
+            return Ok(json!(feldera_sql_opt::borrowed_variables(&arena, places)?));
+        }
         ("InnerCSE/ReadLazy", [source]) => {
             let borrowed = serde_json::from_slice(state)?;
             let roots = feldera_sql_opt::read_lazy_value(&mut edit, *source, borrowed, &mut next)?;
@@ -1244,7 +1247,7 @@ fn transform(
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
-        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" => {
+        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" => {
             return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Groups" => {
