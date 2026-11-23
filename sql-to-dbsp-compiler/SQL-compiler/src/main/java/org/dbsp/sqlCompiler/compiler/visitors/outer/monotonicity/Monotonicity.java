@@ -1032,8 +1032,9 @@ public class Monotonicity extends CircuitVisitor {
         DBSPExpression minimum = withFirstField(
             node.getNode(), input.getType(), 
             firstField(input).applyCloneIfNeeded());
+        // Reducing a row cast can reuse the accumulator at several field reads.
         DBSPExpression value = minMax.postProcessing == null ? minimum :
-                minMax.postProcessing.call(minimum.borrow()).reduce(this.compiler());
+                minMax.postProcessing.call(minimum.borrow()).reduce(this.compiler()).ensureTree(this.compiler());
         DBSPExpression body = new DBSPRawTupleExpression(var.field(0).deref(), value);
         return body.closure(var);
     }

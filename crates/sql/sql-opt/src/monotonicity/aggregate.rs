@@ -1,7 +1,8 @@
 //! Transfer a group key or a rolling timestamp through an aggregate.
 use super::{indexed_parameter, unknown};
 use feldera_sql_expr::{
-    SimplifyWarning, apply_closure, copy_expression, reduce_closure_body_with_warnings,
+    SimplifyWarning, apply_closure, copy_expression, ensure_expression_tree,
+    reduce_closure_body_with_warnings,
 };
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, TypeId, TypeKind};
 
@@ -107,7 +108,9 @@ pub fn minimum_transfer(
     let minimum = accumulator_value(edit, value_type, Some((origin, owned)))?;
     let output = if let Some(function) = postprocess {
         let borrowed = edit.borrow_value(minimum)?;
-        apply_closure(edit, function, &[borrowed], warnings)?
+        let reduced = apply_closure(edit, function, &[borrowed], warnings)?;
+        let tree = ensure_expression_tree(edit, reduced.into())?;
+        edit.expression(tree)?
     } else {
         minimum
     };

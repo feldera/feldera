@@ -50,6 +50,25 @@ public class ArgMinGCIncrementalTests extends StreamingTestBase {
         }
     }
 
+    @Test
+    public void constructedNestedRowPayload() {
+        var ccs = this.getCCS("""
+                CREATE TABLE events(k INT NOT NULL LATENESS 1, x INT NOT NULL LATENESS 10, y INT);
+                CREATE LOCAL VIEW minima AS
+                    SELECT k, ARG_MIN(ROW(ROW(y, x), x), x) AS payload FROM events GROUP BY k;
+                CREATE VIEW v AS SELECT k, payload[1][1] AS y, payload[1][2] AS x, payload[2] AS outer_x
+                    FROM minima;""");
+        ccs.step("INSERT INTO events VALUES (1, 9, 80), (1, 11, 90);", """
+                 k | y  | x | outer_x | weight
+                -------------------------------
+                 1 | 80 | 9 | 9       | 1""");
+        ccs.step("INSERT INTO events VALUES (1, 4, NULL);", """
+                 k | y    | x | outer_x | weight
+                ---------------------------------
+                 1 | 80   | 9 | 9       | -1
+                 1 | NULL | 4 | 4       | 1""");
+    }
+
     /** A row of the tables: group key k, group key g, compared value c, payload p. */
     record Row(int k, @Nullable Integer g, @Nullable Integer c, @Nullable Integer p) {}
 
