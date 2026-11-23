@@ -12,6 +12,14 @@ enum Visit {
 }
 
 impl CircuitEditor {
+    /// The ordered arguments of a DBSP user type, including specialized encodings
+    /// such as indexed Z-sets that store each argument in a named field.
+    pub fn user_type_arguments(&self, ty: TypeId) -> Result<Option<Vec<NodeId>>, Error> {
+        generic_arguments(self.type_kind(ty)?)
+            .map(|args| args.read(self.node(ty.into())?))
+            .transpose()
+    }
+
     pub fn same_type(&self, left: TypeId, right: TypeId) -> Result<bool, Error> {
         self.equal_types(left, right, false)
     }

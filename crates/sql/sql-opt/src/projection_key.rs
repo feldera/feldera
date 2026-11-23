@@ -2,10 +2,12 @@
 //! window and map fusion passes use printed closures, so cast safety and call result types do
 //! not distinguish keys, while operand nullability in a binary expression does.
 mod numbers;
+mod types;
 use numbers::{decimal_text, floating_text};
+use types::{scalar_spelling, type_term};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
-    OutputPort, TypeId, TypeKind as Ty,
+    OutputPort, TypeId,
 };
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
@@ -48,10 +50,10 @@ enum Term {
     Method(String),
     Cast,
     ScalarType(String),
-    CompositeType {
-        kind: Ty,
-        nullable: bool,
-    },
+    RawTupleType,
+    TupleType { nullable: bool },
+    FunctionType,
+    NamedType { name: String, nullable: bool },
     Number(String),
     Bool(bool),
     String(String),
@@ -751,119 +753,6 @@ pub(crate) fn row_parameter(
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::new("missing timestamp parameter name"))?;
     Ok(RowParameter { ty, name })
-}
-
-/// Number each type argument just like an expression operand. A row can share
-/// field types at every level, so constructing its full spelling can be exponential.
-fn type_term(edit: &CircuitEditor, ty: TypeId) -> Result<Option<(Term, Vec<NodeId>)>, Error> {
-    let kind = edit.type_kind(ty)?;
-    let field = match kind {
-        Ty::Ref => {
-            let node = edit.node(ty.into())?;
-            let Some(mutable) = node.data("mutable").and_then(|v| v.as_bool()) else {
-                return Ok(None);
-            };
-            return Ok(Some((
-                Term::ReferenceType {
-                    mutable,
-                    nullable: edit.nullable(ty)?,
-                },
-                vec![node.edge("type")?],
-            )));
-        }
-        Ty::Tuple | Ty::RawTuple => "tupFields",
-        Ty::Array | Ty::Map | Ty::SqlResult => "typeArgs",
-        _ => return Ok(scalar_spelling(edit, ty)?.map(|name| (Term::ScalarType(name), vec![]))),
-    };
-    let args = edit
-        .node(ty.into())?
-        .edges(field)?
-        .into_iter()
-        .map(|id| edit.type_id(id).map(NodeId::from))
-        .collect::<Result<Vec<_>, _>>()?;
-    let nullable = kind != Ty::RawTuple && edit.nullable(ty)?;
-    Ok(Some((Term::CompositeType { kind, nullable }, args)))
-}
-
-/// Match the Java debug printer used for temporal keys.
-fn scalar_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Error> {
-    let node = edit.node(ty.into())?;
-    let mut text = match edit.type_kind(ty)? {
-        Ty::Null => "null".to_owned(),
-        Ty::GeoPoint => "geopoint".to_owned(),
-        kind @ (Ty::LongInterval | Ty::ShortInterval) => {
-            let Some(units) = string(node, "units") else {
-                return Ok(None);
-            };
-            let name = if kind == Ty::LongInterval {
-                "LongInterval"
-            } else {
-                "ShortInterval"
-            };
-            // The Java printer puts the nullability marker before the unit qualifier.
-            let suffix = if edit.nullable(ty)? { "?" } else { "" };
-            return Ok(Some(format!("{name}{suffix}({units})")));
-        }
-        Ty::Variant => "VARIANT".to_owned(),
-        Ty::Uuid => "Uuid".to_owned(),
-        Ty::Binary => {
-            let Some(precision) = node.data("precision").and_then(|v| v.as_i64()) else {
-                return Ok(None);
-            };
-            // The binary type printer omits the fixed-width flag.
-            if precision == -1 {
-                "bytes".to_owned()
-            } else {
-                format!("bytes({precision})")
-            }
-        }
-        Ty::Date => "Date".to_owned(),
-        Ty::Time => "Time".to_owned(),
-        Ty::Real => "f".to_owned(),
-        Ty::Double => "d".to_owned(),
-        Ty::Decimal => {
-            let precision = node.data("precision").and_then(|v| v.as_u64());
-            let scale = node.data("scale").and_then(|v| v.as_u64());
-            let (Some(precision), Some(scale)) = (precision, scale) else {
-                return Ok(None);
-            };
-            format!("DECIMAL({precision}, {scale})")
-        }
-        Ty::Bool => "b".to_owned(),
-        Ty::Timestamp => "Timestamp".to_owned(),
-        Ty::TimestampTz => "TimestampTz".to_owned(),
-        Ty::ISize => "i".to_owned(),
-        Ty::USize => "u".to_owned(),
-        Ty::Integer => {
-            let Some(width @ (8 | 16 | 32 | 64 | 128)) =
-                node.data("width").and_then(|v| v.as_u64())
-            else {
-                return Ok(None);
-            };
-            let Some(signed) = node.data("signed").and_then(|v| v.as_bool()) else {
-                return Ok(None);
-            };
-            format!("{}{width}", if signed { "i" } else { "u" })
-        }
-        Ty::String => {
-            let Some(precision) = node.data("precision").and_then(|v| v.as_i64()) else {
-                return Ok(None);
-            };
-            if precision == -1 {
-                "s".to_owned()
-            } else {
-                let Some(fixed) = node.data("fixed").and_then(|v| v.as_bool()) else {
-                    return Ok(None);
-                };
-                format!("s({precision},{fixed})")
-            }
-        }
-        _ => return Ok(None),
-    };
-    if edit.nullable(ty)? {
-        text.push('?');
-    }
-    Ok(Some(text))
 }
 
 /// The reference fingerprint includes the port and the printed closure parameter

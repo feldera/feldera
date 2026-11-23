@@ -1,0 +1,39 @@
+{
+  "scope": "Compare printed type arguments for map fusion and window sharing. The directed Java oracle groups 17 call signatures by their printed closures. Replay six frozen programs per engine.",
+  "source_base": "b72c1de73d93e3ff639b26755e26450b79a11e4b",
+  "source_files_sha256": {
+    "crates/sql/sql-ir/src/expression/type_equality.rs": "8d681b6234f3ba8fa14a38d9fe976b26e42eba37aab4f2155dbef19ee0dcd26a",
+    "crates/sql/sql-opt/src/projection_key.rs": "7e7f10f34634983522e86e163a7d31ea2502792fd33f864d3cc60acf19246359",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "ee15c752dcddb5aadadc7175605ca46da533b47d41431289e67ff9e06a083d4a",
+    "crates/sql/sql-opt/src/projection_key/types.rs": "7be21f82fa1eadcc8101aaee5bb9a86938812ec4038f759c9487ee86d961c1b6"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "c1c4fc12fa32b0efeef78b67e9e71b462df001cba25fc3fd2bc0baa0d01c1247",
+    "bin/sql-difftest": "111de59c683021b588c2ee8715ac30f64926092f609fa9b3f16a6192a1ddd650",
+    "maven/tests.jar": "11dd8772a7b47d6844e3b1db2af7861fcaa3f1bc1d92b1b5434cd479a1b1c476",
+    "maven/sql-compiler.jar": "c836260b68f5229039caac12b4745e843a9b5df57daa54ddf0ebbe066e3d4780"
+  },
+  "negative_control": {
+    "library_sha256": "ef23a029539d64cb4e50c6e02244162f19601d2f84a1a6f6bcc07e0356954c58",
+    "failed_test": "fusionFingerprintsComparePrintedTypeArguments"
+  },
+  "rust_tests": 220,
+  "junit_tests": 141,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 6,
+      "ordered_s4_observations": 2375,
+      "mismatches": 0,
+      "population_sha256": "77119c444566bc487149db0ced29097eb55a59f719a065eed13249b3ab532c46",
+      "receipt_sha256": "36f9b3828368b42e7efc04fa4954c9c76341539582c23fcca13dbd4a5646859f"
+    },
+    "gen2": {
+      "cases": 6,
+      "ordered_s4_observations": 2399,
+      "mismatches": 0,
+      "population_sha256": "dd60ea2d81d994f76576b3475e3ec6b47bf87c88f1d5f15214f1e331a3244457",
+      "receipt_sha256": "7cdf8b1fae24b38e426debbe51cad07dcfc742ec20bdd3703a21aaf353db7d4c"
+    }
+  }
+}

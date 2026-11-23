@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust groups map fragments by their printed function, stream and generic type
+arguments. Seventeen call signatures form the same eleven groups as direct Java,
+including nullable references printed as `Option<&T>`. All 141 targeted JUnit
+tests passed, and twelve detached compilations matched through 4,774 ordered
+S4 observations and emission. [Printed type arguments](evidence/p3-printed-type-keys.json)
+
 Rust omits the fact for an uninitialized assignment destination in both waterline
 visitor modes. A consumer that requires that local's value still gets the direct
 Java diagnostic. All 220 Rust tests and 140 targeted JUnit tests passed.

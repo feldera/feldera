@@ -27,8 +27,17 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -245,6 +254,44 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
         Assert.assertEquals(8, prints.stream().distinct().count());
         Assert.assertArrayEquals(new int[][]{{0, 2}, {1, 3}, {4}, {5}, {6}, {7}, {8}, {9}},
                 RustCircuitPass.siblingMapGroups(compiler, siblings));
+    }
+
+    @Test
+    public void fusionFingerprintsComparePrintedTypeArguments() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var compiler = this.testCompiler();
+        var finder = new FuseExpensiveMaps.FindFusableMaps(compiler);
+        var siblings = new ArrayList<MapInfo>();
+        var prints = new ArrayList<String>();
+        var type = b.i32();
+        var optional = b.i32n();
+        var signature = new DBSPTypeFunction(optional, type, optional);
+        var stream = new DBSPTypeStream(signature, StreamKind.DELTA, 0);
+        var site = CalciteObject.EMPTY;
+        for (var argument : List.<DBSPType>of(
+                stream, new DBSPTypeStream(signature, StreamKind.COLLECTION, 1),
+                new DBSPTypeUser(site, DBSPTypeCode.USER, "Stream", false, signature),
+                new DBSPTypeStream(new DBSPTypeFunction(type, type, optional), StreamKind.DELTA, 0),
+                new DBSPTypeStream(new DBSPTypeFunction(optional, optional, type), StreamKind.DELTA, 0),
+                new DBSPTypeStream(new DBSPTypeFunction(optional, type), StreamKind.DELTA, 0),
+                new DBSPTypeArray(optional, true), new DBSPTypeUser(site, DBSPTypeCode.USER, "Array", true, optional),
+                new DBSPTypeArray(type, true), new DBSPTypeArray(optional, false),
+                new DBSPTypeRef(type, false, true), new DBSPTypeOption(type.ref()), new DBSPTypeRef(type, true, true),
+                this.pair, new DBSPTypeUser(site, DBSPTypeCode.USER, "Tup2", false, type, type),
+                optional, new DBSPTypeUser(site, DBSPTypeCode.USER, "i32", true))) {
+            var row = b.refVar(this.pair);
+            var path = new DBSPPath(new DBSPSimplePathSegment("f", argument));
+            var call = new DBSPApplyExpression(path.toExpression(), type, b.field(row, 0));
+            var info = new MapInfo(null, b.tuple(call).closure(row), List.of(call));
+            siblings.add(info);
+            prints.add(finder.fingerprint(info, call));
+        }
+        int[][] expected = {{0, 1, 2}, {3}, {4}, {5}, {6, 7}, {8}, {9}, {10, 11}, {12}, {13, 14}, {15, 16}};
+        Assert.assertEquals(expected.length, prints.stream().distinct().count());
+        for (var group : expected)
+            for (int i : group)
+                Assert.assertEquals(prints.get(group[0]), prints.get(i));
+        Assert.assertArrayEquals(expected, RustCircuitPass.siblingMapGroups(compiler, siblings));
     }
 
     /** Collect the minimal expensive expressions of |param| expression */
