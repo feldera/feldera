@@ -3,8 +3,8 @@
 //! not distinguish keys, while operand nullability in a binary expression does.
 use super::numbers::{decimal_text, floating_text};
 use feldera_sql_ir::{
-    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId, TypeId,
-    TypeKind as Ty,
+    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
+    TypeId, TypeKind as Ty,
 };
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
@@ -19,13 +19,21 @@ enum Term {
     Parameter,
     Array,
     Map,
+    Tuple,
+    AbsentTuple,
+    VariantNullLiteral,
     Field(u64),
     Deref,
     Clone,
     IsNull,
     If,
     Call(String),
-    Cast(String),
+    Cast,
+    ScalarType(String),
+    CompositeType {
+        kind: Ty,
+        nullable: bool,
+    },
     Number(String),
     Bool(bool),
     String(String),
@@ -53,8 +61,8 @@ enum Term {
 }
 
 enum Visit {
-    Read(ExpressionId),
-    Intern(ExpressionId, Term, Vec<ExpressionId>),
+    Read(NodeId),
+    Intern(NodeId, Term, Vec<NodeId>),
 }
 
 impl TimestampKey {
@@ -66,7 +74,7 @@ impl TimestampKey {
         let mut terms = IndexSet::new();
         let mut numbers = HashMap::new();
         let mut active = HashSet::new();
-        let mut work = vec![Visit::Read(root)];
+        let mut work = vec![Visit::Read(root.into())];
         while let Some(visit) = work.pop() {
             match visit {
                 Visit::Read(id) => {
@@ -76,7 +84,11 @@ impl TimestampKey {
                     if !active.insert(id) {
                         return Err(Error::new("cycle in a window key expression"));
                     }
-                    let Some((term, children)) = key_term(edit, id, parameter)? else {
+                    let entry = match edit.node(id)?.inner_kind() {
+                        Some(InnerKind::Type(_)) => type_term(edit, edit.type_id(id)?)?,
+                        _ => key_term(edit, edit.expression(id)?, parameter)?,
+                    };
+                    let Some((term, children)) = entry else {
                         return Ok(None);
                     };
                     work.push(Visit::Intern(id, term, children.clone()));
@@ -88,6 +100,7 @@ impl TimestampKey {
                     let wrap = matches!(
                         term,
                         Term::Number(_)
+                            | Term::Tuple
                             | Term::Bool(_)
                             | Term::String(_)
                             | Term::Bytes(_)
@@ -95,7 +108,7 @@ impl TimestampKey {
                             | Term::TemporalText(_)
                             | Term::Date(_)
                             | Term::Timestamp(_)
-                    ) && edit.nullable(edit.expression_type(id)?)?;
+                    ) && edit.nullable(edit.expression_type(edit.expression(id)?)?)?;
                     let (mut number, _) = terms.insert_full((term, operands));
                     if wrap {
                         number = terms
@@ -115,13 +128,13 @@ fn key_term(
     edit: &CircuitEditor,
     id: ExpressionId,
     parameter: RowParameter<'_>,
-) -> Result<Option<(Term, Vec<ExpressionId>)>, Error> {
+) -> Result<Option<(Term, Vec<NodeId>)>, Error> {
     let node = edit.node(id.into())?;
-    let child = |field| edit.expression(node.edge(field)?);
+    let child = |field| edit.expression(node.edge(field)?).map(NodeId::from);
     let children = |field| {
         node.edges(field)?
             .into_iter()
-            .map(|id| edit.expression(id))
+            .map(|id| edit.expression(id).map(NodeId::from))
             .collect::<Result<Vec<_>, Error>>()
     };
     let kind = edit.expr_kind(id)?;
@@ -141,6 +154,18 @@ fn key_term(
         }
         // Non-null constructors print their contents in order and omit their type.
         Expr::Array if node.field("data").is_some() => (Term::Array, children("data")?),
+        // Tuple constructors include their arity and a trailing separator after each field.
+        Expr::Tuple if node.field("fields").is_some() => (Term::Tuple, children("fields")?),
+        Expr::Tuple => (Term::AbsentTuple, vec![]),
+        Expr::VariantNullLiteral => (Term::VariantNullLiteral, vec![]),
+        Expr::Variant => match node.field("value").and_then(|field| field.node_id()) {
+            Some(value) => (
+                Term::Call("VARIANT".into()),
+                vec![edit.expression(value)?.into()],
+            ),
+            // Both an absent VARIANT and a VARIANT containing SQL NULL print "(VARIANT)null".
+            None => (Term::TypedNull("VARIANT".into()), vec![]),
+        },
         Expr::Map if node.field("keys").is_some() => {
             let keys = children("keys")?;
             let values = children("values")?;
@@ -178,24 +203,22 @@ fn key_term(
             (
                 Term::Unary {
                     opcode: opcode.to_owned(),
-                    nullable: edit.nullable(edit.expression_type(source)?)?,
+                    nullable: edit.nullable(edit.expression_type(edit.expression(source)?)?)?,
                 },
                 vec![source],
             )
         }
         Expr::Some => (Term::Call("Some".into()), vec![child("expression")?]),
-        Expr::Cast => {
-            let Some(target) = cast_spelling(edit, edit.expression_type(id)?)? else {
-                return Ok(None);
-            };
-            (Term::Cast(target), vec![child("source")?])
-        }
+        Expr::Cast => (
+            Term::Cast,
+            vec![edit.expression_type(id)?.into(), child("source")?],
+        ),
         Expr::Apply => {
             let function = child("function")?;
-            if edit.expr_kind(function)? != Expr::Path {
+            if edit.expr_kind(edit.expression(function)?)? != Expr::Path {
                 return Ok(None);
             }
-            let path = edit.node(edit.node(function.into())?.edge("path")?)?;
+            let path = edit.node(edit.node(function)?.edge("path")?)?;
             let [segment] = path.edges("components")?[..] else {
                 return Ok(None);
             };
@@ -216,8 +239,8 @@ fn key_term(
         Expr::Binary | Expr::TimeAddSub => {
             let left = child("left")?;
             let right = child("right")?;
-            let left_nullable = edit.nullable(edit.expression_type(left)?)?;
-            let right_nullable = edit.nullable(edit.expression_type(right)?)?;
+            let left_nullable = edit.nullable(edit.expression_type(edit.expression(left)?)?)?;
+            let right_nullable = edit.nullable(edit.expression_type(edit.expression(right)?)?)?;
             let Some(op) = string(node, "opcode").and_then(BinaryOp::from_wire) else {
                 return Ok(None);
             };
@@ -361,7 +384,7 @@ fn key_term(
                     Term::Number(digits)
                 }
                 None => {
-                    let Some(name) = cast_spelling(edit, edit.expression_type(id)?)? else {
+                    let Some(name) = scalar_spelling(edit, edit.expression_type(id)?)? else {
                         return Ok(None);
                     };
                     Term::TypedNull(name)
@@ -416,10 +439,30 @@ pub(super) fn row_parameter(
     Ok(RowParameter { ty, name })
 }
 
+/// Number each type argument just like an expression operand. A row can share
+/// field types at every level, so constructing its full spelling can be exponential.
+fn type_term(edit: &CircuitEditor, ty: TypeId) -> Result<Option<(Term, Vec<NodeId>)>, Error> {
+    let kind = edit.type_kind(ty)?;
+    let field = match kind {
+        Ty::Tuple | Ty::RawTuple => "tupFields",
+        Ty::Array | Ty::Map => "typeArgs",
+        _ => return Ok(scalar_spelling(edit, ty)?.map(|name| (Term::ScalarType(name), vec![]))),
+    };
+    let args = edit
+        .node(ty.into())?
+        .edges(field)?
+        .into_iter()
+        .map(|id| edit.type_id(id).map(NodeId::from))
+        .collect::<Result<Vec<_>, _>>()?;
+    let nullable = kind != Ty::RawTuple && edit.nullable(ty)?;
+    Ok(Some((Term::CompositeType { kind, nullable }, args)))
+}
+
 /// Match the Java debug printer used for temporal keys.
-fn cast_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Error> {
+fn scalar_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Error> {
     let node = edit.node(ty.into())?;
     let mut text = match edit.type_kind(ty)? {
+        Ty::Variant => "VARIANT".to_owned(),
         Ty::Uuid => "Uuid".to_owned(),
         Ty::Binary => {
             let Some(precision) = node.data("precision").and_then(|v| v.as_i64()) else {
@@ -559,6 +602,82 @@ mod tests {
     use super::*;
     use feldera_sql_ir::{Circuit, Field};
     use serde_json::json;
+
+    #[test]
+    fn variant_nulls_and_nullable_tuples_follow_the_printed_constructor() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[]
+        }))?;
+        let site = graph.root_id();
+        let (graph, types) = graph.with_inner_roots([json!({
+            "class":"DBSPTypeVariant","id":50,"code":"VARIANT","mayBeNull":true
+        })])?;
+        let mut edit = CircuitEditor::new(graph);
+        let bool_ty = edit.bool_type(site, false)?;
+        let variant = edit.type_id(types[0])?;
+        let mut null = |sql_null: bool| {
+            edit.make_expr(
+                site,
+                Expr::Variant,
+                variant,
+                [("isSqlNull", Field::Data(sql_null.into()))],
+            )
+        };
+        let absent = null(false)?;
+        let sql_null = null(true)?;
+        let variant_null = edit.make_expr(site, Expr::VariantNullLiteral, variant, [])?;
+        let param = edit.named_variable(bool_ty, "v")?;
+        let tuple = edit.tuple_expr(site, false, &[param])?;
+        let nullable = edit.with_nullability(edit.expression_type(tuple)?, true)?;
+        let fields = [("fields", Field::Array(vec![Field::Reference(param.into())]))];
+        let wrapped = edit.make_expr(site, Expr::Tuple, nullable, fields)?;
+        let some = edit.make_expr(
+            site,
+            Expr::Some,
+            nullable,
+            [("expression", Field::Reference(tuple.into()))],
+        )?;
+        let absent_tuple = edit.make_expr(site, Expr::Tuple, nullable, [])?;
+        let key = |expr| {
+            TimestampKey::read(
+                &edit,
+                expr,
+                RowParameter {
+                    name: "v",
+                    ty: bool_ty,
+                },
+            )
+            .map(Option::unwrap)
+        };
+        assert!(key(absent)? == key(sql_null)? && key(absent)? != key(variant_null)?);
+        assert!(key(wrapped)? == key(some)? && key(wrapped)? != key(tuple)?);
+        assert!(key(absent_tuple)? != key(absent)? && key(absent_tuple)? != key(wrapped)?);
+        Ok(())
+    }
+
+    #[test]
+    fn a_cast_numbers_each_shared_field_type_once() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[]
+        }))?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let ty = edit.bool_type(site, false)?;
+        let row = RowParameter { name: "v", ty };
+        let mut target = ty;
+        for _ in 0..160 {
+            target = edit.tuple_type(site, false, [target.into(), target.into()])?;
+        }
+        let variable = edit.named_variable(ty, "v")?;
+        let operand = [("source", Field::Reference(variable.into()))];
+        let cast = edit.make_expr(site, Expr::Cast, target, operand.clone())?;
+        let nullable = edit.with_nullability(target, true)?;
+        let other = edit.make_expr(site, Expr::Cast, nullable, operand)?;
+        let key = TimestampKey::read(&edit, cast, row)?.unwrap();
+        assert_eq!(key.0.len(), 163);
+        assert!(Some(key) != TimestampKey::read(&edit, other, row)?);
+        Ok(())
+    }
 
     #[test]
     fn repeated_operands_share_one_value_number_per_level() -> Result<(), Error> {

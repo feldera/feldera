@@ -103,6 +103,19 @@ public class TemporalKeyTests {
                 key.formatted("1.25e0"), key.formatted("1.75e0"));
     }
 
+    @Test
+    public void variantAndRowValuesDistinguishSharedTimestamps() {
+        String key = "TIMESTAMPADD(SECOND, CASE WHEN %s THEN id ELSE 1 END, ts)";
+        String variants = "id INT NOT NULL, ts TIMESTAMP, tag VARIANT";
+        checkSharedWindowKeys(variants, key.formatted("tag = CAST('blue' AS VARIANT)"),
+                key.formatted("tag = CAST('red' AS VARIANT)"));
+        checkSharedWindowKeys(variants, key.formatted("tag['x'] = CAST(id AS VARIANT)"),
+                key.formatted("tag['y'] = CAST(id AS VARIANT)"));
+        checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, tag INT",
+                key.formatted("ARRAY_CONTAINS(ARRAY[ROW(id, tag)], ROW(tag, id))"),
+                key.formatted("ARRAY_CONTAINS(ARRAY[ROW(id, tag)], ROW(id, tag))"));
+    }
+
     private static void checkOffsetKeys(String shared, String different) {
         String key = "TIMESTAMPADD(SECOND, %s, ts)";
         checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, flag BOOLEAN, label VARCHAR",
