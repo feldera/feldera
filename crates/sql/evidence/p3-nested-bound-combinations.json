@@ -1,0 +1,57 @@
+{
+  "commit": "b679cc7a6102670ae285d1eb63de229c7a786f5d",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "8596c9b3233ad9ec71e11ec569b2f9a79bc7807a00890a894dcede1c38353d41",
+    "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+    "bin/sql2dbsp": "ad72e12f97eb2e0bc013e23c6754471ea5d56549e7b310fdf1a51a40aecfbf09",
+    "maven/tests.jar": "b44eeeb97b7c66fb656e25249f8d85fead94f2ee3d3ce30b3af91e3b995cbb80",
+    "maven/sql-compiler.jar": "5660343afd52aedb5e2f21b88af378dde0e52d7096a704d5164130e7dcb4cb0e"
+  },
+  "rust_tests": 160,
+  "clippy": "passed",
+  "junit_tests": 69,
+  "test_log_sha256": {
+    "tests.log": "619e06f5408436354d388f5b1e6fa7105c80c469fc437ecaccef74c81a949012",
+    "clippy.log": "dccad65a474a0e64d7c677fc96c87f30265067841005a793f4d82605fea6fe77",
+    "packaged-junit.log": "4a19a8175fbe39e7bc4585e8bf41926cb03278478439ca74fe0404550159a087"
+  },
+  "engines": {
+    "classic": {
+      "monotonicity_pass_comparisons": 291,
+      "direct_pass_sha256": "b22dc1375204a3f91fde907ad98bb95a01a8fc9062cdf40616aee5df36f3a2f9",
+      "hybrid_pass_sha256": "4fd5cef116b08ef7d8753fe6d2db90894cee7f3f5172602f8d774203107d88f3",
+      "directed_ordered_s4_observations": 1835,
+      "detached_cases": 140,
+      "ordered_s4_observations": 71180,
+      "detached_receipt_sha256": [
+        "06491a450bcac6e5e1e0eb37c53e3b952d3ce687b18968dd74ca0e2354d62496",
+        "9bf2ba593ebb9df5ee5b0a89bc3a130799f1434a8251f8a9da003fec1c43bc07",
+        "bed3fc4b5654ec0c3f05f89f223b9aaa3a7558bffca8c739ef2329ceb0611744",
+        "af21f0dd14402e7898749d27b02341dab9ea659e907979590414768f8ee8bf0d",
+        "82e861a8bfa46444e0263cb476a019b026d291ebc7c81dc1a70d0bd9af7c7d19"
+      ],
+      "frozen_detached_cases": 136
+    },
+    "gen2": {
+      "monotonicity_pass_comparisons": 259,
+      "direct_pass_sha256": "f385a9712c76abfe3bdf186bffaf0dc84d594271c2c20770f8b4de7e724ba685",
+      "hybrid_pass_sha256": "b3a452a921840fe451c434bec7246c3bdd813246f7ea22b593af8654d8f756c2",
+      "directed_ordered_s4_observations": 1843,
+      "detached_cases": 131,
+      "ordered_s4_observations": 67146,
+      "detached_receipt_sha256": [
+        "381140f06e8ef0389224399bb07e9fb8299816c0385843021871efca3b593380",
+        "38b90ef2b49e605e1cb336086f16dfb51998c709e3a591eab9340baae8f65329",
+        "b92ed929d64d54594f9c4f487479984d4c0357df7315a6b5433a6a39ebb94eb4",
+        "d9d5fd5e3c4245fba6788b92ca5ea1edeb5b3c16f1dcfac5e9b4fe1b85e69418",
+        "2b9c393fa7551c2ed458eeb6e4dce01603710645c0c358f77753ae1edd1f3579"
+      ],
+      "frozen_detached_cases": 127
+    }
+  },
+  "scope": "Union, intersection and join waterlines for nested types, including 144-level row shapes.",
+  "scalar_identity_checks": {
+    "legacy_java_caller": 128,
+    "current_java_caller": 128
+  }
+}

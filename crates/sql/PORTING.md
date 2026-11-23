@@ -478,6 +478,13 @@ checkpoints restored in both directions without bootstrap.
 [Comparison and restore receipts](evidence/p3-constructed-row-arg-min.json) ·
 [Upstream compiler fix](https://github.com/feldera/feldera/pull/8046)
 
+On `b679cc7a6`, Rust combined 144-level nested waterline types. Both the
+current and earlier Java callers preserved scalar identities in 128 checks
+each. Detached replay matched 136 classic and 127 Gen-2 frozen inputs plus
+four directed inputs per engine through 138,326 ordered S4 observations
+and emission.
+[Nested waterline replay](evidence/p3-nested-bound-combinations.json)
+
 On `e9ec5cf98`, Rust grouped window inputs with TIME, DATE, TIMESTAMP and
 TIMESTAMP WITH TIME ZONE literals. All 423 pass comparisons matched Java
 across 133 frozen clock programs and eight directed compilations. The eight
