@@ -243,13 +243,17 @@ and admit each caller only to its own routes:
 
 | Caller | Certificate | Compiler | Runner | Pipeline `<p>` and its coordinator |
 |---|---|---|---|---|
-| API server, runner, compiler replicas | control-plane certificate (URI SAN `urn:feldera:control-plane`), issued by cert-manager from the private CA | all routes | all routes | all routes |
-| Pipeline `<id>` | pipeline certificate (URI SAN `urn:feldera:pipeline:<id>`), issued by the runner from the private CA | download its own binary and program info, `/healthz` | `/healthz` | all routes if `<id>` is `<p>` (the multihost coordinator), else none |
-| External client, such as a sidecar | certificate with one URI SAN listed in `mtls.extraClientUris`, issued from the private CA | `/healthz` | `/healthz` | all routes |
+| API server, runner, compiler replicas | control-plane certificate (URI SAN `urn:feldera:control-plane`), issued by cert-manager from the private CA | all routes | all routes | all routes except `/coordination/*` |
+| Pipeline `<id>` | pipeline certificate (URI SAN `urn:feldera:pipeline:<id>`), issued by the runner from the private CA | download its own binary and program info, `/healthz` | `/healthz` | all routes if `<id>` is `<p>` (the coordinator and the hosts of a multihost pipeline), else none |
+| External client, such as a sidecar | certificate with one URI SAN listed in `mtls.extraClientUris`, issued from the private CA | `/healthz` | `/healthz` | all routes except `/coordination/*` |
 | No certificate | none | `/healthz` | `/healthz` | none |
 
 Clients that reach a pipeline directly, instead of through the API server,
-are refused, except [external clients](#external-clients).  Pipelines on an older runtime version (`runtime_version`) do
+are refused, except [external clients](#external-clients).  Only the
+coordinator and the hosts of a multihost pipeline use the `/coordination/*`
+routes, so the pipeline admits only its own certificate to them.  A pipeline
+without a coordinator refuses them with 400 Bad Request and error code
+`NoCoordinator`, also without client certificates.  Pipelines on an older runtime version (`runtime_version`) do
 not check client certificates.
 
 The hosts of a multihost pipeline also use TLS to exchange data with each
