@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `3160a9fce`, the Rust window-group passes matched Java for all 133 frozen
+clock programs and four directed compilations with decimal thresholds and
+floating-point casts. The four directed compilations also matched through
+2,412 ordered observations and artifact emission.
+[Decimal window comparisons](evidence/p3-decimal-window-keys.json)
+
 On `93fef8ab1`, Rust evaluated function arguments, row fields and local
 bindings in lexical order. It matched all 550 selected monotonicity
 comparisons, including the limiter graphs they produced. A separate

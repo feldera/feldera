@@ -1,0 +1,180 @@
+{
+  "commit": "3160a9fceb0e66569e2414bf1aa6ba012f13082b",
+  "scope": "Temporal window grouping with DECIMAL thresholds and REAL and DOUBLE casts. Scan, Reorder and FindWindowGroups are compared with their Java visitors.",
+  "build_sha256": {
+    "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+    "bin/libfeldera_sql_opt_jni.so": "8a7e60e37cc71c065184d89ed6b348e93c380f0b856ee33972e3c35c285a7165",
+    "bin/sql2dbsp": "4aeb67d2501f6db3ef178f6984b3bb5ac6c947fc839d0cfe495bdb218d8cdab0",
+    "maven/sql-compiler.jar": "2018a2850dde9dee949b1f6b2ec0043327aeb2e57f875e9256aeeb0671cdd374",
+    "maven/tests.jar": "b753b73f125dccd7678b873cdf25098dc686351e7868899cb042134d39cca7a6"
+  },
+  "rust_tests_passed": 158,
+  "clippy": "passed",
+  "packaged_junit_tests": 66,
+  "engines": {
+    "classic": {
+      "frozen": {
+        "programs": 71,
+        "observations_sha256": "2120cf4845497be74c5a92e7084cc576fe9a0d23c42113e2d85771eba74af92f",
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "requests": {
+          "WindowGroups/Scan": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 64,
+            "fallbacks": 0
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched": 71,
+            "direct_sha256": "253b2bc45df4a392dad95196641ef7446afacf6fb63c18bb98813d18d44a11b8",
+            "hybrid_sha256": "549f4aa482f37f2c4341c8611a21a790afce16a22515ee1a8c3387dc63af496b"
+          },
+          "Reorder": {
+            "matched": 71,
+            "direct_sha256": "18b8f9a2dde60ffe0503bb2e9155227c0643c4153036ccde8daef44b0fbd026e",
+            "hybrid_sha256": "aaad58ee536a58d649547c50af6c7d1f3c3cf8c1ae63793f2909054ee648baa9"
+          },
+          "FindWindowGroups": {
+            "matched": 71,
+            "direct_sha256": "521d6b5bfd048cf4efe3fe4a31e28e5b4995ce6a4984f16372598d12dd86d4ee",
+            "hybrid_sha256": "c95424c15ad1001b8dc6a870e9c88bcdd65deb830bbff794afc08b4b91c91172"
+          }
+        }
+      },
+      "directed": {
+        "programs": 2,
+        "observations_sha256": "4205e64483ac020110bffd055cf7f3868fdd2eaf4e98a3ae3ae5348f4c094a64",
+        "population_sha256": "979aef0edb2688b7aea6a02c721e3ebbc0d868ce03707e656283795a8da0d0f7",
+        "requests": {
+          "WindowGroups/Scan": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 2,
+            "fallbacks": 0
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched": 2,
+            "direct_sha256": "c3feb833fd79ea0452bb447821d7e5db89d76588d5938de84f0c89d84b6665fb",
+            "hybrid_sha256": "8bcd2338c96f3f4944ae1baa527aa56b4126f6f15263a3b519b8b6a5e5d0673c"
+          },
+          "Reorder": {
+            "matched": 2,
+            "direct_sha256": "eee88625391558ca54ad3038b282de3a96a5a7efd44d5e246623f31a86224ed5",
+            "hybrid_sha256": "7906d7b6d51c706d2f79c3f859ceb582cf6de49ff4a1cda2a0997d3a67174bf5"
+          },
+          "FindWindowGroups": {
+            "matched": 2,
+            "direct_sha256": "17d3c3f271fa6863359a76ed662b6ebca16922491f43bc8860f916d1f97485c8",
+            "hybrid_sha256": "17d3c3f271fa6863359a76ed662b6ebca16922491f43bc8860f916d1f97485c8"
+          }
+        },
+        "previous_fallbacks": {
+          "WindowGroups/Scan": 2,
+          "WindowGroups/Reorder": 2,
+          "WindowGroups/Indexes": 0
+        },
+        "baseline_commit": "e5557ed3d2f54a5e01338ee4bfb24d22c4e2caeb",
+        "ordered_s4_observations": 1200,
+        "detached_receipt_sha256": "de7e131fecb56958172fb1cfd80920365802a83526cb377e6666d84ddbc52ed1"
+      }
+    },
+    "gen2": {
+      "frozen": {
+        "programs": 62,
+        "observations_sha256": "e4805183665613f9dd3e005092c3972dd164c0446056cd7602ea9ec21c29beee",
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "requests": {
+          "WindowGroups/Scan": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 55,
+            "fallbacks": 0
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched": 62,
+            "direct_sha256": "d8392c82b40194e1bf1c9d54344b4be12564de341fd58922a165f41ec9241ccf",
+            "hybrid_sha256": "cffc06d9493eec994ffc6e2c173e6a2b38313b261a233490cf484c66c5b5ab01"
+          },
+          "Reorder": {
+            "matched": 62,
+            "direct_sha256": "f0d6b56c7a749372288f1125cda85bc3a820690b58b67824079f76cc828f94f8",
+            "hybrid_sha256": "87625216b50533ae608c0673d163bb2ef968ff1eb3d18d7240aa64b6c69c62f7"
+          },
+          "FindWindowGroups": {
+            "matched": 62,
+            "direct_sha256": "387e330449c3468e7ed8e3ff09e90adcfed48acd299babb2caeacc548393a161",
+            "hybrid_sha256": "940c246fc92768e2b6997eedc0001d8af33f15030d9a6c9b7e74337bc94a0ac7"
+          }
+        }
+      },
+      "directed": {
+        "programs": 2,
+        "observations_sha256": "513bbb27d52ea3c9b1ac9e1839d70b23717032201c1baa998d60b4a71dba1c77",
+        "population_sha256": "9546d39229b7dc7192c52118136ec0732317246c78c8e56a79b47ef687d69a11",
+        "requests": {
+          "WindowGroups/Scan": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 2,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 2,
+            "fallbacks": 0
+          }
+        },
+        "passes": {
+          "Scan": {
+            "matched": 2,
+            "direct_sha256": "83b8495762ee67b77bf83e2f9d6221e4d964a71a9a2d9bf78d414e4f329a573c",
+            "hybrid_sha256": "8e4b735b2acf62046de5aa6725202dbb3f901699b95a10a4da916f31c5b4b0da"
+          },
+          "Reorder": {
+            "matched": 2,
+            "direct_sha256": "d5526103c29f28c6c4f8011add8a7a541cfd95ee22e23e4b7cee7569f1c5c049",
+            "hybrid_sha256": "e1d3d71c13105720bf80929bc906391dd38ae339178e1e537d1b6eac83522fed"
+          },
+          "FindWindowGroups": {
+            "matched": 2,
+            "direct_sha256": "c984d4ea82ee5763e8d67befc5137cb9e4482d3dd22125e58aa3221a7e63c5da",
+            "hybrid_sha256": "fc923aff13fa0821d92b219c3e426cdfa46dff4780fa99c296a7f3ca942dad58"
+          }
+        },
+        "previous_fallbacks": {
+          "WindowGroups/Scan": 2,
+          "WindowGroups/Reorder": 2,
+          "WindowGroups/Indexes": 2
+        },
+        "baseline_commit": "e5557ed3d2f54a5e01338ee4bfb24d22c4e2caeb",
+        "ordered_s4_observations": 1212,
+        "detached_receipt_sha256": "ea65adb7031e094117254306db67482c521ad790f50ee41bc5d331ba6e7423b2"
+      }
+    }
+  }
+}
