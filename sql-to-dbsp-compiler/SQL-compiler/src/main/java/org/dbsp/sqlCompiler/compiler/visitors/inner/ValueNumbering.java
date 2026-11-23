@@ -461,7 +461,7 @@ public class ValueNumbering extends InnerVisitor {
         this.startVisit(node);
         var collector = new NativeValueNumbering(this);
         node.accept(collector);
-        collector.finish(this.canonical, this.mutable, this.rewrite);
+        collector.finish(node, this.canonical, this.mutable, this.rewrite);
         this.endVisit();
         return node;
     }
@@ -477,7 +477,8 @@ public class ValueNumbering extends InnerVisitor {
         super.startVisit(node);
         this.canonical.clear();
         this.representation.clear();
-        this.resolver.apply(node);
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
+            this.resolver.apply(node);
         this.foundAssignment = false;
         this.mutable.clear();
     }

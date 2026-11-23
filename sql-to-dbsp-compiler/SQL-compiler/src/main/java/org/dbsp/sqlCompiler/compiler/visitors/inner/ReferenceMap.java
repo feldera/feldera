@@ -22,12 +22,16 @@ public class ReferenceMap {
         if (this.declarations.containsKey(var)) {
             IDBSPDeclaration decl = this.declarations.get(var);
             if (decl != declaration)
-                throw new InternalCompilerError("Changing declaration of " + var + " from\n" +
-                        decl.getId() + " " + decl + " to\n" +
-                        declaration.getId() + " " + declaration, var);
+                throw conflictingDeclaration(var, decl, declaration);
             return;
         }
         Utilities.putNew(this.declarations, var, declaration);
+    }
+
+    public static InternalCompilerError conflictingDeclaration(DBSPVariablePath var, IDBSPDeclaration previous,
+                                                              IDBSPDeclaration current) {
+        return new InternalCompilerError("Changing declaration of " + var + " from\n" +
+                previous.getId() + " " + previous + " to\n" + current.getId() + " " + current, var);
     }
 
     public IDBSPDeclaration getDeclaration(DBSPVariablePath var) {

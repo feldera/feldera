@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -195,6 +196,33 @@ public class ResolveReferencesTests extends BaseSQLTests {
 
         Assert.assertThrows(InternalCompilerError.class,
                 () -> this.resolve(expression, false));
+    }
+
+    @Test
+    public void valueNumberingReportsBindingErrorsBeforeChoosingGroups() {
+        var compiler = this.testCompiler();
+        var parameter = new DBSPVariablePath("x", b.i32());
+        var shared = new DBSPVariablePath("x", b.i32());
+        var free = new DBSPVariablePath("missing", b.i32());
+        var conflict = new DBSPLetExpression(shared, shared, shared.deepCopy()).closure(parameter);
+        var empty = new DBSPAggregateList(free.getNode(), free, java.util.List.of());
+        for (var root : java.util.List.of(free, conflict, empty)) {
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            var expected = Assert.assertThrows(InternalCompilerError.class,
+                    () -> ValueNumbering.forRewrite(compiler).apply(root));
+            Assert.assertTrue(expected.getMessage(), expected.getMessage().contains(
+                    root == conflict ? "Changing declaration" : "Could not resolve"));
+            if (Boolean.getBoolean("feldera.optimizer.compareRustValueNumbers")) {
+                compiler.options.ioOptions.rustOptimizerPasses = true;
+                var numbering = ValueNumbering.forRewrite(compiler);
+                var actual = Assert.assertThrows(InternalCompilerError.class, () -> numbering.apply(root));
+                Assert.assertEquals(expected.getMessage(), actual.getMessage());
+                Assert.assertSame(expected.dbspNode, actual.dbspNode);
+                Assert.assertEquals(expected.getPositionRange(), actual.getPositionRange());
+                var valid = shared.closure(parameter);
+                Assert.assertSame(valid, numbering.apply(valid));
+            }
+        }
     }
 
     @Test

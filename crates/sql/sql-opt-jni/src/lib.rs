@@ -428,22 +428,26 @@ fn lowering_arguments(base: Circuit, input: &[u8]) -> Result<(Circuit, Vec<NodeI
     }
 }
 
+fn inner_number(id: NodeId) -> u64 {
+    match id {
+        NodeId::Inner(id) => id,
+        NodeId::Outer(_) => unreachable!("expected an inner expression or declaration"),
+    }
+}
+
+fn binding_conflict(variable: NodeId, previous: NodeId, current: NodeId) -> Value {
+    json!({"conflict": [inner_number(variable), inner_number(previous), inner_number(current)]})
+}
+
 fn waterline_inspection(inspection: feldera_sql_opt::WaterlineInspection) -> Value {
     use feldera_sql_opt::WaterlineInspection;
-    let inner = |id| match id {
-        NodeId::Inner(id) => id,
-        NodeId::Outer(_) => unreachable!("waterline variables and expressions are inner nodes"),
-    };
     match inspection {
-        WaterlineInspection::Free(variable) => json!({"free": inner(variable)}),
-        WaterlineInspection::Conflict { variable, previous, current } => {
-            // ReferenceMap reports the conflict with both original declarations.
-            json!({"bindings": [[inner(variable), inner(previous)], [inner(variable), inner(current)]], "repeated": []})
-        }
+        WaterlineInspection::Free(variable) => json!({"free": inner_number(variable)}),
+        WaterlineInspection::Conflict { variable, previous, current } => binding_conflict(variable, previous, current),
         WaterlineInspection::Bound { references, repeated } => {
-            let mut bindings: Vec<_> = references.into_iter().map(|(v, d)| (inner(v), inner(d))).collect();
+            let mut bindings: Vec<_> = references.into_iter().map(|(v, d)| (inner_number(v), inner_number(d))).collect();
             bindings.sort_unstable();
-            json!({"bindings": bindings, "repeated": repeated.into_iter().map(inner).collect::<Vec<_>>()})
+            json!({"bindings": bindings, "repeated": repeated.into_iter().map(inner_number).collect::<Vec<_>>()})
         }
     }
 }
@@ -497,6 +501,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(json!({"copies": copies, "groups": groups, "keys": keys}));
         }
         return Ok(serde_json::to_value(copies)?);
+    }
+    if let ("InnerCSE/ResolveAndNumber", [root]) = (pass, roots.as_slice()) {
+        use feldera_sql_opt::LexicalResolution;
+        let request: feldera_sql_opt::LiveNumbering = serde_json::from_slice(state)?;
+        return Ok(match feldera_sql_opt::lexical_references(&arena, *root)? {
+            LexicalResolution::Bound(references) => serde_json::to_value(request.number(&arena, &references)?)?,
+            LexicalResolution::Free { variable, .. } => json!({"free": inner_number(variable)}),
+            LexicalResolution::Conflict { variable, previous, current } =>
+                binding_conflict(variable, previous, current),
+        });
     }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_expr::live_parameter_field_paths(&arena, *closure)?)?);
@@ -1338,7 +1352,7 @@ fn transform(
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
-        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" => {
+        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "InnerCSE/ResolveAndNumber" => {
             return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Groups" => {

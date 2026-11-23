@@ -197,7 +197,8 @@ pub(crate) fn expression_children(node: &Node) -> Vec<NodeId> {
     let mut children = Vec::new();
     if !matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
         for (name, field) in node.fields() {
-            if !matches!(name, "type" | "originalStruct") {
+            // The aggregate list serializes its cached empty row for replay; visitors skip that cache.
+            if !matches!(name, "type" | "originalStruct" | "cachedEmptySetResult") {
                 field.collect_inner_edges(&mut children);
             }
         }

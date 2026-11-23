@@ -31,6 +31,7 @@ pub(super) enum Form {
     Path {
         text: String,
     },
+    Read,
     Variable {
         declaration: u64,
     },

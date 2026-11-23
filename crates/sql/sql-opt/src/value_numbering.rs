@@ -49,6 +49,7 @@ pub struct NumberingInput {
     // The rewriter consumes only groups shared in at least one closure.
     rewrite: bool,
     sites: Vec<UseSite>,
+    #[serde(default)]
     mutable: HashSet<u64>,
 }
 
@@ -127,6 +128,48 @@ pub struct ValueGroup {
     wrapper: bool,
     shared: BTreeSet<u64>,
     users: Vec<usize>,
+}
+
+/// The live collector identifies variable reads and mutable places by occurrence.
+/// Resolve them in the original closure before discarding groups that depend on a write.
+#[derive(Deserialize)]
+pub struct LiveNumbering {
+    #[serde(flatten)]
+    numbers: NumberingInput,
+    mutable_reads: Vec<u64>,
+    mutable_places: Vec<u64>,
+}
+
+#[derive(Serialize)]
+pub struct ResolvedNumbers {
+    groups: Vec<ValueGroup>,
+    mutable: BTreeSet<u64>,
+    unknown_write: bool,
+}
+
+impl LiveNumbering {
+    pub fn number(
+        mut self,
+        circuit: &Circuit,
+        references: &HashMap<NodeId, NodeId>,
+    ) -> Result<ResolvedNumbers, Error> {
+        let declaration = |read| match references.get(&NodeId::Inner(read)) {
+            Some(&NodeId::Inner(id)) => Ok(id),
+            _ => Err(Error::new(format!("missing declaration for CSE variable {read}"))),
+        };
+        for event in &mut self.numbers.events {
+            if let Event::Define { expression, key: Definition::Typed { form: form @ Form::Read }, .. } = event {
+                *form = Form::Variable { declaration: declaration(*expression)? };
+            }
+        }
+        let places: Vec<_> = self.mutable_places.into_iter().map(NodeId::Inner).collect();
+        let borrows = borrowed_variables(circuit, &places)?;
+        let unknown_write = borrows.iter().any(Option::is_none);
+        let mutable = self.mutable_reads.into_iter().chain(borrows.into_iter().flatten())
+            .map(declaration).collect::<Result<BTreeSet<_>, _>>()?;
+        self.numbers.mutable.extend(&mutable);
+        Ok(ResolvedNumbers { groups: self.numbers.number()?, mutable, unknown_write })
+    }
 }
 
 impl NumberingInput {

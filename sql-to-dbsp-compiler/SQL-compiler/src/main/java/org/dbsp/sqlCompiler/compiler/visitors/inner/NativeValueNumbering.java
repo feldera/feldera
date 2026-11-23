@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
@@ -29,7 +30,7 @@ public final class NativeValueNumbering extends InnerVisitor {
     public sealed interface Form {}
     public record Literal(String type, @Nullable String value) implements Form {}
     public record Path(String text) implements Form {}
-    public record Variable(long declaration) implements Form {}
+    public record Read() implements Form {}
     public record Let(String name, long declaration) implements Form {}
     public record Binary(String type, String opcode, String symbol) implements Form {}
     public record Unary(String type, String opcode, String symbol) implements Form {}
@@ -46,15 +47,17 @@ public final class NativeValueNumbering extends InnerVisitor {
     public record Use(long input, int site) implements Event {}
     public record Site(long parent, int operand, Long closure) {}
     public record Define(long expression, Form form, long[] operands) implements Event {}
-    public record Request(List<Event> events, Set<Long> mutable, boolean rewrite, List<Site> sites) {}
+    public record Request(List<Event> events, List<Long> mutable_reads, List<Long> mutable_places,
+                          boolean rewrite, List<Site> sites) {}
     public record Group(long representative, boolean expensive, List<Long> declarations,
                         List<Long> occurrences, List<Integer> users, Set<Long> shared) {}
 
     private final List<Event> events = new ArrayList<>();
-    private final List<DBSPExpression> mutableBorrows = new ArrayList<>();
+    private final List<Long> mutableBorrows = new ArrayList<>();
+    private final List<Long> mutableReads = new ArrayList<>();
     private final List<ValueNumbering.ExpressionUser> users = new ArrayList<>();
     private final Map<Long, DBSPExpression> expressions = new HashMap<>();
-    private final Map<Long, IDBSPDeclaration> bindings = new HashMap<>();
+    private boolean hasVariable;
 
     private final ValueNumbering analysis;
     private final List<DBSPClosureExpression> closures = new ArrayList<>();
@@ -78,11 +81,6 @@ public final class NativeValueNumbering extends InnerVisitor {
     @Override
     public void postorder(DBSPClosureExpression node) {
         Utilities.removeLast(this.closures);
-    }
-
-    private long binding(IDBSPDeclaration declaration) {
-        this.bindings.put(declaration.getId(), declaration);
-        return declaration.getId();
     }
 
     private void use(DBSPExpression parent, int operand, DBSPExpression input) {
@@ -115,16 +113,15 @@ public final class NativeValueNumbering extends InnerVisitor {
 
     @Override
     public void postorder(DBSPVariablePath e) {
-        var declaration = this.analysis.resolver.reference.get(e);
-        Utilities.enforce(declaration != null);
+        this.hasVariable = true;
         if (e.type instanceof DBSPTypeRef ref && ref.mutable)
-            this.analysis.mutable.add(declaration);
-        this.define(e, new Variable(this.binding(declaration)));
+            this.mutableReads.add(e.id);
+        this.define(e, new Read());
     }
 
     @Override
     public void postorder(DBSPLetExpression e) {
-        this.define(e, new Let(e.variable.toString(), this.binding(e)), e.initializer, e.consumer);
+        this.define(e, new Let(e.variable.toString(), e.id), e.initializer, e.consumer);
     }
 
     @Override
@@ -173,7 +170,7 @@ public final class NativeValueNumbering extends InnerVisitor {
         if (!e.mut)
             this.define(e, new Simple(Operator.Borrow), e.expression);
         else
-            this.mutableBorrows.add(e.expression);
+            this.mutableBorrows.add(e.expression.id);
     }
 
     @Override
@@ -218,33 +215,24 @@ public final class NativeValueNumbering extends InnerVisitor {
         this.analysis.foundAssignment = true;
     }
 
-    void finish(Map<DBSPExpression, ValueNumbering.CanonicalExpression> numbers,
+    void finish(IDBSPInnerNode root, Map<DBSPExpression, ValueNumbering.CanonicalExpression> numbers,
                 Set<IDBSPDeclaration> mutable, boolean rewrite) {
-        if (!this.mutableBorrows.isEmpty()) {
-            for (var variable : RustCircuitPass.borrowedVariables(this.compiler, this.mutableBorrows)) {
-                if (variable == null)
-                    this.analysis.foundAssignment = true;
-                else
-                    mutable.add(this.analysis.resolver.reference.getDeclaration(variable));
-            }
-        }
-        if (this.expressions.isEmpty() || (rewrite && this.users.size() < 2))
+        if (!this.hasVariable && this.mutableBorrows.isEmpty()
+                && (this.expressions.isEmpty() || (rewrite && this.users.size() < 2)))
             return;
-        var writes = new HashSet<Long>();
-        for (var binding : mutable)
-            writes.add(binding.getId());
         var sites = new ArrayList<Site>();
         if (rewrite) {
             for (var user : this.users)
                 sites.add(new Site(user.expression().id, user.operand(), user.closure() == null ? null : user.closure().id));
         }
-        var groups = RustCircuitPass.numberValues(new Request(this.events, writes, rewrite, sites));
-        if (this.compiler.stateObserver != null)
-            this.compiler.stateObserver.nativeDecision("InnerCSE/NumberValues", true);
-        for (var group : groups) {
+        var result = RustCircuitPass.resolveAndNumber(this.compiler, root,
+                new Request(this.events, this.mutableReads, this.mutableBorrows, rewrite, sites));
+        this.analysis.foundAssignment |= result.unknownWrite();
+        mutable.addAll(result.mutable());
+        for (var group : result.groups()) {
             var dependencies = new HashSet<IDBSPDeclaration>();
             for (long id : group.declarations())
-                dependencies.add(Utilities.getExists(this.bindings, id));
+                dependencies.add(result.declaration(id));
             var value = new ValueNumbering.CanonicalExpression(
                     Utilities.getExists(this.expressions, group.representative()), dependencies, group.expensive(),
                     rewrite ? group.shared() : null);

@@ -578,12 +578,24 @@ public final class RustCircuitPass implements CircuitTransform {
         return readWaterlineInspection(reply.writer, reply.value);
     }
 
-    private static WaterlineInspection readWaterlineInspection(ToJsonInnerVisitor writer, JsonNode value) {
+    private static void checkBindingErrors(ToJsonInnerVisitor writer, JsonNode value) {
         var nodes = Objects.requireNonNull(writer.liveNodes);
         if (value.has("free")) {
             var variable = Utilities.getExists(nodes, value.required("free").longValue());
             throw new InternalCompilerError("Could not resolve " + variable);
         }
+        if (value.has("conflict")) {
+            var conflict = value.required("conflict");
+            var variable = Utilities.getExists(nodes, conflict.required(0).longValue()).to(DBSPVariablePath.class);
+            var previous = Utilities.getExists(nodes, conflict.required(1).longValue()).to(IDBSPDeclaration.class);
+            var current = Utilities.getExists(nodes, conflict.required(2).longValue()).to(IDBSPDeclaration.class);
+            throw ReferenceMap.conflictingDeclaration(variable, previous, current);
+        }
+    }
+
+    private static WaterlineInspection readWaterlineInspection(ToJsonInnerVisitor writer, JsonNode value) {
+        checkBindingErrors(writer, value);
+        var nodes = Objects.requireNonNull(writer.liveNodes);
         var references = new ReferenceMap();
         for (var pair : value.required("bindings")) {
             var variable = Utilities.getExists(nodes, pair.required(0).longValue()).to(DBSPVariablePath.class);
@@ -1920,30 +1932,29 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    /** For each mutable borrow, return its original variable or null for a computed place. */
-    public static DBSPVariablePath[] borrowedVariables(DBSPCompiler compiler, List<DBSPExpression> places) {
-        String pass = "InnerCSE/BorrowedVariables";
-        var reply = invokeLowering(compiler, pass, places.toArray(DBSPExpression[]::new));
-        var nodes = Objects.requireNonNull(reply.writer.liveNodes);
-        Utilities.enforce(reply.value.isArray() && reply.value.size() == places.size());
-        var variables = new DBSPVariablePath[places.size()];
-        for (int i = 0; i < variables.length; i++) {
-            var id = reply.value.required(i);
-            if (!id.isNull())
-                variables[i] = Utilities.getExists(nodes, id.longValue()).to(DBSPVariablePath.class);
+    public record ResolvedNumbers(NativeValueNumbering.Group[] groups, Map<Long, IDBSPInnerNode> nodes,
+                                  List<IDBSPDeclaration> mutable, boolean unknownWrite) {
+        public IDBSPDeclaration declaration(long id) {
+            return Utilities.getExists(this.nodes, id).to(IDBSPDeclaration.class);
         }
-        if (compiler.stateObserver != null)
-            compiler.stateObserver.nativeDecision(pass, true);
-        return variables;
     }
 
-    public static NativeValueNumbering.Group[] numberValues(NativeValueNumbering.Request request) {
+    /** Resolve each read and mutable borrow in the same graph used to number the expressions. */
+    public static ResolvedNumbers resolveAndNumber(DBSPCompiler compiler, IDBSPInnerNode root,
+                                                   NativeValueNumbering.Request request) {
         try {
-            byte[] reply = transformWithContext("InnerCSE/NumberValues", MAPPER.writeValueAsBytes(request),
-                    0, "", EMPTY_CONTEXT);
-            return MAPPER.readValue(reply, NativeValueNumbering.Group[].class);
+            var reply = invokeLowering(compiler, "InnerCSE/ResolveAndNumber", MAPPER.writeValueAsBytes(request), root);
+            checkBindingErrors(reply.writer, reply.value);
+            var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+            var mutable = new ArrayList<IDBSPDeclaration>();
+            for (var id : reply.value.required("mutable"))
+                mutable.add(Utilities.getExists(nodes, id.longValue()).to(IDBSPDeclaration.class));
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision("InnerCSE/ResolveAndNumber", true);
+            return new ResolvedNumbers(MAPPER.treeToValue(reply.value.required("groups"), NativeValueNumbering.Group[].class),
+                    nodes, mutable, reply.value.required("unknown_write").booleanValue());
         } catch (IOException error) {
-            throw new UncheckedIOException("Invalid expression value numbers from Rust", error);
+            throw new UncheckedIOException("Invalid CSE variable bindings or value numbers", error);
         }
     }
 

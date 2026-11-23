@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust resolves CSE variable reads and mutable borrows before assigning value
+numbers. Free reads and conflicting declarations retain their Java diagnostics.
+All 103 targeted JUnit tests passed. Across 94 detached compilations, Rust
+handled 3,812 numbering requests and matched all 46,351 S4 observations and
+emitted artifacts. The largest cold p95 ratio was 1.177× on Nexmark (4.892 s
+hybrid, 4.156 s direct). [Replay](evidence/p3-cse-resolution.json) ·
+[Paired compilation timings](evidence/p3-cse-resolution-cold.json)
+
 When a waterline closure needs the general visitor, Rust returns the variable
 bindings and shared-expression check from its first traversal. A binding
 error takes precedence over a shared-expression diagnostic, as in direct

@@ -92,7 +92,7 @@ mod expand_aggregates;
 mod binding_placement;
 pub use binding_placement::{BindingScope, PendingBinding, bind_lazy_expression, lazy_statements, read_lazy_value};
 mod value_numbering;
-pub use value_numbering::{NumberingInput, borrowed_variables};
+pub use value_numbering::{LiveNumbering, NumberingInput, borrowed_variables};
 mod expression_uses;
 pub use expression_uses::{shared_expression_uses, NumberedExpression};
 mod expression_visitor;
