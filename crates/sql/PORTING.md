@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust resolves variable references for optimizer visitors that accept free
+variables and for those that require closed expressions. Both preserve the
+bindings established before a diagnostic. All 104 targeted JUnit tests
+passed, and 94 detached compilations matched Java through 46,351 ordered S4
+observations and emission. Nexmark had the largest cold p95 ratio at 1.121×.
+[Reference resolution replay](evidence/p3-general-resolver.json) ·
+[Paired compilation timings](evidence/p3-general-resolver-cold.json)
+
 When an optimizer pass needs an expression tree, Rust copies each shared
 subtree and gives each nested closure its own parameters. The outer closure
 keeps its original parameter objects. The identity checks passed in the

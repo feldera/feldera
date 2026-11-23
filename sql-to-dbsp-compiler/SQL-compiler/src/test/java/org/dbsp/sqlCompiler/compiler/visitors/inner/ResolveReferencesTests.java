@@ -199,6 +199,34 @@ public class ResolveReferencesTests extends BaseSQLTests {
     }
 
     @Test
+    public void partialResolutionRetainsBindingsBeforeAConflict() {
+        var compiler = this.testCompiler();
+        var free = new DBSPVariablePath("missing", b.i32());
+        var parameter = new DBSPVariablePath("outer", b.i32());
+        var shared = new DBSPVariablePath(parameter.variable, parameter.getType());
+        var inner = shared.closure(new DBSPVariablePath("outer", b.i32()));
+        var prefix = b.tuple(free, shared);
+        var conflict = b.tuple(prefix, inner).closure(parameter);
+        var valid = prefix.closure(parameter);
+        for (boolean nativePass : java.util.List.of(false, true)) {
+            if (nativePass && !Boolean.getBoolean("feldera.optimizer.compareRustValueNumbers"))
+                continue;
+            compiler.options.ioOptions.rustOptimizerPasses = nativePass;
+            var resolver = new ResolveReferences(compiler, true);
+            var error = Assert.assertThrows(InternalCompilerError.class, () -> resolver.apply(conflict));
+            Assert.assertSame(shared, error.dbspNode);
+            Assert.assertTrue(resolver.hasFreeVariables());
+            Assert.assertSame(conflict.parameters[0], resolver.reference.get(shared));
+            resolver.apply(valid);
+            Assert.assertTrue(resolver.hasFreeVariables());
+            Assert.assertSame(valid.parameters[0], resolver.reference.get(shared));
+            resolver.apply(b.i32());
+            Assert.assertFalse(resolver.hasFreeVariables());
+            Assert.assertNull(resolver.reference.get(shared));
+        }
+    }
+
+    @Test
     public void valueNumberingReportsBindingErrorsBeforeChoosingGroups() {
         var compiler = this.testCompiler();
         var parameter = new DBSPVariablePath("x", b.i32());

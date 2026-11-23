@@ -14,7 +14,7 @@ pub use pipeline::{optimizer_order, OptimizerStep, PipelineOptions};
 mod repeat;
 pub use repeat::{repeat, RepeatResult};
 mod lexical_scope;
-pub use lexical_scope::{lexical_references, Resolution as LexicalResolution};
+pub use lexical_scope::{BindingDiagnostic, Resolution as LexicalResolution, inspect_references, lexical_references};
 mod map_fusion;
 mod monotonicity;
 pub use monotonicity::aggregate::{aggregate_transfer, chain_minimum_transfer, minimum_transfer, AggregateTransfer};

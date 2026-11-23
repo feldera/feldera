@@ -31,6 +31,39 @@ pub enum Resolution<'a> {
     },
 }
 
+/// All bindings recorded before the first diagnostic. Open expressions can
+/// contain free variables while still resolving their local declarations.
+#[derive(Default)]
+pub struct ReferenceInspection<'a> {
+    pub bindings: HashMap<NodeId, NodeId>,
+    pub has_free_variables: bool,
+    pub diagnostic: Option<BindingDiagnostic<'a>>,
+}
+
+pub enum BindingDiagnostic<'a> {
+    Free { variable: NodeId, name: &'a str },
+    Conflict { variable: NodeId, previous: NodeId, current: NodeId },
+}
+
+impl<'a> ReferenceInspection<'a> {
+    fn resolution(self) -> Resolution<'a> {
+        match self.diagnostic {
+            Some(BindingDiagnostic::Free { variable, name }) => Resolution::Free { variable, name },
+            Some(BindingDiagnostic::Conflict { variable, previous, current }) =>
+                Resolution::Conflict { variable, previous, current },
+            None => Resolution::Bound(self.bindings),
+        }
+    }
+}
+
+pub fn inspect_references(
+    circuit: &Circuit,
+    root: NodeId,
+    allow_free: bool,
+) -> Result<ReferenceInspection<'_>, Error> {
+    resolve_variables(circuit, root, Vec::new(), allow_free)
+}
+
 impl Resolution<'_> {
     fn required(self) -> Result<References, Error> {
         match self {
@@ -54,7 +87,7 @@ impl Resolution<'_> {
 
 /// Keep the identities of failed bindings so the caller can report their live source locations.
 pub fn lexical_references(circuit: &Circuit, root: NodeId) -> Result<Resolution<'_>, Error> {
-    resolve_variables(circuit, root, Vec::new())
+    Ok(inspect_references(circuit, root, false)?.resolution())
 }
 
 pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, Error> {
@@ -62,7 +95,10 @@ pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, 
 }
 
 pub(crate) fn has_free_variables(circuit: &Circuit, closure: NodeId) -> Result<bool, Error> {
-    Ok(lexical_references(circuit, closure)?.optional()?.is_none())
+    let inspection = inspect_references(circuit, closure, true)?;
+    let found = inspection.has_free_variables;
+    inspection.resolution().required()?;
+    Ok(found)
 }
 
 /// Resolve a predicate detached from its closure, keeping its row parameter in scope.
@@ -87,7 +123,7 @@ pub(crate) fn resolve_body(
             .ok_or_else(|| Error::new("missing closure parameter"))?;
         bindings.push((name(parameter, "name")?, id));
     }
-    resolve_variables(circuit, body, bindings)
+    Ok(resolve_variables(circuit, body, bindings, false)?.resolution())
 }
 
 /// An unbound name is a normal outcome when testing a partially projected closure.
@@ -95,8 +131,9 @@ fn resolve_variables<'a>(
     circuit: &'a Circuit,
     closure: NodeId,
     mut bindings: Vec<(&'a str, NodeId)>,
-) -> Result<Resolution<'a>, Error> {
-    let mut references = HashMap::new();
+    allow_free: bool,
+) -> Result<ReferenceInspection<'a>, Error> {
+    let mut result = ReferenceInspection::default();
     let mut path = HashSet::new();
     let mut pending = vec![Visit::Enter(closure)];
     while let Some(visit) = pending.pop() {
@@ -111,14 +148,10 @@ fn resolve_variables<'a>(
                 continue;
             }
             Visit::Record(variable, current) => {
-                if let Some(previous) = references.insert(variable, current) {
-                    if previous != current {
-                        return Ok(Resolution::Conflict {
-                            variable,
-                            previous,
-                            current,
-                        });
-                    }
+                let previous = *result.bindings.entry(variable).or_insert(current);
+                if previous != current {
+                    result.diagnostic = Some(BindingDiagnostic::Conflict { variable, previous, current });
+                    break;
                 }
                 continue;
             }
@@ -140,10 +173,12 @@ fn resolve_variables<'a>(
                     .rev()
                     .find_map(|&(bound, id)| (bound == variable).then_some(id))
                 else {
-                    return Ok(Resolution::Free {
-                        variable: id,
-                        name: variable,
-                    });
+                    if allow_free {
+                        result.has_free_variables = true;
+                        continue;
+                    }
+                    result.diagnostic = Some(BindingDiagnostic::Free { variable: id, name: variable });
+                    break;
                 };
                 pending.push(Visit::Record(id, declaration));
             }
@@ -190,7 +225,7 @@ fn resolve_variables<'a>(
             }
         }
     }
-    Ok(Resolution::Bound(references))
+    Ok(result)
 }
 
 pub(crate) fn expression_children(node: &Node) -> Vec<NodeId> {

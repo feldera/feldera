@@ -439,15 +439,21 @@ fn binding_conflict(variable: NodeId, previous: NodeId, current: NodeId) -> Valu
     json!({"conflict": [inner_number(variable), inner_number(previous), inner_number(current)]})
 }
 
+fn binding_ids(bindings: std::collections::HashMap<NodeId, NodeId>) -> Vec<(u64, u64)> {
+    let mut pairs: Vec<_> = bindings.into_iter()
+        .map(|(variable, declaration)| (inner_number(variable), inner_number(declaration)))
+        .collect();
+    pairs.sort_unstable();
+    pairs
+}
+
 fn waterline_inspection(inspection: feldera_sql_opt::WaterlineInspection) -> Value {
     use feldera_sql_opt::WaterlineInspection;
     match inspection {
         WaterlineInspection::Free(variable) => json!({"free": inner_number(variable)}),
         WaterlineInspection::Conflict { variable, previous, current } => binding_conflict(variable, previous, current),
         WaterlineInspection::Bound { references, repeated } => {
-            let mut bindings: Vec<_> = references.into_iter().map(|(v, d)| (inner_number(v), inner_number(d))).collect();
-            bindings.sort_unstable();
-            json!({"bindings": bindings, "repeated": repeated.into_iter().map(inner_number).collect::<Vec<_>>()})
+            json!({"bindings": binding_ids(references), "repeated": repeated.into_iter().map(inner_number).collect::<Vec<_>>()})
         }
     }
 }
@@ -501,6 +507,17 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(json!({"copies": copies, "groups": groups, "keys": keys}));
         }
         return Ok(serde_json::to_value(copies)?);
+    }
+    if let ("ResolveReferences", [root]) = (pass, roots.as_slice()) {
+        use feldera_sql_opt::BindingDiagnostic;
+        let allow_free = serde_json::from_slice(state)?;
+        let inspection = feldera_sql_opt::inspect_references(&arena, *root, allow_free)?;
+        let diagnostic = inspection.diagnostic.map(|issue| match issue {
+            BindingDiagnostic::Free { variable, .. } => json!({"free": inner_number(variable)}),
+            BindingDiagnostic::Conflict { variable, previous, current } => binding_conflict(variable, previous, current),
+        });
+        return Ok(json!({"bindings": binding_ids(inspection.bindings),
+            "has_free": inspection.has_free_variables, "diagnostic": diagnostic}));
     }
     if let ("InnerCSE/ResolveAndNumber", [root]) = (pass, roots.as_slice()) {
         use feldera_sql_opt::LexicalResolution;
@@ -1356,7 +1373,7 @@ fn transform(
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
-        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "InnerCSE/ResolveAndNumber" => {
+        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" => {
             return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Groups" => {

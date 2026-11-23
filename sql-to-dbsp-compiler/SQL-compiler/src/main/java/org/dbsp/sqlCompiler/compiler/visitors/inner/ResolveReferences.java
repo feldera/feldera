@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -33,6 +34,21 @@ public class ResolveReferences extends InnerVisitor {
         this.reference = new ReferenceMap();
         this.allowFreeVariables = allowFreeVariables;
         this.freeVariablesFound = false;
+    }
+
+    @Override
+    public IDBSPInnerNode apply(IDBSPInnerNode node) {
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses || getClass() != ResolveReferences.class)
+            return super.apply(node);
+        this.startVisit(node);
+        if (!(node instanceof DBSPType)) {
+            var result = RustCircuitPass.resolveReferences(this.compiler, node, this.allowFreeVariables, this.reference);
+            this.freeVariablesFound = result.hasFree();
+            if (result.diagnostic() != null)
+                throw result.diagnostic();
+        }
+        this.endVisit();
+        return node;
     }
 
     @Override

@@ -578,30 +578,54 @@ public final class RustCircuitPass implements CircuitTransform {
         return readWaterlineInspection(reply.writer, reply.value);
     }
 
-    private static void checkBindingErrors(ToJsonInnerVisitor writer, JsonNode value) {
+    @Nullable
+    private static InternalCompilerError bindingError(ToJsonInnerVisitor writer, JsonNode value) {
         var nodes = Objects.requireNonNull(writer.liveNodes);
         if (value.has("free")) {
             var variable = Utilities.getExists(nodes, value.required("free").longValue());
-            throw new InternalCompilerError("Could not resolve " + variable);
+            return new InternalCompilerError("Could not resolve " + variable);
         }
         if (value.has("conflict")) {
             var conflict = value.required("conflict");
             var variable = Utilities.getExists(nodes, conflict.required(0).longValue()).to(DBSPVariablePath.class);
             var previous = Utilities.getExists(nodes, conflict.required(1).longValue()).to(IDBSPDeclaration.class);
             var current = Utilities.getExists(nodes, conflict.required(2).longValue()).to(IDBSPDeclaration.class);
-            throw ReferenceMap.conflictingDeclaration(variable, previous, current);
+            return ReferenceMap.conflictingDeclaration(variable, previous, current);
         }
+        return null;
+    }
+
+    private static void checkBindingErrors(ToJsonInnerVisitor writer, JsonNode value) {
+        var error = bindingError(writer, value);
+        if (error != null)
+            throw error;
+    }
+
+    private static void readBindings(ToJsonInnerVisitor writer, JsonNode pairs, ReferenceMap references) {
+        var nodes = Objects.requireNonNull(writer.liveNodes);
+        for (var pair : pairs) {
+            var variable = Utilities.getExists(nodes, pair.required(0).longValue()).to(DBSPVariablePath.class);
+            var declaration = Utilities.getExists(nodes, pair.required(1).longValue()).to(IDBSPDeclaration.class);
+            references.declare(variable, declaration);
+        }
+    }
+
+    public record ReferenceResult(boolean hasFree, @Nullable InternalCompilerError diagnostic) {}
+
+    public static ReferenceResult resolveReferences(DBSPCompiler compiler, IDBSPInnerNode root,
+                                                   boolean allowFree, ReferenceMap references) {
+        var flags = (allowFree ? "true" : "false").getBytes(StandardCharsets.US_ASCII);
+        var reply = invokeLowering(compiler, "ResolveReferences", flags, root);
+        readBindings(reply.writer, reply.value.required("bindings"), references);
+        return new ReferenceResult(reply.value.required("has_free").booleanValue(),
+                bindingError(reply.writer, reply.value.required("diagnostic")));
     }
 
     private static WaterlineInspection readWaterlineInspection(ToJsonInnerVisitor writer, JsonNode value) {
         checkBindingErrors(writer, value);
         var nodes = Objects.requireNonNull(writer.liveNodes);
         var references = new ReferenceMap();
-        for (var pair : value.required("bindings")) {
-            var variable = Utilities.getExists(nodes, pair.required(0).longValue()).to(DBSPVariablePath.class);
-            var declaration = Utilities.getExists(nodes, pair.required(1).longValue()).to(IDBSPDeclaration.class);
-            references.declare(variable, declaration);
-        }
+        readBindings(writer, value.required("bindings"), references);
         var path = new ArrayList<IDBSPInnerNode>();
         for (var id : value.required("repeated"))
             path.add(Utilities.getExists(nodes, id.longValue()));
