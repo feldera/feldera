@@ -1,0 +1,59 @@
+{
+  "scope": "Integrated optimizer with native temporal-scan warnings, general waterline closures and left-join lookups. Directed warnings check the source span and exactly-once reporting during fallback.",
+  "parent_commit": "9328c239e",
+  "build_sha256": {
+    "verified-bin/libfeldera_sql_opt_jni.so": "3b972009a90d45a715790e19265d43b0a507faf5099aaed2a418261dcaf3ff7d",
+    "verified-bin/sql-difftest": "683dd370d9c1325dc3137e8bdf18ecba275a1acd2bea127cdcfe076289cbc2b7",
+    "maven/sql-compiler.jar": "f8e2de903d7fd047e64dc37e82f1094916472ee57cc053c0de1f7ac9f66f151d",
+    "maven/tests.jar": "86a1f3865f680658394e3568576ba26235cb38b77b10a8614ee02a0e87f4cd1f",
+    "maven/build.log": "3980a4735307cbff67122c3a297019f50624b2ccd1789d4cea461a8746068721",
+    "isolated-tests.log": "fb087a094c7af7625f6c981789d309463cf9afdd60e2e7726a0928d6736ebd9f",
+    "isolated-clippy.log": "06fff8098471587efd4ac866d2f9c67ae24310d2dc19aa4eab289951f9326d2a",
+    "isolated-build.log": "592c9ee5b4d6e3119ae8d589024db96128d6da100c3bd1148841b6bc71a7ac91",
+    "verified-junit.log": "d20d3a27bd7ebc8bd79774db027f9d35954a9f0926e97cdbcac7f1f7cce7f610"
+  },
+  "rust_tests": 217,
+  "junit_tests": 94,
+  "engines": {
+    "classic": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18310,
+      "mismatches": 0,
+      "receipt_sha256": "305a797037dd155922720cad4a8a2d70c2de547b481eaaa7f21be6be2b0fbafb",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 210,
+        "Monotonicity/Transfer": 388,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    },
+    "gen2": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18484,
+      "mismatches": 0,
+      "receipt_sha256": "f9f72fc34b56199a624740fa1c0bba478f2d374895ae8d47dcc8f73bbc29c16b",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 268,
+        "Monotonicity/Transfer": 536,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    }
+  }
+}

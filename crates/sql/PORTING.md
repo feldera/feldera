@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The Rust window scan reports cast warnings at their SQL source ranges. When
+a later filter requires replay, the earlier warning appears once. The native
+scan also groups a scalar conversion with an ordinary call of the same name
+and operands. On each build, 60 temporal programs matched direct Java at all
+36,794 ordered S4 observations and through emission.
+[Warning replay](evidence/p3-temporal-warning.json) · [Conversion keys](evidence/p3-conversion-window-keys.json)
+
 Rust selects lookup keys and deferred payload columns for left-join chains.
 Across both engines, the 20 profitable rewrites in the frozen corpus matched
 Java's key selection, physical index order and payload layout. All 14,254

@@ -481,14 +481,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_expr::live_parameter_field_paths(&arena, *closure)?)?);
     }
-    if let ("Monotonicity/Cast", [from, to, bound]) = (pass, roots.as_slice()) {
-        let edit = feldera_sql_ir::CircuitEditor::new(arena);
-        let choice = feldera_sql_opt::cast_waterline(
-            &edit, edit.type_id(*from)?, edit.type_id(*to)?, edit.type_id(*bound)?,
-            serde_json::from_slice(state)?,
-        )?;
-        return Ok(serde_json::to_value(choice)?);
-    }
     if let ("IsIdentityProjection", [closure]) = (pass, roots.as_slice()) {
         let edit = feldera_sql_ir::CircuitEditor::new(arena);
         let identity = feldera_sql_opt::identity_closure(&edit, *closure, &mut next)?;
@@ -794,6 +786,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             }
             let call = edit.expression(*call)?;
             feldera_sql_opt::build_function_waterline(&mut edit, call, target, &bounds)?
+        }
+        ("Monotonicity/Cast", [cast, bound]) => {
+            let cast = edit.expression(*cast)?;
+            let bound = edit.expression(*bound)?;
+            let Some(reduced) = feldera_sql_opt::cast_bound(&mut edit, cast, bound)? else {
+                return Ok(Value::Null);
+            };
+            reduced
         }
         ("Monotonicity/Unary", [operator, bound]) => {
             let operator = edit.expression(*operator)?;

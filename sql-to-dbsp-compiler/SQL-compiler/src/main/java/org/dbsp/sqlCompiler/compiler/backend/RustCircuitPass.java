@@ -973,16 +973,18 @@ public final class RustCircuitPass implements CircuitTransform {
     public enum BinaryDomain { Scalar, Temporal, TimeOfDay }
     public enum BinaryWaterline { None, Left, Right, Both, InheritLeft, InheritRight, Coalesce }
     public record WaterlineOperand(boolean monotone, boolean constant, boolean positiveLiteral, boolean neverNull) {}
-    public enum CastWaterline { None, Identity, Ordinary, Saturating }
 
-    public static CastWaterline castWaterline(DBSPCompiler compiler, DBSPType from, DBSPType to,
-                                               DBSPType bound, boolean safe) {
-        try {
-            var reply = invokeLowering(compiler, "Monotonicity/Cast", MAPPER.writeValueAsBytes(safe), from, to, bound);
-            return MAPPER.treeToValue(reply.value, CastWaterline.class);
-        } catch (IOException error) {
-            throw new UncheckedIOException("Invalid cast waterline from Rust", error);
-        }
+    /** Encode only the operand types; the projected cast must reference the live bound. */
+    @Nullable
+    public static DBSPExpression castWaterline(DBSPCompiler compiler, DBSPCastExpression cast, DBSPExpression bound) {
+        var source = new DBSPVariablePath("source", cast.source.getType());
+        var reduced = new DBSPVariablePath("bound", bound.getType());
+        var operation = new DBSPCastExpression(cast.getNode(), source, cast.getType(), cast.safe);
+        var reply = invokeLowering(compiler, "Monotonicity/Cast", operation, reduced);
+        if (reply.value.isNull())
+            return null;
+        Objects.requireNonNull(reply.writer.liveNodes).put(reduced.id, bound);
+        return loweredFunction(compiler, reply.writer, reply.value, DBSPExpression.class);
     }
 
     public record FunctionArgument(boolean monotone, boolean constant, boolean doubleLiteralAboveOne) {}

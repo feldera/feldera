@@ -1,0 +1,59 @@
+{
+  "scope": "Scalar unary conversions in temporal keys use the same spelling as ordinary calls. The integration test compares a converted Boolean, the named call and a distinct input field in the reference and native scans.",
+  "parent_commit": "4072efe22",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "9463a78c868d84ca2364c20faf493baf7f63e21a787d30fbea253b66f90d40eb",
+    "bin/sql-difftest": "683dd370d9c1325dc3137e8bdf18ecba275a1acd2bea127cdcfe076289cbc2b7",
+    "maven/sql-compiler.jar": "aa34e3f71ef27fa6959ef8045ddb89488c7001656306b059d6cd021da2d910c3",
+    "maven/tests.jar": "2000de50f739ca7a20c9779792d3a267243e1d894fb12393232d6e1f603535ff",
+    "maven/build.log": "90aebad049d1f83e833f37f1f0bfde0395e98e6281d0decdb66d16a6a2c28c06",
+    "tests.log": "defd6231f67b1a7056a2c933050dc1eecf064317e5a5bb00e5419fd2778e97ef",
+    "clippy.log": "094d06b23a5f57608f56419005177a80d0e5344b643030115fc269c62b2b75ae",
+    "build.log": "9a27d25f65184ee1ca06a680e5026feb59cc88ac5e65ed5eedb32a3a5d14d730",
+    "junit.log": "e11208647011ed5f33f659cb20b23c43484405834c5791623a6ac68729347e11"
+  },
+  "rust_tests": 217,
+  "junit_tests": 96,
+  "engines": {
+    "classic": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18310,
+      "mismatches": 0,
+      "receipt_sha256": "20ca807f24b7444e1eb2e379e3e66d8ba54be6fd62c856e44347e21cb2f78dcf",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 210,
+        "Monotonicity/Transfer": 388,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    },
+    "gen2": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18484,
+      "mismatches": 0,
+      "receipt_sha256": "c10795f041362c917eac32cd2a800a81308f4af958bb1b7b64461d7ebd1a5561",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 268,
+        "Monotonicity/Transfer": 536,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    }
+  }
+}

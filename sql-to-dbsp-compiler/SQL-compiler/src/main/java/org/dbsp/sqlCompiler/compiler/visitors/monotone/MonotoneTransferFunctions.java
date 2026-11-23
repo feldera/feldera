@@ -821,21 +821,20 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     }
 
     /** Choose a cast for an existing waterline. A failing SAFE_CAST can insert NULL among the values. */
-    RustCircuitPass.CastWaterline castWaterline(DBSPCastExpression cast, DBSPType bound) {
+    @Nullable
+    private static DBSPExpression castWaterline(DBSPCastExpression cast, DBSPExpression bound) {
         DBSPType from = cast.source.getType();
         DBSPType to = cast.getType();
-        if (this.compiler.options.ioOptions.rustOptimizerPasses)
-            return RustCircuitPass.castWaterline(this.compiler, from, to, bound, cast.safe.isSafe());
         if (!typeCanBeMonotone(to) || !castPreservesOrder(from, to) || (cast.safe.isSafe() && cast.canFail()))
-            return RustCircuitPass.CastWaterline.None;
+            return null;
         DBSPType result = to.withMayBeNull(false);
-        if (bound.sameType(result))
-            return RustCircuitPass.CastWaterline.Identity;
+        if (bound.getType().sameType(result))
+            return bound;
         if (!cast.canFail())
-            return RustCircuitPass.CastWaterline.Ordinary;
-        if (DBSPCastExpression.hasSaturatingForm(bound, result))
-            return RustCircuitPass.CastWaterline.Saturating;
-        return RustCircuitPass.CastWaterline.None;
+            return bound.cast(cast.getNode(), result, DBSPCastExpression.CastType.SqlUnsafe);
+        if (DBSPCastExpression.hasSaturatingForm(bound.getType(), result))
+            return bound.cast(cast.getNode(), result, DBSPCastExpression.CastType.Saturating);
+        return null;
     }
 
     @Override
@@ -844,14 +843,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPExpression reduced = null;
         if (source.mayBeMonotone()) {
             DBSPExpression bound = source.getReducedExpression();
-            reduced = switch (this.castWaterline(expression, bound.getType())) {
-                case None -> null;
-                case Identity -> bound;
-                case Ordinary -> bound.cast(expression.getNode(), expression.getType().withMayBeNull(false),
-                        DBSPCastExpression.CastType.SqlUnsafe);
-                case Saturating -> bound.cast(expression.getNode(), expression.getType().withMayBeNull(false),
-                        DBSPCastExpression.CastType.Saturating);
-            };
+            reduced = this.compiler.options.ioOptions.rustOptimizerPasses
+                    ? RustCircuitPass.castWaterline(this.compiler, expression, bound) : castWaterline(expression, bound);
         }
         IMaybeMonotoneType resultType = reduced == null
                 ? NonMonotoneType.nonMonotone(expression.type) : source.copyMonotonicity(expression.getType());

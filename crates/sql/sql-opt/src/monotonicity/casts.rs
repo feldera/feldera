@@ -13,7 +13,7 @@ pub enum CastWaterline {
 }
 
 /// Convert an existing lower bound to the target of the data cast.
-pub(super) fn cast_bound(
+pub fn cast_bound(
     edit: &mut CircuitEditor,
     cast: ExpressionId,
     bound: ExpressionId,

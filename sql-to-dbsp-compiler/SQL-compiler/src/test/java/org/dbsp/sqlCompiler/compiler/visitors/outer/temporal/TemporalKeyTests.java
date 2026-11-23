@@ -22,6 +22,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
@@ -46,8 +47,8 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
-import java.util.HashSet;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -86,24 +87,7 @@ public class TemporalKeyTests {
             for (boolean hybrid : List.of(false, true)) {
                 var compiler = new DBSPCompiler(new CompilerOptions());
                 compiler.options.ioOptions.rustOptimizerPasses = hybrid;
-                compiler.stateObserver = new DBSPCompiler.StateObserver() {
-                    @Override
-                    public void nativeDecision(String operation, boolean success) {
-                        if (operation.equals("WindowGroups/Scan"))
-                            decisions.add(success);
-                    }
-                    @Override
-                    public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph) {}
-                    @Override
-                    public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
-                };
-                var graph = new Graph(compiler);
-                graph.apply(circuit);
-                var scan = new ReorderTemporalFilters.Scan(compiler, graph.getGraphs());
-                if (hybrid)
-                    new RustCircuitPass(compiler, scan, new OptimizerSnapshots(compiler)).apply(circuit);
-                else
-                    scan.apply(circuit);
+                scanWindows(compiler, circuit, decisions);
                 Assert.assertEquals(1, compiler.messages.messages.size());
                 var warning = compiler.messages.messages.get(0);
                 Assert.assertEquals(range, warning.range);
@@ -111,6 +95,64 @@ public class TemporalKeyTests {
                 Assert.assertTrue(warning.message.contains("invalid timestamp"));
             }
             Assert.assertEquals(List.of(!replayPaths), decisions);
+        }
+    }
+
+    private static ReorderTemporalFilters.Scan scanWindows(
+            DBSPCompiler compiler, DBSPCircuit circuit, List<Boolean> decisions) {
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void nativeDecision(String operation, boolean success) {
+                if (operation.equals("WindowGroups/Scan"))
+                    decisions.add(success);
+            }
+            @Override
+            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph) {}
+            @Override
+            public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
+        };
+        var graph = new Graph(compiler);
+        graph.apply(circuit);
+        var scan = new ReorderTemporalFilters.Scan(compiler, graph.getGraphs());
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            new RustCircuitPass(compiler, scan, new OptimizerSnapshots(compiler)).apply(circuit);
+        else
+            scan.apply(circuit);
+        return scan;
+    }
+
+    @Test
+    public void unaryConversionAndItsNamedCallShareAWindowKey() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var inputType = b.tup(b.bool(), b.bool());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(inputType));
+        circuit.addOperator(input);
+        var filters = new ArrayList<DBSPFilterOperator>();
+        for (int i = 0; i < 3; i++) {
+            var param = b.refVar(inputType);
+            var flag = b.field(param, i == 2 ? 1 : 0);
+            var byteType = b.integer(DBSPTypeCode.INT8, false);
+            var offset = i == 0 ? new DBSPUnaryExpression(site, byteType, DBSPOpcode.BOOL_TO_INTEGER, flag)
+                    : b.call(byteType, "bool_to_i8", flag);
+            var timestamp = b.call(time, "timestamp_from_offset", offset);
+            var condition = b.binary(DBSPOpcode.GTE, timestamp, b.call(time, "now"));
+            var filter = new DBSPFilterOperator(site, condition.closure(param), input.outputPort());
+            filters.add(filter);
+            circuit.addOperator(filter);
+        }
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.metadata.set(ProgramMetadata.WINDOW_SHARING_THRESHOLD, b.lit(2), SourcePositionRange.INVALID, compiler);
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var decisions = new ArrayList<Boolean>();
+            var scan = scanWindows(compiler, circuit, decisions);
+            Assert.assertEquals(filters.subList(0, 2), List.copyOf(scan.chosenConjunct.keySet()));
+            Assert.assertEquals(List.of(0, 0), List.copyOf(scan.chosenConjunct.values()));
+            Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
         }
     }
 

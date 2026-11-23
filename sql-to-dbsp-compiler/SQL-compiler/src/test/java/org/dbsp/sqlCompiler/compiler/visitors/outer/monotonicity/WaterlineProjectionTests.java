@@ -1043,6 +1043,49 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void generalCastWaterlinesRetainTheLiveBoundAndCastLocation() {
+        var span = new SourcePositionRange(new SourcePosition(3, 4), new SourcePosition(3, 21));
+        var site = CalciteObject.create(span);
+        var integer = new DBSPTypeInteger(site, 32, true, true);
+        var row = new PartiallyMonotoneTuple(List.of(new MonotoneType(integer)), false, false);
+        var parameter = new DBSPVariablePath("row", row.getType().ref());
+        var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        for (boolean hybrid : List.of(false, true)) {
+            if (hybrid && !Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
+                continue;
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            for (int width : List.of(16, 32, 64)) {
+                for (var mode : List.of(DBSPCastExpression.CastType.SqlUnsafe, DBSPCastExpression.CastType.SqlSafe)) {
+                    var target = new DBSPTypeInteger(site, width, true, true);
+                    var field = parameter.deref().field(0);
+                    var cast = new DBSPCastExpression(site, field, target, mode);
+                    var analysis = new MonotoneTransferFunctions(compiler, operator,
+                            MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+                    analysis.apply(cast.closure(parameter));
+                    var result = analysis.get(cast);
+                    if (width == 16 && mode.isSafe()) {
+                        Assert.assertFalse(result.mayBeMonotone());
+                        continue;
+                    }
+                    var bound = analysis.get(field).getReducedExpression();
+                    var reduced = result.getReducedExpression();
+                    Assert.assertTrue(reduced.getType().sameType(target.withMayBeNull(false)));
+                    if (width == 32) {
+                        Assert.assertSame(bound, reduced);
+                    } else {
+                        var projected = reduced.to(DBSPCastExpression.class);
+                        Assert.assertSame(bound, projected.source);
+                        Assert.assertEquals(span, projected.getNode().getPositionRange());
+                        Assert.assertEquals(width == 16 ? DBSPCastExpression.CastType.Saturating
+                                : DBSPCastExpression.CastType.SqlUnsafe, projected.safe);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     public void convertScalarWaterlinesInRowClosures() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var node = CalciteEmptyRel.INSTANCE;

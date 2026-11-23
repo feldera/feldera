@@ -332,21 +332,32 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
             (Term::If, branches)
         }
         Expr::Unary => {
-            let Some(
-                opcode @ ("WRAP_BOOL" | "IS_TRUE" | "IS_FALSE" | "IS_NOT_TRUE" | "IS_NOT_FALSE"
-                | "NOT" | "NEG" | "UNARY_PLUS" | "INDICATOR" | "TYPEDBOX"),
-            ) = string(node, "opcode")
-            else {
+            let source = child("source")?;
+            let Some(opcode) = string(node, "opcode") else {
                 return Ok(None);
             };
-            let source = child("source")?;
-            (
-                Term::Unary {
+            // Conversions print as ordinary calls, with no operand nullability marker.
+            let term = match opcode {
+                "DECIMAL_TO_INTEGER" => Term::Call("decimal_to_integer".into()),
+                "INTEGER_TO_DECIMAL" => Term::Call("integer_to_decimal".into()),
+                "SHORT_INTERVAL_TO_INTEGER" => Term::Call("short_interval_to_integer".into()),
+                "INTEGER_TO_SHORT_INTERVAL" => Term::Call("integer_to_short_interval".into()),
+                "LONG_INTERVAL_TO_INTEGER" => Term::Call("long_interval_to_integer".into()),
+                "INTEGER_TO_LONG_INTERVAL" => Term::Call("integer_to_long_interval".into()),
+                "INTEGER_TO_UUID" => Term::Call("u128_to_uuid".into()),
+                "UUID_TO_INTEGER" => Term::Call("uuid_to_u128".into()),
+                "BINARY_TO_U64" => Term::Call("bytes_to_u64".into()),
+                "BINARY_TO_U128" => Term::Call("bytes_to_u128".into()),
+                "INTEGER_TO_BOOL" => Term::Call("i8_to_bool".into()),
+                "BOOL_TO_INTEGER" => Term::Call("bool_to_i8".into()),
+                "WRAP_BOOL" | "IS_TRUE" | "IS_FALSE" | "IS_NOT_TRUE" | "IS_NOT_FALSE"
+                | "NOT" | "NEG" | "UNARY_PLUS" | "INDICATOR" | "TYPEDBOX" => Term::Unary {
                     opcode: opcode.to_owned(),
                     nullable: edit.nullable(edit.expression_type(edit.expression(source)?)?)?,
                 },
-                vec![source],
-            )
+                _ => return Ok(None),
+            };
+            (term, vec![source])
         }
         Expr::Some => (Term::Call("Some".into()), vec![child("expression")?]),
         Expr::Cast => (
