@@ -1,5 +1,6 @@
 //! Project a field read or value wrapper against its operand waterline.
-use super::{ProjectedValue, RowType, Shape, unbounded_type};
+use super::evaluate::Evaluation;
+use super::{unbounded_type, ProjectedValue, RowType, Shape};
 use crate::limiters::Projection;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId};
 
@@ -30,17 +31,19 @@ impl RowRead {
             // Let the general visitor report the missing bound at the original read.
             return Ok(None);
         }
-        self.apply(
-            edit,
-            site,
-            ty,
-            ProjectedValue {
-                shape,
-                row_type: RowType::Parameter { index: 0 },
-                reduced: bound,
-                constant: false,
-            },
-        )
+        Ok(self
+            .apply(
+                edit,
+                site,
+                ty,
+                ProjectedValue {
+                    shape,
+                    row_type: RowType::Parameter { index: 0 },
+                    reduced: bound,
+                    constant: false,
+                },
+            )?
+            .projected())
     }
 
     pub(super) fn apply(
@@ -49,7 +52,7 @@ impl RowRead {
         site: NodeId,
         ty: TypeId,
         mut value: ProjectedValue,
-    ) -> Result<Option<ProjectedValue>, Error> {
+    ) -> Result<Evaluation, Error> {
         let projected = match self {
             Self::Clone => {
                 if let Some(bound) = value.reduced {
@@ -67,7 +70,7 @@ impl RowRead {
                 // A closure has no withMaybeNull operation. Preserve the diagnostic
                 // at the live expression even when its result is later discarded.
                 if matches!(value.shape, Shape::Opaque(_)) {
-                    return Ok(None);
+                    return Ok(Evaluation::NeedsVisitor);
                 }
                 value.row_type = RowType::WithNullability {
                     value: Box::new(value.row_type),
@@ -91,7 +94,7 @@ impl RowRead {
                     if let Some(result) = &mut result {
                         result.constant = value.constant;
                     }
-                    return Ok(result);
+                    return Ok(result.into());
                 };
                 ProjectedValue {
                     shape: Shape::Reference(value.shape.into()),
@@ -104,7 +107,7 @@ impl RowRead {
             }
             Self::Deref => {
                 let Shape::Reference(base) = value.shape else {
-                    return Ok(None);
+                    return Ok(Evaluation::NeedsVisitor);
                 };
                 ProjectedValue {
                     shape: (*base).clone(),
@@ -120,13 +123,13 @@ impl RowRead {
                     fields, nullable, ..
                 } = value.shape
                 else {
-                    return Ok(None);
+                    return Ok(Evaluation::NeedsVisitor);
                 };
                 let Some(field) = fields.get(index) else {
-                    return Ok(None);
+                    return Ok(Evaluation::NeedsVisitor);
                 };
                 if nullable && matches!(field, Shape::Opaque(_)) {
-                    return Ok(None);
+                    return Ok(Evaluation::NeedsVisitor);
                 }
                 let mut shape = field.clone();
                 if let Shape::Tuple {
@@ -137,7 +140,10 @@ impl RowRead {
                 }
                 let reduced = if shape.monotone() {
                     let Some(row) = value.reduced else {
-                        return Ok(None);
+                        // The requested field has a bound, so Java reads the
+                        // tuple's reduced expression before compressing its index.
+                        let operand = edit.expression(edit.node(site)?.edge("expression")?)?;
+                        return Ok(Evaluation::missing_operand(operand));
                     };
                     let compressed = fields[..index]
                         .iter()
@@ -158,6 +164,6 @@ impl RowRead {
                 }
             }
         };
-        Ok(Some(projected))
+        Ok(Evaluation::Value(projected))
     }
 }

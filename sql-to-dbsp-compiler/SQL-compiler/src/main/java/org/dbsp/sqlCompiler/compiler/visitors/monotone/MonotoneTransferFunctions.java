@@ -228,11 +228,20 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
             var analysis = RustCircuitPass.projectWaterlineClosure(this.compiler, expression.body, expression.parameters,
-                    projectedTypes, this.parameterTypes, indexed, this.closureResultOnly ? null : this::set);
+                    projectedTypes, this.parameterTypes, indexed, this.closureResultOnly, this::set);
             if (analysis instanceof RustCircuitPass.ProjectedWaterline projected) {
                 if (projected.bodyType().mayBeMonotone())
                     this.recordClosure(expression, projected.bodyType(), Objects.requireNonNull(projected.closure()));
                 return VisitDecision.STOP;
+            }
+            if (analysis instanceof RustCircuitPass.FailedWaterline failed) {
+                var expressionAtError = failed.expression();
+                if (failed.error() == RustCircuitPass.WaterlineError.TargetMaximum)
+                    throw new UnsupportedException(expressionAtError.getType().withMayBeNull(false).getNode());
+                // Use the same live lookup as the direct visitor, which distinguishes
+                // a missing fact from a present fact with no reduced expression.
+                this.get(expressionAtError).getReducedExpression();
+                throw new InternalCompilerError("Expected an absent waterline for " + expressionAtError);
             }
             this.inspection = (RustCircuitPass.WaterlineInspection) analysis;
         }

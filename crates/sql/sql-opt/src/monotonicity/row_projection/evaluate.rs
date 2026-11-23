@@ -1,13 +1,45 @@
 //! Evaluate children before their parent and bind locals between successive statements.
 use super::{
-    ExpressionWaterline, Observations, ProjectedValue, Row, RowType, function, project_tuple,
-    project_wrapper, scalar, unbounded,
+    function, project_tuple, project_wrapper, scalar, unbounded, ExpressionWaterline, Observations,
+    ProjectedValue, Row, RowType, WaterlineError,
 };
-use super::{FactType, scope::VariableRead};
+use super::{scope::VariableRead, FactType};
 use crate::function_calls::function_name;
 use crate::monotonicity::literal::ordered_literal;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind};
 use std::collections::HashSet;
+
+/// Visiting an uninitialized variable or an aggregate descriptor produces no
+/// fact. Its parent can discard it or demand it in the original operand order.
+pub(super) struct Visited {
+    pub id: ExpressionId,
+    pub value: Option<ProjectedValue>,
+}
+
+pub(super) enum Evaluation {
+    Value(ProjectedValue),
+    Failed(WaterlineError),
+    NeedsVisitor,
+}
+
+impl From<Option<ProjectedValue>> for Evaluation {
+    fn from(value: Option<ProjectedValue>) -> Self {
+        value.map_or(Self::NeedsVisitor, Self::Value)
+    }
+}
+
+impl Evaluation {
+    pub(super) fn missing_operand(id: ExpressionId) -> Self {
+        Self::Failed(WaterlineError::MissingOperand(id))
+    }
+
+    pub(super) fn projected(self) -> Option<ProjectedValue> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Failed(_) | Self::NeedsVisitor => None,
+        }
+    }
+}
 
 pub(super) enum Step {
     Read(ExpressionId),
@@ -39,23 +71,39 @@ impl Operation {
         self,
         edit: &mut CircuitEditor,
         id: ExpressionId,
-        children: std::vec::Drain<'_, Option<ProjectedValue>>,
-    ) -> Result<Option<ProjectedValue>, Error> {
+        children: std::vec::Drain<'_, Visited>,
+    ) -> Result<Evaluation, Error> {
         if let Self::Call(name) = self {
             return function::call_bound(edit, id, name.as_deref(), children);
         }
-        // Field reads and scalar operators decide which operand bounds they need.
-        let selects_bounds =
-            matches!(self, Self::Binary(_) | Self::Unary) || edit.expr_kind(id)? == Expr::Field;
-        if !children.as_slice().iter().all(|v| {
-            v.as_ref().is_some_and(|v| selects_bounds || !v.missing_bound())
-        }) {
-            return Ok(None);
+        // Tuple construction and scalar operations look up every operand's
+        // fact before asking any of those facts for a reduced expression.
+        if let Some(child) = children.as_slice().iter().find(|v| v.value.is_none()) {
+            return Ok(Evaluation::missing_operand(child.id));
         }
-        let mut children = children.flatten();
-        match self {
+        if let Some(child) = children
+            .as_slice()
+            .iter()
+            .find(|v| v.value.as_ref().is_some_and(ProjectedValue::missing_bound))
+        {
+            let needs_bound = match self {
+                Self::Unary => scalar::reads_unary_bound(edit, id)?,
+                // The transfer itself selects the bounded fields and operands.
+                Self::Binary(_) => false,
+                _ => edit.expr_kind(id)? != Expr::Field,
+            };
+            if needs_bound {
+                return Ok(Evaluation::missing_operand(child.id));
+            }
+        }
+        let mut children = children.filter_map(|child| child.value);
+        let value = match self {
             Self::Wrapper => {
-                project_wrapper(edit, id, children.next().expect("visited wrapper operand"))
+                return project_wrapper(
+                    edit,
+                    id,
+                    children.next().expect("visited wrapper operand"),
+                );
             }
             Self::Unary => {
                 scalar::unary_bound(edit, id, children.next().expect("visited unary operand"))
@@ -68,7 +116,8 @@ impl Operation {
             Self::Tuple => project_tuple(edit, id, children),
             Self::Call(_) => unreachable!("calls consume optional argument facts above"),
             Self::Unbounded => unbounded(edit, id),
-        }
+        }?;
+        Ok(value.into())
     }
 }
 
@@ -237,7 +286,7 @@ impl Row {
         &mut self,
         edit: &mut CircuitEditor,
         expression: ExpressionId,
-    ) -> Result<Option<ProjectedValue>, Error> {
+    ) -> Result<Evaluation, Error> {
         let mut work = vec![Step::Read(expression)];
         let mut values = Vec::new();
         let mut active = HashSet::new();
@@ -250,7 +299,7 @@ impl Row {
                     match edit.expr_kind(id)? {
                         Expr::Let | Expr::Block => {
                             if !super::scope::schedule(edit, id, self.locals.len(), &mut work)? {
-                                return Ok(None);
+                                return Ok(Evaluation::NeedsVisitor);
                             }
                             continue;
                         }
@@ -261,10 +310,13 @@ impl Row {
                                 continue;
                             }
                             VariableRead::NeedsVisitor => {
-                                return Ok(None);
+                                return Ok(Evaluation::NeedsVisitor);
                             }
                         },
-                        kind if ordered_literal(kind) => (id, scalar::literal_bound(edit, id)?),
+                        kind if ordered_literal(kind) => match scalar::literal_bound(edit, id)? {
+                            Evaluation::Value(value) => (id, Some(value)),
+                            other => return Ok(other),
+                        },
                         _ => {
                             if !schedule(
                                 edit,
@@ -273,16 +325,19 @@ impl Row {
                                 matches!(self.observations, Observations::Facts(_)),
                                 &mut work,
                             )? {
-                                return Ok(None);
+                                return Ok(Evaluation::NeedsVisitor);
                             }
                             continue;
                         }
                     }
                 }
-                Step::Reduce(id, op, base) => (id, op.reduce(edit, id, values.drain(base..))?),
+                Step::Reduce(id, op, base) => match op.reduce(edit, id, values.drain(base..))? {
+                    Evaluation::Value(value) => (id, Some(value)),
+                    other => return Ok(other),
+                },
                 Step::NoFact(id) => {
                     // Its parent decides whether evaluating the operation requires a fact.
-                    values.push(None);
+                    values.push(Visited { id, value: None });
                     active.remove(&id);
                     continue;
                 }
@@ -292,8 +347,9 @@ impl Row {
                 }
                 Step::Bind { name, initializer } => {
                     let initial = if let Some(expr) = initializer {
-                        let Some(value) = values.pop().expect("visited initializer") else {
-                            return Ok(None);
+                        let initial = values.pop().expect("visited initializer");
+                        let Some(value) = initial.value else {
+                            return Ok(Evaluation::missing_operand(initial.id));
                         };
                         Some((edit.expression_type(expr)?, value))
                     } else {
@@ -304,14 +360,18 @@ impl Row {
                 }
                 Step::EmptyBlock(id) => {
                     let Some(value) = unbounded(edit, id)? else {
-                        return Ok(None);
+                        return Ok(Evaluation::NeedsVisitor);
                     };
-                    values.push(Some(value));
+                    values.push(Visited {
+                        id,
+                        value: Some(value),
+                    });
                     continue;
                 }
                 Step::FinishScope { scopes, outer } => {
-                    let Some(result) = values.pop().expect("visited scope result") else {
-                        return Ok(None);
+                    let tail = values.pop().expect("visited scope result");
+                    let Some(result) = tail.value else {
+                        return Ok(Evaluation::missing_operand(tail.id));
                     };
                     let mut value = self.finish_scope(outer, result);
                     // Blocks and LETs take the very same analysis as their tail.
@@ -322,7 +382,7 @@ impl Row {
                 }
             };
             let Some(mut value) = value else {
-                return Ok(None);
+                return Ok(Evaluation::NeedsVisitor);
             };
             active.remove(&id);
             self.observe(edit, id, &mut value)?;
@@ -331,9 +391,16 @@ impl Row {
             if !value.shape.monotone() {
                 value.reduced = None;
             }
-            values.push(Some(value));
+            values.push(Visited {
+                id,
+                value: Some(value),
+            });
         }
         debug_assert_eq!(values.len(), 1);
-        Ok(values.pop().flatten().filter(|v| !v.missing_bound()))
+        let result = values.pop().expect("visited closure body");
+        Ok(match result.value {
+            Some(value) if !value.missing_bound() => Evaluation::Value(value),
+            _ => Evaluation::missing_operand(result.id),
+        })
     }
 }

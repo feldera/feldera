@@ -1,0 +1,52 @@
+{
+  "scope": "Report missing operand waterlines and unsupported target maxima in Rust, preserving expression order, earlier facts, and the live Java diagnostic for both visitor modes.",
+  "source_base": "fed68da375a9ae1a08e9f207fe1871d7cfa73dbd",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "46419edd10336e20de12cdf527ae2d3d675a81d5b86c4c3704987921a08c8582",
+    "crates/sql/sql-opt/src/lib.rs": "9c361b757db12ab56e7aee41fec706774cbe3666ef81491213194bcbb63d1fa4",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "317c68526b80d418eb14a4f47723989544c25f0ebdfd6cbf8dd7da40994171d4",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "a5e8e29892f9129f467e41d791e9652f12ff7d261e2e8d5959dc3607f8987f76",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/function.rs": "0abf712b065c9264e45a475163fea7547572dcdbe178051c74de33a908bfbb98",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/reads.rs": "00efc4bde5041c27f4a17ff4e93df635fd46593a574204cebbed323b76fe6333",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/scalar.rs": "390a2df4ecdaef7a7bef411184a251bbf3fe6514be5275112fb49ccc6c9330e8",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "09aaad7be89b6eaf6d19c65c8238095cc5313f5555e61f84db3dc7c36c9d9454",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneTransferFunctions.java": "2ce50b3d2fa6a465359a500d518ffaed7e872eee4bee7cf0217b0ac0258564d9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "22c0b3f3bb5231c5aafde38e53a468ccb99f5c07d821287631d601a1808a25e1"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ba9a972cf43916b78f645da603df3d94abf342edeba5124a1b62a050476f6848",
+    "bin/sql-difftest": "20fc622e25bc6924d4ffb9acfae7f72d4176cb614c26d0671c93456861782db2",
+    "maven/tests.jar": "ce8b73bb63cf5118d4599ec6ca82a6b8d0ee886ad0400ad04676caacce4d7415",
+    "maven/sql-compiler.jar": "304fb60c8d210ccc1a7fbd9ddfbd66374281f9aa7d85c144987c4f27b26aa1b2"
+  },
+  "negative_control": {
+    "library_sha256": "b80ab6f0f5f0c52ac327109c24aa3a418b61ecab6bffd0058113b6bbf91b6151",
+    "failed_tests": [
+      "missingOperandsRetainFactsUpToTheFailingLookup",
+      "literalWaterlinesDistinguishNullsFromPositiveConstants",
+      "aggregateDescriptorsExposeChildrenWithoutAResultFact",
+      "assignmentToAnUninitializedLocalNeedsNoDestinationWaterline",
+      "emptyFieldsDoNotRequireAWaterlineUntilRead",
+      "unaryWaterlineReadsOnlyOrderPreservingOperands"
+    ]
+  },
+  "rust_tests": 221,
+  "junit_tests": 152,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "b90b9aa040504cd2ea01d10039f10d3f9798661a77bb1840b360b91ba83779b9"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "df80f894bf0e279992d4573f3a59a7d4e196f4bb33064d8bbcc1474252af495e"
+    }
+  }
+}

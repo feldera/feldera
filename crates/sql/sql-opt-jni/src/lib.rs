@@ -454,7 +454,8 @@ fn binding_ids(bindings: std::collections::HashMap<NodeId, NodeId>) -> Vec<(u64,
 fn expression_facts_reply(
     arena: &Circuit,
     edit: &feldera_sql_ir::CircuitEditor,
-    projection: feldera_sql_opt::ProjectedClosure,
+    facts: Vec<feldera_sql_opt::ExpressionWaterline>,
+    closure: Option<feldera_sql_ir::ExpressionId>,
 ) -> Result<Value, feldera_sql_ir::Error> {
     use feldera_sql_opt::FactType;
     let mut roots = Vec::new();
@@ -465,7 +466,7 @@ fn expression_facts_reply(
             index
         })
     };
-    let facts = projection.facts.into_iter().map(|fact| {
+    let facts = facts.into_iter().map(|fact| {
         let id = inner_number(fact.expression.into());
         match fact.origin {
             FactType::Alias(index) => json!({ "id": id, "alias": index }),
@@ -473,7 +474,7 @@ fn expression_facts_reply(
             FactType::Computed(ty) => json!({ "id": id, "type": ty, "bound": add_bound(fact.bound) }),
         }
     }).collect::<Vec<_>>();
-    let closure = add_bound(projection.closure);
+    let closure = add_bound(closure);
     let bounds = edit.circuit().live_inner_roots(arena, &roots)?;
     Ok(json!({ "facts": facts, "bounds": bounds, "closure": closure }))
 }
@@ -982,7 +983,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let result = analyze(&mut edit, body, &parameters, &request.shapes, request.indexed)?;
             return Ok(match result {
                 feldera_sql_opt::ClosureAnalysis::Projected(result) if collect => {
-                    expression_facts_reply(&arena, &edit, result)?
+                    expression_facts_reply(&arena, &edit, result.facts, result.closure)?
                 }
                 feldera_sql_opt::ClosureAnalysis::Projected(result) => {
                     let closure = result.closure.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
@@ -990,6 +991,15 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 }
                 feldera_sql_opt::ClosureAnalysis::Visit(inspection) => {
                     json!({"inspection": waterline_inspection(inspection)})
+                }
+                feldera_sql_opt::ClosureAnalysis::Failed { error, facts } => {
+                    let (kind, expression) = match error {
+                        feldera_sql_opt::WaterlineError::MissingOperand(id) => ("MissingOperand", id),
+                        feldera_sql_opt::WaterlineError::TargetMaximum(id) => ("TargetMaximum", id),
+                    };
+                    let mut reply = expression_facts_reply(&arena, &edit, facts, None)?;
+                    reply["failure"] = json!({"kind":kind, "expression":inner_number(expression.into())});
+                    reply
                 }
             });
         }

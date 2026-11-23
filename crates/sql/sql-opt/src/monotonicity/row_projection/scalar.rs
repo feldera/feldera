@@ -1,5 +1,5 @@
 //! Scalar literals and arithmetic inside a projected waterline closure.
-use super::{type_number, ProjectedValue, RowType, Shape};
+use super::{evaluate::Evaluation, type_number, ProjectedValue, RowType, Shape, WaterlineError};
 use crate::monotonicity::binary::{
     binary_waterline, BinaryOperation, BinaryWaterline, Domain, Operand,
 };
@@ -26,13 +26,15 @@ impl ProjectedValue {
 pub(super) fn literal_bound(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
-) -> Result<Option<ProjectedValue>, Error> {
+) -> Result<Evaluation, Error> {
     match literal_waterline(edit, expression)? {
         LiteralWaterline::Bounded { bound, constant } => {
-            ProjectedValue::bounded(edit, expression, bound, constant).map(Some)
+            ProjectedValue::bounded(edit, expression, bound, constant).map(Evaluation::Value)
         }
-        LiteralWaterline::Unbounded => super::unbounded(edit, expression),
-        LiteralWaterline::TargetMaximum => Ok(None),
+        LiteralWaterline::Unbounded => super::unbounded(edit, expression).map(Evaluation::from),
+        LiteralWaterline::TargetMaximum => Ok(Evaluation::Failed(WaterlineError::TargetMaximum(
+            expression,
+        ))),
     }
 }
 
@@ -65,24 +67,26 @@ fn operand(
     })
 }
 
+/// Casts and unsigned wrappers read the input bound before testing their rule.
+/// Other unary operators only read it when they preserve order.
+pub(super) fn reads_unary_bound(
+    edit: &CircuitEditor,
+    expression: ExpressionId,
+) -> Result<bool, Error> {
+    if edit.expr_kind(expression)? != Expr::Unary {
+        return Ok(true);
+    }
+    let opcode = super::super::opcode(edit.node(expression.into())?)
+        .ok_or_else(|| Error::new("missing unary opcode"))?;
+    Ok(super::super::unary_preserves_order(opcode))
+}
+
 pub(super) fn unary_bound(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
     source: ProjectedValue,
 ) -> Result<Option<ProjectedValue>, Error> {
     let kind = edit.expr_kind(expression)?;
-    if source.missing_bound() {
-        // Casts and unsigned wrappers read the input bound before testing their
-        // transfer rule. Ordinary unary operators read it only if they preserve order.
-        if kind != Expr::Unary {
-            return Ok(None);
-        }
-        let opcode = super::super::opcode(edit.node(expression.into())?)
-            .ok_or_else(|| Error::new("missing unary opcode"))?;
-        if super::super::unary_preserves_order(opcode) {
-            return Ok(None);
-        }
-    }
     let reduced = match (kind, source.reduced) {
         (Expr::Cast, None) => None,
         (Expr::Cast, Some(bound)) => super::super::casts::cast_bound(edit, expression, bound)?,
@@ -248,7 +252,11 @@ mod tests {
         for (width, signed, kind) in [(16, true, Expr::I16Literal), (32, false, Expr::U32Literal)] {
             let ty = edit.integer_type(origin, width, signed, true)?;
             let literal = edit.make_expr(site, kind, ty, [("value", Field::Data("2".into()))])?;
-            let bound = literal_bound(&mut edit, literal)?.unwrap().reduced.unwrap();
+            let bound = literal_bound(&mut edit, literal)?
+                .projected()
+                .unwrap()
+                .reduced
+                .unwrap();
             let required = edit.expression_type(bound)?;
             let original = edit.node(ty.into())?;
             let projected = edit.node(required.into())?;

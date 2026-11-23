@@ -37,7 +37,7 @@ pub use monotonicity::binary::{
     binary_waterline, BinaryOperation, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
 };
 pub use monotonicity::identity::identity_bounds;
-pub use monotonicity::row_projection::{expression_waterlines, project_closure, project_row, project_rows, tuple_waterline, ClosureAnalysis, FactType, ProjectedClosure, RowRead, WaterlineInspection};
+pub use monotonicity::row_projection::{expression_waterlines, project_closure, project_row, project_rows, tuple_waterline, ClosureAnalysis, ExpressionWaterline, FactType, ProjectedClosure, RowRead, WaterlineError, WaterlineInspection};
 pub use monotonicity::{filter_lower_bounds, filter_transfer, unary_preserves_order, unary_waterline, FilterBound};
 mod static_candidates;
 mod static_items;

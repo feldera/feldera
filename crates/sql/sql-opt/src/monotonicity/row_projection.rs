@@ -7,6 +7,7 @@ mod scalar;
 mod scope;
 mod shape;
 use self::{
+    evaluate::Evaluation,
     scope::Local,
     shape::{Shape, UnorderedRow},
 };
@@ -154,7 +155,7 @@ fn project_wrapper(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
     value: ProjectedValue,
-) -> Result<Option<ProjectedValue>, Error> {
+) -> Result<Evaluation, Error> {
     let kind = edit.expr_kind(expression)?;
     let read = match kind {
         Expr::Borrow => RowRead::Borrow,
@@ -248,7 +249,8 @@ pub(crate) fn clock_operands(
     let Some(UnorderedRow { shape, projected }) = UnorderedRow::from_type(edit, ty)? else {
         return Ok(None);
     };
-    if crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?.is_none() {
+    if crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?.is_none()
+    {
         return Ok(None);
     }
     let variable = edit.named_variable(projected.unwrap_or(ty), &name)?;
@@ -262,7 +264,7 @@ pub(crate) fn clock_operands(
         locals: Vec::new(),
         observations: Observations::Clocks(HashSet::new()),
     };
-    if row.visit(edit, body)?.is_none() {
+    if !matches!(row.visit(edit, body)?, Evaluation::Value(_)) {
         return Ok(None);
     }
     let Observations::Clocks(clocks) = row.observations else {
@@ -296,7 +298,7 @@ pub fn project_rows(
     indexed: bool,
 ) -> Result<Option<ProjectedValue>, Error> {
     let mut row = Row::new(edit, bounds, projections, indexed)?;
-    row.visit(edit, body)
+    Ok(row.visit(edit, body)?.projected())
 }
 
 impl Row {
@@ -408,8 +410,18 @@ impl WaterlineInspection {
     }
 }
 
+pub enum WaterlineError {
+    MissingOperand(ExpressionId),
+    TargetMaximum(ExpressionId),
+}
+
 pub enum ClosureAnalysis {
     Projected(ProjectedClosure),
+    /// Earlier facts must be published before the caller reports the error.
+    Failed {
+        error: WaterlineError,
+        facts: Vec<ExpressionWaterline>,
+    },
     Visit(WaterlineInspection),
 }
 
@@ -461,19 +473,28 @@ fn analyze_closure(
     let declared = parameters.iter().map(|&(parameter, _)| parameter);
     let resolution = crate::lexical_scope::resolve_body(edit.circuit(), declared, body.into())?;
     let inspection = WaterlineInspection::inspect(edit, resolution, Some(body.into()))?;
-    let WaterlineInspection::Bound { repeated, .. } = &inspection
-    else {
+    let WaterlineInspection::Bound { repeated, .. } = &inspection else {
         return Ok(ClosureAnalysis::Visit(inspection));
     };
     if !repeated.is_empty() {
         return Ok(ClosureAnalysis::Visit(inspection));
     }
-    if let Some(projected) =
-        project_validated_closure(edit, body, parameters, projections, indexed, observations)?
-    {
-        return Ok(ClosureAnalysis::Projected(projected));
+    let result_only = matches!(observations, Observations::ResultOnly);
+    let mut result =
+        project_validated_closure(edit, body, parameters, projections, indexed, observations)?;
+    if result_only && matches!(result, Some(ClosureAnalysis::Failed { .. })) {
+        // Errors expose the facts computed before the failing read, even to a
+        // caller that originally asked only for the closure result.
+        result = project_validated_closure(
+            edit,
+            body,
+            parameters,
+            projections,
+            indexed,
+            Observations::Facts(Vec::new()),
+        )?;
     }
-    Ok(ClosureAnalysis::Visit(inspection))
+    Ok(result.unwrap_or(ClosureAnalysis::Visit(inspection)))
 }
 
 fn project_validated_closure(
@@ -483,7 +504,7 @@ fn project_validated_closure(
     projections: &[Projection],
     indexed: bool,
     observations: Observations,
-) -> Result<Option<ProjectedClosure>, Error> {
+) -> Result<Option<ClosureAnalysis>, Error> {
     let mut variables = Vec::with_capacity(parameters.len());
     let mut names = Vec::with_capacity(parameters.len());
     for &(parameter, projected) in parameters {
@@ -506,8 +527,17 @@ fn project_validated_closure(
         binding.declared_type = Some(edit.type_id(edit.node(parameter)?.edge("type")?)?);
     }
     row.observations = observations;
-    let Some(value) = row.visit(edit, body)? else {
-        return Ok(None);
+    let result = row.visit(edit, body)?;
+    let facts = match row.observations {
+        Observations::Facts(facts) => facts,
+        _ => Vec::new(),
+    };
+    let value = match result {
+        Evaluation::Value(value) => value,
+        Evaluation::Failed(error) => {
+            return Ok(Some(ClosureAnalysis::Failed { error, facts }));
+        }
+        Evaluation::NeedsVisitor => return Ok(None),
     };
     let closure = match (value.reduced, parameters) {
         (None, _) => None,
@@ -525,15 +555,11 @@ fn project_validated_closure(
             Some(super::bindings::waterline_bindings(edit, &inputs)?.closure(edit, body)?)
         }
     };
-    let facts = match row.observations {
-        Observations::Facts(facts) => facts,
-        _ => Vec::new(),
-    };
-    Ok(Some(ProjectedClosure {
+    Ok(Some(ClosureAnalysis::Projected(ProjectedClosure {
         facts,
         row_type: value.row_type,
         closure,
-    }))
+    })))
 }
 
 #[cfg(test)]
@@ -563,11 +589,9 @@ mod tests {
         let dropped = edit.tuple_field(pair, 0)?;
         let bounds = clock_operands(&mut edit, parameter, kept)?.unwrap();
         assert!(bounds.contains(&kept));
-        assert!(
-            !clock_operands(&mut edit, parameter, dropped)?
-                .unwrap()
-                .contains(&dropped)
-        );
+        assert!(!clock_operands(&mut edit, parameter, dropped)?
+            .unwrap()
+            .contains(&dropped));
         let projected = UnorderedRow::from_type(&mut edit, row)?
             .unwrap()
             .projected

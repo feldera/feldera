@@ -107,6 +107,14 @@ import java.util.Map;
 import java.util.Set;
 
 public class WaterlineProjectionTests {
+    private static void assertFailure(RustCircuitPass.WaterlineAnalysis analysis,
+            RustCircuitPass.WaterlineError error, DBSPExpression expression) {
+        Assert.assertTrue("Expected a native waterline error", analysis instanceof RustCircuitPass.FailedWaterline);
+        var failure = (RustCircuitPass.FailedWaterline) analysis;
+        Assert.assertEquals(error, failure.error());
+        Assert.assertSame(expression, failure.expression());
+    }
+
     @Test
     public void combinesDeepWaterlinesForUnionsAndJoins() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
@@ -749,11 +757,11 @@ public class WaterlineProjectionTests {
                 Assert.assertSame(facts.get(tail), facts.get(body));
             }
         }
-        // Reading an uninitialized local as the block's result still needs the visitor diagnostic.
+        // Reading the same declaration as the block result demands its absent fact.
         var required = new DBSPBlockExpression(List.of(scratch), scratch.getVarReference());
-        Assert.assertTrue(RustCircuitPass.projectWaterlineClosure(compiler, required, closure.parameters,
-                new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)}, false)
-                instanceof RustCircuitPass.WaterlineInspection);
+        var failure = RustCircuitPass.projectWaterlineClosure(compiler, required, closure.parameters,
+                new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)}, false);
+        assertFailure(failure, RustCircuitPass.WaterlineError.MissingOperand, required.lastExpression);
     }
 
     @Test
@@ -806,9 +814,10 @@ public class WaterlineProjectionTests {
                     Assert.assertFalse(facts.containsKey(descriptor));
                     Assert.assertTrue(facts.get(descriptor.getEmptySetResult()).mayBeMonotone());
                 }
-                Assert.assertTrue(RustCircuitPass.projectWaterlineClosure(compiler, descriptor, required.parameters,
+                var failure = RustCircuitPass.projectWaterlineClosure(compiler, descriptor, required.parameters,
                         new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
-                        false, observe ? facts::put : null) instanceof RustCircuitPass.WaterlineInspection);
+                        false, observe ? facts::put : null);
+                assertFailure(failure, RustCircuitPass.WaterlineError.MissingOperand, descriptor);
             }
         }
     }
@@ -833,9 +842,10 @@ public class WaterlineProjectionTests {
         var body = new DBSPBlockExpression(List.of(boxed.toStatement()), input.deref());
         for (boolean observe : List.of(false, true)) {
             var facts = new HashMap<DBSPExpression, MonotoneExpression>();
-            Assert.assertTrue(RustCircuitPass.projectWaterlineClosure(compiler, body, body.closure(input).parameters,
+            var failure = RustCircuitPass.projectWaterlineClosure(compiler, body, body.closure(input).parameters,
                     new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
-                    false, observe ? facts::put : null) instanceof RustCircuitPass.WaterlineInspection);
+                    false, observe ? facts::put : null);
+            assertFailure(failure, RustCircuitPass.WaterlineError.MissingOperand, empty);
         }
     }
 
@@ -953,6 +963,58 @@ public class WaterlineProjectionTests {
         Assert.assertSame(facts.get(tail), facts.get(block));
         Assert.assertTrue(direct.get(closure).getReducedExpression().equivalent(
                 ((RustCircuitPass.ProjectedWaterline) result).closure()));
+    }
+
+    @Test
+    public void missingOperandsRetainFactsUpToTheFailingLookup() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(1).getType();
+        var input = integer.ref().var();
+        var local = new DBSPLetStatement("uninitialized", integer, false);
+        var read = local.getVarReference();
+        var empty = new NoExpression(DBSPTypeRawTuple.EMPTY);
+        var visited = input.deref();
+        var later = new DBSPI32Literal(99);
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var shape = new MonotoneType(integer);
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+
+        // The tuple looks up every field's fact before reading any reduced
+        // expressions. A registered function consumes one argument at a time.
+        for (var consumer : List.of(new DBSPTupleExpression(empty, read),
+                new DBSPApplyExpression("sign_i32", integer, empty, read))) {
+            var body = new DBSPBlockExpression(List.of(local, visited.toStatement(), consumer.toStatement()), later);
+            var closure = body.closure(input);
+            var expectedOperand = consumer instanceof DBSPTupleExpression ? read : empty;
+            var directVisitor = new MonotoneTransferFunctions(compiler, op, kind, shape);
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            var expected = Assert.assertThrows(RuntimeException.class, () -> directVisitor.apply(closure));
+            for (boolean resultOnly : List.of(false, true)) {
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var failure = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                        new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                        false, resultOnly, facts::put);
+                assertFailure(failure, RustCircuitPass.WaterlineError.MissingOperand, expectedOperand);
+                Assert.assertTrue(directVisitor.get(visited).getReducedExpression().closure(input)
+                        .equivalent(facts.get(visited).getReducedExpression().closure(input)));
+                Assert.assertTrue(facts.containsKey(empty));
+                Assert.assertFalse(facts.containsKey(read));
+                Assert.assertFalse(facts.containsKey(later));
+                compiler.options.ioOptions.rustOptimizerPasses = true;
+                var hybrid = new MonotoneTransferFunctions(compiler, op, kind, shape);
+                var actual = Assert.assertThrows(RuntimeException.class, () -> {
+                    if (resultOnly)
+                        hybrid.applyAnalysis(closure);
+                    else
+                        hybrid.apply(closure);
+                });
+                Assert.assertEquals(expected.getClass(), actual.getClass());
+                Assert.assertEquals(expected.getMessage(), actual.getMessage());
+                Assert.assertTrue(hybrid.get(empty).mayBeMonotone());
+                Assert.assertNull(hybrid.maybeGet(later));
+            }
+        }
     }
 
     @Test
@@ -1414,10 +1476,26 @@ public class WaterlineProjectionTests {
             var maximum = analysis.get(absent).getReducedExpression().to(DBSPDoubleLiteral.class);
             Assert.assertFalse(maximum.getType().mayBeNull);
             Assert.assertTrue(Double.isNaN(maximum.value));
-            var target = new DBSPUSizeLiteral(null, true);
-            var unsupported = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
-            var error = Assert.assertThrows(UnsupportedException.class, () -> unsupported.apply(target.closure(input)));
-            Assert.assertSame(target.getType().withMayBeNull(false).getNode(), error.calciteObject);
+            for (DBSPExpression target : List.of(new DBSPUSizeLiteral(null, true), new DBSPISizeLiteral(null, true))) {
+                var visited = input.deref();
+                var block = new DBSPBlockExpression(List.of(visited.toStatement()), target);
+                var function = block.closure(input);
+                var unsupported = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+                var error = Assert.assertThrows(UnsupportedException.class, () -> unsupported.applyAnalysis(function));
+                Assert.assertSame(target.getType().withMayBeNull(false).getNode(), error.calciteObject);
+                Assert.assertTrue(unsupported.get(visited).mayBeMonotone());
+                if (nativePass) {
+                    for (boolean resultOnly : List.of(false, true)) {
+                        var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                        var failure = RustCircuitPass.projectWaterlineClosure(compiler, block, function.parameters,
+                                new DBSPType[]{row.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(row)},
+                                false, resultOnly, facts::put);
+                        assertFailure(failure, RustCircuitPass.WaterlineError.TargetMaximum, target);
+                        Assert.assertTrue(facts.containsKey(visited));
+                        Assert.assertFalse(facts.containsKey(target));
+                    }
+                }
+            }
         }
     }
 
@@ -1710,6 +1788,16 @@ public class WaterlineProjectionTests {
             compiler.options.ioOptions.rustOptimizerPasses = hybrid;
             Assert.assertThrows(NullPointerException.class, () ->
                     new MonotoneTransferFunctions(compiler, operator, kind, row).applyAnalysis(demanding));
+            if (hybrid) {
+                for (boolean resultOnly : List.of(false, true)) {
+                    var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                    var failure = RustCircuitPass.projectWaterlineClosure(compiler, demanding.body, demanding.parameters,
+                            new DBSPType[]{row.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(row)},
+                            false, resultOnly, facts::put);
+                    assertFailure(failure, RustCircuitPass.WaterlineError.MissingOperand, unknown);
+                    Assert.assertTrue(facts.get(unknown).mayBeMonotone());
+                }
+            }
         }
     }
 

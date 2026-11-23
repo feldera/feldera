@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust now identifies the operand whose waterline is missing and the literal
+whose target type has no maximum. Both visitor modes publish the facts
+computed up to the failure so Java can report the diagnostic on the original
+expression. The build passed 221 Rust tests and 152 targeted JUnit tests.
+Six JUnit cases failed against the preceding library. All 24 selected
+compilations matched direct Java through 10,929 ordered S4 observations and
+emission. [Waterline failures](evidence/p3-waterline-failures.json)
+
 Rust compares printed window keys for static blocks containing calls and
 expression statements. The directed scan preserved the preceding cast warning
 at its original range. An initializer containing a local declaration produced
