@@ -27,6 +27,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -34,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -54,6 +57,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -63,6 +67,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -861,6 +866,41 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void aggregateImplementationsHaveNoWaterline() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var node = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(0).getType();
+        var field = new MonotoneType(integer);
+        var row = new PartiallyMonotoneTuple(List.of(field), false, false);
+        var input = new DBSPVariablePath("input", row.getType().ref());
+        var accumulator = new DBSPVariablePath("accumulator", integer.ref());
+        var element = new DBSPVariablePath("element", integer.ref());
+        var weight = new DBSPVariablePath("weight", integer);
+        var increment = accumulator.deref().closure(accumulator, element, weight);
+        var finish = element.deref().closure(element);
+        var fold = new DBSPFold(node, new DBSPTypeUser(node, DBSPTypeCode.USER, "DefaultSemigroup", false, integer),
+                new DBSPI32Literal(0), increment, finish);
+        var minimum = new DBSPMinMax(node, fold.getType(), finish.deepCopy().to(DBSPClosureExpression.class),
+                DBSPMinMax.Aggregation.Min);
+        var body = new DBSPTupleExpression(fold, minimum, input.deref().field(0));
+        var bound = new DBSPVariablePath("input", row.getProjectedType().ref());
+        var expected = new DBSPTupleExpression(bound.deref().field(0)).closure(bound);
+        var operator = new DBSPConstantOperator(node, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet,
+                row).applyAnalysis(body.closure(input));
+        Assert.assertTrue(direct.getReducedExpression().equivalent(expected));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var projected = RustCircuitPass.projectRow(compiler, body, bound, row);
+            Assert.assertNotNull(projected);
+            Assert.assertTrue(projected.getReducedExpression().closure(bound).equivalent(expected));
+            var result = projected.getMonotoneType().to(PartiallyMonotoneTuple.class);
+            Assert.assertFalse(result.getFieldType(0).mayBeMonotone());
+            Assert.assertFalse(result.getFieldType(1).mayBeMonotone());
+            Assert.assertSame(field, result.getFieldType(2));
+        }
+    }
+
+    @Test
     public void unboundedFieldsKeepTheirDeclaredTypes() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var node = CalciteEmptyRel.INSTANCE;
@@ -871,7 +911,8 @@ public class WaterlineProjectionTests {
         var nullable = nested.withMayBeNull(true).to(DBSPTypeTuple.class);
         var parameter = new DBSPVariablePath("row", row.getType().ref());
         var body = new DBSPTupleExpression(new NoExpression(nested).field(1), text,
-                DBSPTupleExpression.none(nullable), parameter.deepCopy().deref().field(0));
+                DBSPTupleExpression.none(nullable), new DBSPFailExpression(node, nested, "null row cast"),
+                parameter.deepCopy().deref().field(0));
         var closure = body.closure(parameter);
         var operator = new DBSPConstantOperator(node, DBSPZSetExpression.emptyWithElementType(integer));
         var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
@@ -888,6 +929,10 @@ public class WaterlineProjectionTests {
             Assert.assertSame(text.getType(), output.getFieldType(1).getType());
             Assert.assertTrue(output.getFieldType(2).getType().mayBeNull);
             Assert.assertFalse(output.getFieldType(2).mayBeMonotone());
+            var failedRow = output.getFieldType(3).to(PartiallyMonotoneTuple.class);
+            Assert.assertFalse(failedRow.mayBeMonotone());
+            Assert.assertSame(integer, failedRow.getFieldType(0).getType());
+            Assert.assertSame(row.getFieldType(0), output.getFieldType(4));
         }
     }
 

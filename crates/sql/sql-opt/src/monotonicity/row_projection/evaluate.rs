@@ -99,6 +99,7 @@ fn schedule(
         Expr::Tuple
         | Expr::RawTuple
         | Expr::Closure
+        | Expr::Fail
         | Expr::Path
         | Expr::NullLiteral
         | Expr::KeywordLiteral
@@ -137,6 +138,8 @@ fn schedule(
         | Expr::Sort
         | Expr::Static
         | Expr::EnumValue
+        | Expr::Fold
+        | Expr::MinMax
         | Expr::ZSet
         | Expr::IndexedZSet => {
             let mut children = Vec::new();
