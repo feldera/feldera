@@ -528,6 +528,14 @@ same first failing column, warnings and generated-name count as direct Java.
 The previous standalone trial returned without reporting the error.
 [Shared-index field trials](evidence/p3-shared-index-field-trials.json)
 
+Optimizer snapshots carry loop variable names through field reduction. Two
+loop-valued columns compare their inputs first. Different inputs occupy
+different columns, while equal inputs reach Java's empty-scope binding error.
+The build passed 184 targeted and 224 nightly JUnit tests. COUNT and LATENESS
+checkpoints restored in both directions, and cancellation p95 was 19.88 ms
+across 20 workers.
+[Loop comparisons, restore and cancellation checks](evidence/p3-index-loop-bindings.json)
+
 Shared-index readers remap a column beneath 160 nested calls. Indexes that
 project the same nested expression still share one output column. Both
 operations exceeded the inline snapshot limit on the preceding build.

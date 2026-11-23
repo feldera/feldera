@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ReplaceSharedIndexes;
@@ -37,6 +38,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputInte
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -742,6 +745,37 @@ public class ShareIndexesTests extends StreamingTestBase {
         Assert.assertArrayEquals(direct.candidateIds().getFirst().toArray(long[][]::new),
                 hybrid.candidateIds().getFirst().toArray(long[][]::new));
         Assert.assertEquals(List.of("SharedIndexes/Discover=true"), decisions);
+    }
+
+    @Test
+    public void wideIndexLoopsCompareTheInputBeforeBinding() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes"));
+        var compiler = this.testCompiler();
+        var decisions = observeDecisions(compiler);
+        for (int secondInput : List.of(1, 2)) {
+            var functions = new ArrayList<DBSPClosureExpression>();
+            var loops = new ArrayList<DBSPForExpression>();
+            for (var value : List.of(1, secondInput)) {
+                var row = INT.ref().var();
+                var loop = new DBSPForExpression("item", new DBSPI32Literal(value), new DBSPBlockExpression(List.of(), null));
+                loops.add(loop);
+                functions.add(new DBSPRawTupleExpression(new DBSPTupleExpression(row.deref()),
+                        new DBSPTupleExpression(loop)).closure(row));
+            }
+            if (secondInput == 1) {
+                var direct = Assert.assertThrows(InternalCompilerError.class, () -> EquivalenceContext.equiv(loops.get(1), loops.get(0)));
+                var hybrid = Assert.assertThrows(direct.getClass(), () -> RustCircuitPass.wideIndexFields(compiler, functions));
+                Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+                Assert.assertEquals(direct.getPositionRange(), hybrid.getPositionRange());
+            } else {
+                Assert.assertFalse(EquivalenceContext.equiv(loops.get(1), loops.get(0)));
+                var index = RustCircuitPass.wideIndexFields(compiler, functions);
+                Assert.assertEquals(List.of(List.of(0), List.of(1)), index.layout());
+                for (var field : index.fields())
+                    Assert.assertEquals("item", field.to(DBSPForExpression.class).variable);
+            }
+        }
+        Assert.assertEquals(List.of("SharedIndexes/WideFields=true", "SharedIndexes/WideFields=true"), decisions);
     }
 
     @Test

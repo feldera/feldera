@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.util.JsonStream;
 
@@ -29,6 +30,12 @@ class OptimizerExpressionWriter extends ToJsonInnerVisitor {
 
     OptimizerExpressionWriter(DBSPCompiler compiler, JsonStream stream, int verbosity, boolean replayMetadata) {
         super(compiler, stream, verbosity, replayMetadata);
+    }
+
+    @Override
+    public void postorder(DBSPForExpression loop) {
+        this.stream.label("variable").append(loop.variable);
+        super.postorder(loop);
     }
 
     @Override

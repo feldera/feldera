@@ -26,6 +26,7 @@ pub(super) enum Work {
     FlatmapOutput(NodeId, NodeId),
     /// Stop after earlier comparisons have had a chance to report their result.
     Answer(Option<bool>),
+    EmptyContext,
     Leave(NodeId, NodeId),
 }
 

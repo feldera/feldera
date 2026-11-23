@@ -11,6 +11,8 @@ use std::collections::HashSet;
 pub enum ComparisonDiagnostic {
     #[error("Declaration for variable '{0}' not found")]
     MissingDeclaration(String),
+    #[error("Empty context")]
+    EmptyContext,
     #[error("Cannot resolve timestamp '{0}'")]
     InvalidTimestamp(String),
 }
@@ -263,6 +265,7 @@ pub(super) fn compare_keys<'a>(
         let (a, b, scope) = match work {
             Work::Compare(a, b, scope) => (a, b, scope),
             Work::Answer(answer) => return Ok(answer),
+            Work::EmptyContext => return Err(ComparisonDiagnostic::EmptyContext.into()),
             Work::FlatmapOutput(a, b) => {
                 let left = edit.node(a)?;
                 let right = edit.node(b)?;
@@ -320,11 +323,9 @@ pub(super) fn compare_keys<'a>(
             }
             Expr::For => {
                 // The iterated expressions are compared before Java binds the loop variable.
-                if let Some(variable) = left
-                    .data("variable")
-                    .and_then(|v| v.as_str())
-                    .filter(|_| scope != Scope::Root)
-                {
+                if scope == Scope::Root {
+                    pending.push(Work::EmptyContext);
+                } else if let Some(variable) = left.data("variable").and_then(|v| v.as_str()) {
                     // DBSPForExpression.equivalent enters the left name in both maps.
                     let local = bindings.bind(variable, variable, scope);
                     pending.push(Work::Compare(

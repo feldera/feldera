@@ -432,6 +432,7 @@ jobs:
             ShareIndexesTests#aDeepSharedIndexReaderUsesTheRemappedColumn
             ShareIndexesTests#wideIndexFieldsShareADeepProjectionAcrossNarrowIndexes
             ShareIndexesTests#sharedIndexColumnErrorPreservesTheComparisonPrefix
+            ShareIndexesTests#wideIndexLoopsCompareTheInputBeforeBinding
             ShareIndexesTests#sharedIndexDiscoveryKeepsCompletedGroupsAtAFailedKey
             StreamKindTests#validateEachPassResultIncludingChangesToTheSameCircuit
             TemporalKeyTests WaterlineProjectionTests

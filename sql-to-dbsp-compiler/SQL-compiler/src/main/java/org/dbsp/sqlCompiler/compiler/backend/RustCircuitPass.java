@@ -1652,12 +1652,9 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass, byte[] state, IDBSPInnerNode... inputs) {
-        var inner = switch (pass) {
-            case "MergeTemporalBounds", "TemporalGroups" -> new TemporalKeyWriter(compiler);
-            case "RewriteNow/ClockSites" -> new OptimizerExpressionWriter(compiler, false);
-            default -> new OptimizerExpressionWriter(compiler);
-        };
-        if (pass.equals("FuseExpensiveMaps/DuplicateField") || pass.equals("FuseExpensiveMaps/Scan"))
+        var inner = new OptimizerExpressionWriter(compiler, !pass.equals("RewriteNow/ClockSites"));
+        if (pass.equals("MergeTemporalBounds") || pass.equals("TemporalGroups")
+                || pass.equals("FuseExpensiveMaps/DuplicateField") || pass.equals("FuseExpensiveMaps/Scan"))
             inner.includeShuffleIdentities();
         try {
             byte[] reply = transformWithContext(pass, inner.encode(inputs), DBSPVariablePath.nextGeneratedName(), "", state);
@@ -3592,6 +3589,8 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     private static void reportComparisonFailure(JsonNode failure) {
+        if (failure.isTextual() && failure.textValue().equals("emptyContext"))
+            throw new InternalCompilerError("Empty context", CalciteObject.EMPTY);
         var variable = failure.get("missingDeclaration");
         if (variable != null)
             Utilities.fail("Declaration for variable " + Utilities.singleQuote(variable.textValue()) + " not found");
