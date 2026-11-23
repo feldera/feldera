@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Decimal window keys, 2026-11-22
+
+On `3160a9fce`, all 69 pairs matched through classic artifact emission.
+Each workload ran two warmup pairs and 21 measured pairs in fresh JVMs on
+CPU 15, with alternating compiler order and no concurrent verification.
+The timer ended before Cargo built the generated pipeline.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.512 | 1.181 | 0.781× |
+| Nexmark suite | 3.363 | 3.830 | 1.139× |
+| Outer join | 1.415 | 1.123 | 0.793× |
+
+[Timings and build identities](evidence/p3-decimal-window-keys-cold.json)
+
 ## Deep checkpoint expressions, 2026-11-22
 
 All 69 pairs on `0c136c3eb` matched through classic artifact emission.

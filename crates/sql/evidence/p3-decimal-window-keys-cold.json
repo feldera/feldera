@@ -1,0 +1,84 @@
+{
+  "commit": "3160a9fceb0e66569e2414bf1aa6ba012f13082b",
+  "archive": ".bench-results/p1-p5/p3-cold-compilation/2026-22-11-17-43-3160a",
+  "profile": "Cold SQL compilation through classic artifact emission after general row waterline traversal, canonicalization of mixed calls, and decimal window key grouping. Both engines were idle before this run. Fresh JVMs pinned to CPU 15; no concurrent devcontainer verification scheduled.",
+  "matched_pairs": 69,
+  "warmup_pairs_per_workload": 2,
+  "measured_pairs_per_workload": 21,
+  "identities": {
+    "inputs": {
+      "array-subquery.sql": "42e09a2b580b083bb2653efdb4e32f8b79c1d1d6ca13796cb13e0eedaa93b33d",
+      "nexmark-suite.sql": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+      "outer-join.sql": "1a475a4c0d4e68f13d124dc2a7c30100baecf86a640ac8ac787ca0bb12d0435d"
+    },
+    "compiler": "4aeb67d2501f6db3ef178f6984b3bb5ac6c947fc839d0cfe495bdb218d8cdab0",
+    "library": "8a7e60e37cc71c065184d89ed6b348e93c380f0b856ee33972e3c35c285a7165",
+    "classpath": {
+      "/stage/p3-verified-u0m6raxd/rolling-s4/decimal-window-keys/maven/sql-compiler.jar": "2018a2850dde9dee949b1f6b2ec0043327aeb2e57f875e9256aeeb0671cdd374"
+    },
+    "affinity": [
+      15
+    ],
+    "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+    "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n"
+  },
+  "sha256": {
+    "measurements/pairs.jsonl": "fcfc3f2ae126b5b190e43de5cec16486bfffe0b227a423d878855865048a81d6",
+    "measurements/environment.json": "06692e519aff132baf2b5ccad10a8ad7e698144c62947e3d8f2ee516bd13e108",
+    "measurements/results.json": "cf2f611a2c7d75c1df2be04da5284b47e94b6084845e6776b7e582d8b39b1ab2",
+    "env.txt": "ec95dcd46c77a5c498ff096d91d187a8b9545776f6a0bca0fe4e182775c45922"
+  },
+  "workloads": {
+    "array-subquery.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.131419373,
+        "empirical_p95_seconds": 1.181383565
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 1.443735386,
+        "empirical_p95_seconds": 1.512352453
+      },
+      "p95_ratio": 0.7811562461227415,
+      "mean_ratio_paired_95pct_interval": [
+        0.7800360912735771,
+        0.7958158580385745
+      ]
+    },
+    "nexmark-suite.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 3.644814993,
+        "empirical_p95_seconds": 3.829686204
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 3.230147607,
+        "empirical_p95_seconds": 3.362597178
+      },
+      "p95_ratio": 1.1389072200071892,
+      "mean_ratio_paired_95pct_interval": [
+        1.1292321446830262,
+        1.1498772525515917
+      ]
+    },
+    "outer-join.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.05743833,
+        "empirical_p95_seconds": 1.122517205
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 1.352199047,
+        "empirical_p95_seconds": 1.414858807
+      },
+      "p95_ratio": 0.7933775437141553,
+      "mean_ratio_paired_95pct_interval": [
+        0.7733260247068969,
+        0.7927998174605161
+      ]
+    }
+  }
+}
