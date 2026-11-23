@@ -1,0 +1,445 @@
+{
+  "scope": "Rust rewrites shared indexes while delegating only unresolved field equality. Nullable references stop waterline analysis at the first invalid read. Both regressions compare against direct Java.",
+  "source_base": "688a1270e254e0e1c4d0989dcd60ec23c16faf98",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "ea056d27edea91db45ba8b4a373fd7fc3ef581178f2ab21bc2acf914b9158b2a",
+    "crates/sql/sql-opt-jni/src/live_equality.rs": "352228aaa6c614ab3ebdfc8116322bf7326191222736aea7a752b03a82d87584",
+    "crates/sql/sql-opt-jni/src/shared_indexes.rs": "a75589f7714059f4efb97217daa9ff09d0e8a0984a9ba67a534a95e14e05388a",
+    "crates/sql/sql-opt/src/lib.rs": "cbf7f2c6aacf31687e62479a874007bd90edc38800055c007da1c3997fdd8860",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "e982e7f45e3fee162087c105ff336f8522a00ef58a558da3afdd9a7308676b7c",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/reads.rs": "80a0c0f18a6f790b162b51a6f4411d84c8a8224a411a34b4513a18a3f5005f0d",
+    "crates/sql/sql-opt/src/replace_shared_indexes.rs": "70f622b36ec03ace5b079828640e0e338538abfeaaf337d2f600f5abae23bfad",
+    "crates/sql/sql-opt/src/wide_index.rs": "503fa3abdf5fb3d9206be504b2945c3085d9a5148530689c8acc1d117d70bb8e",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "8e6615a27364c4cefe62e7d261f3c660973de7e7fec9ab2a2504fa389b74fb99",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ShareIndexesTests.java": "a9c7830d132825a5d7fc570a4a7883b2afbc29f7ceda0daf3ebfcc2060200faf",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "56759973465b98a3fa5e665572505925bd691ad3ee9c9651a60614d7c22393ec"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "a5f13cfbc09334e98dd805752e88e1dab210fe96b75f31e07fa36cb2efc37346",
+    "bin/sql-difftest": "0c0b1df847449953670f435567b2f83667ed003dddacc966c14499c41c58ffa3",
+    "maven/tests.jar": "9431343c9231c00722e7e60894c6bd540247bdff0d0a72623109616000931b25",
+    "maven/sql-compiler.jar": "a2cc0e5365565d1c357b28aad42f88a6c93d1b08cf9335bc4611a7d57df52eea",
+    "bin/sql2dbsp": "e6d131a2bab862ccae37997bc8bfa1defffe0066f4df3e42c540736b53323c46"
+  },
+  "negative_control": {
+    "library_sha256": "3f3bb5454bd24de85b780efb2d6d7623a882ed0cc46311227afea1fc754e9039",
+    "failed_tests": [
+      "sharedIndexColumnErrorPreservesTheComparisonPrefix",
+      "nullableReferencesStopWaterlineAnalysisAtTheRead"
+    ],
+    "java_compiler_sha256": "40297d817004c26ab305fd104dab5ce2f30c3e068b49f6addd1ec65b6f137258"
+  },
+  "rust_tests": 225,
+  "junit_tests": 176,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "700aaea520e505da9270e9aee797cc8b18ea25359d0a0c2da0eda1ed9c26de56"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "dcdb1a5f72196e53324b770ffac023478d79a7eec21a32fc614c89173a756a2f"
+    }
+  },
+  "source_commit": "4e5dead2f0b0ad9f5e727b7ac9dddc6fd09fa686",
+  "nightly_optimizer_junit": {
+    "tests": 216,
+    "failures": 0,
+    "skipped": 0
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      8.730179,
+      8.421804,
+      8.453428,
+      13.07931,
+      11.114099,
+      8.578929,
+      7.269385,
+      11.884808,
+      7.637928,
+      7.780386,
+      7.794761,
+      13.905728,
+      12.461059,
+      9.467681,
+      12.139767,
+      15.104147,
+      9.900389,
+      5.487841,
+      10.925848,
+      11.131724
+    ],
+    "p95_ms": 13.905728,
+    "largest_driver_plus_front_end_rss_bytes": 70336512,
+    "compiler_sha256": "e6d131a2bab862ccae37997bc8bfa1defffe0066f4df3e42c540736b53323c46",
+    "cpu_affinity": [
+      15
+    ]
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20909-24e6-7a31-a4e8-b0108fae596c",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20909-2500-7101-b2ef-67a09dcd0469",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20909-c156-7c33-87d9-f15a921edc32",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20909-c171-73f0-9b10-7d5c70747823",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "native_decision_coverage": {
+    "classic": {
+      "programs": 8571,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "observations_sha256": "8d32fc3b0a1d1e33d206f3e9aac03dcb30edfeec100cb1acaa12e44ac6b4f178",
+      "requests": {
+        "KeyAnalysis/Circuit": {
+          "calls": 25713,
+          "fallbacks": 0
+        },
+        "LeftJoinChains/Steps": {
+          "calls": 8571,
+          "fallbacks": 0
+        },
+        "FuseExpensiveMaps/Scan": {
+          "calls": 6404,
+          "fallbacks": 0
+        },
+        "InnerCSE/Rewrite": {
+          "calls": 35013,
+          "fallbacks": 0
+        },
+        "OptimizeProjections/Producer": {
+          "calls": 93191,
+          "fallbacks": 0
+        },
+        "Monotonicity/Intersection": {
+          "calls": 174,
+          "fallbacks": 0
+        },
+        "Monotonicity/JoinArguments": {
+          "calls": 824,
+          "fallbacks": 0
+        },
+        "Monotonicity/ProjectClosure": {
+          "calls": 3317,
+          "fallbacks": 0
+        },
+        "Monotonicity/Transfer": {
+          "calls": 6673,
+          "fallbacks": 0
+        },
+        "ParameterFieldDependencies": {
+          "calls": 13079,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/AggregateReader": {
+          "calls": 2890,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/IndexedValue": {
+          "calls": 1939,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/ParameterTypes": {
+          "calls": 3080,
+          "fallbacks": 0
+        },
+        "ReplaceSharedIndexes": {
+          "calls": 202,
+          "fallbacks": 0
+        },
+        "SharedIndexes/Discover": {
+          "calls": 509,
+          "fallbacks": 0
+        },
+        "MergeFilters": {
+          "calls": 35,
+          "fallbacks": 0
+        },
+        "RewriteNow/Filter": {
+          "calls": 163,
+          "fallbacks": 0
+        },
+        "WindowGroups/Indexes": {
+          "calls": 64,
+          "fallbacks": 0
+        },
+        "WindowGroups/Reorder": {
+          "calls": 71,
+          "fallbacks": 0
+        },
+        "WindowGroups/Scan": {
+          "calls": 71,
+          "fallbacks": 0
+        },
+        "LeftJoinChains/Columns": {
+          "calls": 293,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/NarrowJoin": {
+          "calls": 3664,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/Reader": {
+          "calls": 190,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/TopKComparators": {
+          "calls": 190,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/TopKFields": {
+          "calls": 961,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/FlatmapInput": {
+          "calls": 405,
+          "fallbacks": 0
+        },
+        "FuseExpensiveMaps/Columns": {
+          "calls": 5,
+          "fallbacks": 0
+        },
+        "Monotonicity/IsMinimumChain": {
+          "calls": 74,
+          "fallbacks": 0
+        },
+        "Monotonicity/AntiJoinProjection": {
+          "calls": 43,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/NarrowAsof": {
+          "calls": 104,
+          "fallbacks": 0
+        }
+      },
+      "calls": 207912,
+      "fallbacks": 0
+    },
+    "gen2": {
+      "programs": 8527,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "observations_sha256": "589025cddc6bde4c692cb52a99fccd9bb1a85a5a20889061e3018ae3c3ec6e13",
+      "requests": {
+        "KeyAnalysis/Circuit": {
+          "calls": 25581,
+          "fallbacks": 0
+        },
+        "LeftJoinChains/Steps": {
+          "calls": 8527,
+          "fallbacks": 0
+        },
+        "FuseExpensiveMaps/Scan": {
+          "calls": 6373,
+          "fallbacks": 0
+        },
+        "InnerCSE/Rewrite": {
+          "calls": 33630,
+          "fallbacks": 0
+        },
+        "OptimizeProjections/Producer": {
+          "calls": 97576,
+          "fallbacks": 0
+        },
+        "Monotonicity/Intersection": {
+          "calls": 173,
+          "fallbacks": 0
+        },
+        "Monotonicity/JoinArguments": {
+          "calls": 828,
+          "fallbacks": 0
+        },
+        "Monotonicity/ProjectClosure": {
+          "calls": 3283,
+          "fallbacks": 0
+        },
+        "Monotonicity/Transfer": {
+          "calls": 6560,
+          "fallbacks": 0
+        },
+        "ParameterFieldDependencies": {
+          "calls": 13023,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/AggregateReader": {
+          "calls": 2880,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/IndexedValue": {
+          "calls": 1930,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/ParameterTypes": {
+          "calls": 3069,
+          "fallbacks": 0
+        },
+        "ReplaceSharedIndexes": {
+          "calls": 243,
+          "fallbacks": 0
+        },
+        "SharedIndexes/Discover": {
+          "calls": 660,
+          "fallbacks": 0
+        },
+        "LeftJoinChains/Columns": {
+          "calls": 290,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/NarrowJoin": {
+          "calls": 3624,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/Reader": {
+          "calls": 189,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/TopKComparators": {
+          "calls": 189,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/TopKFields": {
+          "calls": 957,
+          "fallbacks": 0
+        },
+        "RewriteNow/Filter": {
+          "calls": 151,
+          "fallbacks": 0
+        },
+        "WindowGroups/Indexes": {
+          "calls": 55,
+          "fallbacks": 0
+        },
+        "WindowGroups/Reorder": {
+          "calls": 62,
+          "fallbacks": 0
+        },
+        "WindowGroups/Scan": {
+          "calls": 62,
+          "fallbacks": 0
+        },
+        "MergeFilters": {
+          "calls": 32,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/FlatmapInput": {
+          "calls": 401,
+          "fallbacks": 0
+        },
+        "FuseExpensiveMaps/Columns": {
+          "calls": 5,
+          "fallbacks": 0
+        },
+        "Monotonicity/IsMinimumChain": {
+          "calls": 74,
+          "fallbacks": 0
+        },
+        "Monotonicity/AntiJoinProjection": {
+          "calls": 42,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/NarrowAsof": {
+          "calls": 93,
+          "fallbacks": 0
+        }
+      },
+      "calls": 210562,
+      "fallbacks": 0
+    }
+  }
+}

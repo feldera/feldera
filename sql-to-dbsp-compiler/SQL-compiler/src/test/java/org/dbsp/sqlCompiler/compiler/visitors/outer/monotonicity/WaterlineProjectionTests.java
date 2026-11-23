@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWeighOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
@@ -102,6 +103,7 @@ import org.junit.Assume;
 import org.junit.Test;
 
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -500,6 +502,52 @@ public class WaterlineProjectionTests {
         var signature = reduced.getType().to(DBSPTypeFunction.class);
         Assert.assertSame(body.getType(), signature.resultType);
         Assert.assertSame(reduced.parameters[0].getType(), signature.parameterTypes[0]);
+    }
+
+    @Test
+    public void invalidClosureBindingsAndRepeatedReadsAreFinalRustDecisions() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(1).getType();
+        var input = integer.ref().var();
+        var shape = new MonotoneType(integer);
+        var repeated = input.deref();
+        var path = new DBSPVariablePath(input.variable, input.getType());
+        var free = new DBSPVariablePath("missing", integer);
+        var conflict = new DBSPLetExpression(path, path, path.deepCopy());
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var decisions = new ArrayList<Boolean>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void nativeDecision(String operation, boolean answered) {
+                if (operation.startsWith("Monotonicity/"))
+                    decisions.add(answered);
+            }
+
+            @Override
+            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
+
+            @Override
+            public void after(String parent, int index, int iteration, CircuitTransform pass,
+                              DBSPCircuit circuit, boolean completed) {}
+        };
+        for (var body : List.of(new DBSPTupleExpression(repeated, repeated),
+                new DBSPTupleExpression(repeated, repeated, free), conflict)) {
+            var closure = body.closure(input);
+            var direct = new MonotoneTransferFunctions(compiler, op, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+            var expected = Assert.assertThrows(RuntimeException.class, () -> direct.apply(closure));
+            for (boolean resultOnly : List.of(false, true)) {
+                decisions.clear();
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var error = Assert.assertThrows(expected.getClass(), () ->
+                        RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                                new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                                false, resultOnly, facts::put));
+                Assert.assertEquals(expected.getMessage(), error.getMessage());
+                Assert.assertTrue(facts.isEmpty());
+                Assert.assertEquals(List.of(true), decisions);
+            }
+        }
     }
 
     @Test

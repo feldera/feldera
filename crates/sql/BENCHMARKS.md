@@ -4,6 +4,20 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Shared-index replacement, 2026-11-23
+
+On `4e5dead2f`, direct Java and the hybrid produced equal diagnostics and
+classic source artifacts in all 69 pairs. Each invocation started a fresh
+process pinned to CPU 15 of the shared ARM64 VM. Each workload ran two warmup
+pairs and 21 measured pairs in alternating order.
+[Paired measurements and build identities](evidence/p3-index-and-waterline-diagnostics-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.872 | 1.425 | 0.761× |
+| Nexmark suite | 4.282 | 4.365 | 1.020× |
+| Outer join | 1.549 | 1.351 | 0.873× |
+
 ## Temporal filter merging, 2026-11-23
 
 On `1d9449cb8`, direct Java and the hybrid produced equal diagnostics and

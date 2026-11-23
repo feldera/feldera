@@ -1,0 +1,42 @@
+{
+  "scope": "Rust reports lexical and repeated-expression waterline failures before publishing expression facts or running the general visitor.",
+  "source_base": "4e5dead2f0b0ad9f5e727b7ac9dddc6fd09fa686",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "5e1258c2a77fbd7121661bf87554d7ca6ceafb7b0628e1a698856fe6e868cc66",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "bc8049a39fa0e6c94450ca0f4fc4abdc17d06ff312fec9252f98c9e2ae9a67fe",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "2e6007b4c5acdc61797014518e30867ba29640e39518ac3f505c0bf03358e4f7",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "434f2d366bed09bcb5419bb33ecb315c780932eb6ab100d8bb545c5a1162d854"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "2341a555f6c06a1e48ba00fe4e450b20f50e6d789c65cd6824a97043c03519d1",
+    "bin/sql-difftest": "0124b9c7c44410402503b9eb8dcdd1be4d74b4381afb18b698c72844b5d9fdb2",
+    "maven/tests.jar": "d02717e5865e8e79ee216cf54c3a7ce29768859e9c038a8a1927dbe0ac1383e8",
+    "maven/sql-compiler.jar": "c46a390d6c97355586305f47179a7dea9fc5ab530361cf90179bee249a06ccb5"
+  },
+  "negative_control": {
+    "library_sha256": "a5f13cfbc09334e98dd805752e88e1dab210fe96b75f31e07fa36cb2efc37346",
+    "failed_tests": [
+      "invalidClosureBindingsAndRepeatedReadsAreFinalRustDecisions"
+    ],
+    "java_compiler_sha256": "a2cc0e5365565d1c357b28aad42f88a6c93d1b08cf9335bc4611a7d57df52eea"
+  },
+  "rust_tests": 225,
+  "junit_tests": 177,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "041b0a240309098b6e2e99bb682fe0ea52074737b48067d58d1e133ec71fe114"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "9fdaf7f3db9f5b41603b27f51f923f6f96a8ac04a72ce325b952aa648cb59379"
+    }
+  }
+}

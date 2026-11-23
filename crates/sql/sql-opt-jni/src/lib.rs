@@ -993,13 +993,18 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                     let closure = result.closure.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
                     json!({"row_type": result.row_type, "closure": closure})
                 }
-                feldera_sql_opt::ClosureAnalysis::Visit(inspection) => {
-                    json!({"inspection": waterline_inspection(inspection)})
+                feldera_sql_opt::ClosureAnalysis::Visit { references } => {
+                    json!({"inspection": {"bindings":binding_ids(references), "repeated":[]}})
                 }
                 feldera_sql_opt::ClosureAnalysis::Failed { error, facts } => {
                     use feldera_sql_opt::WaterlineError;
                     let mut reply = expression_facts_reply(&arena, &edit, facts, None)?;
                     reply["failure"] = match error {
+                        WaterlineError::FreeVariable(id) => json!({"free":inner_number(id)}),
+                        WaterlineError::ConflictingBinding { variable, previous, current } =>
+                            binding_conflict(variable, previous, current),
+                        WaterlineError::RepeatedExpression(path) =>
+                            json!({"repeated":path.into_iter().map(inner_number).collect::<Vec<_>>()}),
                         WaterlineError::MissingOperand(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
                         WaterlineError::TargetMaximum(id) => json!({"kind":"TargetMaximum", "expression":inner_number(id.into())}),
                         WaterlineError::NullableReference { source, field } =>

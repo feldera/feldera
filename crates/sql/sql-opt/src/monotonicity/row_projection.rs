@@ -409,6 +409,27 @@ impl WaterlineInspection {
         })
     }
 
+    /// Only validated closures can resume the general expression visitor.
+    fn into_bindings(self) -> Result<HashMap<NodeId, NodeId>, WaterlineError> {
+        match self {
+            Self::Free(variable) => Err(WaterlineError::FreeVariable(variable)),
+            Self::Conflict {
+                variable,
+                previous,
+                current,
+            } => Err(WaterlineError::ConflictingBinding {
+                variable,
+                previous,
+                current,
+            }),
+            Self::Bound {
+                references,
+                repeated,
+            } if repeated.is_empty() => Ok(references),
+            Self::Bound { repeated, .. } => Err(WaterlineError::RepeatedExpression(repeated)),
+        }
+    }
+
     pub fn for_root(edit: &CircuitEditor, root: NodeId) -> Result<Self, Error> {
         let node = edit.node(root)?;
         let body = match node.inner_kind() {
@@ -420,6 +441,13 @@ impl WaterlineInspection {
 }
 
 pub enum WaterlineError {
+    FreeVariable(NodeId),
+    ConflictingBinding {
+        variable: NodeId,
+        previous: NodeId,
+        current: NodeId,
+    },
+    RepeatedExpression(Vec<NodeId>),
     MissingOperand(ExpressionId),
     TargetMaximum(ExpressionId),
     UnsupportedType(TypeId),
@@ -438,7 +466,9 @@ pub enum ClosureAnalysis {
         error: WaterlineError,
         facts: Vec<ExpressionWaterline>,
     },
-    Visit(WaterlineInspection),
+    Visit {
+        references: HashMap<NodeId, NodeId>,
+    },
 }
 
 /// Bind projected reads to the Apply input. If the general visitor is needed,
@@ -489,12 +519,15 @@ fn analyze_closure(
     let declared = parameters.iter().map(|&(parameter, _)| parameter);
     let resolution = crate::lexical_scope::resolve_body(edit.circuit(), declared, body.into())?;
     let inspection = WaterlineInspection::inspect(edit, resolution, Some(body.into()))?;
-    let WaterlineInspection::Bound { repeated, .. } = &inspection else {
-        return Ok(ClosureAnalysis::Visit(inspection));
+    let references = match inspection.into_bindings() {
+        Ok(references) => references,
+        Err(error) => {
+            return Ok(ClosureAnalysis::Failed {
+                error,
+                facts: Vec::new(),
+            });
+        }
     };
-    if !repeated.is_empty() {
-        return Ok(ClosureAnalysis::Visit(inspection));
-    }
     let result_only = matches!(observations, Observations::ResultOnly);
     let mut result =
         project_validated_closure(edit, body, parameters, projections, indexed, observations)?;
@@ -510,7 +543,7 @@ fn analyze_closure(
             Observations::Facts(Vec::new()),
         )?;
     }
-    Ok(result.unwrap_or(ClosureAnalysis::Visit(inspection)))
+    Ok(result.unwrap_or(ClosureAnalysis::Visit { references }))
 }
 
 fn project_validated_closure(

@@ -581,11 +581,8 @@ public final class RustCircuitPass implements CircuitTransform {
     public record WaterlineInspection(ReferenceMap references, List<IDBSPInnerNode> repeatedPath)
             implements WaterlineAnalysis {
         public void checkTree() {
-            if (!this.repeatedPath.isEmpty()) {
-                int last = this.repeatedPath.size() - 1;
-                throw RepeatedExpressions.duplicateError(this.repeatedPath.get(0), this.repeatedPath.get(last),
-                        this.repeatedPath.subList(0, last));
-            }
+            if (!this.repeatedPath.isEmpty())
+                throw repeatedExpressionError(this.repeatedPath);
         }
     }
 
@@ -640,13 +637,21 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static WaterlineInspection readWaterlineInspection(ToJsonInnerVisitor writer, JsonNode value) {
         checkBindingErrors(writer, value);
-        var nodes = Objects.requireNonNull(writer.liveNodes);
         var references = new ReferenceMap();
         readBindings(writer, value.required("bindings"), references);
-        var path = new ArrayList<IDBSPInnerNode>();
-        for (var id : value.required("repeated"))
+        return new WaterlineInspection(references, repeatedPath(writer, value.required("repeated")));
+    }
+
+    private static List<IDBSPInnerNode> repeatedPath(ToJsonInnerVisitor writer, JsonNode ids) {
+        var nodes = Objects.requireNonNull(writer.liveNodes);
+        var path = new ArrayList<IDBSPInnerNode>(ids.size());
+        for (var id : ids)
             path.add(Utilities.getExists(nodes, id.longValue()));
-        return new WaterlineInspection(references, path);
+        return path;
+    }
+
+    private static RuntimeException repeatedExpressionError(List<IDBSPInnerNode> path) {
+        return RepeatedExpressions.duplicateError(path.getFirst(), path.getLast(), path.subList(0, path.size() - 1));
     }
 
     public static WaterlineAnalysis projectWaterlineClosure(DBSPCompiler compiler, DBSPExpression body,
@@ -730,6 +735,9 @@ public final class RustCircuitPass implements CircuitTransform {
         }
         var failure = reply.value.get("failure");
         if (failure != null) {
+            checkBindingErrors(reply.writer, failure);
+            if (failure.has("repeated"))
+                throw repeatedExpressionError(repeatedPath(reply.writer, failure.required("repeated")));
             if ("UnsupportedType".equals(failure.required("kind").textValue()))
                 throw NonMonotoneType.unsupportedType(Utilities.getExists(nodes,
                         failure.required("type").longValue()).to(DBSPType.class));
