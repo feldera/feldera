@@ -1657,8 +1657,7 @@ public final class RustCircuitPass implements CircuitTransform {
             case "RewriteNow/ClockSites" -> new OptimizerExpressionWriter(compiler, false);
             default -> new OptimizerExpressionWriter(compiler);
         };
-        if (pass.equals("SharedIndexes/Split") || pass.equals("SharedIndexes/WideFields")
-                || pass.equals("FuseExpensiveMaps/DuplicateField") || pass.equals("FuseExpensiveMaps/Scan"))
+        if (pass.equals("FuseExpensiveMaps/DuplicateField") || pass.equals("FuseExpensiveMaps/Scan"))
             inner.includeShuffleIdentities();
         try {
             byte[] reply = transformWithContext(pass, inner.encode(inputs), DBSPVariablePath.nextGeneratedName(), "", state);
@@ -3463,18 +3462,32 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @Nullable
-    public static int[][] splitSharedIndexes(DBSPCompiler compiler, List<DBSPClosureExpression> functions, List<Boolean> fixed) {
+    private static native byte[] planIndexFields(byte[] functions, long next, byte[] fixed, KeyEquality equality);
+
+    private static LoweringReply sharedIndexPlan(DBSPCompiler compiler, List<DBSPClosureExpression> functions,
+                                                 @Nullable List<Boolean> fixed) {
+        String operation = fixed == null ? "SharedIndexes/WideFields" : "SharedIndexes/Split";
+        var writer = new OptimizerExpressionWriter(compiler);
+        writer.includeShuffleIdentities();
         try {
-            var reply = invokeLowering(compiler, "SharedIndexes/Split",
-                    MAPPER.writeValueAsBytes(fixed), functions.toArray(DBSPClosureExpression[]::new)).value;
-            if (!answered(compiler, "SharedIndexes/Split", reply))
-                return null;
-            var groups = MAPPER.treeToValue(reply.required("groups"), int[][].class);
-            finishLowering(compiler, reply);
-            return groups;
+            var inputs = writer.encode(functions.toArray(DBSPClosureExpression[]::new));
+            var bytes = planIndexFields(inputs, DBSPVariablePath.nextGeneratedName(), MAPPER.writeValueAsBytes(fixed),
+                    request -> compareIndexField(compiler, operation, writer, request));
+            var state = MAPPER.readTree(bytes);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(operation, state.required("native_columns").booleanValue());
+            finishLowering(compiler, state);
+            if (state.has("comparison_failure"))
+                reportComparisonFailure(state.required("comparison_failure"));
+            return new LoweringReply(writer, state);
         } catch (IOException error) {
-            throw new UncheckedIOException("Invalid shared index groups", error);
+            throw new UncheckedIOException("Could not plan shared-index fields", error);
         }
+    }
+
+    public static int[][] splitSharedIndexes(DBSPCompiler compiler, List<DBSPClosureExpression> functions, List<Boolean> fixed) {
+        var reply = sharedIndexPlan(compiler, functions, fixed);
+        return MAPPER.convertValue(reply.value.required("groups"), int[][].class);
     }
 
     private static void reportWarnings(DBSPCompiler compiler, JsonNode warnings) {
@@ -3511,11 +3524,10 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public record WideIndexFields(DBSPVariablePath variable, DBSPExpression key, boolean nullable,
-                                  List<DBSPExpression> fields, @Nullable List<List<Integer>> layout,
-                                  List<List<DBSPExpression>> rows) {}
+                                  List<DBSPExpression> fields, List<List<Integer>> layout) {}
 
     public static WideIndexFields wideIndexFields(DBSPCompiler compiler, List<DBSPClosureExpression> functions) {
-        var reply = invokeLowering(compiler, "SharedIndexes/WideFields", functions.toArray(DBSPClosureExpression[]::new));
+        var reply = sharedIndexPlan(compiler, functions, null);
         var decoder = expressionDecoder(reply.writer);
         var expressions = reply.value.required("expressions");
         var variable = decodeLiveRoot(decoder, expressions.required(0), DBSPVariablePath.class);
@@ -3524,19 +3536,7 @@ public final class RustCircuitPass implements CircuitTransform {
         for (int i = 2; i < expressions.size(); i++)
             fields.add(decodeLiveRoot(decoder, expressions.required(i), DBSPExpression.class));
         List<List<Integer>> layout = MAPPER.convertValue(reply.value.required("layout"), new TypeReference<>() {});
-        var rows = new ArrayList<List<DBSPExpression>>();
-        if (!answered(compiler, "SharedIndexes/WideFields", reply.value.required("layout"))) {
-            int offset = 0;
-            for (var width : reply.value.required("widths")) {
-                int end = Math.addExact(offset, width.intValue());
-                rows.add(fields.subList(offset, end));
-                offset = end;
-            }
-            if (rows.size() != functions.size() || offset != fields.size())
-                throw new IllegalStateException("Invalid column counts in Rust shared index");
-        }
-        finishLowering(compiler, reply.value);
-        return new WideIndexFields(variable, key, reply.value.required("nullable").booleanValue(), fields, layout, rows);
+        return new WideIndexFields(variable, key, reply.value.required("nullable").booleanValue(), fields, layout);
     }
 
     @FunctionalInterface
@@ -3636,22 +3636,26 @@ public final class RustCircuitPass implements CircuitTransform {
         return this.columnRewriteReply("FuseExpensiveMaps/Columns", result);
     }
 
+    private static boolean compareIndexField(DBSPCompiler compiler, String operation, ToJsonInnerVisitor writer,
+                                             byte[] bytes) throws IOException {
+        var request = MAPPER.readTree(bytes);
+        var roots = request.required("roots");
+        var decoder = expressionDecoder(writer);
+        var field = decodeLiveRoot(decoder, roots.required(0), DBSPExpression.class);
+        var prior = decodeLiveRoot(decoder, roots.required(1), DBSPExpression.class);
+        try {
+            return EquivalenceContext.equiv(field, prior);
+        } catch (RuntimeException failure) {
+            finishLowering(compiler, request);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(operation, false);
+            throw failure;
+        }
+    }
+
     private JsonNode replaceIndexGroups(ToJsonOuterVisitor writer, byte[] snapshot, long next, byte[] groups) throws IOException {
-        byte[] result = replaceIndexes(snapshot, next, groups, bytes -> {
-            var request = MAPPER.readTree(bytes);
-            var roots = request.required("roots");
-            var decoder = expressionDecoder(writer.innerVisitor);
-            var field = decodeLiveRoot(decoder, roots.required(0), DBSPExpression.class);
-            var prior = decodeLiveRoot(decoder, roots.required(1), DBSPExpression.class);
-            try {
-                return EquivalenceContext.equiv(field, prior);
-            } catch (RuntimeException failure) {
-                finishLowering(this.compiler, request);
-                if (this.compiler.stateObserver != null)
-                    this.compiler.stateObserver.nativeDecision("ReplaceSharedIndexes", false);
-                throw failure;
-            }
-        });
+        byte[] result = replaceIndexes(snapshot, next, groups,
+                request -> compareIndexField(this.compiler, "ReplaceSharedIndexes", writer.innerVisitor, request));
         return this.columnRewriteReply("ReplaceSharedIndexes", result);
     }
 

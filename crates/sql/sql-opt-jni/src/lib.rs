@@ -714,29 +714,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let reader = feldera_sql_opt::rewrite_index_reader(&mut edit, *reader, &parameters)?;
             return Ok(edit.circuit().live_inner_node(&arena, reader)?);
         }
-        ("SharedIndexes/Split", roots) => {
-            let fixed: Vec<bool> = serde_json::from_slice(state)?;
-            let groups = feldera_sql_opt::split_shared_indexes(&arena, roots, &fixed, &mut next, &mut warnings)?;
-            return Ok(match groups {
-                None => Value::Null,
-                Some(groups) => json!({"groups": groups, "next_generated_name":next, "warnings": warnings.into_iter()
-                    .map(|w| json!({"range":w.position, "error_type":w.kind, "message":w.message})).collect::<Vec<_>>()})
-            });
-        }
-        ("SharedIndexes/WideFields", roots) => {
-            let fields = feldera_sql_opt::wide_index_fields(&mut edit, roots, &mut next, &mut warnings)?;
-            let widths: Vec<_> = fields.rows.iter().map(Vec::len).collect();
-            let (columns, layout) = match fields.layout(&edit)? {
-                Some(layout) => (layout.columns, Some(layout.positions)),
-                None => (fields.rows.into_iter().flatten().collect(), None),
-            };
-            let roots: Vec<_> = [fields.variable, fields.key].into_iter().chain(columns).map(NodeId::from).collect();
-            let expressions = edit.circuit().live_inner_roots(&arena, &roots)?;
-            return Ok(json!({"expressions": expressions, "widths": widths, "layout": layout, "nullable": fields.nullable,
-                "next_generated_name": next, "warnings": warnings.into_iter().map(|w| json!({
-                    "range":w.position, "error_type":w.kind, "message":w.message,
-                })).collect::<Vec<_>>()}));
-        }
         ("TemporalGroups" | "MergeTemporalBounds", roots) => {
             return temporal::groups(&arena, &mut edit, roots, state, pass == "MergeTemporalBounds");
         }
@@ -1487,7 +1464,7 @@ fn transform(
         "ExpandHop/Window" => return expand_hop(input, state, next),
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields"
+        "SharedIndexes/Reader"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp" | "WindowGroups/Conjuncts"
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"

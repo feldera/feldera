@@ -786,17 +786,26 @@ public class ShareIndexesTests extends StreamingTestBase {
         var warnings = compiler.messages.replaySnapshot();
         Assert.assertTrue(compiler.messages.warningCount() > 0);
 
-        var hybridCompiler = this.testCompiler();
-        hybridCompiler.options.ioOptions.rustOptimizerPasses = true;
-        var decisions = observeDecisions(hybridCompiler);
-        start = DBSPVariablePath.nextGeneratedName();
-        var hybrid = Assert.assertThrows(direct.getClass(), () -> new RustCircuitPass(
-                hybridCompiler, new ReplaceSharedIndexes(hybridCompiler, find), new OptimizerSnapshots(hybridCompiler)).apply(circuit));
-        Assert.assertEquals(diagnostic, hybrid.getMessage().lines().findFirst().orElseThrow());
-        Assert.assertEquals(direct.getPositionRange(), hybrid.getPositionRange());
-        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertEquals(warnings, hybridCompiler.messages.replaySnapshot());
-        Assert.assertEquals(List.of("ReplaceSharedIndexes=true"), decisions);
+        var functions = inputs.stream().map(port -> port.simpleNode().getClosureFunction()).toList();
+        for (String operation : List.of("SharedIndexes/Split", "SharedIndexes/WideFields", "ReplaceSharedIndexes")) {
+            var hybridCompiler = this.testCompiler();
+            hybridCompiler.options.ioOptions.rustOptimizerPasses = true;
+            var decisions = observeDecisions(hybridCompiler);
+            start = DBSPVariablePath.nextGeneratedName();
+            var hybrid = Assert.assertThrows(direct.getClass(), () -> {
+                switch (operation) {
+                    case "SharedIndexes/Split" -> RustCircuitPass.splitSharedIndexes(hybridCompiler, functions, List.of(false, false));
+                    case "SharedIndexes/WideFields" -> RustCircuitPass.wideIndexFields(hybridCompiler, functions);
+                    default -> new RustCircuitPass(hybridCompiler, new ReplaceSharedIndexes(hybridCompiler, find),
+                            new OptimizerSnapshots(hybridCompiler)).apply(circuit);
+                }
+            });
+            Assert.assertEquals(diagnostic, hybrid.getMessage().lines().findFirst().orElseThrow());
+            Assert.assertEquals(direct.getPositionRange(), hybrid.getPositionRange());
+            Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+            Assert.assertEquals(warnings, hybridCompiler.messages.replaySnapshot());
+            Assert.assertEquals(List.of(operation + "=true"), decisions);
+        }
     }
 
     /** Two joins read indexes of T whose values are {@code first} and {@code second}.

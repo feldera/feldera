@@ -249,16 +249,14 @@ public final class FindSharedIndexes extends CircuitWithGraphsVisitor {
                 var selected = RustCircuitPass.splitSharedIndexes(compiler,
                         this.members.stream().map(m -> m.index.getClosureFunction()).toList(),
                         this.members.stream().map(MapIndexAndConsumer::requiresFixedIndex).toList());
-                if (selected != null) {
-                    var groups = new ArrayList<List<MapIndexAndConsumer>>(selected.length);
-                    for (var group : selected) {
-                        var members = new ArrayList<MapIndexAndConsumer>(group.length);
-                        for (int position : group)
-                            members.add(this.members.get(position));
-                        groups.add(members);
-                    }
-                    return groups;
+                var groups = new ArrayList<List<MapIndexAndConsumer>>(selected.length);
+                for (var group : selected) {
+                    var members = new ArrayList<MapIndexAndConsumer>(group.length);
+                    for (int position : group)
+                        members.add(this.members.get(position));
+                    groups.add(members);
                 }
+                return groups;
             }
             // An index whose consumer cannot take a wider value seeds a list, the widest of
             // those first: the value of the first member becomes the start of the shared

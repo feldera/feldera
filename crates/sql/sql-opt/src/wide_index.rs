@@ -133,7 +133,7 @@ pub struct IndexComparison<'a> {
     pub warnings: &'a [SimplifyWarning],
 }
 
-pub(super) type CompareColumn<'a> =
+pub type CompareColumn<'a> =
     dyn FnMut(IndexComparison<'_>) -> Result<Option<bool>, Error> + 'a;
 
 fn column_position(
@@ -177,14 +177,15 @@ impl WideIndexFields {
     }
 }
 
-pub(super) struct ProjectedIndex {
+pub struct ProjectedIndex {
     pub variable: ExpressionId,
     pub key: ExpressionId,
     pub nullable: bool,
     pub layout: WideIndexLayout,
 }
 
-pub(super) fn project_index(
+/// Build the layout in field order so each comparison observes only earlier reductions.
+pub fn project_index(
     edit: &mut CircuitEditor,
     functions: &[NodeId],
     next: &mut u64,
@@ -245,7 +246,9 @@ pub fn split_shared_indexes(
     Ok(groups)
 }
 
-pub(super) fn split_with(
+/// Plan fixed-width trials in the same order as replacement, using the caller's
+/// equality function only for a field that lacks enough serialized information.
+pub fn split_with(
     arena: &Circuit,
     functions: &[NodeId],
     fixed: &[bool],

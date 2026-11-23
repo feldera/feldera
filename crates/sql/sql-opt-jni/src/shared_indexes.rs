@@ -2,7 +2,7 @@
 //! expressions in the same object namespace as the original circuit.
 use crate::{BridgeError, MAX_BYTES, decode_live_circuit, live_equality, pass_warnings};
 use feldera_sql_ir::{Circuit, CircuitEditor};
-use feldera_sql_opt::{IndexDiscoveryError, KeyComparisonError, SharedIndexes};
+use feldera_sql_opt::{IndexComparison, IndexDiscoveryError, KeyComparisonError, SharedIndexes};
 use jni::{
     EnvUnowned,
     errors::ThrowRuntimeExAndDefault,
@@ -80,6 +80,107 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         let bytes = serde_json::to_vec(&reply).map_err(optimizer_error)?;
         if bytes.len() > MAX_BYTES {
             return Err(optimizer_error("output exceeds 64 MiB"));
+        }
+        Ok(env.byte_array_from_slice(&bytes)?)
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// An absent fixed-width list requests the final layout. A supplied list
+/// requests the ordered partition used to choose compatible readers.
+fn plan_fields(
+    arena: &Circuit,
+    functions: &[feldera_sql_ir::NodeId],
+    fixed: Option<&[bool]>,
+    next: &mut u64,
+    warnings: &mut Vec<feldera_sql_expr::SimplifyWarning>,
+    compare: &mut feldera_sql_opt::CompareColumn,
+) -> Result<Value, KeyComparisonError> {
+    use feldera_sql_ir::{Error, NodeId};
+    let unanswered = || Error::new("live shared-index comparison returned no answer");
+    if let Some(fixed) = fixed {
+        let groups = feldera_sql_opt::split_shared_indexes_with(
+            arena, functions, fixed, next, warnings, compare,
+        )?
+        .ok_or_else(unanswered)?;
+        return Ok(json!({"groups": groups}));
+    }
+    let mut edit = CircuitEditor::new(arena.clone());
+    let index =
+        feldera_sql_opt::project_shared_index(&mut edit, functions, next, warnings, compare)?
+            .ok_or_else(unanswered)?;
+    let roots = [index.variable, index.key]
+        .into_iter()
+        .chain(index.layout.columns)
+        .map(NodeId::from)
+        .collect::<Vec<_>>();
+    Ok(
+        json!({"expressions": edit.circuit().live_inner_roots(arena, &roots)?,
+              "layout": index.layout.positions, "nullable": index.nullable}),
+    )
+}
+
+// SAFETY: the symbol and signature match RustCircuitPass.planIndexFields.
+// EnvUnowned contains panics and preserves pending exceptions from the comparator.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPass_planIndexFields<
+    'local,
+>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    functions: JByteArray<'local>,
+    next: i64,
+    fixed: JByteArray<'local>,
+    equality: JObject<'local>,
+) -> JByteArray<'local> {
+    env.with_env(|env| -> Result<_, BridgeError> {
+        let error =
+            |message: String| BridgeError::Optimizer(format!("shared-index layout: {message}"));
+        if functions.len(env)?.saturating_add(fixed.len(env)?) > MAX_BYTES {
+            return Err(error("input exceeds 64 MiB".into()));
+        }
+        let input = Circuit::from_json(
+            json!({"class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]}),
+        )
+        .map_err(|e| error(e.to_string()))?;
+        let (arena, roots) = crate::lowering_arguments(input, &env.convert_byte_array(&functions)?)
+            .map_err(|e| error(e.to_string()))?;
+        let fixed: Option<Vec<bool>> = serde_json::from_slice(&env.convert_byte_array(&fixed)?)
+            .map_err(|e| error(e.to_string()))?;
+        let mut next = u64::try_from(next).map_err(|e| error(e.to_string()))?;
+        let mut warnings = Vec::new();
+        let mut native = true;
+        let result = plan_fields(
+            &arena,
+            &roots,
+            fixed.as_deref(),
+            &mut next,
+            &mut warnings,
+            &mut |site: IndexComparison| {
+                native = false;
+                let request = live_equality::column_request(
+                    site.graph,
+                    &arena,
+                    &site.fields.map(Into::into),
+                    site.warnings,
+                    site.next_name,
+                )?;
+                live_equality::compare(env, &equality, &request).map(Some)
+            },
+        );
+        let mut reply = match result {
+            Ok(reply) => reply,
+            Err(KeyComparisonError::Diagnostic(diagnostic)) => {
+                json!({"comparison_failure": diagnostic})
+            }
+            Err(KeyComparisonError::InvalidIr(e)) => return Err(error(e.to_string())),
+        };
+        reply["native_columns"] = native.into();
+        reply["warnings"] = json!(pass_warnings(warnings));
+        reply["next_generated_name"] = next.into();
+        let bytes = serde_json::to_vec(&reply).map_err(|e| error(e.to_string()))?;
+        if bytes.len() > MAX_BYTES {
+            return Err(error("output exceeds 64 MiB".into()));
         }
         Ok(env.byte_array_from_slice(&bytes)?)
     })

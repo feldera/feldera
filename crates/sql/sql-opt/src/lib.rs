@@ -268,7 +268,8 @@ pub use remove_table::{remove_table, unreferenced_table_sources, TableRemoval};
 pub use shared_index_candidates::{find_shared_indexes, shared_index_payloads, IndexDiscoveryError, IndexReader, SharedIndexes};
 pub use index_reader::{rewrite_index_reader, IndexParameter};
 pub use replace_shared_indexes::{replace_shared_indexes, replace_shared_indexes_with};
-pub use wide_index::{split_shared_indexes, wide_index_fields, IndexComparison, WideIndexFields, WideIndexLayout};
+pub use wide_index::{project_index as project_shared_index, split_with as split_shared_indexes_with,
+    split_shared_indexes, wide_index_fields, CompareColumn, IndexComparison, ProjectedIndex, WideIndexFields, WideIndexLayout};
 pub use shared_indexes::{duplicate_shared_indexes, find_map_chains};
 pub use state_bounds::{
     detects_streaming, propagate_bounds, pruned_streams, unbounded_operators, UnboundedOperator,

@@ -522,6 +522,12 @@ both errors. The candidate passed 183 targeted and 223 nightly JUnit tests
 and matched Java on 24 classic and Gen-2 compilations.
 [Shared-index discovery tests](evidence/p3-shared-index-discovery-prefix.json)
 
+Fixed-width trials, final column layout and reader replacement now compare
+each field as soon as they project it. All three entry points returned the
+same first failing column, warnings and generated-name count as direct Java.
+The previous standalone trial returned without reporting the error.
+[Shared-index field trials](evidence/p3-shared-index-field-trials.json)
+
 Shared-index readers remap a column beneath 160 nested calls. Indexes that
 project the same nested expression still share one output column. Both
 operations exceeded the inline snapshot limit on the preceding build.
