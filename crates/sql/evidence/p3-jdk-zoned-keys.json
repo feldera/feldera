@@ -1,0 +1,39 @@
+{
+  "scope": "Compare detached timestamp keys with the custom GMT offsets and System V rules supported by the compiler JDK.",
+  "source_base": "d1c98b443bfffe6650f5b51ee4967c1d23ef56cb",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/casts.rs": "7ec9021630149e10357f53645d0eeeac2ebb37aefebdc9fbf72c46330fde92d9",
+    "crates/sql/sql-expr/src/casts/comparison.rs": "06cd053b76283200a18de358ec0f00f4a07b6d211271c6c06e13e81027115b90",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "77fd97a691d91cad28adddf93413c4d7095a233afa636a69e0c2180e2437cbe6",
+    "crates/sql/sql-expr/src/casts/zoned_timestamp.rs": "15e033c8cb5f4737f43c811fe25e15d60f14acc4159293c1d477f263417ac40a"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "f9164cfacb65d25f3138697fb442114ba0b8d592d518e059eff314b0e0acbe28",
+    "bin/sql-difftest": "bfbaa301458413ab20c1289545b75b1a74335e10f9d69221fce1e1edde3f0b29",
+    "maven/tests.jar": "ad009bf38c9234f861fbcb16b9b33aa48321ad756f8b07e39377f858710c48bf",
+    "maven/sql-compiler.jar": "9d0ea7842ed676e08e1628177af3fe0a0e63a636cc92d7124e3a3eaeed2d51b1"
+  },
+  "negative_control": {
+    "library_sha256": "ee3ad295f7436fa90f346921b6677c804372c7daef7e35e8f80e082339c239e5",
+    "failed_test": "zonedLiteralKeysUseJdkSystemVAndCustomOffsets"
+  },
+  "rust_tests": 221,
+  "junit_tests": 148,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 29,
+      "ordered_s4_observations": 11534,
+      "mismatches": 0,
+      "population_sha256": "9a6d28ae145b5c936ea3af208eff37450784953da9ca97e239e3adab2af5abd8",
+      "receipt_sha256": "01440ba4ae02c1821206fed450ee17aa7de7d6969209385e587979644695a5f0"
+    },
+    "gen2": {
+      "cases": 29,
+      "ordered_s4_observations": 11708,
+      "mismatches": 0,
+      "population_sha256": "07fa1d861246b918eae4bedc5fed5a41b45ab5670fca1ab9dae6e3df48280737",
+      "receipt_sha256": "5284700b402ad817395dfc3a82a25d6049f70922294fad516d1c481cbb482c9e"
+    }
+  }
+}

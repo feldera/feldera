@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The detached timestamp comparator now handles the JDK's System V daylight
+rules and compact GMT offsets. All 198 directed zone/date pairs agreed with
+Java, and 58 frozen compilations matched through 23,242 ordered S4 observations
+and emission. A wider check of all 632 JVM zone IDs on six dates found six
+differences between the JVM and Rust time-zone databases, in northern Mexico
+in 1974 and Morocco in 2040.
+[Detached zoned keys](evidence/p3-jdk-zoned-keys.json)
+
 Rust now reports the first missing declaration when grouping or merging
 temporal bounds. A regression compares the exception class and variable name
 with Java when both operands are unbound and when only the right operand is

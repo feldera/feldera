@@ -9,6 +9,7 @@ use feldera_sql_ir::{
 mod arithmetic;
 mod collections;
 mod comparison;
+mod zoned_timestamp;
 pub use comparison::{decimal_literal_parts, literal_is_positive, numeric_value_is_positive, same_literal_value};
 mod literals;
 mod simplify;

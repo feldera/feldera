@@ -59,12 +59,15 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
+import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.TimeZone;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.function.Consumer;
 
 public class TemporalKeyTests {
@@ -638,6 +641,28 @@ public class TemporalKeyTests {
                 var site = CalciteObject.EMPTY;
                 assertCompatible(compiler, bound(new DBSPTimestampTzLiteral(site, type, timestamp)),
                         bound(new DBSPTimestampTzLiteral(site, type, utc)), true);
+            }
+        }
+    }
+
+    @Test
+    public void zonedLiteralKeysUseJdkSystemVAndCustomOffsets() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var zones = new ArrayList<>(List.of("GMT+5", "GMT-330", "GMT+0545", "GMT-0:30", "GMT+18:00"));
+        ZoneId.getAvailableZoneIds().stream().filter(name -> name.startsWith("SystemV/")).sorted()
+                .forEach(zones::add);
+        var format = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss");
+        for (var zone : zones) {
+            for (var local : List.of("1899-07-15 12:00:00", "1900-04-29 01:59:59", "1900-04-29 03:00:00",
+                    "1974-01-06 01:59:59", "1974-01-06 03:00:00", "1974-11-24 01:30:00", "1974-11-24 02:00:00",
+                    "1975-02-23 03:00:00", "2020-03-15 12:00:00", "2020-07-15 12:00:00", "2020-10-25 01:30:00")) {
+                var timestamp = new TimestampWithTimeZoneString(local + " " + zone);
+                var utc = LocalDateTime.parse(local, format).atZone(timestamp.getTimeZone().toZoneId())
+                        .withZoneSameInstant(ZoneOffset.UTC);
+                var canonical = new TimestampWithTimeZoneString(format.format(utc) + " UTC");
+                var type = DBSPTypeTimestampTz.INSTANCE;
+                assertCompatible(compiler, bound(new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type, timestamp)),
+                        bound(new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type, canonical)), true);
             }
         }
     }

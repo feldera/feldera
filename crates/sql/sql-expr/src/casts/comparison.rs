@@ -1,4 +1,5 @@
 //! Comparisons between scalar literals in the optimizer's Simplify pass.
+use super::zoned_timestamp::zoned_micros;
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,
     NodeId, TypeKind,
@@ -192,94 +193,4 @@ fn compare_numbers(ty: TypeKind, a: &Node, b: &Node) -> Result<Option<Ordering>,
         _ => return Ok(None),
     };
     Ok(Some(order))
-}
-
-/// Calcite stores local time and a zone name. Java resolves an overlap with
-/// the earlier offset and moves a time in a spring gap forward by the gap.
-fn zoned_micros(value: &str) -> Option<i64> {
-    use chrono::{FixedOffset, NaiveDateTime, Offset, TimeZone};
-    let (time, zone) = value.rsplit_once(' ')?;
-    let local = NaiveDateTime::parse_from_str(time, "%Y-%m-%d %H:%M:%S%.f").ok()?;
-    // java.util.TimeZone.toZoneId resolves the Java short IDs before consulting
-    // the IANA database. Several names also exist in tzdata with different rules.
-    let zone = match zone {
-        "ACT" => "Australia/Darwin",
-        "AET" => "Australia/Sydney",
-        "AGT" => "America/Argentina/Buenos_Aires",
-        "ART" => "Africa/Cairo",
-        "AST" => "America/Anchorage",
-        "BET" => "America/Sao_Paulo",
-        "BST" => "Asia/Dhaka",
-        "CAT" => "Africa/Harare",
-        "CNT" => "America/St_Johns",
-        "CST" => "America/Chicago",
-        "CTT" => "Asia/Shanghai",
-        "EAT" => "Africa/Addis_Ababa",
-        "ECT" => "Europe/Paris",
-        "EST" => "-05:00",
-        "HST" => "-10:00",
-        "IET" => "America/Indiana/Indianapolis",
-        "IST" => "Asia/Kolkata",
-        "JST" => "Asia/Tokyo",
-        "MIT" => "Pacific/Apia",
-        "MST" => "-07:00",
-        "NET" => "Asia/Yerevan",
-        "NST" => "Pacific/Auckland",
-        "PLT" => "Asia/Karachi",
-        "PNT" => "America/Phoenix",
-        "PRT" => "America/Puerto_Rico",
-        "PST" => "America/Los_Angeles",
-        "SST" => "Pacific/Guadalcanal",
-        "VST" => "Asia/Ho_Chi_Minh",
-        name => name,
-    };
-    if let Ok(tz) = zone.parse::<chrono_tz::Tz>() {
-        if let Some(instant) = tz.from_local_datetime(&local).earliest() {
-            return Some(instant.timestamp_micros());
-        }
-        let (_, before) = chrono_tz::GapInfo::new(&local, &tz)?.begin?;
-        return before
-            .fix()
-            .from_local_datetime(&local)
-            .single()
-            .map(|t| t.timestamp_micros());
-    }
-    let offset = zone
-        .strip_prefix("GMT")
-        .unwrap_or(zone)
-        .parse::<FixedOffset>()
-        .ok()?;
-    Some(
-        offset
-            .from_local_datetime(&local)
-            .single()?
-            .timestamp_micros(),
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::zoned_micros;
-
-    #[test]
-    fn canonical_timestamp_handles_offsets_gaps_and_overlaps() {
-        for (local, utc) in [
-            (
-                "2020-01-01 08:10:10.1234569 America/New_York",
-                "2020-01-01 13:10:10.123456 UTC",
-            ),
-            (
-                "2024-03-10 02:30:00 America/New_York",
-                "2024-03-10 07:30:00 UTC",
-            ),
-            (
-                "2024-11-03 01:30:00 America/New_York",
-                "2024-11-03 05:30:00 UTC",
-            ),
-            ("2020-01-01 05:30:00 GMT+05:30", "2020-01-01 00:00:00 UTC"),
-        ] {
-            let expected = zoned_micros(utc).unwrap();
-            assert_eq!(zoned_micros(local), Some(expected));
-        }
-    }
 }
