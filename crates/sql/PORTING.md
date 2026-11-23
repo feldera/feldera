@@ -469,7 +469,11 @@ verified continued merging and the error from an uninitialized clock.
 The preceding compiler restarted the Java graph traversal in both cases.
 The temporal-classification corpus matched on 71 classic and 62 Gen-2
 compilations through 72,422 ordered S4 observations and emission.
-[Temporal merge tests and replay](evidence/p3-live-temporal-merge.json)
+On the same build, Rust answered all 418,474 instrumented requests across
+the 17,098 frozen compilations. COUNT and LATENESS checkpoints restored in
+both directions. Four-worker cancellation p95 was 13.90 ms. Nexmark had
+the largest cold compilation ratio at 1.112× Java p95.
+[Temporal merge tests, coverage and restores](evidence/p3-live-temporal-merge.json) · [Cold compilation](BENCHMARKS.md#temporal-filter-merging-2026-11-23)
 
 Temporal classification and grouping preserve the order and identity of all
 192 leaves in a deep conjunction. Both operations exceeded the inline
