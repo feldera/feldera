@@ -54,6 +54,20 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void temporalThresholdsShareOnlyMatchingWindowKeys() {
+        checkTemporalThreshold("TIME", "12:34:56.123", "12:34:56.124");
+        checkTemporalThreshold("DATE", "1969-12-31", "1970-01-01");
+        checkTemporalThreshold("TIMESTAMP", "1969-12-31 23:59:59.999999", "1970-01-01 00:00:00");
+        checkTemporalThreshold("TIMESTAMP WITH TIME ZONE",
+                "2020-01-02 10:11:12 UTC", "2020-01-02 10:11:12 America/New_York");
+    }
+
+    private static void checkTemporalThreshold(String type, String first, String second) {
+        var offset = "CASE WHEN CAST(ts AS %1$s) > %1$s '%2$s' THEN id ELSE 1 END";
+        checkOffsetKeys(offset.formatted(type, first), offset.formatted(type, second));
+    }
+
+    @Test
     public void conditionalTimestampKeysDistinguishBranchOrderAndStringValues() {
         checkOffsetKeys("CASE WHEN flag THEN id ELSE 1 END", "CASE WHEN flag THEN 1 ELSE id END");
         checkOffsetKeys("CASE WHEN label = 'déjà' THEN id ELSE 1 END",

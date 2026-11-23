@@ -29,6 +29,9 @@ enum Term {
     },
     Bool(bool),
     String(String),
+    TemporalText(String),
+    Date(i64),
+    Timestamp(i64),
     TypedNull(String),
     Binary {
         opcode: BinaryOp,
@@ -82,7 +85,12 @@ impl TimestampKey {
                     // The literal printer and an explicit Some use the same spelling.
                     let wrap = matches!(
                         term,
-                        Term::ExactNumber { .. } | Term::Bool(_) | Term::String(_)
+                        Term::ExactNumber { .. }
+                            | Term::Bool(_)
+                            | Term::String(_)
+                            | Term::TemporalText(_)
+                            | Term::Date(_)
+                            | Term::Timestamp(_)
                     ) && edit.nullable(edit.expression_type(id)?)?;
                     let (mut number, _) = terms.insert_full((term, operands));
                     if wrap {
@@ -219,8 +227,12 @@ fn key_term(
             }
         }
         Expr::BoolLiteral
+        | Expr::DateLiteral
         | Expr::DecimalLiteral
         | Expr::StringLiteral
+        | Expr::TimeLiteral
+        | Expr::TimestampLiteral
+        | Expr::TimestampTzLiteral
         | Expr::I8Literal
         | Expr::I16Literal
         | Expr::I32Literal
@@ -250,6 +262,34 @@ fn key_term(
                         return Ok(None);
                     };
                     Term::String(value.to_owned())
+                }
+                Some(value) if matches!(kind, Expr::TimeLiteral | Expr::TimestampTzLiteral) => {
+                    // Java prints the wire text unquoted, including the original zone.
+                    let Some(text) = value.as_str() else {
+                        return Ok(None);
+                    };
+                    Term::TemporalText(text.to_owned())
+                }
+                Some(value) if matches!(kind, Expr::DateLiteral | Expr::TimestampLiteral) => {
+                    let Some(ticks) = value.as_i64().or_else(|| value.as_str()?.parse().ok())
+                    else {
+                        return Ok(None);
+                    };
+                    let days = if kind == Expr::DateLiteral {
+                        ticks
+                    } else {
+                        ticks.div_euclid(86_400_000_000)
+                    };
+                    // Each epoch value has a distinct spelling within Calcite's
+                    // four-digit CE years (0001-01-01 through 9999-12-31).
+                    if !(-719_162..=2_932_896).contains(&days) {
+                        return Ok(None);
+                    }
+                    if kind == Expr::DateLiteral {
+                        Term::Date(ticks)
+                    } else {
+                        Term::Timestamp(ticks)
+                    }
                 }
                 Some(value) => {
                     // Current writers use decimal strings. Earlier snapshots
@@ -332,6 +372,7 @@ fn cast_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Err
     let node = edit.node(ty.into())?;
     let mut text = match edit.type_kind(ty)? {
         Ty::Date => "Date".to_owned(),
+        Ty::Time => "Time".to_owned(),
         Ty::Real => "f".to_owned(),
         Ty::Double => "d".to_owned(),
         Ty::Decimal => {
