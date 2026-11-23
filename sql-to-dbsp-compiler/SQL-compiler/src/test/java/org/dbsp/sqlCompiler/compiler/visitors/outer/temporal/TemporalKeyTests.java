@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -43,7 +44,9 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
@@ -55,6 +58,8 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
+import java.time.ZoneId;
+import java.util.TimeZone;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -579,6 +584,21 @@ public class TemporalKeyTests {
         var zero = new DBSPI32Literal(0);
         return new TemporalFilter(new DBSPVariablePath("row", zero.getType()).asParameter(),
                 key, zero, DBSPOpcode.GTE);
+    }
+
+    @Test
+    public void zonedLiteralKeysUseTheJavaShortIdsInWinterAndSummer() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        for (var alias : ZoneId.SHORT_IDS.keySet()) {
+            for (var local : List.of("2020-01-15 12:00:00", "2020-07-15 12:00:00")) {
+                var timestamp = new TimestampWithTimeZoneString(local + " " + alias);
+                var utc = timestamp.withTimeZone(TimeZone.getTimeZone("UTC"));
+                var type = DBSPTypeTimestampTz.INSTANCE;
+                var site = CalciteObject.EMPTY;
+                assertCompatible(compiler, bound(new DBSPTimestampTzLiteral(site, type, timestamp)),
+                        bound(new DBSPTimestampTzLiteral(site, type, utc)), true);
+            }
+        }
     }
 
     @Test

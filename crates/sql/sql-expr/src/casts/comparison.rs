@@ -200,6 +200,39 @@ fn zoned_micros(value: &str) -> Option<i64> {
     use chrono::{FixedOffset, NaiveDateTime, Offset, TimeZone};
     let (time, zone) = value.rsplit_once(' ')?;
     let local = NaiveDateTime::parse_from_str(time, "%Y-%m-%d %H:%M:%S%.f").ok()?;
+    // java.util.TimeZone.toZoneId resolves the Java short IDs before consulting
+    // the IANA database. Several names also exist in tzdata with different rules.
+    let zone = match zone {
+        "ACT" => "Australia/Darwin",
+        "AET" => "Australia/Sydney",
+        "AGT" => "America/Argentina/Buenos_Aires",
+        "ART" => "Africa/Cairo",
+        "AST" => "America/Anchorage",
+        "BET" => "America/Sao_Paulo",
+        "BST" => "Asia/Dhaka",
+        "CAT" => "Africa/Harare",
+        "CNT" => "America/St_Johns",
+        "CST" => "America/Chicago",
+        "CTT" => "Asia/Shanghai",
+        "EAT" => "Africa/Addis_Ababa",
+        "ECT" => "Europe/Paris",
+        "EST" => "-05:00",
+        "HST" => "-10:00",
+        "IET" => "America/Indiana/Indianapolis",
+        "IST" => "Asia/Kolkata",
+        "JST" => "Asia/Tokyo",
+        "MIT" => "Pacific/Apia",
+        "MST" => "-07:00",
+        "NET" => "Asia/Yerevan",
+        "NST" => "Pacific/Auckland",
+        "PLT" => "Asia/Karachi",
+        "PNT" => "America/Phoenix",
+        "PRT" => "America/Puerto_Rico",
+        "PST" => "America/Los_Angeles",
+        "SST" => "Pacific/Guadalcanal",
+        "VST" => "Asia/Ho_Chi_Minh",
+        name => name,
+    };
     if let Ok(tz) = zone.parse::<chrono_tz::Tz>() {
         if let Some(instant) = tz.from_local_datetime(&local).earliest() {
             return Some(instant.timestamp_micros());

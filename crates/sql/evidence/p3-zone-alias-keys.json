@@ -1,0 +1,33 @@
+{
+  "scope": "Compare Java short time-zone IDs against their UTC equivalents in winter and summer. Replay the selected timestamp cases on both engines.",
+  "source_base": "27668c6dd7a24098260d66c21cef296d12980fc1",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/casts/comparison.rs": "27a31a3cdc874215df6609243253f60f4f271c3295115e66c19834e9f92d4427",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "f7dbd310e14d30cf7432d7de805c5603371a17741f4355c703ce2e47a6c4061c"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "a268a6e42fbd94ed0624129eb2ce8b23a87489f64d86e18a0d4aa3662d7ab023",
+    "bin/sql-difftest": "1b607ec6655e16050091b8bb76e69a08f66a3ae181c12719b2b78044ceae6c54",
+    "maven/sql-compiler.jar": "3b6ef160b7de9fa747e95ddb3528859ac471b560267f906f53c8c12d1a2d0f7e",
+    "maven/tests.jar": "98546d8cf2e0255ab8126e68a85bf3f24ef5b9826b65accf7fba419cec695137"
+  },
+  "rust_tests": 220,
+  "junit_tests": 138,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 29,
+      "ordered_s4_observations": 11534,
+      "mismatches": 0,
+      "population_sha256": "9a6d28ae145b5c936ea3af208eff37450784953da9ca97e239e3adab2af5abd8",
+      "receipt_sha256": "e2b76ea70fcc17ce29575cdd28521be3e61038cacfc4d8c0eeb6283bae65def9"
+    },
+    "gen2": {
+      "cases": 29,
+      "ordered_s4_observations": 11708,
+      "mismatches": 0,
+      "population_sha256": "07fa1d861246b918eae4bedc5fed5a41b45ab5670fca1ab9dae6e3df48280737",
+      "receipt_sha256": "32e5700bbfc11c736e09968921430fa90deb3b82dbd1ed1caefe4c6e1b728008"
+    }
+  }
+}
