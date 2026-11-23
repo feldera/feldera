@@ -424,6 +424,36 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void waterlineTreeReportsTheFirstRepeatedSubexpressionAndItsParents() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(site, 32, true, false);
+        var parameter = new DBSPVariablePath("row", integer.ref());
+        var read = parameter.deref();
+        var shared = new DBSPTupleExpression(read);
+        // The first duplicate in visitor order is the whole row inside the
+        // second tuple. A later read also shares a node with the first tuple.
+        var nested = new DBSPTupleExpression(shared, read);
+        var body = new DBSPTupleExpression(shared, nested);
+        var closure = body.closure(parameter);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        var input = new MonotoneType(integer);
+        var error = Assert.assertThrows(RuntimeException.class,
+                () -> new MonotoneTransferFunctions(compiler, operator, kind, input).apply(closure));
+        Assert.assertTrue(error.getMessage(), error.getMessage().contains(
+                "contains multiple instances of " + shared + " " + shared.id + " context:\n" + nested.id));
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var directVisit = Assert.assertThrows(RuntimeException.class,
+                () -> new MonotoneTransferFunctions(compiler, operator, kind, input).apply(closure));
+        var closureVisit = Assert.assertThrows(RuntimeException.class,
+                () -> new MonotoneTransferFunctions(compiler, operator, kind, input).applyAnalysis(closure));
+        Assert.assertEquals(error.getMessage(), directVisit.getMessage());
+        Assert.assertEquals(error.getMessage(), closureVisit.getMessage());
+    }
+
+    @Test
     public void localRowWaterlinesRespectShadowingAndShareTheirInitializer() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var node = CalciteEmptyRel.INSTANCE;

@@ -4,7 +4,7 @@ pub mod constant_rows;
 mod canonical;
 pub use canonical::canonicalize_names;
 mod tree;
-pub use tree::{copy_expression, ensure_expression_tree, flatten_tuple_fields, is_expression_tree};
+pub use tree::{copy_expression, ensure_expression_tree, first_repeated_expression, flatten_tuple_fields, is_expression_tree};
 mod beta;
 pub use beta::{
     apply_closure, compose_closures, parameter_bindings, parameter_paths, parameter_references, reduce_closure_body, reduce_closure_body_with_warnings,

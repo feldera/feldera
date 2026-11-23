@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust checks waterline closure bodies for shared expressions when it resolves
+their variables. Both visitor entry points report the same first repeated
+node and enclosing expressions as direct Java. The 102 targeted JUnit tests
+passed. All 94 detached compilations matched through 46,351 ordered S4
+observations and artifact emission.
+[Closure inspection replay](evidence/p3-waterline-tree.json)
+
 Rust resolves variable reads and LET binders for the general waterline visitor.
 An initializer sees the outer declaration, including when a shared read would
 conflict with the subsequent binder. All 550 isolated comparisons and 94

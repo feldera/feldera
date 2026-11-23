@@ -24,23 +24,37 @@ pub fn flatten_tuple_fields(
 
 /// SQL types may be shared. Each expression in a tree has exactly one occurrence.
 pub fn is_expression_tree(edit: &CircuitEditor, root: NodeId) -> Result<bool, Error> {
-    let mut pending = vec![root];
+    Ok(first_repeated_expression(edit, root)?.is_none())
+}
+
+/// The path from the body root to the first repeated expression in visitor order.
+/// The live compiler uses these identities to print the original enclosing expressions.
+pub fn first_repeated_expression(
+    edit: &CircuitEditor,
+    root: NodeId,
+) -> Result<Option<Vec<NodeId>>, Error> {
+    let mut pending = vec![(root, 0)];
+    let mut path = Vec::new();
     let mut seen = HashSet::new();
-    while let Some(id) = pending.pop() {
+    let mut children = Vec::new();
+    while let Some((id, depth)) = pending.pop() {
         let node = edit.node(id)?;
         if matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
             continue;
         }
+        path.truncate(depth);
+        path.push(id);
         if matches!(node.inner_kind(), Some(InnerKind::Expression(_))) && !seen.insert(id) {
-            return Ok(false);
+            return Ok(Some(path));
         }
         for (key, field) in node.fields() {
-            if !matches!(key, "type" | "originalStruct") {
-                field.collect_inner_edges(&mut pending);
+            if !matches!(key, "type" | "originalStruct" | "cachedEmptySetResult") {
+                field.collect_inner_edges(&mut children);
             }
         }
+        pending.extend(children.drain(..).rev().map(|child| (child, depth + 1)));
     }
-    Ok(true)
+    Ok(None)
 }
 
 /// A filter closure that is already a tree must retain its original identity.

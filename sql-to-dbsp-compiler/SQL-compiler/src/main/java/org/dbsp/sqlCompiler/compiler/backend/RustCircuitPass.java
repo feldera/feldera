@@ -52,6 +52,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.RepeatedExpressions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
@@ -557,20 +558,34 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public record ProjectedWaterline(IMaybeMonotoneType bodyType, @Nullable DBSPClosureExpression closure) {}
 
-    /** Bind the waterline visitor's live variable paths to their original declarations. */
-    public static void resolveWaterlineReferences(DBSPCompiler compiler, IDBSPInnerNode root, ReferenceMap references) {
-        var reply = invokeLowering(compiler, "Monotonicity/References", root);
+    public record WaterlineInspection(ReferenceMap references, List<IDBSPInnerNode> repeatedPath) {
+        public void checkTree() {
+            if (!this.repeatedPath.isEmpty()) {
+                int last = this.repeatedPath.size() - 1;
+                throw RepeatedExpressions.duplicateError(this.repeatedPath.get(0), this.repeatedPath.get(last),
+                        this.repeatedPath.subList(0, last));
+            }
+        }
+    }
+
+    /** Resolve bindings and check expression occurrences in the same serialized graph. */
+    public static WaterlineInspection inspectWaterline(DBSPCompiler compiler, IDBSPInnerNode root) {
+        var reply = invokeLowering(compiler, "Monotonicity/InspectBody", root);
         var nodes = Objects.requireNonNull(reply.writer.liveNodes);
-        references.clear();
         if (reply.value.has("free")) {
             var variable = Utilities.getExists(nodes, reply.value.required("free").longValue());
             throw new InternalCompilerError("Could not resolve " + variable);
         }
+        var references = new ReferenceMap();
         for (var pair : reply.value.required("bindings")) {
             var variable = Utilities.getExists(nodes, pair.required(0).longValue()).to(DBSPVariablePath.class);
             var declaration = Utilities.getExists(nodes, pair.required(1).longValue()).to(IDBSPDeclaration.class);
             references.declare(variable, declaration);
         }
+        var path = new ArrayList<IDBSPInnerNode>();
+        for (var id : reply.value.required("repeated"))
+            path.add(Utilities.getExists(nodes, id.longValue()));
+        return new WaterlineInspection(references, path);
     }
 
     @Nullable

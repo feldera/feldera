@@ -119,6 +119,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
      * (They all must have numeric types) */
     final ExpressionSet positiveExpressions;
     final ResolveReferences resolver;
+    @Nullable private RustCircuitPass.WaterlineInspection inspection;
     final ArgumentKind argumentKind;
     /** Operator where the analyzed closure originates from.
      * Only used for debugging. */
@@ -236,7 +237,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             // Resolve the live nodes for the visitor, including its original diagnostics.
             this.resolveReferences(expression);
         }
-        new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
+        if (this.inspection != null)
+            this.inspection.checkTree();
+        else
+            new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
 
         DBSPParameter[] projectedParameters = new DBSPParameter[projectedTypes.length];
         if (pair != null) {
@@ -351,7 +355,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
     @Override
     public void postorder(DBSPVariablePath var) {
-        IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
+        var references = this.inspection == null ? this.resolver.reference : this.inspection.references();
+        IDBSPDeclaration declaration = references.getDeclaration(var);
         MonotoneExpression value = this.variables.get(declaration);
         this.maybeSet(var, value);
         if (value == null)
@@ -1051,10 +1056,12 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     }
 
     private void resolveReferences(IDBSPInnerNode node) {
-        if (this.compiler.options.ioOptions.rustOptimizerPasses)
-            RustCircuitPass.resolveWaterlineReferences(this.compiler, node, this.resolver.reference);
-        else
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            this.inspection = RustCircuitPass.inspectWaterline(this.compiler, node);
+        } else {
+            this.inspection = null;
             this.resolver.apply(node);
+        }
     }
 
     private boolean projectsClosure() {

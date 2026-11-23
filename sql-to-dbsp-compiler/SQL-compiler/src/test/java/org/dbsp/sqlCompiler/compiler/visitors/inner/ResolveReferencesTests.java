@@ -22,8 +22,7 @@ public class ResolveReferencesTests extends BaseSQLTests {
         ResolveReferences resolver = new ResolveReferences(compiler, allowFree);
         resolver.apply(expression);
         if (!allowFree && Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
-            var nativeMap = new ReferenceMap();
-            RustCircuitPass.resolveWaterlineReferences(compiler, expression, nativeMap);
+            var nativeMap = RustCircuitPass.inspectWaterline(compiler, expression).references();
             Assert.assertEquals(resolver.reference.declarations, nativeMap.declarations);
         }
         return resolver.reference;
@@ -215,7 +214,7 @@ public class ResolveReferencesTests extends BaseSQLTests {
                     initializer == shared ? "Changing declaration" : "Could not resolve"));
             if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
                 var nativeError = Assert.assertThrows(InternalCompilerError.class,
-                        () -> RustCircuitPass.resolveWaterlineReferences(compiler, closure, new ReferenceMap()));
+                        () -> RustCircuitPass.inspectWaterline(compiler, closure));
                 Assert.assertEquals(error.getMessage(), nativeError.getMessage());
             }
         }

@@ -8,7 +8,6 @@ import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -71,26 +70,20 @@ public class RepeatedExpressions extends InnerVisitor {
     @Override
     public void endVisit() {
         Objects.requireNonNull(this.root);
-        if (this.duplicate != null && this.reportError) {
-            StringBuilder builder = new StringBuilder();
-            builder.append("Expression ")
-                    .append(this.root)
-                    .append(" ")
-                    .append(this.root.getId())
-                    .append(" contains multiple instances of ")
-                    .append(this.duplicate)
-                    .append(" ")
-                    .append(this.duplicate.getId())
-                    .append(" context:\n");
-            Collections.reverse(this.duplicateContext);
-            for (IDBSPInnerNode parent: this.duplicateContext) {
-                builder.append(parent.getId())
-                        .append(" ")
-                        .append(parent)
-                        .append("\n");
-            }
-            throw new RuntimeException(builder.toString());
-        }
+        if (this.duplicate != null && this.reportError)
+            throw duplicateError(this.root, this.duplicate, this.duplicateContext);
         super.endVisit();
+    }
+
+    public static RuntimeException duplicateError(IDBSPInnerNode root, IDBSPInnerNode duplicate,
+                                                 List<IDBSPInnerNode> parents) {
+        var message = new StringBuilder().append("Expression ").append(root).append(" ").append(root.getId())
+                .append(" contains multiple instances of ").append(duplicate).append(" ").append(duplicate.getId())
+                .append(" context:\n");
+        for (int i = parents.size() - 1; i >= 0; i--) {
+            var parent = parents.get(i);
+            message.append(parent.getId()).append(" ").append(parent).append("\n");
+        }
+        return new RuntimeException(message.toString());
     }
 }
