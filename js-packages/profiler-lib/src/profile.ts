@@ -172,12 +172,29 @@ interface JsonGraph {
     readonly edges: Array<JsonCircuitEdge>;
 }
 
+// Serialized representation of the host (pod) that ran a range of workers.
+// Values that the host does not know are absent.
+export interface JsonHostProfile {
+    readonly ordinal: number;
+    // Global worker numbers `start` to `end - 1`.
+    readonly workers: { readonly start: number; readonly end: number };
+    readonly pod_name?: string;
+    readonly pod_namespace?: string;
+    readonly pod_ip?: string;
+    readonly node_name?: string;
+    readonly cpu_limit_cores?: number;
+    readonly memory_limit_bytes?: number;
+    readonly memory_used_bytes?: number;
+}
+
 // Serialized JSON representation for the
 // profiles received from the Feldera pipeline manager.
 export type JsonProfiles = {
     // Some profiles do not have the metric descriptions
     readonly metrics?: Array<ProfileMetricDescription>;
     readonly worker_profiles: Array<JsonWorkerProfile>;
+    // Absent in profiles from older pipelines
+    readonly hosts?: Array<JsonHostProfile>;
     readonly graph: JsonGraph;
 }
 

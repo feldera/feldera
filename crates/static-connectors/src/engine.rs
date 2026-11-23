@@ -15,7 +15,7 @@ use dbsp::circuit::metrics::{
 };
 use dbsp::circuit::{CircuitConfig, Mode};
 use dbsp::operator::communication::ExchangeTls;
-use dbsp::profile::{DbspProfile, ProfileJsonWriter, WorkerProfile};
+use dbsp::profile::{DbspProfile, HostProfile, ProfileJsonWriter, WorkerProfile};
 use dbsp::{DBSPHandle, Runtime, WeakRuntime};
 use feldera_adapterlib::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
 use feldera_adapterlib::catalog::CircuitCatalog;
@@ -508,6 +508,7 @@ enum JsonProfileState {
     Workers {
         writer: ProfileJsonWriter<Vec<u8>>,
         workers: std::vec::IntoIter<WorkerProfile>,
+        hosts: Vec<HostProfile>,
         graph: Option<dbsp::monitor::visual_graph::Graph>,
     },
 
@@ -533,6 +534,7 @@ impl Iterator for JsonProfileWriterChunks {
                 let DbspProfile {
                     metrics,
                     worker_profiles,
+                    hosts,
                     graph,
                 } = profile;
                 match ProfileJsonWriter::begin(Vec::new(), Some(metrics)) {
@@ -540,6 +542,7 @@ impl Iterator for JsonProfileWriterChunks {
                         self.state = JsonProfileState::Workers {
                             writer,
                             workers: worker_profiles.into_iter(),
+                            hosts,
                             graph,
                         };
                         self.next()
@@ -550,6 +553,7 @@ impl Iterator for JsonProfileWriterChunks {
             JsonProfileState::Workers {
                 mut writer,
                 mut workers,
+                hosts,
                 graph,
             } => match workers.next() {
                 Some(worker) => Some(writer.worker(&worker).map(|()| {
@@ -557,11 +561,12 @@ impl Iterator for JsonProfileWriterChunks {
                     self.state = JsonProfileState::Workers {
                         writer,
                         workers,
+                        hosts,
                         graph,
                     };
                     chunk
                 })),
-                None => Some(writer.finish(&graph)),
+                None => Some(writer.finish(&hosts, &graph)),
             },
             JsonProfileState::Done => None,
         }
@@ -570,7 +575,7 @@ impl Iterator for JsonProfileWriterChunks {
 
 #[cfg(test)]
 mod test {
-    use dbsp::profile::{DbspProfile, WorkerProfile};
+    use dbsp::profile::{DbspProfile, HostProfile, WorkerProfile};
     use dbsp_connectors::engine::Engine;
 
     use super::{JsonProfileWriterChunks, StaticEngine, StaticEngineArgs};
@@ -594,7 +599,13 @@ mod test {
     #[test]
     fn json_profile_chunks_concatenate_to_as_json() {
         for workers in [0, 1, 3] {
-            let profile = DbspProfile::new(vec![WorkerProfile::default(); workers], None);
+            let profile = DbspProfile {
+                hosts: vec![HostProfile {
+                    workers: 0..workers,
+                    ..HostProfile::default()
+                }],
+                ..DbspProfile::new(vec![WorkerProfile::default(); workers], None)
+            };
             let expected = profile.as_json();
             let chunks: Vec<Vec<u8>> = JsonProfileWriterChunks::new(profile)
                 .collect::<Result<_, _>>()

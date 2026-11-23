@@ -28,9 +28,11 @@ use std::{
 use zip::{ZipWriter, write::SimpleFileOptions};
 
 mod cpu;
+mod host;
 pub use cpu::{BlockingFor, CPUProfiler, ParkReason, ParkingFor, RuntimeIdle};
 #[cfg(test)]
 pub(crate) use cpu::{current_park_reason, current_runtime_idle};
+pub use host::HostProfile;
 
 /// Rudimentary circuit profiler.
 ///
@@ -150,6 +152,9 @@ impl WorkerProfile {
 pub struct DbspProfile {
     pub metrics: &'static [CircuitMetric],
     pub worker_profiles: Vec<WorkerProfile>,
+    /// The hosts that ran `worker_profiles`: one in a pipeline's profile, and
+    /// every host that answered in the coordinator's combined profile.
+    pub hosts: Vec<HostProfile>,
     pub graph: Option<Graph>,
 }
 
@@ -185,8 +190,14 @@ impl<W: IoWrite> ProfileJsonWriter<W> {
         Ok(())
     }
 
-    pub fn finish<G: Serialize + ?Sized>(mut self, graph: &G) -> Result<W, IoError> {
-        self.writer.write_all(b"],\"graph\":")?;
+    pub fn finish<H: Serialize + ?Sized, G: Serialize + ?Sized>(
+        mut self,
+        hosts: &H,
+        graph: &G,
+    ) -> Result<W, IoError> {
+        self.writer.write_all(b"],\"hosts\":")?;
+        serde_json::to_writer(&mut self.writer, hosts)?;
+        self.writer.write_all(b",\"graph\":")?;
         serde_json::to_writer(&mut self.writer, graph)?;
         self.writer.write_all(b"}")?;
         Ok(self.writer)
@@ -203,6 +214,7 @@ impl DbspProfile {
         Self {
             metrics: &CIRCUIT_METRICS,
             worker_profiles,
+            hosts: Vec::new(),
             graph,
         }
     }
@@ -670,7 +682,14 @@ mod tests {
     }
 
     fn profile(workers: u64, graph: Option<Graph>) -> DbspProfile {
-        DbspProfile::new((0..workers).map(worker_profile).collect(), graph)
+        DbspProfile {
+            hosts: vec![HostProfile {
+                workers: 0..workers as usize,
+                node_name: Some("node".into()),
+                ..HostProfile::default()
+            }],
+            ..DbspProfile::new((0..workers).map(worker_profile).collect(), graph)
+        }
     }
 
     #[test]
@@ -681,8 +700,8 @@ mod tests {
         json.worker(&2).unwrap();
         let so_far = std::mem::take(json.writer_mut());
         assert_eq!(so_far, b"{\"worker_profiles\":[1,2");
-        let rest = json.finish(&"g").unwrap();
-        assert_eq!(rest, b"],\"graph\":\"g\"}");
+        let rest = json.finish(&["h"], &"g").unwrap();
+        assert_eq!(rest, b"],\"hosts\":[\"h\"],\"graph\":\"g\"}");
     }
 
     /// The phased writer produces the same bytes as `as_json`.
@@ -695,7 +714,7 @@ mod tests {
             for worker in &profile.worker_profiles {
                 json.worker(worker).unwrap();
             }
-            let streamed = json.finish(&profile.graph).unwrap();
+            let streamed = json.finish(&profile.hosts, &profile.graph).unwrap();
             assert_eq!(String::from_utf8(streamed).unwrap(), expected);
         }
     }

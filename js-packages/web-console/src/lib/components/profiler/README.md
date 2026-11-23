@@ -111,6 +111,7 @@ GET / v0 / pipelines / { pipeline_name } / circuit_profile
 Contains:
 
 - `worker_profiles[]`: Per-worker performance measurements
+- `hosts[]`: The host (pod, node, CPU and memory limits) of each range of workers
 - `graph`: Circuit structure (nodes, edges, hierarchies)
 
 ### Dataflow Graph (`Dataflow`)

@@ -74,6 +74,29 @@ impl Cgroup {
         self.read("memory.current")?.trim().parse().ok()
     }
 
+    /// Returns the CPU limit in `cpu.max`, in cores, or `Some(None)` when the
+    /// cgroup has no limit.
+    ///
+    /// `cpu.max` holds `<quota> <period>`, in microseconds of CPU time per
+    /// period of wall-clock time:
+    ///
+    /// | `cpu.max`       | Result            |
+    /// |-----------------|-------------------|
+    /// | `250000 100000` | `Some(Some(2.5))` |
+    /// | `max 100000`    | `Some(None)`      |
+    /// | missing         | `None`            |
+    pub fn cpu_max_cores(&self) -> Option<Option<f64>> {
+        let cpu_max = self.read("cpu.max")?;
+        let mut fields = cpu_max.split_whitespace();
+        let quota = fields.next()?;
+        let period: u64 = fields.next()?.parse().ok()?;
+        match quota {
+            "max" => Some(None),
+            quota if period > 0 => Some(Some(quota.parse::<u64>().ok()? as f64 / period as f64)),
+            _ => None,
+        }
+    }
+
     /// Returns the cgroup's memory use and limit.
     pub fn memory(&self) -> Option<CgroupMemory> {
         let max = match self.read("memory.max")?.trim() {
@@ -146,6 +169,25 @@ mod tests {
 
         write("memory.max", "4096\n").unwrap();
         assert_eq!(cgroup.memory().unwrap().max, Some(4096));
+    }
+
+    #[test]
+    fn reads_cgroup_cpu_max() {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |contents: &str| std::fs::write(dir.path().join("cpu.max"), contents);
+        let cgroup = Cgroup::at(dir.path().to_path_buf());
+        assert_eq!(cgroup.cpu_max_cores(), None);
+
+        write("max 100000\n").unwrap();
+        assert_eq!(cgroup.cpu_max_cores(), Some(None));
+
+        write("250000 100000\n").unwrap();
+        assert_eq!(cgroup.cpu_max_cores(), Some(Some(2.5)));
+
+        for bad in ["", "max\n", "x 100000\n", "100000 0\n"] {
+            write(bad).unwrap();
+            assert_eq!(cgroup.cpu_max_cores(), None, "{bad:?}");
+        }
     }
 
     /// Guards the `sysinfo` call sequence (`cgroup_limits` panics when memory
