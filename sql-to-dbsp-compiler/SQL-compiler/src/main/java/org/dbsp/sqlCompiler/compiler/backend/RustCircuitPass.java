@@ -1933,6 +1933,23 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    @Nullable
+    public static FuseExpensiveMaps.MapInfo mapFusionCandidate(DBSPCompiler compiler, DBSPMapOperator operator) {
+        String pass = "FuseExpensiveMaps/Candidate";
+        var reply = invokeLowering(compiler, pass, operator.getClosureFunction());
+        reportWarnings(compiler, reply.value.required("warnings"));
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision(pass, true);
+        var roots = reply.value.required("roots").elements();
+        if (!roots.hasNext())
+            return null;
+        var decoder = expressionDecoder(reply.writer);
+        var function = decodeLiveRoot(decoder, roots.next(), DBSPClosureExpression.class);
+        var fragments = new ArrayList<DBSPExpression>();
+        roots.forEachRemaining(node -> fragments.add(decodeLiveRoot(decoder, node, DBSPExpression.class)));
+        return new FuseExpensiveMaps.MapInfo(operator, function, fragments);
+    }
+
     public static List<DBSPExpression> mapFusionFragments(DBSPCompiler compiler, DBSPClosureExpression function) {
         var snapshot = ClosureSnapshot.capture(compiler, function);
         try {

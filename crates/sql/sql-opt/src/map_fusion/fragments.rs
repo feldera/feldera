@@ -1,8 +1,29 @@
 //! Select the smallest expensive expressions that can move between sibling map closures.
 use crate::lexical_scope::{closed_over, expression_children, resolve};
 use crate::fanout::expensive;
-use feldera_sql_ir::{Circuit, Error, ExpressionKind as Expr, InnerKind, Node, NodeId};
+use crate::function_calls::contains_now;
+use feldera_sql_expr::{SimplifyWarning, simplify_closure_with_warnings};
+use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionKind as Expr, InnerKind, Node, NodeId};
 use std::collections::HashSet;
+
+/// Find the shareable fragments in the simplified map, keeping their identities
+/// in that closure. Simplification can emit warnings even for a rejected map.
+pub fn map_fusion_candidate(
+    edit: &mut CircuitEditor,
+    closure: NodeId,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<Option<(NodeId, Vec<u64>)>, Error> {
+    if contains_now(edit.circuit(), &[closure])? || !expensive(edit.circuit(), closure)? {
+        return Ok(None);
+    }
+    let closure = simplify_closure_with_warnings(edit, closure, Some(warnings))?;
+    let body = edit.node(closure)?.edge("body")?;
+    if edit.expr_kind(edit.expression(body)?)? != Expr::Tuple {
+        return Ok(None);
+    }
+    let fragments = map_fusion_fragments(edit.circuit(), closure)?;
+    Ok((!fragments.is_empty()).then_some((closure, fragments)))
+}
 
 /// Visit a shared expression once per incoming edge, in operand order. A let
 /// with only open expensive children can still be a closed fragment itself.

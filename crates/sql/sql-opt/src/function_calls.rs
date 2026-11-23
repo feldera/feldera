@@ -111,9 +111,7 @@ pub(super) fn contains_now(circuit: &Circuit, roots: &[NodeId]) -> Result<bool, 
                 return Ok(true);
             }
         }
-        for (_, field) in node.fields() {
-            field.collect_inner_edges(&mut pending);
-        }
+        crate::lexical_scope::push_expression_children(node, &mut pending);
     }
     Ok(false)
 }

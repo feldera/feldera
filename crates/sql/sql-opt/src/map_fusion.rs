@@ -2,7 +2,7 @@
 mod fragments;
 mod groups;
 
-pub use fragments::map_fusion_fragments;
+pub use fragments::{map_fusion_candidate, map_fusion_fragments};
 pub use groups::map_fusion_groups;
 
 use crate::{rebuild::ProjectionNames, stream_rewrites::body_members, terms::Terms};

@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -187,21 +188,27 @@ public class FuseExpensiveMaps extends Passes {
         public void postorder(DBSPMapOperator operator) {
             if (!operator.getFunction().is(DBSPClosureExpression.class))
                 return;
+            var candidate = this.compiler().options.ioOptions.rustOptimizerPasses
+                    ? RustCircuitPass.mapFusionCandidate(this.compiler(), operator)
+                    : this.candidate(operator);
+            if (candidate != null)
+                this.groups.computeIfAbsent(operator.input(), p -> new ArrayList<>()).add(candidate);
+        }
+
+        @Nullable
+        private MapInfo candidate(DBSPMapOperator operator) {
             DBSPClosureExpression function = operator.getClosureFunction();
             this.containsNow.apply(function);
             if (this.containsNow.found)
-                return;
+                return null;
             if (!Expensive.isExpensive(this.compiler(), function))
-                return;
+                return null;
             Simplify simplify = new Simplify(this.compiler());
             function = simplify.apply(function).to(DBSPClosureExpression.class);
             if (!function.body.is(DBSPTupleExpression.class))
-                return;
+                return null;
             var minimal = minimalFragments(this.compiler(), function);
-            if (minimal.isEmpty())
-                return;
-            MapInfo info = new MapInfo(operator, function, minimal);
-            this.groups.computeIfAbsent(operator.input(), p -> new ArrayList<>()).add(info);
+            return minimal.isEmpty() ? null : new MapInfo(operator, function, minimal);
         }
 
         /** A fingerprint that equivalent expressions share: the printout of

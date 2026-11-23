@@ -230,15 +230,19 @@ fn resolve_variables<'a>(
 
 pub(crate) fn expression_children(node: &Node) -> Vec<NodeId> {
     let mut children = Vec::new();
+    push_expression_children(node, &mut children);
+    children
+}
+
+pub(crate) fn push_expression_children(node: &Node, children: &mut Vec<NodeId>) {
     if !matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
         for (name, field) in node.fields() {
             // The aggregate list serializes its cached empty row for replay; visitors skip that cache.
             if !matches!(name, "type" | "originalStruct" | "cachedEmptySetResult") {
-                field.collect_inner_edges(&mut children);
+                field.collect_inner_edges(children);
             }
         }
     }
-    children
 }
 
 /// A movable expression may refer to its own declarations and an optional outer parameter.

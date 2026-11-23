@@ -1,14 +1,20 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.MapInfo;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 
 import java.util.List;
@@ -19,6 +25,34 @@ import java.util.List;
 public class CollectExpensiveExpressionsTests extends BaseSQLTests {
     final ExpressionBuilder b = new ExpressionBuilder();
     final DBSPTypeTuple pair = this.b.tup(this.b.i32(), this.b.i32());
+
+    @Test
+    public void fusionCandidatesReferToFragmentsInTheSimplifiedClosure() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
+        var row = b.refVar(this.pair);
+        var field = b.field(row, 0);
+        var redundant = new DBSPFieldExpression(site, b.tuple(field), 0);
+        var call = b.call("costly", redundant);
+        var selected = new DBSPMapOperator(site, b.tuple(call, call).closure(row), input.outputPort());
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = this.testCompiler();
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var scan = new FuseExpensiveMaps.FindFusableMaps(compiler);
+            for (var rejected : List.of(b.tuple(field), b.tuple(b.call("costly", b.call("NoW"))), call))
+                scan.postorder(new DBSPMapOperator(site, rejected.closure(row), input.outputPort()));
+            scan.postorder(selected);
+            var candidates = scan.groups.get(input.outputPort());
+            Assert.assertEquals(1, candidates.size());
+            var candidate = candidates.get(0);
+            Assert.assertSame(selected, candidate.operator());
+            Assert.assertEquals(2, candidate.minimal().size());
+            Assert.assertNotSame(call, candidate.minimal().get(0));
+            Assert.assertSame(candidate.body().get(0), candidate.minimal().get(0));
+            Assert.assertSame(candidate.body().get(1), candidate.minimal().get(1));
+        }
+    }
 
     /** Collect the minimal expensive expressions of |param| expression */
     List<DBSPExpression> collect(DBSPExpression expression, DBSPVariablePath param) {

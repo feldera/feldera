@@ -630,6 +630,17 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("Monotonicity/InspectBody", [root]) => {
             return Ok(waterline_inspection(feldera_sql_opt::WaterlineInspection::for_root(&edit, *root)?));
         }
+        ("FuseExpensiveMaps/Candidate", [closure]) => {
+            let mut roots = Vec::new();
+            if let Some((function, fragments)) =
+                feldera_sql_opt::map_fusion_candidate(&mut edit, *closure, &mut warnings)?
+            {
+                roots.push(function);
+                roots.extend(fragments.into_iter().map(NodeId::Inner));
+            }
+            let roots = edit.circuit().live_inner_roots(&arena, &roots)?;
+            return Ok(json!({"roots": roots, "warnings": pass_warnings(warnings)}));
+        }
         ("FuseExpensiveMaps/Fragments", [closure]) => {
             return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_fragments(&arena, *closure)?)?);
         }
@@ -1425,7 +1436,7 @@ fn transform(
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
-        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
+        | "FuseExpensiveMaps/Candidate" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
             return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Groups" => {

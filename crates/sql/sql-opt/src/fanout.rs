@@ -46,9 +46,7 @@ pub(super) fn expensive(circuit: &Circuit, root: NodeId) -> Result<bool, Error> 
         if size > 100 {
             return Ok(true);
         }
-        for (_, field) in node.fields() {
-            field.collect_inner_edges(&mut pending);
-        }
+        crate::lexical_scope::push_expression_children(node, &mut pending);
     }
     Ok(false)
 }
