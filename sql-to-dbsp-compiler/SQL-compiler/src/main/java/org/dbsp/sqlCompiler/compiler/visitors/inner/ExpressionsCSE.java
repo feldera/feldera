@@ -55,6 +55,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
      * closure cannot be shared with (nested) sibling closures; each closure gets its own copy. */
     final Map<DBSPClosureExpression, Map<DBSPExpression, DBSPVariablePath>> cseVariables;
     final List<Assignment> assignments;
+    @Nullable private NativeCsePlan.Bindings planned;
 
     record Assignment(DBSPClosureExpression owner, DBSPVariablePath var,
                       DBSPExpression expression, Set<IDBSPDeclaration> dependsOn) implements RustCircuitPass.LazyBinding {
@@ -77,6 +78,16 @@ public class ExpressionsCSE extends ExpressionTranslator {
         this.numbering = numbering;
         this.cseVariables = new HashMap<>();
         this.assignments = new ArrayList<>();
+    }
+
+    /** Apply a plan to the exact tree whose expression identities it names. */
+    public IDBSPInnerNode applyPlan(DBSPExpression tree, NativeCsePlan plan) {
+        this.planned = new NativeCsePlan.Bindings(this.compiler, plan);
+        try {
+            return this.apply(tree);
+        } finally {
+            this.planned = null;
+        }
     }
 
     /** The innermost closure that the currently-visited node is nested in,
@@ -108,6 +119,13 @@ public class ExpressionsCSE extends ExpressionTranslator {
     @Override
     protected void map(DBSPExpression expression, DBSPExpression result) {
         Utilities.enforce(!neverShared(expression));
+        DBSPExpression replacement = this.planned == null
+                ? this.share(expression, result) : this.planned.read(expression, result);
+        if (!this.translationMap.containsKey(expression))
+            super.map(expression, replacement);
+    }
+
+    private DBSPExpression share(DBSPExpression expression, DBSPExpression result) {
         ValueNumbering.CanonicalExpression canonical = this.numbering.get(expression);
         DBSPClosureExpression owner = this.enclosingClosure();
         if (canonical != null && owner != null) {
@@ -137,9 +155,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
                 result = read;
             }
         }
-        if (!this.translationMap.containsKey(expression)) {
-            super.map(expression, result);
-        }
+        return result;
     }
 
     @Override
@@ -194,8 +210,10 @@ public class ExpressionsCSE extends ExpressionTranslator {
 
     /** Group the bindings consumed at this scope by the declaration after which
      * they are inserted. Bindings at closure entry use the closure itself as the key. */
-    private Map<Long, List<Assignment>> takeBindings(List<? extends IDBSPDeclaration> declarations,
+    private Map<Long, List<RustCircuitPass.LazyBinding>> takeBindings(DBSPExpression scopeNode, List<? extends IDBSPDeclaration> declarations,
             @Nullable DBSPClosureExpression closure) {
+        if (this.planned != null)
+            return this.planned.insertions(scopeNode);
         if (this.assignments.isEmpty() || (closure == null && declarations.isEmpty()))
             return Map.of();
         boolean outermost = closure != null && this.context.isEmpty();
@@ -223,7 +241,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
                 }
             }
         }
-        Map<Long, List<Assignment>> inserted = new HashMap<>();
+        Map<Long, List<RustCircuitPass.LazyBinding>> inserted = new HashMap<>();
         List<Assignment> remaining = new ArrayList<>();
         for (int i = 0; i < placements.length; i++) {
             Integer position = placements[i];
@@ -241,12 +259,12 @@ public class ExpressionsCSE extends ExpressionTranslator {
     }
 
     /** Earlier bindings enclose later ones, which may refer to them. */
-    private DBSPExpression bind(List<Assignment> bindings, DBSPExpression body) {
+    private DBSPExpression bind(List<RustCircuitPass.LazyBinding> bindings, DBSPExpression body) {
         if (!bindings.isEmpty() && this.compiler.options.ioOptions.rustOptimizerPasses)
             return RustCircuitPass.bindLazyExpression(this.compiler, bindings, body);
         for (int i = bindings.size() - 1; i >= 0; i--) {
-            Assignment assignment = bindings.get(i);
-            body = new DBSPLetExpression(assignment.var, new DBSPLazyExpression(assignment.expression), body);
+            var assignment = bindings.get(i);
+            body = new DBSPLetExpression(assignment.var(), new DBSPLazyExpression(assignment.expression()), body);
         }
         return body;
     }
@@ -257,7 +275,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
         DBSPExpression initializer = this.getE(node.initializer);
         node.consumer.accept(this);
         DBSPExpression consumer = this.getE(node.consumer);
-        var inserted = this.takeBindings(List.of(node), null);
+        var inserted = this.takeBindings(node, List.of(node), null);
         consumer = bind(inserted.getOrDefault(node.id, List.of()), consumer);
         this.map(node, new DBSPLetExpression(node.variable, initializer, consumer));
         return VisitDecision.STOP;
@@ -269,7 +287,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
         var declarations = this.assignments.isEmpty() ? List.<DBSPLetStatement>of() :
                 expression.contents.stream().filter(DBSPLetStatement.class::isInstance)
                         .map(DBSPLetStatement.class::cast).toList();
-        var inserted = this.takeBindings(declarations, null);
+        var inserted = this.takeBindings(expression, declarations, null);
         List<DBSPStatement> result = new ArrayList<>();
         for (DBSPStatement stat : expression.contents) {
             result.add(this.get(stat).to(DBSPStatement.class));
@@ -279,15 +297,15 @@ public class ExpressionsCSE extends ExpressionTranslator {
             if (this.compiler.options.ioOptions.rustOptimizerPasses)
                 result.addAll(RustCircuitPass.lazyStatements(this.compiler, bindings));
             else
-                for (Assignment a : bindings)
-                    result.add(new DBSPLetStatement(a.var.variable, new DBSPLazyExpression(a.expression)));
+                for (var a : bindings)
+                    result.add(new DBSPLetStatement(a.var().variable, new DBSPLazyExpression(a.expression())));
         }
         this.map(expression, new DBSPBlockExpression(result, last));
     }
 
     @Override
     public void postorder(DBSPClosureExpression node) {
-        var inserted = this.takeBindings(List.of(node.parameters), node);
+        var inserted = this.takeBindings(node, List.of(node.parameters), node);
         DBSPExpression translation = bind(inserted.getOrDefault(node.id, List.of()), this.getE(node.body));
         DBSPExpression result = new DBSPClosureExpression(node.getNode(), translation, node.parameters);
         this.map(node, result);

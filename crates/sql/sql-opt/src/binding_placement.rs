@@ -7,16 +7,16 @@ use std::collections::HashMap;
 
 #[derive(Deserialize)]
 pub struct PendingBinding {
-    owner: u64,
-    dependencies: Vec<u64>,
+    pub(crate) owner: u64,
+    pub(crate) dependencies: Vec<u64>,
 }
 
 #[derive(Deserialize)]
 pub struct BindingScope {
     /// Block lets in source order, a single let expression, or closure parameters.
-    declarations: Vec<u64>,
-    closure: Option<u64>,
-    outermost: bool,
+    pub(crate) declarations: Vec<u64>,
+    pub(crate) closure: Option<u64>,
+    pub(crate) outermost: bool,
 }
 
 impl BindingScope {
@@ -24,9 +24,12 @@ impl BindingScope {
     /// inserts all captured bindings at its entrance, in creation order.
     /// An unplaced binding travels out to the next enclosing scope.
     pub fn placements(&self, bindings: &[PendingBinding]) -> Vec<Option<usize>> {
+        self.positions(bindings.iter())
+    }
+
+    pub(crate) fn positions<'a>(&self, bindings: impl Iterator<Item = &'a PendingBinding>) -> Vec<Option<usize>> {
         let positions: HashMap<_, _> = self.declarations.iter().copied().zip(0..).collect();
         bindings
-            .iter()
             .map(|binding| {
                 let mut local = binding
                     .dependencies

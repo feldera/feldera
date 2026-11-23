@@ -178,6 +178,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.NativeCsePlan;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.NativeValueNumbering;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
@@ -1963,20 +1964,39 @@ public final class RustCircuitPass implements CircuitTransform {
 
     /** Send the original DAG once. Rust collects operand uses and chooses value numbers in lexical scope. */
     public static void numberValues(DBSPCompiler compiler, IDBSPInnerNode root, ValueNumbering analysis, boolean rewrite) {
+        var reply = analyzeCse(compiler, root, rewrite, "InnerCSE/NumberGraph");
+        try {
+            var result = MAPPER.treeToValue(reply.value, NativeValueNumbering.Result.class);
+            NativeValueNumbering.bind(result, Objects.requireNonNull(reply.writer.liveNodes), analysis, rewrite);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid CSE graph value numbers", error);
+        }
+    }
+
+    /** An unknown write disables CSE for this root. */
+    @Nullable
+    public static NativeCsePlan planCse(DBSPCompiler compiler, DBSPExpression tree) {
+        var reply = analyzeCse(compiler, tree, true, "InnerCSE/Plan");
+        try {
+            return MAPPER.treeToValue(reply.value.required("plan"), NativeCsePlan.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid CSE binding plan", error);
+        }
+    }
+
+    private static LoweringReply analyzeCse(DBSPCompiler compiler, IDBSPInnerNode root, boolean rewrite, String pass) {
         var writer = new OptimizerExpressionWriter(compiler, false);
         var graph = writer.encode(root);
-        var nodes = Objects.requireNonNull(writer.liveNodes);
-        String pass = "InnerCSE/NumberGraph";
         try {
-            var spellings = NativeValueNumbering.spellings(nodes.values(), rewrite);
+            var spellings = NativeValueNumbering.spellings(Objects.requireNonNull(writer.liveNodes).values(), rewrite);
             var bytes = transformWithContext(pass, graph, 0, "", MAPPER.writeValueAsBytes(spellings));
             var value = MAPPER.readTree(bytes);
             checkBindingErrors(writer, value);
-            NativeValueNumbering.bind(MAPPER.treeToValue(value, NativeValueNumbering.Result.class), nodes, analysis, rewrite);
             if (compiler.stateObserver != null)
                 compiler.stateObserver.nativeDecision(pass, true);
+            return new LoweringReply(writer, value);
         } catch (IOException error) {
-            throw new UncheckedIOException("Invalid CSE graph value numbers", error);
+            throw new UncheckedIOException("Invalid Rust CSE analysis", error);
         }
     }
 

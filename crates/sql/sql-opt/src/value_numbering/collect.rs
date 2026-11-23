@@ -20,7 +20,7 @@ pub struct NumberingSpellings {
 #[derive(Serialize)]
 pub struct CollectedNumbers {
     #[serde(flatten)]
-    numbers: ResolvedNumbers,
+    pub(super) numbers: ResolvedNumbers,
     sites: Vec<UseSite>,
 }
 

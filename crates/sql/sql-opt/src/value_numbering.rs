@@ -2,6 +2,7 @@
 //! printer's text between operands and the value number of each operand.
 mod collect;
 mod key;
+mod plan;
 pub use collect::NumberingSpellings;
 
 use self::key::{Form, Key, Number};

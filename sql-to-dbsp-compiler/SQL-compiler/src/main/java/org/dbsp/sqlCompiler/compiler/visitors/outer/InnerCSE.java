@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionsCSE;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
@@ -51,6 +52,10 @@ public class InnerCSE implements IRTransform {
         // ExpressionsCSE translates each node once, but a subtree shared by two closures
         // needs a separate translation in each closure.
         DBSPExpression tree = node.to(DBSPExpression.class).ensureTree(this.compiler);
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var plan = RustCircuitPass.planCse(this.compiler, tree);
+            return plan == null ? node : this.cse.applyPlan(tree, plan);
+        }
         this.numbering.apply(tree);
         if (!this.numbering.foundAssignment) {
             return this.cse.apply(tree);

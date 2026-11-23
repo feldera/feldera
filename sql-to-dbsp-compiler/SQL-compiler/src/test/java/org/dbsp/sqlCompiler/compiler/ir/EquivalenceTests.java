@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.InnerCSE;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -111,6 +112,32 @@ public class EquivalenceTests {
         });
         // Find 2 common subexpressions; one has a single use
         assertCseVariables(compiler, cse(compiler, closure), 2);
+    }
+
+    @Test
+    public void testCseMethodReceiverAndArgumentsAcrossScopes() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var row = b.refVar(b.tup(b.i32()));
+        var none = b.tup(b.i32()).withMayBeNull(true).none();
+        var method = new DBSPApplyMethodExpression("lookup", b.i32(), b.field(row, 0), none);
+        var nested = b.lambda(b.i32(), x -> b.let(b.add(x, method.deepCopy()),
+                y -> b.tuple(b.add(y, method.deepCopy()), b.add(y, method.deepCopy()))));
+        var root = b.tuple(method.borrow(), method.deepCopy(), nested).closure(row);
+        long firstName = DBSPVariablePath.nextGeneratedName();
+        var expected = new InnerCSE(compiler).apply(root).to(DBSPClosureExpression.class);
+        long nextName = DBSPVariablePath.nextGeneratedName();
+        assertCseVariables(compiler, expected, 3);
+        assertResolves(compiler, expected);
+        if (Boolean.getBoolean("feldera.optimizer.compareRustExpressionUses")) {
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            DBSPVariablePath.restoreGeneratedNames(firstName);
+            var actual = new InnerCSE(compiler).apply(root).to(DBSPClosureExpression.class);
+            Assert.assertEquals(nextName, DBSPVariablePath.nextGeneratedName());
+            Assert.assertEquals(expected.toString(), actual.toString());
+            Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
+            Assert.assertSame(root.parameters[0], actual.parameters[0]);
+            assertResolves(compiler, actual);
+        }
     }
 
     @Test

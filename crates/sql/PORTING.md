@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust chooses the first read of each closure-local lazy cell, whether a read
+borrows its value, and where each binding becomes visible. The direct and
+hybrid compilers used the same generated names for a method called across
+nested scopes. All 105 targeted JUnit tests passed. The 94 detached
+compilations matched through 46,351 ordered S4 observations and emission.
+Nexmark had the largest cold p95 ratio at 1.047× (5.155 s hybrid, 4.923 s
+direct). [Binding replay](evidence/p3-cse-binding-plan.json) ·
+[Paired compilation timings](evidence/p3-cse-binding-plan-cold.json)
+
 Rust walks the original expression graph to number values, track mutable
 reads and identify shared subexpressions within each closure. Java supplies
 the printer spellings used in the value keys. Rust handled 4,444 numbering
