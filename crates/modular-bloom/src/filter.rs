@@ -1,74 +1,58 @@
+use std::sync::Arc;
+
+use smallvec::SmallVec;
+
 use crate::bits::{HashChain, index, set, test};
-use crate::density::ModuleDensity;
+use crate::density::{ModuleDensity, count_set_bits};
 use crate::error::LoadError;
 use crate::layout::ModuleLayout;
 
-/// Given a key hash and a module count, yields the bit positions that key
-/// occupies, as offsets into the modules laid out back to back.
+/// Module storage of a built filter.
 ///
-/// Every position comes from one hash chain seeded by the hash and advanced
-/// once per position. Positions are grouped by module and yielded in module
-/// order: `hashes_per_module` of them land in module 0, the next
-/// `hashes_per_module` in module 1, and so on. Each is reduced into the
-/// `words_per_module` words of the module it belongs to, so a position never
-/// falls outside that module.
-struct BitPositions {
+/// Each module is its own allocation, so a prefix of the modules can be shared
+/// with another filter without copying, and dropping a module frees exactly its
+/// memory. Up to four handles are stored inline, which keeps them in the same
+/// cache line as the filter for every count a caller is expected to use.
+type Modules = SmallVec<[Arc<[u64]>; 4]>;
+
+/// The bit positions that one key occupies, one module at a time.
+///
+/// Every position comes from one hash chain seeded by the key hash and advanced
+/// once per position. Module 0 takes the first `hashes_per_module` positions,
+/// module 1 the next `hashes_per_module`, and so on. Each position is reduced
+/// into the `words_per_module` words of its module, so it never falls outside
+/// that module.
+///
+/// Truncation depends on this order: the positions of the first `n` modules do
+/// not depend on how many modules follow, so a filter that has dropped its
+/// trailing modules probes the modules it kept at the positions insertion
+/// wrote.
+struct KeyPositions {
     /// Source of the derived hashes, advanced once per position.
     chain: HashChain,
     /// Size of one module, in 64-bit words.
     words_per_module: u64,
-    /// Size of one module, in bits.
-    bits_per_module: u64,
-    /// Positions yielded per module.
+    /// Positions per module.
     hashes_per_module: u32,
-    /// Bit offset of the module currently being yielded.
-    base: u64,
-    /// Modules still to yield after the current one.
-    modules_left: u32,
-    /// Positions still to yield within the current module.
-    hashes_left: u32,
 }
 
-impl BitPositions {
-    /// Yields `modules * layout.hashes_per_module()` positions, covering the
-    /// first `modules` modules of `layout`.
-    ///
-    /// What a smaller `modules` yields is a prefix of what a larger one yields.
-    /// Truncation depends on that: a filter that has dropped its trailing
-    /// modules must probe the modules it kept at the positions insertion wrote.
+impl KeyPositions {
     #[inline(always)]
-    fn new(layout: &ModuleLayout, modules: u32, hash: u64) -> Self {
+    fn new(layout: &ModuleLayout, hash: u64) -> Self {
         Self {
             chain: HashChain::new(hash),
             words_per_module: u64::from(layout.words_per_module()),
-            bits_per_module: layout.bits_per_module(),
             hashes_per_module: layout.hashes_per_module(),
-            base: 0,
-            modules_left: modules,
-            hashes_left: if modules == 0 {
-                0
-            } else {
-                layout.hashes_per_module()
-            },
         }
     }
-}
 
-impl Iterator for BitPositions {
-    type Item = u64;
-
+    /// Yields the positions of the next module. Call it once per module, in
+    /// module order, and consume each result before the next call.
     #[inline(always)]
-    fn next(&mut self) -> Option<u64> {
-        if self.hashes_left == 0 {
-            self.modules_left = self.modules_left.checked_sub(1)?;
-            if self.modules_left == 0 {
-                return None;
-            }
-            self.base += self.bits_per_module;
-            self.hashes_left = self.hashes_per_module;
-        }
-        self.hashes_left -= 1;
-        Some(self.base + index(self.words_per_module, self.chain.next()))
+    fn next_module(&mut self) -> impl Iterator<Item = u64> + '_ {
+        let words_per_module = self.words_per_module;
+        let chain = &mut self.chain;
+        (0..self.hashes_per_module).map(move |_| index(words_per_module, chain.next()))
     }
 }
 
@@ -77,17 +61,34 @@ impl Iterator for BitPositions {
 /// Keys can only be added here, before [`Self::finish`]. A finished filter may
 /// drop modules, and a key added after that would be missing from the dropped
 /// ones, so reloading them later would report it absent.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ModularBloomFilterBuilder {
-    words: Vec<u64>,
+    /// Each module in the allocation the finished filter keeps, so
+    /// [`Self::finish`] copies no data. The builder holds the only handle to
+    /// each one, and gives none out.
+    modules: Vec<Arc<[u64]>>,
     layout: ModuleLayout,
+}
+
+impl Clone for ModularBloomFilterBuilder {
+    /// Copies the modules, so each builder keeps the only handle to its own.
+    fn clone(&self) -> Self {
+        Self {
+            modules: self.modules.iter().map(|m| Arc::from(&m[..])).collect(),
+            layout: self.layout,
+        }
+    }
 }
 
 impl ModularBloomFilterBuilder {
     /// Allocates every module of `layout`, zeroed.
     pub fn new(layout: ModuleLayout) -> Self {
+        let words = layout.words_per_module() as usize;
         Self {
-            words: vec![0u64; layout.total_words() as usize],
+            modules: (0..layout.total_modules())
+                // SAFETY: all zero bits is a valid `u64`.
+                .map(|_| unsafe { Arc::<[u64]>::new_zeroed_slice(words).assume_init() })
+                .collect(),
             layout,
         }
     }
@@ -103,17 +104,26 @@ impl ModularBloomFilterBuilder {
     // Callers drive this one key at a time from another crate. Inline to avoid call overhead.
     #[inline]
     pub fn insert_hash(&mut self, hash: u64) {
-        let words = self.words.as_mut_slice();
-        for bit in BitPositions::new(&self.layout, self.layout.total_modules(), hash) {
-            set(words, bit);
+        let mut positions = KeyPositions::new(&self.layout, hash);
+        for module in &mut self.modules {
+            // SAFETY: the builder holds the only handle to `module`, and
+            // `&mut self` keeps any other reference to it from being live.
+            // `Arc::get_mut` would check this with an atomic operation per
+            // module, which makes building up to several times slower.
+            let words = unsafe {
+                std::slice::from_raw_parts_mut(Arc::as_ptr(module) as *mut u64, module.len())
+            };
+            for bit in positions.next_module() {
+                set(words, bit);
+            }
         }
     }
 
-    /// Completes the filter with all modules resident.
+    /// Completes the filter with all modules resident, without copying them.
     pub fn finish(self) -> ModularBloomFilter {
-        let density = ModuleDensity::measure(&self.layout, &self.words);
+        let density = ModuleDensity::new(self.modules.iter().map(|m| count_set_bits(m)).collect());
         ModularBloomFilter {
-            words: self.words,
+            modules: self.modules.into_iter().collect(),
             density,
             layout: self.layout,
         }
@@ -124,10 +134,12 @@ impl ModularBloomFilterBuilder {
 ///
 /// A probe consults resident modules in order and stops at the first rejection,
 /// so an absent key usually touches far fewer modules than are resident.
+///
+/// Cloning shares the module storage instead of copying it.
 #[derive(Clone, Debug)]
 pub struct ModularBloomFilter {
-    /// Resident modules, laid out back to back starting at module 0.
-    words: Vec<u64>,
+    /// Resident modules, in order starting at module 0.
+    modules: Modules,
     /// Bits set per module. Covers every module the layout describes when the
     /// caller supplied a recorded density, otherwise only the resident ones.
     density: ModuleDensity,
@@ -165,7 +177,7 @@ impl ModularBloomFilter {
 
         Ok(Self {
             density: ModuleDensity::measure(&layout, words),
-            words: words.to_vec(),
+            modules: words.chunks(words_per_module).map(Arc::from).collect(),
             layout,
         })
     }
@@ -200,37 +212,54 @@ impl ModularBloomFilter {
     ///
     /// `words` must hold exactly `layout().words_per_module()` words, and
     /// must be the module at index `resident_modules()`, since modules are
-    /// stored in order. Modules already resident are left untouched.
+    /// stored in order. Modules already resident are left untouched. Passing
+    /// an `Arc<[u64]>` adds the module without copying it.
     ///
-    /// Fails if `words` is the wrong length, or if every module the layout
-    /// describes is already resident.
-    pub fn push_module(&mut self, words: &[u64]) -> Result<(), LoadError> {
+    /// Fails if `words` is the wrong length, if every module the layout
+    /// describes is already resident, or if the recorded density covers this
+    /// module and `words` has a different number of bits set. That count stands
+    /// in for a checksum when the module was read back on its own.
+    pub fn push_module(&mut self, words: impl Into<Arc<[u64]>>) -> Result<(), LoadError> {
+        let words = words.into();
         if words.len() != self.layout.words_per_module() as usize {
             return Err(LoadError::PartialModule {
                 words: words.len(),
                 words_per_module: self.layout.words_per_module(),
             });
         }
-        if self.resident_modules() >= self.layout.total_modules() {
+        let index = self.resident_modules();
+        if index >= self.layout.total_modules() {
             return Err(LoadError::TooManyModules {
-                modules: self.resident_modules() + 1,
+                modules: index + 1,
                 total_modules: self.layout.total_modules(),
             });
         }
-        let appended = self.resident_modules() + 1;
-        self.words.extend_from_slice(words);
-        if self.density.modules() < appended {
-            self.density
-                .push(words.iter().map(|w| u64::from(w.count_ones())).sum());
+        let actual = count_set_bits(&words);
+        match self.density.set_bits().get(index as usize) {
+            Some(&expected) if expected != actual => {
+                return Err(LoadError::WrongSetBits {
+                    module: index,
+                    expected,
+                    actual,
+                });
+            }
+            Some(_) => {}
+            None => self.density.push(actual),
         }
+        self.modules.push(words);
         Ok(())
     }
 
     /// Returns `false` only when `hash` was definitely never inserted.
     #[inline]
     pub fn contains_hash(&self, hash: u64) -> bool {
-        BitPositions::new(&self.layout, self.resident_modules(), hash)
-            .all(|bit| test(&self.words, bit))
+        // Gets each module's words once, not once per bit: indexing the module
+        // list per bit doubles the work of each bit test.
+        let mut positions = KeyPositions::new(&self.layout, hash);
+        self.modules.iter().all(|words| {
+            let words: &[u64] = words;
+            positions.next_module().all(|bit| test(words, bit))
+        })
     }
 
     /// Shape the filter was built with, whatever its current residency.
@@ -240,26 +269,22 @@ impl ModularBloomFilter {
 
     /// Modules currently held in memory.
     pub fn resident_modules(&self) -> u32 {
-        (self.words.len() / self.layout.words_per_module() as usize) as u32
+        self.modules.len() as u32
     }
 
     /// Bytes the resident modules occupy.
     pub fn resident_bytes(&self) -> usize {
-        self.words.len() * 8
+        self.modules.len() * self.layout.bytes_per_module()
     }
 
-    /// Drops modules beyond the first `modules`, releasing their memory.
+    /// Drops modules beyond the first `modules`, releasing their memory once no
+    /// other filter shares them.
     ///
     /// Truncating to zero leaves a filter that admits every key, which is the
     /// same answer a batch with no filter gives. Truncating to at least the
     /// current residency does nothing.
     pub fn truncate(&mut self, modules: u32) {
-        if modules >= self.resident_modules() {
-            return;
-        }
-        self.words
-            .truncate(modules as usize * self.layout.words_per_module() as usize);
-        self.words.shrink_to_fit();
+        self.modules.truncate(modules as usize);
     }
 
     /// Drops every module the filter can spare while still meeting
@@ -315,9 +340,7 @@ impl ModularBloomFilter {
     /// This is the handle a caller writes to storage. Modules are independent,
     /// so they may be written and read individually.
     pub fn module(&self, index: u32) -> Option<&[u64]> {
-        let per = self.layout.words_per_module() as usize;
-        let start = index as usize * per;
-        self.words.get(start..start + per)
+        self.modules.get(index as usize).map(|module| &**module)
     }
 
     /// Words of each resident module, in order.
@@ -325,17 +348,48 @@ impl ModularBloomFilter {
     /// Allocates a vector of slice references; use [`Self::module`] to reach a
     /// single module without allocating.
     pub fn modules(&self) -> Vec<&[u64]> {
-        self.words
-            .chunks(self.layout.words_per_module() as usize)
-            .collect()
+        self.modules.iter().map(|module| &**module).collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        BitPositions, ModularBloomFilter, ModularBloomFilterBuilder, ModuleDensity, ModuleLayout,
+        KeyPositions, ModularBloomFilter, ModularBloomFilterBuilder, ModuleDensity, ModuleLayout,
     };
+
+    /// A clone of a builder has its own modules, so keys added to one are not
+    /// in the other, and `finish` keeps the modules it built.
+    #[test]
+    fn a_cloned_builder_has_its_own_modules() {
+        let layout = ModuleLayout::for_keys(1_000, 1e-4, 4).unwrap();
+        let mut original = ModularBloomFilterBuilder::new(layout);
+        original.insert_hash(1);
+        let mut clone = original.clone();
+        clone.insert_hash(2);
+        let original = original.finish();
+        let clone = clone.finish();
+        assert!(original.contains_hash(1) && clone.contains_hash(1));
+        assert!(clone.contains_hash(2));
+        assert!(
+            !original.contains_hash(2),
+            "the clone wrote to the original"
+        );
+    }
+
+    /// The positions of `hash` in the first `modules` modules, each as a
+    /// module index and a bit offset into that module.
+    fn bit_positions(layout: &ModuleLayout, modules: u32, hash: u64) -> Vec<(usize, u64)> {
+        let mut positions = KeyPositions::new(layout, hash);
+        (0..modules as usize)
+            .flat_map(|module| {
+                positions
+                    .next_module()
+                    .map(|bit| (module, bit))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
 
     fn sample(i: u64) -> u64 {
         let mut x = i;
@@ -354,10 +408,10 @@ mod tests {
             let layout = ModuleLayout::new(modules, 64, hashes).unwrap();
             for i in 0..2_000u64 {
                 let hash = sample(i);
-                let full: Vec<u64> = BitPositions::new(&layout, modules, hash).collect();
+                let full = bit_positions(&layout, modules, hash);
                 assert_eq!(full.len(), modules as usize * hashes as usize);
                 for prefix in 0..=modules {
-                    let partial: Vec<u64> = BitPositions::new(&layout, prefix, hash).collect();
+                    let partial = bit_positions(&layout, prefix, hash);
                     assert_eq!(
                         partial,
                         full[..prefix as usize * hashes as usize],
@@ -368,24 +422,70 @@ mod tests {
         }
     }
 
-    /// Every bit must land inside its own module's region, or truncation would
-    /// drop bits a retained module still depends on.
+    /// Every bit must land inside its own module, in module order, or
+    /// truncation would drop bits a retained module still depends on.
     #[test]
     fn every_bit_lands_in_its_own_module() {
         let layout = ModuleLayout::new(6, 128, 3).unwrap();
         let bits = layout.bits_per_module();
         for i in 0..5_000u64 {
             let mut seen = 0usize;
-            for bit in BitPositions::new(&layout, 6, sample(i)) {
-                let module = (seen / 3) as u64;
-                assert!(
-                    bit >= module * bits && bit < (module + 1) * bits,
-                    "bit {bit} escaped module {module}"
-                );
+            for (module, bit) in bit_positions(&layout, 6, sample(i)) {
+                assert_eq!(module, seen / 3, "position {seen} is in the wrong module");
+                assert!(bit < bits, "bit {bit} escaped module {module}");
                 seen += 1;
             }
             assert_eq!(seen, 18);
         }
+    }
+
+    /// A clone shares its modules instead of copying them, so truncating a
+    /// clone frees nothing that the original still holds.
+    #[test]
+    fn a_clone_shares_modules() {
+        let layout = ModuleLayout::new(4, 64, 3).unwrap();
+        let mut builder = ModularBloomFilterBuilder::new(layout);
+        for i in 0..200u64 {
+            builder.insert_hash(sample(i));
+        }
+        let full = builder.finish();
+        let mut truncated = full.clone();
+        truncated.truncate(2);
+
+        assert_eq!(full.resident_modules(), 4);
+        for m in 0..2 {
+            assert!(
+                std::ptr::eq(truncated.module(m).unwrap(), full.module(m).unwrap()),
+                "module {m} was copied"
+            );
+        }
+        for i in 0..200u64 {
+            assert!(truncated.contains_hash(sample(i)), "false negative");
+        }
+    }
+
+    /// A module whose bit count differs from the recorded density is refused,
+    /// and the filter keeps what it had.
+    #[test]
+    fn a_module_that_does_not_match_its_density_is_refused() {
+        let layout = ModuleLayout::new(4, 64, 3).unwrap();
+        let mut builder = ModularBloomFilterBuilder::new(layout);
+        for i in 0..200u64 {
+            builder.insert_hash(sample(i));
+        }
+        let full = builder.finish();
+        let mut filter = full.clone();
+        filter.truncate(2);
+
+        let mut wrong = full.module(2).unwrap().to_vec();
+        wrong[0] ^= 1;
+        assert!(matches!(
+            filter.push_module(wrong),
+            Err(super::LoadError::WrongSetBits { module: 2, .. })
+        ));
+        assert_eq!(filter.resident_modules(), 2);
+        filter.push_module(full.module(2).unwrap()).unwrap();
+        assert_eq!(filter.resident_modules(), 3);
     }
 
     /// Modules must carry independent load, not merely differ. Correlated

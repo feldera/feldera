@@ -71,6 +71,33 @@ fn construction(c: &mut Criterion) {
     group.finish();
 }
 
+/// Cost of building and finishing a filter that does not fit in cache, and of
+/// `finish` alone.
+fn construction_large(c: &mut Criterion) {
+    let keys = LARGE_KEYS;
+    let layout = ModuleLayout::for_keys(keys, DEFAULT_FP, 4).unwrap();
+    let mut filled = ModularBloomFilterBuilder::new(layout);
+    for i in 0..keys {
+        filled.insert_hash(present(i));
+    }
+
+    let mut group = c.benchmark_group("construction_large");
+    group.sample_size(10);
+    group.throughput(Throughput::Elements(keys));
+    group.bench_function("modular_d4", |b| {
+        b.iter(|| black_box(build_modular(keys, 4).resident_bytes()))
+    });
+    group.throughput(Throughput::Bytes(layout.total_bytes() as u64));
+    group.bench_function("finish_d4", |b| {
+        b.iter_batched(
+            || filled.clone(),
+            |builder| black_box(builder.finish().resident_bytes()),
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    group.finish();
+}
+
 /// Probe cost, split by whether the key is in the filter.
 fn probe(c: &mut Criterion, keys: u64, label: &str) {
     let monolithic = build_monolithic(keys);
@@ -247,6 +274,7 @@ fn resize(c: &mut Criterion) {
 
 fn all(c: &mut Criterion) {
     construction(c);
+    construction_large(c);
     probe(c, SMALL_KEYS, "small");
     probe(c, LARGE_KEYS, "large");
     ladder(c, LARGE_KEYS, "large");

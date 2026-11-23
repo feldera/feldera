@@ -74,4 +74,15 @@ pub enum LoadError {
         /// Modules the layout declares.
         total_modules: u32,
     },
+    /// A module does not have the number of bits set that was recorded for it
+    /// when the filter was built, so it is not the module that was written.
+    #[error("module {module} has {actual} bits set, but {expected} were recorded")]
+    WrongSetBits {
+        /// Index of the module.
+        module: u32,
+        /// Bits the recorded density gives for the module.
+        expected: u64,
+        /// Bits set in the supplied words.
+        actual: u64,
+    },
 }
