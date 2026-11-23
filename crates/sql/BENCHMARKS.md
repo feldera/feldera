@@ -4,6 +4,20 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Block-scoped map fusion keys, 2026-11-23
+
+On `31a6547e4`, all 69 paired compilations produced equal classic artifacts.
+Each workload used two warmup pairs and 21 measured pairs, alternating which
+compiler ran first. Fresh compiler processes ran on CPU 15 of the ARM64 VM.
+Concurrent corpus replay could use the same CPU. The timer stopped at classic
+source emission, before Cargo. [Paired measurements](evidence/p3-fusion-block-keys-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.154 | 1.813 | 0.842× |
+| Nexmark suite | 4.809 | 5.146 | 1.070× |
+| Outer join | 2.087 | 1.786 | 0.856× |
+
 ## Map fusion with SQL NULL keys, 2026-11-23
 
 On `a0fa0123b`, all 69 Java and hybrid compilation pairs produced equal

@@ -41,6 +41,13 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-23. Build `881233749` matched both frozen populations through
+  6,996,738 ordered optimizer observations and passed all 8,256 classic
+  executable cases. On `31a6547e4`, all three cold compile workloads met
+  the approved p95 ceiling. Rust now compares scoped block declarations
+  and generic call paths when deciding which map expressions to share.
+  [Frozen replay and runtime](crates/sql/evidence/p3-cse-tree-rewrite-replay.json) · [Cold compilation](crates/sql/evidence/p3-fusion-block-keys-cold.json) · [Generic call parity](crates/sql/evidence/p3-generic-call-keys.json)
+
 - 2026-11-23. On `a0fa0123b`, Rust answered all 418,464 instrumented
   optimizer requests across 8,571 classic and 8,527 Gen-2 compilations.
   The all-casts case and five fusion-triggering programs matched direct Java
