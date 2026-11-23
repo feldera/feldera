@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.WindowInputStats;
@@ -57,6 +58,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -277,6 +279,62 @@ public class TemporalKeyTests {
                 var expected = direct.allOperators.get(1).to(DBSPFilterOperator.class);
                 var actual = hybrid.allOperators.get(1).to(DBSPFilterOperator.class);
                 Assert.assertTrue(expected.getClosureFunction().equivalent(actual.getClosureFunction()));
+            }
+        }
+    }
+
+    @Test
+    public void nestedFlatmapValidationKeepsEarlierFactsAndAllocatedNames() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var integer = new DBSPI32Literal(0).getType();
+        var scalar = new MonotoneType(integer);
+        var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        for (var kind : MonotoneTransferFunctions.ArgumentKind.values()) {
+            // Reading a passthrough field from a nullable row lifts its type.
+            var row = new DBSPTypeTuple(CalciteObject.EMPTY, true, List.of(integer, new DBSPTypeArray(integer, false)));
+            var source = row.ref().var();
+            var nested = new DBSPFlatmap(CalciteObject.EMPTY, row, source.deref().field(1).closure(source),
+                    List.of(0), null, null, new IdShuffle(2));
+            var prefix = new DBSPI32Literal(7);
+            var body = new DBSPBlockExpression(List.of(prefix.toStatement()), nested);
+            var pair = new PartiallyMonotoneTuple(List.of(scalar, scalar), true, false);
+            var inputs = switch (kind) {
+                case IndexedZSet -> new IMaybeMonotoneType[]{pair};
+                case Join -> new IMaybeMonotoneType[]{scalar, scalar, scalar};
+                case ZSet -> new IMaybeMonotoneType[]{scalar};
+            };
+            var closure = switch (kind) {
+                case IndexedZSet -> body.closure(new DBSPTypeRawTuple(integer.ref(), integer.ref()).var());
+                case Join -> body.closure(integer.ref().var(), integer.ref().var(), integer.ref().var());
+                case ZSet -> body.closure(integer.ref().var());
+            };
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            var direct = new MonotoneTransferFunctions(compiler, operator, kind, inputs);
+            long start = DBSPVariablePath.nextGeneratedName();
+            var expected = Assert.assertThrows(InternalCompilerError.class, () -> direct.apply(closure));
+            long names = DBSPVariablePath.nextGeneratedName() - start;
+            Assert.assertEquals(kind == MonotoneTransferFunctions.ArgumentKind.ZSet ? 1 : 0, names);
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var decisions = new LinkedHashMap<String, Boolean>();
+            compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                @Override public void nativeDecision(String op, boolean success) { decisions.put(op, success); }
+                @Override public void before(String p, int i, int n, CircuitTransform pass, DBSPCircuit graph) {}
+                @Override public void after(String p, int i, int n, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
+            };
+            for (boolean resultOnly : List.of(false, true)) {
+                var hybrid = new MonotoneTransferFunctions(compiler, operator, kind, inputs);
+                start = DBSPVariablePath.nextGeneratedName();
+                var actual = Assert.assertThrows(expected.getClass(), () -> {
+                    if (resultOnly)
+                        hybrid.applyAnalysis(closure);
+                    else
+                        hybrid.apply(closure);
+                });
+                Assert.assertEquals(expected.getMessage().lines().findFirst(), actual.getMessage().lines().findFirst());
+                Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+                Assert.assertTrue(hybrid.get(prefix).mayBeMonotone());
+                Assert.assertNull(hybrid.maybeGet(nested));
+                Assert.assertEquals(Boolean.TRUE, decisions.get(resultOnly ? "Monotonicity/ProjectClosure" : "Monotonicity/ExpressionFacts"));
             }
         }
     }

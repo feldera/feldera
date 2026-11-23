@@ -984,6 +984,12 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                             binding_conflict(variable, previous, current),
                         WaterlineError::RepeatedExpression(path) =>
                             json!({"repeated":path.into_iter().map(inner_number).collect::<Vec<_>>()}),
+                        WaterlineError::FlatmapInput(id) =>
+                            json!({"kind":"FlatmapInput", "expression":inner_number(id.into())}),
+                        WaterlineError::FlatmapResult { flatmap, computed } => {
+                            let types = edit.circuit().live_inner_roots(&arena, &[computed.into()])?;
+                            json!({"kind":"FlatmapResult", "expression":inner_number(flatmap.into()), "computed":types[0]})
+                        }
                         WaterlineError::VariableTypeMismatch(id) => json!({"kind":"VariableTypeMismatch", "expression":inner_number(id.into())}),
                         WaterlineError::MissingReference(id) => json!({"kind":"MissingReference", "expression":inner_number(id.into())}),
                         WaterlineError::MissingOperand(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),

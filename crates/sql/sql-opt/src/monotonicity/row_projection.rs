@@ -7,7 +7,7 @@ mod scalar;
 mod scope;
 mod shape;
 use self::{
-    evaluate::Evaluation,
+    evaluate::{Evaluation, FlatmapInput},
     scope::Local,
     shape::{Shape, UnorderedRow, UnorderedType},
 };
@@ -280,7 +280,7 @@ pub(crate) fn clock_facts(
         locals: Vec::new(),
         observations: Observations::Clocks(HashSet::new()),
     };
-    match row.visit(edit, body, Some(next))? {
+    match row.visit(edit, body, FlatmapInput::ZSet(next))? {
         Evaluation::Value(_) => {}
         Evaluation::Failed(WaterlineError::MissingReference(id)) => {
             return Err(ClockError::Missing(MissingClockKey::Reference(id)));
@@ -345,7 +345,7 @@ pub fn project_rows(
     indexed: bool,
 ) -> Result<Option<ProjectedValue>, Error> {
     let mut row = Row::new(edit, bounds, projections, indexed)?;
-    Ok(row.visit(edit, body, None)?.projected())
+    Ok(row.visit(edit, body, FlatmapInput::Detached)?.projected())
 }
 
 impl Row {
@@ -486,6 +486,8 @@ pub enum WaterlineError {
         current: NodeId,
     },
     RepeatedExpression(Vec<NodeId>),
+    FlatmapInput(ExpressionId),
+    FlatmapResult { flatmap: ExpressionId, computed: TypeId },
     VariableTypeMismatch(ExpressionId),
     MissingReference(ExpressionId),
     MissingOperand(ExpressionId),
@@ -640,10 +642,12 @@ fn project_validated_closure(
         binding.declared_type = Some(edit.type_id(edit.node(parameter)?.edge("type")?)?);
     }
     row.observations = observations;
-    // UNNEST requires a single ZSet input. Other argument kinds retain the
-    // live visitor's assertion at the nested expression.
-    let flatmap_names = (!indexed && parameters.len() == 1).then_some(next);
-    let result = row.visit(edit, body, flatmap_names)?;
+    let input = if !indexed && parameters.len() == 1 {
+        FlatmapInput::ZSet(next)
+    } else {
+        FlatmapInput::JoinOrIndex
+    };
+    let result = row.visit(edit, body, input)?;
     let facts = match row.observations {
         Observations::Facts(facts) => facts,
         _ => Vec::new(),

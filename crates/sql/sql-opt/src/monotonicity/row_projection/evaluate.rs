@@ -22,6 +22,13 @@ pub(super) enum Evaluation {
     NeedsVisitor,
 }
 
+pub(super) enum FlatmapInput<'a> {
+    ZSet(&'a mut u64),
+    JoinOrIndex,
+    /// A detached row projection has no live generated-name allocator.
+    Detached,
+}
+
 impl From<Option<ProjectedValue>> for Evaluation {
     fn from(value: Option<ProjectedValue>) -> Self {
         value.map_or(Self::NeedsVisitor, Self::Value)
@@ -289,8 +296,12 @@ impl Row {
             let function = edit.expression_type(expr)?;
             edit.type_id(edit.node(function.into())?.edge("resultType")?)
         };
-        if !edit.same_type(result_type(id)?, result_type(closure)?)? {
-            return Ok(Evaluation::NeedsVisitor);
+        let computed = result_type(closure)?;
+        if !edit.same_type(result_type(id)?, computed)? {
+            return Ok(Evaluation::Failed(WaterlineError::FlatmapResult {
+                flatmap: id,
+                computed,
+            }));
         }
         // Nested closures are opaque. The synthetic closure and the flatmap
         // point to the very same analysis, whose type belongs to the closure.
@@ -312,7 +323,7 @@ impl Row {
         &mut self,
         edit: &mut CircuitEditor,
         expression: ExpressionId,
-        mut next: Option<&mut u64>,
+        mut input: FlatmapInput<'_>,
     ) -> Result<Evaluation, Error> {
         let mut work = vec![Step::Read(expression)];
         let mut values = Vec::new();
@@ -332,8 +343,12 @@ impl Row {
                             continue;
                         }
                         Expr::Flatmap => {
-                            let Some(names) = next.as_deref_mut() else {
-                                return Ok(Evaluation::NeedsVisitor);
+                            let names = match &mut input {
+                                FlatmapInput::ZSet(names) => &mut **names,
+                                FlatmapInput::JoinOrIndex => {
+                                    return Ok(Evaluation::Failed(WaterlineError::FlatmapInput(id)));
+                                }
+                                FlatmapInput::Detached => return Ok(Evaluation::NeedsVisitor),
                             };
                             references_replaced = true;
                             match self.nested_flatmap(edit, id, names)? {

@@ -191,6 +191,12 @@ public final class DBSPFlatmap extends DBSPExpression {
                 this.postProcess, this.ordinalityIndexType);
     }
 
+    public void checkResultType(DBSPType computed) {
+        var declared = this.getType().to(DBSPTypeFunction.class).resultType;
+        Utilities.enforce(computed.sameType(declared),
+                () -> "Flatmap result type " + declared + " does not match computed type " + computed);
+    }
+
     /** Given the constructor arguments, compute the type of the Flatmap as a function */
     static DBSPTypeFunction computeFunctionType(
             DBSPTypeTuple inputRowType, DBSPClosureExpression collectionExpression,

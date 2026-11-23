@@ -45,7 +45,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -159,16 +158,17 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         }
     }
 
-    @Override
-    public VisitDecision preorder(DBSPFlatmap expression) {
+    private void checkFlatmapInput() {
         Utilities.enforce(this.parameterTypes.length == 1);
         Utilities.enforce(this.argumentKind == ArgumentKind.ZSet);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPFlatmap expression) {
+        this.checkFlatmapInput();
         DBSPClosureExpression closure = this.compiler.options.ioOptions.rustOptimizerPasses
                 ? RustCircuitPass.flatmapWaterline(this.compiler, expression) : flatmapWaterline(expression);
-        DBSPType resultType = expression.getType().to(DBSPTypeFunction.class).resultType;
-        var computed = closure.getResultType();
-        Utilities.enforce(computed.sameType(resultType),
-                () -> "Flatmap result type " + resultType + " does not match computed type " + computed);
+        expression.checkResultType(closure.getResultType());
         // This is the same as this.apply(closure)
         if (!this.compiler.options.ioOptions.rustOptimizerPasses || !this.context.isEmpty())
             this.resolveReferences(closure);
@@ -236,6 +236,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             }
             if (analysis instanceof RustCircuitPass.FailedWaterline failed) {
                 var expressionAtError = failed.expression();
+                if (failed.error() == RustCircuitPass.WaterlineError.FlatmapInput) {
+                    this.checkFlatmapInput();
+                    throw new InternalCompilerError("Expected a non-ZSet input for " + expressionAtError);
+                }
                 if (failed.error() == RustCircuitPass.WaterlineError.TargetMaximum)
                     throw new UnsupportedException(expressionAtError.getType().withMayBeNull(false).getNode());
                 // Use the same live lookup as the direct visitor, which distinguishes

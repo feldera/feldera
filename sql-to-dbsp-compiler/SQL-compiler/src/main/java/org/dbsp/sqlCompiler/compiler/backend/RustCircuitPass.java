@@ -573,7 +573,7 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public sealed interface WaterlineAnalysis permits ProjectedWaterline, WaterlineInspection, FailedWaterline {}
 
-    public enum WaterlineError { MissingOperand, TargetMaximum }
+    public enum WaterlineError { MissingOperand, TargetMaximum, FlatmapInput }
 
     public record FailedWaterline(WaterlineError error, DBSPExpression expression) implements WaterlineAnalysis {}
 
@@ -748,6 +748,12 @@ public final class RustCircuitPass implements CircuitTransform {
             checkBindingErrors(reply.writer, failure);
             if (failure.has("repeated"))
                 throw repeatedExpressionError(repeatedPath(reply.writer, failure.required("repeated")));
+            if ("FlatmapResult".equals(failure.required("kind").textValue())) {
+                var flatmap = Utilities.getExists(nodes, failure.required("expression").longValue()).to(DBSPFlatmap.class);
+                var computed = decodeLiveRoot(reply.writer, failure.required("computed"), DBSPType.class);
+                flatmap.checkResultType(Objects.requireNonNull(computed));
+                throw new IllegalStateException("Expected a flatmap result type mismatch for " + flatmap);
+            }
             if ("VariableTypeMismatch".equals(failure.required("kind").textValue())) {
                 var read = Utilities.getExists(nodes, failure.required("expression").longValue()).to(DBSPVariablePath.class);
                 Utilities.last(facts).checkVariableType(read);
