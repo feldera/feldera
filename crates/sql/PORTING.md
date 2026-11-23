@@ -466,7 +466,10 @@ Temporal filters now use the same Rust waterline transfer as LATENESS for
 scalar and structured clock operands. All 71 classic and 62 Gen-2 programs
 in the frozen clock population matched direct Java, as did 20 directed
 compilations. Together they compared 81,200 ordered S4 observations and
-the emitted artifacts. [Temporal waterline replay](evidence/p3-temporal-waterline-analysis.json)
+the emitted artifacts. Across all 17,098 frozen compilations, Rust answered
+all 418,474 instrumented requests. The largest cold p95 ratio was 1.115×
+on Nexmark. [Temporal waterline replay and coverage](evidence/p3-temporal-waterline-analysis.json) ·
+[Paired measurements](evidence/p3-temporal-waterline-analysis-cold.json)
 
 The hybrid accepts an `INDICATOR` whose operand has no materialized waterline
 and preserves the direct visitor's diagnostic when `TYPEDBOX` needs that

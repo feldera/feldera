@@ -4,6 +4,22 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Unified temporal waterline analysis, 2026-11-23
+
+On `3d4fd14a0`, all 92 direct and hybrid pairs emitted equal classic
+artifacts. Each workload used two warmup pairs and 21 measured pairs.
+The shared-window program exercised four clock comparisons on CPU 14.
+The other workloads ran on CPU 15 of the same ARM64 VM during corpus
+verification. Times cover cold compilation through source emission.
+[Paired measurements and workload identity](evidence/p3-temporal-waterline-analysis-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.927 | 1.504 | 0.780× |
+| Nexmark suite | 4.151 | 4.629 | 1.115× |
+| Outer join | 1.690 | 1.312 | 0.776× |
+| Shared temporal windows | 3.455 | 3.262 | 0.944× |
+
 ## Binary operand waterlines, 2026-11-23
 
 On the sources committed in `d84964f28`, all 69 paired compilations emitted

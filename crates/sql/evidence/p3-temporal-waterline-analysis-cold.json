@@ -1,0 +1,116 @@
+{
+  "source_commit": "a6bff7c4ad9eb79febcaa3caf71cde2597205ece",
+  "source_manifest_sha256": "43a41fc7d03bcef99ee0268867758942870e9015d7f4cb77d4670ec366e912bc",
+  "changes_patch_sha256": "7d447706c27a1127c14a31ee209cfe56796ef0d604849755233dd477febd8f53",
+  "archive": ".bench-results/p1-p5/p3-cold-compilation/2026-23-11-03-57-a6bff",
+  "profile": "Cold SQL-to-classic artifact emission. Each invocation starts a fresh compiler process pinned to CPU 15. Verification ran concurrently on other CPUs of the same ARM64 VM.",
+  "matched_pairs": 69,
+  "warmup_pairs_per_workload": 2,
+  "measured_pairs_per_workload": 21,
+  "identities": {
+    "inputs": {
+      "array-subquery.sql": "42e09a2b580b083bb2653efdb4e32f8b79c1d1d6ca13796cb13e0eedaa93b33d",
+      "nexmark-suite.sql": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+      "outer-join.sql": "1a475a4c0d4e68f13d124dc2a7c30100baecf86a640ac8ac787ca0bb12d0435d"
+    },
+    "compiler": "eeef9d6a0907da644c7a3da8d61facf4b0e96f7ea3964e9f242a21de3bdefca9",
+    "library": "1a565c848919f2afe07b9d94559f9c2aff75c7dbf8e1b52b1cb09cf826fa100b",
+    "classpath": {
+      "/stage/p3-temporal-waterline-analysis/maven/sql-compiler.jar": "c60c5b09c75e80cf85fb594f679e79be457ac953f85d5247bd60569397328ec3"
+    },
+    "affinity": [
+      15
+    ],
+    "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+    "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n"
+  },
+  "sha256": {
+    "measurements/pairs.jsonl": "334bb896e8da7952bc2a825ebb0ea24e2f11afbeee446ef332452ef70d329b22",
+    "measurements/environment.json": "8ff5673289c74ffb6394a2baedd05c8b02c82f3a5afb3990c95361eb0184720e",
+    "measurements/results.json": "54319fdd26c6a25dfbff1a33837a278698e338e9642590f520d4b20fcc780a28",
+    "env.txt": "f6475ac60e5f3e55fd85ed72ab3bd37143606bdef9092ee5b6d95c642f22aa40"
+  },
+  "workloads": {
+    "array-subquery.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.35758474,
+        "empirical_p95_seconds": 1.503810227
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 1.737521507,
+        "empirical_p95_seconds": 1.9274522
+      },
+      "p95_ratio": 0.7802062365022593,
+      "mean_ratio_paired_95pct_interval": [
+        0.7787089815876782,
+        0.7957354312559615
+      ]
+    },
+    "nexmark-suite.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 4.400255088,
+        "empirical_p95_seconds": 4.629096071
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 3.963976291,
+        "empirical_p95_seconds": 4.151277292
+      },
+      "p95_ratio": 1.1151016290626534,
+      "mean_ratio_paired_95pct_interval": [
+        1.1064891156886536,
+        1.121171641829425
+      ]
+    },
+    "outer-join.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.255644868,
+        "empirical_p95_seconds": 1.311503938
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 1.630834098,
+        "empirical_p95_seconds": 1.690330503
+      },
+      "p95_ratio": 0.7758860978207172,
+      "mean_ratio_paired_95pct_interval": [
+        0.7545881744955174,
+        0.7756738793475677
+      ]
+    }
+  },
+  "shared_window_workload": {
+    "case": "org.dbsp.sqlCompiler.compiler.visitors.outer.ReorderTemporalFiltersTests#resultsSurviveSplittingTheTemporalConjuncts/0",
+    "sql_sha256": "60d28f1a8998386fc6d9d3ab2f226b3f4801476f31b327d7c5062c235ebbc7ee",
+    "affinity": [
+      14
+    ],
+    "matched_pairs": 23,
+    "results": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 2.972611989,
+        "empirical_p95_seconds": 3.262260365
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 3.140778092,
+        "empirical_p95_seconds": 3.454748155
+      },
+      "p95_ratio": 0.9442831195317622,
+      "mean_ratio_paired_95pct_interval": [
+        0.9296992467337212,
+        0.9678975794221156
+      ]
+    },
+    "sha256": {
+      "environment.json": "a8a065dbe9c0052af518d1e9a71fc4a74dc48211dc7bc7fb57288b63c94dd311",
+      "pairs.jsonl": "2423a63352cafe8cb257f9a8969a66bbb496f702891516970743dc7483591a0a",
+      "results.json": "044cac72e0cde649112fd09df471dc5698cfe3b6db572eee1d39863dfafdf8a4"
+    }
+  }
+}

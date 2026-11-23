@@ -31,6 +31,13 @@
         "mismatches": 0,
         "source_population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
         "receipt_sha256": "4a54b9478bebea7273327d65fb3a16ddd73a89ed09c51b5295d34b9770af2f88"
+      },
+      "native_coverage": {
+        "programs": 8527,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "observations_sha256": "589025cddc6bde4c692cb52a99fccd9bb1a85a5a20889061e3018ae3c3ec6e13",
+        "programs_with_fallbacks": {},
+        "requests": 210562
       }
     },
     "classic": {
@@ -47,6 +54,13 @@
         "mismatches": 0,
         "source_population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
         "receipt_sha256": "6ea9e2a8985fa6f39c69f375ccb47d12cac84d0bb30ace3ab1c21c8c16dab2e4"
+      },
+      "native_coverage": {
+        "programs": 8571,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "observations_sha256": "8d32fc3b0a1d1e33d206f3e9aac03dcb30edfeec100cb1acaa12e44ac6b4f178",
+        "programs_with_fallbacks": {},
+        "requests": 207912
       }
     }
   }
