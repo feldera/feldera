@@ -42,35 +42,6 @@ impl Names {
             .insert(original, binding);
     }
 
-    /// Visit operands in constructor order. Calls allocate argument bindings before
-    /// the callee; blocks introduce each statement's locals before the final value.
-    fn ordered_children(
-        &mut self,
-        edit: &mut CircuitEditor,
-        id: NodeId,
-        fields: &[&str],
-    ) -> Result<NodeId, Error> {
-        let mut changes = Vec::new();
-        for &key in fields {
-            if let Some(mut field) = edit.node(id)?.field(key).cloned() {
-                if field.map_inner_edges(&mut |child| self.rewrite(edit, child))? {
-                    changes.push((key, field));
-                }
-            }
-        }
-        if changes.is_empty() {
-            return Ok(id);
-        }
-        if matches!(
-            edit.node(id)?.inner_kind(),
-            Some(InnerKind::Expression(Expr::Block))
-        ) {
-            let block = edit.derive_unlocated_inner(id, changes)?;
-            return super::rebuild_result_type(edit, block, Some(Expr::Block), false);
-        }
-        edit.derive_inner(id, changes)
-    }
-
     fn closure(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<NodeId, Error> {
         let node = edit.node(id)?;
         let body = node.edge("body")?;
@@ -261,14 +232,12 @@ impl Transformation for &mut Names {
             Some(InnerKind::AggregateList) => Visit::Replace(self.aggregate(edit, id)?),
             Some(InnerKind::Expression(Expr::Closure)) => Visit::Replace(self.closure(edit, id)?),
             Some(InnerKind::Expression(Expr::VariablePath)) => Visit::Replace(self.path(edit, id)?),
-            Some(InnerKind::Expression(Expr::Apply | Expr::ApplyMethod)) => Visit::Replace(
-                self.ordered_children(edit, id, &["arguments", "function", "self"])?,
-            ),
+            Some(InnerKind::Expression(Expr::Apply | Expr::ApplyMethod)) => {
+                Visit::IndependentFields(&["arguments", "function", "self"])
+            }
             Some(InnerKind::Expression(Expr::Block)) => {
                 self.scopes.push(HashMap::new());
-                let block = self.ordered_children(edit, id, &["contents", "lastExpression"])?;
-                self.scopes.pop();
-                Visit::Replace(block)
+                Visit::IndependentFields(&["contents", "lastExpression"])
             }
             Some(InnerKind::Expression(Expr::Let)) => {
                 self.scopes.push(HashMap::new());
@@ -288,6 +257,9 @@ impl Transformation for &mut Names {
         rebuilt: NodeId,
     ) -> Result<NodeId, Error> {
         let kind = edit.node(original)?.inner_kind();
+        if matches!(kind, Some(InnerKind::Expression(Expr::Block))) {
+            self.scopes.pop();
+        }
         if original != rebuilt && matches!(kind, Some(InnerKind::Expression(Expr::RawTuple))) {
             return edit.derive_unlocated_inner(rebuilt, []);
         }
@@ -329,6 +301,53 @@ mod tests {
     use super::*;
     use feldera_sql_ir::{Circuit, TypeKind};
     use serde_json::json;
+
+    #[test]
+    fn deep_calls_in_blocks_keep_the_outer_parameter() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let ty = edit.bool_type(site, false)?;
+        let input = edit.named_variable(ty, "input")?;
+        let function = edit.function_path(site, "f")?;
+        let mut body = input;
+        for _ in 0..180 {
+            let call = edit.make_expr(
+                site,
+                Expr::Apply,
+                ty,
+                [
+                    ("function", Field::Reference(function.into())),
+                    (
+                        "arguments",
+                        Field::Array(vec![Field::Reference(body.into())]),
+                    ),
+                ],
+            )?;
+            body = edit.make_expr(
+                site,
+                Expr::Block,
+                ty,
+                [
+                    ("contents", Field::Array(vec![])),
+                    ("lastExpression", Field::Reference(call.into())),
+                ],
+            )?;
+        }
+        let closure = edit.closure_from_variables(body, &[input])?;
+        let canonical = canonicalize_names(&mut edit, closure.into())?;
+        let mut current = edit.node(canonical)?.edge("body")?;
+        for _ in 0..180 {
+            let call = edit.node(current)?.edge("lastExpression")?;
+            assert_eq!(edit.node(call)?.edge("function")?, function.into());
+            current = edit.node(call)?.edges("arguments")?[0];
+        }
+        assert_eq!(name(&edit, current, "variable")?, "p0");
+        assert_eq!(name(&edit, input.into(), "variable")?, "input");
+        Ok(())
+    }
 
     #[test]
     fn closure_arguments_receive_names_before_the_callee() {

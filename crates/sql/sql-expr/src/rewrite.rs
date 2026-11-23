@@ -9,6 +9,9 @@ pub enum Visit {
     Follow(NodeId),
     Replace(NodeId),
     Children,
+    /// Visit these fields in constructor order. Each child has its own
+    /// translation cache because earlier children may introduce bindings.
+    IndependentFields(&'static [&'static str]),
 }
 
 pub trait Transformation {
@@ -79,18 +82,31 @@ impl<T: Transformation> Rewrite<T> {
     pub fn apply(&mut self, arena: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
         enum Step {
             Visit(NodeId),
+            Independent(NodeId),
+            RestoreTranslations,
             Follow(NodeId),
             Rebuild(NodeId, Children, usize),
+            RebuildFields(NodeId, &'static [&'static str], usize),
         }
 
         let mut pending = vec![Step::Visit(root)];
         let mut active = HashSet::new();
+        let mut enclosing = Vec::new();
         // Child results stay in field order, including separate results for
         // repeated uses when the visitor rebuilds an expression at each use.
         let mut results = Vec::new();
         let mut edges = Vec::new();
         while let Some(step) = pending.pop() {
             let (id, result) = match step {
+                Step::Independent(id) => {
+                    enclosing.push(std::mem::take(&mut self.translations));
+                    pending.extend([Step::RestoreTranslations, Step::Visit(id)]);
+                    continue;
+                }
+                Step::RestoreTranslations => {
+                    self.translations = enclosing.pop().expect("enclosing translation cache");
+                    continue;
+                }
                 Step::Visit(id) => {
                     if let Some(&result) = self.translations.get(&id) {
                         results.push(result);
@@ -120,11 +136,41 @@ impl<T: Transformation> Rewrite<T> {
                             pending.extend(edges.drain(..).rev().map(Step::Visit));
                             continue;
                         }
+                        Visit::IndependentFields(names) => {
+                            let node = arena.node(id)?;
+                            for name in names {
+                                if let Some(field) = node.field(name) {
+                                    field.collect_inner_edges(&mut edges);
+                                }
+                            }
+                            pending.push(Step::RebuildFields(id, names, results.len()));
+                            pending.extend(edges.drain(..).rev().map(Step::Independent));
+                            continue;
+                        }
                     }
                 }
                 Step::Follow(id) => (id, results.pop().expect("followed child")),
                 Step::Rebuild(id, children, start) => {
                     let rebuilt = self.rebuild(arena, id, children, results.drain(start..))?;
+                    (id, self.rule.postorder_rebuilt(arena, id, rebuilt)?)
+                }
+                Step::RebuildFields(id, names, start) => {
+                    let node = arena.node(id)?;
+                    let fields = names
+                        .iter()
+                        .filter_map(|&name| Some((name, node.field(name)?)));
+                    let changed = changed_fields(fields, results.drain(start..))?;
+                    let rebuilt = if changed.is_empty() {
+                        id
+                    } else if matches!(
+                        node.inner_kind(),
+                        Some(InnerKind::Expression(ExpressionKind::Block))
+                    ) {
+                        let block = arena.derive_unlocated_inner(id, changed)?;
+                        rebuild_result_type(arena, block, Some(ExpressionKind::Block), false)?
+                    } else {
+                        arena.derive_inner(id, changed)?
+                    };
                     (id, self.rule.postorder_rebuilt(arena, id, rebuilt)?)
                 }
             };
@@ -142,15 +188,9 @@ impl<T: Transformation> Rewrite<T> {
         arena: &mut CircuitEditor,
         id: NodeId,
         children: Children,
-        mut results: impl Iterator<Item = NodeId>,
+        results: impl Iterator<Item = NodeId>,
     ) -> Result<NodeId, Error> {
-        let mut changed = Vec::new();
-        for (name, field) in children.fields() {
-            let mut field = field.clone();
-            if field.map_inner_edges(&mut |_| Ok(results.next().expect("visited edge")))? {
-                changed.push((name, field));
-            }
-        }
+        let changed = changed_fields(children.fields(), results)?;
         if changed.is_empty() {
             return Ok(id);
         }
@@ -186,6 +226,20 @@ impl<T: Transformation> Rewrite<T> {
             rebuild_result_type(arena, transformed, expr, self.expression_translation)
         }
     }
+}
+
+fn changed_fields<'a, 'b>(
+    fields: impl Iterator<Item = (&'a str, &'b Field)>,
+    mut results: impl Iterator<Item = NodeId>,
+) -> Result<Vec<(&'a str, Field)>, Error> {
+    let mut changed = Vec::new();
+    for (name, field) in fields {
+        let mut field = field.clone();
+        if field.map_inner_edges(&mut |_| Ok(results.next().expect("visited edge")))? {
+            changed.push((name, field));
+        }
+    }
+    Ok(changed)
 }
 
 struct Children {
