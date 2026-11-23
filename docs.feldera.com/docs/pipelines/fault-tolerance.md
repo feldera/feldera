@@ -104,6 +104,9 @@ Feldera pipeline:
      inside `fault_tolerance`:
 
      - Change `model` to `"at_least_once"` or `"exactly_once"`.
+       A multihost pipeline (`hosts` greater than 1) supports only
+       `"at_least_once"`.  Feldera rejects a multihost configuration
+       that has `"exactly_once"`.
 
      - Optionally, change `"checkpoint_interval"` to an automatic
        checkpoint interval of your choice, such as `"5m"`. The default is 60 seconds. `null` will
