@@ -41,6 +41,7 @@ enum Term {
     IsNull,
     If,
     Call(String),
+    Method(String),
     Cast,
     ScalarType(String),
     CompositeType {
@@ -352,7 +353,7 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
             Term::Cast,
             vec![edit.expression_type(id)?.into(), child("source")?],
         ),
-        Expr::Apply => {
+        Expr::Apply | Expr::ApplyMethod => {
             let function = child("function")?;
             if edit.expr_kind(edit.expression(function)?)? != Expr::Path {
                 return Ok(None);
@@ -373,7 +374,15 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
             if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
                 return Ok(None);
             }
-            (Term::Call(name.to_owned()), children("arguments")?)
+            let arguments = children("arguments")?;
+            if kind == Expr::ApplyMethod {
+                let mut operands = Vec::with_capacity(arguments.len() + 1);
+                operands.push(child("self")?);
+                operands.extend(arguments);
+                (Term::Method(name.to_owned()), operands)
+            } else {
+                (Term::Call(name.to_owned()), arguments)
+            }
         }
         Expr::Binary | Expr::TimeAddSub => {
             let left = child("left")?;
@@ -973,6 +982,36 @@ mod tests {
         assert!(key(whole)? == key(integer)?);
         assert!(key(tenth)? != key(integer)? && key(tenth)? != key(hundredth)?);
         assert!(key(hundredth)? == key(exponent)?);
+        Ok(())
+    }
+
+    #[test]
+    fn method_keys_distinguish_the_receiver_and_argument_order() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[]
+        }))?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let ty = edit.bool_type(site, false)?;
+        let row = RowParameter { name: "row", ty };
+        let input = edit.named_variable(ty, row.name)?;
+        let other = edit.make_expr(
+            site,
+            Expr::BoolLiteral,
+            ty,
+            [("value", Field::Data(true.into()))],
+        )?;
+        let mut keys = HashSet::new();
+        for (name, receiver, args) in [
+            ("select", input, [input, other]),
+            ("select", other, [input, other]),
+            ("select", input, [other, input]),
+            ("replace", input, [input, other]),
+        ] {
+            let call = edit.iterator_method(site, name, receiver, &args)?;
+            let key = TimestampKey::read(&edit, call, row)?.expect("method key");
+            assert!(keys.insert(key));
+        }
         Ok(())
     }
 

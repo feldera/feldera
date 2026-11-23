@@ -1,0 +1,50 @@
+{
+  "scope": "Shared temporal windows over external SQL functions. The directed program uses identical calls in two views and a different function in a third view.",
+  "optimizer_library_sha256": "690d29decf9c71b92b5065c3c24129d8ab7b8016be63fbd57d56e64516dba407",
+  "classpath_sha256": [
+    "658438eb45239a6297aff5456af581e344f4db42e1e0842bffe793fb4447a3d3",
+    "4daed5fcf6482ae94ca17a1e3731f905c31856938b598ca1f616c61decae9e7a"
+  ],
+  "comparator_sha256": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+  "engines": {
+    "classic": {
+      "cases": 1,
+      "population_sha256": "8bf9f77d22b5b9a15700342fac60fbf34d51875af7e6a5125efa3734417daa38",
+      "ordered_s4_observations": 695,
+      "native_requests": 172,
+      "window_requests": {
+        "WindowGroups/Indexes": 1,
+        "WindowGroups/Reorder": 1,
+        "WindowGroups/Scan": 1
+      },
+      "mismatches": 0,
+      "receipt_sha256": "d453a050a7a0ad03ad676275ddf1581d13100c6fa685eb42fff7e2ca0d38423f"
+    },
+    "gen2": {
+      "cases": 1,
+      "population_sha256": "7e9bd4ea53eb4ae92eb7a1509bd70e7242d5522678dd1bc89b8bea665aea1747",
+      "ordered_s4_observations": 701,
+      "native_requests": 179,
+      "window_requests": {
+        "WindowGroups/Indexes": 1,
+        "WindowGroups/Reorder": 1,
+        "WindowGroups/Scan": 1
+      },
+      "mismatches": 0,
+      "receipt_sha256": "7d44284873b16e58bf871945a09c6a4975b19598ee384ce963e26fe3549e6a19"
+    }
+  },
+  "rust_tests": 215,
+  "junit": {
+    "passed": 24,
+    "previous_failures": 1,
+    "previous_library_sha256": "7ea5e13dda041c318e1f3be6f0da7f6969e8a78812ef8b30f425095d0c89d099"
+  },
+  "log_sha256": {
+    "tests.log": "565ad65e578988674130652a287fd45d2fb31290dcf8ac11bcef03f7dfbd14a3",
+    "clippy.log": "653114c60e5e841c4afea0bc416fdde3a36607ec977c59492f238bd35692c8ce",
+    "build.log": "bdff245d38e1465592f04fc4837211425a0e830d26a9467ca3939126078e4c5f",
+    "before.log": "5fa5832b12aa121ca60d0b24eb509ce04e6c6401e7d6511582df70c7a85f9ab3",
+    "after.log": "ec51d19d85437ec9aa338945b6ab1e4997c6f084f718aa25710a01e854d84f11"
+  }
+}

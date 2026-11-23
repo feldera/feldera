@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The Rust optimizer groups temporal windows over calls to external SQL
+functions. It compares the method name, receiver and ordered arguments.
+On classic and Gen-2, two calls to the same function shared a window index
+and the call to a different function used its own. Both compilations matched
+Java through all 1,396 ordered S4 observations and artifact emission.
+[Window grouping regression](evidence/p3-external-function-window-keys.json)
+
 On `72c33626c`, Rust constructed common-subexpression keys and classified
 their costs. The 84 selected detached compilations matched Java at 42,215
 ordered S4 observations. Rust answered all 3,746 value-numbering requests.

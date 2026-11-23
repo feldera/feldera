@@ -72,6 +72,19 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void externalFunctionsShareMatchingWindowKeys() {
+        for (boolean nativePasses : List.of(false, true)) {
+            checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP", "stamp(ts)", "stamp(ts)", "other_stamp(ts)", compiler -> {
+                compiler.options.ioOptions.rustOptimizerPasses = nativePasses;
+                compiler.submitStatementsForCompilation("""
+                        CREATE FUNCTION stamp(t TIMESTAMP) RETURNS TIMESTAMP;
+                        CREATE FUNCTION other_stamp(t TIMESTAMP) RETURNS TIMESTAMP;
+                        """);
+            });
+        }
+    }
+
+    @Test
     public void windowKeysWithNullIntervalsShareByTheirTimestampExpression() {
         String columns = "id INT NOT NULL, ts TIMESTAMP, alt TIMESTAMP";
         for (String unit : List.of("SECOND", "MONTH")) {
