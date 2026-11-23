@@ -135,6 +135,12 @@ fn failed_part(host: usize, step: Step, error: &str) -> String {
 
 /// The leader of a distributed output connector, which collects the other parts' reports.
 pub struct CommitLeader {
+    /// The number of parts, including the leader.
+    n_hosts: usize,
+
+    /// The ordinal of the leader's host.
+    leader_host: usize,
+
     /// The number of parts other than the leader.
     n_followers: usize,
 
@@ -170,9 +176,13 @@ struct LeaderState {
 const CLOSED: &str = "the leader's part of the connector stopped";
 
 impl CommitLeader {
-    /// Returns a leader for a connector with `n_hosts` parts, including the leader.
-    pub fn new(n_hosts: usize) -> Self {
+    /// Returns a leader on host `leader_host` for a connector with `n_hosts` parts, including the
+    /// leader.
+    pub fn new(n_hosts: usize, leader_host: usize) -> Self {
+        assert!(leader_host < n_hosts);
         Self {
+            n_hosts,
+            leader_host,
             n_followers: n_hosts - 1,
             state: Mutex::new(LeaderState::default()),
             reported: Condvar::new(),
@@ -190,6 +200,14 @@ impl CommitLeader {
         step: Step,
         payload: Result<JsonValue, String>,
     ) -> Result<(), String> {
+        // [Self::gather] counts reports, so a report from a host that is not a follower would
+        // stand in for a follower's report.
+        if host >= self.n_hosts || host == self.leader_host {
+            return Err(format!(
+                "host {host} has no part that reports to the leader on host {} of {} hosts",
+                self.leader_host, self.n_hosts
+            ));
+        }
         let mut finished = self.finished.subscribe();
         {
             let mut state = self.state.lock().unwrap();
@@ -365,7 +383,7 @@ mod tests {
     /// leader's commit, including a part that repeats its report afterward.
     #[test]
     fn leader_gathers_and_answers() {
-        let leader = Arc::new(CommitLeader::new(3));
+        let leader = Arc::new(CommitLeader::new(3, 0));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let reports: Vec<_> = (1..3)
             .map(|host| {
@@ -390,11 +408,44 @@ mod tests {
         );
     }
 
+    /// A report that names the leader's host or a host outside the pipeline fails at once and
+    /// does not stand in for a follower's report.
+    #[test]
+    fn leader_refuses_reports_from_non_followers() {
+        let leader = Arc::new(CommitLeader::new(2, 0));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        for host in [0, 2, usize::MAX] {
+            let error = runtime
+                .block_on(async {
+                    tokio::time::timeout(
+                        Duration::from_secs(10),
+                        leader.report(host, 7, Ok(json!([]))),
+                    )
+                    .await
+                })
+                .expect("a report from a host that is not a follower must fail at once")
+                .unwrap_err();
+            assert!(error.contains("no part that reports"), "{error}");
+        }
+
+        // The step still waits for host 1.
+        let report = runtime.spawn({
+            let leader = leader.clone();
+            async move { leader.report(1, 7, Ok(json!(1))).await }
+        });
+        let payloads = leader
+            .gather(7, &CancellationToken::new(), &mut |_, _| {})
+            .unwrap();
+        assert_eq!(payloads, [json!(1)]);
+        leader.finish(7, Ok(()));
+        assert_eq!(runtime.block_on(report).unwrap(), Ok(()));
+    }
+
     /// If any part, the leader's own included, failed to write its output for a step, the leader
     /// commits none of the step, and every part gets an error that names the part that failed.
     #[test]
     fn a_failed_part_fails_the_step() {
-        let leader = Arc::new(CommitLeader::new(3));
+        let leader = Arc::new(CommitLeader::new(3, 0));
         let part = OutputPart {
             endpoint: "spread".into(),
             host: 0,
@@ -456,7 +507,7 @@ mod tests {
     /// pending report of a step that the leader skipped.
     #[test]
     fn mismatched_steps_fail() {
-        let leader = Arc::new(CommitLeader::new(2));
+        let leader = Arc::new(CommitLeader::new(2, 0));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let skipped = runtime.spawn({
             let leader = leader.clone();
@@ -480,7 +531,7 @@ mod tests {
     /// that come later.
     #[test]
     fn close_fails_reports() {
-        let leader = Arc::new(CommitLeader::new(2));
+        let leader = Arc::new(CommitLeader::new(2, 0));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let waiting = runtime.spawn({
             let leader = leader.clone();
@@ -508,7 +559,7 @@ mod tests {
     /// that did report, so that the connector can show the wait.
     #[test]
     fn gather_reports_a_long_wait() {
-        let mut leader = CommitLeader::new(3);
+        let mut leader = CommitLeader::new(3, 0);
         leader.wait_warning = Duration::from_millis(50);
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let leader = Arc::new(leader);
@@ -541,7 +592,7 @@ mod tests {
     /// the part waits for the later step.
     #[test]
     fn a_skipped_step_fails_instead_of_waiting() {
-        let leader = Arc::new(CommitLeader::new(2));
+        let leader = Arc::new(CommitLeader::new(2, 0));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _report = runtime.spawn({
             let leader = leader.clone();
@@ -571,7 +622,7 @@ mod tests {
     /// waiting forever.
     #[test]
     fn a_part_that_is_behind_fails_instead_of_waiting() {
-        let leader = Arc::new(CommitLeader::new(2));
+        let leader = Arc::new(CommitLeader::new(2, 0));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let behind = runtime.spawn({
             let leader = leader.clone();
@@ -602,7 +653,7 @@ mod tests {
     /// The leader stops waiting when its connector stops.
     #[test]
     fn gather_stops_on_close() {
-        let leader = Arc::new(CommitLeader::new(2));
+        let leader = Arc::new(CommitLeader::new(2, 0));
         let gather = std::thread::spawn({
             let leader = leader.clone();
             move || leader.gather(1, &CancellationToken::new(), &mut |_, _| {})
@@ -623,7 +674,7 @@ mod tests {
     /// The leader stops waiting when the pipeline stops.
     #[test]
     fn gather_stops_on_shutdown() {
-        let leader = CommitLeader::new(2);
+        let leader = CommitLeader::new(2, 0);
         let shutdown = CancellationToken::new();
         shutdown.cancel();
         assert!(leader.gather(1, &shutdown, &mut |_, _| {}).is_err());

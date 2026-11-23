@@ -2634,7 +2634,7 @@ pub mod parallel {
         let dir = TempDir::new().unwrap();
         let uri = dir.path().join("table");
         let uri = uri.to_str().unwrap();
-        let leader = Arc::new(CommitLeader::new(2));
+        let leader = Arc::new(CommitLeader::new(2, 0));
         let mut endpoint = DeltaTableWriter::new(
             EndpointId::default(),
             "test_endpoint",
