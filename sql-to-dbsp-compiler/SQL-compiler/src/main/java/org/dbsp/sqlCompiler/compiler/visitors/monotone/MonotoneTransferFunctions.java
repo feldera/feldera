@@ -363,10 +363,26 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 " with type " + value.expression.getType());
     }
 
+    /** Field reads drop constant status. Borrowing and dereferencing preserve it. */
+    private boolean projectRead(DBSPExpression read, DBSPExpression operand, MonotoneExpression value) {
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
+            return false;
+        var result = RustCircuitPass.projectRead(this.compiler, read, value.type,
+                value.mayBeMonotone() ? value.reducedExpression : null);
+        if (result == null)
+            return false;
+        if (!(read instanceof DBSPFieldExpression) && this.constantExpressions.contains(operand))
+            this.constantExpressions.add(read);
+        this.set(read, result);
+        return true;
+    }
+
     @Override
     public void postorder(DBSPFieldExpression expression) {
         // t.0, where t may have monotone fields.
         MonotoneExpression value = this.get(expression.expression);
+        if (this.projectRead(expression, expression.expression, value))
+            return;
         PartiallyMonotoneTuple tuple = value.type.to(PartiallyMonotoneTuple.class);
         IMaybeMonotoneType fieldType = tuple.getFieldExpressionType(expression.fieldNo);
         DBSPExpression reduced = null;
@@ -380,6 +396,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public void postorder(DBSPBorrowExpression expression) {
         MonotoneExpression value = this.get(expression.expression);
+        if (this.projectRead(expression, expression.expression, value))
+            return;
         IMaybeMonotoneType sourceType = value.type;
         DBSPExpression reduced = null;
         IMaybeMonotoneType type = NonMonotoneType.nonMonotone(expression.type);
@@ -396,6 +414,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public void postorder(DBSPDerefExpression expression) {
         MonotoneExpression value = this.get(expression.expression);
+        if (this.projectRead(expression, expression.expression, value))
+            return;
         IMaybeMonotoneType type = value.type;
         DBSPExpression reduced = null;
         if (type.mayBeMonotone())

@@ -149,6 +149,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -492,14 +496,50 @@ public final class RustCircuitPass implements CircuitTransform {
             var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(shapes.size() == 1 ? shapes.get(0) : shapes), roots);
             if (reply.value.isNull())
                 return null;
-            var nodes = Objects.requireNonNull(reply.writer.liveNodes);
-            var result = WaterlineProjection.resolveType(reply.value.required("row_type"),
-                    id -> Utilities.getExists(nodes, id).to(DBSPType.class), parameters);
-            var reduced = reply.value.required("bound");
-            return new MonotoneExpression(body, result, decodeLiveRoot(reply.writer, reduced, DBSPExpression.class));
+            return projectedValue(body, reply, parameters);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode a row waterline projection", error);
         }
+    }
+
+    @Nullable
+    public static MonotoneExpression projectRead(DBSPCompiler compiler, DBSPExpression read,
+            IMaybeMonotoneType source, @Nullable DBSPExpression bound) {
+        String pass = "Monotonicity/ProjectRead";
+        try {
+            var operation = MAPPER.createObjectNode();
+            if (read instanceof DBSPFieldExpression field)
+                operation.put("kind", "field").put("index", field.fieldNo);
+            else if (read instanceof DBSPBorrowExpression)
+                operation.put("kind", "borrow");
+            else if (read instanceof DBSPDerefExpression)
+                operation.put("kind", "deref");
+            else
+                throw new IllegalArgumentException("Expected a field read, borrow or dereference");
+            // Field simplification can return one of a tuple's own fields or move an unwrap.
+            // All other reads need only the bound's type and source location.
+            boolean inspectBound = read instanceof DBSPFieldExpression &&
+                    (bound instanceof DBSPBaseTupleExpression || bound instanceof DBSPUnwrapExpression);
+            var input = bound == null || inspectBound ? bound : new DBSPVariablePath(bound.getNode(), "bound", bound.getType());
+            var state = MAPPER.writeValueAsBytes(List.of(operation, WaterlineProjection.encode(source)));
+            var reply = invokeLowering(compiler, pass, state, read.getType(), input);
+            if (!answered(compiler, pass, reply.value))
+                return null;
+            if (input != bound)
+                Objects.requireNonNull(reply.writer.liveNodes).put(Objects.requireNonNull(input).id, bound);
+            return projectedValue(read, reply, source);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode a field or reference waterline", error);
+        }
+    }
+
+    private static MonotoneExpression projectedValue(DBSPExpression body, LoweringReply reply,
+                                                       IMaybeMonotoneType... parameters) {
+        var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+        var result = WaterlineProjection.resolveType(reply.value.required("row_type"),
+                id -> Utilities.getExists(nodes, id).to(DBSPType.class), parameters);
+        var reduced = reply.value.required("bound");
+        return new MonotoneExpression(body, result, decodeLiveRoot(reply.writer, reduced, DBSPExpression.class));
     }
 
     public record ProjectedWaterline(IMaybeMonotoneType bodyType, @Nullable DBSPClosureExpression closure) {}

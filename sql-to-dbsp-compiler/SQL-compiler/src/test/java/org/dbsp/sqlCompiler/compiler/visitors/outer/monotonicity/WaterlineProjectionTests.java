@@ -38,6 +38,9 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -1039,6 +1042,37 @@ public class WaterlineProjectionTests {
             var unsupported = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
             var error = Assert.assertThrows(UnsupportedException.class, () -> unsupported.apply(target.closure(input)));
             Assert.assertSame(target.getType().withMayBeNull(false).getNode(), error.calciteObject);
+        }
+    }
+
+    @Test
+    public void generalFieldReadsUseTheCompressedIndexAndRetainBoundIdentity() {
+        var integer = new DBSPI32Literal(1).getType();
+        var fieldType = new MonotoneType(integer);
+        var row = new PartiallyMonotoneTuple(List.of(new NonMonotoneType(integer), fieldType), false, false);
+        var input = new DBSPVariablePath("row", row.getType().ref());
+        var dropped = input.deref().field(0);
+        var kept = input.deepCopy().deref().field(1);
+        var tuple = new DBSPTupleExpression(dropped, kept);
+        var field = new DBSPFieldExpression(CalciteObject.EMPTY, tuple, 1);
+        var borrow = field.borrow();
+        var deref = borrow.deref();
+        var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(row.getType()));
+        for (boolean hybrid : List.of(false, true)) {
+            if (hybrid && !Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
+                continue;
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var analysis = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+            analysis.apply(deref.closure(input));
+            Assert.assertFalse(analysis.get(dropped).mayBeMonotone());
+            var retained = analysis.get(kept).getReducedExpression().to(DBSPFieldExpression.class);
+            Assert.assertEquals(0, retained.fieldNo);
+            Assert.assertSame(retained, analysis.get(field).getReducedExpression());
+            var reference = analysis.get(borrow).getReducedExpression().to(DBSPBorrowExpression.class);
+            Assert.assertSame(retained, reference.expression);
+            Assert.assertSame(reference, analysis.get(deref).getReducedExpression().to(DBSPDerefExpression.class).expression);
+            Assert.assertSame(fieldType, analysis.get(deref).getMonotoneType());
         }
     }
 

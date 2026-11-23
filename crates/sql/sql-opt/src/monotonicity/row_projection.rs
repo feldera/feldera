@@ -1,6 +1,8 @@
 //! Reduce the structural part of a row closure to its projected waterline.
 mod evaluate;
 mod function;
+mod reads;
+pub use reads::RowRead;
 mod scalar;
 mod scope;
 mod shape;
@@ -88,7 +90,10 @@ fn unbounded(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
 ) -> Result<Option<ProjectedValue>, Error> {
-    let ty = edit.expression_type(expression)?;
+    unbounded_type(edit, edit.expression_type(expression)?)
+}
+
+fn unbounded_type(edit: &mut CircuitEditor, ty: TypeId) -> Result<Option<ProjectedValue>, Error> {
     let Some(UnorderedRow { shape, .. }) = UnorderedRow::from_type(edit, ty)? else {
         return Ok(None);
     };
@@ -122,79 +127,13 @@ fn project_wrapper(
     let id = expression.into();
     let kind = edit.expr_kind(expression)?;
     let result = match kind {
-        Expr::Borrow | Expr::Deref => {
-            if kind == Expr::Borrow {
-                // For an unbounded borrow, Java constructs the reference
-                // from the declared expression type, including nested fields.
-                if value.reduced.is_none() {
-                    let Some(mut result) = unbounded(edit, expression)? else {
-                        return Ok(None);
-                    };
-                    result.constant = value.constant;
-                    return Ok(Some(result));
-                }
-                ProjectedValue {
-                    shape: Shape::Reference(value.shape.into()),
-                    row_type: RowType::Borrow {
-                        value: Box::new(value.row_type),
-                    },
-                    reduced: value.reduced.map(|v| edit.borrow_value(v)).transpose()?,
-                    constant: value.constant,
-                }
-            } else {
-                let Shape::Reference(base) = value.shape else {
-                    return Ok(None);
-                };
-                ProjectedValue {
-                    shape: (*base).clone(),
-                    row_type: RowType::Deref {
-                        value: Box::new(value.row_type),
-                    },
-                    reduced: value.reduced.map(|v| edit.dereference(v)).transpose()?,
-                    constant: value.constant,
-                }
-            }
-        }
-        Expr::Field => {
-            let index = field_number(edit.node(id)?)?;
-            let base = value;
-            let Shape::Tuple {
-                fields, nullable, ..
-            } = base.shape
-            else {
-                return Ok(None);
+        Expr::Borrow | Expr::Deref | Expr::Field => {
+            let read = match kind {
+                Expr::Borrow => RowRead::Borrow,
+                Expr::Deref => RowRead::Deref,
+                _ => RowRead::Field { index: field_number(edit.node(id)?)? },
             };
-            let Some(field) = fields.get(index) else {
-                return Ok(None);
-            };
-            let mut shape = field.clone();
-            if let Shape::Tuple {
-                nullable: inner, ..
-            } = &mut shape
-            {
-                *inner |= nullable;
-            }
-            let reduced = if shape.monotone() {
-                let Some(row) = base.reduced else {
-                    return Ok(None);
-                };
-                let compressed = fields[..index]
-                    .iter()
-                    .filter(|field| field.monotone())
-                    .count();
-                Some(edit.tuple_field(row, compressed)?)
-            } else {
-                None
-            };
-            ProjectedValue {
-                shape,
-                constant: false,
-                row_type: RowType::Field {
-                    row: Box::new(base.row_type),
-                    index,
-                },
-                reduced,
-            }
+            return read.apply(edit, edit.expression_type(expression)?, value);
         }
         Expr::Clone | Expr::Some | Expr::Unwrap => {
             if kind == Expr::Clone {

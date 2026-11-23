@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The general monotonicity visitor uses Rust's whole-closure cast rule to build
+the reduced expression. The direct and hybrid visitors agree on identity,
+widening, saturation and safe narrowing. All 94 detached compilations
+matched Java at 46,351 ordered S4 observations and through emission.
+[Cast waterline comparisons](evidence/p3-native-cast.json)
+
 The Rust window scan reports cast warnings at their SQL source ranges. When
 a later filter requires replay, the earlier warning appears once. The native
 scan also groups a scalar conversion with an ordinary call of the same name
