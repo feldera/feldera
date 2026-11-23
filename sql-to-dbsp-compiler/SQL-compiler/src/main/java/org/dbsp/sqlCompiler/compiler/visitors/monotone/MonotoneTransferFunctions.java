@@ -363,7 +363,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 " with type " + value.expression.getType());
     }
 
-    /** Field reads drop constant status. Borrowing and dereferencing preserve it. */
+    /** Field reads drop constant status. Value wrappers also preserve positive operands. */
     private boolean projectRead(DBSPExpression read, DBSPExpression operand, MonotoneExpression value) {
         if (!this.compiler.options.ioOptions.rustOptimizerPasses)
             return false;
@@ -373,6 +373,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             return false;
         if (!(read instanceof DBSPFieldExpression) && this.constantExpressions.contains(operand))
             this.constantExpressions.add(read);
+        if ((read instanceof DBSPCloneExpression || read instanceof DBSPSomeExpression || read instanceof DBSPUnwrapExpression)
+                && this.positiveExpressions.contains(operand))
+            this.positiveExpressions.add(read);
         this.set(read, result);
         return true;
     }
@@ -521,6 +524,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public void postorder(DBSPCloneExpression expression) {
         MonotoneExpression source = this.get(expression.expression);
+        if (this.projectRead(expression, expression.expression, source))
+            return;
         DBSPExpression reduced = null;
 
         if (source.mayBeMonotone()) {
@@ -537,6 +542,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public void postorder(DBSPSomeExpression expression) {
         MonotoneExpression source = this.get(expression.expression);
+        if (this.projectRead(expression, expression.expression, source))
+            return;
         DBSPExpression reduced = null;
 
         if (source.mayBeMonotone()) {
@@ -554,6 +561,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public void postorder(DBSPUnwrapExpression expression) {
         MonotoneExpression source = this.get(expression.expression);
+        if (this.projectRead(expression, expression.expression, source))
+            return;
         DBSPExpression reduced = null;
 
         if (source.mayBeMonotone()) {

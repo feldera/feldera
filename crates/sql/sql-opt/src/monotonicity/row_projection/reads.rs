@@ -1,11 +1,14 @@
-//! Rebuild field reads and references against the projected operand.
+//! Project a field read or value wrapper against its operand waterline.
 use super::{ProjectedValue, RowType, Shape, unbounded_type};
 use crate::limiters::Projection;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, TypeId};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId};
 
 #[derive(serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RowRead {
+    Clone,
+    Some,
+    Unwrap,
     Borrow,
     Deref,
     Field { index: usize },
@@ -17,6 +20,7 @@ impl RowRead {
     pub fn project(
         self,
         edit: &mut CircuitEditor,
+        site: NodeId,
         ty: TypeId,
         source: &Projection,
         bound: Option<ExpressionId>,
@@ -30,6 +34,7 @@ impl RowRead {
         }
         self.apply(
             edit,
+            site,
             ty,
             ProjectedValue {
                 shape,
@@ -43,10 +48,39 @@ impl RowRead {
     pub(super) fn apply(
         self,
         edit: &mut CircuitEditor,
+        site: NodeId,
         ty: TypeId,
-        value: ProjectedValue,
+        mut value: ProjectedValue,
     ) -> Result<Option<ProjectedValue>, Error> {
         let projected = match self {
+            Self::Clone => {
+                if let Some(bound) = value.reduced {
+                    value.reduced = Some(edit.make_expr(
+                        site,
+                        ExpressionKind::Clone,
+                        edit.expression_type(bound)?,
+                        [("expression", Field::Reference(bound.into()))],
+                    )?);
+                }
+                value
+            }
+            Self::Some | Self::Unwrap => {
+                let nullable = matches!(self, Self::Some);
+                value.row_type = RowType::WithNullability {
+                    value: Box::new(value.row_type),
+                    nullable,
+                };
+                if let Shape::Tuple {
+                    nullable: tuple_nullable,
+                    ..
+                } = &mut value.shape
+                {
+                    *tuple_nullable = nullable;
+                }
+                // The general visitor exposes the operand bound even when Some(())
+                // makes the result unbounded. Consumers decide whether to use it.
+                value
+            }
             Self::Borrow => {
                 let Some(bound) = value.reduced else {
                     // An unbounded borrow takes its shape from its declared reference type.

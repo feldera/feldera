@@ -45,6 +45,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
@@ -1042,6 +1044,39 @@ public class WaterlineProjectionTests {
             var unsupported = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
             var error = Assert.assertThrows(UnsupportedException.class, () -> unsupported.apply(target.closure(input)));
             Assert.assertSame(target.getType().withMayBeNull(false).getNode(), error.calciteObject);
+        }
+    }
+
+    @Test
+    public void generalValueWrappersKeepTheOperandBoundAndCloneLocation() {
+        var range = new SourcePositionRange(new SourcePosition(5, 3), new SourcePosition(5, 19));
+        var site = CalciteObject.create(range);
+        var scalar = new MonotoneType(new DBSPI32Literal(0).getType());
+        var unit = new PartiallyMonotoneTuple(List.of(), false, false);
+        var shape = new PartiallyMonotoneTuple(List.of(unit, scalar), false, false);
+        var row = new DBSPVariablePath("row", shape.getType().ref());
+        var empty = row.deref().field(0);
+        var nullableEmpty = empty.some();
+        var field = row.deepCopy().deref().field(1);
+        var copy = new DBSPCloneExpression(site, field);
+        var some = copy.some();
+        var unwrap = new DBSPUnwrapExpression(site, "expected value", some);
+        var closure = new DBSPTupleExpression(nullableEmpty, unwrap).closure(row);
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(shape.getType()));
+        for (boolean hybrid : List.of(false, true)) {
+            if (hybrid && !Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
+                continue;
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var analysis = new MonotoneTransferFunctions(compiler, op, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+            analysis.apply(closure);
+            var cloned = analysis.get(copy).getReducedExpression().to(DBSPCloneExpression.class);
+            Assert.assertEquals(range, cloned.getNode().getPositionRange());
+            Assert.assertSame(analysis.get(field).getReducedExpression(), cloned.expression);
+            Assert.assertSame(cloned, analysis.get(some).getReducedExpression());
+            Assert.assertSame(cloned, analysis.get(unwrap).getReducedExpression());
+            Assert.assertFalse(analysis.get(nullableEmpty).mayBeMonotone());
+            Assert.assertSame(analysis.get(empty).getReducedExpression(), analysis.get(nullableEmpty).getReducedExpression());
         }
     }
 

@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust projects clones, `Some` and unwraps in both waterline visitors. The
+general visitor exposes the original bound for `Some(())` even though the
+nullable unit contributes no bound to its parent row. All 550 isolated
+comparisons and 94 detached compilations matched direct Java, including
+46,351 ordered S4 observations and emitted artifacts. COUNT and LATENESS
+checkpoints restored in both directions.
+[Wrapper comparisons and restores](evidence/p3-value-wrappers.json)
+
 Rust selects the last profitable integrator for each left-join chain source
 port. A later unprofitable integrator leaves the earlier choice in place.
 Direct Java and the hybrid selected the same 20 rewrites across both engines,

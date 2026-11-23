@@ -850,15 +850,15 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let closure = result.closure.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
             return Ok(json!({"row_type": result.row_type, "closure": closure}));
         }
-        ("Monotonicity/ProjectRead" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow", [body, bounds @ ..]) => {
+        ("Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow", [body, bounds @ ..]) => {
             let bounds = bounds.iter().map(|&id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;
-            let projection = if pass == "Monotonicity/ProjectRead" {
+            let projection = if matches!(pass, "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper") {
                 if bounds.len() > 1 {
-                    return Err("a field or reference read takes one operand bound".into());
+                    return Err("a row projection takes at most one operand bound".into());
                 }
                 let (read, source): (feldera_sql_opt::RowRead, feldera_sql_opt::limiters::Projection) = waterline_input(state)?;
-                let ty = edit.type_id(*body)?;
-                read.project(&mut edit, ty, &source, bounds.first().copied())?
+                let ty = if pass == "Monotonicity/ProjectWrapper" { edit.expression_type(edit.expression(*body)?)? } else { edit.type_id(*body)? };
+                read.project(&mut edit, *body, ty, &source, bounds.first().copied())?
             } else {
                 let indexed = pass == "Monotonicity/ProjectIndexedRow";
                 let shapes = if pass == "Monotonicity/ProjectRow" {
@@ -1301,7 +1301,7 @@ fn transform(
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"
         | "Monotonicity/Clock" | "Monotonicity/RowClosure"
-        | "Monotonicity/ProjectRead" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
+        | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"

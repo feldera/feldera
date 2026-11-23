@@ -151,6 +151,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -505,7 +507,8 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static MonotoneExpression projectRead(DBSPCompiler compiler, DBSPExpression read,
             IMaybeMonotoneType source, @Nullable DBSPExpression bound) {
-        String pass = "Monotonicity/ProjectRead";
+        boolean wrapper = read instanceof DBSPCloneExpression || read instanceof DBSPSomeExpression || read instanceof DBSPUnwrapExpression;
+        String pass = wrapper ? "Monotonicity/ProjectWrapper" : "Monotonicity/ProjectRead";
         try {
             var operation = MAPPER.createObjectNode();
             if (read instanceof DBSPFieldExpression field)
@@ -514,22 +517,30 @@ public final class RustCircuitPass implements CircuitTransform {
                 operation.put("kind", "borrow");
             else if (read instanceof DBSPDerefExpression)
                 operation.put("kind", "deref");
+            else if (read instanceof DBSPCloneExpression)
+                operation.put("kind", "clone");
+            else if (read instanceof DBSPSomeExpression)
+                operation.put("kind", "some");
+            else if (read instanceof DBSPUnwrapExpression)
+                operation.put("kind", "unwrap");
             else
-                throw new IllegalArgumentException("Expected a field read, borrow or dereference");
+                throw new IllegalArgumentException("Expected a row read or value wrapper");
             // Field simplification can return one of a tuple's own fields or move an unwrap.
             // All other reads need only the bound's type and source location.
             boolean inspectBound = read instanceof DBSPFieldExpression &&
                     (bound instanceof DBSPBaseTupleExpression || bound instanceof DBSPUnwrapExpression);
             var input = bound == null || inspectBound ? bound : new DBSPVariablePath(bound.getNode(), "bound", bound.getType());
             var state = MAPPER.writeValueAsBytes(List.of(operation, WaterlineProjection.encode(source)));
-            var reply = invokeLowering(compiler, pass, state, read.getType(), input);
+            // A clone of the bound inherits the wrapper's source location.
+            IDBSPInnerNode site = wrapper ? new DBSPVariablePath(read.getNode(), "site", read.getType()) : read.getType();
+            var reply = invokeLowering(compiler, pass, state, site, input);
             if (!answered(compiler, pass, reply.value))
                 return null;
             if (input != bound)
                 Objects.requireNonNull(reply.writer.liveNodes).put(Objects.requireNonNull(input).id, bound);
             return projectedValue(read, reply, source);
         } catch (IOException error) {
-            throw new UncheckedIOException("Cannot encode a field or reference waterline", error);
+            throw new UncheckedIOException("Cannot encode a row waterline", error);
         }
     }
 

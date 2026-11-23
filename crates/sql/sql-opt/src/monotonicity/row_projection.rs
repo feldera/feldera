@@ -12,7 +12,7 @@ use self::{
 };
 use crate::limiters::Projection;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
     TypeId,
 };
 use std::collections::HashSet;
@@ -122,56 +122,29 @@ fn type_number(ty: TypeId) -> u64 {
 fn project_wrapper(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
-    mut value: ProjectedValue,
+    value: ProjectedValue,
 ) -> Result<Option<ProjectedValue>, Error> {
-    let id = expression.into();
     let kind = edit.expr_kind(expression)?;
-    let result = match kind {
-        Expr::Borrow | Expr::Deref | Expr::Field => {
-            let read = match kind {
-                Expr::Borrow => RowRead::Borrow,
-                Expr::Deref => RowRead::Deref,
-                _ => RowRead::Field { index: field_number(edit.node(id)?)? },
-            };
-            return read.apply(edit, edit.expression_type(expression)?, value);
-        }
-        Expr::Clone | Expr::Some | Expr::Unwrap => {
-            if kind == Expr::Clone {
-                if let Some(bound) = value.reduced {
-                    let ty = edit.expression_type(bound)?;
-                    value.reduced = Some(edit.make_expr(
-                        id,
-                        Expr::Clone,
-                        ty,
-                        [("expression", Field::Reference(bound.into()))],
-                    )?);
-                }
-            } else {
-                let nullable = kind == Expr::Some;
-                value.row_type = RowType::WithNullability {
-                    value: Box::new(value.row_type),
-                    nullable,
-                };
-                if let Shape::Tuple {
-                    nullable: tuple_nullable,
-                    ..
-                } = &mut value.shape
-                {
-                    *tuple_nullable = nullable;
-                }
-                if !value.shape.monotone() {
-                    // Some(()) has no usable bound. Its parent projects only bounded fields.
-                    value.reduced = None;
-                } else if value.reduced.is_none() {
-                    // Unwrapping a nullable empty tuple has no input bound to read.
-                    return Ok(None);
-                }
-            }
-            value
-        }
+    let read = match kind {
+        Expr::Borrow => RowRead::Borrow,
+        Expr::Deref => RowRead::Deref,
+        Expr::Field => RowRead::Field { index: field_number(edit.node(expression.into())?)? },
+        Expr::Clone => RowRead::Clone,
+        Expr::Some => RowRead::Some,
+        Expr::Unwrap => RowRead::Unwrap,
         _ => unreachable!("expected an expression wrapper"),
     };
-    Ok(Some(result))
+    let Some(mut projected) = read.apply(edit, expression.into(), edit.expression_type(expression)?, value)? else {
+        return Ok(None);
+    };
+    // Parents in a whole closure consume only the bounded fields of a row.
+    // Unwrapping a nullable empty tuple can expose a field with no operand bound.
+    if !projected.shape.monotone() {
+        projected.reduced = None;
+    } else if projected.reduced.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(projected))
 }
 
 /// Assemble the bounded fields in their original order. SQL rows retain the
@@ -426,7 +399,7 @@ pub fn project_closure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use feldera_sql_ir::Circuit;
+    use feldera_sql_ir::{Circuit, Field};
     use serde_json::json;
 
     #[test]

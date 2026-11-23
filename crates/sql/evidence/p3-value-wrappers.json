@@ -1,0 +1,190 @@
+{
+  "scope": "Clone, Some, and unwrap waterlines in the general Java visitor use the same Rust rules as whole-closure projection. The general visitor retains observable intermediate bounds.",
+  "parent_commit": "68ed537f0",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "d08adf7bd30a32d37fa73b5571fff64fbaf1ae61bc85dbb95734d4f70b0dd4c4",
+    "bin/sql-difftest": "86eaa0848bbd5c06673d3e15e28c06f894edcd204c99c59d1cbdd48112b1da70",
+    "maven/sql-compiler.jar": "e6c9e4063fa8dcf688434d0a14e7dbd67f9388914b1d6d5b7a902a91ca408050",
+    "maven/tests.jar": "1270d893621df41cf046d5d4f3efd6a34d418b83098e94a88da1e91367b4a240",
+    "maven/build.log": "cdf7c538e26efcb24da81e0bb8987080d997f42caef02646ef27b968692a8b18",
+    "tests.log": "7fdf102a89cdf0a73d617e81bdcd939cd081eec86daa9688361e4c303317d8d2",
+    "clippy.log": "437b4a56288768a64a66989d95ed92b6615df6587fa885a67986550e2463ed81",
+    "build.log": "098427ce6ddc1f4e086c8b946a0086a93509d4f01875016cf75600911292d404",
+    "junit.log": "07e29d2b6d933c1cd59bd18155e3049d131801493aa7dedd6012d69baf3f8556"
+  },
+  "rust_tests": 206,
+  "junit_tests": 98,
+  "engines": {
+    "classic": {
+      "detached_cases": 47,
+      "ordered_s4_observations": 23174,
+      "mismatches": 0,
+      "receipt_sha256": "e675abee0897cbc2032578c3661d848d749ce915e0127ea0ee57c5121c851659",
+      "native_request_calls": {
+        "InnerCSE/BorrowedVariables": 4,
+        "InnerCSE/NumberValues": 1962,
+        "InnerCSE/ReadLazy": 93,
+        "KeyAnalysis/Circuit": 141,
+        "LeftJoinChains/Columns": 3,
+        "LeftJoinChains/Steps": 47,
+        "MergeFilters": 7,
+        "Monotonicity/AntiJoinProjection": 3,
+        "Monotonicity/Intersection": 62,
+        "Monotonicity/IsMinimumChain": 44,
+        "Monotonicity/JoinArguments": 241,
+        "Monotonicity/ProjectClosure": 794,
+        "Monotonicity/Transfer": 1358,
+        "OptimizeProjections/Producer": 4165,
+        "ParameterFieldDependencies": 588,
+        "RemoveUnusedFields/AggregateReader": 143,
+        "RemoveUnusedFields/FlatmapInput": 12,
+        "RemoveUnusedFields/IndexedValue": 102,
+        "RemoveUnusedFields/NarrowAsof": 9,
+        "RemoveUnusedFields/NarrowJoin": 173,
+        "RemoveUnusedFields/ParameterTypes": 153,
+        "RemoveUnusedFields/Reader": 10,
+        "RemoveUnusedFields/TopKComparators": 10,
+        "RemoveUnusedFields/TopKFields": 33,
+        "ReplaceSharedIndexes": 5,
+        "RewriteNow/Filter": 42,
+        "SharedIndexes/Discover": 7,
+        "WindowGroups/Indexes": 8,
+        "WindowGroups/Reorder": 8,
+        "WindowGroups/Scan": 8
+      },
+      "isolated_pass": "MonotoneAnalyzer matched at 291 invocations across 291 cases"
+    },
+    "gen2": {
+      "detached_cases": 47,
+      "ordered_s4_observations": 23177,
+      "mismatches": 0,
+      "receipt_sha256": "b3a6f86193950365be85433634a3275922a53cdf73fbc4637f55b9fc51d7a813",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 1824,
+        "InnerCSE/ReadLazy": 91,
+        "KeyAnalysis/Circuit": 141,
+        "LeftJoinChains/Columns": 3,
+        "LeftJoinChains/Steps": 47,
+        "MergeFilters": 6,
+        "Monotonicity/AntiJoinProjection": 3,
+        "Monotonicity/Intersection": 58,
+        "Monotonicity/IsMinimumChain": 44,
+        "Monotonicity/JoinArguments": 227,
+        "Monotonicity/ProjectClosure": 753,
+        "Monotonicity/Transfer": 1305,
+        "OptimizeProjections/Producer": 3892,
+        "ParameterFieldDependencies": 559,
+        "RemoveUnusedFields/AggregateReader": 139,
+        "RemoveUnusedFields/FlatmapInput": 10,
+        "RemoveUnusedFields/IndexedValue": 99,
+        "RemoveUnusedFields/NarrowAsof": 9,
+        "RemoveUnusedFields/NarrowJoin": 161,
+        "RemoveUnusedFields/ParameterTypes": 148,
+        "RemoveUnusedFields/Reader": 9,
+        "RemoveUnusedFields/TopKComparators": 9,
+        "RemoveUnusedFields/TopKFields": 29,
+        "ReplaceSharedIndexes": 4,
+        "RewriteNow/Filter": 41,
+        "SharedIndexes/Discover": 7,
+        "WindowGroups/Indexes": 8,
+        "WindowGroups/Reorder": 8,
+        "WindowGroups/Scan": 8
+      },
+      "isolated_pass": "MonotoneAnalyzer matched at 259 invocations across 259 cases"
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2074c-52a6-7fa0-97bc-a4be4f0ba829",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2074c-52c8-7f12-9227-696ed34b4f82",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2074d-110c-78e3-a3c8-cf1133576728",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2074d-1124-7a43-b819-5153cb004c93",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}
