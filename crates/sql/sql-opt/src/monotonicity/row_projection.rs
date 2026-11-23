@@ -243,11 +243,7 @@ pub(crate) fn clock_operands(
     else {
         return Ok(None);
     };
-    let Some(UnorderedRow {
-        shape: shape @ Shape::Reference(_),
-        projected,
-    }) = UnorderedRow::from_type(edit, ty)?
-    else {
+    let Some(UnorderedRow { shape, projected }) = UnorderedRow::from_type(edit, ty)? else {
         return Ok(None);
     };
     let Some(references) =

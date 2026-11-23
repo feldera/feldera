@@ -1,0 +1,53 @@
+{
+  "scope": "Temporal predicates and LATENESS use the same Rust expression waterline transfer. Frozen clock population and directed scalar-clock replays compare direct Java with the hybrid through ordered S4 observations and artifact emission.",
+  "source_base": "a6bff7c4ad9eb79febcaa3caf71cde2597205ece",
+  "source_files_sha256": {
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "427cf4581cc555bf071629ced896b90216fef8ab0a11afa222eaf71f1020c076",
+    "crates/sql/sql-opt/src/temporal_comparisons.rs": "95d0188f4c10c2c6d9553b58d8c58490d69901778619ddde6277d40301496800",
+    "crates/sql/sql-opt/src/temporal_comparisons/clock_bounds.rs": "4dbcd4e65dc3d8efaa7ab99e1407e5deda39263f3eabcb129e1a4fb59a33adf7"
+  },
+  "build_sha256": {
+    "maven/sql-compiler.jar": "c60c5b09c75e80cf85fb594f679e79be457ac953f85d5247bd60569397328ec3",
+    "maven/tests.jar": "f343e9830e66306df878f7cf6e3e2e5a51024f1ede70519b3aca24c1ef4402bb",
+    "bin/libfeldera_sql_opt_jni.so": "1a565c848919f2afe07b9d94559f9c2aff75c7dbf8e1b52b1cb09cf826fa100b",
+    "bin/sql-difftest": "28f8c3e9c609338caa16b223f576628056164ed638b84b103813742f37361cac",
+    "bin/sql2dbsp": "eeef9d6a0907da644c7a3da8d61facf4b0e96f7ea3964e9f242a21de3bdefca9"
+  },
+  "rust_tests": 221,
+  "junit_tests": 145,
+  "clippy_exit_code": 0,
+  "engines": {
+    "gen2": {
+      "directed": {
+        "cases": 8,
+        "ordered_s4_observations": 3469,
+        "mismatches": 0,
+        "source_population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+        "receipt_sha256": "89075fcc31f8c11cdba8a1f0ef7999766862035b8e14330c124109a1064a4760"
+      },
+      "frozen": {
+        "cases": 62,
+        "ordered_s4_observations": 34141,
+        "mismatches": 0,
+        "source_population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "receipt_sha256": "4a54b9478bebea7273327d65fb3a16ddd73a89ed09c51b5295d34b9770af2f88"
+      }
+    },
+    "classic": {
+      "directed": {
+        "cases": 12,
+        "ordered_s4_observations": 5309,
+        "mismatches": 0,
+        "source_population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+        "receipt_sha256": "d8d0b9e77e6849aab0fd38a06e6aa9a7a8abcf4021ce07cc93f9bff5d52b7c9f"
+      },
+      "frozen": {
+        "cases": 71,
+        "ordered_s4_observations": 38281,
+        "mismatches": 0,
+        "source_population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "receipt_sha256": "6ea9e2a8985fa6f39c69f375ccb47d12cac84d0bb30ace3ab1c21c8c16dab2e4"
+      }
+    }
+  }
+}

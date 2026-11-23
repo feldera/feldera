@@ -41,6 +41,11 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-23. Rust uses one expression analysis for temporal predicates and
+  LATENESS. The 133 frozen clock programs and 20 directed compilations
+  matched Java through all 81,200 optimizer observations and emission.
+  [Temporal waterline analysis](crates/sql/evidence/p3-temporal-waterline-analysis.json)
+
 - 2026-11-23. The hybrid accepts row equality over an empty tuple with no
   materialized waterline. All 24 detached LATENESS compilations matched
   direct Java through optimizer observations and emission.

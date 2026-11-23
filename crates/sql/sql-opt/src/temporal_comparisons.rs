@@ -1,4 +1,5 @@
 //! Split a filter into a prefix of window bounds and the predicates evaluated after it.
+#[cfg(test)]
 mod clock_bounds;
 use crate::{WindowComparison, function_calls::contains_now};
 use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, NodeId};
@@ -55,22 +56,15 @@ pub fn conjunct_windows(
     Ok(Some(windows))
 }
 
-/// Classify scalar filters directly and use row projection for structured clock operands.
+/// Classify clock operands with the same waterline transfer as other filter closures.
 pub fn infer_temporal_predicates(
     edit: &mut CircuitEditor,
     parameter: NodeId,
     body: ExpressionId,
 ) -> Result<Option<Vec<TemporalPredicate>>, Error> {
-    let monotone = match clock_bounds::monotone_operands(edit, parameter, body)? {
-        Some(bounds) => bounds,
-        None => {
-            let Some(bounds) =
-                crate::monotonicity::row_projection::clock_operands(edit, parameter, body)?
-            else {
-                return Ok(None);
-            };
-            bounds
-        }
+    let Some(monotone) = crate::monotonicity::row_projection::clock_operands(edit, parameter, body)?
+    else {
+        return Ok(None);
     };
     classify_temporal_predicates(edit, body, &monotone).map(Some)
 }
