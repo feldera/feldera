@@ -1,8 +1,7 @@
 //! Plan shared indexes after temporal predicates have become window operators.
-use super::key::{row_parameter, same_row_spelling, TimestampKey};
+use super::key::{row_parameter, SourceRows, TimestampKey};
 use super::{qualifying_window_groups, shared_window_fields, window_candidates, WindowFields};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, NodeId, OperatorKind, OutputPort};
-use std::collections::HashMap;
 
 pub(super) struct WindowIndex {
     pub(super) source: OutputPort,
@@ -66,20 +65,19 @@ pub fn indexed_window_groups(circuit: Circuit, threshold: usize) -> Result<Index
         return Ok(IndexedWindows::Groups(Vec::new()));
     }
     let edit = CircuitEditor::new(circuit);
-    let mut inputs = HashMap::new();
+    let mut inputs = SourceRows::default();
     let mut keys = Vec::with_capacity(candidates.len());
     let mut indexes = Vec::with_capacity(candidates.len());
     for &window in &candidates {
         let index = WindowIndex::read(&edit, window)?;
         let parameter = row_parameter(&edit, index.parameter)?;
-        let common = *inputs.entry(index.source).or_insert(parameter.ty);
-        if !same_row_spelling(&edit, common, parameter.ty)? {
+        let Some(row) = inputs.representative(&edit, index.source, parameter.ty)? else {
             return Ok(IndexedWindows::Candidates(candidates));
-        }
+        };
         let Some(key) = TimestampKey::read(&edit, edit.expression(index.key)?, parameter)? else {
             return Ok(IndexedWindows::Candidates(candidates));
         };
-        keys.push((index.source, key));
+        keys.push((index.source, row, key));
         indexes.push((index, parameter));
     }
 

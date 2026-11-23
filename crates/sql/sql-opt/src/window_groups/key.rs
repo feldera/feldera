@@ -4,7 +4,7 @@
 use super::numbers::{decimal_text, floating_text};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
-    TypeId, TypeKind as Ty,
+    OutputPort, TypeId, TypeKind as Ty,
 };
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
@@ -719,77 +719,61 @@ fn scalar_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, E
     Ok(Some(text))
 }
 
-/// Prove that copies of a source row type print identically. The debug printer
-/// ignores the original SQL struct attached to a tuple. For an unfamiliar
-/// type, the caller can still use the compiler's printer.
-pub(super) fn same_row_spelling(
+/// The reference fingerprint includes the port and the printed closure parameter
+/// type. A port can occur with several copies of a row type, or with distinct
+/// parameter spellings. Keep one representative for each spelling at that port.
+#[derive(Default)]
+pub(super) struct SourceRows(HashMap<OutputPort, Vec<TypeId>>);
+
+impl SourceRows {
+    pub(super) fn representative(
+        &mut self,
+        edit: &CircuitEditor,
+        port: OutputPort,
+        row: TypeId,
+    ) -> Result<Option<TypeId>, Error> {
+        let types = self.0.entry(port).or_default();
+        for &ty in types.iter() {
+            match same_type_spelling(edit, ty, row)? {
+                Some(true) => return Ok(Some(ty)),
+                Some(false) => {}
+                None => return Ok(None),
+            }
+        }
+        types.push(row);
+        Ok(Some(row))
+    }
+}
+
+/// Use the same type printer rules as casts inside the timestamp expression.
+/// Comparing shared children once also handles deeply nested row signatures.
+fn same_type_spelling(
     edit: &CircuitEditor,
     left: TypeId,
     right: TypeId,
-) -> Result<bool, Error> {
+) -> Result<Option<bool>, Error> {
     if left == right {
-        return Ok(true);
+        return Ok(Some(true));
     }
     let mut pending = vec![(left, right)];
     let mut compared = HashSet::new();
     while let Some((left, right)) = pending.pop() {
-        if left == right || !compared.insert((NodeId::from(left), NodeId::from(right))) {
+        if left == right || !compared.insert((left, right)) {
             continue;
         }
-        let kind = edit.type_kind(left)?;
-        if kind != edit.type_kind(right)? || edit.nullable(left)? != edit.nullable(right)? {
-            return Ok(false);
+        let (Some((a, fields)), Some((b, other))) =
+            (type_term(edit, left)?, type_term(edit, right)?)
+        else {
+            return Ok(None);
+        };
+        if a != b || fields.len() != other.len() {
+            return Ok(Some(false));
         }
-        match kind {
-            Ty::Ref => {
-                let a = edit.node(left.into())?;
-                let b = edit.node(right.into())?;
-                if a.data("mutable") != b.data("mutable") {
-                    return Ok(false);
-                }
-                pending.push((
-                    edit.type_id(a.edge("type")?)?,
-                    edit.type_id(b.edge("type")?)?,
-                ));
-            }
-            Ty::Tuple | Ty::RawTuple | Ty::Array | Ty::Map | Ty::SqlResult => {
-                let field = match kind {
-                    Ty::Array | Ty::Map | Ty::SqlResult => "typeArgs",
-                    _ => "tupFields",
-                };
-                let a = edit.node(left.into())?.edges(field)?;
-                let b = edit.node(right.into())?.edges(field)?;
-                if a.len() != b.len() {
-                    return Ok(false);
-                }
-                for (a, b) in a.into_iter().zip(b) {
-                    pending.push((edit.type_id(a)?, edit.type_id(b)?));
-                }
-            }
-            Ty::Binary
-            | Ty::Bool
-            | Ty::Date
-            | Ty::Decimal
-            | Ty::Double
-            | Ty::GeoPoint
-            | Ty::Integer
-            | Ty::LongInterval
-            | Ty::Real
-            | Ty::ShortInterval
-            | Ty::String
-            | Ty::Time
-            | Ty::Timestamp
-            | Ty::TimestampTz
-            | Ty::Uuid
-            | Ty::Variant => {
-                if !edit.same_type(left, right)? {
-                    return Ok(false);
-                }
-            }
-            _ => return Ok(false),
+        for (l, r) in fields.into_iter().zip(other) {
+            pending.push((edit.type_id(l)?, edit.type_id(r)?));
         }
     }
-    Ok(true)
+    Ok(Some(true))
 }
 
 #[cfg(test)]
@@ -797,6 +781,36 @@ mod tests {
     use super::*;
     use feldera_sql_ir::{Circuit, Field};
     use serde_json::json;
+
+    #[test]
+    fn source_rows_compare_printed_signatures_including_nested_type_arguments() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "allOperators":[], "declarations":[]
+        }))?;
+        let binary = |id, fixed, precision| json!({
+            "class":"DBSPTypeBinary", "code":"BYTES", "id":id, "mayBeNull":false,
+            "fixed":fixed, "precision":precision,
+        });
+        let (circuit, leaves) = circuit.with_inner_roots([
+            binary(1, true, 4), binary(2, false, 4), binary(3, false, 8),
+        ])?;
+        let port = OutputPort { operator: circuit.root_id(), number: 0 };
+        let mut edit = CircuitEditor::new(circuit);
+        let row = |edit: &mut CircuitEditor, leaf| -> Result<_, Error> {
+            let tuple = edit.tuple_type(port.operator, false, [leaf, leaf])?;
+            edit.reference_type(tuple)
+        };
+        let fixed = row(&mut edit, leaves[0])?;
+        let varying = row(&mut edit, leaves[1])?;
+        let wider = row(&mut edit, leaves[2])?;
+        let mut rows = SourceRows::default();
+        assert_eq!(rows.representative(&edit, port, fixed)?, Some(fixed));
+        assert_eq!(rows.representative(&edit, port, wider)?, Some(wider));
+        // BINARY and VARBINARY omit the fixed-width flag in the debug printer.
+        assert_eq!(rows.representative(&edit, port, varying)?, Some(fixed));
+        assert_eq!(rows.representative(&edit, port, wider)?, Some(wider));
+        Ok(())
+    }
 
     #[test]
     fn variant_nulls_and_nullable_tuples_follow_the_printed_constructor() -> Result<(), Error> {

@@ -1,11 +1,10 @@
 //! Select shared temporal windows by tracing their keys to a common input.
-use super::key::{row_parameter, same_row_spelling, TimestampKey};
+use super::key::{row_parameter, SourceRows, TimestampKey};
 use super::source::{compose_timestamp, filter_sources, TemporalFilterSource};
 use super::temporal::{shared_temporal_inputs, TemporalCandidate};
 use crate::conjunct_windows;
 use feldera_sql_expr::{ensure_expression_tree, SimplifyWarning};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
-use std::collections::HashMap;
 
 pub enum TemporalScan {
     /// Groups and their members are in selection order. Each member identifies
@@ -22,7 +21,7 @@ pub fn scan_temporal_windows(circuit: Circuit, threshold: usize) -> Result<Tempo
     let mut edit = CircuitEditor::new(circuit);
     let paths = filter_sources(&edit)?;
     let mut candidates = Vec::with_capacity(paths.len());
-    let mut input_types = HashMap::new();
+    let mut input_types = SourceRows::default();
     let mut warnings = Vec::new();
     for path in &paths {
         let Some(keys) = source_candidates(&mut edit, path, &mut input_types, &mut warnings)? else {
@@ -43,12 +42,12 @@ pub fn scan_temporal_windows(circuit: Circuit, threshold: usize) -> Result<Tempo
     Ok(TemporalScan::Groups { groups, warnings })
 }
 
-type SourceCandidate = TemporalCandidate<(OutputPort, TimestampKey)>;
+type SourceCandidate = TemporalCandidate<(OutputPort, TypeId, TimestampKey)>;
 
 fn source_candidates(
     edit: &mut CircuitEditor,
     path: &TemporalFilterSource,
-    input_types: &mut HashMap<OutputPort, TypeId>,
+    input_types: &mut SourceRows,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<Vec<SourceCandidate>>, Error> {
     let function = edit.node(path.filter)?.edge("function")?;
@@ -70,12 +69,11 @@ fn source_candidates(
         let Some((input, key)) = source_key(edit, parameter, window.key, &maps, warnings)? else {
             return Ok(None);
         };
-        let common = *input_types.entry(path.source).or_insert(input);
-        if !same_row_spelling(edit, common, input)? {
+        let Some(row) = input_types.representative(edit, path.source, input)? else {
             return Ok(None);
-        }
+        };
         candidates.push(TemporalCandidate {
-            fingerprint: (path.source, key),
+            fingerprint: (path.source, row, key),
             conjunct,
         });
     }

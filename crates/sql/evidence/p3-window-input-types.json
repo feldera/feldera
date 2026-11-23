@@ -1,0 +1,59 @@
+{
+  "scope": "Native filter and index window grouping includes the printed input row signature. Distinct signatures on one source port are classified independently.",
+  "parent_commit": "4b4e71762",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "4fca2e4b149647d831b8ac00af179225b6b0c5a735a3ec15cb3b6005d4881c53",
+    "bin/sql-difftest": "86eaa0848bbd5c06673d3e15e28c06f894edcd204c99c59d1cbdd48112b1da70",
+    "maven/sql-compiler.jar": "91919d39b95c5632642e801855455b0cd6581a713b05d0b026cc3889f515166a",
+    "maven/tests.jar": "fce6ad8c0223ed9192c3a7a19a7e6f9fc279d01ac2f6955ae7f1bc4b9bfa5703",
+    "maven/build.log": "11ea27c7bad71b8db7d0d2052a13f7ce5b49f569c732c26c3380b653ce561826",
+    "tests.log": "02edfb63182ee67f0e3f60ac8dece0d1a69e4279ebb79791d8f0efbc726b5fae",
+    "clippy.log": "a91d66be9a409e202bc9e4643aac9b2ead3281ea5df5cc1d8955a5d14e873f3d",
+    "build.log": "766a3239b7e0e9ed9c72431c01da854f3f663fe62d40c627b485ba74efda8e4d",
+    "junit.log": "ceeea2f0e0d1d4e5b78fcecc39937420164309a9883fac2f39db2212481ca7fc"
+  },
+  "rust_tests": 218,
+  "junit_tests": 97,
+  "engines": {
+    "classic": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18310,
+      "mismatches": 0,
+      "receipt_sha256": "1ca440a3a142e08c03b3d5269954c2950636215a366938a8a0995b6d67c65a4d",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 210,
+        "Monotonicity/Transfer": 388,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    },
+    "gen2": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18484,
+      "mismatches": 0,
+      "receipt_sha256": "c4ec0b54fbfe727c0bd075c056aadfc802527c0176afc8dd5093d811be57a911",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 268,
+        "Monotonicity/Transfer": 536,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    }
+  }
+}

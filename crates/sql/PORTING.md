@@ -462,6 +462,20 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust groups temporal filters and lowered window indexes by source port and
+printed input row type. Distinct signatures can share a port. The Rust test
+covers nested row signatures with fixed and variable binary fields. All 60
+detached temporal compilations matched Java through 36,794 ordered S4
+observations and artifact emission.
+[Window input type comparisons](evidence/p3-window-input-types.json)
+
+The general waterline visitor and whole-closure analysis use the same Rust
+rules for field reads, borrows and dereferences. All 550 isolated comparisons
+and 94 detached compilations matched Java, including 46,351 ordered S4
+observations. COUNT and LATENESS checkpoints restored in both directions.
+Both readers dropped late input after restoring the watermark.
+[Field and reference comparisons](evidence/p3-structural-reads.json)
+
 The general monotonicity visitor uses Rust's whole-closure cast rule to build
 the reduced expression. The direct and hybrid visitors agree on identity,
 widening, saturation and safe narrowing. All 94 detached compilations
