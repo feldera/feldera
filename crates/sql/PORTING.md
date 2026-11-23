@@ -466,8 +466,11 @@ On `4b83f145e`, Rust answered all 24 closure projections in the eight
 constructed-row `ARG_MIN` compilations. Previously, one cast per compilation
 fell back to Java. All eight compilations matched Java at every S4 observation
 and through emission. The streaming regression and all 550 selected
-monotonicity comparisons passed.
-[Row cast comparisons](evidence/p3-row-cast-waterlines.json)
+monotonicity comparisons passed. After a checkpoint restore in either
+direction, the aggregate rejected the late input, retracted the old minimum,
+and emitted the new minimum with its NULL payload.
+[Row cast comparisons](evidence/p3-row-cast-waterlines.json) ·
+[ARG_MIN checkpoint interchange](evidence/p3-constructed-row-checkpoint.json)
 
 On `8bb0f52b1`, the Java and Rust optimizers both handled `ARG_MIN` on a
 constructed nested row with `LATENESS`. Eight classic and Gen-2 compilations
@@ -476,6 +479,7 @@ regression retracted the old row and emitted the new row with its nullable
 field. All 550 selected monotonicity comparisons matched. COUNT and LATENESS
 checkpoints restored in both directions without bootstrap.
 [Comparison and restore receipts](evidence/p3-constructed-row-arg-min.json) ·
+[Cold compilation timings](evidence/p3-constructed-row-arg-min-cold.json) ·
 [Upstream compiler fix](https://github.com/feldera/feldera/pull/8046)
 
 On `b679cc7a6`, Rust combined 144-level nested waterline types. Both the

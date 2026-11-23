@@ -1,0 +1,107 @@
+{
+  "commit": "4b83f145ec2df852c12725dac61dc61d4a6b413f",
+  "case": "org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests#constructedNestedRowPayload/0",
+  "program": "CREATE TABLE events(k INT NOT NULL LATENESS 1, x INT NOT NULL LATENESS 10, y INT);\nCREATE LOCAL VIEW minima AS\n    SELECT k, ARG_MIN(ROW(ROW(y, x), x), x) AS payload FROM events GROUP BY k;\nCREATE VIEW v AS SELECT k, payload[1][1] AS y, payload[1][2] AS x, payload[2] AS outer_x\n    FROM minima;\n",
+  "scope": "One worker. Spill thresholds set to zero. Separate executables generate and restore each checkpoint.",
+  "input_columns": [
+    "k",
+    "x",
+    "y"
+  ],
+  "seed_inserts": [
+    [
+      1,
+      9,
+      80
+    ],
+    [
+      1,
+      11,
+      90
+    ]
+  ],
+  "restored_inserts": [
+    [
+      1,
+      0,
+      -1
+    ],
+    [
+      1,
+      4,
+      null
+    ]
+  ],
+  "delta_columns": [
+    "y",
+    "x",
+    "weight"
+  ],
+  "other_output_checks": {
+    "k": 1,
+    "outer_x": "equals x on every row"
+  },
+  "seed_deltas": [
+    [
+      80,
+      9,
+      1
+    ]
+  ],
+  "program_sha256": "7dfc52f9d2b4d4d10a1328db5618f62638a750a1c5e6bdb1d5b7a39033ec97c2",
+  "binary_sha256": {
+    "java": "e4356d18403344d83c2e7da74e955ba3bf52fd67fd9f225595e6544407fd6662",
+    "hybrid": "37d01fc8e44a0c7117faacf8fff121de7681d084d3d9c6ef95c8af6f27183959"
+  },
+  "generated_rust_sha256": {
+    "java": "6676fd01f43a9a2450e7ceb8e117afef67e34f3c74801730300d1de6de0c57e2",
+    "hybrid": "6676fd01f43a9a2450e7ceb8e117afef67e34f3c74801730300d1de6de0c57e2"
+  },
+  "restores": [
+    {
+      "writer": "java",
+      "reader": "hybrid",
+      "bootstrap": false,
+      "checkpoint_id": "01a2064d-517a-7451-abdd-91d201411949",
+      "restored_payload_deltas": [
+        [
+          null,
+          4,
+          1
+        ],
+        [
+          80,
+          9,
+          -1
+        ]
+      ],
+      "late_input_dropped_after_restore": true
+    },
+    {
+      "writer": "hybrid",
+      "reader": "java",
+      "bootstrap": false,
+      "checkpoint_id": "01a2064d-518d-7f11-b000-143a087ea324",
+      "restored_payload_deltas": [
+        [
+          null,
+          4,
+          1
+        ],
+        [
+          80,
+          9,
+          -1
+        ]
+      ],
+      "late_input_dropped_after_restore": true
+    }
+  ],
+  "checksums": {
+    "optimizer_library": "e8c027d40b47c8756849ecf1ae41306747eeabe3a59de780459f905c797ee499",
+    "compiler_jar": "b18a62afa875b9430d509fc81b58e05cfef4859c98f482570a562b01ecd88cf7",
+    "supervised_worker": "df42d5e475ed50b69f190f381bc6a6d7bedf055a8a4cf32fba58f7649b0b9be3",
+    "harness": "d2e10ae054a90e17ed78183f4bb2cbb5fd373a99006f6ec9c9b6b6dbc9b1c567",
+    "receipt": "2bbf89390d796fdb05df6be7fd1de690ffbdc46cd09e09c60300c972304e2e38"
+  }
+}
