@@ -1,5 +1,5 @@
 //! Rebuild a filter's conjunction in the order chosen for its temporal windows.
-use super::key::{TimestampKey, row_parameter};
+use crate::projection_key::{ProjectionKey, row_parameter};
 use super::temporal::{temporal_filter_order, TemporalBound};
 use crate::filters::{conjuncts, is_boolean_wrapper, rewrite_filters, strip_wrap_bool};
 use crate::{conjunct_windows, function_calls::contains_now};
@@ -131,7 +131,7 @@ pub fn reorder_shared_windows(
         for window in windows {
             bounds.push(match window {
                 Some(window) => {
-                    let Some(fingerprint) = TimestampKey::read(&edit, window.key, parameter)? else {
+                    let Some(fingerprint) = ProjectionKey::read(&edit, window.key, parameter)? else {
                         return Ok(None);
                     };
                     Some(TemporalBound {

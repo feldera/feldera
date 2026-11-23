@@ -647,6 +647,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("FuseExpensiveMaps/DuplicateField", [closure]) => {
             return Ok(json!(feldera_sql_opt::has_duplicate_expensive_field(&edit, *closure)?));
         }
+        ("FuseExpensiveMaps/Siblings", roots) => {
+            let counts: Vec<usize> = serde_json::from_slice(state)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::sibling_map_groups(&edit, roots, &counts)?)?);
+        }
         ("ImplementStatics/Candidates", [closure]) => {
             return Ok(serde_json::to_value(feldera_sql_opt::static_candidates(&arena, *closure)?)?);
         }
@@ -1439,7 +1443,7 @@ fn transform(
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
-        | "FuseExpensiveMaps/Candidate" | "FuseExpensiveMaps/DuplicateField" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
+        | "FuseExpensiveMaps/Candidate" | "FuseExpensiveMaps/DuplicateField" | "FuseExpensiveMaps/Siblings" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
             return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Groups" => {

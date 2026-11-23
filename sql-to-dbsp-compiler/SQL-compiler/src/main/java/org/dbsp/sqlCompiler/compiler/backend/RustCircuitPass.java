@@ -2022,6 +2022,26 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    @Nullable
+    public static int[][] siblingMapGroups(DBSPCompiler compiler, List<FuseExpensiveMaps.MapInfo> siblings) {
+        String pass = "FuseExpensiveMaps/Siblings";
+        var roots = new ArrayList<IDBSPInnerNode>();
+        int[] counts = new int[siblings.size()];
+        for (int i = 0; i < counts.length; i++) {
+            var map = siblings.get(i);
+            roots.add(map.function().parameters[0]);
+            roots.addAll(map.minimal());
+            counts[i] = map.minimal().size();
+        }
+        try {
+            var result = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(counts),
+                    roots.toArray(IDBSPInnerNode[]::new)).value;
+            return answered(compiler, pass, result) ? MAPPER.treeToValue(result, int[][].class) : null;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid sibling map groups from Rust", error);
+        }
+    }
+
     public static int[][] mapFusionGroups(List<int[]> fingerprints) {
         try {
             byte[] reply = transformWithContext("FuseExpensiveMaps/Groups", MAPPER.writeValueAsBytes(fingerprints),

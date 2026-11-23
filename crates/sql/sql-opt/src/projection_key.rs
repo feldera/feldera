@@ -1,7 +1,8 @@
 //! Compare the canonical spelling of a projection over one bound row. The Java
-//! window pass uses printed closures, so cast safety and call result types do
+//! window and map fusion passes use printed closures, so cast safety and call result types do
 //! not distinguish keys, while operand nullability in a binary expression does.
-use super::numbers::{decimal_text, floating_text};
+mod numbers;
+use numbers::{decimal_text, floating_text};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
     OutputPort, TypeId, TypeKind as Ty,
@@ -12,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 /// Postorder value numbers preserve operand order and ignore incidental sharing
 /// in the input graph. Repeated subexpressions occupy one slot.
 #[derive(Eq, Hash, PartialEq)]
-pub(super) struct TimestampKey(Vec<(Term, Vec<usize>)>);
+pub(crate) struct ProjectionKey(Vec<(Term, Vec<usize>)>);
 
 #[derive(Eq, Hash, PartialEq)]
 enum Term {
@@ -98,10 +99,26 @@ enum Visit {
     Intern(ScopedNode, Term, Vec<ScopedNode>),
 }
 
-impl TimestampKey {
-    pub(super) fn read(
+impl ProjectionKey {
+    pub(crate) fn read(
         edit: &CircuitEditor,
         root: ExpressionId,
+        parameter: RowParameter<'_>,
+    ) -> Result<Option<Self>, Error> {
+        Self::from_node(edit, root.into(), parameter)
+    }
+
+    /// Fusion compares the whole printed closure, including its parameter type.
+    pub(crate) fn parameter_type(
+        edit: &CircuitEditor,
+        parameter: RowParameter<'_>,
+    ) -> Result<Option<Self>, Error> {
+        Self::from_node(edit, parameter.ty.into(), parameter)
+    }
+
+    fn from_node(
+        edit: &CircuitEditor,
+        root: NodeId,
         parameter: RowParameter<'_>,
     ) -> Result<Option<Self>, Error> {
         let mut scopes = vec![Binding {
@@ -113,7 +130,7 @@ impl TimestampKey {
         let mut numbers = HashMap::new();
         let mut active = HashSet::new();
         let mut work = vec![Visit::Read(ScopedNode {
-            id: root.into(),
+            id: root,
             scope: 0,
             in_static: false,
         })];
@@ -646,12 +663,12 @@ fn call_path(edit: &CircuitEditor, path: &Node) -> Result<Option<String>, Error>
 /// Canonical closures rename the parameter and print its type, including
 /// both references in the (key, value) parameter of an indexed map.
 #[derive(Clone, Copy)]
-pub(super) struct RowParameter<'a> {
-    pub(super) ty: TypeId,
+pub(crate) struct RowParameter<'a> {
+    pub(crate) ty: TypeId,
     name: &'a str,
 }
 
-pub(super) fn row_parameter(
+pub(crate) fn row_parameter(
     edit: &CircuitEditor,
     parameter: NodeId,
 ) -> Result<RowParameter<'_>, Error> {
@@ -780,10 +797,10 @@ fn scalar_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, E
 /// type. A port can occur with several copies of a row type, or with distinct
 /// parameter spellings. Keep one representative for each spelling at that port.
 #[derive(Default)]
-pub(super) struct SourceRows(HashMap<OutputPort, Vec<TypeId>>);
+pub(crate) struct SourceRows(HashMap<OutputPort, Vec<TypeId>>);
 
 impl SourceRows {
-    pub(super) fn representative(
+    pub(crate) fn representative(
         &mut self,
         edit: &CircuitEditor,
         port: OutputPort,
@@ -905,7 +922,7 @@ mod tests {
         )?;
         let absent_tuple = edit.make_expr(site, Expr::Tuple, nullable, [])?;
         let key = |expr| {
-            TimestampKey::read(
+            ProjectionKey::read(
                 &edit,
                 expr,
                 RowParameter {
@@ -931,7 +948,7 @@ mod tests {
         let ty = edit.bool_type(site, false)?;
         let outer = edit.named_variable(ty, "row")?;
         let row = RowParameter { name: "row", ty };
-        let mut key = |parameter_name, local_name, capture| -> Result<TimestampKey, Error> {
+        let mut key = |parameter_name, local_name, capture| -> Result<ProjectionKey, Error> {
             let parameter = edit.named_variable(ty, parameter_name)?;
             let local = edit.named_variable(ty, local_name)?;
             // The initializer reads the lambda parameter even when the LET shadows its name.
@@ -939,14 +956,14 @@ mod tests {
             let body =
                 edit.let_expression(local, initializer, if capture { outer } else { local })?;
             let lambda = edit.closure_from_variables(body, &[parameter])?;
-            Ok(TimestampKey::read(&edit, lambda, row)?.expect("bound lambda key"))
+            Ok(ProjectionKey::read(&edit, lambda, row)?.expect("bound lambda key"))
         };
         let shadow = key("x", "x", false)?;
         assert!(shadow == key("y", "z", false)?);
         assert!(shadow != key("y", "z", true)?);
         let free = edit.named_variable(ty, "p1")?;
         let lambda = edit.closure_from_variables(free, &[outer])?;
-        assert!(TimestampKey::read(&edit, lambda, row)?.is_none());
+        assert!(ProjectionKey::read(&edit, lambda, row)?.is_none());
         Ok(())
     }
 
@@ -969,9 +986,9 @@ mod tests {
         let capture = edit.closure_from_variables(body, &[y])?;
         let both = edit.tuple_expr(site, false, &[shadow, capture])?;
         let same = edit.tuple_expr(site, false, &[shadow, shadow])?;
-        let key = TimestampKey::read(&edit, both, row)?.expect("two bound lambdas");
+        let key = ProjectionKey::read(&edit, both, row)?.expect("two bound lambdas");
         assert!(key.0.len() < 270);
-        assert!(Some(key) != TimestampKey::read(&edit, same, row)?);
+        assert!(Some(key) != ProjectionKey::read(&edit, same, row)?);
         Ok(())
     }
 
@@ -993,9 +1010,9 @@ mod tests {
         let cast = edit.make_expr(site, Expr::Cast, target, operand.clone())?;
         let nullable = edit.with_nullability(target, true)?;
         let other = edit.make_expr(site, Expr::Cast, nullable, operand)?;
-        let key = TimestampKey::read(&edit, cast, row)?.unwrap();
+        let key = ProjectionKey::read(&edit, cast, row)?.unwrap();
         assert_eq!(key.0.len(), 163);
-        assert!(Some(key) != TimestampKey::read(&edit, other, row)?);
+        assert!(Some(key) != ProjectionKey::read(&edit, other, row)?);
         Ok(())
     }
 
@@ -1019,12 +1036,12 @@ mod tests {
             shared = edit.binary_expression(site, ty, BinaryOp::Max, shared, shared)?;
             copied = edit.binary_expression(site, ty, BinaryOp::Max, copied, copied)?;
         }
-        let key = TimestampKey::read(&edit, shared, row)?.unwrap();
+        let key = ProjectionKey::read(&edit, shared, row)?.unwrap();
         assert_eq!(key.0.len(), 130);
-        assert!(Some(key) == TimestampKey::read(&edit, copied, row)?);
+        assert!(Some(key) == ProjectionKey::read(&edit, copied, row)?);
         let wrong_type = edit.bool_type(site, false)?;
         let invalid = edit.named_variable(wrong_type, "t")?;
-        assert!(TimestampKey::read(&edit, invalid, row)?.is_none());
+        assert!(ProjectionKey::read(&edit, invalid, row)?.is_none());
         Ok(())
     }
 
@@ -1060,7 +1077,7 @@ mod tests {
             [("value", Field::Data(1.into()))],
         )?;
         let key =
-            |id| TimestampKey::read(&edit, id, RowParameter { name: "r", ty }).map(Option::unwrap);
+            |id| ProjectionKey::read(&edit, id, RowParameter { name: "r", ty }).map(Option::unwrap);
         assert!(key(whole)? == key(integer)?);
         assert!(key(tenth)? != key(integer)? && key(tenth)? != key(hundredth)?);
         assert!(key(hundredth)? == key(exponent)?);
@@ -1091,7 +1108,7 @@ mod tests {
             ("replace", input, [input, other]),
         ] {
             let call = edit.iterator_method(site, name, receiver, &args)?;
-            let key = TimestampKey::read(&edit, call, row)?.expect("method key");
+            let key = ProjectionKey::read(&edit, call, row)?.expect("method key");
             assert!(keys.insert(key));
         }
         Ok(())
@@ -1139,8 +1156,8 @@ mod tests {
             };
             let first = conversion(ty, left)?;
             let second = conversion(opt, nullable)?;
-            let key = TimestampKey::read(&edit, first, row)?.expect("conversion key");
-            assert!(Some(&key) == TimestampKey::read(&edit, second, row)?.as_ref());
+            let key = ProjectionKey::read(&edit, first, row)?.expect("conversion key");
+            assert!(Some(&key) == ProjectionKey::read(&edit, second, row)?.as_ref());
             assert!(keys.insert(key));
         }
         Ok(())
@@ -1214,7 +1231,7 @@ mod tests {
         let nullable_product = binary(&mut edit, BinaryOp::Mul, some)?;
         let quotient = binary(&mut edit, BinaryOp::Div, one)?;
         let key = |id| {
-            TimestampKey::read(&edit, id, RowParameter { name: "r", ty: i16 })
+            ProjectionKey::read(&edit, id, RowParameter { name: "r", ty: i16 })
                 .map(|k| k.expect("numeric window key"))
         };
         assert!(key(one)? == key(wide)?);

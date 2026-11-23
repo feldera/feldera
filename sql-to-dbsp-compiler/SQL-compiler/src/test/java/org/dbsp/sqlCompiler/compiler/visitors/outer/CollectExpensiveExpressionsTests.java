@@ -20,6 +20,7 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /** Tests for {@link FuseExpensiveMaps.CollectExpensiveExpressions} and for the
@@ -75,6 +76,36 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
             var closure = pair.closure(row);
             boolean expected = direct.hasDuplicatedExpensiveField(new MapInfo(null, closure, List.of()));
             Assert.assertEquals(Boolean.valueOf(expected), RustCircuitPass.hasDuplicateExpensiveField(compiler, closure));
+        }
+    }
+
+    @Test
+    public void siblingFusionConnectsMapsThroughRenamedFragments() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var compiler = this.testCompiler();
+        var site = CalciteEmptyRel.INSTANCE;
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(input);
+        var maps = new ArrayList<DBSPMapOperator>();
+        for (var functions : List.of(List.of("f"), List.of("other"), List.of("g"), List.of("f", "g"))) {
+            var row = b.refVar(this.pair);
+            var fields = functions.stream().map(name -> b.call(name, b.field(row, 0)))
+                    .toArray(DBSPExpression[]::new);
+            var map = new DBSPMapOperator(site, b.tuple(fields).closure(row), input.outputPort());
+            maps.add(map);
+            circuit.addOperator(map);
+        }
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var scan = new FuseExpensiveMaps.FindFusableMaps(compiler);
+            scan.apply(circuit);
+            var candidates = scan.groups.get(input.outputPort());
+            Assert.assertArrayEquals(new int[][]{{0, 2, 3}, {1}}, RustCircuitPass.siblingMapGroups(compiler, candidates));
+            Assert.assertNull(scan.clusters.get(maps.get(1)));
+            for (int i : List.of(0, 2, 3))
+                Assert.assertEquals(List.of(candidates.get(0), candidates.get(2), candidates.get(3)),
+                        scan.clusters.get(maps.get(i)));
         }
     }
 

@@ -1,8 +1,6 @@
 //! Select bounded windows that can use the same indexed input.
 mod implement;
 mod indexed;
-mod key;
-mod numbers;
 mod reorder;
 mod scan;
 mod source;

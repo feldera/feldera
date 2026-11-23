@@ -1,5 +1,5 @@
 //! Select shared temporal windows by tracing their keys to a common input.
-use super::key::{row_parameter, SourceRows, TimestampKey};
+use crate::projection_key::{row_parameter, SourceRows, ProjectionKey};
 use super::source::{compose_timestamp, filter_sources, TemporalFilterSource};
 use super::temporal::{shared_temporal_inputs, TemporalCandidate};
 use crate::conjunct_windows;
@@ -42,7 +42,7 @@ pub fn scan_temporal_windows(circuit: Circuit, threshold: usize) -> Result<Tempo
     Ok(TemporalScan::Groups { groups, warnings })
 }
 
-type SourceCandidate = TemporalCandidate<(OutputPort, TypeId, TimestampKey)>;
+type SourceCandidate = TemporalCandidate<(OutputPort, TypeId, ProjectionKey)>;
 
 fn source_candidates(
     edit: &mut CircuitEditor,
@@ -86,7 +86,7 @@ fn source_key(
     mut key: ExpressionId,
     maps: &[NodeId],
     warnings: &mut Vec<SimplifyWarning>,
-) -> Result<Option<(TypeId, TimestampKey)>, Error> {
+) -> Result<Option<(TypeId, ProjectionKey)>, Error> {
     if !maps.is_empty() {
         let closure = edit.closure_with_parameters(key, &[parameter])?;
         let timestamp = compose_timestamp(edit, closure, maps, warnings)?;
@@ -98,7 +98,7 @@ fn source_key(
         key = edit.expression(closure.edge("body")?)?;
     }
     let parameter = row_parameter(edit, parameter)?;
-    Ok(TimestampKey::read(edit, key, parameter)?.map(|key| (parameter.ty, key)))
+    Ok(ProjectionKey::read(edit, key, parameter)?.map(|key| (parameter.ty, key)))
 }
 
 #[cfg(test)]

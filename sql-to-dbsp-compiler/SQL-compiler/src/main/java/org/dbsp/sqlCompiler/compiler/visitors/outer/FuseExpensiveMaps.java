@@ -278,16 +278,22 @@ public class FuseExpensiveMaps extends Passes {
             return components.values();
         }
 
-        private Iterable<List<MapInfo>> nativeComponents(List<MapInfo> group) {
-            if (group.size() == 1)
-                return List.of(group);
-            // Only equality within this input port matters. Keep the rendered text in the JVM.
+        private int[][] groupsByPrintedFingerprint(List<MapInfo> group) {
             Map<String, Integer> ids = new HashMap<>();
             List<int[]> fingerprints = group.stream().map(info -> info.minimal().stream()
                     .mapToInt(e -> ids.computeIfAbsent(this.fingerprint(info, e), ignored -> ids.size()))
                     .toArray()).toList();
+            return RustCircuitPass.mapFusionGroups(fingerprints);
+        }
+
+        private Iterable<List<MapInfo>> nativeComponents(List<MapInfo> group) {
+            if (group.size() == 1)
+                return List.of(group);
+            int[][] indices = RustCircuitPass.siblingMapGroups(this.compiler(), group);
+            if (indices == null)
+                indices = this.groupsByPrintedFingerprint(group);
             List<List<MapInfo>> components = new ArrayList<>();
-            for (int[] component : RustCircuitPass.mapFusionGroups(fingerprints)) {
+            for (int[] component : indices) {
                 List<MapInfo> members = new ArrayList<>(component.length);
                 for (int index : component)
                     members.add(group.get(index));

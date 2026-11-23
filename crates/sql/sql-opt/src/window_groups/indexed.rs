@@ -1,5 +1,5 @@
 //! Plan shared indexes after temporal predicates have become window operators.
-use super::key::{row_parameter, SourceRows, TimestampKey};
+use crate::projection_key::{row_parameter, SourceRows, ProjectionKey};
 use super::{qualifying_window_groups, shared_window_fields, window_candidates, WindowFields};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, NodeId, OperatorKind, OutputPort};
 
@@ -74,7 +74,7 @@ pub fn indexed_window_groups(circuit: Circuit, threshold: usize) -> Result<Index
         let Some(row) = inputs.representative(&edit, index.source, parameter.ty)? else {
             return Ok(IndexedWindows::Candidates(candidates));
         };
-        let Some(key) = TimestampKey::read(&edit, edit.expression(index.key)?, parameter)? else {
+        let Some(key) = ProjectionKey::read(&edit, edit.expression(index.key)?, parameter)? else {
             return Ok(IndexedWindows::Candidates(candidates));
         };
         keys.push((index.source, row, key));
@@ -89,7 +89,7 @@ pub fn indexed_window_groups(circuit: Circuit, threshold: usize) -> Result<Index
             let (index, parameter) = &indexes[member];
             let mut projections = Vec::with_capacity(index.fields.len());
             for &field in &index.fields {
-                let Some(field) = TimestampKey::read(&edit, edit.expression(field)?, *parameter)?
+                let Some(field) = ProjectionKey::read(&edit, edit.expression(field)?, *parameter)?
                 else {
                     return Ok(IndexedWindows::Candidates(candidates));
                 };
