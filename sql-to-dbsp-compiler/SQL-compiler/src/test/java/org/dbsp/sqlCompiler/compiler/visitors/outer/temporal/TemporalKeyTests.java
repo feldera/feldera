@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -883,6 +884,21 @@ public class TemporalKeyTests {
                 new DBSPTypeStream(type, StreamKind.COLLECTION, 0), new DBSPTypeStream(type, StreamKind.DELTA, 1))) {
             assertCompatible(compiler, first, bound(new DBSPQualifyTypeExpression(value, same, other)), false);
         }
+    }
+
+    private static DBSPZSetExpression nestedConstantRow(int leaf) {
+        DBSPExpression row = new DBSPI32Literal(leaf);
+        for (int i = 0; i < 144; i++)
+            row = new DBSPTupleExpression(row);
+        return new DBSPZSetExpression(row);
+    }
+
+    @Test
+    public void deeplyNestedConstantRowsCompareByValueInWindowKeys() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var one = bound(nestedConstantRow(1));
+        assertCompatible(compiler, one, bound(nestedConstantRow(1)), true);
+        assertCompatible(compiler, one, bound(nestedConstantRow(2)), false);
     }
 
     @Test
