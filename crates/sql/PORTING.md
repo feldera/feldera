@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust omits the fact for an uninitialized assignment destination in both waterline
+visitor modes. A consumer that requires that local's value still gets the direct
+Java diagnostic. All 220 Rust tests and 140 targeted JUnit tests passed.
+Twelve frozen LATENESS programs per engine matched direct Java through 10,929
+ordered S4 observations and emission. [Waterline projection](evidence/p3-discarded-local-waterlines.json)
+
 Rust rewrites common subexpressions into closure-local lazy cells and returns
 the rewritten tree and the next generated name to the compiler. It performed
 4,444 rewrites across 47 classic and 47 Gen-2 compilations. All 46,351 ordered

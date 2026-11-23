@@ -711,6 +711,46 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void assignmentToAnUninitializedLocalNeedsNoDestinationWaterline() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var literal = new DBSPI32Literal(7);
+        var integer = literal.getType();
+        var input = integer.ref().var();
+        var scratch = new DBSPLetStatement("scratch", integer, true);
+        var destination = scratch.getVarReference();
+        var assignment = new DBSPAssignmentExpression(destination, literal);
+        var tail = input.deref();
+        var body = new DBSPBlockExpression(List.of(scratch, assignment.toStatement()), tail);
+        var closure = body.closure(input);
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var shape = new MonotoneType(integer);
+        var direct = new MonotoneTransferFunctions(compiler, op, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+        direct.apply(closure);
+        Assert.assertNull(direct.maybeGet(destination));
+        for (boolean observe : List.of(false, true)) {
+            var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+            var result = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                    false, observe ? facts::put : null);
+            Assert.assertTrue(result instanceof RustCircuitPass.ProjectedWaterline);
+            Assert.assertTrue(direct.get(closure).getReducedExpression().equivalent(
+                    ((RustCircuitPass.ProjectedWaterline) result).closure()));
+            if (observe) {
+                Assert.assertFalse(facts.containsKey(destination));
+                Assert.assertFalse(facts.get(assignment).mayBeMonotone());
+                Assert.assertTrue(facts.get(literal).mayBeMonotone());
+                Assert.assertSame(facts.get(tail), facts.get(body));
+            }
+        }
+        // Reading an uninitialized local as the block's result still needs the visitor diagnostic.
+        var required = new DBSPBlockExpression(List.of(scratch), scratch.getVarReference());
+        Assert.assertTrue(RustCircuitPass.projectWaterlineClosure(compiler, required, closure.parameters,
+                new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)}, false)
+                instanceof RustCircuitPass.WaterlineInspection);
+    }
+
+    @Test
     public void blockDeclarationsExposeIntermediateBoundsAndPreserveTheTail() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

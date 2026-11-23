@@ -1,9 +1,9 @@
 //! Evaluate children before their parent and bind locals between successive statements.
-use super::FactType;
 use super::{
     ExpressionWaterline, Observations, ProjectedValue, Row, RowType, function, project_tuple,
     project_wrapper, scalar, unbounded,
 };
+use super::{FactType, scope::VariableRead};
 use crate::function_calls::function_name;
 use crate::monotonicity::literal::ordered_literal;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind};
@@ -43,7 +43,10 @@ impl Operation {
         // In a field read the selected field can be unbounded even when an
         // empty sibling makes the row monotone. Other transfer rules can
         // require the reduced operands and must preserve missing-bound errors.
-        if children.as_slice().iter().any(ProjectedValue::missing_bound)
+        if children
+            .as_slice()
+            .iter()
+            .any(ProjectedValue::missing_bound)
             && !(matches!(self, Self::Wrapper) && edit.expr_kind(id)? == Expr::Field)
         {
             return Ok(None);
@@ -237,7 +240,21 @@ impl Row {
                             }
                             continue;
                         }
-                        Expr::VariablePath => (id, self.variable(edit, id)?),
+                        Expr::VariablePath => match self.variable(edit, id)? {
+                            VariableRead::Projected(value) => (id, Some(value)),
+                            // A declaration without an initializer has no waterline fact.
+                            // An assignment visits its destination but consumes no fact for it.
+                            VariableRead::Uninitialized
+                                if matches!(work.last(), Some(Step::Discard)) =>
+                            {
+                                work.pop();
+                                active.remove(&id);
+                                continue;
+                            }
+                            VariableRead::Uninitialized | VariableRead::NeedsVisitor => {
+                                return Ok(None);
+                            }
+                        },
                         kind if ordered_literal(kind) => (id, scalar::literal_bound(edit, id)?),
                         _ => {
                             if !schedule(

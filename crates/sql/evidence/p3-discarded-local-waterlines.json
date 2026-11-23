@@ -1,0 +1,43 @@
+{
+  "scope": "Waterline projection for an assignment to an uninitialized local. The destination contributes no fact. A later use that requires its bound retains the Java diagnostic. Twelve frozen LATENESS cases per engine.",
+  "source_base": "3e07293dbb8339b97ba8ecc7298c8089691ee6a4",
+  "source_files_sha256": {
+    "crates/sql/sql-difftest/examples/check_pass_corpus.rs": "636f435a4a94456d1a83e72efe05390a1fb8ff410dfd3f18a5051bee4ef290ea",
+    "crates/sql/sql-opt-jni/src/lib.rs": "38a6ab98344c92526fff107def7ecc72fbc01fb26362d0425696165f38ac2040",
+    "crates/sql/sql-opt/src/map_fusion.rs": "95938b2a412d38404a93ab10ba037d0293bdb0f41187ce6d7fb57d7044556539",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "d70cadd541ebc237882799c8c824ebe0a5934a92dd6e1827798269cf31db4b15",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/scope.rs": "74b883353d67d117b9292806764e1d31ea65e71fb2a74eb9c6b567abdd31e8e9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "5c67135fe6d18596c30a2669999ea36a538365f94c35aca6f87b131ed682c932",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "03332c6afb9822336320e8637a10cb8a1c4b466311f474d1408fd6ff8544ee36",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "17004335ad772c36687a9fd6dbef24457f0d9a336b3949e92f4db8810ebdade0"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ef23a029539d64cb4e50c6e02244162f19601d2f84a1a6f6bcc07e0356954c58",
+    "bin/sql-difftest": "53dbb2dd2cda85eb7255cb3861ec0c3f3fdb7fb9f3f5369e89d688bbf5418e3c",
+    "maven/tests.jar": "0cf697ddf32739b542ead0472c3c93e3ae0e5a005c875990011528dd84d11e10",
+    "maven/sql-compiler.jar": "9306ba6d996ed74bb6010f37c5109fce449322fbab2487a3fa53a8d8d7f21e10"
+  },
+  "negative_control": {
+    "library_sha256": "3f5402fe839fb78e231f4ed9c2714bd4395b27689fecd2e12b932a9f03c6f518",
+    "failed_test": "assignmentToAnUninitializedLocalNeedsNoDestinationWaterline"
+  },
+  "rust_tests": 220,
+  "junit_tests": 140,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "aeead43f10c6c4d6f50d4fc082fe1d714fec7da861729818d5e67e9aeb240c48"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "a0a393295665a9c0065350ba932662c4b7765fd8766bf11f7257f702a748a668"
+    }
+  }
+}

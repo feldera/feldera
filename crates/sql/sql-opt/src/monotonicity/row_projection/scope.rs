@@ -9,6 +9,12 @@ pub(super) struct Local {
     initializer: Option<Initializer>,
 }
 
+pub(super) enum VariableRead {
+    Projected(ProjectedValue),
+    Uninitialized,
+    NeedsVisitor,
+}
+
 struct Initializer {
     row_type: RowType,
     ty: TypeId,
@@ -159,10 +165,10 @@ impl Row {
         &self,
         edit: &CircuitEditor,
         expression: ExpressionId,
-    ) -> Result<Option<ProjectedValue>, Error> {
+    ) -> Result<VariableRead, Error> {
         let node = edit.node(expression.into())?;
         let Some(name) = node.data("variable").and_then(|v| v.as_str()) else {
-            return Ok(None);
+            return Ok(VariableRead::NeedsVisitor);
         };
         let (shape, row_type, reduced) = if let Some((index, local)) = self
             .locals
@@ -172,10 +178,10 @@ impl Row {
             .find(|(_, local)| local.name == name)
         {
             let Some(local) = &local.initializer else {
-                return Ok(None);
+                return Ok(VariableRead::Uninitialized);
             };
             if !edit.same_type(edit.expression_type(expression)?, local.ty)? {
-                return Ok(None);
+                return Ok(VariableRead::NeedsVisitor);
             }
             let ty = match &local.row_type {
                 RowType::Prior { index } => RowType::Prior { index: *index },
@@ -195,9 +201,9 @@ impl Row {
                 parameter.shape.monotone().then_some(parameter.variable),
             )
         } else {
-            return Ok(None);
+            return Ok(VariableRead::NeedsVisitor);
         };
-        Ok(Some(ProjectedValue {
+        Ok(VariableRead::Projected(ProjectedValue {
             shape: shape.clone(),
             row_type,
             reduced,

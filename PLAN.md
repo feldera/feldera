@@ -41,6 +41,13 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-23. Rust shares equivalent output columns in fused maps and handles
+  assignments to uninitialized locals during waterline analysis. The previous
+  JNI builds each failed the corresponding regression. On the waterline build,
+  24 detached LATENESS compilations matched Java through 10,929 ordered S4
+  observations and emission.
+  [Map fusion](crates/sql/evidence/p3-fused-column-equivalence.json) · [Waterline projection](crates/sql/evidence/p3-discarded-local-waterlines.json)
+
 - 2026-11-23. Build `881233749` matched both frozen populations through
   6,996,738 ordered optimizer observations and passed all 8,256 classic
   executable cases. On `31a6547e4`, all three cold compile workloads met
