@@ -927,6 +927,18 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void computedRowKeysReplaceWeightsWithoutCancellation() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var value = new DBSPApplyExpression("opaque", new DBSPI32Literal(0).getType());
+        var set = bound(new DBSPZSetExpression(value));
+        assertCompatible(compiler, set, bound(new DBSPZSetExpression(value)), false);
+        var tuple = new DBSPTupleExpression(value);
+        var rows = bound(new DBSPZSetExpression(tuple));
+        assertCompatible(compiler, rows, bound(new DBSPZSetExpression(new DBSPTupleExpression(value))), false);
+        assertCompatible(compiler, rows, bound(new DBSPZSetExpression(tuple)), true);
+    }
+
+    @Test
     public void collectionWeightsQualifiersAndAggregateOperationsAffectKeyEquality() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var one = new DBSPI32Literal(1);

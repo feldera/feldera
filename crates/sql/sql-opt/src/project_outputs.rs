@@ -130,19 +130,7 @@ fn project_constant(
         let arg = edit.borrow_value(row)?;
         let row =
             reduce_closure_body_with_warnings(edit, body, &params, &[arg.into()], Some(warnings))?;
-        // The projection uses LinkedHashMap.put. A repeated literal replaces
-        // the previous weight while keeping the original key and its position.
-        let mut overwritten = false;
-        for (key, previous) in &mut projected {
-            if rows::object_equals(edit, NodeId::from(*key), row)? {
-                *previous = weight;
-                overwritten = true;
-                break;
-            }
-        }
-        if !overwritten {
-            projected.push((edit.expression(row)?, weight));
-        }
+        rows::put(edit, &mut projected, (edit.expression(row)?, weight))?;
     }
     multiset(edit, element, projected).map(Some)
 }

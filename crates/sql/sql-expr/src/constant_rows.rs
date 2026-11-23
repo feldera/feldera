@@ -61,8 +61,33 @@ pub fn append(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Result<(),
             return Ok(());
         }
     }
+    store_unmatched(edit, rows, row)
+}
+
+/// Replace the weight at its original position, as LinkedHashMap.put does.
+/// Constant projection uses this operation directly. Z-set append reaches it
+/// only after exhausting the search for a row that can combine weights.
+pub fn put(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Result<(), Error> {
+    for (key, weight) in rows.iter_mut() {
+        if equal_map_keys(edit, row.0, *key)? {
+            *weight = row.1;
+            return Ok(());
+        }
+    }
     rows.push(row);
     Ok(())
+}
+
+fn store_unmatched(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Result<(), Error> {
+    let kind = edit.expr_kind(row.0)?;
+    // For these values, a map-key match would already have matched the value
+    // scan. Tuples can contain computed fields that lack value equality.
+    if has_value_equality(kind) && !matches!(kind, Expr::Tuple | Expr::RawTuple) {
+        rows.push(row);
+        Ok(())
+    } else {
+        put(edit, rows, row)
+    }
 }
 
 fn merge_weight(rows: &mut Vec<Row>, index: usize, weight: i64) {
@@ -73,62 +98,23 @@ fn merge_weight(rows: &mut Vec<Row>, index: usize, weight: i64) {
     }
 }
 
-pub fn object_equals(edit: &CircuitEditor, a: NodeId, b: NodeId) -> Result<bool, Error> {
-    if a == b {
-        return Ok(true);
-    }
-    let (a, b) = (edit.expression(a)?, edit.expression(b)?);
-    Ok(edit.expr_kind(a)?.wire_name().ends_with("Literal")
-        && edit.same_type(edit.expression_type(a)?, edit.expression_type(b)?)?
-        && scalar_equals(edit, a, b)?)
-}
+mod object_equality;
+use object_equality::equal_map_keys;
+pub use object_equality::object_equals;
 
-/// Java list equality calls each element's equals method. SQL tuples compare
-/// field identities, while raw tuples and point coordinates call equals again.
-fn equal_elements(edit: &CircuitEditor, a: NodeId, b: NodeId) -> Result<bool, Error> {
-    let mut pending = vec![(a, b)];
-    let mut seen = std::collections::HashSet::new();
-    while let Some((a, b)) = pending.pop() {
-        if a == b || !seen.insert((a, b)) {
-            continue;
-        }
-        let (left, right) = (edit.node(a)?, edit.node(b)?);
-        let kind = edit.expr_kind(edit.expression(a)?)?;
-        if left.class() != right.class() {
-            return Ok(false);
-        }
-        match kind {
-            Expr::Tuple | Expr::RawTuple => match (left.field("fields"), right.field("fields")) {
-                (None, None) => {}
-                (Some(_), Some(_)) => {
-                    let (xs, ys) = (left.edges("fields")?, right.edges("fields")?);
-                    if xs.len() != ys.len() {
-                        return Ok(false);
-                    }
-                    if kind == Expr::Tuple {
-                        if xs != ys {
-                            return Ok(false);
-                        }
-                    } else {
-                        pending.extend(xs.into_iter().zip(ys).rev());
-                    }
-                }
-                _ => return Ok(false),
-            },
-            Expr::GeoPointConstructor => {
-                for field in ["right", "left"] {
-                    match (left.field(field), right.field(field)) {
-                        (None, None) => {}
-                        (Some(_), Some(_)) => pending.push((left.edge(field)?, right.edge(field)?)),
-                        _ => return Ok(false),
-                    }
-                }
-            }
-            _ if object_equals(edit, a, b)? => {}
-            _ => return Ok(false),
-        }
-    }
-    Ok(true)
+fn has_value_equality(kind: Expr) -> bool {
+    kind.wire_name().ends_with("Literal")
+        || matches!(
+            kind,
+            Expr::Tuple
+                | Expr::RawTuple
+                | Expr::Variant
+                | Expr::Array
+                | Expr::Map
+                | Expr::GeoPointConstructor
+                | Expr::ZSet
+                | Expr::IndexedZSet
+        )
 }
 
 fn scalar_equals(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<bool, Error> {
@@ -171,7 +157,7 @@ impl Difference {
     }
 
     /// Resume the linear search for the incoming row after comparing two values.
-    fn advance(&mut self, matched: Option<bool>) -> Step {
+    fn advance(&mut self, edit: &CircuitEditor, matched: Option<bool>) -> Result<Step, Error> {
         match matched {
             Some(true) => {
                 let (_, weight) = self.incoming.next().expect("row under comparison");
@@ -184,14 +170,18 @@ impl Difference {
         loop {
             if let Some(&(value, _)) = self.incoming.as_slice().first() {
                 if let Some(&(existing, _)) = self.rows.get(self.position) {
-                    return Step::Compare((existing, value));
+                    return Ok(Step::Compare((existing, value)));
                 }
-                self.rows.push(self.incoming.next().expect("incoming row"));
+                store_unmatched(
+                    edit,
+                    &mut self.rows,
+                    self.incoming.next().expect("incoming row"),
+                )?;
                 self.position = 0;
             } else if let Some(left) = self.left.take() {
                 self.incoming = std::mem::replace(&mut self.rows, left).into_iter();
             } else {
-                return Step::Done(self.rows.is_empty());
+                return Ok(Step::Done(self.rows.is_empty()));
             }
         }
     }
@@ -217,7 +207,7 @@ impl Comparison {
                 Some((a, b)) => Step::Compare((edit.expression(a)?, edit.expression(b)?)),
                 None => Step::Done(true),
             },
-            Self::Difference(diff) => diff.advance(matched),
+            Self::Difference(diff) => return diff.advance(edit, matched),
         })
     }
 }
@@ -232,7 +222,8 @@ fn same_value(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<
     let mut step = Step::Compare((a, b));
     loop {
         step = match step {
-            Step::Compare((a, b)) if a == b || equal.contains(&(a, b)) => Step::Done(true),
+            Step::Compare((a, b)) if a == b => Step::Done(has_value_equality(edit.expr_kind(a)?)),
+            Step::Compare(pair) if equal.contains(&pair) => Step::Done(true),
             Step::Compare(pair) => {
                 let mut comparison = compare(edit, pair.0, pair.1)?;
                 let first = comparison.advance(edit, None)?;
@@ -279,7 +270,7 @@ fn compare(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<Com
                     return Ok(false);
                 }
                 for (x, y) in xs.into_iter().zip(ys) {
-                    if !equal_elements(edit, x, y)? {
+                    if !object_equals(edit, x, y)? {
                         return Ok(false);
                     }
                 }
@@ -309,7 +300,7 @@ fn compare(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<Com
             for key in ["left", "right"] {
                 match (edge(left, key), edge(right, key)) {
                     (None, None) => {}
-                    (Some(x), Some(y)) if equal_elements(edit, x, y)? => {}
+                    (Some(x), Some(y)) if object_equals(edit, x, y)? => {}
                     _ => return Ok(Immediate(false)),
                 }
             }
@@ -423,6 +414,60 @@ mod tests {
         append(&edit, &mut rows, (utc, -2)).unwrap();
         append(&edit, &mut rows, (utc, 1)).unwrap();
         assert_eq!(rows, [(later, 1), (utc, 1)]);
+    }
+
+    #[test]
+    fn computed_rows_replace_weights_at_the_original_position() -> Result<(), Error> {
+        let mut edit = editor();
+        let site = edit.circuit().root_id();
+        let ty = edit.bool_type(site, false)?;
+        let x = edit.named_variable(ty, "x")?;
+        let y = edit.named_variable(ty, "y")?;
+        let mut rows = vec![(x, 4), (y, 1)];
+        append(&edit, &mut rows, (x, -4))?;
+        assert_eq!(rows, [(x, -4), (y, 1)]);
+        for raw in [true, false] {
+            let first = edit.tuple_expr(site, raw, &[x])?;
+            let second = edit.tuple_expr(site, raw, &[x])?;
+            let other = edit.tuple_expr(site, raw, &[y])?;
+            let mut rows = vec![(first, 3), (other, 2)];
+            append(&edit, &mut rows, (second, -3))?;
+            assert_eq!(rows, [(first, -3), (other, 2)]);
+            append(&edit, &mut rows, (first, 3))?;
+            assert_eq!(rows, [(other, 2)]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn projected_timestamp_keys_use_the_hash_of_the_stored_spelling() -> Result<(), Error> {
+        let mut edit = editor();
+        let site = edit.circuit().root_id();
+        let make_timestamp = |edit: &mut CircuitEditor, value| {
+            literal(
+                edit,
+                Expr::TimestampTzLiteral,
+                TypeKind::TimestampTz,
+                json!(value),
+            )
+        };
+        let west = make_timestamp(&mut edit, "2024-11-03 01:30:00 America/New_York");
+        let utc = make_timestamp(&mut edit, "2024-11-03 05:30:00 UTC");
+        let mut projected = vec![(west, 1)];
+        put(&edit, &mut projected, (utc, 2))?;
+        assert_eq!(projected, [(west, 1), (utc, 2)]);
+
+        // The middle two leaves have the same coefficient in the outer tuple's
+        // hash. Exchanging their spellings preserves both hash and equality.
+        let w_u = edit.tuple_expr(site, true, &[west, utc])?;
+        let w_w = edit.tuple_expr(site, true, &[west, west])?;
+        let a = edit.tuple_expr(site, true, &[w_u, w_w])?;
+        let u_w = edit.tuple_expr(site, true, &[utc, west])?;
+        let b = edit.tuple_expr(site, true, &[w_w, u_w])?;
+        let mut projected = vec![(a, 1)];
+        put(&edit, &mut projected, (b, 2))?;
+        assert_eq!(projected, [(a, 2)]);
+        Ok(())
     }
 
     #[test]
