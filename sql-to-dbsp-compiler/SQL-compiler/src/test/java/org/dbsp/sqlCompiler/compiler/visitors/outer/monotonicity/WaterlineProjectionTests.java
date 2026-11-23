@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.CombinedBounds;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
@@ -48,6 +49,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -84,6 +86,7 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -625,6 +628,44 @@ public class WaterlineProjectionTests {
             compiler.options.ioOptions.rustOptimizerPasses = true;
             var hybrid = new MonotoneTransferFunctions(compiler, operator, kind, row).applyAnalysis(closure);
             Assert.assertTrue(direct.equivalent(hybrid.getReducedExpression()));
+        }
+    }
+
+    @Test
+    public void expressionFactsPreserveLocalAliasesAndSharedWaterlines() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPTypeInteger(CalciteEmptyRel.INSTANCE, 32, true, false);
+        var row = new PartiallyMonotoneTuple(List.of(new MonotoneType(integer)), false, false);
+        var input = new DBSPVariablePath("row", row.getType().ref());
+        var field = input.deref().field(0);
+        var local = new DBSPLetStatement("value", field);
+        var first = local.getVarReference();
+        var second = local.getVarReference();
+        var pair = new DBSPTupleExpression(first, second);
+        var block = new DBSPBlockExpression(List.of(local), pair);
+        var closure = block.closure(input);
+        var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var analyzer = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+        analyzer.apply(closure);
+        Assert.assertSame(analyzer.get(field), analyzer.get(first));
+        Assert.assertSame(analyzer.get(first), analyzer.get(second));
+        Assert.assertSame(analyzer.get(pair), analyzer.get(block));
+
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+            var nativeResult = RustCircuitPass.projectWaterlineClosure(compiler, block, closure.parameters,
+                    new DBSPType[]{row.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(row)},
+                    false, facts::put);
+            Assert.assertTrue(nativeResult instanceof RustCircuitPass.ProjectedWaterline);
+            Assert.assertSame(facts.get(field), facts.get(first));
+            Assert.assertSame(facts.get(first), facts.get(second));
+            Assert.assertSame(facts.get(pair), facts.get(block));
+            var reduced = ((RustCircuitPass.ProjectedWaterline) nativeResult).closure();
+            Assert.assertTrue(analyzer.get(closure).getReducedExpression().equivalent(reduced));
+            Assert.assertSame(facts.get(pair).getReducedExpression(), reduced.body);
+            var fields = reduced.body.to(DBSPTupleExpression.class);
+            Assert.assertSame(facts.get(first).getReducedExpression(), fields.get(0));
+            Assert.assertSame(fields.get(0), fields.get(1));
         }
     }
 
@@ -1284,6 +1325,54 @@ public class WaterlineProjectionTests {
             Assert.assertFalse(failedRow.mayBeMonotone());
             Assert.assertSame(integer, failedRow.getFieldType(0).getType());
             Assert.assertSame(row.getFieldType(0), output.getFieldType(4));
+        }
+    }
+
+    @Test
+    public void emptyFieldsDoNotRequireAWaterlineUntilRead() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(site, 32, true, false);
+        var row = new PartiallyMonotoneTuple(List.of(new MonotoneType(integer)), false, false);
+        var input = new DBSPVariablePath("row", row.getType().ref());
+        var unit = DBSPTypeRawTuple.EMPTY;
+        var unknown = new NoExpression(new DBSPTypeTuple(unit, integer));
+        var unboundedField = unknown.field(1);
+        var loop = new DBSPForExpression("unused", input.deepCopy().deref(),
+                new DBSPBlockExpression(List.of(), new NoExpression(unit)));
+        var result = new DBSPTupleExpression(unboundedField, input.deepCopy().deref().field(0));
+        var body = new DBSPBlockExpression(List.of(new DBSPExpressionStatement(loop)), result);
+        var closure = body.closure(input);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        var direct = new MonotoneTransferFunctions(compiler, operator, kind, row);
+        direct.apply(closure);
+        Assert.assertTrue(direct.get(unknown).mayBeMonotone());
+        Assert.assertTrue(direct.get(loop).mayBeMonotone());
+        Assert.assertFalse(direct.get(unboundedField).mayBeMonotone());
+        Assert.assertThrows(NullPointerException.class, () -> direct.get(unknown).getReducedExpression());
+
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+            var nativeResult = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{row.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(row)},
+                    false, facts::put);
+            Assert.assertTrue(nativeResult instanceof RustCircuitPass.ProjectedWaterline);
+            Assert.assertTrue(direct.get(closure).getReducedExpression().equivalent(
+                    ((RustCircuitPass.ProjectedWaterline) nativeResult).closure()));
+            Assert.assertTrue(facts.get(loop).mayBeMonotone());
+            Assert.assertFalse(facts.get(unboundedField).mayBeMonotone());
+            Assert.assertThrows(NullPointerException.class, () -> facts.get(unknown).getReducedExpression());
+        }
+
+        // Selecting the empty field itself does demand the absent operand bound.
+        var demanding = unknown.field(0).closure(input);
+        for (boolean hybrid : List.of(false, true)) {
+            if (hybrid && !Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
+                continue;
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            Assert.assertThrows(NullPointerException.class, () ->
+                    new MonotoneTransferFunctions(compiler, operator, kind, row).applyAnalysis(demanding));
         }
     }
 

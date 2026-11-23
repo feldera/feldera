@@ -12,8 +12,7 @@ use self::{
 };
 use crate::limiters::Projection;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
-    TypeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId, TypeId,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -28,6 +27,10 @@ pub enum RowType {
     },
     BoundedScalar {
         type_id: u64,
+    },
+    /// Type of an earlier expression in the same postorder analysis.
+    Prior {
+        index: usize,
     },
     Local {
         index: usize,
@@ -67,16 +70,47 @@ pub struct ProjectedValue {
     pub reduced: Option<ExpressionId>,
 }
 
+impl ProjectedValue {
+    /// Java can describe an empty row as monotone even when the expression
+    /// producing it supplies no bound. Only a consumer of that bound needs it.
+    fn missing_bound(&self) -> bool {
+        self.reduced.is_none() && self.shape.monotone()
+    }
+}
+
 struct Binding {
     name: String,
     variable: ExpressionId,
     shape: Shape,
 }
 
+/// One expression as observed by a caller querying intermediate waterlines.
+pub enum FactType {
+    /// Reads of one parameter share the parameter's original analysis.
+    Parameter(usize),
+    /// A local read or the result of a block or LET reuses an earlier analysis.
+    Alias(usize),
+    Computed(RowType),
+}
+
+pub struct ExpressionWaterline {
+    pub expression: ExpressionId,
+    pub origin: FactType,
+    pub bound: Option<ExpressionId>,
+}
+
+#[derive(Default)]
+enum Observations {
+    #[default]
+    ResultOnly,
+    Clocks(HashSet<ExpressionId>),
+    Facts(Vec<ExpressionWaterline>),
+}
+
 struct Row {
     bindings: Vec<Binding>,
     locals: Vec<Local>,
-    clock_operands: Option<HashSet<ExpressionId>>,
+    observations: Observations,
 }
 
 fn field_number(node: &Node) -> Result<usize, Error> {
@@ -97,11 +131,6 @@ fn unbounded_type(edit: &mut CircuitEditor, ty: TypeId) -> Result<Option<Project
     let Some(UnorderedRow { shape, .. }) = UnorderedRow::from_type(edit, ty)? else {
         return Ok(None);
     };
-    // A nonnullable empty tuple has a bound even when it occurs inside an
-    // otherwise unknown row. Its construction belongs to the general visitor.
-    if shape.monotone() {
-        return Ok(None);
-    }
     Ok(Some(ProjectedValue {
         shape,
         constant: false,
@@ -128,23 +157,20 @@ fn project_wrapper(
     let read = match kind {
         Expr::Borrow => RowRead::Borrow,
         Expr::Deref => RowRead::Deref,
-        Expr::Field => RowRead::Field { index: field_number(edit.node(expression.into())?)? },
+        Expr::Field => RowRead::Field {
+            index: field_number(edit.node(expression.into())?)?,
+        },
         Expr::Clone => RowRead::Clone,
         Expr::Some => RowRead::Some,
         Expr::Unwrap => RowRead::Unwrap,
         _ => unreachable!("expected an expression wrapper"),
     };
-    let Some(mut projected) = read.apply(edit, expression.into(), edit.expression_type(expression)?, value)? else {
-        return Ok(None);
-    };
-    // Parents in a whole closure consume only the bounded fields of a row.
-    // Unwrapping a nullable empty tuple can expose a field with no operand bound.
-    if !projected.shape.monotone() {
-        projected.reduced = None;
-    } else if projected.reduced.is_none() {
-        return Ok(None);
-    }
-    Ok(Some(projected))
+    read.apply(
+        edit,
+        expression.into(),
+        edit.expression_type(expression)?,
+        value,
+    )
 }
 
 /// Assemble the bounded fields in their original order. SQL rows retain the
@@ -244,12 +270,15 @@ pub(crate) fn clock_operands(
             shape,
         }],
         locals: Vec::new(),
-        clock_operands: Some(HashSet::new()),
+        observations: Observations::Clocks(HashSet::new()),
     };
     if row.visit(edit, body)?.is_none() {
         return Ok(None);
     }
-    Ok(row.clock_operands)
+    let Observations::Clocks(clocks) = row.observations else {
+        unreachable!()
+    };
+    Ok(Some(clocks))
 }
 
 pub fn project_row(
@@ -276,50 +305,64 @@ pub fn project_rows(
     projections: &[Projection],
     indexed: bool,
 ) -> Result<Option<ProjectedValue>, Error> {
-    if (indexed && (projections.len() != 2 || bounds.len() != 1))
-        || (!indexed && projections.len() != bounds.len())
-    {
-        return Err(Error::new(
-            "waterline shapes do not match closure parameters",
-        ));
-    }
-    let Some(mut shapes) = projections
-        .iter()
-        .map(|p| Shape::from_input(p).map(|shape| Shape::Reference(shape.into())))
-        .collect::<Option<Vec<_>>>()
-    else {
+    let Some(mut row) = Row::new(edit, bounds, projections, indexed)? else {
         return Ok(None);
     };
-    if indexed {
-        // The original pair holds (&key, &value). Ordinary field projection
-        // computes the compressed index when either reference lacks a bound.
-        shapes = vec![Shape::tuple(shapes, false)];
+    row.visit(edit, body)
+}
+
+impl Row {
+    fn new(
+        edit: &CircuitEditor,
+        bounds: &[ExpressionId],
+        projections: &[Projection],
+        indexed: bool,
+    ) -> Result<Option<Self>, Error> {
+        if (indexed && (projections.len() != 2 || bounds.len() != 1))
+            || (!indexed && projections.len() != bounds.len())
+        {
+            return Err(Error::new(
+                "waterline shapes do not match closure parameters",
+            ));
+        }
+        let Some(mut shapes) = projections
+            .iter()
+            .map(|p| Shape::from_input(p).map(|shape| Shape::Reference(shape.into())))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Ok(None);
+        };
+        if indexed {
+            // The original pair holds (&key, &value). Ordinary field projection
+            // computes the compressed index when either reference lacks a bound.
+            shapes = vec![Shape::tuple(shapes, false)];
+        }
+        let mut bindings = Vec::with_capacity(bounds.len());
+        for (&variable, shape) in bounds.iter().zip(shapes) {
+            let name = edit
+                .node(variable.into())?
+                .data("variable")
+                .and_then(|n| n.as_str())
+                .ok_or_else(|| Error::new("expected a projected row variable"))?
+                .to_owned();
+            bindings.push(Binding {
+                name,
+                variable,
+                shape,
+            });
+        }
+        Ok(Some(Self {
+            bindings,
+            locals: Vec::new(),
+            observations: Observations::ResultOnly,
+        }))
     }
-    let mut bindings = Vec::with_capacity(bounds.len());
-    for (&variable, shape) in bounds.iter().zip(shapes) {
-        let name = edit
-            .node(variable.into())?
-            .data("variable")
-            .and_then(|n| n.as_str())
-            .ok_or_else(|| Error::new("expected a projected row variable"))?
-            .to_owned();
-        bindings.push(Binding {
-            name,
-            variable,
-            shape,
-        });
-    }
-    Row {
-        bindings,
-        locals: Vec::new(),
-        clock_operands: None,
-    }
-    .visit(edit, body)
 }
 
 /// The bound of a whole closure and the SQL type recipe used by its consumers.
 /// A supported closure can have no bounded output fields.
 pub struct ProjectedClosure {
+    pub facts: Vec<ExpressionWaterline>,
     pub row_type: RowType,
     pub closure: Option<ExpressionId>,
 }
@@ -327,8 +370,15 @@ pub struct ProjectedClosure {
 /// Bindings and diagnostics for the general visitor, all in the original node-ID space.
 pub enum WaterlineInspection {
     Free(NodeId),
-    Conflict { variable: NodeId, previous: NodeId, current: NodeId },
-    Bound { references: HashMap<NodeId, NodeId>, repeated: Vec<NodeId> },
+    Conflict {
+        variable: NodeId,
+        previous: NodeId,
+        current: NodeId,
+    },
+    Bound {
+        references: HashMap<NodeId, NodeId>,
+        repeated: Vec<NodeId>,
+    },
 }
 
 impl WaterlineInspection {
@@ -340,14 +390,24 @@ impl WaterlineInspection {
         use crate::LexicalResolution;
         Ok(match resolution {
             LexicalResolution::Free { variable, .. } => Self::Free(variable),
-            LexicalResolution::Conflict { variable, previous, current } =>
-                Self::Conflict { variable, previous, current },
+            LexicalResolution::Conflict {
+                variable,
+                previous,
+                current,
+            } => Self::Conflict {
+                variable,
+                previous,
+                current,
+            },
             LexicalResolution::Bound(references) => {
                 let repeated = match body {
                     Some(body) => feldera_sql_expr::first_repeated_expression(edit, body)?,
                     None => None,
                 };
-                Self::Bound { references, repeated: repeated.unwrap_or_default() }
+                Self::Bound {
+                    references,
+                    repeated: repeated.unwrap_or_default(),
+                }
             }
         })
     }
@@ -376,10 +436,50 @@ pub fn project_closure(
     projections: &[Projection],
     indexed: bool,
 ) -> Result<ClosureAnalysis, Error> {
+    analyze_closure(
+        edit,
+        body,
+        parameters,
+        projections,
+        indexed,
+        Observations::ResultOnly,
+    )
+}
+
+/// Include the intermediate expressions queried by callers of the general visitor.
+pub fn expression_waterlines(
+    edit: &mut CircuitEditor,
+    body: ExpressionId,
+    parameters: &[(NodeId, TypeId)],
+    projections: &[Projection],
+    indexed: bool,
+) -> Result<ClosureAnalysis, Error> {
+    analyze_closure(
+        edit,
+        body,
+        parameters,
+        projections,
+        indexed,
+        Observations::Facts(Vec::new()),
+    )
+}
+
+fn analyze_closure(
+    edit: &mut CircuitEditor,
+    body: ExpressionId,
+    parameters: &[(NodeId, TypeId)],
+    projections: &[Projection],
+    indexed: bool,
+    observations: Observations,
+) -> Result<ClosureAnalysis, Error> {
     let declared = parameters.iter().map(|&(parameter, _)| parameter);
     let resolution = crate::lexical_scope::resolve_body(edit.circuit(), declared, body.into())?;
     let inspection = WaterlineInspection::inspect(edit, resolution, Some(body.into()))?;
-    let WaterlineInspection::Bound { references, repeated } = &inspection else {
+    let WaterlineInspection::Bound {
+        references,
+        repeated,
+    } = &inspection
+    else {
         return Ok(ClosureAnalysis::Visit(inspection));
     };
     if !repeated.is_empty() {
@@ -394,7 +494,9 @@ pub fn project_closure(
             }
         }
     }
-    if let Some(projected) = project_validated_closure(edit, body, parameters, projections, indexed)? {
+    if let Some(projected) =
+        project_validated_closure(edit, body, parameters, projections, indexed, observations)?
+    {
         return Ok(ClosureAnalysis::Projected(projected));
     }
     Ok(ClosureAnalysis::Visit(inspection))
@@ -406,6 +508,7 @@ fn project_validated_closure(
     parameters: &[(NodeId, TypeId)],
     projections: &[Projection],
     indexed: bool,
+    observations: Observations,
 ) -> Result<Option<ProjectedClosure>, Error> {
     let mut variables = Vec::with_capacity(parameters.len());
     let mut names = Vec::with_capacity(parameters.len());
@@ -424,7 +527,11 @@ fn project_validated_closure(
         variables.push(edit.named_variable(ty, &name)?);
         names.push(name);
     }
-    let Some(value) = project_rows(edit, body, &variables, projections, indexed)? else {
+    let Some(mut row) = Row::new(edit, &variables, projections, indexed)? else {
+        return Ok(None);
+    };
+    row.observations = observations;
+    let Some(value) = row.visit(edit, body)? else {
         return Ok(None);
     };
     let closure = match (value.reduced, parameters) {
@@ -443,7 +550,12 @@ fn project_validated_closure(
             Some(super::bindings::waterline_bindings(edit, &inputs)?.closure(edit, body)?)
         }
     };
+    let facts = match row.observations {
+        Observations::Facts(facts) => facts,
+        _ => Vec::new(),
+    };
     Ok(Some(ProjectedClosure {
+        facts,
         row_type: value.row_type,
         closure,
     }))
@@ -476,9 +588,11 @@ mod tests {
         let dropped = edit.tuple_field(pair, 0)?;
         let bounds = clock_operands(&mut edit, parameter, kept)?.unwrap();
         assert!(bounds.contains(&kept));
-        assert!(!clock_operands(&mut edit, parameter, dropped)?
-            .unwrap()
-            .contains(&dropped));
+        assert!(
+            !clock_operands(&mut edit, parameter, dropped)?
+                .unwrap()
+                .contains(&dropped)
+        );
         let projected = UnorderedRow::from_type(&mut edit, row)?
             .unwrap()
             .projected

@@ -8,6 +8,8 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -65,6 +67,28 @@ public class StaticCandidatesTests {
         Assert.assertEquals(11, rewritten.fields[5].to(DBSPHandleErrorExpression.class).index);
         Assert.assertEquals(12, pass.renumber(shared).to(DBSPHandleErrorExpression.class).index);
         Assert.assertEquals(13, pass.index);
+    }
+
+    @Test
+    public void deepSharedStaticInitializersKeepTheFirstErrorSlot() {
+        var origin = CalciteObject.create(new SourcePositionRange(new SourcePosition(2, 1), new SourcePosition(2, 2)));
+        var literal = new DBSPI32Literal(origin, b.i32(), 1);
+        var shared = new DBSPHandleErrorExpression(origin, 0,
+                DBSPHandleErrorExpression.RuntimeBehavior.PanicWithSource, literal, true);
+        DBSPExpression sum = shared;
+        for (int i = 0; i < 160; i++)
+            sum = b.add(sum, literal);
+
+        var pass = pass().renumber;
+        pass.index = 7;
+        var result = pass.renumber(b.tuple(sum, sum, shared)).to(DBSPTupleExpression.class);
+        Assert.assertSame(result.fields[0], result.fields[1]);
+        DBSPExpression first = result.fields[0];
+        for (int i = 0; i < 160; i++)
+            first = first.to(DBSPBinaryExpression.class).left;
+        Assert.assertSame(first, result.fields[2]);
+        Assert.assertEquals(7, first.to(DBSPHandleErrorExpression.class).index);
+        Assert.assertEquals(10, pass.index);
     }
 
     @Test

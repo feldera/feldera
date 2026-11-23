@@ -447,6 +447,34 @@ fn binding_ids(bindings: std::collections::HashMap<NodeId, NodeId>) -> Vec<(u64,
     pairs
 }
 
+/// Send the dependencies of all bounds once so Java sees the same shared expressions.
+fn expression_facts_reply(
+    arena: &Circuit,
+    edit: &feldera_sql_ir::CircuitEditor,
+    projection: feldera_sql_opt::ProjectedClosure,
+) -> Result<Value, feldera_sql_ir::Error> {
+    use feldera_sql_opt::FactType;
+    let mut roots = Vec::new();
+    let mut add_bound = |bound: Option<feldera_sql_ir::ExpressionId>| {
+        bound.map(|id| {
+            let index = roots.len();
+            roots.push(id.into());
+            index
+        })
+    };
+    let facts = projection.facts.into_iter().map(|fact| {
+        let id = inner_number(fact.expression.into());
+        match fact.origin {
+            FactType::Alias(index) => json!({ "id": id, "alias": index }),
+            FactType::Parameter(index) => json!({ "id": id, "parameter": index, "bound": add_bound(fact.bound) }),
+            FactType::Computed(ty) => json!({ "id": id, "type": ty, "bound": add_bound(fact.bound) }),
+        }
+    }).collect::<Vec<_>>();
+    let closure = add_bound(projection.closure);
+    let bounds = edit.circuit().live_inner_roots(arena, &roots)?;
+    Ok(json!({ "facts": facts, "bounds": bounds, "closure": closure }))
+}
+
 fn waterline_inspection(inspection: feldera_sql_opt::WaterlineInspection) -> Value {
     use feldera_sql_opt::WaterlineInspection;
     match inspection {
@@ -766,8 +794,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let first = serde_json::from_slice(state)?;
             let initializer = edit.expression(*initializer)?;
             let (result, next) = feldera_sql_opt::renumber_static_errors(&mut edit, initializer, first)?;
-            let mut roots = edit.circuit().additional_expressions(&arena, &[result])?;
-            let value = roots.pop().expect("one static initializer");
+            let value = edit.circuit().live_expression(&arena, result)?;
             return Ok(json!({"initializer": value, "next": next}));
         }
         ("Statics/Inline" | "Statics/Define" | "Statics/Declare", _) => {
@@ -907,7 +934,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             return lowered_function_reply(&arena, &edit, Some(function), next, warnings);
         }
-        ("Monotonicity/ProjectClosure", [body, inputs @ ..]) => {
+        ("Monotonicity/ProjectClosure" | "Monotonicity/ExpressionFacts", [body, inputs @ ..]) => {
             #[derive(serde::Deserialize)]
             struct InputShapes {
                 indexed: bool,
@@ -922,8 +949,13 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let parameters = pairs.iter()
                 .map(|&[parameter, ty]| edit.type_id(ty).map(|ty| (parameter, ty)))
                 .collect::<Result<Vec<_>, _>>()?;
-            let result = feldera_sql_opt::project_closure(&mut edit, body, &parameters, &request.shapes, request.indexed)?;
+            let collect = pass == "Monotonicity/ExpressionFacts";
+            let analyze = if collect { feldera_sql_opt::expression_waterlines } else { feldera_sql_opt::project_closure };
+            let result = analyze(&mut edit, body, &parameters, &request.shapes, request.indexed)?;
             return Ok(match result {
+                feldera_sql_opt::ClosureAnalysis::Projected(result) if collect => {
+                    expression_facts_reply(&arena, &edit, result)?
+                }
                 feldera_sql_opt::ClosureAnalysis::Projected(result) => {
                     let closure = result.closure.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
                     json!({"row_type": result.row_type, "closure": closure})
@@ -1384,7 +1416,7 @@ fn transform(
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "EnsureExpressionTree" | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"
         | "Monotonicity/Clock" | "Monotonicity/RowClosure" | "Monotonicity/InspectBody"
-        | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
+        | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ExpressionFacts" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"

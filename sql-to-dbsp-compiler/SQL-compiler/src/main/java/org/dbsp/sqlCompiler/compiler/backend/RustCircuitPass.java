@@ -635,6 +635,12 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public static WaterlineAnalysis projectWaterlineClosure(DBSPCompiler compiler, DBSPExpression body,
             DBSPParameter[] parameters, DBSPType[] projectedTypes, IMaybeMonotoneType[] argumentShapes, boolean indexed) {
+        return projectWaterlineClosure(compiler, body, parameters, projectedTypes, argumentShapes, indexed, null);
+    }
+
+    public static WaterlineAnalysis projectWaterlineClosure(DBSPCompiler compiler, DBSPExpression body,
+            DBSPParameter[] parameters, DBSPType[] projectedTypes, IMaybeMonotoneType[] argumentShapes, boolean indexed,
+            @Nullable BiConsumer<DBSPExpression, MonotoneExpression> observe) {
         var roots = new ArrayList<IDBSPInnerNode>();
         roots.add(body);
         for (int i = 0; i < parameters.length; i++) {
@@ -645,13 +651,16 @@ public final class RustCircuitPass implements CircuitTransform {
         request.put("indexed", indexed);
         request.set("shapes", MAPPER.valueToTree(WaterlineProjection.inputShapes(argumentShapes, indexed)));
         try {
-            var reply = invokeLowering(compiler, "Monotonicity/ProjectClosure",
+            String pass = observe == null ? "Monotonicity/ProjectClosure" : "Monotonicity/ExpressionFacts";
+            var reply = invokeLowering(compiler, pass,
                     MAPPER.writeValueAsBytes(request), roots.toArray(IDBSPInnerNode[]::new));
             var inspection = reply.value.get("inspection");
             if (compiler.stateObserver != null)
-                compiler.stateObserver.nativeDecision("Monotonicity/ProjectClosure", inspection == null);
+                compiler.stateObserver.nativeDecision(pass, inspection == null);
             if (inspection != null)
                 return readWaterlineInspection(reply.writer, inspection);
+            if (observe != null)
+                return readExpressionFacts(reply, parameters, argumentShapes, observe);
             var nodes = Objects.requireNonNull(reply.writer.liveNodes);
             var type = WaterlineProjection.resolveType(reply.value.required("row_type"),
                     id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes);
@@ -660,6 +669,43 @@ public final class RustCircuitPass implements CircuitTransform {
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode a waterline closure", error);
         }
+    }
+
+    /** Decode all bounds with one identity map, including operands shared with the reduced closure. */
+    private static ProjectedWaterline readExpressionFacts(LoweringReply reply,
+            DBSPParameter[] parameters, IMaybeMonotoneType[] argumentShapes,
+            BiConsumer<DBSPExpression, MonotoneExpression> observe) {
+        var decoder = expressionDecoder(reply.writer);
+        var bounds = new ArrayList<DBSPExpression>();
+        for (var encoded : reply.value.required("bounds"))
+            bounds.add(decodeLiveRoot(decoder, encoded, DBSPExpression.class));
+        var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+        var facts = new ArrayList<MonotoneExpression>();
+        var inputs = new MonotoneExpression[parameters.length];
+        for (var entry : reply.value.required("facts")) {
+            var expression = Utilities.getExists(nodes, entry.required("id").longValue()).to(DBSPExpression.class);
+            MonotoneExpression value;
+            if (entry.has("alias")) {
+                value = facts.get(entry.required("alias").intValue());
+            } else if (entry.has("parameter")) {
+                int index = entry.required("parameter").intValue();
+                if (inputs[index] == null) {
+                    var bound = bounds.get(entry.required("bound").intValue());
+                    inputs[index] = new MonotoneExpression(parameters[index].asVariable(), argumentShapes[index], bound);
+                }
+                value = inputs[index];
+            } else {
+                var type = WaterlineProjection.resolveFactType(entry.required("type"),
+                        id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes, facts);
+                var slot = entry.required("bound");
+                value = new MonotoneExpression(expression, type, slot.isNull() ? null : bounds.get(slot.intValue()));
+            }
+            facts.add(value);
+            observe.accept(expression, value);
+        }
+        var result = reply.value.required("closure");
+        var closure = result.isNull() ? null : bounds.get(result.intValue()).to(DBSPClosureExpression.class);
+        return new ProjectedWaterline(Utilities.last(facts).getMonotoneType(), closure);
     }
 
     public static DBSPExpression ensureExpressionTree(DBSPCompiler compiler, DBSPExpression root) {
@@ -1907,7 +1953,8 @@ public final class RustCircuitPass implements CircuitTransform {
     public static RenumberedInitializer renumberStaticErrors(DBSPCompiler compiler, DBSPExpression initializer, int first) {
         try {
             var reply = invokeLowering(compiler, "Statics/RenumberErrors", MAPPER.writeValueAsBytes(first), initializer);
-            var expression = expressionDecoder(reply.writer).decodeInner(reply.value.required("initializer"), DBSPExpression.class);
+            var expression = Objects.requireNonNull(decodeLiveRoot(reply.writer, reply.value.required("initializer"),
+                    DBSPExpression.class));
             return new RenumberedInitializer(expression, reply.value.required("next").intValue());
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode the next static error index", error);

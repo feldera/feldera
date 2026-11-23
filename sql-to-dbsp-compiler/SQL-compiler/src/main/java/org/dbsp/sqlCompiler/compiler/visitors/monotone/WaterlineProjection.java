@@ -43,34 +43,41 @@ public final class WaterlineProjection {
     /** Resolve the Rust projection against the same analyzed types that fed the closure. */
     public static IMaybeMonotoneType resolveType(JsonNode projection, LongFunction<DBSPType> declaredType,
                                                  IMaybeMonotoneType... parameters) {
-        return resolveType(projection, declaredType, parameters, new ArrayList<>());
+        return resolveType(projection, declaredType, parameters, new ArrayList<>(), List.of());
+    }
+
+    public static IMaybeMonotoneType resolveFactType(JsonNode projection, LongFunction<DBSPType> declaredType,
+                                                    IMaybeMonotoneType[] parameters, List<MonotoneExpression> facts) {
+        return resolveType(projection, declaredType, parameters, new ArrayList<>(), facts);
     }
 
     private static IMaybeMonotoneType resolveType(JsonNode projection, LongFunction<DBSPType> declaredType,
-                                                   IMaybeMonotoneType[] parameters, ArrayList<IMaybeMonotoneType> locals) {
+                                                   IMaybeMonotoneType[] parameters, ArrayList<IMaybeMonotoneType> locals,
+                                                   List<MonotoneExpression> facts) {
         return switch (projection.required("kind").textValue()) {
             case "unbounded" -> NonMonotoneType.nonMonotone(declaredType.apply(projection.required("type_id").longValue()));
             case "bounded_scalar" -> new MonotoneType(declaredType.apply(projection.required("type_id").longValue()));
+            case "prior" -> facts.get(projection.required("index").intValue()).getMonotoneType();
             case "local" -> locals.get(projection.required("index").intValue());
             case "scope" -> {
                 int outer = locals.size();
                 for (var initializer : projection.required("initializers"))
-                    locals.add(initializer.isNull() ? null : resolveType(initializer, declaredType, parameters, locals));
-                var result = resolveType(projection.required("result"), declaredType, parameters, locals);
+                    locals.add(initializer.isNull() ? null : resolveType(initializer, declaredType, parameters, locals, facts));
+                var result = resolveType(projection.required("result"), declaredType, parameters, locals, facts);
                 locals.subList(outer, locals.size()).clear();
                 yield result;
             }
             case "parameter" -> parameters[projection.required("index").intValue()];
-            case "borrow" -> new MonotoneRefType(resolveType(projection.required("value"), declaredType, parameters, locals));
-            case "deref" -> resolveType(projection.required("value"), declaredType, parameters, locals).to(MonotoneRefType.class).base;
-            case "field" -> resolveType(projection.required("row"), declaredType, parameters, locals).to(PartiallyMonotoneTuple.class)
+            case "borrow" -> new MonotoneRefType(resolveType(projection.required("value"), declaredType, parameters, locals, facts));
+            case "deref" -> resolveType(projection.required("value"), declaredType, parameters, locals, facts).to(MonotoneRefType.class).base;
+            case "field" -> resolveType(projection.required("row"), declaredType, parameters, locals, facts).to(PartiallyMonotoneTuple.class)
                     .getFieldExpressionType(projection.required("index").intValue());
-            case "with_nullability" -> resolveType(projection.required("value"), declaredType, parameters, locals)
+            case "with_nullability" -> resolveType(projection.required("value"), declaredType, parameters, locals, facts)
                     .withMaybeNull(projection.required("nullable").booleanValue());
             case "tuple" -> {
                 var members = new ArrayList<IMaybeMonotoneType>();
                 for (var field : projection.required("fields"))
-                    members.add(resolveType(field, declaredType, parameters, locals));
+                    members.add(resolveType(field, declaredType, parameters, locals, facts));
                 yield new PartiallyMonotoneTuple(members, projection.required("raw").booleanValue(),
                         projection.required("nullable").booleanValue());
             }

@@ -170,7 +170,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         Utilities.enforce(computed.sameType(resultType),
                 () -> "Flatmap result type " + resultType + " does not match computed type " + computed);
         // This is the same as this.apply(closure)
-        if (!this.projectsClosure())
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
             this.resolveReferences(closure);
         this.preorder(closure);
         // The result applies to the original expression
@@ -226,9 +226,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             this.parameterTypes = Linq.map(this.parameterTypes, MonotoneRefType::new, IMaybeMonotoneType.class);
         }
 
-        if (this.projectsClosure()) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
             var analysis = RustCircuitPass.projectWaterlineClosure(this.compiler, expression.body, expression.parameters,
-                    projectedTypes, this.parameterTypes, indexed);
+                    projectedTypes, this.parameterTypes, indexed, this.closureResultOnly ? null : this::set);
             if (analysis instanceof RustCircuitPass.ProjectedWaterline projected) {
                 if (projected.bodyType().mayBeMonotone())
                     this.recordClosure(expression, projected.bodyType(), Objects.requireNonNull(projected.closure()));
@@ -1049,7 +1049,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
     @Override
     public IDBSPInnerNode apply(IDBSPInnerNode node) {
-        if (!(this.projectsClosure() && node instanceof DBSPClosureExpression))
+        if (!(this.compiler.options.ioOptions.rustOptimizerPasses && node instanceof DBSPClosureExpression))
             this.resolveReferences(node);
         return super.apply(node);
     }
@@ -1061,10 +1061,6 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             this.inspection = null;
             this.resolver.apply(node);
         }
-    }
-
-    private boolean projectsClosure() {
-        return this.closureResultOnly && this.compiler.options.ioOptions.rustOptimizerPasses;
     }
 
     @Override

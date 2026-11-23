@@ -1,5 +1,5 @@
 //! Resolve block locals in statement order. Only a block's final expression contributes its result.
-use super::{evaluate::Step, ProjectedValue, Row, RowType, Shape};
+use super::{Observations, ProjectedValue, Row, RowType, Shape, evaluate::Step};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, TypeId};
 
 pub(super) struct Local {
@@ -112,7 +112,9 @@ impl Row {
         outer: usize,
         mut value: ProjectedValue,
     ) -> ProjectedValue {
-        if outer < self.locals.len() {
+        if matches!(self.observations, Observations::Facts(_)) {
+            self.locals.truncate(outer);
+        } else if outer < self.locals.len() {
             let initializers = self
                 .locals
                 .drain(outer..)
@@ -148,7 +150,11 @@ impl Row {
             if !edit.same_type(edit.expression_type(expression)?, local.ty)? {
                 return Ok(None);
             }
-            (&local.shape, RowType::Local { index }, local.reduced)
+            let ty = match &local.row_type {
+                RowType::Prior { index } => RowType::Prior { index: *index },
+                _ => RowType::Local { index },
+            };
+            (&local.shape, ty, local.reduced)
         } else if let Some((index, parameter)) = self
             .bindings
             .iter()

@@ -1,5 +1,9 @@
 //! Evaluate children before their parent and bind locals between successive statements.
-use super::{function, project_tuple, project_wrapper, scalar, unbounded, ProjectedValue, Row};
+use super::FactType;
+use super::{
+    ExpressionWaterline, Observations, ProjectedValue, Row, RowType, function, project_tuple,
+    project_wrapper, scalar, unbounded,
+};
 use crate::function_calls::function_name;
 use crate::monotonicity::literal::ordered_literal;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind};
@@ -34,8 +38,16 @@ impl Operation {
         self,
         edit: &mut CircuitEditor,
         id: ExpressionId,
-        mut children: impl Iterator<Item = ProjectedValue>,
+        mut children: std::vec::Drain<'_, ProjectedValue>,
     ) -> Result<Option<ProjectedValue>, Error> {
+        // In a field read the selected field can be unbounded even when an
+        // empty sibling makes the row monotone. Other transfer rules can
+        // require the reduced operands and must preserve missing-bound errors.
+        if children.as_slice().iter().any(ProjectedValue::missing_bound)
+            && !(matches!(self, Self::Wrapper) && edit.expr_kind(id)? == Expr::Field)
+        {
+            return Ok(None);
+        }
         match self {
             Self::Wrapper => {
                 project_wrapper(edit, id, children.next().expect("visited wrapper operand"))
@@ -60,6 +72,7 @@ fn schedule(
     edit: &CircuitEditor,
     id: ExpressionId,
     base: usize,
+    record_callee: bool,
     work: &mut Vec<Step>,
 ) -> Result<bool, Error> {
     let node = edit.node(id.into())?;
@@ -82,7 +95,7 @@ fn schedule(
         Expr::Apply => {
             let name = function_name(edit.circuit(), node)?.map(|s| s.into_owned());
             // An indirect callee can itself contain an observed clock operand.
-            if name.is_none() {
+            if record_callee || name.is_none() {
                 work.extend([Step::Read(child("function")?), Step::Discard]);
             }
             for arg in node.edges("arguments")? {
@@ -139,6 +152,7 @@ fn schedule(
         | Expr::Sort
         | Expr::Static
         | Expr::EnumValue
+        | Expr::For
         | Expr::Fold
         | Expr::MinMax
         | Expr::ZSet
@@ -166,6 +180,42 @@ fn schedule(
 }
 
 impl Row {
+    fn observe(
+        &mut self,
+        edit: &CircuitEditor,
+        id: ExpressionId,
+        value: &mut ProjectedValue,
+    ) -> Result<(), Error> {
+        match &mut self.observations {
+            Observations::ResultOnly => {}
+            Observations::Clocks(clocks) => {
+                if value.shape.monotone() {
+                    clocks.insert(id);
+                }
+            }
+            Observations::Facts(facts) => {
+                let index = facts.len();
+                let row_type = std::mem::replace(&mut value.row_type, RowType::Prior { index });
+                let (origin, bound) = match (edit.expr_kind(id)?, row_type) {
+                    (Expr::VariablePath, RowType::Parameter { index }) => (
+                        FactType::Parameter(index),
+                        Some(self.bindings[index].variable),
+                    ),
+                    (Expr::VariablePath | Expr::Let | Expr::Block, RowType::Prior { index }) => {
+                        (FactType::Alias(index), None)
+                    }
+                    (_, ty) => (FactType::Computed(ty), value.reduced),
+                };
+                facts.push(ExpressionWaterline {
+                    expression: id,
+                    origin,
+                    bound,
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn visit(
         &mut self,
         edit: &mut CircuitEditor,
@@ -190,7 +240,13 @@ impl Row {
                         Expr::VariablePath => (id, self.variable(edit, id)?),
                         kind if ordered_literal(kind) => (id, scalar::literal_bound(edit, id)?),
                         _ => {
-                            if !schedule(edit, id, values.len(), &mut work)? {
+                            if !schedule(
+                                edit,
+                                id,
+                                values.len(),
+                                matches!(self.observations, Observations::Facts(_)),
+                                &mut work,
+                            )? {
                                 return Ok(None);
                             }
                             continue;
@@ -222,26 +278,28 @@ impl Row {
                     continue;
                 }
                 Step::FinishScope { scopes, outer } => {
-                    let value =
+                    let mut value =
                         self.finish_scope(outer, values.pop().expect("visited scope result"));
-                    if value.shape.monotone() {
-                        if let Some(clocks) = &mut self.clock_operands {
-                            clocks.extend(&scopes);
-                        }
+                    // Blocks and LETs take the very same analysis as their tail.
+                    for &scope in scopes.iter().skip(1).rev() {
+                        self.observe(edit, scope, &mut value)?;
                     }
                     (scopes[0], Some(value))
                 }
             };
-            let Some(value) = value else { return Ok(None) };
+            let Some(mut value) = value else {
+                return Ok(None);
+            };
             active.remove(&id);
-            if value.shape.monotone() {
-                if let Some(clocks) = &mut self.clock_operands {
-                    clocks.insert(id);
-                }
+            self.observe(edit, id, &mut value)?;
+            // Some(()) exposes its operand's bound to callers inspecting this node.
+            // Its parent can only consume the bound when the result shape is monotone.
+            if !value.shape.monotone() {
+                value.reduced = None;
             }
             values.push(value);
         }
         debug_assert_eq!(values.len(), 1);
-        Ok(values.pop())
+        Ok(values.pop().filter(|v| !v.missing_bound()))
     }
 }

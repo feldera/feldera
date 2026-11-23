@@ -1,11 +1,11 @@
 //! Name static initializers and construct the declarations referenced by generated code.
 use crate::lexical_scope::expression_children;
-use feldera_sql_expr::{error_source_reports_position, Rewrite, Transformation, Visit};
+use feldera_sql_expr::{Rewrite, Transformation, Visit, error_source_reports_position};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind, Field, InnerKind, NodeId,
 };
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The classic printer renders the initializer and its type in the operator's context.
 pub fn static_initializer(
@@ -61,7 +61,7 @@ pub fn renumber_static_errors(
         repeated_visits: HashMap::new(),
         first_slot: HashMap::new(),
     };
-    slots.assign(edit, initializer.into(), 0)?;
+    slots.assign(edit, initializer.into())?;
     let next = slots.next;
     let id = Rewrite::translating_expressions(slots).apply(edit, initializer.into())?;
     Ok((edit.expression(id)?, next))
@@ -76,34 +76,46 @@ struct StaticErrorSlots {
 impl StaticErrorSlots {
     /// The visitor reserves a slot on every visit to a handler, but retains the
     /// first translation. Count subsequent visits to a shared subtree in O(1).
-    fn assign(&mut self, edit: &CircuitEditor, id: NodeId, depth: usize) -> Result<i32, Error> {
-        if let Some(&visits) = self.repeated_visits.get(&id) {
-            self.next = self.next.wrapping_add(visits);
-            return Ok(visits);
-        }
-        if depth > 128 {
-            return Err(Error::new(
-                "static initializer exceeds the expression nesting limit",
-            ));
-        }
-        let node = edit.node(id)?;
-        let mut visits = 0_i32;
-        for child in expression_children(node) {
-            visits = visits.wrapping_add(self.assign(edit, child, depth + 1)?);
-        }
-        match node.inner_kind() {
-            Some(InnerKind::Expression(ExpressionKind::HandleError)) => {
+    fn assign(&mut self, edit: &CircuitEditor, root: NodeId) -> Result<(), Error> {
+        let mut pending = vec![(root, false)];
+        let mut active = HashSet::new();
+        while let Some((id, leaving)) = pending.pop() {
+            if let Some(&visits) = self.repeated_visits.get(&id) {
+                self.next = self.next.wrapping_add(visits);
+                continue;
+            }
+            let node = edit.node(id)?;
+            let children = expression_children(node);
+            if !leaving {
+                if !active.insert(id) {
+                    return Err(Error::new("cycle in static initializer"));
+                }
+                pending.push((id, true));
+                pending.extend(children.into_iter().rev().map(|child| (child, false)));
+                continue;
+            }
+            active.remove(&id);
+            // A translated LET skips both its initializer and consumer on later visits.
+            let mut visits = 0_i32;
+            if !matches!(
+                node.inner_kind(),
+                Some(InnerKind::Expression(ExpressionKind::Let))
+            ) {
+                for child in children {
+                    visits = visits.wrapping_add(self.repeated_visits[&child]);
+                }
+            }
+            if matches!(
+                node.inner_kind(),
+                Some(InnerKind::Expression(ExpressionKind::HandleError))
+            ) {
                 self.first_slot.insert(id, self.next);
                 self.next = self.next.wrapping_add(1);
                 visits = visits.wrapping_add(1);
             }
-            // ExpressionTranslator handles let in preorder and skips its
-            // initializer and consumer on every visit after the first.
-            Some(InnerKind::Expression(ExpressionKind::Let)) => visits = 0,
-            _ => {}
+            self.repeated_visits.insert(id, visits);
         }
-        self.repeated_visits.insert(id, visits);
-        Ok(visits)
+        Ok(())
     }
 }
 
