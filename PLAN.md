@@ -41,6 +41,15 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-23. On `a0fa0123b`, Rust answered all 418,464 instrumented
+  optimizer requests across 8,571 classic and 8,527 Gen-2 compilations.
+  The all-casts case and five fusion-triggering programs matched direct Java
+  across 4,774 ordered S4 observations and final emission. All three cold
+  workloads met the latency ceiling. Nexmark measured 5.012 s hybrid and
+  4.235 s Java at p95. General optimizer fallbacks and the 30-day field
+  shadow gate remain open.
+  [Native request coverage](crates/sql/evidence/p3-fusion-cast-keys-coverage.json) · [Detached replays](crates/sql/evidence/p3-fusion-cast-keys.json) · [Cold timings](crates/sql/BENCHMARKS.md#map-fusion-with-sql-null-keys-2026-11-23)
+
 - 2026-11-22. Rust selected the same left-join chains and carried columns as
   Java for every profitable rewrite across both frozen populations. The next
   build matched all 550 selected monotonicity comparisons and all 29 detached

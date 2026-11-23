@@ -1,0 +1,47 @@
+{
+  "scope": "Compare block-scoped map fragment keys with the Java canonical printer. Detached S2 replays cover the all-casts regression and all five frozen programs known to apply map fusion per engine.",
+  "parent_commit": "d29cf641ce4d9f218b1758807d3062cb0e475c9a",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "bcf8f08e73bcc54187e750bfe67e96b3d61a78e9e6e55879c5a1e522e4986a24",
+    "bin/sql-difftest": "16e3871a51eefe52d181b0827abdbae03fd5c6601deeef91d4a0a60f41bc6430",
+    "maven/sql-compiler.jar": "3c17ecb8c14f5a8cc26817d1747b373680340773784e947fec9f183a09a2d6c1",
+    "maven/tests.jar": "2fa18e900c44390941018c91d3c57d1a600ca6a5813f64c2fc53233678652bb6",
+    "maven/build.log": "b6ec2ae391b00d9b315e27e8c5ceea15145309af15f1eea3540543e8ba2c1970",
+    "tests.log": "e46d1d2edd91d1d4132429679d798115dc71c1fe31f8a668c2913275486ec403",
+    "clippy.log": "15607722928524dbda9e49b1fe8c53c2f048693c6102684f818943670c4c1778",
+    "build.log": "528aaffc191e65631b2d6cfdf2056a0708fd9364ee3e69056a0355e3578d440c",
+    "junit.log": "08e09649dae4bd44ffac45309b6e46d6258f7deb11febb3e3f7ce26f3fe88e82"
+  },
+  "rust_tests": 207,
+  "junit_tests": 135,
+  "engines": {
+    "classic": {
+      "detached_cases": 6,
+      "ordered_s4_observations": 2375,
+      "mismatches": 0,
+      "receipt_sha256": "1533b85bdd183db5ac4e1cec5d03cd8aedcb2b3b08de98132930cad3210750a8",
+      "native_request_calls": {
+        "FuseExpensiveMaps/Scan": 6,
+        "InnerCSE/Rewrite": 51,
+        "KeyAnalysis/Circuit": 18,
+        "LeftJoinChains/Steps": 6,
+        "OptimizeProjections/Producer": 401
+      }
+    },
+    "gen2": {
+      "detached_cases": 6,
+      "ordered_s4_observations": 2399,
+      "mismatches": 0,
+      "receipt_sha256": "88df30f7ec0097e1c1111a31341c7abacc311491203b7d18dd8570c7ee5091ba",
+      "native_request_calls": {
+        "FuseExpensiveMaps/Scan": 6,
+        "InnerCSE/Rewrite": 51,
+        "KeyAnalysis/Circuit": 18,
+        "LeftJoinChains/Steps": 6,
+        "OptimizeProjections/Producer": 402
+      }
+    }
+  },
+  "source_commit": "31a6547e4b9ceda1adf05fb0df209963773df42d",
+  "source_manifest_sha256": "c515fa39e0217e4f49c76ccee580d99f65903a21061db50146d015e5018674b4"
+}

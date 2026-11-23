@@ -6,6 +6,8 @@ import json
 import os
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack
 from pathlib import Path
 
 from determinism import compare
@@ -37,6 +39,8 @@ def main():
     parser.add_argument(
         "--source-class", help="Exact Java test class; retains all its cases"
     )
+    parser.add_argument("--workers", type=int, choices=range(1, 5), default=1,
+                        help="Parallel JVMs for Rust optimizer replay (default: one)")
     parser.add_argument("--classpath", required=True)
     parser.add_argument("--comparator", required=True, type=Path)
     parser.add_argument("--producer", required=True)
@@ -52,6 +56,8 @@ def main():
         parser.error("--full-optimizer-trace requires --rust-optimizer")
     if args.require_native_decisions and not args.rust_optimizer:
         parser.error("--require-native-decisions requires --rust-optimizer")
+    if args.workers > 1 and not args.rust_optimizer:
+        parser.error("--workers requires --rust-optimizer")
     library = None
     if args.rust_optimizer:
         if args.stage != "S2":
@@ -86,6 +92,51 @@ def main():
     budget.check(force=True)
     if not identities:
         raise ValueError("Empty corpus selection")
+    workers = min(args.workers, len(identities))
+    cancelled = threading.Event()
+    if workers == 1:
+        return 0 if replay(args, selected, args.output, len(identities), library, budget, cancelled) else 1
+
+    shards = [args.output / f"shard-{i:03}" for i in range(workers)]
+    counts = [0] * workers
+    with ExitStack() as streams, selected.open("rb") as population:
+        writers = []
+        for directory in shards:
+            directory.mkdir()
+            writers.append(streams.enter_context((directory / "input.jsonl").open("xb")))
+        for index, line in enumerate(population):
+            shard = index % workers
+            writers[shard].write(line)
+            counts[shard] += 1
+    budget.check(force=True)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        tasks = [pool.submit(replay, args, d / "input.jsonl", d, count, library, budget, cancelled)
+                 for d, count in zip(shards, counts, strict=True)]
+        try:
+            for task in as_completed(tasks):
+                if not task.result():
+                    cancelled.set()
+                    return 1
+        except BaseException:
+            cancelled.set()
+            raise
+
+    # Recheck the union against the original selection, including every shard's compiler identities.
+    result = compare_live_optimizer(
+        selected, [d / "live-s3" for d in shards], [d / "live-s2" for d in shards],
+        full_trace=args.full_optimizer_trace, require_native_limiters=True,
+        require_native_decisions=args.require_native_decisions, require_same_build=True,
+    )
+    result.update(equal=result["mismatches"] == 0, workers=workers, jvm_runs=2 * workers,
+                  full_optimizer_trace=args.full_optimizer_trace,
+                  require_native_decisions=args.require_native_decisions)
+    (args.output / "complete.json").write_text(json.dumps(result, indent=2) + "\n")
+    print(f"Compared {result['cases']} cases across {workers} workers: equal={result['equal']}", flush=True)
+    return 0 if result["equal"] else 1
+
+
+def replay(args, selected, output, case_count, library, budget, cancelled):
     capture_mode = "capture-s3" if args.stage == "S3" else "capture"
     replay_mode = f"replay-{args.stage.lower()}"
     if library:
@@ -103,7 +154,7 @@ def main():
         "comparator_sha256": file_digest(args.comparator),
         "input_sha256": file_digest(selected),
         "source_class": args.source_class,
-        "cases": len(identities),
+        "cases": case_count,
         "stage": args.stage,
         "execution_order": modes,
         "keep_going": args.keep_going,
@@ -120,7 +171,7 @@ def main():
         provenance["full_optimizer_trace"] = args.full_optimizer_trace
         provenance["require_native_decisions"] = args.require_native_decisions
         provenance["optimizer_library_sha256"] = file_digest(library)
-    (args.output / "provenance.json").write_text(
+    (output / "provenance.json").write_text(
         json.dumps(provenance, indent=2) + "\n"
     )
     for mode in modes:
@@ -146,22 +197,22 @@ def main():
             args.classpath,
             "org.dbsp.sqlCompiler.compiler.sql.tools.CorpusDeterminism",
             str(selected),
-            str(args.output / mode),
+            str(output / mode),
             str(args.comparator),
-            str(args.output / f"{mode}-generated"),
+            str(output / f"{mode}-generated"),
             mode,
         ]
-        print(f"Starting {mode}: {len(identities)} cases", flush=True)
-        with (args.output / f"{mode}.log").open("w") as log:
+        print(f"Starting {mode} in {output.name}: {case_count} cases", flush=True)
+        with (output / f"{mode}.log").open("w") as log:
             run_process(
-                command, args.output, log, args.timeout, threading.Event(), budget
+                command, output, log, args.timeout, cancelled, budget
             )
     if (
         classpath_digest(args.classpath) != provenance["classpath"]
         or file_digest(args.comparator) != provenance["comparator_sha256"]
     ):
         raise ValueError("Compiler or comparator changed during replay")
-    direct, replay = args.output / capture_mode, args.output / replay_mode
+    direct, replay = output / capture_mode, output / replay_mode
     if library:
         if file_digest(library) != provenance["optimizer_library_sha256"]:
             raise ValueError("Rust optimizer library changed during replay")
@@ -175,9 +226,9 @@ def main():
             and not result["exported_diagnostic_differences"]
         )
     report = {**provenance, **result, "jvm_runs": 2}
-    (args.output / "complete.json").write_text(json.dumps(report, indent=2) + "\n")
+    (output / "complete.json").write_text(json.dumps(report, indent=2) + "\n")
     print(f"Compared {result['cases']} cases: equal={result['equal']}", flush=True)
-    return 0 if result["equal"] else 1
+    return result["equal"]
 
 
 if __name__ == "__main__":

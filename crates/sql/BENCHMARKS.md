@@ -4,6 +4,25 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Map fusion with SQL NULL keys, 2026-11-23
+
+On `a0fa0123b`, all 69 Java and hybrid compilation pairs produced equal
+classic artifacts. Each workload used two warmup pairs and 21 timed pairs,
+alternating compiler order in fresh processes on CPU 15 of the shared ARM64
+verification VM. The timer covered SQL through source emission and stopped
+before Cargo built the pipeline.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 1.881 | 1.618 | 0.860× |
+| Nexmark suite | 4.235 | 5.012 | 1.184× |
+| Outer join | 2.050 | 1.639 | 0.799× |
+
+The preceding build measured 0.901× on Nexmark, with direct Java at 5.504 s
+and hybrid at 4.958 s. Both runs met the 1.2× ceiling. The direct Java tail
+latency varied by more than a second between runs on this VM.
+[SQL NULL keys](evidence/p3-fusion-cast-keys-cold.json) · [Preceding build](evidence/p3-map-fusion-scan-cold.json)
+
 ## Field reads and references, 2026-11-22
 
 Build `4b4e71762` matched classic artifact emission in all 69 cold compile

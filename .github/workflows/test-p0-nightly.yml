@@ -412,7 +412,8 @@ jobs:
           java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
           python3 crates/sql/scripts/run_s2_corpus.py \
             "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-mixed-optimizer" \
-            --rust-optimizer --require-native-decisions --comparator "$target_dir/release/sql-difftest" \
+            --full-optimizer-trace --rust-optimizer --require-native-decisions --workers 4 \
+            --comparator "$target_dir/release/sql-difftest" \
             --classpath "$java_target/test-classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
             --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA" --timeout 5400
 
