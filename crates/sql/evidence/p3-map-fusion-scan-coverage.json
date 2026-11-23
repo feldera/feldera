@@ -1,0 +1,448 @@
+{
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ddf2756f1126a1f81a74a9aee95998bdc0570c0651d76d3dd7d9185fe9dd65b9",
+    "maven/sql-compiler.jar": "d007161072ea96dc9b8d840f942d6f1059106bb8ffd76ae4ae23b6650e6df5be",
+    "maven/tests.jar": "450b4e6177cf43a4901f38f93a6f149683bf2411e1b9bf0dddc8c694d7d2f635"
+  },
+  "commit": "5072c0701ebfb501aef0ad79542b88e6a7506764",
+  "engines": {
+    "classic": {
+      "observations_sha256": "6d201641c79ce094629463641722a136f8ce47dcca5f77c8647fd3a7b203dba6",
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "programs": 8571,
+      "programs_with_fallbacks": {
+        "FuseExpensiveMaps/Scan": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+        ],
+        "FuseExpensiveMaps/Siblings": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+        ]
+      },
+      "requests": {
+        "FuseExpensiveMaps/DuplicateField": {
+          "calls": 40,
+          "fallbacks": 0
+        },
+        "FuseExpensiveMaps/Scan": {
+          "calls": 6404,
+          "fallbacks": 1
+        },
+        "FuseExpensiveMaps/Siblings": {
+          "calls": 1,
+          "fallbacks": 1
+        },
+        "InnerCSE/Rewrite": {
+          "calls": 35013,
+          "fallbacks": 0
+        },
+        "KeyAnalysis/Circuit": {
+          "calls": 25713,
+          "fallbacks": 0
+        },
+        "LeftJoinChains/Columns": {
+          "calls": 293,
+          "fallbacks": 0
+        },
+        "LeftJoinChains/Steps": {
+          "calls": 8571,
+          "fallbacks": 0
+        },
+        "MergeFilters": {
+          "calls": 35,
+          "fallbacks": 0
+        },
+        "Monotonicity/AntiJoinProjection": {
+          "calls": 43,
+          "fallbacks": 0
+        },
+        "Monotonicity/Intersection": {
+          "calls": 174,
+          "fallbacks": 0
+        },
+        "Monotonicity/IsMinimumChain": {
+          "calls": 74,
+          "fallbacks": 0
+        },
+        "Monotonicity/JoinArguments": {
+          "calls": 824,
+          "fallbacks": 0
+        },
+        "Monotonicity/ProjectClosure": {
+          "calls": 3317,
+          "fallbacks": 0
+        },
+        "Monotonicity/Transfer": {
+          "calls": 6673,
+          "fallbacks": 0
+        },
+        "OptimizeProjections/Producer": {
+          "calls": 93191,
+          "fallbacks": 0
+        },
+        "ParameterFieldDependencies": {
+          "calls": 13079,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/AggregateReader": {
+          "calls": 2890,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/FlatmapInput": {
+          "calls": 405,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/IndexedValue": {
+          "calls": 1939,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/NarrowAsof": {
+          "calls": 104,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/NarrowJoin": {
+          "calls": 3664,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/ParameterTypes": {
+          "calls": 3080,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/Reader": {
+          "calls": 190,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/TopKComparators": {
+          "calls": 190,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/TopKFields": {
+          "calls": 961,
+          "fallbacks": 0
+        },
+        "ReplaceSharedIndexes": {
+          "calls": 202,
+          "fallbacks": 0
+        },
+        "RewriteNow/Filter": {
+          "calls": 163,
+          "fallbacks": 0
+        },
+        "SharedIndexes/Discover": {
+          "calls": 509,
+          "fallbacks": 0
+        },
+        "WindowGroups/Indexes": {
+          "calls": 64,
+          "fallbacks": 0
+        },
+        "WindowGroups/Reorder": {
+          "calls": 71,
+          "fallbacks": 0
+        },
+        "WindowGroups/Scan": {
+          "calls": 71,
+          "fallbacks": 0
+        }
+      },
+      "transfer_rules": {
+        "DBSPAggregateLinearPostprocessOperator": {
+          "AggregateKey": 291
+        },
+        "DBSPAntiJoinOperator": {
+          "IntersectKeys": 48
+        },
+        "DBSPAsofJoinOperator": {
+          "JoinClosure": 16
+        },
+        "DBSPBinaryDistinctOperator": {
+          "Identity": 76
+        },
+        "DBSPChainAggregateOperator": {
+          "ChainMinimumOrKey": 74,
+          "ProjectIndex": 69
+        },
+        "DBSPDeindexOperator": {
+          "ApplyClosure": 68
+        },
+        "DBSPFilterOperator": {
+          "ApplyClosure": 379,
+          "Identity": 39
+        },
+        "DBSPFlatMapOperator": {
+          "ApplyClosure": 4
+        },
+        "DBSPHopOperator": {
+          "ApplyClosure": 7
+        },
+        "DBSPLagOperator": {
+          "ApplyClosure": 10
+        },
+        "DBSPMapIndexOperator": {
+          "ApplyClosure": 1086
+        },
+        "DBSPMapOperator": {
+          "ApplyClosure": 1677
+        },
+        "DBSPNegateOperator": {
+          "Identity": 57
+        },
+        "DBSPNoopOperator": {
+          "Identity": 382
+        },
+        "DBSPPartitionedRollingAggregateOperator": {
+          "RollingTimestamp": 27
+        },
+        "DBSPPrimitiveAggregateOperator": {
+          "AggregateKey": 107,
+          "PrimitiveMinimumOrKey": 50
+        },
+        "DBSPSinkOperator": {
+          "Identity": 216
+        },
+        "DBSPSourceMultisetOperator": {
+          "DeclaredColumns": 514
+        },
+        "DBSPStreamJoinIndexOperator": {
+          "JoinClosure": 361
+        },
+        "DBSPStreamJoinOperator": {
+          "JoinClosure": 556
+        },
+        "DBSPSubtractOperator": {
+          "IntersectRows": 11
+        },
+        "DBSPSumOperator": {
+          "IntersectRows": 276
+        },
+        "DBSPUpsertFeedbackOperator": {
+          "Identity": 157
+        },
+        "DBSPViewOperator": {
+          "DeclaredColumns": 15
+        },
+        "DBSPWindowOperator": {
+          "ProjectIndex": 100
+        }
+      }
+    },
+    "gen2": {
+      "observations_sha256": "fe74073a5f8fe5e32c800ab610d0def38287ef1034ccc242932f113a24429316",
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "programs": 8527,
+      "programs_with_fallbacks": {
+        "FuseExpensiveMaps/Scan": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+        ],
+        "FuseExpensiveMaps/Siblings": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+        ]
+      },
+      "requests": {
+        "FuseExpensiveMaps/DuplicateField": {
+          "calls": 40,
+          "fallbacks": 0
+        },
+        "FuseExpensiveMaps/Scan": {
+          "calls": 6373,
+          "fallbacks": 1
+        },
+        "FuseExpensiveMaps/Siblings": {
+          "calls": 1,
+          "fallbacks": 1
+        },
+        "InnerCSE/Rewrite": {
+          "calls": 33630,
+          "fallbacks": 0
+        },
+        "KeyAnalysis/Circuit": {
+          "calls": 25581,
+          "fallbacks": 0
+        },
+        "LeftJoinChains/Columns": {
+          "calls": 290,
+          "fallbacks": 0
+        },
+        "LeftJoinChains/Steps": {
+          "calls": 8527,
+          "fallbacks": 0
+        },
+        "MergeFilters": {
+          "calls": 32,
+          "fallbacks": 0
+        },
+        "Monotonicity/AntiJoinProjection": {
+          "calls": 42,
+          "fallbacks": 0
+        },
+        "Monotonicity/Intersection": {
+          "calls": 173,
+          "fallbacks": 0
+        },
+        "Monotonicity/IsMinimumChain": {
+          "calls": 74,
+          "fallbacks": 0
+        },
+        "Monotonicity/JoinArguments": {
+          "calls": 828,
+          "fallbacks": 0
+        },
+        "Monotonicity/ProjectClosure": {
+          "calls": 3283,
+          "fallbacks": 0
+        },
+        "Monotonicity/Transfer": {
+          "calls": 6560,
+          "fallbacks": 0
+        },
+        "OptimizeProjections/Producer": {
+          "calls": 97576,
+          "fallbacks": 0
+        },
+        "ParameterFieldDependencies": {
+          "calls": 13023,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/AggregateReader": {
+          "calls": 2880,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/FlatmapInput": {
+          "calls": 401,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/IndexedValue": {
+          "calls": 1930,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/NarrowAsof": {
+          "calls": 93,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/NarrowJoin": {
+          "calls": 3624,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/ParameterTypes": {
+          "calls": 3069,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/Reader": {
+          "calls": 189,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/TopKComparators": {
+          "calls": 189,
+          "fallbacks": 0
+        },
+        "RemoveUnusedFields/TopKFields": {
+          "calls": 957,
+          "fallbacks": 0
+        },
+        "ReplaceSharedIndexes": {
+          "calls": 243,
+          "fallbacks": 0
+        },
+        "RewriteNow/Filter": {
+          "calls": 151,
+          "fallbacks": 0
+        },
+        "SharedIndexes/Discover": {
+          "calls": 660,
+          "fallbacks": 0
+        },
+        "WindowGroups/Indexes": {
+          "calls": 55,
+          "fallbacks": 0
+        },
+        "WindowGroups/Reorder": {
+          "calls": 62,
+          "fallbacks": 0
+        },
+        "WindowGroups/Scan": {
+          "calls": 62,
+          "fallbacks": 0
+        }
+      },
+      "transfer_rules": {
+        "DBSPAggregateLinearPostprocessOperator": {
+          "AggregateKey": 286
+        },
+        "DBSPAntiJoinOperator": {
+          "IntersectKeys": 47
+        },
+        "DBSPAsofJoinOperator": {
+          "JoinClosure": 15
+        },
+        "DBSPBinaryDistinctOperator": {
+          "Identity": 76
+        },
+        "DBSPChainAggregateOperator": {
+          "ChainMinimumOrKey": 74,
+          "ProjectIndex": 60
+        },
+        "DBSPDeindexOperator": {
+          "ApplyClosure": 59
+        },
+        "DBSPFilterOperator": {
+          "ApplyClosure": 371,
+          "Identity": 39
+        },
+        "DBSPFlatMapOperator": {
+          "ApplyClosure": 3
+        },
+        "DBSPHopOperator": {
+          "ApplyClosure": 7
+        },
+        "DBSPLagOperator": {
+          "ApplyClosure": 10
+        },
+        "DBSPMapIndexOperator": {
+          "ApplyClosure": 1075
+        },
+        "DBSPMapOperator": {
+          "ApplyClosure": 1656
+        },
+        "DBSPNegateOperator": {
+          "Identity": 56
+        },
+        "DBSPNoopOperator": {
+          "Identity": 384
+        },
+        "DBSPPartitionedRollingAggregateOperator": {
+          "RollingTimestamp": 33
+        },
+        "DBSPPrimitiveAggregateOperator": {
+          "AggregateKey": 106,
+          "PrimitiveMinimumOrKey": 50
+        },
+        "DBSPSinkOperator": {
+          "Identity": 204
+        },
+        "DBSPSourceMultisetOperator": {
+          "DeclaredColumns": 483
+        },
+        "DBSPStreamJoinIndexOperator": {
+          "JoinClosure": 374
+        },
+        "DBSPStreamJoinOperator": {
+          "JoinClosure": 545
+        },
+        "DBSPSubtractOperator": {
+          "IntersectRows": 11
+        },
+        "DBSPSumOperator": {
+          "IntersectRows": 272
+        },
+        "DBSPUpsertFeedbackOperator": {
+          "Identity": 156
+        },
+        "DBSPViewOperator": {
+          "DeclaredColumns": 14
+        },
+        "DBSPWindowOperator": {
+          "ProjectIndex": 94
+        }
+      }
+    }
+  }
+}

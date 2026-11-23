@@ -416,7 +416,7 @@ jobs:
             --classpath "$java_target/test-classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
             --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA" --timeout 5400
 
-      - name: Compare Rust projections, waterlines and temporal keys with Java
+      - name: Compare Rust projections, map fusion, waterlines and temporal keys with Java
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         shell: bash
         working-directory: ./sql-to-dbsp-compiler
@@ -424,10 +424,11 @@ jobs:
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           export LD_LIBRARY_PATH="$target_dir/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           mvn test --no-transfer-progress -B -pl SQL-compiler \
-            -Dtest=InliningTests,JoinInputProjectionTests,ProjectionCompositionTests,TemporalKeyTests,WaterlineProjectionTests \
+            -Dtest=InliningTests,JoinInputProjectionTests,ProjectionCompositionTests,CollectExpensiveExpressionsTests,TemporalKeyTests,WaterlineProjectionTests \
             -Dfeldera.optimizer.compareRustCanonicalForm=true -Dfeldera.optimizer.compareRustFieldUses=true \
             -Dfeldera.optimizer.compareRustMapDependencies=true -Dfeldera.optimizer.compareRustProjectionFields=true \
-            -Dfeldera.optimizer.compareRustTemporalKeys=true -Dfeldera.optimizer.compareRustLimiterApply=true
+            -Dfeldera.optimizer.compareRustTemporalKeys=true -Dfeldera.optimizer.compareRustLimiterApply=true \
+            -Dfeldera.optimizer.compareRustMapFusionGroups=true
 
       - name: Audit optimizer option and metadata activation paths
         if: ${{ vars.CI_DRY_RUN != 'true' }}

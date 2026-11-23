@@ -1,0 +1,47 @@
+{
+  "scope": "Detached S2 replay of the all-casts regression and all five frozen programs known to apply map fusion, on both engines. Checked ordered S4 observations, final circuits, IDs and emitted artifacts against direct Java.",
+  "parent_commit": "5072c0701ebfb501aef0ad79542b88e6a7506764",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "df4fac0cd074f3ad9c4828ced3defe85820ace8336f21d58c07a4aa07b6efa3c",
+    "bin/sql-difftest": "f65ddcbc59742e331edb963dcea2e1f9d19796c5e3c1616897a15164eb255a89",
+    "maven/sql-compiler.jar": "e48d8edc17bd20bf1e640960cb41265b6e45eb63819452057b38dfe21665785d",
+    "maven/tests.jar": "1f806d313afbeea78dcaf664e825d74f468a75aa0f6c56a8873b55ff8ffcea51",
+    "maven/build.log": "a071762787d6b535cd9b2b1e307fecdcd2b44c8b09c36b0fe95f95565da41a72",
+    "tests.log": "a7a8b3315ca6693bb4128e63b7c0ff9876363485cc274ce2daeca224842eba58",
+    "clippy.log": "67f813c470a10995cc0db746b83bbb20b13159ef7b15be65a3321da1597b9aaa",
+    "build.log": "9c910c6174797393129319159b97a16c5b824720def2980d1d3c728513ee2fb4",
+    "junit.log": "ddb94a09bbe87618e44503425de33e38fd8d9811d39445c2eff41925a0fb2d87"
+  },
+  "rust_tests": 207,
+  "junit_tests": 134,
+  "engines": {
+    "classic": {
+      "detached_cases": 6,
+      "ordered_s4_observations": 2375,
+      "mismatches": 0,
+      "receipt_sha256": "bcd9104d08eb037210346e8f2edf91fbe3a9fa4b24d47a3c7cb31a434efb49ea",
+      "native_request_calls": {
+        "FuseExpensiveMaps/Scan": 6,
+        "InnerCSE/Rewrite": 51,
+        "KeyAnalysis/Circuit": 18,
+        "LeftJoinChains/Steps": 6,
+        "OptimizeProjections/Producer": 401
+      }
+    },
+    "gen2": {
+      "detached_cases": 6,
+      "ordered_s4_observations": 2399,
+      "mismatches": 0,
+      "receipt_sha256": "ccf995c06124222d05acc7a6e4f9b9f7a0106d1258d20d7dfe5e6127137df92a",
+      "native_request_calls": {
+        "FuseExpensiveMaps/Scan": 6,
+        "InnerCSE/Rewrite": 51,
+        "KeyAnalysis/Circuit": 18,
+        "LeftJoinChains/Steps": 6,
+        "OptimizeProjections/Producer": 402
+      }
+    }
+  },
+  "source_commit": "a0fa0123bdae0bd1ee320e167d3f723770e25b62",
+  "source_manifest_sha256": "5618bd202348a17fb912fefc9e22afea400a591f8f18880470d10cc16ae79aa7"
+}

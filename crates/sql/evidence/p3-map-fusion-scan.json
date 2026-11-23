@@ -1,0 +1,47 @@
+{
+  "scope": "Compare whole-map discovery, grouping and singleton selection on all five known active frozen programs in each engine. Direct Java and detached Rust optimizer through ordered S4 and emission.",
+  "parent_commit": "f4af740a3d140d9d9b423ab427b873e3055379d2",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ddf2756f1126a1f81a74a9aee95998bdc0570c0651d76d3dd7d9185fe9dd65b9",
+    "bin/sql-difftest": "0d4c7d2ac7d34e370bbd5361632e01c3623ac897d364ddf5f53940cff8689f36",
+    "maven/sql-compiler.jar": "d007161072ea96dc9b8d840f942d6f1059106bb8ffd76ae4ae23b6650e6df5be",
+    "maven/tests.jar": "450b4e6177cf43a4901f38f93a6f149683bf2411e1b9bf0dddc8c694d7d2f635",
+    "maven/build.log": "6f8610149f9c734625d1548fe90012e856d18a5e2330184b2f9af1431dc556c3",
+    "tests.log": "7aa7fa2e11673351cc073cf54a5adbbd495c5a314f53aaf4fbb311e388efd1fc",
+    "clippy.log": "78dde3f76e65afc6d1cdc012416e6bd9639a213e313ab5d46b0db9924729298f",
+    "build.log": "a6785d1b7dd33d48dac93f7ee1629596c20912c33c53cabb6263db382c7fe2f0",
+    "junit.log": "742f32dc738b843cf3b977e70a71a8d6887fabbe7413f2179acb3ff51db026e9"
+  },
+  "rust_tests": 207,
+  "junit_tests": 133,
+  "engines": {
+    "classic": {
+      "detached_cases": 5,
+      "ordered_s4_observations": 1898,
+      "mismatches": 0,
+      "receipt_sha256": "1fdd387e91b6eff65cb0d99d0f33e9dfb2d10cf37717b218baaefa756b44bd52",
+      "native_request_calls": {
+        "FuseExpensiveMaps/Scan": 5,
+        "InnerCSE/Rewrite": 15,
+        "KeyAnalysis/Circuit": 15,
+        "LeftJoinChains/Steps": 5,
+        "OptimizeProjections/Producer": 43
+      }
+    },
+    "gen2": {
+      "detached_cases": 5,
+      "ordered_s4_observations": 1922,
+      "mismatches": 0,
+      "receipt_sha256": "b35637583053e5e76a5d56fc14bce8451123f1691052ab35f7a2744538f43cbf",
+      "native_request_calls": {
+        "FuseExpensiveMaps/Scan": 5,
+        "InnerCSE/Rewrite": 15,
+        "KeyAnalysis/Circuit": 15,
+        "LeftJoinChains/Steps": 5,
+        "OptimizeProjections/Producer": 44
+      }
+    }
+  },
+  "source_commit": "5072c0701ebfb501aef0ad79542b88e6a7506764",
+  "source_manifest_sha256": "b2f08e0f0584598bd3d434424104407338efff7d78d9829b4ab8419647422ed2"
+}

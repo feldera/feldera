@@ -1,0 +1,51 @@
+{
+  "scope": "All five frozen programs with observed map fusion in each engine. Compare the native sibling fingerprint and singleton decisions through ordered S4 and artifact emission.",
+  "parent_commit": "e524d773891a61e7d3fc93f86d9e2769abd51cc2",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "aadbd29db8c5f5936e90f1a81add6563a8f7290b8744190692c70c0de20cf7be",
+    "bin/sql-difftest": "cead9cf1006952744cbc0d0a728c05a59252563bb17683cfeafff718d9d17d7c",
+    "maven/sql-compiler.jar": "a76321b73ad347f257165e3f859d2b8bed6eca7eb08bdd5da492108653629d67",
+    "maven/tests.jar": "00d4dea7a87fc8a394e05572d06d359543ceb0fecf26b3322b418b4ce48c76b9",
+    "maven/build.log": "0ae626613f139ad8d561c56d37b5203b11ca2cd10e77978114a096e9302290da",
+    "tests.log": "4de9c36465601dabbb1305f7a5df247fd75fb33d56b49f408b853079275d0a63",
+    "clippy.log": "56ddc4bec84e5e204fc8ae61c89ad587fb9509d1685142b24b949bf734a882dc",
+    "build.log": "5b545c424711f5509ac2a5fd03e8d95070ea13c0fb403100a7f0ba5e6cf64015",
+    "junit.log": "4585792f41a2ca080df9907db8ad4fb78247a5e6ce503508c0266d7a89988978"
+  },
+  "rust_tests": 207,
+  "junit_tests": 133,
+  "engines": {
+    "classic": {
+      "detached_cases": 5,
+      "ordered_s4_observations": 1898,
+      "mismatches": 0,
+      "receipt_sha256": "7c453b515330be1bea520806cbeab8666c44f9620fa7b173d879fd439e8eb2ef",
+      "native_request_calls": {
+        "FuseExpensiveMaps/Candidate": 8,
+        "FuseExpensiveMaps/DuplicateField": 2,
+        "FuseExpensiveMaps/Siblings": 3,
+        "InnerCSE/Rewrite": 15,
+        "KeyAnalysis/Circuit": 15,
+        "LeftJoinChains/Steps": 5,
+        "OptimizeProjections/Producer": 43
+      }
+    },
+    "gen2": {
+      "detached_cases": 5,
+      "ordered_s4_observations": 1922,
+      "mismatches": 0,
+      "receipt_sha256": "34869c39236ceacecae081836bbe374a9fd4ca80f186ae0fa10d8cd90ad040b4",
+      "native_request_calls": {
+        "FuseExpensiveMaps/Candidate": 8,
+        "FuseExpensiveMaps/DuplicateField": 2,
+        "FuseExpensiveMaps/Siblings": 3,
+        "InnerCSE/Rewrite": 15,
+        "KeyAnalysis/Circuit": 15,
+        "LeftJoinChains/Steps": 5,
+        "OptimizeProjections/Producer": 44
+      }
+    }
+  },
+  "source_commit": "f4af740a3d140d9d9b423ab427b873e3055379d2",
+  "source_manifest_sha256": "fa7c82054f01203ac4d33888f386bda2f41925a6a5f839a1b79d607d42e57d33"
+}
