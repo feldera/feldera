@@ -1,0 +1,49 @@
+{
+  "scope": "Compare Rust map-fusion keys for generic functions and methods with Java\u2019s canonical printer. Detached replay includes the all-casts case and five frozen map-fusion cases per engine.",
+  "parent_commit": "41cd290da28f303e643f512140e9cf61382f8537",
+  "changed_sources": {
+    "crates/sql/sql-opt/src/projection_key.rs": "ab87c3c3e541ba089b00b3a4bd163dedb15e93fbb25c4091656aeb27253183a7",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "e89332c234e4e9cede79664ab3c0b68625fd36aa70c47e736ac38cdbd030b4be"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "dced7e8db217e72df597e439d52ec44916416ee0ca831a72253a90c7abb0ea55",
+    "bin/sql-difftest": "c8b402bb2c6264d7ab3bd581c6608a173ad9790e4bea732b4b3119ea8045c25e",
+    "maven/sql-compiler.jar": "b505a6ba3cc92b0b98e017024392bae4d277cfb582e2a070fa4c065b19e76b87",
+    "maven/tests.jar": "93dd4aaff85b387a62e741f819ec0f1a601d4e634f35bf7db563a7133f85a347",
+    "junit.log": "5c1488973c3dd431efe12172fbfbaa51ec36e51dda9d426cf0dd6eb7dbfc38de",
+    "tests.log": "48dae9ba68fe6f8d6824bf9185df03f9ed2bffeaed4420570d4b9ee77cf63333",
+    "clippy.log": "2ec6ea705bd176252f5b3e230b8007ab49af7c4f2faeb89c1d47d0f9a428d391"
+  },
+  "rust_tests": 207,
+  "junit_tests": 136,
+  "replay": {
+    "classic": {
+      "cases": 6,
+      "mismatches": 0,
+      "ordered_s4_observations": 2375,
+      "native_request_calls": {
+        "FuseExpensiveMaps/Scan": 6,
+        "InnerCSE/Rewrite": 51,
+        "KeyAnalysis/Circuit": 18,
+        "LeftJoinChains/Steps": 6,
+        "OptimizeProjections/Producer": 401
+      },
+      "population_sha256": "77119c444566bc487149db0ced29097eb55a59f719a065eed13249b3ab532c46",
+      "receipt_sha256": "d79738a03837b6fb6af3ebae00a5887a3f2cc400563fc13a2f6a30420c44f5ab"
+    },
+    "gen2": {
+      "cases": 6,
+      "mismatches": 0,
+      "ordered_s4_observations": 2399,
+      "native_request_calls": {
+        "FuseExpensiveMaps/Scan": 6,
+        "InnerCSE/Rewrite": 51,
+        "KeyAnalysis/Circuit": 18,
+        "LeftJoinChains/Steps": 6,
+        "OptimizeProjections/Producer": 402
+      },
+      "population_sha256": "dd60ea2d81d994f76576b3475e3ec6b47bf87c88f1d5f15214f1e331a3244457",
+      "receipt_sha256": "a1cedf82a26cc2508968a66b13987c3802627318b8fd3768effebb3456b14c2e"
+    }
+  }
+}

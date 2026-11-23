@@ -9,6 +9,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.MapInfo;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -17,6 +19,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
+import org.dbsp.sqlCompiler.ir.path.DBSPPath;
+import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.junit.Assert;
@@ -168,6 +172,36 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
         Assert.assertEquals(prints.get(0), prints.get(1));
         Assert.assertEquals(4, prints.stream().distinct().count());
         Assert.assertArrayEquals(new int[][]{{0, 1}, {2}, {3}, {4}},
+                RustCircuitPass.siblingMapGroups(compiler, siblings));
+    }
+
+    @Test
+    public void genericCallFingerprintsPreserveTypeArgumentsOnEachPathSegment() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var compiler = this.testCompiler();
+        var finder = new FuseExpensiveMaps.FindFusableMaps(compiler);
+        var siblings = new ArrayList<MapInfo>();
+        var prints = new ArrayList<String>();
+        var namespace = new DBSPSimplePathSegment("ns");
+        var function = new DBSPSimplePathSegment("f", this.pair, b.i32n());
+        var qualified = new DBSPPath(namespace, function);
+        for (var path : List.of(qualified, new DBSPPath(new DBSPSimplePathSegment("ns::f", this.pair, b.i32n())),
+                new DBSPPath(new DBSPSimplePathSegment("ns", this.pair), new DBSPSimplePathSegment("f", b.i32n())),
+                new DBSPPath(namespace, new DBSPSimplePathSegment("f", b.i32n(), this.pair)),
+                new DBSPPath(namespace, new DBSPSimplePathSegment("f", this.pair, b.i32())))) {
+            var row = b.refVar(this.pair);
+            var field = b.field(row, 0);
+            for (var call : List.of(new DBSPApplyExpression(path.toExpression(), b.i32(), field),
+                    new DBSPApplyMethodExpression(path.toExpression(), b.i32(), field))) {
+                var info = new MapInfo(null, b.tuple(call).closure(row), List.of(call));
+                siblings.add(info);
+                prints.add(finder.fingerprint(info, call));
+            }
+        }
+        Assert.assertEquals(prints.get(0), prints.get(2));
+        Assert.assertEquals(prints.get(1), prints.get(3));
+        Assert.assertEquals(8, prints.stream().distinct().count());
+        Assert.assertArrayEquals(new int[][]{{0, 2}, {1, 3}, {4}, {5}, {6}, {7}, {8}, {9}},
                 RustCircuitPass.siblingMapGroups(compiler, siblings));
     }
 

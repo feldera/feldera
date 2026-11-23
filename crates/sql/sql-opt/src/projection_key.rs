@@ -487,18 +487,18 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
                 return Ok(None);
             }
             let path = edit.node(edit.node(function)?.edge("path")?)?;
-            let Some(name) = call_path(edit, path)? else {
+            let mut operands = Vec::new();
+            let Some(name) = call_path(edit, path, &mut operands)? else {
                 return Ok(None);
             };
-            let arguments = children("arguments")?;
-            if kind == Expr::ApplyMethod {
-                let mut operands = Vec::with_capacity(arguments.len() + 1);
+            let term = if kind == Expr::ApplyMethod {
                 operands.push(child("self")?);
-                operands.extend(arguments);
-                (Term::Method(name), operands)
+                Term::Method(name)
             } else {
-                (Term::Call(name), arguments)
-            }
+                Term::Call(name)
+            };
+            operands.extend(children("arguments")?);
+            (term, operands)
         }
         Expr::Binary | Expr::TimeAddSub => {
             let left = child("left")?;
@@ -691,12 +691,17 @@ fn string<'a>(node: &'a Node, field: &str) -> Option<&'a str> {
     node.data(field)?.as_str()
 }
 
-/// A qualified spelling can arrive as one segment or several.
-fn call_path(edit: &CircuitEditor, path: &Node) -> Result<Option<String>, Error> {
+/// A qualified spelling can arrive as one segment or several. Mark the position
+/// of each generic argument in the name and compare its type as a key operand.
+fn call_path(
+    edit: &CircuitEditor,
+    path: &Node,
+    type_arguments: &mut Vec<NodeId>,
+) -> Result<Option<String>, Error> {
     let mut name = String::new();
     for component in path.edges("components")? {
         let segment = edit.node(component)?;
-        if segment.class() != "DBSPSimplePathSegment" || !segment.edges("genericArgs")?.is_empty() {
+        if segment.class() != "DBSPSimplePathSegment" {
             return Ok(None);
         }
         let Some(identifier) = string(segment, "identifier") else {
@@ -711,6 +716,18 @@ fn call_path(edit: &CircuitEditor, path: &Node) -> Result<Option<String>, Error>
             name.push_str("::");
         }
         name.push_str(identifier);
+        let arguments = segment.edges("genericArgs")?;
+        if !arguments.is_empty() {
+            name.push('<');
+            for (index, argument) in arguments.into_iter().enumerate() {
+                if index != 0 {
+                    name.push(',');
+                }
+                name.push('_');
+                type_arguments.push(edit.type_id(argument)?.into());
+            }
+            name.push('>');
+        }
     }
     Ok((!name.is_empty()).then_some(name))
 }
