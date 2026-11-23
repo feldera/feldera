@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The hybrid visitor now reports the same error as direct Java when a registered
+scalar function reads an uninitialized local. Rust also projects calls to
+unregistered functions when an argument has no waterline fact. Both visitor
+modes passed the regression. All 142 targeted JUnit tests and 24 detached
+LATENESS compilations passed. [Function arguments](evidence/p3-call-argument-waterlines.json)
+
 Rust groups map fragments by their printed function, stream and generic type
 arguments. Seventeen call signatures form the same eleven groups as direct Java,
 including nullable references printed as `Option<&T>`. All 141 targeted JUnit

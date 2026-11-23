@@ -983,18 +983,21 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             facts.add(new RustCircuitPass.FunctionArgument(transfer != null && transfer.mayBeMonotone(),
                     this.constantExpressions.contains(arg), ConstantBaseMonotoneFunction.aboveOne(arg)));
         }
-        String target = RustCircuitPass.functionWaterline(name, facts);
-        if (target == null)
+        var rule = RustCircuitPass.functionRule(name, facts);
+        if (!rule.registered())
             return null;
+        // The direct visitor looks up every argument of a registered function,
+        // including when the arguments cannot produce a bound.
         DBSPExpression[] bounds = new DBSPExpression[expression.arguments.length];
         for (int i = 0; i < bounds.length; i++) {
             var argument = this.argument(expression, i);
             if (argument.monotone())
                 bounds[i] = argument.waterline();
-            else
+            else if (rule.target() != null)
                 argument.requireConstant();
         }
-        return RustCircuitPass.buildFunctionWaterline(this.compiler, expression, target, bounds);
+        return rule.target() == null ? null :
+                RustCircuitPass.buildFunctionWaterline(this.compiler, expression, rule.target(), bounds);
     }
 
     @Override

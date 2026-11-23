@@ -1170,15 +1170,21 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public record FunctionArgument(boolean monotone, boolean constant, boolean doubleLiteralAboveOne) {}
 
-    @Nullable
-    public static String functionWaterline(String function, List<FunctionArgument> arguments) {
+    public record FunctionRule(boolean registered, @Nullable String target) {}
+
+    public static FunctionRule functionRule(String function, List<FunctionArgument> arguments) {
         try {
             var facts = MAPPER.writeValueAsBytes(List.of(function, arguments));
-            var reply = transformWithContext("Monotonicity/Function", facts, 0, "", EMPTY_CONTEXT);
-            return MAPPER.readValue(reply, String.class);
+            var reply = transformWithContext("Monotonicity/FunctionRule", facts, 0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, FunctionRule.class);
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid function waterline from Rust", error);
         }
+    }
+
+    @Nullable
+    public static String functionWaterline(String function, List<FunctionArgument> arguments) {
+        return functionRule(function, arguments).target();
     }
 
     /** A null slot copies the corresponding constant from the original call. */

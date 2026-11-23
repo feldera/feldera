@@ -38,19 +38,20 @@ impl Operation {
         self,
         edit: &mut CircuitEditor,
         id: ExpressionId,
-        mut children: std::vec::Drain<'_, ProjectedValue>,
+        children: std::vec::Drain<'_, Option<ProjectedValue>>,
     ) -> Result<Option<ProjectedValue>, Error> {
-        // In a field read the selected field can be unbounded even when an
-        // empty sibling makes the row monotone. Other transfer rules can
-        // require the reduced operands and must preserve missing-bound errors.
-        if children
-            .as_slice()
-            .iter()
-            .any(ProjectedValue::missing_bound)
-            && !(matches!(self, Self::Wrapper) && edit.expr_kind(id)? == Expr::Field)
-        {
+        if let Self::Call(name) = self {
+            return function::call_bound(edit, id, name.as_deref(), children);
+        }
+        // A field read can select an unbounded field even if an empty sibling
+        // makes the row monotone. It still needs the fact describing that row.
+        let field = matches!(self, Self::Wrapper) && edit.expr_kind(id)? == Expr::Field;
+        if !children.as_slice().iter().all(|v| {
+            v.as_ref().is_some_and(|v| field || !v.missing_bound())
+        }) {
             return Ok(None);
         }
+        let mut children = children.flatten();
         match self {
             Self::Wrapper => {
                 project_wrapper(edit, id, children.next().expect("visited wrapper operand"))
@@ -64,7 +65,7 @@ impl Operation {
                 scalar::binary_bound(edit, id, operands, [left, right])
             }
             Self::Tuple => project_tuple(edit, id, children),
-            Self::Call(name) => function::call_bound(edit, id, name.as_deref(), children),
+            Self::Call(_) => unreachable!("calls consume optional argument facts above"),
             Self::Unbounded => unbounded(edit, id),
         }
     }
@@ -242,16 +243,14 @@ impl Row {
                         }
                         Expr::VariablePath => match self.variable(edit, id)? {
                             VariableRead::Projected(value) => (id, Some(value)),
-                            // A declaration without an initializer has no waterline fact.
-                            // An assignment visits its destination but consumes no fact for it.
-                            VariableRead::Uninitialized
-                                if matches!(work.last(), Some(Step::Discard)) =>
-                            {
-                                work.pop();
+                            VariableRead::Uninitialized => {
+                                // The visitor records no fact for this read. Its parent
+                                // decides whether evaluating the operation requires one.
+                                values.push(None);
                                 active.remove(&id);
                                 continue;
                             }
-                            VariableRead::Uninitialized | VariableRead::NeedsVisitor => {
+                            VariableRead::NeedsVisitor => {
                                 return Ok(None);
                             }
                         },
@@ -276,14 +275,14 @@ impl Row {
                     continue;
                 }
                 Step::Bind { name, initializer } => {
-                    let initial = initializer
-                        .map(|expr| {
-                            Ok::<_, Error>((
-                                edit.expression_type(expr)?,
-                                values.pop().expect("visited initializer"),
-                            ))
-                        })
-                        .transpose()?;
+                    let initial = if let Some(expr) = initializer {
+                        let Some(value) = values.pop().expect("visited initializer") else {
+                            return Ok(None);
+                        };
+                        Some((edit.expression_type(expr)?, value))
+                    } else {
+                        None
+                    };
                     self.bind_local(name, initial);
                     continue;
                 }
@@ -291,12 +290,14 @@ impl Row {
                     let Some(value) = unbounded(edit, id)? else {
                         return Ok(None);
                     };
-                    values.push(value);
+                    values.push(Some(value));
                     continue;
                 }
                 Step::FinishScope { scopes, outer } => {
-                    let mut value =
-                        self.finish_scope(outer, values.pop().expect("visited scope result"));
+                    let Some(result) = values.pop().expect("visited scope result") else {
+                        return Ok(None);
+                    };
+                    let mut value = self.finish_scope(outer, result);
                     // Blocks and LETs take the very same analysis as their tail.
                     for &scope in scopes.iter().skip(1).rev() {
                         self.observe(edit, scope, &mut value)?;
@@ -314,9 +315,9 @@ impl Row {
             if !value.shape.monotone() {
                 value.reduced = None;
             }
-            values.push(value);
+            values.push(Some(value));
         }
         debug_assert_eq!(values.len(), 1);
-        Ok(values.pop().filter(|v| !v.missing_bound()))
+        Ok(values.pop().flatten().filter(|v| !v.missing_bound()))
     }
 }

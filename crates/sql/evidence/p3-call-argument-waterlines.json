@@ -1,0 +1,45 @@
+{
+  "scope": "Waterline argument lookup for registered scalar functions and opaque calls. The previous hybrid omitted a Java diagnostic for a missing argument fact. Both visitors now agree on that error, and Rust projects opaque calls that discard missing facts or bounds.",
+  "source_base": "ade7448fc0ccd1f78b6354783fbcfd6831334a58",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "2474df10741a8c7b26882034a6cacc9c5c8fce4224e104a9559a371d437d8ad1",
+    "crates/sql/sql-opt/src/lib.rs": "338e24131901e832b35e9f34a5c2bc2017442e7655e62c343993a67fb720846f",
+    "crates/sql/sql-opt/src/monotonicity/functions.rs": "d00316b65d254c39e7b1bb8c708382328c8e13fb9da1c9a97bcffb51a30857ea",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "c83fbde59f8859fdfda56f055eb46aee4460a7b70282002af933d7454771f207",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/function.rs": "cfcdacf64f9339ae4366956d78e879459210f0dab291e8932f01b787a3b2d8ac",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "4cd513bf27feb61bafb665c4b2a86e9b4570e2666364e2bd985dc7d64c17686a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneTransferFunctions.java": "6e14d06db60537ef26dfbd808129cf60913e9642799d584970440b1f9744281b",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "013e1213be2b09dbfbd8aca344fe1040222b8c7b9400eefcf496ac8345318d42"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "9ca7e4eb1461f3cb00d7b636e8e109e2095b15e955d715b715b98056e5172b8f",
+    "bin/sql-difftest": "31570deb0222f2c580d347246424e5ef2c20c838a416a173cce78ed780e4448b",
+    "maven/tests.jar": "9c1c7c2bbfec25924eb97f75a8038c148d614c91b98103691b9298601f414be5",
+    "maven/sql-compiler.jar": "e33cf28eac8ef0ad4bdbd51149397b9703c176b6296c6abfd5b27235aa752d4e"
+  },
+  "negative_control": {
+    "library_sha256": "c1c4fc12fa32b0efeef78b67e9e71b462df001cba25fc3fd2bc0baa0d01c1247",
+    "failed_test": "onlyRegisteredFunctionsRequireArgumentWaterlines",
+    "compiler_jar_sha256": "c836260b68f5229039caac12b4745e843a9b5df57daa54ddf0ebbe066e3d4780",
+    "observed": "Direct Java rejected the missing argument fact. The previous hybrid compiler accepted it."
+  },
+  "rust_tests": 220,
+  "junit_tests": 142,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "2709ca9c29307b983a7d288bc869215890dc19918fa82ccb81f1ee8ba4f9b325"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "9d692756d1a89ae00ee608e9de28ede274961c9119f9e3c29d0dafcf07f368d4"
+    }
+  }
+}

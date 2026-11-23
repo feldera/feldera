@@ -1407,9 +1407,12 @@ fn transform(
                 .map(|bound| BoundReply::encode(bound, state));
             return Ok(serde_json::to_value(reply)?);
         }
-        "Monotonicity/Function" => {
+        "Monotonicity/Function" | "Monotonicity/FunctionRule" => {
             let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::function_waterline(&name, &arguments))?);
+            let rule = feldera_sql_opt::function_rule(&name, &arguments);
+            let registered = !matches!(rule, feldera_sql_opt::FunctionRule::Unknown);
+            let target = rule.target();
+            return Ok(if pass == "Monotonicity/Function" { json!(target) } else { json!({ "registered": registered, "target": target }) });
         }
         "Monotonicity/BinaryBound" => return binary_bound(input, state),
         "Monotonicity/TupleBound" => return tuple_bound(input, state, next),

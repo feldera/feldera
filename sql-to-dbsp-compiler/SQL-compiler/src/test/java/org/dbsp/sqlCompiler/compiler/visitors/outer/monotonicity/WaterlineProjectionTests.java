@@ -751,6 +751,54 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void onlyRegisteredFunctionsRequireArgumentWaterlines() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(1).getType();
+        var input = integer.ref().var();
+        var shape = new MonotoneType(integer);
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        var local = new DBSPLetStatement("scratch", integer, true);
+        var read = local.getVarReference();
+        var known = new DBSPApplyExpression("sign_i32", integer, read);
+        var required = new DBSPBlockExpression(List.of(local, known.toStatement()), input.deref()).closure(input);
+        var expected = Assert.assertThrows(RuntimeException.class,
+                () -> new MonotoneTransferFunctions(compiler, op, kind, shape).apply(required));
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var hybrid = new MonotoneTransferFunctions(compiler, op, kind, shape);
+        var actual = Assert.assertThrows(RuntimeException.class, () -> hybrid.apply(required));
+        Assert.assertEquals(expected.getClass(), actual.getClass());
+        Assert.assertEquals(expected.getMessage(), actual.getMessage());
+
+        compiler.options.ioOptions.rustOptimizerPasses = false;
+        // The empty tuple has a monotone shape but no bound. Neither it nor
+        // the uninitialized local is demanded by an unregistered function.
+        var unit = new NoExpression(DBSPTypeRawTuple.EMPTY);
+        var unknown = new DBSPApplyExpression("opaque", integer, read, unit);
+        var tail = input.deref();
+        var body = new DBSPBlockExpression(List.of(local, unknown.toStatement()), tail);
+        var closure = body.closure(input);
+        var direct = new MonotoneTransferFunctions(compiler, op, kind, shape);
+        direct.apply(closure);
+        for (boolean observe : List.of(false, true)) {
+            var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+            var result = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                    false, observe ? facts::put : null);
+            Assert.assertTrue(result instanceof RustCircuitPass.ProjectedWaterline);
+            Assert.assertTrue(direct.get(closure).getReducedExpression().equivalent(
+                    ((RustCircuitPass.ProjectedWaterline) result).closure()));
+            if (observe) {
+                Assert.assertFalse(facts.containsKey(read));
+                Assert.assertTrue(facts.get(unit).mayBeMonotone());
+                Assert.assertFalse(facts.get(unknown).mayBeMonotone());
+                Assert.assertSame(facts.get(tail), facts.get(body));
+            }
+        }
+    }
+
+    @Test
     public void blockDeclarationsExposeIntermediateBoundsAndPreserveTheTail() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

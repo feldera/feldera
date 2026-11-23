@@ -181,14 +181,31 @@ static FUNCTIONS: LazyLock<Vec<Function>> = LazyLock::new(|| {
         .collect()
 });
 
+/// A registered function reads the waterline fact for every argument, even if
+/// their bounds do not admit a monotone call. An unknown function reads none.
+pub enum FunctionRule {
+    Unknown,
+    Unbounded,
+    Bounded(String),
+}
+
+impl FunctionRule {
+    pub fn target(self) -> Option<String> {
+        match self {
+            Self::Bounded(target) => Some(target),
+            Self::Unknown | Self::Unbounded => None,
+        }
+    }
+}
+
 /// Return the non-null runtime callee for a lower bound, if the operands admit one.
-pub fn function_waterline(name: &str, args: &[Argument]) -> Option<String> {
+pub fn function_rule(name: &str, args: &[Argument]) -> FunctionRule {
     for function in FUNCTIONS.iter() {
         let Some(matched) = function.names.captures(name) else {
             continue;
         };
         if !function.arguments.admits(args) {
-            return None;
+            return FunctionRule::Unbounded;
         }
         let mut callee = name.to_owned();
         if let Some(suffix) = matched.name("nullable") {
@@ -197,9 +214,13 @@ pub fn function_waterline(name: &str, args: &[Argument]) -> Option<String> {
         if matches!(function.runtime, Runtime::Saturating) {
             callee.push_str("_saturating");
         }
-        return Some(callee);
+        return FunctionRule::Bounded(callee);
     }
-    None
+    FunctionRule::Unknown
+}
+
+pub fn function_waterline(name: &str, args: &[Argument]) -> Option<String> {
+    function_rule(name, args).target()
 }
 
 #[cfg(test)]
