@@ -243,6 +243,17 @@ fn bind<'a>(scopes: &mut Vec<Binding<'a>>, parent: usize, variable: RowParameter
 }
 
 fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<NodeId>)>, Error> {
+    // Static references print their initializer. A literal also survives
+    // canonical renaming unchanged, as required by the static's cached name.
+    let id = if edit.expr_kind(id)? == Expr::Static {
+        let initializer = edit.expression(edit.node(id.into())?.edge("initializer")?)?;
+        if !edit.expr_kind(initializer)?.wire_name().ends_with("Literal") {
+            return Ok(None);
+        }
+        initializer
+    } else {
+        id
+    };
     let node = edit.node(id.into())?;
     let child = |field| edit.expression(node.edge(field)?).map(NodeId::from);
     let children = |field| {
@@ -382,35 +393,23 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
             Term::Cast,
             vec![edit.expression_type(id)?.into(), child("source")?],
         ),
-        Expr::Apply | Expr::ApplyMethod => {
+        Expr::Apply | Expr::ApplyMethod | Expr::Constructor => {
             let function = child("function")?;
             if edit.expr_kind(edit.expression(function)?)? != Expr::Path {
                 return Ok(None);
             }
             let path = edit.node(edit.node(function)?.edge("path")?)?;
-            let [segment] = path.edges("components")?[..] else {
+            let Some(name) = call_path(edit, path)? else {
                 return Ok(None);
             };
-            let segment = edit.node(segment)?;
-            if segment.class() != "DBSPSimplePathSegment"
-                || !segment.edges("genericArgs")?.is_empty()
-            {
-                return Ok(None);
-            }
-            let Some(name) = string(segment, "identifier") else {
-                return Ok(None);
-            };
-            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
-                return Ok(None);
-            }
             let arguments = children("arguments")?;
             if kind == Expr::ApplyMethod {
                 let mut operands = Vec::with_capacity(arguments.len() + 1);
                 operands.push(child("self")?);
                 operands.extend(arguments);
-                (Term::Method(name.to_owned()), operands)
+                (Term::Method(name), operands)
             } else {
-                (Term::Call(name.to_owned()), arguments)
+                (Term::Call(name), arguments)
             }
         }
         Expr::Binary | Expr::TimeAddSub => {
@@ -602,6 +601,30 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
 
 fn string<'a>(node: &'a Node, field: &str) -> Option<&'a str> {
     node.data(field)?.as_str()
+}
+
+/// A qualified spelling can arrive as one segment or several.
+fn call_path(edit: &CircuitEditor, path: &Node) -> Result<Option<String>, Error> {
+    let mut name = String::new();
+    for component in path.edges("components")? {
+        let segment = edit.node(component)?;
+        if segment.class() != "DBSPSimplePathSegment" || !segment.edges("genericArgs")?.is_empty() {
+            return Ok(None);
+        }
+        let Some(identifier) = string(segment, "identifier") else {
+            return Ok(None);
+        };
+        if !identifier.split("::").all(|part| {
+            !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        }) {
+            return Ok(None);
+        }
+        if !name.is_empty() {
+            name.push_str("::");
+        }
+        name.push_str(identifier);
+    }
+    Ok((!name.is_empty()).then_some(name))
 }
 
 /// Canonical closures rename the parameter and print its type, including

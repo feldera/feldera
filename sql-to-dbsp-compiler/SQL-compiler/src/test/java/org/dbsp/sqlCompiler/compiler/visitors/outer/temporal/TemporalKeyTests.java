@@ -22,6 +22,8 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -35,6 +37,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -68,8 +71,8 @@ public class TemporalKeyTests {
         var second = b.call(time, "now");
         var ordinary = b.call(time, "now", b.lit(1));
         var root = b.tuple(first, second, first, ordinary);
-        var sites = RustCircuitPass.temporalClockSites(new DBSPCompiler(new CompilerOptions()),
-                List.of(root, second, ordinary));
+        Iterable<DBSPExpression> roots = () -> List.<DBSPExpression>of(root, second, ordinary).iterator();
+        var sites = RustCircuitPass.temporalClockSites(new DBSPCompiler(new CompilerOptions()), roots);
         Assert.assertEquals(2, sites.size());
         Assert.assertSame(first, sites.get(root.id));
         Assert.assertSame(second, sites.get(second.id));
@@ -98,9 +101,9 @@ public class TemporalKeyTests {
             circuit.addOperator(new DBSPFilterOperator(rel, b.binary(DBSPOpcode.GTE, cast, clock).closure(row),
                     map.outputPort()));
             if (replayPaths) {
-                // This key needs the canonical printer after the preceding map has emitted its warning.
+                // Keep exercising the path replay after the preceding map has emitted its warning.
                 var second = b.refVar(inputType);
-                var offset = new DBSPStaticExpression(rel, b.lit(1), "offset");
+                var offset = new DBSPStaticExpression(rel, b.call("get_offset", b.lit(1)), "offset");
                 var key = b.call(time, "shift_timestamp", b.unwrap(b.field(second, 0)), offset);
                 var condition = b.binary(DBSPOpcode.GTE, key, clock.deepCopy());
                 circuit.addOperator(new DBSPFilterOperator(rel, condition.closure(second), input.outputPort()));
@@ -118,6 +121,41 @@ public class TemporalKeyTests {
                 Assert.assertTrue(warning.message.contains("invalid timestamp"));
             }
             Assert.assertEquals(List.of(!replayPaths), decisions);
+        }
+    }
+
+    @Test
+    public void qualifiedCallsAndConstructorsGroupByPrintedInitializer() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var inputType = b.tup(time);
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(inputType));
+        circuit.addOperator(input);
+        var filters = new ArrayList<DBSPFilterOperator>();
+        for (int i = 0; i < 4; i++) {
+            var row = b.refVar(inputType);
+            var field = b.field(row, 0);
+            var literal = b.lit(i == 2 ? 2 : 1);
+            var namespace = i == 3 ? "other" : "clock";
+            var path = new DBSPPathExpression(time, new DBSPPath(namespace, "shift"));
+            DBSPExpression key = i == 0 ? b.call(time, "clock::shift", field, literal)
+                    : new DBSPConstructorExpression(path, time, field, new DBSPStaticExpression(site, literal, "offset"));
+            var predicate = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+            var filter = new DBSPFilterOperator(site, predicate.closure(row), input.outputPort());
+            circuit.addOperator(filter);
+            filters.add(filter);
+        }
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.metadata.set(ProgramMetadata.WINDOW_SHARING_THRESHOLD, b.lit(2), SourcePositionRange.INVALID, compiler);
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var decisions = new ArrayList<Boolean>();
+            var scan = scanWindows(compiler, circuit, decisions);
+            Assert.assertEquals(filters.subList(0, 2), List.copyOf(scan.chosenConjunct.keySet()));
+            Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
         }
     }
 

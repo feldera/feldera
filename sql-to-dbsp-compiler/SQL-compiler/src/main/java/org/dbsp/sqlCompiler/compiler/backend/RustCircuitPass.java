@@ -189,7 +189,6 @@ import org.dbsp.util.Utilities;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -1613,10 +1612,11 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public static Map<Long, DBSPExpression> temporalClockSites(DBSPCompiler compiler,
-                                                               Collection<DBSPExpression> expressions) {
-        if (expressions.isEmpty())
+                                                               Iterable<DBSPExpression> expressions) {
+        var roots = Linq.list(expressions).toArray(IDBSPInnerNode[]::new);
+        if (roots.length == 0)
             return Map.of();
-        var reply = invokeLowering(compiler, "RewriteNow/ClockSites", expressions.toArray(IDBSPInnerNode[]::new));
+        var reply = invokeLowering(compiler, "RewriteNow/ClockSites", roots);
         var nodes = Objects.requireNonNull(reply.writer.liveNodes);
         var sites = new HashMap<Long, DBSPExpression>();
         for (var pair : reply.value) {
