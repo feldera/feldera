@@ -27,12 +27,14 @@ pub use monotonicity::flatmap::flatmap_waterline;
 pub use monotonicity::lag::lag_transfer;
 pub use monotonicity::schedule::{monotonicity_transfers, MonotonicityTransfer};
 pub use monotonicity::casts::{cast_waterline, CastWaterline};
-pub use monotonicity::functions::{build_function_waterline, function_waterline, Argument as WaterlineArgument};
+pub use monotonicity::functions::{
+    build_function_waterline, clock_waterline, function_waterline, Argument as WaterlineArgument,
+};
 pub use monotonicity::binary::{
     binary_waterline, BinaryOperation, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
 };
 pub use monotonicity::identity::identity_bounds;
-pub use monotonicity::row_projection::{project_closure, project_row, project_rows};
+pub use monotonicity::row_projection::{project_closure, project_row, project_rows, tuple_waterline};
 pub use monotonicity::{filter_lower_bounds, filter_transfer, unary_waterline, FilterBound};
 mod static_candidates;
 mod static_items;

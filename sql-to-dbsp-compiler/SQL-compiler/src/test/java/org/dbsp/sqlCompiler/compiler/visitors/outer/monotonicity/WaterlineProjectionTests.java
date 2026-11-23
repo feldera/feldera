@@ -17,9 +17,12 @@ import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.CombinedBounds;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
@@ -771,6 +774,39 @@ public class WaterlineProjectionTests {
             Assert.assertEquals(RustCircuitPass.PredicateKind.GTE, terms.get(0).kind());
             Assert.assertSame(key, terms.get(0).expression());
             Assert.assertSame(clock, terms.get(0).clock());
+        }
+    }
+
+    @Test
+    public void tupleWaterlineKeepsLiveFieldsAndClockIdentity() {
+        var span = new SourcePositionRange(new SourcePosition(2, 3), new SourcePosition(2, 8));
+        var site = CalciteObject.create(span);
+        var time = DBSPTypeTimestamp.create(false);
+        var row = new PartiallyMonotoneTuple(List.of(new NonMonotoneType(time)), false, false);
+        var input = new DBSPVariablePath("row", row.getType().ref());
+        var clock = new DBSPApplyExpression(site, "now", time);
+        var unit = new DBSPRawTupleExpression();
+        var dropped = input.deref().field(0);
+        var tuple = new DBSPTupleExpression(site, List.of(unit, dropped, clock));
+        var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(time));
+        for (boolean nativePass : List.of(false, true)) {
+            if (nativePass && !Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
+                continue;
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.options.ioOptions.rustOptimizerPasses = nativePass;
+            var analysis = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+            analysis.apply(tuple.closure(input));
+            var reduced = analysis.get(tuple).getReducedExpression().to(DBSPTupleExpression.class);
+            Assert.assertEquals(2, reduced.size());
+            Assert.assertEquals(span, reduced.getNode().getPositionRange());
+            Assert.assertSame(analysis.get(unit).getReducedExpression(), reduced.get(0));
+            Assert.assertEquals(0, reduced.get(0).to(DBSPRawTupleExpression.class).size());
+            Assert.assertSame(analysis.get(clock).getReducedExpression(), reduced.get(1));
+            var reducedClock = reduced.get(1).to(DBSPApplyExpression.class);
+            Assert.assertNotSame(clock, reducedClock);
+            Assert.assertSame(clock.function, reducedClock.function);
+            Assert.assertSame(time, reducedClock.getType());
+            Assert.assertFalse(reducedClock.getNode().getPositionRange().isValid());
         }
     }
 

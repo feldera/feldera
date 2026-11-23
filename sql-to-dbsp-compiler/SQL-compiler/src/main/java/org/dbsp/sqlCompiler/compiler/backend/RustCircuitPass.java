@@ -145,6 +145,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -530,6 +531,34 @@ public final class RustCircuitPass implements CircuitTransform {
             return new ProjectedWaterline(type, decodeLiveRoot(reply.writer, closure, DBSPClosureExpression.class));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode a waterline closure", error);
+        }
+    }
+
+    public static DBSPExpression clockWaterline(DBSPCompiler compiler, DBSPApplyExpression call) {
+        var clock = lowerFunction(compiler, "Monotonicity/Clock", call, null, DBSPApplyExpression.class);
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision("Monotonicity/Clock", true);
+        return clock;
+    }
+
+    /** Send just the field types. The reduced tuple refers back to the live field expressions. */
+    public static DBSPExpression tupleWaterline(DBSPCompiler compiler, DBSPBaseTupleExpression tuple,
+                                                DBSPExpression[] fields) {
+        var site = expressionSite(tuple.getNode());
+        site.put("raw", tuple.isRaw());
+        var inputs = Linq.map(fields, field -> new DBSPVariablePath("field", field.getType()), DBSPVariablePath.class);
+        String pass = "Monotonicity/TupleBound";
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site), inputs);
+            var live = Objects.requireNonNull(reply.writer.liveNodes);
+            for (int i = 0; i < inputs.length; i++)
+                live.put(inputs[i].id, fields[i]);
+            var result = loweredFunction(compiler, reply.writer, reply.value, DBSPBaseTupleExpression.class);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode a tuple waterline", error);
         }
     }
 

@@ -148,6 +148,21 @@ impl ExpressionSite {
     }
 }
 
+fn tuple_bound(input: &[u8], state: &[u8], next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Request {
+        #[serde(flatten)]
+        site: ExpressionSite,
+        raw: bool,
+    }
+    let request: Request = serde_json::from_slice(state)?;
+    let (arena, roots) = request.site.arena(input)?;
+    let mut edit = CircuitEditor::new(arena.clone());
+    let fields = roots.into_iter().map(|id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;
+    let bound = feldera_sql_opt::tuple_waterline(&mut edit, arena.root_id(), request.raw, &fields)?;
+    lowered_function_reply(&arena, &edit, Some(bound), next, vec![])
+}
+
 fn binary_bound(input: &[u8], state: &[u8]) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request<'a> {
@@ -744,6 +759,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let ty = edit.type_id(*ty)?;
             edit.scalar_maximum(ty)?
         }
+        ("Monotonicity/Clock", [call]) => {
+            let call = edit.expression(*call)?;
+            feldera_sql_opt::clock_waterline(&mut edit, call)?
+        }
         ("Monotonicity/FunctionBound", [call, inputs @ ..]) => {
             let (target, present): (&str, Vec<bool>) = serde_json::from_slice(state)?;
             let mut inputs = inputs.iter();
@@ -1232,6 +1251,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::function_waterline(&name, &arguments))?);
         }
         "Monotonicity/BinaryBound" => return binary_bound(input, state),
+        "Monotonicity/TupleBound" => return tuple_bound(input, state, next),
         "InnerCSE/Bindings" => {
             let scope: feldera_sql_opt::BindingScope = serde_json::from_slice(state)?;
             let bindings: Vec<feldera_sql_opt::PendingBinding> = serde_json::from_slice(input)?;
@@ -1255,6 +1275,7 @@ fn transform(
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"
+        | "Monotonicity/Clock"
         | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"

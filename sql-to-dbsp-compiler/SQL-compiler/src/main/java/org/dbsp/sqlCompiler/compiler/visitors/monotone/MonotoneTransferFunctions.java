@@ -428,12 +428,15 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             Utilities.enforce(monotoneFields.length > 0 || fields.length == 0);
             DBSPExpression[] monotoneComponents = Linq.map(
                     monotoneFields, MonotoneExpression::getReducedExpression, DBSPExpression.class);
-            DBSPTypeTuple type = new DBSPTypeTuple(CalciteObject.EMPTY,
-                    false,
-                    Linq.list(Linq.map(monotoneComponents, DBSPExpression::getType, DBSPType.class)));
-            reduced = expression.isRaw() ?
-                    new DBSPRawTupleExpression(monotoneComponents) :
-                    new DBSPTupleExpression(expression.getNode(), type, monotoneComponents);
+            if (this.compiler.options.ioOptions.rustOptimizerPasses)
+                reduced = RustCircuitPass.tupleWaterline(this.compiler, expression, monotoneComponents);
+            else if (expression.isRaw())
+                reduced = new DBSPRawTupleExpression(monotoneComponents);
+            else {
+                DBSPTypeTuple type = new DBSPTypeTuple(CalciteObject.EMPTY, false,
+                        Linq.list(Linq.map(monotoneComponents, DBSPExpression::getType, DBSPType.class)));
+                reduced = new DBSPTupleExpression(expression.getNode(), type, monotoneComponents);
+            }
         }
         boolean allConstant = Linq.all(expression.fields, this.constantExpressions::contains);
         if (allConstant) {
@@ -976,7 +979,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             if (name.equals("now")) {
                 // Only when called from ImplementNow
                 resultType = new MonotoneType(expression.getType());
-                reduced = expression.replaceArguments();
+                reduced = this.compiler.options.ioOptions.rustOptimizerPasses
+                        ? RustCircuitPass.clockWaterline(this.compiler, expression) : expression.replaceArguments();
             } else if (this.compiler.options.ioOptions.rustOptimizerPasses) {
                 reduced = this.nativeFunctionWaterline(expression, name);
                 if (reduced != null)

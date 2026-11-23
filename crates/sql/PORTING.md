@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The general monotonicity visitor uses the same Rust clock and tuple
+constructors as whole-closure projection. A directed test checks that
+a projected SQL row retains its source range and the identities of its
+bounded fields, including an empty raw tuple and a call to the clock.
+The packaged build passed 92 JUnit tests, 550 isolated monotonicity
+comparisons and 22 detached compilations.
+[Clock and tuple comparisons](evidence/p3-tuple-clock-waterlines.json)
+
 Rust builds scalar function waterlines for both whole closures and the general
 monotonicity visitor. A directed test checks the runtime callee, result
 nullability, reuse of the reduced argument and copying of the constant.

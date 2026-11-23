@@ -1,0 +1,61 @@
+{
+  "scope": "A directed comparison runs both general visitors and checks compressed tuples, an empty raw tuple, clock callee and result type identity, and SQL source locations. Isolated MonotoneAnalyzer and detached replay use the same packaged compiler.",
+  "verification": {
+    "build_sha256": {
+      "bin/libfeldera_sql_opt_jni.so": "0bc264ba68566504f8c660726ec6213ff897744f8a33c8fe8889416c17aa2644",
+      "bin/sql-difftest": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+      "maven/sql-compiler.jar": "5cada7e4e2d3b59b6a50c82e46ebfbc5d8a7e09a7b5a5e513bdc43fb53009c39",
+      "maven/tests.jar": "d8538ec6726dcd2dc90b87f657e47e5dec5bb9b808d57d0c68a24da470b55838",
+      "maven/build.log": "0f655dd812c578f9cd9a2889b4fd7bf3ad54a920bbdfa0ba8ea7b0ec00fc3325",
+      "tests.log": "0d10ed6d925d8d944a38f1ac72bd7a73973d9f5de767cdd406e45bbcb685c3d2",
+      "build.log": "bb64ff65faa44589f808a62e2d180471e730d68aa02c206078c620383235585d",
+      "clippy.log": "8a77f6c19aea3066aacf23818616047d7a52ed82ddd9bf2e137dbc215eda4538",
+      "junit.log": "e77181bb4f138f4cb613af10fa26b1f4555474f21bb55ce27618d61e44d09a73"
+    },
+    "rust_tests": 216,
+    "junit_tests": 92,
+    "engines": {
+      "classic": {
+        "isolated_pass": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+        "detached_cases": 11,
+        "ordered_s4_observations": 4490,
+        "mismatches": 0,
+        "receipt_sha256": "51a351de42ad67c2c9b1407959432cffe61739bd6a4c5f74bffc561cc5362fb1",
+        "native_request_calls": {
+          "InnerCSE/BorrowedVariables": 1,
+          "InnerCSE/NumberValues": 35,
+          "InnerCSE/ReadLazy": 72,
+          "KeyAnalysis/Circuit": 33,
+          "LeftJoinChains/Steps": 11,
+          "Monotonicity/ProjectClosure": 3,
+          "Monotonicity/Transfer": 18,
+          "OptimizeProjections/Producer": 114,
+          "ParameterFieldDependencies": 16,
+          "RemoveUnusedFields/AggregateReader": 6,
+          "RemoveUnusedFields/IndexedValue": 6,
+          "RemoveUnusedFields/ParameterTypes": 6
+        }
+      },
+      "gen2": {
+        "isolated_pass": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+        "detached_cases": 11,
+        "ordered_s4_observations": 4524,
+        "mismatches": 0,
+        "receipt_sha256": "0e5227c9ae125267c0f1506845dd004010d737da729c5ff3401abb6fd9c0573f",
+        "native_request_calls": {
+          "InnerCSE/NumberValues": 34,
+          "InnerCSE/ReadLazy": 72,
+          "KeyAnalysis/Circuit": 33,
+          "LeftJoinChains/Steps": 11,
+          "Monotonicity/ProjectClosure": 3,
+          "Monotonicity/Transfer": 18,
+          "OptimizeProjections/Producer": 116,
+          "ParameterFieldDependencies": 16,
+          "RemoveUnusedFields/AggregateReader": 6,
+          "RemoveUnusedFields/IndexedValue": 6,
+          "RemoveUnusedFields/ParameterTypes": 6
+        }
+      }
+    }
+  }
+}

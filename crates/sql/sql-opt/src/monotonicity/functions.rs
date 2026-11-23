@@ -1,9 +1,32 @@
 //! Select the runtime function that computes a lower bound for a scalar call.
 use feldera_sql_expr::copy_expression;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind,
+};
 use regex::Regex;
 use serde::Deserialize;
 use std::sync::LazyLock;
+
+/// The clock is its own lower bound. Keep the live callee and result type,
+/// and give the synthesized zero-argument call an empty source location.
+pub fn clock_waterline(
+    edit: &mut CircuitEditor,
+    call: ExpressionId,
+) -> Result<ExpressionId, Error> {
+    let site = call.into();
+    let callee = edit.node(site)?.edge("function")?;
+    let ty = edit.expression_type(call)?;
+    let clock = edit.empty_origin_node(
+        site,
+        InnerKind::Expression(Expr::Apply),
+        [
+            ("type", Field::Reference(ty.into())),
+            ("function", Field::Reference(callee)),
+            ("arguments", Field::Array(vec![])),
+        ],
+    )?;
+    edit.expression(clock)
+}
 
 /// Build the selected runtime call in the original call's location. A bounded
 /// operand retains its reduced expression. An unbounded constant needs its own

@@ -235,6 +235,25 @@ fn project_wrapper(
     Ok(Some(result))
 }
 
+/// Assemble the bounded fields in their original order. SQL rows retain the
+/// constructor's source location. Raw tuples use an empty location.
+pub fn tuple_waterline(
+    edit: &mut CircuitEditor,
+    site: NodeId,
+    raw: bool,
+    fields: &[ExpressionId],
+) -> Result<ExpressionId, Error> {
+    if raw {
+        return edit.tuple_expr(site, true, fields);
+    }
+    let types = fields
+        .iter()
+        .map(|&field| Ok(edit.expression_type(field)?.into()))
+        .collect::<Result<Vec<_>, Error>>()?;
+    let ty = edit.tuple_type(site, false, types)?;
+    edit.tuple_with_type_at(site, ty, fields)
+}
+
 fn project_tuple(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
@@ -254,18 +273,10 @@ fn project_tuple(
     let raw = edit.expr_kind(expression)? == Expr::RawTuple;
     let nullable = edit.nullable(edit.expression_type(expression)?)?;
     let shape = Shape::tuple(fields, nullable);
-    let reduced = if !shape.monotone() {
-        None
-    } else if raw {
-        Some(edit.tuple_expr(id, true, &bounds)?)
-    } else {
-        let types = bounds
-            .iter()
-            .map(|&v| Ok(edit.expression_type(v)?.into()))
-            .collect::<Result<Vec<_>, Error>>()?;
-        let ty = edit.tuple_type(id, false, types)?;
-        Some(edit.tuple_with_type_at(id, ty, &bounds)?)
-    };
+    let reduced = shape
+        .monotone()
+        .then(|| tuple_waterline(edit, id, raw, &bounds))
+        .transpose()?;
     Ok(Some(ProjectedValue {
         shape,
         constant,
