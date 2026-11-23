@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Count completed UTC days in an exported field shadow log for one optimizer build."""
 import argparse
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 import json
 from pathlib import Path
@@ -9,6 +10,19 @@ import re
 EVENT = "Rust optimizer daily shadow sample"
 MIN_PROGRAMS = 200
 MIN_DAYS = 30
+
+
+@dataclass
+class DailySample:
+    matched: int = 0
+    incomplete: bool = False
+    differences: int = 0
+    mismatch_times: set[str] = field(default_factory=set)
+
+    def resets(self):
+        # The cumulative count survives a partial export. Distinct mismatch events
+        # also capture restarts and concurrent workers. Both count the same attempts.
+        return max(self.differences, len(self.mismatch_times))
 
 
 def summarize(events, build, package, today):
@@ -29,6 +43,9 @@ def summarize(events, build, package, today):
         counts = [fields[key] for key in ("matched_distinct", "differences", "incomplete")]
         if any(type(value) is not int or value < 0 for value in counts) or counts[0] > MIN_PROGRAMS:
             raise ValueError(f"Invalid daily shadow counts on {day}")
+        delta = fields.get("difference_this_attempt", 0)
+        if type(delta) is not int or delta not in (0, 1) or delta > counts[1]:
+            raise ValueError(f"Invalid shadow mismatch increment on {day}")
         if not identified:
             # An older worker or a package replaced during compilation cannot
             # contribute a match. Its difference may belong to this candidate.
@@ -37,22 +54,31 @@ def summarize(events, build, package, today):
             counts[0] = 0
         # These are cumulative process counters. Two processes can see identical programs.
         # A single process reaching the threshold proves the lower bound for the day.
-        distinct, differences, incomplete = days.get(day, (0, False, False))
-        days[day] = (max(distinct, counts[0]), differences or counts[1] > 0,
-                     incomplete or counts[2] > 0)
+        sample = days.setdefault(day, DailySample())
+        sample.matched = max(sample.matched, counts[0])
+        sample.differences = max(sample.differences, counts[1])
+        sample.incomplete |= counts[2] > 0
+        if delta and event.get("timestamp"):
+            # Re-exporting a log shard must not count a mismatch twice.
+            sample.mismatch_times.add(event["timestamp"])
 
     qualified = []
     report = []
-    for day, (distinct, different, incomplete) in sorted(days.items()):
-        if different:
+    resets = 0
+    for day, sample in sorted(days.items()):
+        daily_resets = sample.resets()
+        resets += daily_resets
+        if daily_resets:
             qualified.clear()
-        elif day < today and distinct >= MIN_PROGRAMS:
+        elif day < today and sample.matched >= MIN_PROGRAMS:
             qualified.append(day.isoformat())
-        if day < today or different:
-            report.append({"date": day.isoformat(), "matched_distinct_lower_bound": distinct,
-                           "observed_difference": different, "observed_incomplete": incomplete})
+        if day < today or daily_resets:
+            report.append({"date": day.isoformat(), "matched_distinct_lower_bound": sample.matched,
+                           "observed_difference": bool(daily_resets), "observed_incomplete": sample.incomplete,
+                           "resets_lower_bound": daily_resets})
     return {"compiler_build": build, "package_sha256": package, "days": report, "qualifying_dates_since_last_difference": qualified,
-            "qualifying_days": len(qualified), "field_sample_satisfied": len(qualified) >= MIN_DAYS}
+            "qualifying_days": len(qualified), "field_sample_satisfied": len(qualified) >= MIN_DAYS,
+            "resets_lower_bound": resets, "reset_review_required": resets > 2}
 
 
 def main():

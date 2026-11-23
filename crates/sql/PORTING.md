@@ -536,6 +536,13 @@ checkpoints restored in both directions, and cancellation p95 was 19.88 ms
 across 20 workers.
 [Loop comparisons, restore and cancellation checks](evidence/p3-index-loop-bindings.json)
 
+When a variable read has the wrong type, Rust records the declaration's
+waterline fact before reporting the error. Both waterline request modes
+matched Java's observations and diagnostic for local and parameter reads.
+The build passed 185 targeted and 225 nightly JUnit tests and matched Java
+at all 11,965 ordered S4 observations across 12 classic and 12 Gen-2 cases.
+[Variable read regression and replay](evidence/p3-waterline-read-types.json)
+
 Shared-index readers remap a column beneath 160 nested calls. Indexes that
 project the same nested expression still share one output column. Both
 operations exceeded the inline snapshot limit on the preceding build.
@@ -2773,6 +2780,10 @@ that all three files retain their identities across its compilation. A missing
 package ID contributes zero matches. A difference with a missing ID resets the
 window for that manager build. A difference takes effect immediately, even on
 the current day. A day below the sample minimum contributes no qualifying day.
+Enable `FELDERA_LOG_JSON=1` on the manager to preserve the original timestamps
+and counters in the export. The report flags a review at the third observed
+reset. It deduplicates overlapping exports and reports a lower bound when
+older logs lack individual mismatch events or events share a timestamp.
 
 ```sh
 python3 crates/sql/scripts/shadow_sample.py --build "$COMPILER_BUILD" --package "$PACKAGE_SHA256" field-logs/*.jsonl

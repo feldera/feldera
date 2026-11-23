@@ -1,0 +1,52 @@
+{
+  "scope": "Rust reports a mistyped variable read after publishing its declaration fact, preserving the prior observations in both waterline request modes.",
+  "source_base": "0b559286cd8eea1454306944bcf525272f0d5ef2",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "6c026f8bda1331573487dcc0cc364a61432bdc069a7b29f26bec0e491a356515",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "c43ddfbab006ef72aa3b5f9cc680f9e52ef8f876dbae41404348479cb663e78e",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "044ca3e0e410b3fb22b3429d107cd28b5bf3a78dcb77e57b2485f1f829b09cc4",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/scope.rs": "64601bfb6b1946b5d7a643262eeabd9604a15322e16359b61dd9320156f5c271",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "8bc610a4c969fe3f46f487eb4b18390cd9134eb0988c58184441973a5e2bf995",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneExpression.java": "eb3d89e58691a101c42f6df2aa6b76ed2e11a9f9442a3eca6b3dca5771e04f11",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneTransferFunctions.java": "62b01168723a3bc362e3d3bae4588b022713a8d3953ca897b85f98555e8c4df9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "c6b82ed11a52d9f6f5a5069aabd5ba368cb9a95c1b917315754957a686836874"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "341ee742bd83ef5650ee459bfabdac9604dab516da926aa639543c235a9387d8",
+    "bin/sql-difftest": "d91baf7bf81643b7c383a89782c91037f89300b7619fd95e9315688857e4597f",
+    "maven/tests.jar": "5bf66a86bf89e8a355be052c399c1d077609d3240d6dd01d449445cbde2ec4e7",
+    "maven/sql-compiler.jar": "d973f0d9d73bd9ca6de18e7ec139f748a9cb703d5594c28a3f2d63d7ee2107b1"
+  },
+  "negative_control": {
+    "library_sha256": "4fc5327ec14ef1eff8b538711c4d70ff5f232f9b19db8823a6b21908956ce373",
+    "failed_tests": [
+      "mistypedWaterlineReadsPublishTheirDeclarationFactBeforeFailing"
+    ],
+    "java_compiler_sha256": "ba6316528d751f8d7f0fed34d0200b9576e0c2a20f3d397596fb8508383817e3"
+  },
+  "rust_tests": 225,
+  "junit_tests": 185,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "faebf5cc93094d40eadd9d5c262951ac374d188af869ba21910bed5af29f43e9"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "e45195edd3e9c9de04f1b52d24e1007c10a6a1145e646843adabaf6d65fbbd91"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 225,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  }
+}

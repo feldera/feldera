@@ -83,6 +83,7 @@ pub(super) fn record(package: Option<&str>, sql: &str, accepted: bool, outcome: 
     let counts = day.record(date, package, sql, accepted, outcome);
     info!(%date, compiler_build = env!("VERGEN_GIT_SHA"), package_sha256 = package.unwrap_or("unidentified"),
           matched_distinct = counts.matched.len(), differences = counts.different,
+          difference_this_attempt = u8::from(*outcome == Outcome::Different),
           incomplete = counts.incomplete, "Rust optimizer daily shadow sample");
 }
 

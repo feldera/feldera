@@ -48,3 +48,27 @@ class FieldSample(unittest.TestCase):
         report = summarize(rows, "candidate", self.package, self.today)
         self.assertEqual(report["qualifying_days"], 0)
         self.assertEqual(report["days"][-1]["matched_distinct_lower_bound"], 0)
+
+    def test_third_reset_requests_review_even_after_worker_restarts(self):
+        rows = []
+        for second in range(3):
+            event = self.event(0, 1, differences=1)
+            event["timestamp"] = f"{self.today}T12:00:0{second}.000000Z"
+            event["fields"]["difference_this_attempt"] = 1
+            rows.append(event)
+        # A cumulative counter on a later successful attempt still reads one.
+        same_count = self.event(0, 2, differences=1)
+        same_count["fields"]["difference_this_attempt"] = 0
+        two = [rows[0], rows[1], rows[0], same_count]
+        self.assertFalse(summarize(two, "candidate", self.package, self.today)["reset_review_required"])
+        report = summarize(two + rows, "candidate", self.package, self.today)
+        self.assertTrue(report["reset_review_required"])
+        self.assertEqual(report["resets_lower_bound"], 3)
+
+    def test_cumulative_only_exports_retain_resets_across_days(self):
+        old = self.event(2, 200, differences=2)
+        unknown = self.event(1, 0, differences=1)
+        del unknown["fields"]["package_sha256"]
+        report = summarize([old, old, unknown], "candidate", self.package, self.today)
+        self.assertEqual(report["resets_lower_bound"], 3)
+        self.assertTrue(report["reset_review_required"])

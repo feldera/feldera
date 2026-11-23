@@ -428,6 +428,7 @@ fn group_contains_only_leader(leader: libc::pid_t) -> bool {
 mod tests {
     use super::*;
     use clap::Parser;
+    use feldera_observability::json_logging::{JsonPipelineFormat, LogIdentity, ServiceName};
     use serde_json::json;
     use std::process::Stdio;
     use tokio::time::timeout;
@@ -690,6 +691,9 @@ mod tests {
         }
         let log_path = directory.path().join("shadow.log");
         let subscriber = tracing_subscriber::fmt()
+            .event_format(JsonPipelineFormat::new(LogIdentity::Service {
+                service_name: Some(ServiceName::CompilerServer),
+            }))
             .with_writer(std::fs::File::create(&log_path).unwrap())
             .finish();
         let outcome = run(
@@ -705,7 +709,13 @@ mod tests {
         assert_eq!(outcome, Outcome::Equal, "{family:?} shadow for {runtime:?}");
         let log = std::fs::read_to_string(log_path).unwrap();
         if family == crate::config::ShadowCompiler::RustOptimizer {
-            assert!(log.contains("Rust optimizer daily shadow sample"));
+            let event: Value = serde_json::from_str(&log).unwrap();
+            assert!(event["timestamp"].is_string());
+            assert_eq!(
+                event["fields"]["message"],
+                "Rust optimizer daily shadow sample"
+            );
+            assert_eq!(event["fields"]["difference_this_attempt"], 0);
             assert!(!log.contains(sql));
         } else {
             assert!(log.is_empty());
