@@ -1,25 +1,14 @@
 //! Replace a repeated Boolean test with its known value inside a guarded branch.
 use crate::{
-    expression_visitor::{rewrite_expressions, Context},
+    expression_visitor::{Context, rewrite_expressions},
+    lexical_scope::expression_children,
     terms::Terms,
 };
-use feldera_sql_expr::{ensure_expression_tree, Rewrite, Transformation, Visit};
+use feldera_sql_expr::{Rewrite, Transformation, Visit, ensure_expression_tree};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId, TypeKind,
 };
 use std::collections::{HashMap, HashSet};
-
-fn children(node: &Node) -> Vec<NodeId> {
-    let mut children = Vec::new();
-    if !matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
-        for (name, field) in node.fields() {
-            if !matches!(name, "type" | "originalStruct") {
-                field.collect_inner_edges(&mut children);
-            }
-        }
-    }
-    children
-}
 
 fn contains_if(edit: &CircuitEditor, root: NodeId) -> Result<bool, Error> {
     let mut pending = vec![root];
@@ -30,7 +19,7 @@ fn contains_if(edit: &CircuitEditor, root: NodeId) -> Result<bool, Error> {
             if matches!(node.inner_kind(), Some(InnerKind::Expression(Expr::If))) {
                 return Ok(true);
             }
-            pending.extend(children(node));
+            pending.extend(expression_children(node));
         }
     }
     Ok(false)
@@ -52,69 +41,112 @@ struct GuardedTests {
     values: HashMap<NodeId, bool>,
 }
 
+enum Step {
+    Visit(NodeId),
+    Bind(String),
+    RestoreScope(usize),
+    EnterBranch(usize, bool),
+    LeaveBranch,
+}
+
 impl GuardedTests {
-    fn visit(&mut self, edit: &CircuitEditor, id: NodeId, depth: usize) -> Result<(), Error> {
-        if depth > 128 {
-            return Err(Error::new(
-                "conditional exceeds the expression nesting limit",
-            ));
-        }
-        let node = edit.node(id)?;
-        let kind = node.inner_kind();
-        let outer = self.scope.len();
-        match kind {
-            Some(InnerKind::Expression(Expr::If)) => {
-                let condition = node.edge("condition")?;
-                self.visit(edit, condition, depth + 1)?;
-                let shape =
-                    self.terms
-                        .field(edit.circuit(), &Field::Reference(condition), &self.scope);
-                for (branch, value) in [("positive", true), ("negative", false)] {
-                    if let Some(child) = node.field(branch).and_then(Field::node_id) {
-                        self.guards.push((shape, value));
-                        self.visit(edit, child, depth + 1)?;
-                        self.guards.pop();
+    fn visit(&mut self, edit: &CircuitEditor, root: NodeId) -> Result<(), Error> {
+        let mut pending = vec![Step::Visit(root)];
+        while let Some(step) = pending.pop() {
+            let id = match step {
+                Step::Visit(id) => id,
+                Step::Bind(name) => {
+                    self.scope.push(name);
+                    continue;
+                }
+                Step::RestoreScope(size) => {
+                    self.scope.truncate(size);
+                    continue;
+                }
+                Step::EnterBranch(guard, value) => {
+                    self.guards.push((guard, value));
+                    continue;
+                }
+                Step::LeaveBranch => {
+                    self.guards.pop();
+                    continue;
+                }
+            };
+            let node = edit.node(id)?;
+            self.record_guarded_value(edit, id, node)?;
+            // Queue children and scope changes in evaluation order, then reverse
+            // this segment so the first child runs next.
+            let start = pending.len();
+            match node.inner_kind() {
+                Some(InnerKind::Expression(Expr::If)) => {
+                    let condition = node.edge("condition")?;
+                    let shape =
+                        self.terms
+                            .field(edit.circuit(), &Field::Reference(condition), &self.scope);
+                    pending.push(Step::Visit(condition));
+                    for (branch, value) in [("positive", true), ("negative", false)] {
+                        if let Some(child) = node.field(branch).and_then(Field::node_id) {
+                            pending.extend([
+                                Step::EnterBranch(shape, value),
+                                Step::Visit(child),
+                                Step::LeaveBranch,
+                            ]);
+                        }
                     }
                 }
-            }
-            Some(InnerKind::Expression(Expr::Closure)) => {
-                for param in node.edges("parameters")? {
-                    self.scope.push(binding(edit.node(param)?, "name")?);
-                }
-                self.visit(edit, node.edge("body")?, depth + 1)?;
-            }
-            Some(InnerKind::Expression(Expr::Let)) => {
-                self.visit(edit, node.edge("initializer")?, depth + 1)?;
-                self.scope
-                    .push(binding(edit.node(node.edge("variable")?)?, "variable")?);
-                self.visit(edit, node.edge("consumer")?, depth + 1)?;
-            }
-            Some(InnerKind::Expression(Expr::Block)) => {
-                for statement in node.edges("contents")? {
-                    self.visit(edit, statement, depth + 1)?;
-                    if edit.node(statement)?.class() == "DBSPLetStatement" {
-                        self.scope.push(binding(edit.node(statement)?, "variable")?);
+                Some(InnerKind::Expression(Expr::Closure)) => {
+                    for param in node.edges("parameters")? {
+                        pending.push(Step::Bind(binding(edit.node(param)?, "name")?));
                     }
+                    pending.push(Step::Visit(node.edge("body")?));
+                    pending.push(Step::RestoreScope(self.scope.len()));
                 }
-                if let Some(last) = node.field("lastExpression").and_then(Field::node_id) {
-                    self.visit(edit, last, depth + 1)?;
+                Some(InnerKind::Expression(Expr::Let)) => {
+                    let variable = edit.node(node.edge("variable")?)?;
+                    pending.extend([
+                        Step::Visit(node.edge("initializer")?),
+                        Step::Bind(binding(variable, "variable")?),
+                        Step::Visit(node.edge("consumer")?),
+                        Step::RestoreScope(self.scope.len()),
+                    ]);
                 }
-            }
-            Some(InnerKind::Expression(Expr::For)) => {
-                self.visit(edit, node.edge("iterated")?, depth + 1)?;
-                self.scope.push(binding(node, "variable")?);
-                self.visit(edit, node.edge("block")?, depth + 1)?;
-            }
-            _ => {
-                for child in children(node) {
-                    self.visit(edit, child, depth + 1)?;
+                Some(InnerKind::Expression(Expr::Block)) => {
+                    for statement in node.edges("contents")? {
+                        pending.push(Step::Visit(statement));
+                        let statement = edit.node(statement)?;
+                        if statement.class() == "DBSPLetStatement" {
+                            pending.push(Step::Bind(binding(statement, "variable")?));
+                        }
+                    }
+                    if let Some(last) = node.field("lastExpression").and_then(Field::node_id) {
+                        pending.push(Step::Visit(last));
+                    }
+                    pending.push(Step::RestoreScope(self.scope.len()));
                 }
+                Some(InnerKind::Expression(Expr::For)) => {
+                    pending.extend([
+                        Step::Visit(node.edge("iterated")?),
+                        Step::Bind(binding(node, "variable")?),
+                        Step::Visit(node.edge("block")?),
+                        Step::RestoreScope(self.scope.len()),
+                    ]);
+                }
+                _ => pending.extend(expression_children(node).into_iter().map(Step::Visit)),
             }
+            pending[start..].reverse();
         }
-        self.scope.truncate(outer);
+        Ok(())
+    }
+
+    fn record_guarded_value(
+        &mut self,
+        edit: &CircuitEditor,
+        id: NodeId,
+        node: &Node,
+    ) -> Result<(), Error> {
         if !self.guards.is_empty()
             && matches!(
-                kind,
+                node.inner_kind(),
                 Some(InnerKind::Expression(
                     Expr::VariablePath
                         | Expr::Apply
@@ -174,7 +206,7 @@ pub fn simplify_conditional_root(edit: &mut CircuitEditor, root: NodeId) -> Resu
     // A shared expression may be true in one branch and false in another.
     let root = ensure_expression_tree(edit, root)?;
     let mut facts = GuardedTests::default();
-    facts.visit(edit, root, 0)?;
+    facts.visit(edit, root)?;
     Rewrite::translating_expressions(ReplaceKnown(facts.values)).apply(edit, root)
 }
 
@@ -192,6 +224,56 @@ pub fn simplify_conditionals(circuit: Circuit, next: &mut u64) -> Result<Circuit
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_deep_branch_still_simplifies_its_guard() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let boolean = edit.bool_type(site, false)?;
+        let parameter = edit.named_variable(boolean, "flag")?;
+        let condition = edit.named_variable(boolean, "flag")?;
+        let read = edit.named_variable(boolean, "flag")?;
+        let negative = edit.named_variable(boolean, "flag")?;
+        let mut branch = read;
+        for _ in 0..256 {
+            branch = edit.make_expr(
+                site,
+                Expr::Unary,
+                boolean,
+                [
+                    ("opcode", Field::Data("NOT".into())),
+                    ("source", Field::Reference(branch.into())),
+                ],
+            )?;
+        }
+        let body = edit.make_expr(
+            site,
+            Expr::If,
+            boolean,
+            [
+                ("condition", Field::Reference(condition.into())),
+                ("positive", Field::Reference(branch.into())),
+                ("negative", Field::Reference(negative.into())),
+            ],
+        )?;
+        let closure = edit.closure_from_variables(body, &[parameter])?;
+        let rewritten = simplify_conditional_root(&mut edit, closure.into())?;
+        let body = edit.node(edit.node(rewritten)?.edge("body")?)?;
+        assert_eq!(body.edge("condition")?, condition.into());
+        assert_eq!(
+            edit.node(body.edge("negative")?)?.data("value"),
+            Some(&json!(false))
+        );
+        let mut current = body.edge("positive")?;
+        for _ in 0..256 {
+            current = edit.node(current)?.edge("source")?;
+        }
+        assert_eq!(edit.node(current)?.data("value"), Some(&json!(true)));
+        Ok(())
+    }
 
     #[test]
     fn nested_let_reads_outer_guard_in_initializer_and_shadows_it_in_body() {
@@ -212,7 +294,7 @@ mod tests {
         .unwrap();
         let edit = CircuitEditor::new(circuit);
         let mut tests = GuardedTests::default();
-        tests.visit(&edit, NodeId::Inner(2), 0).unwrap();
+        tests.visit(&edit, NodeId::Inner(2)).unwrap();
         assert_eq!(
             tests.values,
             HashMap::from([(NodeId::Inner(8), true), (NodeId::Inner(10), false)])
