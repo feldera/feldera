@@ -222,6 +222,10 @@ harness = false
 name = "graph_coloring"
 harness = false
 
+[[bench]]
+name = "storage_writes"
+harness = false
+
 [[example]]
 name = "orgchart"
 

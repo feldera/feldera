@@ -20,5 +20,5 @@ pub static COMMIT_ALL_LATENCY_MICROSECONDS: ExponentialHistogram = ExponentialHi
 /// Histogram of read block sizes, in bytes.
 pub static READ_BLOCKS_BYTES: ExponentialHistogram = ExponentialHistogram::new();
 
-/// Histogram of write block sizes, in bytes.
+/// Histogram of write sizes, in bytes, one sample per write system call.
 pub static WRITE_BLOCKS_BYTES: ExponentialHistogram = ExponentialHistogram::new();
