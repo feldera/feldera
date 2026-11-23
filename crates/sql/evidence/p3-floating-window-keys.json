@@ -1,0 +1,86 @@
+{
+  "scope": "REAL and DOUBLE thresholds in CASE expressions inside TIMESTAMPADD shared window keys. Direct Java controls and detached S2 candidates compare every ordered optimizer boundary and emitted artifacts.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "d912234cfbeb083cd67523caef4b32a197567ea71ddc4f81ad95a0e563c0a731",
+    "bin/sql-difftest": "bff552098e5e676313045900ad03fb9609c825c32324a6bcc03027690425ca8e",
+    "sql-compiler.jar": "d5a31dd795d5a18f8fd0e8c263a4d2905b932dfc317891fd0a85ea27004c2295"
+  },
+  "jdk_numeric_comparison": {
+    "patterns": 1099086,
+    "inputs_sha256": "0d89195ce5921ecda7ced27f362ec6a886f39abed5e0b2ba2867c712f37f0d20",
+    "common_output_sha256": "65064148f9459140d4489b4bc454068d9341a350d473b99dc2ecf71e97467db4",
+    "profile": "JDK 21 Float.toString and Double.toString, raw IEEE bits, covering every exponent, selected mantissas, neighbors of powers of ten and seeded random patterns."
+  },
+  "engines": {
+    "classic": {
+      "detached_cases": 2,
+      "ordered_s4_observations": 1192,
+      "mismatches": 0,
+      "receipt_sha256": "be26509c86d8dd8ec4e49cec976714ce4872a31d5167a4446332739b2c2380ad",
+      "before": {
+        "WindowGroups/Scan": {
+          "calls": 2,
+          "fallbacks": 2
+        },
+        "WindowGroups/Reorder": {
+          "calls": 2,
+          "fallbacks": 2
+        },
+        "WindowGroups/Indexes": {
+          "calls": 2,
+          "fallbacks": 0
+        }
+      },
+      "after": {
+        "WindowGroups/Scan": {
+          "calls": 2,
+          "fallbacks": 0
+        },
+        "WindowGroups/Reorder": {
+          "calls": 2,
+          "fallbacks": 0
+        },
+        "WindowGroups/Indexes": {
+          "calls": 2,
+          "fallbacks": 0
+        }
+      }
+    },
+    "gen2": {
+      "detached_cases": 2,
+      "ordered_s4_observations": 1204,
+      "mismatches": 0,
+      "receipt_sha256": "55729c011a2368120258a8c97e9cd357e77ccca88e1b995276cb62922ad681cb",
+      "before": {
+        "WindowGroups/Scan": {
+          "calls": 2,
+          "fallbacks": 2
+        },
+        "WindowGroups/Reorder": {
+          "calls": 2,
+          "fallbacks": 2
+        },
+        "WindowGroups/Indexes": {
+          "calls": 2,
+          "fallbacks": 2
+        }
+      },
+      "after": {
+        "WindowGroups/Scan": {
+          "calls": 2,
+          "fallbacks": 0
+        },
+        "WindowGroups/Reorder": {
+          "calls": 2,
+          "fallbacks": 0
+        },
+        "WindowGroups/Indexes": {
+          "calls": 2,
+          "fallbacks": 0
+        }
+      }
+    }
+  },
+  "temporal_junit_tests": 16,
+  "rust_tests": 150
+}

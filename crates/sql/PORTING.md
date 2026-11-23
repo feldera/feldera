@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust grouped temporal windows with REAL and DOUBLE thresholds on classic
+and Gen-2. All four compilations matched Java through 2,396 ordered S4
+observations and final emission. A JDK 21 comparison checked 1,099,086
+floating-point bit patterns, including distinct NaN payloads, signed zero
+and values adjacent to powers of ten.
+[Numeric and SQL comparisons](evidence/p3-floating-window-keys.json)
+
 On `cb578c70d`, casting a partially bounded row can remove its bound while
 preserving the bound and original field identity of an adjacent input
 column. The new JNI regression failed on the previous native library. All

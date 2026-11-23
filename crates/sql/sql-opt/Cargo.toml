@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 indexmap.workspace = true
 regex.workspace = true
+ryu.workspace = true
 feldera-sql-expr = { path = "../sql-expr" }
 feldera-sql-ir = { path = "../sql-ir" }
 serde_json.workspace = true

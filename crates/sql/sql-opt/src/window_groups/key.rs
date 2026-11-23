@@ -1,6 +1,7 @@
 //! Compare the canonical spelling of a projection over one bound row. The Java
 //! window pass uses printed closures, so cast safety and call result types do
 //! not distinguish keys, while operand nullability in a binary expression does.
+use super::numbers::{decimal_text, floating_text};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId, TypeId,
     TypeKind as Ty,
@@ -25,10 +26,7 @@ enum Term {
     If,
     Call(String),
     Cast(String),
-    ExactNumber {
-        coefficient: String,
-        scale: i64,
-    },
+    Number(String),
     Bool(bool),
     String(String),
     Bytes(String),
@@ -89,7 +87,7 @@ impl TimestampKey {
                     // The literal printer and an explicit Some use the same spelling.
                     let wrap = matches!(
                         term,
-                        Term::ExactNumber { .. }
+                        Term::Number(_)
                             | Term::Bool(_)
                             | Term::String(_)
                             | Term::Bytes(_)
@@ -254,6 +252,8 @@ fn key_term(
         | Expr::BoolLiteral
         | Expr::DateLiteral
         | Expr::DecimalLiteral
+        | Expr::RealLiteral
+        | Expr::DoubleLiteral
         | Expr::StringLiteral
         | Expr::TimeLiteral
         | Expr::TimestampLiteral
@@ -280,7 +280,21 @@ fn key_term(
                 }
                 Some(_) if kind == Expr::DecimalLiteral => {
                     let (coefficient, scale) = feldera_sql_expr::decimal_literal_parts(node)?;
-                    Term::ExactNumber { coefficient, scale }
+                    Term::Number(decimal_text(&coefficient, scale))
+                }
+                Some(value) if matches!(kind, Expr::RealLiteral | Expr::DoubleLiteral) => {
+                    let Some(bits) = value.as_i64() else {
+                        return Ok(None);
+                    };
+                    let text = if kind == Expr::RealLiteral {
+                        let Ok(bits) = i32::try_from(bits) else {
+                            return Ok(None);
+                        };
+                        floating_text(f32::from_bits(bits as u32))
+                    } else {
+                        floating_text(f64::from_bits(bits as u64))
+                    };
+                    Term::Number(text)
                 }
                 Some(value) if kind == Expr::StringLiteral => {
                     // Quoting and escaping are injective in Java's debug printer.
@@ -344,10 +358,7 @@ fn key_term(
                     let Some(digits) = digits else {
                         return Ok(None);
                     };
-                    Term::ExactNumber {
-                        coefficient: digits,
-                        scale: 0,
-                    }
+                    Term::Number(digits)
                 }
                 None => {
                     let Some(name) = cast_spelling(edit, edit.expression_type(id)?)? else {

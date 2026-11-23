@@ -94,6 +94,15 @@ public class TemporalKeyTests {
         checkSharedWindowKeys(columns + "VARBINARY", key.formatted("X'00FF'"), key.formatted("X'FF00'"));
     }
 
+    @Test
+    public void floatingThresholdsDistinguishSharedTimestamps() {
+        String key = "TIMESTAMPADD(SECOND, CASE WHEN tag > %s THEN id ELSE 1 END, ts)";
+        checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, tag REAL",
+                key.formatted("CAST(1.25 AS REAL)"), key.formatted("CAST(1.75 AS REAL)"));
+        checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, tag DOUBLE",
+                key.formatted("1.25e0"), key.formatted("1.75e0"));
+    }
+
     private static void checkOffsetKeys(String shared, String different) {
         String key = "TIMESTAMPADD(SECOND, %s, ts)";
         checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, flag BOOLEAN, label VARCHAR",

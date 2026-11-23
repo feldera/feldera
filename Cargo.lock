@@ -5925,6 +5925,7 @@ dependencies = [
  "feldera-sql-ir",
  "indexmap 2.14.2",
  "regex",
+ "ryu",
  "serde",
  "serde_json",
  "sha2 0.10.9",
