@@ -390,15 +390,30 @@ pub(super) fn groups(
     if roots.next().is_some() {
         return Err("extra temporal predicate roots".into());
     }
-    if merge {
+    let result = if merge {
         let (target, upstream) = terms
             .split_last()
             .ok_or("missing downstream temporal filter")?;
-        return Ok(serde_json::to_value(
-            feldera_sql_opt::accepts_temporal_bound(edit, upstream, *target)?,
-        )?);
+        feldera_sql_opt::check_temporal_bound(edit, upstream, *target)
+            .map(|accepted| json!(accepted))
+    } else {
+        group_predicates(input, edit, &terms)
+    };
+    match result {
+        Ok(value) => Ok(value),
+        Err(feldera_sql_opt::KeyComparisonError::MissingDeclaration(name)) => {
+            Ok(json!({"missingDeclaration":name}))
+        }
+        Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => Err(error.into()),
     }
-    let Some(groups) = feldera_sql_opt::group_temporal_filters(edit, &terms)? else {
+}
+
+fn group_predicates(
+    input: &Circuit,
+    edit: &mut CircuitEditor,
+    terms: &[feldera_sql_opt::WindowTerm],
+) -> Result<Value, feldera_sql_opt::KeyComparisonError> {
+    let Some(groups) = feldera_sql_opt::check_temporal_groups(edit, terms)? else {
         return Ok(Value::Null);
     };
     let expressions = groups

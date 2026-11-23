@@ -69,7 +69,7 @@ final class NativeTemporalComparisons {
         var inputs = new Inputs();
         upstream.forEach(inputs::add);
         inputs.add(downstream);
-        var compatible = RustCircuitPass.acceptsTemporalBound(compiler, inputs.kinds(), inputs.roots());
+        var compatible = RustCircuitPass.acceptsTemporalBound(compiler, inputs.kinds(), inputs.roots(), true);
         return compatible != null ? compatible : upstream.stream().allMatch(term ->
                 term instanceof TemporalFilter && term.compatible(downstream));
     }

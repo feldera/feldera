@@ -1,5 +1,5 @@
 //! Group consecutive SQL predicates into windows without moving residual filters.
-use crate::index_key_equivalence::equivalent_bodies;
+use crate::index_key_equivalence::{KeyComparisonError, check_bodies, speculative};
 use crate::temporal_comparisons::conjoin;
 use crate::{TemporalPredicate, WindowComparison};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId};
@@ -12,14 +12,18 @@ pub struct TemporalBoundKey {
 }
 
 impl TemporalBoundKey {
-    fn compatible(self, edit: &CircuitEditor, other: Self) -> Result<Option<bool>, Error> {
+    fn compatible(
+        self,
+        edit: &CircuitEditor,
+        other: Self,
+    ) -> Result<Option<bool>, KeyComparisonError> {
         use WindowComparison::*;
         let lower = |op| matches!(op, Greater | GreaterEqual);
         if lower(self.comparison) == lower(other.comparison) && self.comparison != other.comparison
         {
             return Ok(Some(false));
         }
-        equivalent_bodies(
+        check_bodies(
             edit,
             self.key.into(),
             other.key.into(),
@@ -58,6 +62,14 @@ pub fn accepts_temporal_bound(
     upstream: &[WindowTerm],
     downstream: WindowTerm,
 ) -> Result<Option<bool>, Error> {
+    speculative(check_temporal_bound(edit, upstream, downstream))
+}
+
+pub fn check_temporal_bound(
+    edit: &CircuitEditor,
+    upstream: &[WindowTerm],
+    downstream: WindowTerm,
+) -> Result<Option<bool>, KeyComparisonError> {
     let WindowTerm::Bound(next) = downstream else {
         return Ok(Some(false));
     };
@@ -85,6 +97,13 @@ pub fn group_temporal_filters(
     edit: &mut CircuitEditor,
     terms: &[WindowTerm],
 ) -> Result<Option<Vec<TemporalGroup>>, Error> {
+    speculative(check_temporal_groups(edit, terms))
+}
+
+pub fn check_temporal_groups(
+    edit: &mut CircuitEditor,
+    terms: &[WindowTerm],
+) -> Result<Option<Vec<TemporalGroup>>, KeyComparisonError> {
     use WindowTerm::*;
     let mut result = Vec::new();
     let mut first = 0;
@@ -98,7 +117,7 @@ pub fn group_temporal_filters(
         while let Some(&next) = terms.get(end) {
             match (head, next) {
                 (Bound(_), Bound(_)) => {
-                    match accepts_temporal_bound(edit, &terms[first..end], next)? {
+                    match check_temporal_bound(edit, &terms[first..end], next)? {
                         Some(true) => {}
                         Some(false) => break,
                         None => return Ok(None),
@@ -108,9 +127,9 @@ pub fn group_temporal_filters(
                     predicate = Some(conjoin(edit, predicate.expect("residual group"), value)?);
                 }
                 (Residual(_), Bound(_)) => {
-                    return Err(Error::new(
-                        "window bound follows a residual clock predicate",
-                    ));
+                    return Err(
+                        Error::new("window bound follows a residual clock predicate").into(),
+                    );
                 }
                 _ => break,
             }

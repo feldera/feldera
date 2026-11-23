@@ -1,0 +1,43 @@
+{
+  "scope": "Temporal grouping and merging report the first missing declaration in Rust comparison order. Speculative rewrites may still decline an unresolved key.",
+  "source_base": "7bed78424d9b4a694cfe5162ebff59582e04332b",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/temporal.rs": "ecbfb44124419e73dbae920d9a836ae2c81e921663139c6d9bbabf3a7f8edc16",
+    "crates/sql/sql-opt/src/index_key_equivalence.rs": "2328d68ec5eeae1e1824f2310ba5befaaec98c695acb3b2df3e56d1e9be34c9a",
+    "crates/sql/sql-opt/src/index_key_equivalence/bindings.rs": "68a97140d4c18b9220a669e258c5f7ea9ab78435bb2a742f9d0358651fe80557",
+    "crates/sql/sql-opt/src/lib.rs": "76ed962888d86d015647ac92db275264d57d92938fca19663426d3f978883bc8",
+    "crates/sql/sql-opt/src/temporal_groups.rs": "7e932307386117955f296a87597080842e1aa0fe44bb4273a08b1f45101b490a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "adebb2165052b51170fe7ed56033c5d897950af9f407aa6fefd8cb921c5b08c1",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/NativeTemporalComparisons.java": "42fb03048e72385ac1a29de7b8c1b13a37e4fe2a5e0b8113c65d97984a1a1922",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "2ea40bcdbc3e966bfed4669be3a4a2a9a917a8568b7e83ee41e0449d475e8b0e"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ee3ad295f7436fa90f346921b6677c804372c7daef7e35e8f80e082339c239e5",
+    "bin/sql-difftest": "2c06c7591648fab0126896839b8a86378b1ee2c9f44209fd58a688fd1c2abf29",
+    "maven/tests.jar": "de57e7aa850a163eebfd2aef641832bbe8689ff51b8fc13a76aff7453c76d08f",
+    "maven/sql-compiler.jar": "e83e548121f309db991235fbd128730a97116b28f7b53c580c607d4cc79b6341"
+  },
+  "negative_control": {
+    "library_sha256": "0f8cc68870ffdbdfbc798e51590de5dd048c8baceb4bad29307e1d2c6e2a6d64",
+    "failed_test": "temporalKeysReportTheFirstMissingDeclaration"
+  },
+  "rust_tests": 221,
+  "junit_tests": 147,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "3d0435516a03717c287574e52471257a841e9a021e1b515b238f5e54f6e87402"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "81b0655c05db0f2e29d8ff8ee03dbe27fdb060d36ca16579dd378859bd2a6b0e"
+    }
+  }
+}

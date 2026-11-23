@@ -1,5 +1,5 @@
 //! Pair local declarations while comparing expressions under alpha-renaming.
-use super::{optional_child, same_type};
+use super::{KeyComparisonError, optional_child, same_type};
 use feldera_sql_ir::{CircuitEditor, Error, Node, NodeId};
 
 /// Each pending comparison sees the bindings in scope at that expression.
@@ -52,7 +52,7 @@ impl<'a> Bindings<'a> {
         mut scope: Scope,
         left: &Node,
         right: &Node,
-    ) -> Result<Option<bool>, Error> {
+    ) -> Result<bool, KeyComparisonError> {
         let left = name(left, "variable")?;
         let right = name(right, "variable")?;
         let mut declarations = (None, None);
@@ -65,12 +65,17 @@ impl<'a> Bindings<'a> {
                 declarations.1 = Some(index);
             }
             if let (Some(l), Some(r)) = declarations {
-                return Ok(Some(l == r));
+                return Ok(l == r);
             }
             scope = parent;
         }
-        // The live compiler reports a missing declaration at the original site.
-        Ok(None)
+        // DBSPVariablePath.equivalent looks up the left declaration first.
+        let missing = if declarations.0.is_none() {
+            left
+        } else {
+            right
+        };
+        Err(KeyComparisonError::MissingDeclaration(missing.to_owned()))
     }
 
     pub fn let_expression(

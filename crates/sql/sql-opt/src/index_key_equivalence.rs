@@ -4,6 +4,26 @@ use bindings::{Bindings, Scope, Work};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId};
 use std::collections::HashSet;
 
+#[derive(Debug, thiserror::Error)]
+pub enum KeyComparisonError {
+    #[error("Declaration for variable '{0}' not found")]
+    MissingDeclaration(String),
+    #[error(transparent)]
+    InvalidIr(#[from] Error),
+}
+
+/// Speculative rewrites leave an unresolved key to the caller. A temporal
+/// comparison at the original site can report the missing declaration.
+pub(super) fn speculative<T>(
+    result: Result<Option<T>, KeyComparisonError>,
+) -> Result<Option<T>, Error> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(KeyComparisonError::MissingDeclaration(_)) => Ok(None),
+        Err(KeyComparisonError::InvalidIr(error)) => Err(error),
+    }
+}
+
 fn same_type(edit: &CircuitEditor, left: &Node, right: &Node) -> Result<bool, Error> {
     same_type_field(edit, left, right, "type")
 }
@@ -142,10 +162,19 @@ pub(super) fn equivalent_bodies(
     right: NodeId,
     parameters: Option<(&Node, &Node)>,
 ) -> Result<Option<bool>, Error> {
+    speculative(check_bodies(edit, left, right, parameters))
+}
+
+pub(super) fn check_bodies(
+    edit: &CircuitEditor,
+    left: NodeId,
+    right: NodeId,
+    parameters: Option<(&Node, &Node)>,
+) -> Result<Option<bool>, KeyComparisonError> {
     let names = parameters
         .map(|(l, r)| Ok::<_, Error>((bindings::name(l, "name")?, bindings::name(r, "name")?)))
         .transpose()?;
-    compare_expressions(edit, left, right, names)
+    compare_keys(edit, left, right, names)
 }
 
 /// Resolve distinct variable occurrences in the scope enclosing the two roots.
@@ -156,6 +185,15 @@ pub(crate) fn compare_expressions<'a>(
     right: NodeId,
     parameters: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<Option<bool>, Error> {
+    speculative(compare_keys(edit, left, right, parameters))
+}
+
+fn compare_keys<'a>(
+    edit: &'a CircuitEditor,
+    left: NodeId,
+    right: NodeId,
+    parameters: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<Option<bool>, KeyComparisonError> {
     let mut bindings = Bindings::default();
     let outer = parameters
         .into_iter()
@@ -209,17 +247,14 @@ pub(crate) fn compare_expressions<'a>(
         // A shared acyclic term is eligible for comparison again after leaving it.
         if matches!(kind, Expr::Let | Expr::Block | Expr::Closure | Expr::For) {
             if !active_binders.insert((a, b)) {
-                return Err(Error::new("cycle in key expression bindings"));
+                return Err(Error::new("cycle in key expression bindings").into());
             }
             pending.push(Work::Leave(a, b));
         }
         let children: &[&str] = match kind {
             Expr::VariablePath => {
-                if a != b {
-                    match bindings.variables(scope, left, right)? {
-                        Some(true) => {}
-                        result => return Ok(result),
-                    }
+                if a != b && !bindings.variables(scope, left, right)? {
+                    return Ok(Some(false));
                 }
                 &[]
             }
@@ -278,7 +313,7 @@ pub(crate) fn compare_expressions<'a>(
                 };
                 for field in lists.iter().rev() {
                     if !compare_children(left, right, field, scope, &mut pending)? {
-                        return Ok(Some(false));
+                        pending.push(Work::Answer(Some(false)));
                     }
                 }
                 &[]
@@ -289,7 +324,7 @@ pub(crate) fn compare_expressions<'a>(
             },
             Expr::Apply | Expr::Constructor | Expr::ApplyMethod => {
                 if !compare_children(left, right, "arguments", scope, &mut pending)? {
-                    return Ok(Some(false));
+                    pending.push(Work::Answer(Some(false)));
                 }
                 if kind == Expr::ApplyMethod {
                     &["self", "function"]
@@ -319,7 +354,7 @@ pub(crate) fn compare_expressions<'a>(
             Expr::Assignment => &["left", "right"],
             Expr::QualifyType => {
                 if !same_type_list(edit, left, right, "types")? {
-                    return Ok(Some(false));
+                    pending.push(Work::Answer(Some(false)));
                 }
                 &["expression"]
             }
@@ -333,34 +368,43 @@ pub(crate) fn compare_expressions<'a>(
                 }
                 &[]
             }
-            Expr::Fold | Expr::NonLinearAggregate | Expr::MinMaxAggregate => {
+            Expr::Fold => {
                 if !same_type_field(edit, left, right, "semigroup")? {
                     return Ok(Some(false));
                 }
-                match kind {
-                    Expr::Fold => &["zero", "increment", "postProcess"],
-                    Expr::NonLinearAggregate => {
-                        &["zero", "increment", "postProcess", "emptySetResult"]
+                &["zero", "increment", "postProcess"]
+            }
+            Expr::NonLinearAggregate | Expr::MinMaxAggregate => {
+                // Min/max compares its operation and value after the shared
+                // aggregate operands and semigroup have compared equal.
+                if kind == Expr::MinMaxAggregate {
+                    if left.data("operation") == right.data("operation") {
+                        pending.push(Work::Compare(
+                            left.edge("comparedValue")?,
+                            right.edge("comparedValue")?,
+                            scope,
+                        ));
+                    } else {
+                        pending.push(Work::Answer(Some(false)));
                     }
-                    _ => &[
-                        "zero",
-                        "increment",
-                        "postProcess",
-                        "emptySetResult",
-                        "comparedValue",
-                    ],
                 }
+                if !same_type_field(edit, left, right, "semigroup")? {
+                    pending.push(Work::Answer(Some(false)));
+                }
+                &["zero", "increment", "postProcess", "emptySetResult"]
             }
             Expr::LinearAggregate => &["map", "postProcess", "emptySetResult"],
             Expr::MinMax => {
                 if !same_type(edit, left, right)? {
                     return Ok(Some(false));
                 }
+                if left.data("aggregation") != right.data("aggregation") {
+                    pending.push(Work::Answer(Some(false)));
+                }
                 &["postProcessing"]
             }
             Expr::ConditionalIncrement => &["left", "right", "condition"],
             Expr::Field
-            | Expr::CustomOrdField
             | Expr::Borrow
             | Expr::Clone
             | Expr::Deref
@@ -369,9 +413,15 @@ pub(crate) fn compare_expressions<'a>(
             | Expr::Unwrap
             | Expr::UnwrapCustomOrd
             | Expr::Lazy => &["expression"],
+            Expr::CustomOrdField => {
+                if left.data("fieldNo") != right.data("fieldNo") {
+                    pending.push(Work::Answer(Some(false)));
+                }
+                &["expression"]
+            }
             Expr::Cast => {
-                if !same_type(edit, left, right)? {
-                    return Ok(Some(false));
+                if left.data("safe") != right.data("safe") || !same_type(edit, left, right)? {
+                    pending.push(Work::Answer(Some(false)));
                 }
                 &["source"]
             }
@@ -426,13 +476,10 @@ pub(crate) fn compare_expressions<'a>(
         };
         let attributes: &[&str] = match kind {
             Expr::AsymmetricFieldComparator => &["comparisons"],
-            Expr::MinMax => &["aggregation"],
-            Expr::MinMaxAggregate => &["operation"],
             Expr::DirectComparator => &["ascending"],
             Expr::FieldComparator => &["ascending", "fieldNo", "nullsFirst"],
-            Expr::Field | Expr::CustomOrdField => &["fieldNo"],
+            Expr::Field => &["fieldNo"],
             Expr::Borrow => &["mut"],
-            Expr::Cast => &["safe"],
             Expr::Unary | Expr::Binary | Expr::ConditionalIncrement => &["opcode"],
             Expr::TimeAddSub => &["opcode", "shortUnits", "longUnits"],
             Expr::UnsignedWrap | Expr::UnsignedUnwrap => &["ascending", "nullsLast"],
@@ -462,7 +509,7 @@ pub(crate) fn compare_expressions<'a>(
             );
             if optional {
                 if !optional_child(left, right, name, scope, &mut pending)? {
-                    return Ok(Some(false));
+                    pending.push(Work::Answer(Some(false)));
                 }
             } else {
                 pending.push(Work::Compare(left.edge(name)?, right.edge(name)?, scope));

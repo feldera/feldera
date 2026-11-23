@@ -2227,8 +2227,8 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     public static List<TemporalGroup> groupTemporalFilters(DBSPCompiler compiler, List<String> kinds,
                                                             List<IDBSPInnerNode> roots) {
-        var reply = temporalGroupRequest(compiler, "TemporalGroups", kinds, roots);
-        if (!answered(compiler, "TemporalGroups", reply.value))
+        var reply = temporalGroupRequest(compiler, "TemporalGroups", kinds, roots, true);
+        if (reply == null)
             return null;
         var decoder = expressionDecoder(reply.writer);
         var groups = new ArrayList<TemporalGroup>();
@@ -2242,14 +2242,34 @@ public final class RustCircuitPass implements CircuitTransform {
 
     @Nullable
     public static Boolean acceptsTemporalBound(DBSPCompiler compiler, List<String> kinds, List<IDBSPInnerNode> roots) {
-        var value = temporalGroupRequest(compiler, "MergeTemporalBounds", kinds, roots).value;
-        return answered(compiler, "MergeTemporalBounds", value) ? value.booleanValue() : null;
+        return acceptsTemporalBound(compiler, kinds, roots, false);
     }
 
+    /** A speculative comparison can decline an unbound key. The merge pass reports it at the original site. */
+    @Nullable
+    public static Boolean acceptsTemporalBound(DBSPCompiler compiler, List<String> kinds, List<IDBSPInnerNode> roots,
+                                              boolean reportMissingDeclaration) {
+        var reply = temporalGroupRequest(compiler, "MergeTemporalBounds", kinds, roots, reportMissingDeclaration);
+        return reply == null ? null : reply.value.booleanValue();
+    }
+
+    @Nullable
     private static LoweringReply temporalGroupRequest(DBSPCompiler compiler, String pass,
-                                                       List<String> kinds, List<IDBSPInnerNode> roots) {
+                                                       List<String> kinds, List<IDBSPInnerNode> roots,
+                                                       boolean reportMissingDeclaration) {
         try {
-            return invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(kinds), roots.toArray(IDBSPInnerNode[]::new));
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(kinds),
+                    roots.toArray(IDBSPInnerNode[]::new));
+            if (!answered(compiler, pass, reply.value))
+                return null;
+            var missing = reply.value.get("missingDeclaration");
+            if (missing != null) {
+                if (reportMissingDeclaration)
+                    Utilities.enforce(false, () -> "Declaration for variable " +
+                            Utilities.singleQuote(missing.textValue()) + " not found");
+                return null;
+            }
+            return reply;
         } catch (IOException error) {
             throw new UncheckedIOException("Could not encode temporal filter groups", error);
         }

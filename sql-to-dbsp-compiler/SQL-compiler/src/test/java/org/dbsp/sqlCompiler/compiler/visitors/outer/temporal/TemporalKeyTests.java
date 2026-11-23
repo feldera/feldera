@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
@@ -584,6 +585,46 @@ public class TemporalKeyTests {
         var zero = new DBSPI32Literal(0);
         return new TemporalFilter(new DBSPVariablePath("row", zero.getType()).asParameter(),
                 key, zero, DBSPOpcode.GTE);
+    }
+
+    @Test
+    public void temporalKeysReportTheFirstMissingDeclaration() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var type = new DBSPI32Literal(0).getType();
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var decisions = new ArrayList<String>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void nativeDecision(String operation, boolean success) {
+                Assert.assertTrue(operation, success);
+                decisions.add(operation);
+            }
+            @Override
+            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph) {}
+            @Override
+            public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
+        };
+        for (String leftName : List.of("left", "row")) {
+            var left = new DBSPVariablePath(leftName, type);
+            var right = new DBSPVariablePath("right", type);
+            // A cast compares its source before either its safety or its result type.
+            var first = bound(new DBSPCastExpression(CalciteObject.EMPTY, left, type,
+                    DBSPCastExpression.CastType.SqlUnsafe));
+            var second = bound(new DBSPCastExpression(CalciteObject.EMPTY, right, type.withMayBeNull(true),
+                    DBSPCastExpression.CastType.SqlSafe));
+            var direct = Assert.assertThrows(InternalCompilerError.class, () -> first.compatible(second));
+            var message = direct.getMessage().lines().findFirst().orElseThrow();
+            Assert.assertEquals("Declaration for variable '" + (leftName.equals("row") ? "right" : "left") +
+                    "' not found", message);
+            decisions.clear();
+            var merge = Assert.assertThrows(InternalCompilerError.class,
+                    () -> NativeTemporalComparisons.canMerge(compiler, List.of(first), second));
+            var group = Assert.assertThrows(InternalCompilerError.class,
+                    () -> NativeTemporalComparisons.combine(compiler, List.of(first, second)));
+            Assert.assertEquals(message, merge.getMessage().lines().findFirst().orElseThrow());
+            Assert.assertEquals(message, group.getMessage().lines().findFirst().orElseThrow());
+            Assert.assertEquals(List.of("MergeTemporalBounds", "TemporalGroups"), decisions);
+        }
     }
 
     @Test

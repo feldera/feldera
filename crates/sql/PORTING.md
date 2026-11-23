@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust now reports the first missing declaration when grouping or merging
+temporal bounds. A regression compares the exception class and variable name
+with Java when both operands are unbound and when only the right operand is
+unbound. The previous hybrid silently rejected the merge. The fix passed 221
+Rust tests and 147 targeted JUnit tests. All 20 directed compilations matched
+through 8,778 ordered S4 observations and artifact emission.
+[Temporal key diagnostics](evidence/p3-temporal-key-diagnostics.json)
+
 Rust visits the children of linear, nonlinear and min/max aggregate descriptors
 without assigning the descriptor a waterline. The previous hybrid failed the
 regression when a closure discarded the descriptor. The fix passed 221 Rust
