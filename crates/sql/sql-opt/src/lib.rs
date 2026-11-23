@@ -27,7 +27,7 @@ pub use monotonicity::flatmap::flatmap_waterline;
 pub use monotonicity::lag::lag_transfer;
 pub use monotonicity::schedule::{monotonicity_transfers, MonotonicityTransfer};
 pub use monotonicity::casts::{cast_waterline, CastWaterline};
-pub use monotonicity::functions::{function_waterline, Argument as WaterlineArgument};
+pub use monotonicity::functions::{build_function_waterline, function_waterline, Argument as WaterlineArgument};
 pub use monotonicity::binary::{
     binary_waterline, BinaryOperation, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
 };

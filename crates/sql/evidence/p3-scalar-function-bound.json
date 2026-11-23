@@ -1,0 +1,84 @@
+{
+  "scope": "The general Java visitor invokes Rust to build a scalar function waterline. A directed JUnit test checks reduced operand sharing and copying of a constant. Selected detached SQL uses whole-closure projection.",
+  "verification": {
+    "build_sha256": {
+      "bin/libfeldera_sql_opt_jni.so": "1d138c740b16c0ddc4d5a38702c429a16af280945463c3364dce10f7a216885d",
+      "bin/sql-difftest": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+      "maven/sql-compiler.jar": "0ce4c19e8bc86ea3d530c2edb8718260c13bff88eeaa190db1dd4464defea0ac",
+      "maven/tests.jar": "bde914701340661de0a5ada1aea7cd8f8034fc119cc648aac4ed1f8694504268",
+      "maven/build.log": "95461f7320d471a29555b664b5be95db912c04dd4a88d49e5b88e80106a188fc",
+      "tests.log": "7e54aedc530f7f243d0fa474a09055fdab04158d8d0b7c034bcafe7d2f0c67eb",
+      "build.log": "5f4938b11a9ca0d0573fb4389367571344ebdd7d2b521e93c416be53183f3d48",
+      "clippy.log": "fa8ed701231c23f3902fdb7912d721b91a891f4400c6b4fe41243f4113fb39aa",
+      "junit.log": "295f8e9a88eda4c475fc338282cd392ab13eba8708a793fbd52326f952cf6be0"
+    },
+    "rust_tests": 216,
+    "junit_tests": 91,
+    "engines": {
+      "classic": {
+        "isolated_pass": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+        "detached_cases": 11,
+        "ordered_s4_observations": 4490,
+        "mismatches": 0,
+        "receipt_sha256": "5be2b532dab50cbcc1a1779eba56bc73b24fe4582fffe20b668fec56640ed31c",
+        "native_request_calls": {
+          "InnerCSE/BorrowedVariables": 1,
+          "InnerCSE/NumberValues": 35,
+          "InnerCSE/ReadLazy": 72,
+          "KeyAnalysis/Circuit": 33,
+          "LeftJoinChains/Steps": 11,
+          "Monotonicity/ProjectClosure": 3,
+          "Monotonicity/Transfer": 18,
+          "OptimizeProjections/Producer": 114,
+          "ParameterFieldDependencies": 16,
+          "RemoveUnusedFields/AggregateReader": 6,
+          "RemoveUnusedFields/IndexedValue": 6,
+          "RemoveUnusedFields/ParameterTypes": 6
+        }
+      },
+      "gen2": {
+        "isolated_pass": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+        "detached_cases": 11,
+        "ordered_s4_observations": 4524,
+        "mismatches": 0,
+        "receipt_sha256": "337a5c08a8f79e33f389950ce58c070a667a4eec7f386e86aeb8aa05643bba90",
+        "native_request_calls": {
+          "InnerCSE/NumberValues": 34,
+          "InnerCSE/ReadLazy": 72,
+          "KeyAnalysis/Circuit": 33,
+          "LeftJoinChains/Steps": 11,
+          "Monotonicity/ProjectClosure": 3,
+          "Monotonicity/Transfer": 18,
+          "OptimizeProjections/Producer": 116,
+          "ParameterFieldDependencies": 16,
+          "RemoveUnusedFields/AggregateReader": 6,
+          "RemoveUnusedFields/IndexedValue": 6,
+          "RemoveUnusedFields/ParameterTypes": 6
+        }
+      }
+    }
+  },
+  "preceding_borrow_discovery_build": {
+    "build_sha256": {
+      "bin/libfeldera_sql_opt_jni.so": "5317c69976c852cd1cb6cfd73947f34adeab552e70d73df1dac9d0533cdb3dad",
+      "bin/sql-difftest": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+      "maven/sql-compiler.jar": "a54a3f5b7bd4cee721187f0cf98d3401407044a06b4fc3bfc0a7ccec386815c5",
+      "maven/tests.jar": "27450ac6334c46e24f7e070bfc14d69bba0ab23f4a70be446727cb8f93c74075",
+      "maven/build.log": "7ea0ff2b7189be02f7f1ec613f89dbdf0368ba34f45d21f6ed56f4443a34fbd6",
+      "tests.log": "cd34d8a1623f79fce863894cd8c4257d3df3c5a1926bf7d72c5b54b4cfc49705",
+      "build.log": "bfeae062f36d542bf496c9bac0392e464e1b814d350d56ce54e650a4b38bb6fa",
+      "clippy.log": "e4302361863f17b2ab739f4a68f73a1ba4dd3af6113f718e648bda452cce798f",
+      "junit.log": "abea31098e1d5783402d2a0d9eecc7b2ce9f993ee47cf0e3686a1a45f9147f82"
+    },
+    "rust_tests": 216,
+    "junit_tests": 90,
+    "engines": {
+      "classic": {
+        "isolated_pass": "InnerCSE matched at 291 invocations across 291 cases"
+      },
+      "gen2": {
+        "isolated_pass": "InnerCSE matched at 259 invocations across 259 cases"
+      }
+    }
+  }
+}

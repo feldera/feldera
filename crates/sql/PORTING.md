@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust builds scalar function waterlines for both whole closures and the general
+monotonicity visitor. A directed test checks the runtime callee, result
+nullability, reuse of the reduced argument and copying of the constant.
+Across 11 selected programs per engine, 9,014 ordered S4 observations and
+all emitted artifacts matched Java. All 550 isolated MonotoneAnalyzer
+comparisons matched. The preceding mutable-borrow CSE port also matched
+Java in 550 isolated comparisons.
+[Scalar waterline and mutable-borrow checks](evidence/p3-scalar-function-bound.json)
+
 On `17681d65a`, Rust constructed 184 lazy-cell reads in 84 detached
 compilations. All 42,215 ordered S4 observations and emitted artifacts
 matched direct Java. Both engines also matched in 550 isolated InnerCSE

@@ -1,8 +1,44 @@
 //! Select the runtime function that computes a lower bound for a scalar call.
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr};
+use feldera_sql_expr::copy_expression;
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field};
 use regex::Regex;
 use serde::Deserialize;
 use std::sync::LazyLock;
+
+/// Build the selected runtime call in the original call's location. A bounded
+/// operand retains its reduced expression. An unbounded constant needs its own
+/// copy because the source call can also survive in the circuit.
+pub fn build_function_waterline(
+    edit: &mut CircuitEditor,
+    call: ExpressionId,
+    target: &str,
+    bounds: &[Option<ExpressionId>],
+) -> Result<ExpressionId, Error> {
+    let site = call.into();
+    let arguments = edit.node(site)?.edges("arguments")?;
+    if arguments.len() != bounds.len() {
+        return Err(Error::new("expected one waterline slot per call argument"));
+    }
+    let mut operands = Vec::with_capacity(bounds.len());
+    for (original, bound) in arguments.into_iter().zip(bounds) {
+        let operand = match bound {
+            Some(bound) => (*bound).into(),
+            None => copy_expression(edit, original)?,
+        };
+        operands.push(Field::Reference(operand));
+    }
+    let callee = edit.function_path(site, target)?;
+    let required = edit.with_nullability(edit.expression_type(call)?, false)?;
+    edit.make_expr(
+        site,
+        Expr::Apply,
+        required,
+        [
+            ("function", Field::Reference(callee.into())),
+            ("arguments", Field::Array(operands)),
+        ],
+    )
+}
 
 /// Java writes a DOUBLE literal's raw IEEE 754 bits as a signed long.
 pub(crate) fn double_literal_above_one(

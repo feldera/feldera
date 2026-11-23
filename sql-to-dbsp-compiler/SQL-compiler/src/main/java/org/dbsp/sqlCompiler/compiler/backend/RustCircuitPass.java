@@ -144,6 +144,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -947,8 +948,32 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public record BinaryBounds(BinaryDomain domain, DBSPOpcode opcode, WaterlineOperand left, WaterlineOperand right) {}
+    /** A null slot copies the corresponding constant from the original call. */
+    public static DBSPExpression buildFunctionWaterline(DBSPCompiler compiler, DBSPApplyExpression call,
+            String target, DBSPExpression[] bounds) {
+        var inputs = new ArrayList<DBSPExpression>();
+        inputs.add(call);
+        var present = new boolean[bounds.length];
+        for (int i = 0; i < bounds.length; i++) {
+            if (bounds[i] != null) {
+                present[i] = true;
+                inputs.add(bounds[i]);
+            }
+        }
+        String pass = "Monotonicity/FunctionBound";
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(List.of(target, present)),
+                    inputs.toArray(DBSPExpression[]::new));
+            var result = loweredFunction(compiler, reply.writer, reply.value, DBSPExpression.class);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode scalar function waterline", error);
+        }
+    }
 
+    public record BinaryBounds(BinaryDomain domain, DBSPOpcode opcode, WaterlineOperand left, WaterlineOperand right) {}
     public record BinaryTransfer(BinaryWaterline rule, @Nullable DBSPExpression bound) {}
 
     /** The reduced operand trees already live in the JVM. Rust needs their types

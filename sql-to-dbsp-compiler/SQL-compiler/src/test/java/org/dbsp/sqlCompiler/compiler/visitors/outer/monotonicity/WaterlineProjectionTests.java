@@ -882,6 +882,33 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void scalarCallWaterlineReusesTheBoundAndCopiesTheConstant() {
+        var site = CalciteEmptyRel.INSTANCE;
+        var real = DBSPTypeDouble.create(true);
+        var row = new PartiallyMonotoneTuple(List.of(new MonotoneType(real)), false, false);
+        var parameter = new DBSPVariablePath("row", row.getType().ref());
+        var field = parameter.deref().field(0);
+        var precision = new DBSPApplyExpression("precision", new DBSPI32Literal(0).getType());
+        var call = new DBSPApplyExpression(site, "round_dN_i32", real, field, precision);
+        var closure = call.closure(parameter);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(real));
+        for (boolean nativePass : List.of(false, true)) {
+            if (nativePass && !Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
+                continue;
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.options.ioOptions.rustOptimizerPasses = nativePass;
+            var analysis = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+            analysis.apply(closure);
+            var reduced = analysis.get(call).getReducedExpression().to(DBSPApplyExpression.class);
+            Assert.assertEquals("round_d_i32", reduced.getFunctionName());
+            Assert.assertFalse(reduced.getType().mayBeNull);
+            Assert.assertSame(analysis.get(field).getReducedExpression(), reduced.arguments[0]);
+            Assert.assertNotSame(precision, reduced.arguments[1]);
+            Assert.assertTrue(precision.equivalent(reduced.arguments[1]));
+        }
+    }
+
+    @Test
     public void scalarRowArithmeticTracksConstantsAndNullableOperands() {
         var node = CalciteEmptyRel.INSTANCE;
         var compiler = new DBSPCompiler(new CompilerOptions());

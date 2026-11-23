@@ -61,9 +61,13 @@ public abstract class MonotoneFunction {
             return Objects.requireNonNull(this.waterline);
         }
 
+        void requireConstant() {
+            Utilities.enforce(this.constant, () -> "Argument " + this.expression + " is not constant");
+        }
+
         /** A copy of a constant argument. */
         DBSPExpression copy() {
-            Utilities.enforce(this.constant, () -> "Argument " + this.expression + " is not constant");
+            this.requireConstant();
             return this.expression.deepCopy();
         }
     }

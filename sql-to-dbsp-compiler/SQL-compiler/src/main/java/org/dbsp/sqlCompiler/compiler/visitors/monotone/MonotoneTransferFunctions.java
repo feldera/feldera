@@ -957,9 +957,12 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPExpression[] bounds = new DBSPExpression[expression.arguments.length];
         for (int i = 0; i < bounds.length; i++) {
             var argument = this.argument(expression, i);
-            bounds[i] = argument.monotone() ? argument.waterline() : argument.copy();
+            if (argument.monotone())
+                bounds[i] = argument.waterline();
+            else
+                argument.requireConstant();
         }
-        return new DBSPApplyExpression(expression.getNode(), target, expression.getType().withMayBeNull(false), bounds);
+        return RustCircuitPass.buildFunctionWaterline(this.compiler, expression, target, bounds);
     }
 
     @Override
