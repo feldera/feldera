@@ -1,9 +1,12 @@
 //! Select the smallest expensive expressions that can move between sibling map closures.
-use crate::lexical_scope::{closed_over, expression_children, resolve};
 use crate::fanout::expensive;
 use crate::function_calls::contains_now;
+use crate::index_key_equivalence::equivalent_bodies;
+use crate::lexical_scope::{closed_over, expression_children, resolve};
 use feldera_sql_expr::{SimplifyWarning, simplify_closure_with_warnings};
-use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionKind as Expr, InnerKind, Node, NodeId};
+use feldera_sql_ir::{
+    Circuit, CircuitEditor, Error, ExpressionKind as Expr, InnerKind, Node, NodeId,
+};
 use std::collections::HashSet;
 
 /// Find the shareable fragments in the simplified map, keeping their identities
@@ -23,6 +26,32 @@ pub fn map_fusion_candidate(
     }
     let fragments = map_fusion_fragments(edit.circuit(), closure)?;
     Ok((!fragments.is_empty()).then_some((closure, fragments)))
+}
+
+/// A map without a sibling to fuse is still profitable if it computes an
+/// expensive output twice. Compare fields in the closure's parameter scope.
+pub fn has_duplicate_expensive_field(
+    edit: &CircuitEditor,
+    closure: NodeId,
+) -> Result<Option<bool>, Error> {
+    let function = edit.node(closure)?;
+    let [parameter] = function.edges("parameters")?[..] else {
+        return Err(Error::new("map fusion expects one closure parameter"));
+    };
+    let parameter = edit.node(parameter)?;
+    let fields = edit.node(function.edge("body")?)?.edges("fields")?;
+    for (index, &field) in fields.iter().enumerate() {
+        if !expensive(edit.circuit(), field)? {
+            continue;
+        }
+        for &previous in &fields[..index] {
+            match equivalent_bodies(edit, previous, field, Some((parameter, parameter)))? {
+                Some(false) => {}
+                answer => return Ok(answer),
+            }
+        }
+    }
+    Ok(Some(false))
 }
 
 /// Visit a shared expression once per incoming edge, in operand order. A let
@@ -50,7 +79,7 @@ pub fn map_fusion_fragments(circuit: &Circuit, closure: NodeId) -> Result<Vec<u6
                 let node = circuit.node(id).expect("validated inner edge");
                 match node.inner_kind() {
                     Some(InnerKind::Type(_) | InnerKind::Expression(Expr::Closure | Expr::For)) => {
-                        continue
+                        continue;
                     }
                     Some(InnerKind::Expression(_)) if !expensive(circuit, id)? => continue,
                     _ => {}

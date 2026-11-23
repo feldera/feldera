@@ -1,7 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
@@ -36,13 +39,16 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
         var redundant = new DBSPFieldExpression(site, b.tuple(field), 0);
         var call = b.call("costly", redundant);
         var selected = new DBSPMapOperator(site, b.tuple(call, call).closure(row), input.outputPort());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(input);
+        for (var rejected : List.of(b.tuple(field), b.tuple(b.call("costly", b.call("NoW"))), call))
+            circuit.addOperator(new DBSPMapOperator(site, rejected.closure(row), input.outputPort()));
+        circuit.addOperator(selected);
         for (boolean hybrid : List.of(false, true)) {
             var compiler = this.testCompiler();
             compiler.options.ioOptions.rustOptimizerPasses = hybrid;
             var scan = new FuseExpensiveMaps.FindFusableMaps(compiler);
-            for (var rejected : List.of(b.tuple(field), b.tuple(b.call("costly", b.call("NoW"))), call))
-                scan.postorder(new DBSPMapOperator(site, rejected.closure(row), input.outputPort()));
-            scan.postorder(selected);
+            scan.apply(circuit);
             var candidates = scan.groups.get(input.outputPort());
             Assert.assertEquals(1, candidates.size());
             var candidate = candidates.get(0);
@@ -51,6 +57,24 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
             Assert.assertNotSame(call, candidate.minimal().get(0));
             Assert.assertSame(candidate.body().get(0), candidate.minimal().get(0));
             Assert.assertSame(candidate.body().get(1), candidate.minimal().get(1));
+            Assert.assertEquals(List.of(candidate), scan.clusters.get(selected));
+        }
+    }
+
+    @Test
+    public void singletonFusionNeedsAnEquivalentExpensiveField() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var compiler = this.testCompiler();
+        var row = b.refVar(this.pair);
+        var field = b.field(row, 0);
+        var first = b.let(field, x -> b.call("f", x));
+        var renamed = b.let(field.deepCopy(), y -> b.call("f", y));
+        var other = b.let(b.field(row, 1), y -> b.call("f", y));
+        var direct = new FuseExpensiveMaps.FindFusableMaps(compiler);
+        for (var pair : List.of(b.tuple(first, renamed), b.tuple(first, other), b.tuple(field, field))) {
+            var closure = pair.closure(row);
+            boolean expected = direct.hasDuplicatedExpensiveField(new MapInfo(null, closure, List.of()));
+            Assert.assertEquals(Boolean.valueOf(expected), RustCircuitPass.hasDuplicateExpensiveField(compiler, closure));
         }
     }
 

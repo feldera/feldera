@@ -1589,7 +1589,8 @@ public final class RustCircuitPass implements CircuitTransform {
             case "RewriteNow/ClockSites" -> new OptimizerExpressionWriter(compiler, false);
             default -> new OptimizerExpressionWriter(compiler);
         };
-        if (pass.equals("SharedIndexes/Split") || pass.equals("SharedIndexes/WideFields"))
+        if (pass.equals("SharedIndexes/Split") || pass.equals("SharedIndexes/WideFields")
+                || pass.equals("FuseExpensiveMaps/DuplicateField"))
             inner.includeShuffleIdentities();
         try {
             byte[] reply = transformWithContext(pass, inner.encode(inputs), DBSPVariablePath.nextGeneratedName(), "", state);
@@ -1948,6 +1949,13 @@ public final class RustCircuitPass implements CircuitTransform {
         var fragments = new ArrayList<DBSPExpression>();
         roots.forEachRemaining(node -> fragments.add(decodeLiveRoot(decoder, node, DBSPExpression.class)));
         return new FuseExpensiveMaps.MapInfo(operator, function, fragments);
+    }
+
+    @Nullable
+    public static Boolean hasDuplicateExpensiveField(DBSPCompiler compiler, DBSPClosureExpression function) {
+        String pass = "FuseExpensiveMaps/DuplicateField";
+        var result = invokeLowering(compiler, pass, function).value;
+        return answered(compiler, pass, result) ? result.booleanValue() : null;
     }
 
     public static List<DBSPExpression> mapFusionFragments(DBSPCompiler compiler, DBSPClosureExpression function) {

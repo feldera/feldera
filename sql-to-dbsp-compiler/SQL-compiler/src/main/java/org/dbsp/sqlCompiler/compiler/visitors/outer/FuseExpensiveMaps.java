@@ -220,6 +220,11 @@ public class FuseExpensiveMaps extends Passes {
         }
 
         boolean hasDuplicatedExpensiveField(MapInfo info) {
+            if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+                var duplicate = RustCircuitPass.hasDuplicateExpensiveField(this.compiler(), info.function());
+                if (duplicate != null)
+                    return duplicate;
+            }
             DBSPExpression[] fields = Objects.requireNonNull(info.body().fields);
             for (int i = 0; i < fields.length; i++) {
                 if (!Expensive.isExpensive(this.compiler(), fields[i]))
