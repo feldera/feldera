@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
@@ -619,6 +620,34 @@ public class WaterlineProjectionTests {
             var error = Assert.assertThrows(RuntimeException.class, () -> hybrid.applyAnalysis(closure));
             Assert.assertEquals(direct.getClass(), error.getClass());
             Assert.assertEquals(direct.getMessage(), error.getMessage());
+        }
+    }
+
+    @Test
+    public void countIndicatorDropsOnlyItsOwnWaterline() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(0).getType();
+        var kept = new MonotoneType(integer);
+        var nullable = integer.withMayBeNull(true);
+        for (var indicatorInput : List.of(new MonotoneType(nullable), new NonMonotoneType(nullable))) {
+            var shape = new PartiallyMonotoneTuple(List.of(kept, indicatorInput), false, false);
+            var row = new DBSPVariablePath("row", shape.getType().ref());
+            var indicator = ExpressionCompiler.makeIndicator(site, integer, row.deref().field(1));
+            Assert.assertEquals(DBSPOpcode.INDICATOR, indicator.to(DBSPUnaryExpression.class).opcode);
+            var body = new DBSPTupleExpression(indicator, row.deepCopy().deref().field(0));
+            var closure = body.closure(row);
+            var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+            var direct = new MonotoneTransferFunctions(compiler, operator,
+                    MonotoneTransferFunctions.ArgumentKind.ZSet, shape).applyAnalysis(closure);
+            var result = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{shape.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)}, false);
+            Assert.assertNotNull(result);
+            var fields = result.bodyType().to(PartiallyMonotoneTuple.class);
+            Assert.assertFalse(fields.getFieldType(0).mayBeMonotone());
+            Assert.assertSame(kept, fields.getFieldType(1));
+            Assert.assertTrue(direct.getReducedExpression().equivalent(result.closure()));
         }
     }
 

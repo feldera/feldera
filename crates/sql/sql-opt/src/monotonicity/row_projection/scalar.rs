@@ -146,12 +146,12 @@ pub(super) fn unary_bound(
     let reduced = match (edit.expr_kind(expression)?, source.reduced) {
         (Expr::Cast, None) => None,
         (Expr::Cast, Some(bound)) => super::super::casts::cast_bound(edit, expression, bound)?,
-        _ if !matches!(source.shape, Shape::Scalar(_)) => return Ok(None),
+        (Expr::UnsignedUnwrap, _) if !matches!(source.shape, Shape::Scalar(_)) => return Ok(None),
         (_, Some(bound)) => super::super::unary_waterline(edit, expression, bound)?,
         (_, None) => None,
     };
     if let Some(bound) = reduced {
-        // A successful cast copies the input's scalar monotonicity. Keep the
+        // A successful transfer copies the input's scalar monotonicity. Keep the
         // visitor's diagnostic if that operation is requested on a tuple or reference.
         if !matches!(source.shape, Shape::Scalar(_)) {
             return Ok(None);
