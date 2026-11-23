@@ -1251,11 +1251,23 @@ enum BoundReply {
 
 impl BoundReply {
     fn encode(selection: feldera_sql_opt::BoundSelection, format: &[u8]) -> Self {
-        if format == b"postorder" {
+        if matches!(format, b"postorder" | b"checked-postorder") {
             Self::Postorder(selection.into_postorder())
         } else {
             Self::Nested(selection)
         }
+    }
+}
+
+/// Older clients resume the Java visitor on an incompatible projection.
+fn bound_result<T: serde::Serialize>(
+    result: Result<T, feldera_sql_opt::BoundError>,
+    format: &[u8],
+) -> Result<Value, serde_json::Error> {
+    match result {
+        Ok(value) => serde_json::to_value(value),
+        Err(error) if format == b"checked-postorder" => Ok(json!({ "error": error })),
+        Err(_) => Ok(Value::Null),
     }
 }
 
@@ -1408,13 +1420,13 @@ fn transform(
             let inputs = serde_json::from_slice(input)?;
             let reply = feldera_sql_opt::join_arguments(inputs)
                 .map(|args| args.map(|arg| BoundReply::encode(arg, state)));
-            return Ok(serde_json::to_value(reply)?);
+            return Ok(bound_result(reply, state)?);
         }
         "Monotonicity/AntiJoinProjection" => {
             let inputs = serde_json::from_slice(input)?;
             let reply = feldera_sql_opt::antijoin_waterline(inputs)
                 .map(|args| args.map(|arg| BoundReply::encode(arg, state)));
-            return Ok(serde_json::to_value(reply)?);
+            return Ok(bound_result(reply, state)?);
         }
         "Monotonicity/Union" | "Monotonicity/Intersection" => {
             use feldera_sql_opt::BoundCombination::{Intersection, Union};
@@ -1422,7 +1434,7 @@ fn transform(
             let inputs = serde_json::from_slice(input)?;
             let reply = feldera_sql_opt::combine_bounds(inputs, mode)
                 .map(|bound| BoundReply::encode(bound, state));
-            return Ok(serde_json::to_value(reply)?);
+            return Ok(bound_result(reply, state)?);
         }
         "Monotonicity/UnaryPreservesOrder" => {
             let opcode: &str = serde_json::from_slice(input)?;

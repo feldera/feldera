@@ -23,7 +23,7 @@ pub use monotonicity::asof::asof_waterline;
 pub use monotonicity::bindings::{waterline_bindings, WaterlineBindings};
 pub use monotonicity::chain_minimum::is_minimum_chain;
 pub use monotonicity::combine::{
-    antijoin_waterline, combine_bounds, join_arguments, BoundCombination, BoundSelection, BoundType,
+    antijoin_waterline, combine_bounds, join_arguments, BoundCombination, BoundError, BoundSelection, BoundType,
 };
 pub use monotonicity::flatmap::flatmap_waterline;
 pub use monotonicity::lag::lag_transfer;

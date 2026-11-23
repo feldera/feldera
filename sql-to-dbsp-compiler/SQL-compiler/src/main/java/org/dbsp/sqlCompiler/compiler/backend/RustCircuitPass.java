@@ -291,7 +291,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final CSE.FindCSE commonExpressions;
     @Nullable private final Set<DBSPOperator> seenConstants;
     private static final byte[] EMPTY_CONTEXT = new byte[0];
-    private static final byte[] POSTORDER_BOUNDS = "postorder".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] POSTORDER_BOUNDS = "checked-postorder".getBytes(StandardCharsets.US_ASCII);
 
     /** Expansion facts for an InsertLimiters checkpoint, including when Rust runs the pass. */
     @Nullable InsertLimiters limiterInputs() {

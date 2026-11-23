@@ -152,6 +152,60 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void incompatibleWaterlinesKeepTheFirstDiagnosticWithoutRepeatingTheCombination() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var type = new DBSPI32Literal(1).getType();
+        class CountedField extends MonotoneType {
+            int visits;
+
+            CountedField(DBSPType type) {
+                super(type);
+            }
+
+            @Override
+            public IMaybeMonotoneType intersection(IMaybeMonotoneType other) {
+                this.visits++;
+                return super.intersection(other);
+            }
+
+            @Override
+            public IMaybeMonotoneType union(IMaybeMonotoneType other) {
+                this.visits++;
+                return super.union(other);
+            }
+        }
+        var first = new CountedField(type);
+        var scalar = new NonMonotoneType(type);
+        var tuple = new PartiallyMonotoneTuple(List.of(scalar), false, false);
+        var reference = new MonotoneRefType(scalar);
+        var closure = new MonotoneClosureType(scalar, new DBSPParameter[0], new DBSPParameter[0]);
+        for (var incompatible : List.of(tuple, reference, closure)) {
+            // Two fields fail. Java visits the middle field before the last one.
+            var left = new PartiallyMonotoneTuple(List.of(first, incompatible, closure), false, false);
+            var right = new PartiallyMonotoneTuple(List.of(scalar, scalar, scalar), false, false);
+            var leftPair = new PartiallyMonotoneTuple(List.of(left, tuple), true, false);
+            var rightPair = new PartiallyMonotoneTuple(List.of(right, tuple), true, false);
+            for (Runnable operation : List.<Runnable>of(
+                    () -> CombinedBounds.union(compiler, left, right),
+                    // The first input selects the second row before the last input fails.
+                    () -> CombinedBounds.intersection(compiler, List.of(new MonotoneType(type), left, right)),
+                    () -> CombinedBounds.joinArguments(compiler, leftPair, rightPair),
+                    () -> CombinedBounds.commonKey(compiler, leftPair, rightPair))) {
+                compiler.options.ioOptions.rustOptimizerPasses = false;
+                first.visits = 0;
+                var direct = Assert.assertThrows(RuntimeException.class, operation::run);
+                Assert.assertEquals(1, first.visits);
+                compiler.options.ioOptions.rustOptimizerPasses = true;
+                first.visits = 0;
+                var hybrid = Assert.assertThrows(direct.getClass(), operation::run);
+                Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+                Assert.assertEquals(0, first.visits);
+            }
+        }
+    }
+
+    @Test
     public void deepAggregatePayloadsRetainOnlyTheComparedLeaf() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

@@ -73,6 +73,20 @@ public final class CombinedBounds {
         return stack.get(0);
     }
 
+    /** Rust identifies the first failing operation. Use its live operands to render the diagnostic. */
+    private void checkError(JsonNode reply, boolean union) {
+        if (!reply.has("error"))
+            return;
+        var pair = reply.required("error").required("incompatible");
+        var left = this.types.get(pair.required("left").intValue());
+        var right = this.types.get(pair.required("right").intValue());
+        if (union)
+            left.union(right);
+        else
+            left.intersection(right);
+        throw new IllegalStateException("Expected incompatible waterline projections");
+    }
+
     public static IMaybeMonotoneType union(DBSPCompiler compiler, IMaybeMonotoneType left, IMaybeMonotoneType right) {
         if (!compiler.options.ioOptions.rustOptimizerPasses)
             return left.union(right);
@@ -86,16 +100,14 @@ public final class CombinedBounds {
     }
 
     private static IMaybeMonotoneType combine(DBSPCompiler compiler, List<IMaybeMonotoneType> inputs, boolean union) {
-        if (inputs.size() == 1)
+        if (inputs.size() <= 1)
             return inputs.get(0);
         var bounds = new CombinedBounds();
         var request = JsonNodeFactory.instance.arrayNode();
         inputs.forEach(type -> request.add(bounds.input(type)));
         var reply = RustCircuitPass.combineBounds(compiler, request, union);
-        if (!reply.isNull())
-            return bounds.result(reply);
-        // Preserve the original diagnostic when a closure or incompatible tuple is combined.
-        return union ? inputs.get(0).union(inputs.get(1)) : IMaybeMonotoneType.intersection(inputs);
+        bounds.checkError(reply, union);
+        return bounds.result(reply);
     }
 
     private JsonNode indexedInputs(PartiallyMonotoneTuple left, PartiallyMonotoneTuple right) {
@@ -113,9 +125,9 @@ public final class CombinedBounds {
         if (compiler.options.ioOptions.rustOptimizerPasses) {
             var bounds = new CombinedBounds();
             var reply = RustCircuitPass.indexedBounds(compiler, bounds.indexedInputs(left, right), true);
-            if (!reply.isNull())
-                return new PartiallyMonotoneTuple(List.of(bounds.result(reply.required(0)),
-                        bounds.result(reply.required(1))), true, false);
+            bounds.checkError(reply, false);
+            return new PartiallyMonotoneTuple(List.of(bounds.result(reply.required(0)),
+                    bounds.result(reply.required(1))), true, false);
         }
         var key = left.getFieldType(0).intersection(right.getFieldType(0));
         var value = left.getFieldType(1).getType().to(DBSPTypeTupleBase.class);
@@ -127,10 +139,9 @@ public final class CombinedBounds {
         if (compiler.options.ioOptions.rustOptimizerPasses) {
             var bounds = new CombinedBounds();
             var reply = RustCircuitPass.indexedBounds(compiler, bounds.indexedInputs(left, right), false);
-            if (!reply.isNull()) {
-                return new IMaybeMonotoneType[]{
-                        bounds.result(reply.required(0)), bounds.result(reply.required(1)), bounds.result(reply.required(2))};
-            }
+            bounds.checkError(reply, true);
+            return new IMaybeMonotoneType[]{
+                    bounds.result(reply.required(0)), bounds.result(reply.required(1)), bounds.result(reply.required(2))};
         }
         return new IMaybeMonotoneType[]{left.getFieldType(0).union(right.getFieldType(0)),
                 left.getFieldType(1), right.getFieldType(1)};

@@ -163,7 +163,7 @@ impl BoundType {
         })
     }
 
-    fn combine(self, other: Self, op: BoundCombination) -> Option<Self> {
+    fn combine(self, other: Self, op: BoundCombination) -> Result<Self, BoundError> {
         let mut result = Vec::new();
         let mut work = vec![(self.0.as_slice(), other.0.as_slice())];
         while let Some((left, right)) = work.pop() {
@@ -180,7 +180,12 @@ impl BoundType {
                 (BoundKind::Tuple { arity: a }, BoundKind::Tuple { arity: b }) => {
                     BoundKind::Tuple { arity: a.min(b) }
                 }
-                _ => return None,
+                _ => {
+                    return Err(BoundError::Incompatible {
+                        left: left[0].slot,
+                        right: right[0].slot,
+                    });
+                }
             };
             result.push(BoundEntry {
                 form,
@@ -191,7 +196,7 @@ impl BoundType {
             work.extend(Self::children(&left[1..]).zip(Self::children(&right[1..])));
             work[mark..].reverse();
         }
-        Some(Self::from_entries(result).expect("combined children match each parent's arity"))
+        Ok(Self::from_entries(result).expect("combined children match each parent's arity"))
     }
 
     fn selection(self) -> BoundSelection {
@@ -213,12 +218,25 @@ impl BoundType {
     }
 }
 
+/// The original operand slots at the first failed field, in Java visitation order.
+/// The right operand comes from the current input. Rebuilt left rows retain
+/// their original tuple or reference class, which determines the diagnostic.
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BoundError {
+    EmptyInputs,
+    Incompatible { left: usize, right: usize },
+}
+
 /// A join accepts a bound from either input. A sum needs a bound from every input.
 /// Preserve the winning operand's type identity even when both flags agree.
 /// Shapes without a defined combination are returned to the caller for diagnostics.
-pub fn combine_bounds(inputs: Vec<BoundType>, op: BoundCombination) -> Option<BoundSelection> {
+pub fn combine_bounds(
+    inputs: Vec<BoundType>,
+    op: BoundCombination,
+) -> Result<BoundSelection, BoundError> {
     let mut inputs = inputs.into_iter();
-    let first = inputs.next()?;
+    let first = inputs.next().ok_or(BoundError::EmptyInputs)?;
     inputs
         .try_fold(first, |a, b| a.combine(b, op))
         .map(BoundType::selection)
@@ -233,9 +251,9 @@ pub struct IndexedInput {
 
 /// The join function takes a common key followed by the two input values.
 /// Either key can establish a lower bound. Value projections remain independent.
-pub fn join_arguments([left, right]: [IndexedInput; 2]) -> Option<[BoundSelection; 3]> {
+pub fn join_arguments([left, right]: [IndexedInput; 2]) -> Result<[BoundSelection; 3], BoundError> {
     let key = left.key.combine(right.key, BoundCombination::Union)?;
-    Some([
+    Ok([
         key.selection(),
         BoundSelection::Original(left.value),
         BoundSelection::Original(right.value),
@@ -244,11 +262,13 @@ pub fn join_arguments([left, right]: [IndexedInput; 2]) -> Option<[BoundSelectio
 
 /// A change on either side can retract a row. Only key fields bounded on both
 /// inputs survive, and the result keeps the left input's value type.
-pub fn antijoin_waterline([left, right]: [IndexedInput; 2]) -> Option<[BoundSelection; 2]> {
+pub fn antijoin_waterline(
+    [left, right]: [IndexedInput; 2],
+) -> Result<[BoundSelection; 2], BoundError> {
     let key = left
         .key
         .combine(right.key, BoundCombination::Intersection)?;
-    Some([
+    Ok([
         key.selection(),
         BoundSelection::UnboundedFields {
             unbounded_fields: left.value,
@@ -283,7 +303,7 @@ mod tests {
         use BoundSelection::{Original, Rebuild};
         assert_eq!(
             join_arguments(serde_json::from_str(inputs).unwrap()),
-            Some([
+            Ok([
                 Rebuild {
                     template: 1,
                     fields: vec![Original(2), Original(8)]
@@ -294,7 +314,7 @@ mod tests {
         );
         assert_eq!(
             antijoin_waterline(serde_json::from_str(inputs).unwrap()),
-            Some([
+            Ok([
                 Rebuild {
                     template: 1,
                     fields: vec![Original(7), Original(3)]
@@ -324,7 +344,7 @@ mod tests {
             let result = combine_bounds(serde_json::from_str(inputs).unwrap(), mode);
             assert_eq!(
                 result,
-                Some(Rebuild {
+                Ok(Rebuild {
                     template: 0,
                     fields: vec![
                         Original(a),
@@ -350,7 +370,7 @@ mod tests {
         ] {
             assert_eq!(
                 combine_bounds(serde_json::from_str(inputs).unwrap(), mode),
-                Some(BoundSelection::Original(slot))
+                Ok(BoundSelection::Original(slot))
             );
         }
     }
