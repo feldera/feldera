@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `1226f2b55`, the JNI test passed with 144 nested aggregate fields. All
+550 selected monotonicity comparisons and 16 detached compilations matched
+direct Java through 11,178 ordered S4 observations and emission. Both engines
+also emitted matching artifacts for an ARG_MIN query with four nested row
+types. A separate 16-level SQL probe exhausted the Java heap on both paths.
+[Aggregate waterline comparisons](evidence/p3-deep-aggregate-payloads.json)
+
 On `3160a9fce`, the Rust window-group passes matched Java for all 133 frozen
 clock programs and four directed compilations with decimal thresholds and
 floating-point casts. The four directed compilations also matched through

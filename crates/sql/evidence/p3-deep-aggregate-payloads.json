@@ -1,0 +1,45 @@
+{
+  "commit": "1226f2b55a6aaae6e849b97fe841a7092382e911",
+  "scope": "Aggregate waterlines with nested accumulator types. The 144-level check exercises the live JNI interface. The directed SQL emission check uses four nested named row types and ARG_MIN.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "10cc440f8086f39048ae185e1127effe2c0aaa91afad1cbb5663541ea65b5194",
+    "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+    "bin/sql2dbsp": "3b649642bb191c7a7634682dd1522998c7aae617de60deb738c0a10807d66fe7",
+    "maven/sql-compiler.jar": "0d736082567a217b038e3121ba3c95feff91d0414cffd92fe1f6374f5cec6bd1",
+    "maven/tests.jar": "d49c72d507f5e1f2721b7531057f4d44c018d017f30c15ffbc8e51c16ff93a74"
+  },
+  "rust_tests_passed": 199,
+  "packaged_junit_tests_passed": 67,
+  "engines": {
+    "classic": {
+      "monotonicity_cases_matched": 291,
+      "direct_observations_sha256": "b22dc1375204a3f91fde907ad98bb95a01a8fc9062cdf40616aee5df36f3a2f9",
+      "hybrid_observations_sha256": "4fd5cef116b08ef7d8753fe6d2db90894cee7f3f5172602f8d774203107d88f3",
+      "detached_cases": 8,
+      "ordered_s4_observations": 5292,
+      "detached_receipt_sha256": "3876b7db3ecc00e6e0573b509dcef2dfa32a8739aecf632454d02d7d078a2eef",
+      "directed_sql_sha256": "9f07c4ac70b91cccfcbd2271e0ea53aeb331e6294d1d86230419bd8122289814",
+      "directed_hybrid_artifacts_sha256": {
+        "circuit.rs": "75fdd044ced2e461fd16d66e1266317524b4d972277d24ff697e4d85fb91ca04",
+        "schema.json": "58ebdded93a0b7336e2544c85db24726c9159a83ea38c8ee773689b63f6146f7",
+        "dataflow.json": "1178fe2554ae4eacdf18e3dd6272ff4b139402f910c9866877ec4f560dba420e",
+        "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+      }
+    },
+    "gen2": {
+      "monotonicity_cases_matched": 259,
+      "direct_observations_sha256": "f385a9712c76abfe3bdf186bffaf0dc84d594271c2c20770f8b4de7e724ba685",
+      "hybrid_observations_sha256": "b3a452a921840fe451c434bec7246c3bdd813246f7ea22b593af8654d8f756c2",
+      "detached_cases": 8,
+      "ordered_s4_observations": 5886,
+      "detached_receipt_sha256": "f89edac8e7b115904e859dfa1d960c7566c79f6f74534fe48fd6aaf09188e7c9",
+      "directed_sql_sha256": "9f07c4ac70b91cccfcbd2271e0ea53aeb331e6294d1d86230419bd8122289814",
+      "directed_hybrid_artifacts_sha256": {
+        "schema.json": "58ebdded93a0b7336e2544c85db24726c9159a83ea38c8ee773689b63f6146f7",
+        "circuit.json": "22b5c5b0bf84ec8724f948682e3c4fd567890cef0aea33e5c432dd9aa707d836",
+        "dataflow.json": "2f6dab8a221cfeb93413bd5fe95ad4bde54cbbe2f4cd6a44a054a366899599aa"
+      }
+    }
+  },
+  "limitations": "A separate 16-level ARG_MIN SQL probe exhausted the Java heap on both the direct and hybrid paths under the test memory limit."
+}
