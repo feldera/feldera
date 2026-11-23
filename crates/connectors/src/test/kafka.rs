@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle, sleep};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -23,9 +23,9 @@ use rdkafka::{
     ClientConfig, ClientContext, Message, Offset, TopicPartitionList,
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
     client::{Client, DefaultClientContext},
-    config::{FromClientConfig, RDKafkaLogLevel},
+    config::{FromClientConfig, FromClientConfigAndContext, RDKafkaLogLevel},
     consumer::{BaseConsumer, Consumer},
-    producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer},
+    producer::{BaseRecord, DeliveryResult, Producer, ProducerContext, ThreadedProducer},
     util::Timeout,
 };
 use serde_json::Value;
@@ -242,7 +242,32 @@ impl Drop for KafkaResources {
 /// Dropping it discards the messages it has not delivered yet, so a test that sends without
 /// waiting for delivery keeps it alive until the messages are consumed.
 pub struct TestProducer {
-    pub producer: ThreadedProducer<DefaultProducerContext>,
+    pub producer: ThreadedProducer<TestProducerContext>,
+}
+
+/// Counts the messages that a [`TestProducer`] failed to deliver.
+#[derive(Default)]
+pub struct TestProducerContext {
+    failed_deliveries: AtomicUsize,
+}
+
+impl ClientContext for TestProducerContext {}
+
+impl ProducerContext for TestProducerContext {
+    type DeliveryOpaque = ();
+
+    fn delivery(&self, result: &DeliveryResult<'_>, _: ()) {
+        // Log only the first failure, because one cause often fails many messages.
+        if let Err((error, message)) = result
+            && self.failed_deliveries.fetch_add(1, Ordering::Relaxed) == 0
+        {
+            error!(
+                "delivery to partition {} of topic {} failed: {error}",
+                message.partition(),
+                message.topic()
+            );
+        }
+    }
 }
 
 impl Default for TestProducer {
@@ -258,7 +283,11 @@ impl TestProducer {
             .set("bootstrap.servers", default_redpanda_server())
             .set("message.timeout.ms", "0") // infinite timeout
             .set_log_level(RDKafkaLogLevel::Debug);
-        let producer = ThreadedProducer::from_config(&producer_config).unwrap();
+        let producer = ThreadedProducer::from_config_and_context(
+            &producer_config,
+            TestProducerContext::default(),
+        )
+        .unwrap();
 
         Self { producer }
     }
@@ -326,6 +355,17 @@ impl TestProducer {
             .payload(string);
         self.producer.send(record).unwrap();
         self.producer.flush(Timeout::Never).unwrap();
+    }
+
+    /// Waits for delivery of the messages sent so far, and panics if any failed.
+    pub fn flush(&self) {
+        self.producer.flush(Timeout::Never).unwrap();
+        let failed = self
+            .producer
+            .context()
+            .failed_deliveries
+            .load(Ordering::Relaxed);
+        assert_eq!(failed, 0, "{failed} messages failed to deliver");
     }
 }
 
