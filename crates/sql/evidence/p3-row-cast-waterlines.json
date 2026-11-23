@@ -1,0 +1,57 @@
+{
+  "commit": "4b83f145ec2df852c12725dac61dc61d4a6b413f",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "e8c027d40b47c8756849ecf1ae41306747eeabe3a59de780459f905c797ee499",
+    "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+    "bin/sql2dbsp": "df42d5e475ed50b69f190f381bc6a6d7bedf055a8a4cf32fba58f7649b0b9be3",
+    "maven/tests.jar": "4abf99256ba64d26120ca123320f3d86311f73cbd9842d289ee640c525867c4a",
+    "maven/sql-compiler.jar": "b18a62afa875b9430d509fc81b58e05cfef4859c98f482570a562b01ecd88cf7"
+  },
+  "rust_tests": 161,
+  "clippy": "passed",
+  "junit_tests": 69,
+  "test_log_sha256": {
+    "tests.log": "232442014add227550be82320db2a203f1b3862188aaa243bf72fc8cbf3be694",
+    "clippy.log": "de7465f06417583d0ee4473491f4c514378fc449d985ac800261b7c8db752e5e",
+    "packaged-junit.log": "185d5b34dec59c25d0eb9a518ba5d6f3058130b25d59ab97b50c16a751bc620a"
+  },
+  "engines": {
+    "classic": {
+      "monotonicity_pass_comparisons": 291,
+      "direct_pass_sha256": "b22dc1375204a3f91fde907ad98bb95a01a8fc9062cdf40616aee5df36f3a2f9",
+      "hybrid_pass_sha256": "4fd5cef116b08ef7d8753fe6d2db90894cee7f3f5172602f8d774203107d88f3",
+      "directed_ordered_s4_observations": 1740,
+      "detached_cases": 4,
+      "ordered_s4_observations": 1740,
+      "detached_receipt_sha256": [
+        "ca291506951c80f3d4476e30c4aabce8b8869335372cc44595794b9bdd65db41"
+      ],
+      "closure_requests": 12,
+      "closure_fallbacks": 0,
+      "coverage_sha256": "ce99dd9379fa09509521ebfa9df20c8a6ff697c774c08c82d97647a457399a65"
+    },
+    "gen2": {
+      "monotonicity_pass_comparisons": 259,
+      "direct_pass_sha256": "f385a9712c76abfe3bdf186bffaf0dc84d594271c2c20770f8b4de7e724ba685",
+      "hybrid_pass_sha256": "b3a452a921840fe451c434bec7246c3bdd813246f7ea22b593af8654d8f756c2",
+      "directed_ordered_s4_observations": 1748,
+      "detached_cases": 4,
+      "ordered_s4_observations": 1748,
+      "detached_receipt_sha256": [
+        "46a6d9999dd982921b2404b051c86dbb66274dbe86c5191481963cd1907ca823"
+      ],
+      "closure_requests": 12,
+      "closure_fallbacks": 0,
+      "coverage_sha256": "8831a66612b0d6f51e7333b03124374c65fc66a37bd9022303939df9fe642ed6"
+    }
+  },
+  "runtime": {
+    "executed": 1,
+    "input_commands": 2,
+    "worker_sha256": "df42d5e475ed50b69f190f381bc6a6d7bedf055a8a4cf32fba58f7649b0b9be3",
+    "population_sha256": "0f8bf0ae3402898cea473c5df157cd5222daf0635b402f1ca6bd74660ead2718",
+    "batch_receipts_sha256": "01707e21a4a47cdfd911a4e674c9205f25e1414f4d0083fbe02d0ac488cf48a4",
+    "receipt_sha256": "f77242b5fa1ceaec54be9aeb94c48e18fc70a02ac95dae7004821397e2262e21"
+  },
+  "scope": "Projection of nested row casts inside the aggregate postprocessor on the eight directed ARG_MIN compilations."
+}

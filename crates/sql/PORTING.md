@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `4b83f145e`, Rust answered all 24 closure projections in the eight
+constructed-row `ARG_MIN` compilations. Previously, one cast per compilation
+fell back to Java. All eight compilations matched Java at every S4 observation
+and through emission. The streaming regression and all 550 selected
+monotonicity comparisons passed.
+[Row cast comparisons](evidence/p3-row-cast-waterlines.json)
+
 On `8bb0f52b1`, the Java and Rust optimizers both handled `ARG_MIN` on a
 constructed nested row with `LATENESS`. Eight classic and Gen-2 compilations
 matched through 3,488 ordered S4 observations and emission. The streaming
