@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.WindowInputStats;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
@@ -38,6 +39,7 @@ import org.junit.Test;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 public class TemporalKeyTests {
     @Test
@@ -67,6 +69,36 @@ public class TemporalKeyTests {
         String columns = "id INT NOT NULL, ts TIMESTAMP, i INT";
         checkSharedWindowKeys(columns, "ts + CAST(i AS INTERVAL DAY)", "ts + CAST(i AS INTERVAL HOUR)");
         checkSharedWindowKeys(columns, "ts + CAST(i AS INTERVAL MONTH)", "ts + CAST(i AS INTERVAL YEAR)");
+    }
+
+    @Test
+    public void windowKeysWithNullIntervalsShareByTheirTimestampExpression() {
+        String columns = "id INT NOT NULL, ts TIMESTAMP, alt TIMESTAMP";
+        for (String unit : List.of("SECOND", "MONTH")) {
+            String offset = "(CASE WHEN id > 0 THEN INTERVAL '1' %1$s ELSE CAST(NULL AS INTERVAL %1$s) END)"
+                    .formatted(unit);
+            checkSharedWindowKeys(columns, "ts + " + offset, "alt + " + offset);
+        }
+    }
+
+    @Test
+    public void expandedCollectionCastsShareOnlyMatchingWindowKeys() {
+        String columns = "id INT NOT NULL, ts TIMESTAMP, arr VARCHAR ARRAY, m MAP<INT,VARCHAR>";
+        for (boolean nativePasses : List.of(false, true)) {
+            Consumer<DBSPCompiler> expand = compiler -> {
+                compiler.options.ioOptions.rustOptimizerPasses = nativePasses;
+                // Exercise the window pass on the lower-level IR produced by cast expansion.
+                compiler.optimizerHook = optimizer -> optimizer.insertBefore(ImplementNow.class, new ExpandCasts(compiler));
+            };
+            for (String offset : List.of("ARRAY_MAX(%s(arr AS INT ARRAY))", "%s(m AS MAP<INT,INT>)[id]")) {
+                String timestamp = "TIMESTAMPADD(SECOND, " + offset + ", ts)";
+                for (String cast : List.of("CAST", "SAFE_CAST")) {
+                    String shared = timestamp.formatted(cast);
+                    String different = timestamp.formatted(cast.equals("CAST") ? "SAFE_CAST" : "CAST");
+                    checkSharedWindowKeys(columns, shared, shared, different, expand);
+                }
+            }
+        }
     }
 
     @Test
@@ -157,12 +189,18 @@ public class TemporalKeyTests {
     }
 
     private static void checkSharedWindowKeys(String fields, String first, String second, String different) {
+        checkSharedWindowKeys(fields, first, second, different, compiler -> {});
+    }
+
+    private static void checkSharedWindowKeys(String fields, String first, String second, String different,
+                                               Consumer<DBSPCompiler> configure) {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         for (boolean gen2 : List.of(false, true)) {
             var options = new CompilerOptions();
             options.ioOptions.gen2 = gen2;
             options.ioOptions.rustOptimizerPasses = true;
             var compiler = new DBSPCompiler(options);
+            configure.accept(compiler);
             var analyses = Set.of("WindowGroups/Scan", "WindowGroups/Reorder", "WindowGroups/Indexes");
             var answered = new HashSet<String>();
             compiler.stateObserver = new DBSPCompiler.StateObserver() {
@@ -190,7 +228,8 @@ public class TemporalKeyTests {
                     """.formatted(fields, first, second, different));
             var circuit = compiler.getFinalCircuit(false);
             compiler.throwIfErrorsOccurred();
-            Assert.assertEquals(analyses, answered);
+            if (options.ioOptions.rustOptimizerPasses)
+                Assert.assertEquals(analyses, answered);
             var windows = new WindowInputStats(compiler);
             windows.apply(circuit);
             Assert.assertEquals(3, windows.leftInputIds.size());

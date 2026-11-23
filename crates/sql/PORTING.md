@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust groups windows whose timestamp expression contains a typed NULL interval
+or a lowered array or map conversion. The two directed interval programs on
+each engine matched direct Java through 2,416 ordered S4 observations. With
+cast expansion moved before window grouping in the pass test, safe and unsafe
+conversions used distinct indexes. All 23 temporal tests passed. Both new
+regressions required Java at `WindowGroups/Scan` on the preceding library.
+[Window grouping comparisons](evidence/p3-expanded-window-keys.json)
+
 On `4324adf5a`, Rust selects waterline transfers from filter and view stream
 types, primitive aggregate functions and ASOF comparators. All 550 selected
 monotonicity analyses matched Java. Across 29 classic and 30 Gen-2 detached

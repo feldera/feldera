@@ -1,6 +1,6 @@
 {
   "commit": "4324adf5a9120001a8003cddcbacec666152ed4e",
-  "scope": "Selected frozen detached compilations with all instrumented native optimizer requests required.",
+  "scope": "Selected detached compilations from the frozen corpus and directed fixtures, with all instrumented native optimizer requests required.",
   "optimizer_library_sha256": "14073dd345ea42dbd4cd0380decc55afe1cbb8498f6690d31d2ae95a888ff3f2",
   "rust_tests": 212,
   "junit_tests": 55,
@@ -17,7 +17,9 @@
       ],
       "population_sha256": "11d8f992f5c40d1d30015dd432ae87eb6017665dd1c6f75c41288b32f78b3dad",
       "combined_validation_sha256": "50773e6915d2a7137ec0409d29cd251f495b939a6094b0b86ea0e9d944eb2469",
-      "monotonicity": "MonotoneAnalyzer matched at 291 invocations across 291 cases"
+      "monotonicity": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+      "frozen_cases": 25,
+      "directed_cases": 4
     },
     "gen2": {
       "detached_cases": 30,
@@ -31,7 +33,9 @@
       ],
       "population_sha256": "3dcdc6a39acbc5aa2c2f59624d09c1310351e07832a21fd1fc648a5b02c1e472",
       "combined_validation_sha256": "c6bcdf3a6647939fe8478d45186b1e35a28188a57a211f69b3e922fd4b10e67d",
-      "monotonicity": "MonotoneAnalyzer matched at 259 invocations across 259 cases"
+      "monotonicity": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+      "frozen_cases": 26,
+      "directed_cases": 4
     }
   },
   "classpath_sha256": [

@@ -27,6 +27,9 @@ enum Term {
     Map,
     NullCollection,
     Tuple,
+    RawTuple {
+        nullable: bool,
+    },
     AbsentTuple,
     VariantNullLiteral,
     NullPoint {
@@ -58,6 +61,7 @@ enum Term {
         left_nullable: bool,
         right_nullable: bool,
     },
+    CollectionConversion(BinaryOp),
     Unary {
         opcode: String,
         nullable: bool,
@@ -258,7 +262,19 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         Expr::Array if node.field("data").is_some() => (Term::Array, children("data")?),
         // Tuple constructors include their arity and a trailing separator after each field.
         Expr::Tuple if node.field("fields").is_some() => (Term::Tuple, children("fields")?),
-        Expr::Tuple => (Term::AbsentTuple, vec![]),
+        Expr::RawTuple if node.field("fields").is_some() => {
+            let fields = children("fields")?;
+            let nullable = edit.nullable(edit.expression_type(id)?)?;
+            // The raw tuple printer appends a separator to each field. Only
+            // an empty nullable tuple spells the same as a plain Some() call.
+            let term = if nullable && fields.is_empty() {
+                Term::Call("Some".into())
+            } else {
+                Term::RawTuple { nullable }
+            };
+            (term, fields)
+        }
+        Expr::Tuple | Expr::RawTuple => (Term::AbsentTuple, vec![]),
         Expr::VariantNullLiteral => (Term::VariantNullLiteral, vec![]),
         Expr::GeoPointConstructor => {
             let ty = edit.expression_type(id)?;
@@ -362,17 +378,16 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         Expr::Binary | Expr::TimeAddSub => {
             let left = child("left")?;
             let right = child("right")?;
-            let left_nullable = edit.nullable(edit.expression_type(edit.expression(left)?)?)?;
-            let right_nullable = edit.nullable(edit.expression_type(edit.expression(right)?)?)?;
             let Some(op) = string(node, "opcode").and_then(BinaryOp::from_wire) else {
                 return Ok(None);
             };
             match op {
-                // Collection conversions print multiline function calls.
+                // The multiline conversion call omits the operand nullability
+                // markers used by the infix printer.
                 BinaryOp::ArrayConvert
                 | BinaryOp::ArrayConvertSafe
                 | BinaryOp::MapConvert
-                | BinaryOp::MapConvertSafe => return Ok(None),
+                | BinaryOp::MapConvertSafe => (Term::CollectionConversion(op), vec![left, right]),
                 _ => {
                     // Several distinct opcodes print the same infix operator.
                     let opcode = match op {
@@ -386,8 +401,10 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
                     (
                         Term::Binary {
                             opcode,
-                            left_nullable,
-                            right_nullable,
+                            left_nullable: edit
+                                .nullable(edit.expression_type(edit.expression(left)?)?)?,
+                            right_nullable: edit
+                                .nullable(edit.expression_type(edit.expression(right)?)?)?,
                         },
                         vec![left, right],
                     )
@@ -520,18 +537,26 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
             let Some(units) = string(edit.node(ty.into())?, "units") else {
                 return Ok(None);
             };
-            let Some(value) = string(node, "value").and_then(|n| n.parse().ok()) else {
-                return Ok(None);
+            let term = match node.data("value").filter(|v| !v.is_null()) {
+                Some(value) => {
+                    let Some(value) = value.as_str().and_then(|s| s.parse().ok()) else {
+                        return Ok(None);
+                    };
+                    Term::Interval {
+                        months: kind == Expr::LongIntervalLiteral,
+                        units: units.to_owned(),
+                        value,
+                        nullable: edit.nullable(ty)?,
+                    }
+                }
+                None => {
+                    let Some(name) = scalar_spelling(edit, ty)? else {
+                        return Ok(None);
+                    };
+                    Term::TypedNull(name)
+                }
             };
-            (
-                Term::Interval {
-                    months: kind == Expr::LongIntervalLiteral,
-                    units: units.to_owned(),
-                    value,
-                    nullable: edit.nullable(ty)?,
-                },
-                vec![],
-            )
+            (term, vec![])
         }
         _ => return Ok(None),
     }))
@@ -581,7 +606,7 @@ fn type_term(edit: &CircuitEditor, ty: TypeId) -> Result<Option<(Term, Vec<NodeI
             )));
         }
         Ty::Tuple | Ty::RawTuple => "tupFields",
-        Ty::Array | Ty::Map => "typeArgs",
+        Ty::Array | Ty::Map | Ty::SqlResult => "typeArgs",
         _ => return Ok(scalar_spelling(edit, ty)?.map(|name| (Term::ScalarType(name), vec![]))),
     };
     let args = edit
@@ -707,9 +732,9 @@ pub(super) fn same_row_spelling(
                     edit.type_id(b.edge("type")?)?,
                 ));
             }
-            Ty::Tuple | Ty::RawTuple | Ty::Array | Ty::Map => {
+            Ty::Tuple | Ty::RawTuple | Ty::Array | Ty::Map | Ty::SqlResult => {
                 let field = match kind {
-                    Ty::Array | Ty::Map => "typeArgs",
+                    Ty::Array | Ty::Map | Ty::SqlResult => "typeArgs",
                     _ => "tupFields",
                 };
                 let a = edit.node(left.into())?.edges(field)?;
@@ -948,6 +973,55 @@ mod tests {
         assert!(key(whole)? == key(integer)?);
         assert!(key(tenth)? != key(integer)? && key(tenth)? != key(hundredth)?);
         assert!(key(hundredth)? == key(exponent)?);
+        Ok(())
+    }
+
+    #[test]
+    fn collection_conversions_use_the_opcode_and_printed_operands() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[]
+        }))?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let ty = edit.bool_type(site, false)?;
+        let opt = edit.with_nullability(ty, true)?;
+        // Function application prints its name and arguments. The result
+        // type can differ while the printed operand stays the same.
+        let function = edit.function_path(site, "values")?;
+        let call = [
+            ("function", Field::Reference(function.into())),
+            ("arguments", Field::Array(vec![])),
+        ];
+        let left = edit.make_expr(site, Expr::Apply, ty, call.clone())?;
+        let nullable = edit.make_expr(site, Expr::Apply, opt, call)?;
+        let var = edit.named_variable(ty, "item")?;
+        let mapper = edit.closure_from_variables(var, &[var])?;
+        let row = RowParameter { name: "row", ty };
+        let mut keys = HashSet::new();
+        for op in [
+            BinaryOp::ArrayConvert,
+            BinaryOp::ArrayConvertSafe,
+            BinaryOp::MapConvert,
+            BinaryOp::MapConvertSafe,
+        ] {
+            let mut conversion = |ty, input: ExpressionId| {
+                edit.make_expr(
+                    site,
+                    Expr::Binary,
+                    ty,
+                    [
+                        ("opcode", Field::Data(op.wire_name().into())),
+                        ("left", Field::Reference(input.into())),
+                        ("right", Field::Reference(mapper.into())),
+                    ],
+                )
+            };
+            let first = conversion(ty, left)?;
+            let second = conversion(opt, nullable)?;
+            let key = TimestampKey::read(&edit, first, row)?.expect("conversion key");
+            assert!(Some(&key) == TimestampKey::read(&edit, second, row)?.as_ref());
+            assert!(keys.insert(key));
+        }
         Ok(())
     }
 

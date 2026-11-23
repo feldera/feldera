@@ -1,0 +1,56 @@
+{
+  "scope": "Two directed SQL programs per engine use typed NULL SECOND and MONTH intervals. A separate JUnit comparison runs ExpandCasts before ImplementNow to exercise all four lowered collection conversions.",
+  "optimizer_library_sha256": "0923e48bdfbf97d474fe37533f0add17c81c74d36bfc108fb105172b472e8e91",
+  "classpath_sha256": [
+    "f1a62ffef25b4e7acbee27fd21aba15ab4a3e959b0a96c181493d8f51beea481",
+    "721d8605e181de1edc560440780fc8a3de240739017dc3e051b8e6394cfaeae1"
+  ],
+  "comparator_sha256": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+  "engines": {
+    "classic": {
+      "cases": 2,
+      "population_sha256": "37fa160b87d353e897db7b913879466c44815c2d86e265291ce44f286de8e428",
+      "ordered_s4_observations": 1202,
+      "native_requests": 262,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "receipt_sha256": "946c7df74626ef5e61385f806c5ef0bf81aad02abcf8a0ee4d00bf47675df73a",
+      "window_requests": {
+        "WindowGroups/Indexes": 2,
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Scan": 2
+      }
+    },
+    "gen2": {
+      "cases": 2,
+      "population_sha256": "37275ea325325678e2c2e4bf419b6fa02978ce2a1ea7ca2c40d1c25fbad5a1c3",
+      "ordered_s4_observations": 1214,
+      "native_requests": 276,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "receipt_sha256": "97c966bb5fe5596afb2a7d2899dd27db6e1bb8cd3153e1c0636bf19653e4445e",
+      "window_requests": {
+        "WindowGroups/Indexes": 2,
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Scan": 2
+      }
+    }
+  },
+  "junit": {
+    "passed": 23,
+    "regressions_failing_on_previous_library": 2,
+    "previous_library_sha256": "873553fb27cfaad0cfa95bccc240eb2177ee21585d30f3369b025fd8a2d1b6f7",
+    "before_log_sha256": "064b7b1245bbb7236c2cfff4e1df714e659aeca792103a3ca53fb0ef7f3ecd9d",
+    "after_log_sha256": "477b8db1db8ade4f2c9be9c6488f7f341226671d236975b23b01960cc3287aae",
+    "test_class_sha256": {
+      "TemporalKeyTests$1.class": "841cf0af572abddb0929009b5153fc2834b73909fc7271334547a46882d9372b",
+      "TemporalKeyTests.class": "fddc4f3be010188cc9b0ff0ee168228882557e216d114e4e86e28eaa7b40a893"
+    }
+  },
+  "rust_tests": 214,
+  "log_sha256": {
+    "tests.log": "8c815e1687d698f70ba5ff3714750dd86b85f0fa13dae54225c5a25a6ccf449c",
+    "clippy.log": "363c5ccbfd10e68cd2ac67a2eb5dd872138283bafd6e30113972720312cb84da",
+    "build.log": "30e2964e8f6368699f51fbad4180d735f642939b99987a765a4feaa3ae1999cd"
+  }
+}
