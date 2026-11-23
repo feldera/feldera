@@ -515,6 +515,15 @@ sides. The build passed 182 targeted and 222 nightly JUnit tests and matched
 Java on 12 classic and 12 Gen-2 programs.
 [Timestamp comparison tests](evidence/p3-timestamp-comparison-errors.json)
 
+The same diagnostic now survives comparison inside a weighted constant
+collection, including an array-valued row. Before the fix, the JNI boundary
+reported a generic optimizer error. The regression checks the exception class
+and message against Java in both operand orders. A separate Rust test checks
+that an older snapshot without a resolved instant can decline the comparison.
+The build passed 186 focused and 226 nightly JUnit tests and matched all
+11,965 ordered S4 observations in the 24-case replay.
+[Constant collection comparison results](evidence/p3-collection-zone-errors.json)
+
 Shared-index discovery checks bindings as it visits each eligible index.
 A failed binding leaves the index unvisited. A failure during key comparison
 retains the seed visit. Earlier groups, warnings and generated names survive

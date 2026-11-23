@@ -1,0 +1,51 @@
+{
+  "scope": "Compare zoned timestamps within constant collection keys in operand order and retain the Java diagnostic or the unresolved legacy result.",
+  "source_base": "a59e044be7c535da4801b25ba5a3670ae6a9a6cb",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/casts.rs": "c628092c41971f52109606b3781b18548449e599fd2067555f3d46b61307633c",
+    "crates/sql/sql-expr/src/casts/comparison.rs": "7c31a5f0c5418c76c2fbaae60d77c1fe3548384c35fa4e08230d55fa461d9eda",
+    "crates/sql/sql-expr/src/constant_rows.rs": "d8a1d491a2e85532b81020981ffcc6e9a20591ddbc535d23996c062c27bb7a6e",
+    "crates/sql/sql-expr/src/constant_rows/object_equality.rs": "481582226ac428838ad7e644e05921c99325c7b33fcd8a31d2734056a31adea5",
+    "crates/sql/sql-expr/src/lib.rs": "ffb6e81463d0553e33f49200717a6f85aef321333c32ba00dbb5d2b9c2b5d5a5",
+    "crates/sql/sql-opt/src/index_key_equivalence.rs": "5b60c85115f00d6f462510ed6648b67787eb265bc6fb487fbcbb45bd2bf38e7f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "bcecd3cec812190e3851e3c0004c991af702da22041b25096f8e50bb08a36ba0"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "e5182a4d46780095fecd94fc88f727b3e56c6531a9c03c859c6416c862514c79",
+    "bin/sql-difftest": "709db417cac7d6d34b9cc00d9ac9620594c2b6d8eb39c19dade0bbdf2b6dcc3c",
+    "maven/tests.jar": "d6c7cf51836c729120c8da2590a731804d1f8f3f447a6fc2e435f5cd7e021b64",
+    "maven/sql-compiler.jar": "c8b4daa575cc7ef1452fad2dd23499dff7049bd9c57e8ebab11b35c1ad93454c"
+  },
+  "negative_control": {
+    "library_sha256": "341ee742bd83ef5650ee459bfabdac9604dab516da926aa639543c235a9387d8",
+    "failed_tests": [
+      "constantRowKeysReportTheFirstInvalidTimestamp"
+    ],
+    "java_compiler_sha256": "d973f0d9d73bd9ca6de18e7ec139f748a9cb703d5594c28a3f2d63d7ee2107b1"
+  },
+  "rust_tests": 226,
+  "junit_tests": 186,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "13b5a54a48dfcba23a0f1996af8ec6f322b7605ba9e222f785fd6b5656ff47a8"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "9169095bc28da121e94f9a33cd956bbe99eb75b3add7d657df9869c498880f76"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 226,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  }
+}

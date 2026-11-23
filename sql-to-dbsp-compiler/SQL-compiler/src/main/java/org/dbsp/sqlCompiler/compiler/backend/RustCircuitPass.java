@@ -3335,7 +3335,10 @@ public final class RustCircuitPass implements CircuitTransform {
     private static <T> T exchangeKeyClosure(DBSPCompiler compiler, String pass, DBSPClosureExpression closure,
                                             Object request, TypeReference<T> type) {
         try {
-            var graph = new OptimizerExpressionWriter(compiler, false).encode(closure);
+            var writer = new OptimizerExpressionWriter(compiler, false);
+            if (pass.equals("KeyAnalysis/OutputColumns") || pass.equals("KeyAnalysis/JoinColumns"))
+                writer.includeShuffleIdentities();
+            var graph = writer.encode(closure);
             var reply = transformWithContext(pass, graph, 0, "", MAPPER.writeValueAsBytes(request));
             return MAPPER.readValue(reply, type);
         } catch (IOException error) {

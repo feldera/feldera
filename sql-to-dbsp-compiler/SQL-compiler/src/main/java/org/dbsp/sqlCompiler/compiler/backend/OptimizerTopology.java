@@ -154,6 +154,8 @@ final class OptimizerTopology {
         json.endArray();
         json.label("allOperators");
         var types = typeContext == null ? null : new OptimizerExpressionWriter(typeContext, json, details == Details.CANDIDATE_KEYS ? 0 : 1, false);
+        if (details == Details.CANDIDATE_KEYS)
+            java.util.Objects.requireNonNull(types).includeShuffleIdentities();
         writeBody(json, circuit.getAllOperators(), details, types, null);
         if (types != null)
             types.writeDeferredDefinitions();

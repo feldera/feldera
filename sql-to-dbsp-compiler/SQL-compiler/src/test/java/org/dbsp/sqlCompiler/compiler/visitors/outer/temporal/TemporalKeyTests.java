@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.ZSetShape;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -1167,6 +1168,34 @@ public class TemporalKeyTests {
         var element = new DBSPVariablePath("element", type);
         return new DBSPFlatmap(CalciteObject.EMPTY, rowType, row.deref().field(2).closure(row),
                 List.of(passthrough), List.of(projection.closure(element)), null, shuffle);
+    }
+
+    @Test
+    public void candidateKeysGroupFlatmapsByTheirLiveShuffle() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var b = new ExpressionBuilder();
+        var shared = new IdShuffle(2);
+        var row = b.tup(b.i32());
+        var parameter = b.refVar(row);
+        var first = flatmap(shared, 0, b.lit(1));
+        var distinct = flatmap(new IdShuffle(2), 0, b.lit(1));
+        var same = flatmap(shared, 0, b.lit(1));
+        Assert.assertTrue(first.equivalent(same));
+        Assert.assertFalse(first.equivalent(distinct));
+        var body = new DBSPTupleExpression(first, distinct, same);
+        var function = body.closure(parameter);
+        var shape = new ZSetShape(3);
+        var columns = RustCircuitPass.outputColumns(compiler, function, shape, false);
+        Assert.assertEquals(List.of(List.of(shape.output(0), shape.output(2))), columns.groups());
+
+        var site = CalciteEmptyRel.INSTANCE;
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(row));
+        var map = new DBSPMapOperator(site, function, input.outputPort());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(input);
+        circuit.addOperator(map);
+        Assert.assertTrue(RustCircuitPass.circuitKeys(compiler, circuit, false, (op, facts) -> {}));
     }
 
     @Test
