@@ -505,6 +505,13 @@ the variable. Both failures preserve the number of names allocated by earlier
 merges. Directed tests verified the exception class and message against Java.
 [Temporal clock lookups](evidence/p3-temporal-clock-lookups.json)
 
+Map fusion and temporal bounds compare zoned timestamp literals in operand
+order. If conversion fails, Rust identifies the offending literal and Java
+renders the JDK diagnostic. Directed tests exercised invalid offsets on both
+sides. The build passed 182 targeted and 222 nightly JUnit tests and matched
+Java on 12 classic and 12 Gen-2 programs.
+[Timestamp comparison tests](evidence/p3-timestamp-comparison-errors.json)
+
 Shared-index readers remap a column beneath 160 nested calls. Indexes that
 project the same nested expression still share one output column. Both
 operations exceeded the inline snapshot limit on the preceding build.

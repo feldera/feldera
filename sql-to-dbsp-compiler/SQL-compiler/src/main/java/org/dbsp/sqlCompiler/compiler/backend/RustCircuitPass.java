@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.util.RawValue;
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
@@ -109,6 +110,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjecti
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.KeyColumns;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.type.CollectionShape;
 import org.dbsp.sqlCompiler.ir.type.CollectionShape.Column;
 import org.dbsp.sqlCompiler.ir.type.IndexedShape;
@@ -2306,24 +2308,24 @@ public final class RustCircuitPass implements CircuitTransform {
     /** A speculative comparison can decline an unbound key. The merge pass reports it at the original site. */
     @Nullable
     public static Boolean acceptsTemporalBound(DBSPCompiler compiler, List<String> kinds, List<IDBSPInnerNode> roots,
-                                              boolean reportMissingDeclaration) {
-        var reply = temporalGroupRequest(compiler, "MergeTemporalBounds", kinds, roots, reportMissingDeclaration);
+                                              boolean reportComparisonFailure) {
+        var reply = temporalGroupRequest(compiler, "MergeTemporalBounds", kinds, roots, reportComparisonFailure);
         return reply == null ? null : reply.value.booleanValue();
     }
 
     @Nullable
     private static LoweringReply temporalGroupRequest(DBSPCompiler compiler, String pass,
                                                        List<String> kinds, List<IDBSPInnerNode> roots,
-                                                       boolean reportMissingDeclaration) {
+                                                       boolean reportComparisonFailure) {
         try {
             var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(kinds),
                     roots.toArray(IDBSPInnerNode[]::new));
             if (!answered(compiler, pass, reply.value))
                 return null;
-            var missing = reply.value.get("missingDeclaration");
-            if (missing != null) {
-                if (reportMissingDeclaration)
-                    reportMissingDeclaration(missing);
+            var failure = reply.value.get("comparison_failure");
+            if (failure != null) {
+                if (reportComparisonFailure)
+                    reportComparisonFailure(failure);
                 return null;
             }
             return reply;
@@ -3589,18 +3591,25 @@ public final class RustCircuitPass implements CircuitTransform {
         return reply;
     }
 
-    private static void reportMissingDeclaration(JsonNode variable) {
-        Utilities.fail("Declaration for variable " + Utilities.singleQuote(variable.textValue()) + " not found");
+    private static void reportComparisonFailure(JsonNode failure) {
+        var variable = failure.get("missingDeclaration");
+        if (variable != null)
+            Utilities.fail("Declaration for variable " + Utilities.singleQuote(variable.textValue()) + " not found");
+        // The snapshot recorded that the JDK could not resolve this literal. Let
+        // the same conversion render its exception only when a comparison reads it.
+        var spelling = failure.required("invalidTimestamp").textValue();
+        DBSPTimestampTzLiteral.getMicros(new TimestampWithTimeZoneString(spelling));
+        throw new IllegalStateException("Expected the recorded timestamp conversion to fail for " + spelling);
     }
 
     private JsonNode columnRewriteReply(String operation, byte[] result) throws IOException {
         var reply = MAPPER.readTree(result);
         if (this.compiler.stateObserver != null)
             this.compiler.stateObserver.nativeDecision(operation, reply.required("native_columns").booleanValue());
-        var missing = reply.get("missingDeclaration");
-        if (missing != null) {
+        var failure = reply.get("comparison_failure");
+        if (failure != null) {
             finishLowering(this.compiler, reply);
-            reportMissingDeclaration(missing);
+            reportComparisonFailure(failure);
         }
         return reply;
     }

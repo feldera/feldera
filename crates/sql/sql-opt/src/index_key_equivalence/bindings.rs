@@ -1,5 +1,5 @@
 //! Pair local declarations while comparing expressions under alpha-renaming.
-use super::{KeyComparisonError, optional_child, same_type};
+use super::{ComparisonDiagnostic, KeyComparisonError, optional_child, same_type};
 use feldera_sql_ir::{CircuitEditor, Error, Node, NodeId};
 
 /// Each pending comparison sees the bindings in scope at that expression.
@@ -75,7 +75,7 @@ impl<'a> Bindings<'a> {
         } else {
             right
         };
-        Err(KeyComparisonError::MissingDeclaration(missing.to_owned()))
+        Err(ComparisonDiagnostic::MissingDeclaration(missing.to_owned()).into())
     }
 
     pub fn let_expression(

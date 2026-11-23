@@ -61,12 +61,12 @@ pub(super) fn column_reply(
             "unused_sources": [],
         })),
         Ok(None) => Err(Error::new("unanswered column comparison")),
-        Err(ColumnRewriteError::MissingDeclaration {
-            name,
+        Err(ColumnRewriteError::Comparison {
+            diagnostic,
             next_name,
             warnings,
         }) => Ok(json!({
-            "missingDeclaration": name,
+            "comparison_failure": diagnostic,
             "native_columns": native_columns,
             "warnings": pass_warnings(warnings),
             "next_generated_name": next_name,

@@ -3,40 +3,48 @@ use chrono::{Datelike, Days, FixedOffset, NaiveDate, NaiveDateTime, Offset, Time
 
 use feldera_sql_ir::{Error, Node};
 
-#[derive(PartialEq)]
-enum TimestampValue {
-    Null,
-    Instant(i64),
+/// A live snapshot can record a failed JDK time zone conversion. Older
+/// snapshots carry only the spelling and can leave the instant unknown.
+pub enum TimestampComparison {
+    Equal(bool),
+    InvalidZone(String),
+    Unresolved,
 }
 
-fn runtime_value(node: &Node) -> Result<Option<TimestampValue>, Error> {
-    let Some(spelling) = node.data("value").filter(|v| !v.is_null()) else {
-        return Ok(Some(TimestampValue::Null));
-    };
-    let micros = match node.data("runtimeMicros") {
-        // The live JDK could not resolve this spelling. The caller retains its diagnostic.
-        Some(value) if value.is_null() => None,
-        Some(value) => Some(
-            value
-                .as_i64()
-                .ok_or_else(|| Error::new("invalid timestamp runtimeMicros"))?,
-        ),
-        None => spelling.as_str().and_then(zoned_micros),
-    };
-    Ok(micros.map(TimestampValue::Instant))
-}
-
-pub(super) fn same_value(a: &Node, b: &Node) -> Result<Option<bool>, Error> {
-    // Equal spellings in an older snapshot do not require a zone lookup.
+/// Compare two distinct timestamp literals, evaluating the left instant first.
+pub fn compare_timestamp_literals(a: &Node, b: &Node) -> Result<TimestampComparison, Error> {
+    use TimestampComparison::*;
     if a.field("runtimeMicros").is_none()
         && b.field("runtimeMicros").is_none()
         && a.data("value") == b.data("value")
     {
-        return Ok(Some(true));
+        return Ok(Equal(true));
     }
-    Ok(runtime_value(a)?
-        .zip(runtime_value(b)?)
-        .map(|(a, b)| a == b))
+
+    let mut instants = [None; 2];
+    for (slot, node) in instants.iter_mut().zip([a, b]) {
+        let Some(spelling) = node.data("value").filter(|v| !v.is_null()) else {
+            continue;
+        };
+        *slot = match node.data("runtimeMicros") {
+            Some(value) if value.is_null() => {
+                let spelling = spelling
+                    .as_str()
+                    .ok_or_else(|| Error::new("invalid timestamp spelling"))?;
+                return Ok(InvalidZone(spelling.to_owned()));
+            }
+            Some(value) => Some(
+                value
+                    .as_i64()
+                    .ok_or_else(|| Error::new("invalid timestamp runtimeMicros"))?,
+            ),
+            None => match spelling.as_str().and_then(zoned_micros) {
+                Some(micros) => Some(micros),
+                None => return Ok(Unresolved),
+            },
+        };
+    }
+    Ok(Equal(instants[0] == instants[1]))
 }
 
 /// Calcite stores local time and a zone name. Java resolves an overlap with

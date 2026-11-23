@@ -513,8 +513,8 @@ pub(super) fn groups(
     };
     match result {
         Ok(value) => Ok(value),
-        Err(feldera_sql_opt::KeyComparisonError::MissingDeclaration(name)) => {
-            Ok(json!({"missingDeclaration":name}))
+        Err(feldera_sql_opt::KeyComparisonError::Diagnostic(diagnostic)) => {
+            Ok(json!({"comparison_failure": diagnostic}))
         }
         Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => Err(error.into()),
     }

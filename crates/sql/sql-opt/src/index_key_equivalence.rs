@@ -5,21 +5,31 @@ use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId};
 use std::collections::HashSet;
 
-#[derive(Debug, thiserror::Error)]
-pub enum KeyComparisonError {
+/// Errors that Java's expression equivalence reports at the first failing operand.
+#[derive(Debug, thiserror::Error, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ComparisonDiagnostic {
     #[error("Declaration for variable '{0}' not found")]
     MissingDeclaration(String),
+    #[error("Cannot resolve timestamp '{0}'")]
+    InvalidTimestamp(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum KeyComparisonError {
+    #[error(transparent)]
+    Diagnostic(#[from] ComparisonDiagnostic),
     #[error(transparent)]
     InvalidIr(#[from] Error),
 }
 
 /// A live column rewrite publishes the warning and name prefix before
-/// reporting a failed declaration lookup. Detached callers can decline it.
+/// reporting a failed comparison. Detached callers can decline it.
 #[derive(Debug, thiserror::Error)]
 pub enum ColumnRewriteError {
-    #[error("Declaration for variable '{name}' not found")]
-    MissingDeclaration {
-        name: String,
+    #[error("{diagnostic}")]
+    Comparison {
+        diagnostic: ComparisonDiagnostic,
         next_name: u64,
         warnings: Vec<SimplifyWarning>,
     },
@@ -34,8 +44,8 @@ impl ColumnRewriteError {
         warnings: &mut Vec<SimplifyWarning>,
     ) -> Self {
         match error {
-            KeyComparisonError::MissingDeclaration(name) => Self::MissingDeclaration {
-                name,
+            KeyComparisonError::Diagnostic(diagnostic) => Self::Comparison {
+                diagnostic,
                 next_name,
                 warnings: std::mem::take(warnings),
             },
@@ -45,20 +55,19 @@ impl ColumnRewriteError {
 
     pub(super) fn decline<T>(self) -> Result<Option<T>, Error> {
         match self {
-            Self::MissingDeclaration { .. } => Ok(None),
+            Self::Comparison { .. } => Ok(None),
             Self::InvalidIr(error) => Err(error),
         }
     }
 }
 
-/// Speculative rewrites leave an unresolved key to the caller. A temporal
-/// comparison at the original site can report the missing declaration.
+/// A speculative caller can retry an unresolved comparison at its original site.
 pub(super) fn speculative<T>(
     result: Result<Option<T>, KeyComparisonError>,
 ) -> Result<Option<T>, Error> {
     match result {
         Ok(value) => Ok(value),
-        Err(KeyComparisonError::MissingDeclaration(_)) => Ok(None),
+        Err(KeyComparisonError::Diagnostic(_)) => Ok(None),
         Err(KeyComparisonError::InvalidIr(error)) => Err(error),
     }
 }
@@ -375,11 +384,23 @@ pub(super) fn compare_keys<'a>(
                 if !same_type(edit, left, right)? {
                     return Ok(Some(false));
                 }
-                match feldera_sql_expr::same_literal_value(
-                    edit,
-                    edit.expression(a)?,
-                    edit.expression(b)?,
-                )? {
+                let equal = if kind == Expr::TimestampTzLiteral && a != b {
+                    use feldera_sql_expr::TimestampComparison;
+                    match feldera_sql_expr::compare_timestamp_literals(left, right)? {
+                        TimestampComparison::Equal(equal) => Some(equal),
+                        TimestampComparison::Unresolved => None,
+                        TimestampComparison::InvalidZone(spelling) => {
+                            return Err(ComparisonDiagnostic::InvalidTimestamp(spelling).into());
+                        }
+                    }
+                } else {
+                    feldera_sql_expr::same_literal_value(
+                        edit,
+                        edit.expression(a)?,
+                        edit.expression(b)?,
+                    )?
+                };
+                match equal {
                     Some(true) => &[],
                     result => return Ok(result),
                 }

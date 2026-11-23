@@ -278,7 +278,7 @@ pub use stream_rewrites::{
     implement_joins, insert_weight_validation, optimize_differentials, push_differentials_up,
 };
 pub use sums::merge_sums;
-pub use index_key_equivalence::{ColumnRewriteError, KeyComparisonError};
+pub use index_key_equivalence::{ColumnRewriteError, ComparisonDiagnostic, KeyComparisonError};
 pub use temporal_groups::{accepts_temporal_bound, check_temporal_bound, check_temporal_groups, group_temporal_filters, TemporalBoundKey, TemporalGroup, WindowTerm};
 pub use temporal_comparisons::{MissingClockKey, classify_temporal_predicates, conjunct_windows, infer_temporal_predicates, ConjunctWindow, TemporalPredicate};
 pub use temporal_equality::desugar_now_equality;

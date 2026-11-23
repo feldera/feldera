@@ -131,23 +131,26 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
     }
 
     @Test
-    public void fusionReportsALiveColumnErrorWithoutReplayingThePass() {
+    public void fusionReportsTheFirstInvalidTimestampInRust() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
         var invalid = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
                 new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
-        this.checkColumnError(invalid, invalid.deepCopy(), java.time.DateTimeException.class, false);
+        var other = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT-20:00"));
+        this.checkColumnError(invalid, other, java.time.DateTimeException.class);
+        this.checkColumnError(other, invalid, java.time.DateTimeException.class);
     }
 
     @Test
     public void fusionReportsTheFirstUnboundColumnInRust() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
         var message = this.checkColumnError(new DBSPVariablePath("prior", b.i32()),
-                new DBSPVariablePath("incoming", b.i32()), InternalCompilerError.class, true);
+                new DBSPVariablePath("incoming", b.i32()), InternalCompilerError.class);
         Assert.assertEquals("Declaration for variable 'prior' not found", message);
     }
 
     private String checkColumnError(DBSPExpression first, DBSPExpression second,
-                                    Class<? extends RuntimeException> expected, boolean nativeDecision) {
+                                    Class<? extends RuntimeException> expected) {
         var compiler = this.testCompiler();
         var site = CalciteEmptyRel.INSTANCE;
         var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
@@ -196,7 +199,7 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
         String message = direct.getMessage().lines().findFirst().orElseThrow();
         Assert.assertEquals(message, hybrid.getMessage().lines().findFirst().orElseThrow());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertEquals(List.of(nativeDecision), decisions);
+        Assert.assertEquals(List.of(true), decisions);
         return message;
     }
 

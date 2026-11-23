@@ -1042,6 +1042,28 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void temporalKeysReportInvalidOffsetsInOperandOrder() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var type = DBSPTypeTimestampTz.INSTANCE;
+        var valid = bound(new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 UTC")));
+        var east = bound(new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00")));
+        var west = bound(new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT-20:00")));
+        for (var pair : List.of(List.of(valid, east), List.of(west, valid), List.of(east, west), List.of(west, east))) {
+            var left = pair.get(0);
+            var right = pair.get(1);
+            var direct = Assert.assertThrows(java.time.DateTimeException.class, () -> left.compatible(right));
+            var hybrid = Assert.assertThrows(direct.getClass(), () -> RustCircuitPass.acceptsTemporalBound(
+                    compiler, List.of("GTE", "GTE"), List.of(left.parameter(), left.noNow(), right.parameter(), right.noNow()), true));
+            Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        }
+        assertCompatible(compiler, east, east, true);
+    }
+
+    @Test
     public void blockItemsCompareUnequalAfterCheckingEarlierInitializers() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var literal = new DBSPI32Literal(1);

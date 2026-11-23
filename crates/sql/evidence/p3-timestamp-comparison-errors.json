@@ -1,0 +1,58 @@
+{
+  "scope": "Live Rust map-fusion and temporal comparisons diagnose the first failing timestamp conversion in operand order.",
+  "source_base": "ad1c02eddae8772070f9121d4f27a988c791c142",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/casts.rs": "2efc7195de54850a4896e7eb37551c4c146c99fdabc85e5f2c7c9fd24026ca3b",
+    "crates/sql/sql-expr/src/casts/comparison.rs": "69fb0c80ecfb6ab1a609de8f52a666e576c654b31d88ea136ee89d6bf40b5c62",
+    "crates/sql/sql-expr/src/casts/zoned_timestamp.rs": "65f7759e3ed5d06fd310e7b2e1575dd9502b26f133b20ee12118fe93366df7a1",
+    "crates/sql/sql-expr/src/lib.rs": "a13119547e41f98998c5902bc16dcefeef7e885dc107587ef32831b090755d0f",
+    "crates/sql/sql-opt-jni/src/live_equality.rs": "8b4e05d8875f2b202946c3afd3c80fea1ab40de897777b2c5b8401840603cb5d",
+    "crates/sql/sql-opt-jni/src/temporal.rs": "dad3ae03583ba2ca2c04619d4733457aad7073c0da8610644aab55b871a22d42",
+    "crates/sql/sql-opt/src/index_key_equivalence.rs": "14f5b176bbf0d99a9e45b0341f6c46abcd31238fd6db0a0af39719b579c4ba88",
+    "crates/sql/sql-opt/src/index_key_equivalence/bindings.rs": "8bf80c53f611dd6a1a6604b2f9800936a695159c5f6e1de10b129d012892ee9f",
+    "crates/sql/sql-opt/src/lib.rs": "8a9ce3e87b1b461c70e4c569165805dcf0d47ebfa6a2f4a30dfedee3570ff930",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "1074a29b75239d4aa38e3a96c13299dd00a228ab2b88e9ff5bb682c5e536ade0",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/ir/expression/literal/DBSPTimestampTzLiteral.java": "fc80d3a7cb6735002bceabb4f32af5044f7922558f47a11ed1c4eaaae1b9b92c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "d4177b37534d8c440a855946176c375287b5f0b6b2b4885335b08b956e47ebfe",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "80a9492d16301989e855a3fdfa3c9ae09cc3ffdce7f0c1fcf58c75d8437db1cd"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "68b14c8d53dd63f78ffc0e388a5e4ce05fa1ce44dd185ee729e7cfb7e942f64f",
+    "bin/sql-difftest": "a5717b5e063cea559745491f5db6cb985c718bd3ca211137585f291e4a657561",
+    "maven/tests.jar": "d5f8d80de6ee2d3fe57377c0f2b8f086a0eab68d955ae6431cbc735ee4d903cd",
+    "maven/sql-compiler.jar": "3cec223cb9f8a169167d569e9c275a6aff76179613afb4450985d8cc75c878c6"
+  },
+  "negative_control": {
+    "library_sha256": "215aaa12151284adabfa7816641b3132fff720ba7c93ddee4597795f9caf1a6d",
+    "failed_tests": [
+      "temporalKeysReportInvalidOffsetsInOperandOrder",
+      "fusionReportsTheFirstInvalidTimestampInRust"
+    ],
+    "java_compiler_sha256": "ba2d6ca503bc0ecc89dfd45e121a1b195306501a891467af5868f79b299a5351"
+  },
+  "rust_tests": 225,
+  "junit_tests": 182,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "164985356443ecc79d8c1f0a9b2901b5f6a9e7fa5717365f27eccc54fba9611c"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "dcc58c9be7a4c55acf48a5240ea835e54ba71b483a84a3960f3d003d613af3c4"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 222,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  }
+}

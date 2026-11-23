@@ -109,12 +109,16 @@ public final class DBSPTimestampTzLiteral extends DBSPLiteral {
     public Long getMicros() {
         if (this.value == null)
             return null;
-        long micros = DBSPTimestampLiteral.getMicrosSinceEpoch(this.value.getLocalTimestampString());
+        return getMicros(this.value);
+    }
+
+    public static long getMicros(TimestampWithTimeZoneString value) {
+        long micros = DBSPTimestampLiteral.getMicrosSinceEpoch(value.getLocalTimestampString());
         LocalDateTime dt = LocalDateTime.ofEpochSecond(
                 Math.floorDiv(micros, 1_000_000L),
                 (int)(Math.floorMod(micros, 1_000_000L)) * 1000,
                 ZoneOffset.UTC);
-        ZonedDateTime z = dt.atZone(this.value.getTimeZone().toZoneId());
+        ZonedDateTime z = dt.atZone(value.getTimeZone().toZoneId());
         Instant instant = z.toInstant();
         return instant.getEpochSecond() * 1_000_000L + instant.getNano() / 1_000;
     }

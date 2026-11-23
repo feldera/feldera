@@ -19,7 +19,7 @@ pub use error_sites::{error_source_reports_position, ErrorSites};
 pub use flatmap::{flatmap_generated_types, project_flatmap, rebuild_flatmap, replace_flatmap_input, FlatmapColumns};
 mod sql_index;
 pub use casts::{
-    decimal_literal_parts, expand_sql_casts, prepare_column_default, literal_is_positive, numeric_value_is_positive, same_literal_value, CastSafety, SimplifyWarning,
+    compare_timestamp_literals, TimestampComparison, decimal_literal_parts, expand_sql_casts, prepare_column_default, literal_is_positive, numeric_value_is_positive, same_literal_value, CastSafety, SimplifyWarning,
 };
 pub use sql_index::{adjust_index_root, adjust_sql_index};
 
