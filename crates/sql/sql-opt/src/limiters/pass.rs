@@ -361,9 +361,15 @@ pub fn insert_limiters_with_warnings(
         let projection = facts.projection.as_ref().filter(|p| p.monotone());
         let kind = op.operator_kind();
         match kind {
-            Some(Op::SourceMultiset | Op::View)
-                if identifier(op, "viewName") != Some("error_view") =>
-            {
+            Some(Op::View) if identifier(op, "viewName") == Some("error_view") => {
+                if inputs.len() != 1 {
+                    return Err(Error::new("ERROR_VIEW needs one input").into());
+                }
+                connect_error_view(&mut edit, body, id, &errors, clocks[&id])?;
+                names.replaced(id);
+                continue;
+            }
+            Some(Op::SourceMultiset | Op::View) => {
                 let columns = Columns::read(op)?;
                 if let Some(projection) = projection.filter(|_| !columns.declared.is_empty()) {
                     let name = identifier(op, "tableName")
@@ -415,14 +421,6 @@ pub fn insert_limiters_with_warnings(
                         edit.place_before(body, bound.port.operator, id)?;
                     }
                 }
-            }
-            Some(Op::View) if identifier(op, "viewName") == Some("error_view") => {
-                if inputs.len() != 1 {
-                    return Err(Error::new("ERROR_VIEW needs one input").into());
-                }
-                connect_error_view(&mut edit, body, id, &errors, clocks[&id])?;
-                names.replaced(id);
-                continue;
             }
             Some(Op::Sum | Op::AtomicSum | Op::Subtract | Op::AntiJoin) => {
                 if let Some(dst) = projection {
@@ -750,31 +748,51 @@ pub fn insert_limiters_with_warnings(
                     .collect::<Vec<_>>();
                 edit.remap_nested_outputs(id, &mapped)?;
             }
-            // The Java visitor clones these operators without deriving output bounds.
+            Some(Op::InputMapWithWaterline) => {
+                if let Some(&errors) = functions.get(&number) {
+                    edit.bind_keyed_error_type(id, edit.type_id(errors)?)?;
+                }
+            }
+            // These visitors only reconnect their inputs. Keep this match exhaustive
+            // so adding an operator requires checking its bound transfer.
             Some(
-                Op::Delta
-                | Op::ViewDeclaration
-                | Op::Now
+                Op::AggregateLinearPostprocessRetainKeys
+                | Op::AggregateZero
+                | Op::Apply
+                | Op::Apply2
+                | Op::ApplyN
+                | Op::BinaryDistinct
+                | Op::Chain
+                | Op::ConcreteAsofJoin
                 | Op::Constant
+                | Op::ControlledKeyFilter
+                | Op::Delay
+                | Op::DelayedIntegral
+                | Op::Delta
+                | Op::Differentiate
+                | Op::FlatMapIndex
                 | Op::IncrementalConstant
+                | Op::IndexedTopK
+                | Op::Integrate
+                | Op::IntegrateTraceRetainKeys
+                | Op::IntegrateTraceRetainNValues
+                | Op::IntegrateTraceRetainValues
+                | Op::Now
+                | Op::PartitionedRollingAggregateWithWaterline
+                | Op::PrimitiveAggregate
+                | Op::Rank
+                | Op::RowNumber
+                | Op::SourceLazyMap
+                | Op::SourceMap
                 | Op::StreamAggregate
                 | Op::StreamDistinct
+                | Op::UpsertFeedback
+                | Op::ViewDeclaration
                 | Op::Waterline
-                | Op::Apply
                 | Op::Weigh
-                | Op::Differentiate
-                | Op::Integrate
-                | Op::IndexedTopK
-                | Op::Rank
-                | Op::RowNumber,
+                | Op::WeightValidator,
             ) => {}
-            _ => {
-                return Err(Error::new(format!(
-                    "{} requires another InsertLimiters visitor",
-                    op.class()
-                ))
-                .into());
-            }
+            None => return Err(Error::new("expected an operator during limiter insertion").into()),
         }
         // withInputs constructs its projection after the operator's bound closure.
         names.visit(id, edit.node(id)?, &mut next)?;

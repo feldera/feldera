@@ -1,7 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
@@ -134,7 +137,7 @@ public class WaterlineProjectionTests {
     }
 
     @Test
-    public void weighRebuildsItsOutputWhenLimitersReplaceItsInput() {
+    public void mixedCircuitRebuildsOutputTypesWhenLimitersReplaceInputs() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         for (boolean hybrid : List.of(false, true)) {
             var compiler = new DBSPCompiler(new CompilerOptions());
@@ -159,12 +162,25 @@ public class WaterlineProjectionTests {
             var weigh = new DBSPWeighOperator(site, new DBSPISizeLiteral(1).closure(
                     indexed.getOutputIndexedZSetType().keyType.ref().var(), rowType.ref().var()), indexed.outputPort());
             circuit.addOperator(weigh);
-            Assert.assertTrue(LimiterInputs.canLowerCircuit(circuit));
+            var zero = new DBSPAggregateZeroOperator(site, rowType.defaultValue(), weigh.outputPort());
+            circuit.addOperator(zero);
+            var delta = new DBSPDifferentiateOperator(site, zero.outputPort());
+            circuit.addOperator(delta);
+            var distinct = new DBSPBinaryDistinctOperator(site, source.outputPort(), delta.outputPort(), false);
+            circuit.addOperator(distinct);
             var limiters = new InsertLimiters(compiler, circuit, new Monotonicity.MonotonicityInformation(),
                     Map.of(), Set.of());
             var result = hybrid ? new RustCircuitPass(compiler, limiters, new OptimizerSnapshots(compiler)).apply(circuit)
                     : limiters.apply(circuit);
-            var rebuilt = result.allOperators.getLast().to(DBSPWeighOperator.class);
+            var rebuiltDistinct = result.allOperators.getLast().to(DBSPBinaryDistinctOperator.class);
+            var rebuiltDelta = rebuiltDistinct.right().node().to(DBSPDifferentiateOperator.class);
+            var rebuiltZero = rebuiltDelta.input().node().to(DBSPAggregateZeroOperator.class);
+            var rebuilt = rebuiltZero.input().node().to(DBSPWeighOperator.class);
+            Assert.assertNotSame(zero.getType(), rebuiltZero.getType());
+            Assert.assertSame(rebuiltZero.getFunction().getType(), rebuiltZero.getOutputZSetElementType());
+            Assert.assertSame(rebuiltZero.getType(), rebuiltDelta.getType());
+            Assert.assertNotSame(rebuiltDistinct.left().outputType(), rebuiltDistinct.getType());
+            Assert.assertSame(rebuiltDelta.getType(), rebuiltDistinct.getType());
             Assert.assertNotSame(indexed, rebuilt.input().node());
             Assert.assertNotSame(weigh.getType(), rebuilt.getType());
             Assert.assertSame(rebuilt.input().getOutputIndexedZSetType().elementType, rebuilt.getOutputZSetElementType());

@@ -7,22 +7,14 @@ import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -30,30 +22,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWeighOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.WaterlineProjection;
@@ -79,31 +54,6 @@ public final class LimiterInputs {
             DBSPNegateOperator.class, DBSPDeindexOperator.class, DBSPStreamAntiJoinOperator.class,
             DBSPAggregateLinearPostprocessOperator.class, DBSPChainAggregateOperator.class, DBSPLagOperator.class);
 
-    private static final Set<Class<?>> OTHER_NATIVE_OPERATORS = Set.of(
-            DBSPDeltaOperator.class, DBSPViewDeclarationOperator.class, DBSPNestedOperator.class,
-            DBSPSourceMultisetOperator.class, DBSPViewOperator.class, DBSPSinkOperator.class, DBSPSumOperator.class,
-            DBSPAtomicSumOperator.class, DBSPSubtractOperator.class, DBSPConstantOperator.class,
-            DBSPIncrementalConstantOperator.class, DBSPDistinctOperator.class, DBSPPositiveOperator.class,
-            DBSPApplyOperator.class, DBSPWaterlineOperator.class, DBSPWeighOperator.class, DBSPWindowOperator.class,
-            DBSPDifferentiateOperator.class, DBSPIntegrateOperator.class, DBSPIndexedTopKOperator.class,
-            DBSPRankOperator.class, DBSPRowNumberOperator.class, DBSPAggregateOperator.class,
-            DBSPAntiJoinOperator.class, DBSPNowOperator.class, DBSPPartitionedRollingAggregateOperator.class,
-            DBSPStreamAggregateOperator.class, DBSPStreamDistinctOperator.class,
-            DBSPStreamJoinOperator.class, DBSPStreamJoinIndexOperator.class, DBSPAsofJoinOperator.class, DBSPStarJoinOperator.class,
-            DBSPStarJoinIndexOperator.class, DBSPStarJoinFilterMapOperator.class);
-
-    /** Whole-pass lowering uses the expansion facts for these operators. */
-    public static boolean canLowerCircuit(ICircuit circuit) {
-        for (var operator : circuit.getAllOperators()) {
-            if (!TRANSFER_OPERATORS.contains(operator.getClass()) && !OTHER_NATIVE_OPERATORS.contains(operator.getClass())
-                    && !BinaryJoinInputs.supports(operator.getClass()))
-                return false;
-            if (operator instanceof DBSPNestedOperator nested && !canLowerCircuit(nested))
-                return false;
-        }
-        return true;
-    }
-
     public static JsonNode projection(IMaybeMonotoneType type) {
         return WaterlineProjection.encode(type);
     }
@@ -128,6 +78,11 @@ public final class LimiterInputs {
         for (var operator : circuit.getAllOperators()) {
             if (operator instanceof DBSPNestedOperator nested) {
                 recordTransferRoots(pass, nested, functions);
+                continue;
+            }
+            if (operator instanceof DBSPInputMapWithWaterlineOperator keyed) {
+                // This wrapper is shared by every error reader and omitted from the source's wire fields.
+                functions.put(keyed.id, keyed.outputType(1));
                 continue;
             }
             if (operator instanceof DBSPSimpleOperator simple

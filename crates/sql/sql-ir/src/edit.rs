@@ -9,7 +9,7 @@ use crate::{Circuit, Error, Field, InnerKind, Node, NodeClass, NodeId};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub struct CircuitEditor {
-    circuit: Circuit,
+    pub(super) circuit: Circuit,
     next: Option<u64>,
     changed: BTreeSet<NodeId>,
     rewired: BTreeSet<NodeId>,
@@ -857,12 +857,10 @@ impl CircuitEditor {
                 self.implicit_outputs.insert(port, errors.into());
             }
         }
-        self.circuit.rebuild(
-            &replacements,
-            self.changed,
-            &self.rewired,
-            &self.implicit_outputs,
-        )
+        let changed = std::mem::take(&mut self.changed);
+        let rewired = std::mem::take(&mut self.rewired);
+        let implicit_outputs = std::mem::take(&mut self.implicit_outputs);
+        self.rebuild(&replacements, changed, &rewired, &implicit_outputs)
     }
 }
 
@@ -1156,6 +1154,30 @@ impl CircuitEditor {
 }
 
 impl CircuitEditor {
+    /// The keyed source keeps one error ZSet for its lifetime. Its circuit
+    /// encoding omits the wrapper, so a live pass can supply the original root.
+    pub fn bind_keyed_error_type(
+        &mut self,
+        source: NodeId,
+        errors: crate::TypeId,
+    ) -> Result<(), Error> {
+        if self.node(source)?.operator_kind() != Some(crate::OperatorKind::InputMapWithWaterline)
+            || self.type_kind(errors)? != crate::TypeKind::ZSet
+        {
+            return Err(Error::new(
+                "expected a keyed waterline source and its error ZSet",
+            ));
+        }
+        self.implicit_outputs.insert(
+            crate::OutputPort {
+                operator: source,
+                number: 1,
+            },
+            errors.into(),
+        );
+        Ok(())
+    }
+
     /// Replace the source at its existing schedule position. The resulting source
     /// supplies indexed data, errors, and its waterline on three distinct ports.
     pub fn replace_with_keyed_waterline(
@@ -1177,14 +1199,8 @@ impl CircuitEditor {
             crate::wire::check_links(&v, &self.circuit.nodes)?;
             source.fields.insert(k.into(), v);
         }
-        self.implicit_outputs.insert(
-            crate::OutputPort {
-                operator: site,
-                number: 1,
-            },
-            error_type.into(),
-        );
         self.circuit.nodes.insert(site, source);
+        self.bind_keyed_error_type(site, error_type)?;
         self.changed.insert(site);
         Ok(())
     }

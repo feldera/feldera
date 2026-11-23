@@ -160,7 +160,8 @@ def main():
     if library:
         if file_digest(library) != provenance["optimizer_library_sha256"]:
             raise ValueError("Rust optimizer library changed during replay")
-        result = compare_live_optimizer(selected, [direct], [replay], full_trace=args.full_optimizer_trace)
+        result = compare_live_optimizer(selected, [direct], [replay], full_trace=args.full_optimizer_trace,
+                                        require_native_limiters=True)
         result["equal"] = result["mismatches"] == 0
     else:
         result = compare(direct, replay)

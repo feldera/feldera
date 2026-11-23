@@ -360,6 +360,66 @@ fn rebuilt_weigh_wraps_the_new_index_value_and_shares_its_output_with_readers() 
 }
 
 #[test]
+fn rebuilt_readers_share_keyed_errors_but_box_each_waterline_separately() {
+    use feldera_sql_ir::{CircuitEditor, OutputPort};
+
+    let port = |id, number| json!({"operator":{"node":id},"outputNumber":number});
+    let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+        {"class":"DBSPInputMapWithWaterlineOperator","id":1,"inputs":[],
+         "lub":{"class":"DBSPClosureExpression","id":10,"type":{
+            "class":"DBSPTypeFunction","id":11,"resultType":{
+              "class":"DBSPTypeTimestamp","id":12,"mayBeNull":false,"sourceEmpty":true}}}},
+        {"class":"DBSPConstantOperator","id":2,"inputs":[],
+         "outputType":{"class":"DBSPTypeZSet","id":13}},
+        {"class":"DBSPDelayOperator","id":3,"inputs":[port(2,0)],"outputType":{"node":13}},
+        {"class":"DBSPDelayOperator","id":4,"inputs":[port(2,0)],"outputType":{"node":13}},
+        {"class":"DBSPDelayOperator","id":5,"inputs":[port(2,0)],"outputType":{"node":13}},
+        {"class":"DBSPDelayOperator","id":6,"inputs":[port(2,0)],"outputType":{"node":13}}
+    ]});
+    let mut edit = CircuitEditor::new(Circuit::from_json(graph).unwrap());
+    let source = NodeId::Outer(1);
+    let errors = edit.type_id(NodeId::Inner(13)).unwrap();
+    edit.bind_keyed_error_type(source, errors).unwrap();
+    for (reader, number) in [(3, 1), (4, 1), (5, 2), (6, 2)] {
+        edit.rewire_inputs(
+            NodeId::Outer(reader),
+            &[OutputPort {
+                operator: source,
+                number,
+            }],
+        )
+        .unwrap();
+    }
+    let circuit = edit.finish().unwrap();
+    let output = |id| {
+        circuit
+            .node(NodeId::Outer(id))
+            .unwrap()
+            .edge("outputType")
+            .unwrap()
+    };
+    assert_eq!(output(3), errors.into());
+    assert_eq!(output(4), errors.into());
+    assert_ne!(output(5), output(6));
+    let args = |id| {
+        let boxed = circuit.node(output(id)).unwrap();
+        assert_eq!(boxed.class(), "DBSPTypeTypedBox");
+        boxed.edges("typeArgs").unwrap()
+    };
+    let left = args(5);
+    let right = args(6);
+    assert_eq!(left[0], NodeId::Inner(12));
+    assert_eq!(left[0], right[0]);
+    assert_ne!(left[1], right[1]);
+    for dynamic in [left[1], right[1]] {
+        assert_eq!(
+            circuit.node(dynamic).unwrap().data("name"),
+            Some(&json!("DynData"))
+        );
+    }
+}
+
+#[test]
 fn rebuilt_chains_preserve_declared_inputs_and_construct_map_outputs() {
     let port = |id| json!({"operator":{"node":id},"outputNumber":0});
     let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[

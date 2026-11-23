@@ -2,7 +2,10 @@
 //! A removed operator may own the first definition of a surviving type or
 //! relational origin. Emit those definitions at their first surviving use.
 
-use super::{BodyOrder, Circuit, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort, wire};
+use super::{
+    BodyOrder, Circuit, CircuitEditor, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort,
+    wire,
+};
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -67,7 +70,7 @@ impl Circuit {
             });
         }
         if aliases.is_empty() {
-            return self.rebuild(
+            return CircuitEditor::new(self).rebuild(
                 &BTreeMap::new(),
                 changed,
                 &BTreeSet::new(),
@@ -108,7 +111,7 @@ impl Circuit {
             .iter()
             .map(|(&id, &base)| (id, Replacement::Equivalent(base)))
             .collect();
-        self.rebuild(&replacements, changed, &BTreeSet::new(), &BTreeMap::new())
+        CircuitEditor::new(self).rebuild(&replacements, changed, &BTreeSet::new(), &BTreeMap::new())
     }
 
     /// Remove the selected unary, stream-preserving operators. The caller proves
@@ -163,14 +166,16 @@ impl Circuit {
                 "cannot bypass an operator outside the circuit".into(),
             ));
         }
-        self.rebuild(
+        CircuitEditor::new(self).rebuild(
             &replacements,
             BTreeSet::new(),
             &BTreeSet::new(),
             &implicit_outputs,
         )
     }
+}
 
+impl CircuitEditor {
     pub(super) fn rebuild(
         mut self,
         aliases: &BTreeMap<NodeId, Replacement>,
@@ -187,21 +192,21 @@ impl Circuit {
             &mut rebuilt_inputs,
         )?;
         let mut writer = Writer {
-            circuit: &self,
+            circuit: self.circuit(),
             aliases,
             inherited_types,
-            emitted: HashSet::with_capacity(self.nodes.len()),
+            emitted: HashSet::with_capacity(self.circuit().nodes.len()),
             nodes: BTreeMap::new(),
             origins: OriginDefinitions::default(),
         };
-        for node in self.nodes.values() {
+        for node in self.circuit().nodes.values() {
             if let Some(Field::Data(origin)) = node.field("provenance") {
                 writer.origins.collect(origin)?;
             }
         }
-        writer.node(self.root, 0)?;
-        let mut circuit = wire::validated(self.root, writer.nodes)?;
-        circuit.live_relations = self.live_relations;
+        writer.node(self.circuit().root, 0)?;
+        let mut circuit = wire::validated(self.circuit().root, writer.nodes)?;
+        circuit.live_relations = self.circuit().live_relations;
         Ok(CircuitRewrite {
             circuit,
             rebuilt_inputs,
@@ -218,8 +223,8 @@ impl Circuit {
         rebuilt_inputs: &mut Vec<NodeId>,
     ) -> Result<BTreeMap<NodeId, NodeId>, Error> {
         let mut inherited = BTreeMap::new();
-        for id in self.operator_order(BodyOrder::Postorder)? {
-            let node = &self.nodes[&id];
+        for id in self.circuit().operator_order(BodyOrder::Postorder)? {
+            let node = self.node(id)?;
             if let Some(Field::Array(body)) = node.field("allOperators") {
                 if body
                     .iter()
@@ -244,8 +249,8 @@ impl Circuit {
                     Some(Op::Apply | Op::Apply2 | Op::ApplyN)
                 )
             {
-                let function = &self.nodes[&node.edge("function")?];
-                let function_type = &self.nodes[&function.edge("type")?];
+                let function = self.node(node.edge("function")?)?;
+                let function_type = self.node(function.edge("type")?)?;
                 inherited.insert(id, function_type.edge("resultType")?);
             }
             // A flattened sum can acquire a new first input even when all of its producers survive.
@@ -262,8 +267,14 @@ impl Circuit {
                 let output = if chain_only_filters(node)? {
                     node.edge("inputType")?
                 } else {
-                    self.insert_inner(self.nodes[&node.edge("outputType")?].clone())?
+                    self.derive_inner(node.edge("outputType")?, [])?
                 };
+                inherited.insert(id, output);
+                continue;
+            }
+            if node.operator_kind() == Some(Op::AggregateZero) {
+                // Its zero expression survives, but the constructor wraps it in a fresh ZSet.
+                let output = self.derive_inner(node.edge("outputType")?, [])?;
                 inherited.insert(id, output);
                 continue;
             }
@@ -271,27 +282,24 @@ impl Circuit {
                 // withInputs creates a new error-stream ZSet. Its element is
                 // shared with the error closure, even if another operator
                 // still references the old ZSet wrapper.
-                let old = node.edge("errorType")?;
-                let mut wrapper = self.nodes[&old].clone();
-                let function = self.nodes[&node.edge("error")?].edge("type")?;
-                let result = self.nodes[&function].edge("resultType")?;
-                wrapper
-                    .fields
-                    .insert("elementType".into(), Field::Reference(result));
-                let fresh = self.insert_inner(wrapper)?;
-                self.nodes
+                let function = self.node(node.edge("error")?)?.edge("type")?;
+                let result = self.type_id(self.node(function)?.edge("resultType")?)?;
+                let fresh = self.zset_type(result)?;
+                self.circuit
+                    .nodes
                     .get_mut(&id)
                     .expect("visited operator")
                     .fields
-                    .insert("errorType".into(), Field::Reference(fresh));
+                    .insert("errorType".into(), Field::Reference(fresh.into()));
             }
-            let node = &self.nodes[&id];
+            let node = self.node(id)?;
             if !new_chain
                 && (node.field("outputType").is_none()
                     || !matches!(
                         node.operator_kind(),
                         Some(
                             Op::AntiJoin
+                                | Op::BinaryDistinct
                                 | Op::AtomicSum
                                 | Op::Delay
                                 | Op::Delta
@@ -323,103 +331,94 @@ impl Circuit {
             {
                 continue;
             }
-            let mut port = node.inputs().next().expect("rewritten input");
-            let mut visited = BTreeSet::new();
-            loop {
-                if !visited.insert(port) {
-                    return Err(Error(format!("cyclic nested output at {port:?}")));
+            let kind = node.operator_kind();
+            let primary_input = usize::from(kind == Some(Op::BinaryDistinct));
+            let port = node
+                .inputs()
+                .nth(primary_input)
+                .ok_or_else(|| Error::new(format!("missing input {primary_input} on {id:?}")))?;
+            let ty = self.rebuilt_port_type(port, aliases, &inherited, implicit_outputs)?;
+            let node = self.node(id)?;
+            if new_chain {
+                let filters_only = chain_only_filters(node)?;
+                self.circuit
+                    .nodes
+                    .get_mut(&id)
+                    .expect("visited chain")
+                    .fields
+                    .insert("inputType".into(), Field::Reference(ty));
+                if filters_only {
+                    inherited.insert(id, ty);
                 }
-                if let Some(replacement) = aliases.get(&port.operator) {
-                    port = replacement.port(port);
-                }
-                let source = port.operator;
-                let operator = &self.nodes[&source];
-                if operator.operator_kind() == Some(Op::Nested) {
-                    let Some(Field::Array(outputs)) = operator.field("internalOutputs") else {
-                        unreachable!()
-                    };
-                    port = super::wire::output(&outputs[port.number])
-                        .expect("validated nested output");
-                    continue;
-                }
-                let ty = match port.number {
-                    0 => inherited
-                        .get(&source)
-                        .copied()
-                        .or_else(|| operator.field("outputType").and_then(Field::node_id)),
-                    1 => operator
-                        .field("errorType")
-                        .and_then(Field::node_id)
-                        .or_else(|| {
-                            implicit_outputs
-                                .get(&crate::OutputPort {
-                                    operator: source,
-                                    number: 1,
-                                })
-                                .copied()
-                        }),
-                    _ => None,
-                }
-                .ok_or_else(|| Error(format!("cannot inherit output type of {port:?}")))?;
-                if new_chain {
-                    let filters_only = chain_only_filters(node)?;
-                    self.nodes
-                        .get_mut(&id)
-                        .expect("visited chain")
-                        .fields
-                        .insert("inputType".into(), Field::Reference(ty));
-                    if filters_only {
-                        inherited.insert(id, ty);
-                    }
-                    break;
-                }
-                let indexed_result = if node.operator_kind() == Some(Op::IndexedTopK) {
-                    node.field("outputProducer").and_then(Field::node_id)
-                } else {
-                    None
-                };
-                let output = if node.operator_kind() == Some(Op::Weigh) {
-                    // Weigh wraps the new input's value type in its own ZSet.
-                    let element = self.nodes[&ty].edge("elementType")?;
-                    let mut wrapper = self.nodes[&node.edge("outputType")?].clone();
-                    wrapper
-                        .fields
-                        .insert("elementType".into(), Field::Reference(element));
-                    for key in ["sourceEmpty", "position"] {
-                        if let Some(value) = self.nodes[&element].field(key) {
-                            wrapper.fields.insert(key.into(), value.clone());
-                        } else {
-                            wrapper.fields.shift_remove(key);
-                        }
-                    }
-                    self.insert_inner(wrapper)?
-                } else if let Some(producer) = indexed_result {
-                    let function_type = self.nodes[&producer].edge("type")?;
-                    let row = self.nodes[&function_type].edge("resultType")?;
-                    let mut indexed = self.nodes[&ty].clone();
-                    indexed
-                        .fields
-                        .insert("elementType".into(), Field::Reference(row));
-                    self.insert_inner(indexed)?
-                } else {
-                    ty
-                };
-                inherited.insert(id, output);
-                break;
+                continue;
             }
+            let indexed_result = if node.operator_kind() == Some(Op::IndexedTopK) {
+                node.field("outputProducer").and_then(Field::node_id)
+            } else {
+                None
+            };
+            let output = if node.operator_kind() == Some(Op::Weigh) {
+                // Weigh wraps the new input's value type in its own ZSet.
+                let element = self.type_id(self.node(ty)?.edge("elementType")?)?;
+                self.zset_type(element)?.into()
+            } else if let Some(producer) = indexed_result {
+                let function_type = self.node(producer)?.edge("type")?;
+                let row = self.node(function_type)?.edge("resultType")?;
+                self.derive_inner(ty, [("elementType", Field::Reference(row))])?
+            } else {
+                ty
+            };
+            inherited.insert(id, output);
         }
         Ok(inherited)
     }
 
-    fn insert_inner(&mut self, node: super::Node) -> Result<NodeId, Error> {
-        let next = match self.nodes.last_key_value() {
-            Some((NodeId::Inner(n), _)) => n.checked_add(1),
-            _ => Some(0),
+    fn rebuilt_port_type(
+        &mut self,
+        mut port: OutputPort,
+        aliases: &BTreeMap<NodeId, Replacement>,
+        inherited: &BTreeMap<NodeId, NodeId>,
+        implicit_outputs: &BTreeMap<OutputPort, NodeId>,
+    ) -> Result<NodeId, Error> {
+        let mut visited = BTreeSet::new();
+        loop {
+            if !visited.insert(port) {
+                return Err(Error(format!("cyclic nested output at {port:?}")));
+            }
+            if let Some(replacement) = aliases.get(&port.operator) {
+                port = replacement.port(port);
+            }
+            let producer = self.node(port.operator)?;
+            if producer.operator_kind() == Some(Op::Nested) {
+                let Some(Field::Array(outputs)) = producer.field("internalOutputs") else {
+                    return Err(Error::new("missing nested outputs"));
+                };
+                port = outputs
+                    .get(port.number)
+                    .and_then(OutputPort::from_field)
+                    .ok_or_else(|| Error::new(format!("missing nested output {port:?}")))?;
+                continue;
+            }
+            return match port.number {
+                0 => inherited
+                    .get(&port.operator)
+                    .copied()
+                    .map(Ok)
+                    .unwrap_or_else(|| producer.edge("outputType")),
+                1 => implicit_outputs
+                    .get(&port)
+                    .copied()
+                    .map(Ok)
+                    .unwrap_or_else(|| producer.edge("errorType")),
+                2 if producer.operator_kind() == Some(Op::InputMapWithWaterline) => {
+                    // outputType(2) constructs a separate erased box for every reader.
+                    let closure = self.node(producer.edge("lub")?)?.edge("type")?;
+                    let result = self.type_id(self.node(closure)?.edge("resultType")?)?;
+                    Ok(self.dynamic_box_type(result)?.into())
+                }
+                _ => Err(Error(format!("cannot inherit output type of {port:?}"))),
+            };
         }
-        .ok_or_else(|| Error::new("inner node identity exhausted"))?;
-        let fresh = NodeId::Inner(next);
-        self.nodes.insert(fresh, node);
-        Ok(fresh)
     }
 }
 
