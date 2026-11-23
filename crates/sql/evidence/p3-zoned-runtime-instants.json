@@ -1,0 +1,61 @@
+{
+  "scope": "The live optimizer compares zoned literals by the runtime instant resolved by the producer JDK. Older inputs use the serialized spelling.",
+  "source_base": "6fba01a2900f17e8cf847e91c0577cc229d22cc5",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/casts/comparison.rs": "57d6e48323518aa72f161617e0d1228e08fb53711b27a917f85fc5b28c4bc201",
+    "crates/sql/sql-expr/src/casts/zoned_timestamp.rs": "847563987483a83a0fe896817f2b9307277e46edf0980c3d2d32f7f6e276f9da",
+    "crates/sql/sql-ir/src/gen2.rs": "2d86fd6f00b7d4a6a6209f2b8d7de03b92ccecb7592aa32437959d27c5d78482",
+    "crates/sql/sql-opt/src/monotonicity/literal.rs": "87aa9bd616aef031cb8ff5c99ec1dba157507a7c80f69aff6a8d9ed1dc120a0d",
+    "crates/sql/sql-opt/src/terms.rs": "4b29cd58a5703dbe6695bc0c429ae5616cbed43c4123d87c98540105f6170163",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/OptimizerExpressionWriter.java": "d19d0f46ee85c630012c0cd3ed267565eafbed91382604d0941a45b2511d6552",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "25ec781802f5ce197e3f70e95ebf9294bbbb3492fd5a7249b92e367732496b38"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "750d55025ed72ed9446935abec8fb67ede622ccfd5a029020d1708cec5a6e3c8",
+    "bin/sql-difftest": "dd7998687ab43be3e73671d585273e8f7c7a3ec63314e7bd6c33f35f776fe48b",
+    "maven/tests.jar": "ca47d28bc9a0fd08d4ff04e703b8252b7de35d2a7c5ba9787640068d956622a7",
+    "maven/sql-compiler.jar": "69f75be14b653e3ce6a057f6e5b1eefbe88239182daf10a60463151f10cd520b"
+  },
+  "negative_control": {
+    "library_sha256": "f9164cfacb65d25f3138697fb442114ba0b8d592d518e059eff314b0e0acbe28",
+    "failed_test": "temporalKeyEqualityUsesTheInstantEmittedByTheCompiler"
+  },
+  "rust_tests": 221,
+  "junit_tests": 149,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 29,
+      "ordered_s4_observations": 11534,
+      "mismatches": 0,
+      "population_sha256": "9a6d28ae145b5c936ea3af208eff37450784953da9ca97e239e3adab2af5abd8",
+      "receipt_sha256": "ec89f8b6c239f355590da48393a0feec42549675c119f08ec3ffe635c99bb1f7"
+    },
+    "gen2": {
+      "cases": 29,
+      "ordered_s4_observations": 11708,
+      "mismatches": 0,
+      "population_sha256": "07fa1d861246b918eae4bedc5fed5a41b45ab5670fca1ab9dae6e3df48280737",
+      "receipt_sha256": "33788d339f5b1bafd4ba48c3520b48dabbc8f8efee89308b8cf6ea78f26cde3a"
+    }
+  },
+  "zone_audit": {
+    "oracle": "DBSPTimestampTzLiteral.getMicros converted to a UTC literal, with equality verified by direct Java",
+    "dates": [
+      "1890-07-15",
+      "1942-07-15",
+      "1974-02-01",
+      "2020-07-15",
+      "2026-07-15",
+      "2040-07-15"
+    ],
+    "local_time": "12:30:01",
+    "zone_ids": 632,
+    "pairs": 3792,
+    "previous_mismatches": 6,
+    "mismatches": 0,
+    "audit_source_sha256": "c558f64e75c37d70ad2563bd0b4fd8930e8122a75a11833bd0b2488610da0485",
+    "previous_log_sha256": "181483ee59e6b262c3bb53641874484844e876ac140a9d9fe762c41191dfa358",
+    "log_sha256": "7bcfab979ada2c651c8fbb6463844fd813858985f9c9842d83398ca7d22f6c7e"
+  }
+}

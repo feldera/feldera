@@ -115,7 +115,7 @@ fn public_field(id: NodeId, name: &str, field: &Field) -> bool {
         NodeId::Inner(_) => {
             !matches!(
                 name,
-                "sourceEmpty" | "singleton" | "cachedEmptySetResult" | "originalStruct"
+                "sourceEmpty" | "singleton" | "cachedEmptySetResult" | "originalStruct" | "runtimeMicros"
             ) && (name != "position" || valid_position(field))
         }
     }

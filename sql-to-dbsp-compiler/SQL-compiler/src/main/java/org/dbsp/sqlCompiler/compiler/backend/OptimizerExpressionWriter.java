@@ -3,9 +3,11 @@ package org.dbsp.sqlCompiler.compiler.backend;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.util.JsonStream;
 
 import java.nio.charset.StandardCharsets;
+import java.time.DateTimeException;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 
@@ -27,6 +29,23 @@ class OptimizerExpressionWriter extends ToJsonInnerVisitor {
 
     OptimizerExpressionWriter(DBSPCompiler compiler, JsonStream stream, int verbosity, boolean replayMetadata) {
         super(compiler, stream, verbosity, replayMetadata);
+    }
+
+    @Override
+    public void postorder(DBSPTimestampTzLiteral literal) {
+        if (literal.value != null) {
+            // DBSPTimestampTzLiteral.sameValue compares the instant resolved by this JDK's tzdata.
+            // Retain the original spelling as well for SQL printing and artifact emission.
+            try {
+                long micros = java.util.Objects.requireNonNull(literal.getMicros());
+                this.stream.label("runtimeMicros").append(micros);
+            } catch (DateTimeException invalidZone) {
+                // A custom GMT offset can exceed java.time's range. Walking the
+                // graph does not demand its instant until an operation compares it.
+                this.stream.label("runtimeMicros").appendNull();
+            }
+        }
+        super.postorder(literal);
     }
 
     @Override

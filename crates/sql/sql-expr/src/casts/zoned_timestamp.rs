@@ -1,9 +1,47 @@
 //! Convert Calcite timestamp-with-zone literals to runtime microseconds.
 use chrono::{Datelike, Days, FixedOffset, NaiveDate, NaiveDateTime, Offset, TimeZone, Weekday};
 
+use feldera_sql_ir::{Error, Node};
+
+#[derive(PartialEq)]
+enum TimestampValue {
+    Null,
+    Instant(i64),
+}
+
+fn runtime_value(node: &Node) -> Result<Option<TimestampValue>, Error> {
+    let Some(spelling) = node.data("value").filter(|v| !v.is_null()) else {
+        return Ok(Some(TimestampValue::Null));
+    };
+    let micros = match node.data("runtimeMicros") {
+        // The live JDK could not resolve this spelling. The caller retains its diagnostic.
+        Some(value) if value.is_null() => None,
+        Some(value) => Some(
+            value
+                .as_i64()
+                .ok_or_else(|| Error::new("invalid timestamp runtimeMicros"))?,
+        ),
+        None => spelling.as_str().and_then(zoned_micros),
+    };
+    Ok(micros.map(TimestampValue::Instant))
+}
+
+pub(super) fn same_value(a: &Node, b: &Node) -> Result<Option<bool>, Error> {
+    // Equal spellings in an older snapshot do not require a zone lookup.
+    if a.field("runtimeMicros").is_none()
+        && b.field("runtimeMicros").is_none()
+        && a.data("value") == b.data("value")
+    {
+        return Ok(Some(true));
+    }
+    Ok(runtime_value(a)?
+        .zip(runtime_value(b)?)
+        .map(|(a, b)| a == b))
+}
+
 /// Calcite stores local time and a zone name. Java resolves an overlap with
 /// the earlier offset and moves a time in a spring gap forward by the gap.
-pub(super) fn zoned_micros(value: &str) -> Option<i64> {
+fn zoned_micros(value: &str) -> Option<i64> {
     let (time, zone) = value.rsplit_once(' ')?;
     let local = NaiveDateTime::parse_from_str(time, "%Y-%m-%d %H:%M:%S%.f").ok()?;
     // java.util.TimeZone.toZoneId resolves the Java short IDs before consulting
@@ -152,6 +190,11 @@ mod tests {
                 "2024-11-03 05:30:00 UTC",
             ),
             ("2020-01-01 05:30:00 GMT+05:30", "2020-01-01 00:00:00 UTC"),
+            ("2020-01-01 05:30:00 GMT+530", "2020-01-01 00:00:00 UTC"),
+            (
+                "1975-02-23 03:00:00 SystemV/CST6CDT",
+                "1975-02-23 08:00:00 UTC",
+            ),
             (
                 "1974-01-06 02:30:00 SystemV/EST5EDT",
                 "1974-01-06 07:30:00 UTC",

@@ -668,6 +668,34 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void temporalKeyEqualityUsesTheInstantEmittedByTheCompiler() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var type = DBSPTypeTimestampTz.INSTANCE;
+        var format = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss");
+        for (var spelling : List.of("1974-02-01 12:30:01 America/Tijuana", "2040-07-15 12:30:01 Africa/Casablanca")) {
+            var local = new TimestampWithTimeZoneString(spelling);
+            var value = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type, local);
+            long second = value.getMicros() / 1_000_000;
+            for (int shift : List.of(-3600, 0, 3600)) {
+                var utc = LocalDateTime.ofEpochSecond(second + shift, 0, ZoneOffset.UTC);
+                var expected = new TimestampWithTimeZoneString(format.format(utc) + " UTC");
+                var other = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type, expected);
+                assertCompatible(compiler, bound(value), bound(other), shift == 0);
+                assertCompatible(compiler, bound(other), bound(value), shift == 0);
+            }
+        }
+        // The JDK accepts this custom TimeZone, but java.time cannot represent
+        // its offset. An earlier opcode mismatch must still avoid comparing it.
+        var invalid = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
+        var first = bound(invalid);
+        var strict = new TemporalFilter(first.parameter(), invalid.deepCopy(), first.withNow(), DBSPOpcode.GT);
+        Assert.assertFalse(first.compatible(strict));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"))
+            Assert.assertFalse(NativeTemporalComparisons.canMerge(compiler, List.of(first), strict));
+    }
+
+    @Test
     public void blockItemsCompareUnequalAfterCheckingEarlierInitializers() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var literal = new DBSPI32Literal(1);

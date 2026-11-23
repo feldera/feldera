@@ -97,7 +97,10 @@ pub fn literal_waterline(
         }
         _ => {
             let required = edit.with_nullability(ty, false)?;
-            edit.make_expr(site, kind, required, [("value", Field::Data(value))])?
+            let instant = edit.node(site)?.field("runtimeMicros").cloned();
+            let fields = std::iter::once(("value", Field::Data(value)))
+                .chain(instant.map(|micros| ("runtimeMicros", micros)));
+            edit.make_expr(site, kind, required, fields)?
         }
     };
     Ok(LiteralWaterline::Bounded {

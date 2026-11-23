@@ -1,5 +1,5 @@
 //! Comparisons between scalar literals in the optimizer's Simplify pass.
-use super::zoned_timestamp::zoned_micros;
+use super::zoned_timestamp;
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,
     NodeId, TypeKind,
@@ -98,18 +98,7 @@ pub fn same_literal_value(
                 compare_numbers(editor.type_kind(ty)?, a, b)? == Some(Ordering::Equal)
             }
         }
-        Expr::TimestampTzLiteral if a.data("value") != b.data("value") => {
-            let (Some(a), Some(b)) = (a.data("value"), b.data("value")) else {
-                return Ok(Some(false));
-            };
-            let (Some(a), Some(b)) = (
-                a.as_str().and_then(zoned_micros),
-                b.as_str().and_then(zoned_micros),
-            ) else {
-                return Ok(None);
-            };
-            a == b
-        }
+        Expr::TimestampTzLiteral if left != right => return zoned_timestamp::same_value(a, b),
         kind if kind.wire_name().ends_with("Literal") => a.data("value") == b.data("value"),
         _ => return Err(Error::new("expected a scalar literal")),
     };
