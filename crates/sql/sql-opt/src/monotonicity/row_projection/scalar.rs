@@ -1,7 +1,7 @@
 //! Scalar literals and arithmetic inside a projected waterline closure.
-use super::{ProjectedValue, Row, RowType, Shape, type_number};
+use super::{type_number, ProjectedValue, RowType, Shape};
 use crate::monotonicity::binary::{
-    BinaryOperation, BinaryWaterline, Domain, Operand, binary_waterline,
+    binary_waterline, BinaryOperation, BinaryWaterline, Domain, Operand,
 };
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, TypeKind as Ty,
@@ -154,74 +154,7 @@ fn operand(
     })
 }
 
-impl Row {
-    /// Evaluate scalar operations in expression order. Casts and unary
-    /// operations can alternate with arithmetic at every level of a SQL projection.
-    pub(super) fn scalar_operation(
-        &mut self,
-        edit: &mut CircuitEditor,
-        expression: ExpressionId,
-        depth: usize,
-    ) -> Result<Option<ProjectedValue>, Error> {
-        enum Step {
-            Read(ExpressionId),
-            Unary(ExpressionId),
-            Binary(ExpressionId, [ExpressionId; 2]),
-        }
-        let mut pending = vec![Step::Read(expression)];
-        let mut values = Vec::new();
-        let mut active = std::collections::HashSet::new();
-        while let Some(step) = pending.pop() {
-            let (id, value) = match step {
-                Step::Read(id) => {
-                    let node = edit.node(id.into())?;
-                    match edit.expr_kind(id)? {
-                        Expr::Binary | Expr::TimeAddSub => {
-                            let left = edit.expression(node.edge("left")?)?;
-                            let right = edit.expression(node.edge("right")?)?;
-                            pending.extend([
-                                Step::Binary(id, [left, right]),
-                                Step::Read(right),
-                                Step::Read(left),
-                            ]);
-                        }
-                        Expr::Cast | Expr::Unary | Expr::UnsignedWrap | Expr::UnsignedUnwrap => {
-                            let source = edit.expression(node.edge("source")?)?;
-                            pending.extend([Step::Unary(id), Step::Read(source)]);
-                        }
-                        _ => {
-                            let Some(value) = self.visit(edit, id, depth + 1)? else {
-                                return Ok(None);
-                            };
-                            values.push(value);
-                            continue;
-                        }
-                    }
-                    if !active.insert(id) {
-                        return Err(Error::new("cycle in a scalar waterline expression"));
-                    }
-                    continue;
-                }
-                Step::Unary(id) => {
-                    let source = values.pop().expect("visited unary operand");
-                    (id, unary_bound(edit, id, source)?)
-                }
-                Step::Binary(id, operands) => {
-                    let right = values.pop().expect("visited right operand");
-                    let left = values.pop().expect("visited left operand");
-                    (id, binary_bound(edit, id, operands, [left, right])?)
-                }
-            };
-            let Some(value) = value else { return Ok(None) };
-            active.remove(&id);
-            self.record_clock(id, Some(&value));
-            values.push(value);
-        }
-        Ok(values.pop())
-    }
-}
-
-fn unary_bound(
+pub(super) fn unary_bound(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
     source: ProjectedValue,
@@ -246,7 +179,7 @@ fn unary_bound(
     Ok(projected)
 }
 
-fn binary_bound(
+pub(super) fn binary_bound(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
     [left, right]: [ExpressionId; 2],
@@ -305,8 +238,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn deep_arithmetic_and_unary_clock_bounds_include_each_intermediate_expression()
-    -> Result<(), Error> {
+    fn deep_arithmetic_and_unary_clock_bounds_include_each_intermediate_expression(
+    ) -> Result<(), Error> {
         let arena = Circuit::from_json(json!({
             "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
         }))?;
