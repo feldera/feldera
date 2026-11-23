@@ -41,6 +41,11 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-23. The hybrid accepts row equality over an empty tuple with no
+  materialized waterline. All 24 detached LATENESS compilations matched
+  direct Java through optimizer observations and emission.
+  [Binary waterline replay](crates/sql/evidence/p3-binary-operand-waterlines.json)
+
 - 2026-11-23. Rust shares equivalent output columns in fused maps and handles
   assignments to uninitialized locals during waterline analysis. The previous
   JNI builds each failed the corresponding regression. On the waterline build,

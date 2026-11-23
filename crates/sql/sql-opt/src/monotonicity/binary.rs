@@ -49,7 +49,7 @@ pub fn binary_waterline(
                 "ADD" if both => Both,
                 "SUB" if both && right.constant => InheritLeft,
                 _ => None,
-            }
+            };
         }
         Domain::Scalar => {}
     }
@@ -88,7 +88,8 @@ pub struct BinaryOperation<'a> {
 
 impl BinaryOperation<'_> {
     /// Construct a bound at the SQL operation's source location. Only the types
-    /// and identities of the operand bounds are needed.
+    /// and identities of the selected operand bounds are needed. If a selected
+    /// bound is absent, return its rule so the caller can preserve the diagnostic.
     pub fn lower(
         &self,
         edit: &mut CircuitEditor,
@@ -102,15 +103,18 @@ impl BinaryOperation<'_> {
         if rule == Rule::None {
             return Ok((rule, None));
         }
-        let required = edit.with_nullability(result, false)?;
         if matches!(rule, Rule::Left | Rule::Right) {
-            let bound = if rule == Rule::Left { left } else { right };
-            let bound = bound.ok_or_else(|| Error::new("missing selected operand waterline"))?;
+            let selected = if rule == Rule::Left { left } else { right };
+            let Some(bound) = selected else {
+                return Ok((rule, None));
+            };
+            let required = edit.with_nullability(result, false)?;
             return Ok((rule, Some(edit.cast(site, bound, required)?)));
         }
         let (Some(mut left), Some(mut right)) = (left, right) else {
-            return Err(Error::new("binary waterline requires both operands"));
+            return Ok((rule, None));
         };
+        let required = edit.with_nullability(result, false)?;
         let temporal = matches!(self.domain, Domain::Temporal);
         let interval = |kind| matches!(kind, TypeKind::ShortInterval | TypeKind::LongInterval);
         let kind = edit.type_kind(result)?;
@@ -169,6 +173,57 @@ mod tests {
     use super::*;
     use feldera_sql_ir::Circuit;
     use serde_json::json;
+
+    #[test]
+    fn only_selected_operands_need_a_bound() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let ty = edit.bool_type(site, false)?;
+        let value = edit.named_variable(ty, "bound")?;
+        let operand = |never_null| Operand {
+            monotone: true,
+            never_null,
+            ..Operand::default()
+        };
+        use BinaryWaterline as Rule;
+        for (opcode, left, right, bounds, expected) in [
+            ("EQ", true, true, [None, None], (Rule::None, None)),
+            (
+                "MAX_IGNORE_NULLS",
+                true,
+                false,
+                [Some(value), None],
+                (Rule::Left, Some(value)),
+            ),
+            (
+                "MAX_IGNORE_NULLS",
+                false,
+                true,
+                [None, Some(value)],
+                (Rule::Right, Some(value)),
+            ),
+            (
+                "MAX_IGNORE_NULLS",
+                false,
+                true,
+                [Some(value), None],
+                (Rule::Right, None),
+            ),
+            ("MIN", true, true, [Some(value), None], (Rule::Both, None)),
+        ] {
+            let operation = BinaryOperation {
+                domain: Domain::Scalar,
+                opcode,
+                left: operand(left),
+                right: operand(right),
+            };
+            assert_eq!(operation.lower(&mut edit, site, ty, bounds)?, expected);
+        }
+        Ok(())
+    }
 
     #[test]
     fn temporal_subtraction_preserves_units_and_saturates_interval_arithmetic() -> Result<(), Error>

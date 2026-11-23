@@ -1221,6 +1221,7 @@ public final class RustCircuitPass implements CircuitTransform {
             BinaryBounds facts, @Nullable DBSPExpression left, @Nullable DBSPExpression right) {
         var site = expressionSite(expression.getNode());
         site.set("operation", MAPPER.valueToTree(facts));
+        site.putArray("present").add(left != null).add(right != null);
         var lhs = left == null ? null : new DBSPVariablePath("left", left.getType());
         var rhs = right == null ? null : new DBSPVariablePath("right", right.getType());
         try {

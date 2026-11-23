@@ -170,6 +170,7 @@ fn binary_bound(input: &[u8], state: &[u8]) -> Result<Value, Box<dyn std::error:
         site: ExpressionSite,
         #[serde(borrow)]
         operation: feldera_sql_opt::BinaryOperation<'a>,
+        present: Option<[bool; 2]>,
     }
     let request: Request = serde_json::from_slice(state)?;
     let (arena, roots) = request.site.arena(input)?;
@@ -183,7 +184,9 @@ fn binary_bound(input: &[u8], state: &[u8]) -> Result<Value, Box<dyn std::error:
             None
         })
     };
-    let bounds = [bound(request.operation.left.monotone)?, bound(request.operation.right.monotone)?];
+    // Older callers supplied one root for every monotone operand.
+    let [left, right] = request.present.unwrap_or([request.operation.left.monotone, request.operation.right.monotone]);
+    let bounds = [bound(left)?, bound(right)?];
     if operands.next().is_some() {
         return Err("unexpected binary operand bound".into());
     }

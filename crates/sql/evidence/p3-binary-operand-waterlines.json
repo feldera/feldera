@@ -1,0 +1,44 @@
+{
+  "scope": "Binary waterline transfer reads only the operands selected by the operation, including row equality over empty tuples without a materialized bound.",
+  "source_base": "8f7768c0cb1e6c0a74feb765e8e1fd7dec0174a7",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "82ac7b7572e802b1387c6a20302e40b529720b039919a64b10d1dd7afb4dbec7",
+    "crates/sql/sql-opt/src/monotonicity/binary.rs": "dcc443bf833f96d78bbc9ca8364175838ac87ff29be7c0ea1ed1881c81d3ed02",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "a60114e26c75b5c907f80281453efc0553101c9d6f943032e121958775413716",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/scalar.rs": "696197c0b59e77eacb0ad83cfa34f27a0f4b7baed6f2dc89e288f3638b5838c3",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "f02531998c9abe66a51dfc22cf899f31a8ea593c27dbd0733055f1166acf3e65",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneTransferFunctions.java": "35c6fbabd11b45e85806234366b28062d0b5abbd147e541898336f4e695d95c6",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "f3615c2cf20dfdefce474588470161f14034c2e4d2287e50e253680e421159fb"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "d2ea2c201e7422c59616bcb7ff4fe93e7bd94c7a26fd47cc903d9218b1c63d1c",
+    "bin/sql-difftest": "037916c85f209c269eab0894f9de2b189f27d0f15bcdb02547b377adc18374ea",
+    "maven/tests.jar": "005dad33c0c968a3205d699eef15ecc66d85f376e2ea12196ebc2156556dfeca",
+    "maven/sql-compiler.jar": "759321725048bdbe3cab25dbdd9786769d97e1f886e1b08a84afa0975524ae46"
+  },
+  "negative_control": {
+    "library_sha256": "d1f60984a9beb3a9452a6b2780677fb376b538646a81998067e5663d091b9eb2",
+    "failed_test": "rowEqualityDoesNotDemandOperandWaterlines",
+    "compiler_jar_sha256": "496832dbc0cead4e13fc30e7643a47bef9ee03131e24988984ef0e77fef8b090",
+    "observed": "Direct Java accepted equality over an empty tuple. The previous hybrid threw NullPointerException while reading the operand waterline."
+  },
+  "rust_tests": 221,
+  "junit_tests": 144,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "0ebfd8deeb30c8b04bdd5137251534c7b18f7ef31e4f18ce9536baeaf1246b38"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "65dfb6fc9e30a0cc78e5488ba5e7838db788c985a9b806c4b475cc51293d8381"
+    }
+  }
+}

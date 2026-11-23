@@ -43,11 +43,11 @@ impl Operation {
         if let Self::Call(name) = self {
             return function::call_bound(edit, id, name.as_deref(), children);
         }
-        // A field read can select an unbounded field even if an empty sibling
-        // makes the row monotone. It still needs the fact describing that row.
-        let field = matches!(self, Self::Wrapper) && edit.expr_kind(id)? == Expr::Field;
+        // A field read or a binary rule may consume the operand's shape
+        // without ever reading its bound.
+        let selects_bounds = matches!(self, Self::Binary(_)) || edit.expr_kind(id)? == Expr::Field;
         if !children.as_slice().iter().all(|v| {
-            v.as_ref().is_some_and(|v| field || !v.missing_bound())
+            v.as_ref().is_some_and(|v| selects_bounds || !v.missing_bound())
         }) {
             return Ok(None);
         }

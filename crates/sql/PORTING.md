@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Row equality over an empty tuple now agrees with direct Java when the tuple
+has no materialized waterline. Rust reads only the bounds required by the
+binary operation. The regression failed on the previous hybrid compiler.
+All 221 Rust tests and 144 targeted JUnit tests passed, and 12 LATENESS
+programs per engine matched through 10,929 ordered S4 observations and
+emission. [Binary operand waterlines](evidence/p3-binary-operand-waterlines.json)
+
 Rust matches Java's six map-fusion groups for eleven empty tuples, factory
 calls, unit values and string literals. All 143 targeted JUnit tests and
 220 Rust tests passed. Twelve classic and Gen-2 compilations matched through

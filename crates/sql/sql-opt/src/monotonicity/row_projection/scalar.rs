@@ -56,7 +56,7 @@ fn operand(
     opcode: &str,
 ) -> Result<Operand, Error> {
     Ok(Operand {
-        monotone: value.reduced.is_some(),
+        monotone: value.shape.monotone(),
         constant: value.constant,
         positive_literal: matches!(opcode, "MUL" | "DIV" | "MUL_INTERVAL" | "DIV_INTERVAL")
             && ordered_literal(edit.expr_kind(expression)?)
@@ -132,9 +132,13 @@ pub(super) fn binary_bound(
         return Ok(None);
     }
     let constant = lhs.constant && rhs.constant;
-    let (_, bound) = operation.lower(edit, expression.into(), ty, [lhs.reduced, rhs.reduced])?;
+    let (rule, bound) = operation.lower(edit, expression.into(), ty, [lhs.reduced, rhs.reduced])?;
     if let Some(bound) = bound {
         return ProjectedValue::bounded(edit, expression, bound, constant).map(Some);
+    }
+    if rule != BinaryWaterline::None {
+        // The general visitor reports the missing bound on the original expression.
+        return Ok(None);
     }
     // Retain the layout of an unbounded ROW for subsequent field reads.
     let mut value = super::unbounded(edit, expression)?;

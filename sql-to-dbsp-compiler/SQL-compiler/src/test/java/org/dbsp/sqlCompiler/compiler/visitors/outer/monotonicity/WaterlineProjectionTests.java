@@ -751,6 +751,46 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void rowEqualityDoesNotDemandOperandWaterlines() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(1).getType();
+        var input = integer.ref().var();
+        var shape = new MonotoneType(integer);
+        var op = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        var empty = new NoExpression(DBSPTypeRawTuple.EMPTY);
+        var equality = new DBSPBinaryExpression(site, DBSPTypeBool.create(false), DBSPOpcode.EQ,
+                empty, new DBSPRawTupleExpression());
+
+        // Visiting the expression directly also exercises the general visitor.
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var visitor = new MonotoneTransferFunctions(compiler, op, kind, shape);
+            visitor.apply(equality);
+            Assert.assertTrue(visitor.get(empty).mayBeMonotone());
+            Assert.assertThrows(NullPointerException.class, () -> visitor.get(empty).getReducedExpression());
+            Assert.assertFalse(visitor.get(equality).mayBeMonotone());
+        }
+        var tail = input.deref();
+        var body = new DBSPBlockExpression(List.of(equality.toStatement()), tail);
+        var closure = body.closure(input);
+        for (boolean observe : List.of(false, true)) {
+            var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+            var result = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                    false, observe ? facts::put : null);
+            Assert.assertTrue(result instanceof RustCircuitPass.ProjectedWaterline);
+            Assert.assertTrue(tail.closure(input).equivalent(((RustCircuitPass.ProjectedWaterline) result).closure()));
+            if (observe) {
+                Assert.assertFalse(facts.get(equality).mayBeMonotone());
+                Assert.assertSame(facts.get(tail), facts.get(body));
+            }
+        }
+    }
+
+    @Test
     public void onlyRegisteredFunctionsRequireArgumentWaterlines() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

@@ -740,15 +740,17 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         var facts = new RustCircuitPass.BinaryBounds(domain, opcode,
                 this.operand(opcode, lhs, left), this.operand(opcode, rhs, right));
         var transfer = RustCircuitPass.binaryWaterline(this.compiler, expression, facts,
-                left.mayBeMonotone() ? left.getReducedExpression() : null,
-                right.mayBeMonotone() ? right.getReducedExpression() : null);
+                left.mayBeMonotone() ? left.reducedExpression : null,
+                right.mayBeMonotone() ? right.reducedExpression : null);
         IMaybeMonotoneType type = switch (transfer.rule()) {
             case None -> NonMonotoneType.nonMonotone(expression.type);
             case InheritLeft -> left.copyMonotonicity(expression.type);
             case InheritRight -> right.copyMonotonicity(expression.type);
             default -> new MonotoneType(expression.type);
         };
-        this.set(expression, new MonotoneExpression(expression, type, transfer.bound()));
+        var bound = transfer.rule() == RustCircuitPass.BinaryWaterline.None ? null :
+                Objects.requireNonNull(transfer.bound());
+        this.set(expression, new MonotoneExpression(expression, type, bound));
     }
 
     @Override
