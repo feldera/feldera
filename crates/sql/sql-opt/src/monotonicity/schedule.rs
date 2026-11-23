@@ -2,7 +2,7 @@
 //! only propagate an existing waterline, except where the operator establishes
 //! a bound itself. Expression analysis determines which fields retain it.
 use crate::state_bounds::column_lateness;
-use feldera_sql_ir::{BodyOrder, Circuit, Error, Node, NodeId, OperatorKind as Op};
+use feldera_sql_ir::{BodyOrder, Circuit, Error, InnerKind, Node, NodeId, OperatorKind as Op};
 use serde::Serialize;
 use std::collections::HashSet;
 
@@ -144,15 +144,38 @@ fn asof_ascending(circuit: &Circuit, node: &Node) -> Option<bool> {
     order.data("ascending")?.as_bool()
 }
 
-fn upper_follows_row(node: &Node) -> Option<bool> {
-    if node.data("upperPreceding")?.as_bool()? {
-        return Some(false);
+fn upper_follows_row(circuit: &Circuit, node: &Node) -> Result<Option<bool>, Error> {
+    if let Some(bound) = node.field("upper").and_then(|f| f.node_id()) {
+        let bound = circuit.node(bound).expect("validated upper bound");
+        match bound.data("isPreceding").and_then(|v| v.as_bool()) {
+            Some(true) => return Ok(Some(false)),
+            Some(false) => {}
+            None => return Err(Error::new("rolling upper bound requires isPreceding")),
+        }
+        let offset = circuit
+            .node(bound.edge("representation")?)
+            .expect("validated offset");
+        if !matches!(offset.inner_kind(), Some(InnerKind::Expression(kind)) if kind.is_numeric_literal())
+        {
+            return Ok(Some(true));
+        }
+        // Leave a NULL numeric offset to the live compiler's diagnostic.
+        if offset.data("value").is_none_or(|value| value.is_null()) {
+            return Ok(None);
+        }
+        return feldera_sql_expr::numeric_value_is_positive(offset).map(Some);
     }
-    if node.data("upperDynamic").and_then(|v| v.as_bool()) == Some(true) {
-        return Some(true);
-    }
-    // Leave a NULL numeric offset to the live compiler's diagnostic.
-    node.data("upperPositive")?.as_bool()
+    // Earlier compact topologies sent the frame classification without its expression.
+    Ok(
+        match node.data("upperPreceding").and_then(|v| v.as_bool()) {
+            Some(true) => Some(false),
+            Some(false) if node.data("upperDynamic").and_then(|v| v.as_bool()) == Some(true) => {
+                Some(true)
+            }
+            Some(false) => node.data("upperPositive").and_then(|v| v.as_bool()),
+            None => None,
+        },
+    )
 }
 
 pub fn monotonicity_transfers(
@@ -265,7 +288,7 @@ pub fn monotonicity_transfers(
             }
             Some(Op::AggregateLinearPostprocess) => first.then_some(AggregateKey),
             Some(Op::PartitionedRollingAggregate) if first => {
-                match upper_follows_row(node) {
+                match upper_follows_row(circuit, node)? {
                     Some(false) => Some(RollingTimestamp),
                     Some(true) => None, // A later input can change an earlier output.
                     None => Some(Analyze),
@@ -413,6 +436,54 @@ mod tests {
         let circuit = Circuit::from_json(json!({"class": "DBSPCircuit", "id": 0,
             "declarations": [], "allOperators": operators}))?;
         assert_eq!(&monotonicity_transfers(&circuit)?[1..], expected);
+        Ok(())
+    }
+
+    #[test]
+    fn upper_frame_offsets_use_the_literal_value_from_the_circuit() -> Result<(), Error> {
+        use MonotonicityTransfer::{Analyze, RollingTimestamp};
+        for (preceding, class, value, rule) in [
+            (true, "DBSPI64Literal", json!("1"), Some(RollingTimestamp)),
+            (false, "DBSPU128Literal", json!(u128::MAX.to_string()), None),
+            (false, "DBSPDecimalLiteral", json!("1E-1000"), None),
+            (
+                false,
+                "DBSPShortIntervalLiteral",
+                json!("-1"),
+                Some(RollingTimestamp),
+            ),
+            (
+                false,
+                "DBSPRealLiteral",
+                json!((-0.0_f32).to_bits().cast_signed()),
+                Some(RollingTimestamp),
+            ),
+            (
+                false,
+                "DBSPDoubleLiteral",
+                json!(f64::NAN.to_bits().cast_signed()),
+                Some(RollingTimestamp),
+            ),
+            (false, "DBSPI64Literal", json!(null), Some(Analyze)),
+            (false, "DBSPVariablePath", json!(null), None),
+        ] {
+            let mut offset = json!({"class":class,"id":2});
+            if !value.is_null() {
+                offset["value"] = value;
+            }
+            let graph = Circuit::from_json(json!({
+                "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+                    {"class":"DBSPSourceMultisetOperator","id":1,"inputs":[],
+                     "metadata":{"columnMetadata":[{"lateness":true}]}},
+                    {"class":"DBSPPartitionedRollingAggregateOperator","id":2,
+                     "inputs":[{"outputNumber":0,"operator":{"node":1}}],
+                     "upper":{"class":"DBSPWindowBoundExpression","id":1,"isPreceding":preceding,
+                              "representation":offset}}
+                ]
+            }))?;
+            let transfers = monotonicity_transfers(&graph)?;
+            assert_eq!(transfers.get(1).map(|(_, t)| t), rule.as_ref(), "{class}");
+        }
         Ok(())
     }
 

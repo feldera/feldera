@@ -1,7 +1,7 @@
 //! Comparisons between scalar literals in the optimizer's Simplify pass.
 use feldera_sql_ir::{
-    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId,
-    TypeKind,
+    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,
+    NodeId, TypeKind,
 };
 use std::cmp::Ordering;
 
@@ -152,19 +152,25 @@ pub fn decimal_literal_parts(node: &Node) -> Result<(String, i64), Error> {
 /// Implements the compiler's strict positive-literal test for waterline scaling.
 /// Java's numeric ordering puts NaN above infinity, but NaN is never a positive factor.
 pub fn literal_is_positive(editor: &CircuitEditor, literal: ExpressionId) -> Result<bool, Error> {
-    let node = editor.node(literal.into())?;
+    numeric_value_is_positive(editor.node(literal.into())?)
+}
+
+/// Compare the encoded literal directly, so a read-only circuit analysis and
+/// an expression rewrite use the same exact-decimal and floating-point rules.
+pub fn numeric_value_is_positive(node: &Node) -> Result<bool, Error> {
     if node.data("value").is_none_or(|value| value.is_null()) {
         return Ok(false);
     }
-    let ty = editor.type_kind(editor.expression_type(literal)?)?;
-    match ty {
-        TypeKind::Real | TypeKind::Double => Ok(float_value(node, ty)? > 0.0),
-        TypeKind::Integer
-        | TypeKind::Decimal
-        | TypeKind::ISize
-        | TypeKind::USize
-        | TypeKind::LongInterval
-        | TypeKind::ShortInterval => Ok(exact_value(node)? > 0),
+    match node.inner_kind() {
+        Some(InnerKind::Expression(Expr::RealLiteral)) => {
+            Ok(float_value(node, TypeKind::Real)? > 0.0)
+        }
+        Some(InnerKind::Expression(Expr::DoubleLiteral)) => {
+            Ok(float_value(node, TypeKind::Double)? > 0.0)
+        }
+        Some(InnerKind::Expression(kind)) if kind.is_numeric_literal() => {
+            Ok(exact_value(node)? > 0)
+        }
         _ => Ok(false),
     }
 }

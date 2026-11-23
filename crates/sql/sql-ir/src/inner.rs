@@ -109,6 +109,32 @@ wire_kinds! { ExpressionKind {
     NonLinearAggregate => "NonLinearAggregate",
 }}
 
+impl ExpressionKind {
+    /// The DBSP expressions that implement IsNumericLiteral, including interval offsets.
+    pub fn is_numeric_literal(self) -> bool {
+        matches!(
+            self,
+            Self::I8Literal
+                | Self::I16Literal
+                | Self::I32Literal
+                | Self::I64Literal
+                | Self::I128Literal
+                | Self::U8Literal
+                | Self::U16Literal
+                | Self::U32Literal
+                | Self::U64Literal
+                | Self::U128Literal
+                | Self::ISizeLiteral
+                | Self::USizeLiteral
+                | Self::DecimalLiteral
+                | Self::RealLiteral
+                | Self::DoubleLiteral
+                | Self::ShortIntervalLiteral
+                | Self::LongIntervalLiteral
+        )
+    }
+}
+
 wire_kinds! { TypeKind {
     Comparator => "DBSPComparatorType",
     Any => "DBSPTypeAny",

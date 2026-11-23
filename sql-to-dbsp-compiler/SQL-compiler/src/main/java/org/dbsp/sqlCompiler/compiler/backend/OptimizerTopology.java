@@ -38,9 +38,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySources;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
-import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -137,6 +135,10 @@ final class OptimizerTopology {
 
     static byte[] stateBounds(DBSPCompiler compiler, DBSPCircuit circuit) {
         return encode(circuit, Details.STATE_BOUNDS, compiler);
+    }
+
+    static byte[] monotonicity(DBSPCompiler compiler, DBSPCircuit circuit) {
+        return encode(circuit, Details.MONOTONICITY, compiler);
     }
 
     static byte[] candidateKeys(DBSPCompiler compiler, DBSPCircuit circuit) {
@@ -291,14 +293,8 @@ final class OptimizerTopology {
                     if (join.comparator instanceof DBSPDirectComparatorExpression order)
                         json.label("ascending").append(order.ascending);
                 } else if (op instanceof DBSPPartitionedRollingAggregateOperator rolling) {
-                    var upper = rolling.upper;
-                    json.label("upperPreceding").append(upper.isPreceding);
-                    if (!upper.isPreceding) {
-                        if (!(upper.representation instanceof IsNumericLiteral offset))
-                            json.label("upperDynamic").append(true);
-                        else if (!offset.to(DBSPLiteral.class).isNull())
-                            json.label("upperPositive").append(offset.gt0());
-                    }
+                    json.label("upper");
+                    rolling.upper.accept(java.util.Objects.requireNonNull(types));
                 } else if (op instanceof DBSPSourceMultisetOperator table) {
                     writeColumnLateness(json, "columnMetadata", table);
                 } else if (op instanceof DBSPViewOperator view) {
@@ -346,7 +342,7 @@ final class OptimizerTopology {
                     json.label("domainInputType");
                     op.inputs.get(0).outputType().accept(java.util.Objects.requireNonNull(types));
                 }
-            } else if (types != null && !(op instanceof DBSPNestedOperator)) {
+            } else if (types != null && details != Details.MONOTONICITY && !(op instanceof DBSPNestedOperator)) {
                 json.label("statisticsTypes").beginArray();
                 for (int i = 0; i < op.outputCount(); i++)
                     op.outputType(i).accept(types);

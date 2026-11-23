@@ -2935,10 +2935,10 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     /** Reconnect the transfer schedule to the live expressions of the expanded circuit. */
-    public static List<MonotonicityTransfer> monotonicityTransfers(DBSPCircuit circuit) {
+    public static List<MonotonicityTransfer> monotonicityTransfers(DBSPCompiler compiler, DBSPCircuit circuit) {
         record Step(long operator, TransferRule rule, int input, @Nullable List<ColumnWaterline> columns,
                     @Nullable IndexedWaterline projection, @Nullable ClosureBody function) {}
-        byte[] topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.MONOTONICITY);
+        byte[] topology = OptimizerTopology.monotonicity(compiler, circuit);
         byte[] result = transformWithContext("Topology/Monotonicity", topology, 0, "", EMPTY_CONTEXT);
         try {
             var steps = MAPPER.readValue(result, Step[].class);

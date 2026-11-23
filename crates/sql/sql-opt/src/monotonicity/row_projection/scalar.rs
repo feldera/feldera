@@ -8,31 +8,15 @@ use feldera_sql_ir::{
 };
 
 pub(super) fn literal(kind: Expr) -> bool {
-    matches!(
-        kind,
-        Expr::BoolLiteral
-            | Expr::I8Literal
-            | Expr::I16Literal
-            | Expr::I32Literal
-            | Expr::I64Literal
-            | Expr::I128Literal
-            | Expr::U8Literal
-            | Expr::U16Literal
-            | Expr::U32Literal
-            | Expr::U64Literal
-            | Expr::U128Literal
-            | Expr::ISizeLiteral
-            | Expr::USizeLiteral
-            | Expr::DecimalLiteral
-            | Expr::RealLiteral
-            | Expr::DoubleLiteral
-            | Expr::DateLiteral
-            | Expr::TimeLiteral
-            | Expr::TimestampLiteral
-            | Expr::TimestampTzLiteral
-            | Expr::ShortIntervalLiteral
-            | Expr::LongIntervalLiteral
-    )
+    kind.is_numeric_literal()
+        || matches!(
+            kind,
+            Expr::BoolLiteral
+                | Expr::DateLiteral
+                | Expr::TimeLiteral
+                | Expr::TimestampLiteral
+                | Expr::TimestampTzLiteral
+        )
 }
 
 impl ProjectedValue {

@@ -175,7 +175,7 @@ public class Monotonicity extends CircuitVisitor {
             return super.apply(circuit);
         this.startVisit(circuit);
         try {
-            for (var transfer : RustCircuitPass.monotonicityTransfers(circuit)) {
+            for (var transfer : RustCircuitPass.monotonicityTransfers(this.compiler(), circuit)) {
                 if (this.compiler().stateObserver != null)
                     this.compiler().stateObserver.monotonicityTransfer(
                             transfer.operator().getClass().getSimpleName(), transfer.rule().name());
