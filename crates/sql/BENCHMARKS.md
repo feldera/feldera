@@ -4,6 +4,33 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Nested constant rows, 2026-11-23
+
+On `091f41bcb`, all 69 paired invocations produced equal diagnostics and
+classic source artifacts. The compiler ran in a fresh process on CPU 15 of
+the shared ARM64 VM, alternating execution order across two warmup pairs and
+21 measured pairs per workload. [Paired measurements and build identities](evidence/p3-nested-constant-rows-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.406 | 2.031 | 0.844× |
+| Nexmark suite | 5.149 | 6.116 | 1.188× |
+| Outer join | 2.298 | 1.889 | 0.822× |
+
+## Declaration-based column lineage, 2026-11-23
+
+On `001cd0637`, direct Java and the hybrid produced equal artifacts and
+diagnostics in all 69 pairs. Each compiler started in a fresh process on CPU
+15 of the shared ARM64 VM. Each workload used two warmup pairs and 21 measured
+pairs in alternating order. The timer ended at classic source emission.
+[Build identities and paired measurements](evidence/p3-lineage-declarations-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.719 | 2.201 | 0.809× |
+| Nexmark suite | 5.727 | 6.426 | 1.122× |
+| Outer join | 2.442 | 2.111 | 0.864× |
+
 ## Waterline failure diagnostics, 2026-11-23
 
 On `fbe698516`, direct Java and the hybrid emitted equal classic artifacts

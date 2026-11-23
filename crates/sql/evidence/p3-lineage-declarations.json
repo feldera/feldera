@@ -1,0 +1,67 @@
+{
+  "scope": "Resolve lineage reads by declaration and preserve preceding findings when a closure contains a free or conflicting read.",
+  "source_base": "f9b3b44a1c48c52b7ddf82fef4d9e2cf94e6827e",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "43754754b23edbb87dcc6834c18ff41804cf94fe1c6570c805b07434624e085c",
+    "crates/sql/sql-opt/src/lexical_scope.rs": "512b3fbf95e29f2ceb7dc7e44c21b32dd502f647ce16c94645c98887de1741db",
+    "crates/sql/sql-opt/src/lib.rs": "32839910e77fead2dbb3d33e5175f6a368d53bcc5127c1656e578a5405118f6d",
+    "crates/sql/sql-opt/src/lineage.rs": "785a0eb5c87eba5295edf44e29897971521a71f838465cd26ba3ec3ce5de4287",
+    "crates/sql/sql-opt/src/lineage/columns.rs": "d689ba9fd92bfcad83060cb7ad7606ca0c4b0459a826df73e10c81b29c33b2f9",
+    "crates/sql/sql-opt/src/lineage/evaluate.rs": "91b52fb3c90bba5c3c86d04ff1dccfded730f5b2a115e6d0f5a190adcd06a341",
+    "crates/sql/sql-opt/src/lineage/report.rs": "2b1edb5934dd167c6d627b37f71a1eb9a4c9a0679353d2223db08181bb361e06",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "d455f97dc76add719a5cc4634f9c610191e82850407ecf3073c74a66db113785",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/LineageTests.java": "e41e7d4e26b71831a3ff4f1bd6027f0ecde5ea358d1ad56996b1a29b2018f1d4"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "6288ee6cae5a4156b7a1460bbed4ed9953d6da45ec59295f68a0399537b2c8e0",
+    "bin/sql-difftest": "6c59a84d69734ef10190d7710498bca3ec621128e3b0fe33a1fad61625297fe8",
+    "maven/tests.jar": "4faa3ff0278b01188ddc29644767871682c6b27b7e91ec93e77da995f348883d",
+    "maven/sql-compiler.jar": "9712297239330b70eed9a4fd5c17fe3a3b4dfe838bf2a420daadb20845ac95ed"
+  },
+  "negative_control": {
+    "library_sha256": "ae363bcd464c58153e5af814d110983e95e355be70b7318680a737c99b30e2d1",
+    "failed_tests": [
+      "lineageReportsEarlierOperatorsBeforeRejectingAnInvalidBinding"
+    ]
+  },
+  "rust_tests": 209,
+  "junit_tests": 159,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "3e2a22aa9ca3e757b41a2d1edcf261de60607b659248a0f765300069e00d609b"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "7773ec7814e64281517efc9c455917e687e1b78fe026f05bffccf49aae4158f0"
+    }
+  },
+  "source_commit": "001cd063779c130b5dd3f061510f49ad405d6d02",
+  "lineage_oracle": {
+    "classic": {
+      "programs": 8571,
+      "compiled_in_gen2_mode": 0,
+      "native_reports": 8571,
+      "differences": 0,
+      "report_lines": 1666,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "report_sha256": "33113370cc31c7094f538bb52f80ea3049ee2ddae17c8458e9a7cd607e80ab60"
+    },
+    "gen2": {
+      "programs": 8527,
+      "compiled_in_gen2_mode": 8526,
+      "native_reports": 8527,
+      "differences": 0,
+      "report_lines": 1645,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "report_sha256": "f80a4db34063b65722454dcee99c5058898f78d9f53aa69e5074ca959654394a"
+    }
+  }
+}

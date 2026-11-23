@@ -1,0 +1,72 @@
+{
+  "scope": "Compare nested tuple, variant and weighted constant rows iteratively, preserving row order and cancellation.",
+  "source_base": "0efc230dcf0a8a1653117e92ab112c03a7ab0197",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/constant_rows.rs": "520e5561fc0c492b272a9c9096c2b938d0d9ff4f8a9b21e8402acf6514580ceb",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "701c59e61fbf732f5ae51d9a9075a06f139e2004c7a6ec2ac627d180eeb7b8c3"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "16518f985697742f768253a1bf75b0ec49b2f22394981e45c2d7c04847be8360",
+    "bin/sql-difftest": "f0f5b1ded7766aa52e9b38f19b7cc3c768fb39c586bfdd866375b8f5a40f56e1",
+    "maven/tests.jar": "61aa3c575f859c90317f696e51461069a6ace98099051763e2ce743bb61e84e7",
+    "maven/sql-compiler.jar": "fd373813300f3747a727f6339c40bb18453d5f45a687a666d798bbd0993c3b29"
+  },
+  "negative_control": {
+    "library_sha256": "5ad452f18e4ab19009a484c591b40d2be1976a30635c4e3267606662e3f320c3",
+    "failed_tests": [
+      "deeplyNestedConstantRowsCompareByValueInWindowKeys"
+    ],
+    "compiler_jar_sha256": "3d09a885a105ee55a6f1cdf2e94f918b34c7cfab7035156f3c811859e517ef83"
+  },
+  "rust_tests": 223,
+  "junit_tests": 161,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "5283715913a67d17684bd217b153d0e0295cee94767ee76162876e53ec0b6b4b"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "ab381cd404d6d5ba31b77e2c2ebca7805cd19824913089282621f3322b2a7ce9"
+    }
+  },
+  "source_commit": "091f41bcb7fe83b59d3feb7f28df12125575a713",
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      10.767845,
+      10.191969,
+      10.46347,
+      6.776883,
+      7.772466,
+      7.559133,
+      8.26955,
+      8.369051,
+      8.566301,
+      9.753843,
+      7.076883,
+      10.83747,
+      5.822382,
+      8.536218,
+      8.778885,
+      16.112309,
+      9.76976,
+      9.221218,
+      9.388301,
+      12.67918
+    ],
+    "p95_ms": 12.67918,
+    "largest_driver_plus_front_end_rss_bytes": 70758400,
+    "compiler_sha256": "79bb5629fb21ca49f735dc51c32d5e0b92ae1fed078567869e4f9ce08eb3e61b"
+  }
+}

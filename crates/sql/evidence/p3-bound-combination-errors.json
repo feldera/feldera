@@ -1,0 +1,45 @@
+{
+  "scope": "Rust selects the first incompatible field in a union, intersection, join or anti-join waterline. The JVM renders the diagnostic from that operand pair.",
+  "source_base": "001cd063779c130b5dd3f061510f49ad405d6d02",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "c264bbfdfd6a9f857ed02ca21d7389088c111aedc2f7483a2760b0dbaa5216fb",
+    "crates/sql/sql-opt/src/lib.rs": "bf27ce155217224afa0121d334878ca4212e834bd4397b5bc7be44ccace6b885",
+    "crates/sql/sql-opt/src/monotonicity/combine.rs": "439d0272c65572c51753ffd633f97665de1cf74035a63b0b3deb4b3c10d891ad",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "78af9c3055432e3942cd4d71d85c2ff407a2291e433c12350298746ddf08df67",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/CombinedBounds.java": "62c06320e8064ac52a7f2959c80bbf7c4ca0786faea64dc54b5884d82bb66b5c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "726dd0a489f6217142922d1c5ed054337dc7cdff6d581545dcae17c89c92325f"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "5ad452f18e4ab19009a484c591b40d2be1976a30635c4e3267606662e3f320c3",
+    "bin/sql-difftest": "43b42fad65029f3024cbf525d1a1b0a584757dd4eb304f802c928b32dfe3dd2b",
+    "maven/tests.jar": "de0dc99fce725636dcba480131eefcba464295c20da0852c1cc3712b61205c30",
+    "maven/sql-compiler.jar": "3d09a885a105ee55a6f1cdf2e94f918b34c7cfab7035156f3c811859e517ef83"
+  },
+  "negative_control": {
+    "library_sha256": "6288ee6cae5a4156b7a1460bbed4ed9953d6da45ec59295f68a0399537b2c8e0",
+    "failed_tests": [
+      "incompatibleWaterlinesKeepTheFirstDiagnosticWithoutRepeatingTheCombination"
+    ],
+    "compiler_jar_sha256": "9712297239330b70eed9a4fd5c17fe3a3b4dfe838bf2a420daadb20845ac95ed"
+  },
+  "rust_tests": 222,
+  "junit_tests": 160,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "7b868f976e0c9d4a4648ea4ce02afa2f0eedd44bc2cb9f5561c20d6853647e00"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "761e1b4f606138349f9bd07b2c1c0e2136fcf6b436b72fe69b5da9ec1d5cf22d"
+    }
+  },
+  "source_commit": "0efc230dcf0a8a1653117e92ab112c03a7ab0197"
+}

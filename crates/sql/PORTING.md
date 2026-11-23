@@ -462,6 +462,31 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `091f41bcb`, a 144-level weighted constant row matched the Java window-key
+decision. The preceding build failed at its 128-level comparison limit. All
+223 Rust tests and 161 targeted JUnit tests passed. Twelve classic and eight
+Gen-2 compilations matched through 8,778 ordered S4 observations and emission.
+Across 20 cancellations of four concurrent workers, signal-to-reap p95 was
+12.68 ms and peak driver plus front-end RSS was 67.48 MiB.
+[Build identities, regressions, replay and cancellation](evidence/p3-nested-constant-rows.json)
+
+On `0efc230dc`, Rust selected the first incompatible field when combining
+waterlines for unions, intersections, joins and anti-joins. Java rendered the
+same exception from the live operands. The regression verified that the
+hybrid skipped fields whose comparisons had already succeeded. All 222 Rust
+tests and 160 targeted JUnit tests passed, and 24 detached compilations
+matched through 10,929 ordered S4 observations and emission.
+[Waterline diagnostics and replay](evidence/p3-bound-combination-errors.json)
+
+On `001cd0637`, the Rust column-lineage report resolved reads by declaration
+before visiting the closure body. A free read or a shared read with conflicting
+bindings produced the same diagnostic and preceding findings as direct Java.
+The complete reports matched on all 8,571 classic and 8,527 Gen-2 population
+entries, including one entry that selects classic mode in the Gen-2 export.
+Rust produced every report. All 209 Rust tests and 159 targeted JUnit tests
+passed. The 24 detached replay cases matched through 10,929 ordered S4
+observations and artifact emission. [Lineage reports and replay](evidence/p3-lineage-declarations.json)
+
 Rust groups temporal filters by the printed contents of comments and static
 collection initializers in their window keys. The directed cases cover
 trailing newlines, a changed map value and the source range of an earlier
