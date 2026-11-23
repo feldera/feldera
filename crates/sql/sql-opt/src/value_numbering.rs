@@ -1,6 +1,9 @@
 //! Intern expression values in evaluation order. A key contains the original
 //! printer's text between operands and the value number of each operand.
-use crate::expression_uses::{NumberedExpression, OperandUse, shared_expression_uses};
+mod key;
+
+use self::key::{Form, Key, Number};
+use crate::expression_uses::{shared_expression_uses, NumberedExpression, OperandUse};
 use feldera_sql_ir::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -31,12 +34,53 @@ enum Event {
     },
     Define {
         expression: u64,
-        fragments: Vec<String>,
         operands: Vec<u64>,
+        #[serde(flatten)]
+        key: Definition,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Definition {
+    Typed {
+        form: Form,
+    },
+    // Recorded requests made before the compiler supplied typed expressions.
+    Fragments {
+        fragments: Vec<String>,
         declarations: Vec<u64>,
         wrapper: bool,
         expensive: bool,
     },
+}
+
+impl Definition {
+    fn key(self, numbers: &[Number]) -> Result<Key, Error> {
+        match self {
+            Self::Typed { form } => form.key(numbers),
+            Self::Fragments {
+                fragments,
+                declarations,
+                wrapper,
+                expensive,
+            } => {
+                let mut parts = fragments.into_iter();
+                let mut text = parts
+                    .next()
+                    .ok_or_else(|| Error::new("missing expression key"))?;
+                for (number, suffix) in numbers.iter().zip(parts) {
+                    write!(text, "{number}{suffix}").expect("writing to a string");
+                }
+                Ok(Key {
+                    text,
+                    declarations: declarations.into_iter().collect(),
+                    expensive,
+                    wrapper,
+                })
+            }
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -65,40 +109,38 @@ impl NumberingInput {
                 }
                 Event::Define {
                     expression,
-                    fragments,
+                    key,
                     operands,
-                    declarations,
-                    mut expensive,
-                    wrapper,
                 } => {
-                    let (first, rest) = fragments
-                        .split_first()
-                        .ok_or_else(|| Error::new("missing expression key"))?;
-                    if rest.len() != operands.len() {
+                    if matches!(&key, Definition::Fragments { fragments, .. }
+                        if fragments.len().checked_sub(1) != Some(operands.len()))
+                    {
                         return Err(Error::new(
                             "expression key does not match its operand count",
                         ));
                     }
-                    let mut key = first.clone();
-                    let mut dependencies: BTreeSet<_> = declarations.into_iter().collect();
-                    for (operand, suffix) in operands.iter().zip(rest) {
-                        let Some(&index) = by_expression.get(operand) else {
-                            // The parent cannot be shared when any operand has no number.
+                    let mut numbers = Vec::with_capacity(operands.len());
+                    let mut dependencies = BTreeSet::new();
+                    let mut expensive = false;
+                    for operand in operands {
+                        let Some(&index) = by_expression.get(&operand) else {
+                            // A parent cannot be shared when any operand has no number.
                             continue 'events;
                         };
                         let child = &groups[index];
-                        write!(key, "#{}#{}", child.representative, suffix)
-                            .expect("writing to a string");
+                        numbers.push(Number(child.representative));
                         dependencies.extend(&child.declarations);
                         expensive |= child.expensive;
                     }
-                    let index = *by_key.entry(key).or_insert_with(|| {
+                    let key = key.key(&numbers)?;
+                    let index = *by_key.entry(key.text).or_insert_with(|| {
+                        dependencies.extend(key.declarations);
                         let index = groups.len();
                         groups.push(ValueGroup {
                             representative: expression,
-                            wrapper,
+                            wrapper: key.wrapper,
                             shared: BTreeSet::new(),
-                            expensive,
+                            expensive: expensive || key.expensive,
                             declarations: dependencies,
                             occurrences: Vec::new(),
                             users: Vec::new(),
@@ -200,12 +242,40 @@ mod tests {
     ) -> Event {
         Event::Define {
             expression: id,
-            fragments: fragments.iter().map(|s| (*s).to_owned()).collect(),
             operands: operands.to_vec(),
-            declarations: dependencies.to_vec(),
-            expensive,
-            wrapper: false,
+            key: Definition::Fragments {
+                fragments: fragments.iter().map(|s| (*s).to_owned()).collect(),
+                declarations: dependencies.to_vec(),
+                expensive,
+                wrapper: false,
+            },
         }
+    }
+
+    #[test]
+    fn typed_and_recorded_keys_share_the_first_representative() -> Result<(), Error> {
+        use serde_json::json;
+
+        let input: NumberingInput = serde_json::from_value(json!({
+            "rewrite": false, "mutable": [], "sites": [],
+            "events": [
+                {"expression": 1, "operands": [], "form": {"kind": "Variable", "declaration": 7}},
+                {"expression": 2, "operands": [], "form": {"kind": "Literal", "type": "s", "value": "🦀#1#"}},
+                {"expression": 3, "operands": [1, 2], "form": {"kind": "Binary", "type": "b", "opcode": "OR", "symbol": "||"}},
+                {"expression": 4, "operands": [1, 2], "form": {"kind": "Binary", "type": "b", "opcode": "CONCAT", "symbol": "||"}},
+                {"expression": 5, "operands": [1, 2], "fragments": ["(b)", "||", ""], "declarations": [], "expensive": true, "wrapper": false},
+                {"expression": 6, "operands": [4, 2, 1], "form": {"kind": "Call", "type": "s", "method": true}},
+                {"expression": 7, "operands": [5, 2, 1], "fragments": ["", ".", "(", ",)s"], "declarations": [], "expensive": true, "wrapper": false}
+            ]
+        })).unwrap();
+        let groups = input.number()?;
+        assert_eq!(groups.len(), 4);
+        assert_eq!(groups[2].occurrences, [3, 4, 5]);
+        assert!(!groups[2].expensive);
+        assert_eq!(groups[3].occurrences, [6, 7]);
+        assert!(groups[3].expensive);
+        assert_eq!(groups[3].declarations, BTreeSet::from([7]));
+        Ok(())
     }
 
     #[test]

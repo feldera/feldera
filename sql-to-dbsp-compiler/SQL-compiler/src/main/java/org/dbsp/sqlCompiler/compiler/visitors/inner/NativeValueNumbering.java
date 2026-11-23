@@ -1,11 +1,20 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -13,12 +22,30 @@ import java.util.Map;
 import java.util.Set;
 
 /** Bind a Rust value-numbering result to the live expressions used by the CSE rewriter. */
-public final class NativeValueNumbering {
+public final class NativeValueNumbering extends InnerVisitor {
+    /** The live printer supplies spellings for types, literals, paths and operators.
+     * Rust builds the key from these fields and the canonical operands. */
+    @JsonTypeInfo(use = JsonTypeInfo.Id.SIMPLE_NAME, property = "kind")
+    public sealed interface Form {}
+    public record Literal(String type, @Nullable String value) implements Form {}
+    public record Path(String text) implements Form {}
+    public record Variable(long declaration) implements Form {}
+    public record Let(String name, long declaration) implements Form {}
+    public record Binary(String type, String opcode, String symbol) implements Form {}
+    public record Unary(String type, String opcode, String symbol) implements Form {}
+    public record Call(String type, boolean method) implements Form {}
+    public record Cast(String type, String safety, boolean sourceString, boolean targetString) implements Form {}
+    public record Tuple(String type) implements Form {}
+    public record RawTuple() implements Form {}
+    public record AbsentTuple(String type, String value) implements Form {}
+    public record Field(int index) implements Form {}
+    public enum Operator { Borrow, Clone, Deref, If, IsNull, Some }
+    public record Simple(Operator operator) implements Form {}
+
     public sealed interface Event permits Use, Define {}
     public record Use(long input, int site) implements Event {}
     public record Site(long parent, int operand, Long closure) {}
-    public record Define(long expression, List<String> fragments, List<Long> operands,
-                         List<Long> declarations, boolean expensive, boolean wrapper) implements Event {}
+    public record Define(long expression, Form form, long[] operands) implements Event {}
     public record Request(List<Event> events, Set<Long> mutable, boolean rewrite, List<Site> sites) {}
     public record Group(long representative, boolean expensive, List<Long> declarations,
                         List<Long> occurrences, List<Integer> users, Set<Long> shared) {}
@@ -28,37 +55,176 @@ public final class NativeValueNumbering {
     private final Map<Long, DBSPExpression> expressions = new HashMap<>();
     private final Map<Long, IDBSPDeclaration> bindings = new HashMap<>();
 
-    private boolean hasExpensiveValue;
+    private final ValueNumbering analysis;
+    private final List<DBSPClosureExpression> closures = new ArrayList<>();
 
-    void use(DBSPExpression input, ValueNumbering.ExpressionUser site) {
-        this.events.add(new Use(input.id, this.users.size()));
-        this.users.add(site);
+    NativeValueNumbering(ValueNumbering analysis) {
+        super(analysis.compiler);
+        this.analysis = analysis;
     }
 
-    void define(DBSPExpression expression, ValueNumbering.Representation key, boolean expensive) {
-        this.expressions.put(expression.id, expression);
-        var fragments = new ArrayList<String>();
-        var operands = new ArrayList<Long>();
-        int start = 0;
-        for (var operand : key.operands()) {
-            fragments.add(key.repr().substring(start, operand.offset()));
-            operands.add(operand.expression());
-            start = operand.offset();
+    @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPClosureExpression node) {
+        this.closures.add(node);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public void postorder(DBSPClosureExpression node) {
+        Utilities.removeLast(this.closures);
+    }
+
+    private long binding(IDBSPDeclaration declaration) {
+        this.bindings.put(declaration.getId(), declaration);
+        return declaration.getId();
+    }
+
+    private void use(DBSPExpression parent, int operand, DBSPExpression input) {
+        this.events.add(new Use(input.id, this.users.size()));
+        this.users.add(new ValueNumbering.ExpressionUser(parent, operand,
+                this.closures.isEmpty() ? null : Utilities.last(this.closures)));
+    }
+
+    private void define(DBSPExpression expression, Form form, DBSPExpression... operands) {
+        long[] ids = new long[operands.length];
+        for (int i = 0; i < operands.length; i++) {
+            this.use(expression, i, operands[i]);
+            ids[i] = operands[i].id;
         }
-        fragments.add(key.repr().substring(start));
-        var declarations = new ArrayList<Long>();
-        for (var binding : key.dependsOn()) {
-            declarations.add(binding.getId());
-            this.bindings.put(binding.getId(), binding);
+        if (!this.closures.isEmpty()) {
+            this.expressions.put(expression.id, expression);
+            this.events.add(new Define(expression.id, form, ids));
         }
-        this.hasExpensiveValue |= expensive;
-        this.events.add(new Define(expression.id, fragments, operands, declarations, expensive,
-                ExpressionsCSE.neverShared(expression)));
+    }
+
+    @Override
+    public void postorder(DBSPLiteral e) {
+        this.define(e, new Literal(e.type.toString(), e.isNull() ? null : e.toString()));
+    }
+
+    @Override
+    public void postorder(DBSPPathExpression e) {
+        this.define(e, new Path(e.path.toString()));
+    }
+
+    @Override
+    public void postorder(DBSPVariablePath e) {
+        var declaration = this.analysis.resolver.reference.get(e);
+        Utilities.enforce(declaration != null);
+        if (e.type instanceof DBSPTypeRef ref && ref.mutable)
+            this.analysis.mutable.add(declaration);
+        this.define(e, new Variable(this.binding(declaration)));
+    }
+
+    @Override
+    public void postorder(DBSPLetExpression e) {
+        this.define(e, new Let(e.variable.toString(), this.binding(e)), e.initializer, e.consumer);
+    }
+
+    @Override
+    public void postorder(DBSPBinaryExpression e) {
+        this.define(e, new Binary(e.type.toString(), e.opcode.name(), e.opcode.toString()),
+                e.left, e.right);
+    }
+
+    @Override
+    public void postorder(DBSPUnaryExpression e) {
+        this.define(e, new Unary(e.type.toString(), e.opcode.name(), e.opcode.toString()), e.source);
+    }
+
+    @Override
+    public void postorder(DBSPApplyBaseExpression e) {
+        List<DBSPExpression> operands = new ArrayList<>();
+        if (e instanceof DBSPApplyMethodExpression method)
+            operands.add(method.self);
+        operands.add(e.function);
+        operands.addAll(Arrays.asList(e.arguments));
+        this.define(e, new Call(e.type.toString(), e instanceof DBSPApplyMethodExpression),
+                operands.toArray(DBSPExpression[]::new));
+    }
+
+    @Override
+    public void postorder(DBSPCastExpression e) {
+        this.define(e, new Cast(e.type.toString(), e.safe.name(),
+                e.source.type instanceof DBSPTypeString, e.type instanceof DBSPTypeString), e.source);
+    }
+
+    @Override
+    public void postorder(DBSPBaseTupleExpression e) {
+        if (e.fields == null)
+            this.define(e, new AbsentTuple(e.type.toString(), e.toString()));
+        else
+            this.define(e, e.isRaw() ? new RawTuple() : new Tuple(e.type.toString()), e.fields);
+    }
+
+    @Override
+    public void postorder(DBSPFieldExpression e) {
+        this.define(e, new Field(e.fieldNo), e.expression);
+    }
+
+    @Override
+    public void postorder(DBSPBorrowExpression e) {
+        if (!e.mut) {
+            this.define(e, new Simple(Operator.Borrow), e.expression);
+        } else {
+            var base = this.analysis.baseDeclaration(e.expression);
+            if (base == null)
+                this.analysis.foundAssignment = true;
+            else
+                this.analysis.mutable.add(base);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPCloneExpression e) {
+        this.define(e, new Simple(Operator.Clone), e.expression);
+    }
+
+    @Override
+    public void postorder(DBSPDerefExpression e) {
+        this.define(e, new Simple(Operator.Deref), e.expression);
+    }
+
+    @Override
+    public void postorder(DBSPIsNullExpression e) {
+        this.define(e, new Simple(Operator.IsNull), e.expression);
+    }
+
+    @Override
+    public void postorder(DBSPSomeExpression e) {
+        this.define(e, new Simple(Operator.Some), e.expression);
+    }
+
+    @Override
+    public void postorder(DBSPIfExpression e) {
+        if (e.negative == null)
+            this.define(e, new Simple(Operator.If), e.condition, e.positive);
+        else
+            this.define(e, new Simple(Operator.If), e.condition, e.positive, e.negative);
+    }
+
+    @Override
+    public void postorder(DBSPBlockExpression e) {
+        for (int i = 0; i < e.contents.size(); i++)
+            if (e.contents.get(i) instanceof DBSPLetStatement let && let.initializer != null)
+                this.use(e, i, let.initializer);
+        if (e.lastExpression != null)
+            this.use(e, e.contents.size(), e.lastExpression);
+    }
+
+    @Override
+    public void postorder(DBSPAssignmentExpression e) {
+        this.analysis.foundAssignment = true;
     }
 
     void finish(Map<DBSPExpression, ValueNumbering.CanonicalExpression> numbers,
                 Set<IDBSPDeclaration> mutable, boolean rewrite) {
-        if (this.expressions.isEmpty() || (rewrite && !this.hasExpensiveValue))
+        if (this.expressions.isEmpty() || (rewrite && this.users.size() < 2))
             return;
         var writes = new HashSet<Long>();
         for (var binding : mutable)
@@ -68,7 +234,10 @@ public final class NativeValueNumbering {
             for (var user : this.users)
                 sites.add(new Site(user.expression().id, user.operand(), user.closure() == null ? null : user.closure().id));
         }
-        for (var group : RustCircuitPass.numberValues(new Request(this.events, writes, rewrite, sites))) {
+        var groups = RustCircuitPass.numberValues(new Request(this.events, writes, rewrite, sites));
+        if (this.compiler.stateObserver != null)
+            this.compiler.stateObserver.nativeDecision("InnerCSE/NumberValues", true);
+        for (var group : groups) {
             var dependencies = new HashSet<IDBSPDeclaration>();
             for (long id : group.declarations())
                 dependencies.add(Utilities.getExists(this.bindings, id));
