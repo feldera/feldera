@@ -1,0 +1,313 @@
+{
+  "commit": "5740b1a0f8d9833317fd460052a6a68f67892718",
+  "scope": "VARIANT, nullable ROW and array-of-ROW timestamp keys, plus every frozen program whose SQL contains LATENESS and RANGE BETWEEN or ROWS BETWEEN. The frame coverage records only operators that can establish or propagate a waterline.",
+  "build_sha256": {
+    "bin/sql2dbsp": "582393d463e6708bf255cdc35f896fde19082ed949ac1f36fca4ea6ff0d04dd9",
+    "bin/libfeldera_sql_opt_jni.so": "a968de8cf1e5d63d848f34acf3c404dd370fd801e7245361debc5d6d6e6fe6b5",
+    "bin/sql-difftest": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+    "maven/sql-compiler.jar": "a831de445e9177d3ee91d03390c5fc6d91e364461b4019e356247ed6d920a2f5",
+    "maven/tests.jar": "e3b5ee19db3533128b932c7504a423c62ca41b7af0f3df43bb6ed080ff239c4b"
+  },
+  "rust_tests": 209,
+  "jni_junit_tests": 49,
+  "engines": {
+    "classic": {
+      "window_selections": {
+        "before": {
+          "WindowGroups/Scan": {
+            "calls": 3,
+            "fallbacks": 3
+          },
+          "WindowGroups/Reorder": {
+            "calls": 3,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 3,
+            "fallbacks": 0
+          }
+        },
+        "after": {
+          "WindowGroups/Scan": {
+            "calls": 3,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 3,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 3,
+            "fallbacks": 0
+          }
+        }
+      },
+      "frame_cases": 23,
+      "rolling_timestamp_transfers": 25,
+      "monotonicity_comparisons": 291,
+      "detached_cases": 26,
+      "ordered_s4_observations": 12855,
+      "mismatches": 0,
+      "receipt_sha256": "7918e82f9d98d38743d2e457c60720ab2c6eccc4a5bd996f7ef4a1768af0cc0d",
+      "frozen_request_coverage": {
+        "programs": 8571,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "observations_sha256": "0b517b724963ee49b20fcc13a00f575d49622c4b0e8febfb8082e8bd6273e3a6",
+        "operations": 25,
+        "native_calls": 159643,
+        "java_fallbacks": 0,
+        "requests": {
+          "KeyAnalysis/Circuit": {
+            "calls": 25713,
+            "fallbacks": 0
+          },
+          "LeftJoinChains/Columns": {
+            "calls": 293,
+            "fallbacks": 0
+          },
+          "LeftJoinChains/Steps": {
+            "calls": 8571,
+            "fallbacks": 0
+          },
+          "MergeFilters": {
+            "calls": 35,
+            "fallbacks": 0
+          },
+          "Monotonicity/AntiJoinProjection": {
+            "calls": 43,
+            "fallbacks": 0
+          },
+          "Monotonicity/IsMinimumChain": {
+            "calls": 74,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 824,
+            "fallbacks": 0
+          },
+          "Monotonicity/ProjectClosure": {
+            "calls": 3317,
+            "fallbacks": 0
+          },
+          "OptimizeProjections/Producer": {
+            "calls": 93191,
+            "fallbacks": 0
+          },
+          "ParameterFieldDependencies": {
+            "calls": 13079,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/AggregateReader": {
+            "calls": 2890,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/FlatmapInput": {
+            "calls": 405,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/IndexedValue": {
+            "calls": 1939,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/NarrowAsof": {
+            "calls": 104,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/NarrowJoin": {
+            "calls": 3664,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/ParameterTypes": {
+            "calls": 3080,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/Reader": {
+            "calls": 190,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/TopKComparators": {
+            "calls": 190,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/TopKFields": {
+            "calls": 961,
+            "fallbacks": 0
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 202,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 163,
+            "fallbacks": 0
+          },
+          "SharedIndexes/Discover": {
+            "calls": 509,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 64,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 71,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 71,
+            "fallbacks": 0
+          }
+        }
+      }
+    },
+    "gen2": {
+      "window_selections": {
+        "before": {
+          "WindowGroups/Scan": {
+            "calls": 3,
+            "fallbacks": 3
+          },
+          "WindowGroups/Reorder": {
+            "calls": 3,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 3,
+            "fallbacks": 0
+          }
+        },
+        "after": {
+          "WindowGroups/Scan": {
+            "calls": 3,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 3,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 3,
+            "fallbacks": 0
+          }
+        }
+      },
+      "frame_cases": 20,
+      "rolling_timestamp_transfers": 31,
+      "monotonicity_comparisons": 259,
+      "detached_cases": 23,
+      "ordered_s4_observations": 11565,
+      "mismatches": 0,
+      "receipt_sha256": "1b037c9ca5d5b5cfe84129dfec7d263f67e3a944ba4b83a58331f2b8eb0ff4d8",
+      "frozen_request_coverage": {
+        "programs": 8527,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "observations_sha256": "5366ae6185c69ab77489419f50af32f466ae3df0f1965eb3b868876d3f0315ae",
+        "operations": 25,
+        "native_calls": 163821,
+        "java_fallbacks": 0,
+        "requests": {
+          "KeyAnalysis/Circuit": {
+            "calls": 25581,
+            "fallbacks": 0
+          },
+          "LeftJoinChains/Columns": {
+            "calls": 290,
+            "fallbacks": 0
+          },
+          "LeftJoinChains/Steps": {
+            "calls": 8527,
+            "fallbacks": 0
+          },
+          "MergeFilters": {
+            "calls": 32,
+            "fallbacks": 0
+          },
+          "Monotonicity/AntiJoinProjection": {
+            "calls": 42,
+            "fallbacks": 0
+          },
+          "Monotonicity/IsMinimumChain": {
+            "calls": 74,
+            "fallbacks": 0
+          },
+          "Monotonicity/JoinArguments": {
+            "calls": 828,
+            "fallbacks": 0
+          },
+          "Monotonicity/ProjectClosure": {
+            "calls": 3283,
+            "fallbacks": 0
+          },
+          "OptimizeProjections/Producer": {
+            "calls": 97576,
+            "fallbacks": 0
+          },
+          "ParameterFieldDependencies": {
+            "calls": 13023,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/AggregateReader": {
+            "calls": 2880,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/FlatmapInput": {
+            "calls": 401,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/IndexedValue": {
+            "calls": 1930,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/NarrowAsof": {
+            "calls": 93,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/NarrowJoin": {
+            "calls": 3624,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/ParameterTypes": {
+            "calls": 3069,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/Reader": {
+            "calls": 189,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/TopKComparators": {
+            "calls": 189,
+            "fallbacks": 0
+          },
+          "RemoveUnusedFields/TopKFields": {
+            "calls": 957,
+            "fallbacks": 0
+          },
+          "ReplaceSharedIndexes": {
+            "calls": 243,
+            "fallbacks": 0
+          },
+          "RewriteNow/Filter": {
+            "calls": 151,
+            "fallbacks": 0
+          },
+          "SharedIndexes/Discover": {
+            "calls": 660,
+            "fallbacks": 0
+          },
+          "WindowGroups/Indexes": {
+            "calls": 55,
+            "fallbacks": 0
+          },
+          "WindowGroups/Reorder": {
+            "calls": 62,
+            "fallbacks": 0
+          },
+          "WindowGroups/Scan": {
+            "calls": 62,
+            "fallbacks": 0
+          }
+        }
+      }
+    }
+  }
+}

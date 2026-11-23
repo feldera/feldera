@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `5740b1a0f`, Rust read rolling-frame upper bounds from the circuit and
+selected timestamp waterlines at 56 rolling aggregates. It grouped windows
+on VARIANT and array-of-ROW predicates on both engines. All 49 selected
+compilations matched Java through 24,420 ordered S4 observations and emission,
+and all 550 selected monotonicity comparisons matched. Across both frozen
+populations, the 25 instrumented operations answered all 323,464 requests in Rust.
+[Rolling frames and composite keys](evidence/p3-rolling-frame-offsets.json)
+
 Rust canonicalized 145 shadowed LET bindings in the same order as Java.
 Each initializer read the enclosing binding and each consumer read its own
 declaration. All 12 classic and Gen-2 SQL replays matched through 5,884
