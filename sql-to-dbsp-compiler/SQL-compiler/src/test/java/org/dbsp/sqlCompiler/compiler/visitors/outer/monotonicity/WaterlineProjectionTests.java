@@ -590,6 +590,37 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void castingAPartiallyBoundRowKeepsOnlyTheSiblingWaterline() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(site, 32, true, false);
+        var inputShape = new PartiallyMonotoneTuple(
+                List.of(new MonotoneType(integer), new NonMonotoneType(integer)), false, false);
+        var row = new DBSPVariablePath("row", inputShape.getType().ref());
+        var target = inputShape.getType().withMayBeNull(true);
+        var cast = row.deref().cast(site, target, DBSPCastExpression.CastType.SqlUnsafe);
+        var body = new DBSPTupleExpression(cast, row.deepCopy().deref().field(0));
+        var closure = body.closure(row);
+        var op = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, op, MonotoneTransferFunctions.ArgumentKind.ZSet, inputShape)
+                .applyAnalysis(closure);
+        var fields = Monotonicity.getBodyType(direct).to(PartiallyMonotoneTuple.class);
+        Assert.assertFalse(fields.getFieldType(0).mayBeMonotone());
+        Assert.assertTrue(fields.getFieldType(1).mayBeMonotone());
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var projected = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{inputShape.getProjectedType()},
+                    new IMaybeMonotoneType[]{new MonotoneRefType(inputShape)}, false);
+            Assert.assertNotNull(projected);
+            var result = projected.bodyType().to(PartiallyMonotoneTuple.class);
+            Assert.assertFalse(result.getFieldType(0).mayBeMonotone());
+            Assert.assertTrue(result.getFieldType(0).getType().sameType(target));
+            Assert.assertSame(inputShape.getFieldType(0), result.getFieldType(1));
+            Assert.assertTrue(direct.getReducedExpression().equivalent(projected.closure()));
+        }
+    }
+
+    @Test
     public void unknownCoalescedRowsRetainTheirFieldTypes() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var node = CalciteEmptyRel.INSTANCE;

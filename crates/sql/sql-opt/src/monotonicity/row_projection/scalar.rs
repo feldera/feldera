@@ -160,14 +160,18 @@ pub(super) fn unary_bound(
     source: ProjectedValue,
 ) -> Result<Option<ProjectedValue>, Error> {
     let reduced = match (edit.expr_kind(expression)?, source.reduced) {
-        // A cast of an unbounded ROW takes its shape from the target type.
         (Expr::Cast, None) => None,
-        _ if !matches!(source.shape, Shape::Scalar(_)) => return Ok(None),
         (Expr::Cast, Some(bound)) => super::super::casts::cast_bound(edit, expression, bound)?,
+        _ if !matches!(source.shape, Shape::Scalar(_)) => return Ok(None),
         (_, Some(bound)) => super::super::unary_waterline(edit, expression, bound)?,
         (_, None) => None,
     };
     if let Some(bound) = reduced {
+        // A successful cast copies the input's scalar monotonicity. Keep the
+        // visitor's diagnostic if that operation is requested on a tuple or reference.
+        if !matches!(source.shape, Shape::Scalar(_)) {
+            return Ok(None);
+        }
         return ProjectedValue::bounded(edit, expression, bound, source.constant).map(Some);
     }
     let mut projected = super::unbounded(edit, expression)?;
