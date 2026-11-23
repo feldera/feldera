@@ -1,5 +1,5 @@
 //! Project the common key and every narrow value onto one shared row variable.
-use crate::index_key_equivalence::equivalent_bodies;
+use crate::index_key_equivalence::{KeyComparisonError, check_bodies, speculative};
 use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId,
@@ -38,14 +38,14 @@ pub fn wide_index_fields(
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<WideIndexFields, Error> {
     project_fields(edit, functions, next, warnings, |_, field, _, _| {
-        Ok(Some(field))
+        Ok::<_, Error>(Some(field))
     })?
     .ok_or_else(|| Error::new("missing projected shared-index field"))
 }
 
 /// Visit each reduced field before projecting the next one. A live equality
 /// error must see exactly the warnings produced up to the failing comparison.
-fn project_fields<T>(
+fn project_fields<T, E: From<Error>>(
     edit: &mut CircuitEditor,
     functions: &[NodeId],
     next: &mut u64,
@@ -55,10 +55,10 @@ fn project_fields<T>(
         ExpressionId,
         u64,
         &[SimplifyWarning],
-    ) -> Result<Option<T>, Error>,
-) -> Result<Option<WideIndexFields<T>>, Error> {
+    ) -> Result<Option<T>, E>,
+) -> Result<Option<WideIndexFields<T>>, E> {
     let &[first, _, ..] = functions else {
-        return Err(Error::new("a wide index needs at least two input indexes"));
+        return Err(Error::new("a wide index needs at least two input indexes").into());
     };
     let input = parameter_type(edit, first)?;
     let variable = edit.variable(input, next)?;
@@ -70,18 +70,16 @@ fn project_fields<T>(
     let mut rows = Vec::with_capacity(functions.len());
     for &function in functions {
         if !edit.same_type(input, parameter_type(edit, function)?)? {
-            return Err(Error::new(
-                "shared indexes require equivalent row parameter types",
-            ));
+            return Err(Error::new("shared indexes require equivalent row parameter types").into());
         }
         let function = edit.expression(function)?;
         let call = edit.call_closure(function, &[variable])?;
         let row = edit.tuple_field(call, 1)?;
         let row_type = edit.expression_type(row)?;
         if edit.type_kind(row_type)? != Ty::Tuple || edit.nullable(row_type)? != nullable {
-            return Err(Error::new(
-                "shared index values require tuples with equal nullability",
-            ));
+            return Err(
+                Error::new("shared index values require tuples with equal nullability").into(),
+            );
         }
         let types = edit.node(row_type.into())?.edges("tupFields")?;
         let mut fields = Vec::with_capacity(types.len());
@@ -143,9 +141,9 @@ fn column_position(
     columns: &mut Vec<ExpressionId>,
     field: ExpressionId,
     mut unresolved: impl FnMut([ExpressionId; 2]) -> Result<Option<bool>, Error>,
-) -> Result<Option<usize>, Error> {
+) -> Result<Option<usize>, KeyComparisonError> {
     for (i, &column) in columns.iter().enumerate() {
-        let equal = match equivalent_bodies(edit, field.into(), column.into(), None)? {
+        let equal = match check_bodies(edit, field.into(), column.into(), None)? {
             None => unresolved([field, column])?,
             known => known,
         };
@@ -166,7 +164,9 @@ impl WideIndexFields {
         for row in &self.rows {
             let mut mapping = Vec::with_capacity(row.len());
             for &field in row {
-                let Some(i) = column_position(edit, &mut columns, field, |_| Ok(None))? else {
+                let Some(i) =
+                    speculative(column_position(edit, &mut columns, field, |_| Ok(None)))?
+                else {
                     return Ok(None);
                 };
                 mapping.push(i);
@@ -190,7 +190,7 @@ pub(super) fn project_index(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
     compare: &mut CompareColumn,
-) -> Result<Option<ProjectedIndex>, Error> {
+) -> Result<Option<ProjectedIndex>, KeyComparisonError> {
     let mut columns = Vec::new();
     let fields = project_fields(
         edit,
@@ -230,14 +230,14 @@ pub fn split_shared_indexes(
 ) -> Result<Option<Vec<Vec<usize>>>, Error> {
     let mut generated = *next;
     let mut emitted = Vec::new();
-    let groups = split_with(
+    let groups = speculative(split_with(
         arena,
         functions,
         fixed,
         &mut generated,
         &mut emitted,
         &mut |_| Ok(None),
-    )?;
+    ))?;
     if groups.is_some() {
         *next = generated;
         warnings.extend(emitted);
@@ -252,9 +252,9 @@ pub(super) fn split_with(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
     compare: &mut CompareColumn,
-) -> Result<Option<Vec<Vec<usize>>>, Error> {
+) -> Result<Option<Vec<Vec<usize>>>, KeyComparisonError> {
     if functions.len() != fixed.len() {
-        return Err(Error::new("missing fixed-index requirement"));
+        return Err(Error::new("missing fixed-index requirement").into());
     }
     let edit = CircuitEditor::new(arena.clone());
     let mut remaining = Vec::with_capacity(functions.len());
@@ -264,7 +264,7 @@ pub(super) fn split_with(
             .node(edit.expression_type(body)?.into())?
             .edges("tupFields")?;
         let [_, value] = pair.as_slice() else {
-            return Err(Error::new("shared index requires a key/value pair"));
+            return Err(Error::new("shared index requires a key/value pair").into());
         };
         let width = if matches!(
             edit.type_kind(edit.type_id(*value)?)?,

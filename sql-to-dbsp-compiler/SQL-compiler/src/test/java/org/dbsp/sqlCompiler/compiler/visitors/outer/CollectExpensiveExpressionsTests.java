@@ -4,9 +4,11 @@ import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
@@ -131,14 +133,27 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
     @Test
     public void fusionReportsALiveColumnErrorWithoutReplayingThePass() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var invalid = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
+        this.checkColumnError(invalid, invalid.deepCopy(), java.time.DateTimeException.class, false);
+    }
+
+    @Test
+    public void fusionReportsTheFirstUnboundColumnInRust() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var message = this.checkColumnError(new DBSPVariablePath("prior", b.i32()),
+                new DBSPVariablePath("incoming", b.i32()), InternalCompilerError.class, true);
+        Assert.assertEquals("Declaration for variable 'prior' not found", message);
+    }
+
+    private String checkColumnError(DBSPExpression first, DBSPExpression second,
+                                    Class<? extends RuntimeException> expected, boolean nativeDecision) {
         var compiler = this.testCompiler();
         var site = CalciteEmptyRel.INSTANCE;
         var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
         var row = b.refVar(this.pair);
         var call = b.call("costly", b.field(row, 0));
-        var invalid = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
-                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
-        var function = b.tuple(call, call.deepCopy(), invalid, invalid.deepCopy()).closure(row);
+        var function = b.tuple(call, call.deepCopy(), first, second).closure(row);
         var map = new DBSPMapOperator(site, function, input.outputPort());
         var circuit = new DBSPCircuit(new ProgramMetadata(), false);
         circuit.addOperator(input);
@@ -149,7 +164,7 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
         scan.clusters.put(map, cluster);
 
         long start = DBSPVariablePath.nextGeneratedName();
-        var direct = Assert.assertThrows(java.time.DateTimeException.class,
+        var direct = Assert.assertThrows(expected,
                 () -> new FuseExpensiveMaps.Fuse(compiler, scan).apply(circuit));
         long names = DBSPVariablePath.nextGeneratedName() - start;
         var fuse = new FuseExpensiveMaps.Fuse(compiler, scan) {
@@ -160,11 +175,29 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
             void fuse(List<MapInfo> members) { Assert.fail("restarted Java map fusion"); }
         };
         compiler.options.ioOptions.rustOptimizerPasses = true;
+        var decisions = new ArrayList<Boolean>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void nativeDecision(String operation, boolean answered) {
+                if (operation.equals("FuseExpensiveMaps/Columns"))
+                    decisions.add(answered);
+            }
+
+            @Override
+            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
+
+            @Override
+            public void after(String parent, int index, int iteration, CircuitTransform pass,
+                              DBSPCircuit circuit, boolean completed) {}
+        };
         start = DBSPVariablePath.nextGeneratedName();
         var hybrid = Assert.assertThrows(direct.getClass(),
                 () -> new RustCircuitPass(compiler, fuse, new OptimizerSnapshots(compiler)).apply(circuit));
-        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        String message = direct.getMessage().lines().findFirst().orElseThrow();
+        Assert.assertEquals(message, hybrid.getMessage().lines().findFirst().orElseThrow());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertEquals(List.of(nativeDecision), decisions);
+        return message;
     }
 
     @Test

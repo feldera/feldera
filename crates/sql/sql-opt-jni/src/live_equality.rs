@@ -2,6 +2,7 @@
 use crate::{BridgeError, MAX_BYTES, decode_live_circuit, pass_warnings};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{Circuit, Error, NodeId};
+use feldera_sql_opt::ColumnRewriteError;
 use jni::{
     Env, EnvUnowned, JValue,
     errors::ThrowRuntimeExAndDefault,
@@ -43,6 +44,37 @@ pub(super) fn column_request(
     )
 }
 
+/// A failed lookup carries exactly the state accumulated at that column.
+pub(super) fn column_reply(
+    output: Result<Option<Circuit>, ColumnRewriteError>,
+    input: &Circuit,
+    native_columns: bool,
+    next_name: u64,
+    warnings: Vec<SimplifyWarning>,
+) -> Result<Value, Error> {
+    match output {
+        Ok(Some(circuit)) => Ok(json!({
+            "circuit": circuit.changed_live_graph(input),
+            "native_columns": native_columns,
+            "diagnostics": pass_warnings(warnings),
+            "next_generated_name": next_name,
+            "unused_sources": [],
+        })),
+        Ok(None) => Err(Error::new("unanswered column comparison")),
+        Err(ColumnRewriteError::MissingDeclaration {
+            name,
+            next_name,
+            warnings,
+        }) => Ok(json!({
+            "missingDeclaration": name,
+            "native_columns": native_columns,
+            "warnings": pass_warnings(warnings),
+            "next_generated_name": next_name,
+        })),
+        Err(ColumnRewriteError::InvalidIr(error)) => Err(error),
+    }
+}
+
 fn fusion_error(error: impl std::fmt::Display) -> BridgeError {
     BridgeError::Optimizer(format!("Live/Fuse: {error}"))
 }
@@ -64,26 +96,38 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         if snapshot.len(env)?.saturating_add(clusters.len(env)?) > MAX_BYTES {
             return Err(fusion_error("input exceeds 64 MiB"));
         }
-        let circuit = decode_live_circuit(&env.convert_byte_array(&snapshot)?).map_err(fusion_error)?;
-        let clusters = serde_json::from_slice(&env.convert_byte_array(&clusters)?).map_err(fusion_error)?;
+        let circuit =
+            decode_live_circuit(&env.convert_byte_array(&snapshot)?).map_err(fusion_error)?;
+        let clusters =
+            serde_json::from_slice(&env.convert_byte_array(&clusters)?).map_err(fusion_error)?;
         let mut next = u64::try_from(next).map_err(fusion_error)?;
         let mut warnings = Vec::new();
         let mut native_columns = true;
         let output = feldera_sql_opt::fuse_expensive_maps_with(
-            circuit.clone(), clusters, &mut next, &mut warnings, |site| {
+            circuit.clone(),
+            clusters,
+            &mut next,
+            &mut warnings,
+            |site| {
                 native_columns = false;
                 let [left, right] = site.fields;
-                let request = column_request(site.graph, site.input, &[site.row.into(), left.into(), right.into()], site.warnings, site.next_name)?;
+                let request = column_request(
+                    site.graph,
+                    site.input,
+                    &[site.row.into(), left.into(), right.into()],
+                    site.warnings,
+                    site.next_name,
+                )?;
                 compare(env, &equality, &request).map(Some)
             },
-        ).map_err(fusion_error)?.ok_or_else(|| fusion_error("unanswered column comparison"))?;
-        let mut result = json!({"native_columns":native_columns, "diagnostics":pass_warnings(warnings),
-            "next_generated_name":next, "unused_sources":[]});
-        result["circuit"] = output.changed_live_graph(&circuit).unwrap_or(Value::Null);
+        );
+        let result =
+            column_reply(output, &circuit, native_columns, next, warnings).map_err(fusion_error)?;
         let bytes = serde_json::to_vec(&result).map_err(fusion_error)?;
         if bytes.len() > MAX_BYTES {
             return Err(fusion_error("output exceeds 64 MiB"));
         }
         Ok(env.byte_array_from_slice(&bytes)?)
-    }).resolve::<ThrowRuntimeExAndDefault>()
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }

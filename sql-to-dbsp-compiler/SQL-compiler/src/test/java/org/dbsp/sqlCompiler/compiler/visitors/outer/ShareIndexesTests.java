@@ -722,7 +722,7 @@ public class ShareIndexesTests extends StreamingTestBase {
         Assert.assertEquals(direct.getPositionRange(), hybrid.getPositionRange());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
         Assert.assertEquals(warnings, hybridCompiler.messages.replaySnapshot());
-        Assert.assertEquals(List.of("ReplaceSharedIndexes=false"), decisions);
+        Assert.assertEquals(List.of("ReplaceSharedIndexes=true"), decisions);
     }
 
     /** Two joins read indexes of T whose values are {@code first} and {@code second}.

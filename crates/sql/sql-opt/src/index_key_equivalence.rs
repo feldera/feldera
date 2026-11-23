@@ -1,6 +1,7 @@
 //! Compare projected index keys under the bindings of their two row parameters.
 mod bindings;
 use bindings::{Bindings, Scope, Work};
+use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId};
 use std::collections::HashSet;
 
@@ -10,6 +11,44 @@ pub enum KeyComparisonError {
     MissingDeclaration(String),
     #[error(transparent)]
     InvalidIr(#[from] Error),
+}
+
+/// A live column rewrite publishes the warning and name prefix before
+/// reporting a failed declaration lookup. Detached callers can decline it.
+#[derive(Debug, thiserror::Error)]
+pub enum ColumnRewriteError {
+    #[error("Declaration for variable '{name}' not found")]
+    MissingDeclaration {
+        name: String,
+        next_name: u64,
+        warnings: Vec<SimplifyWarning>,
+    },
+    #[error(transparent)]
+    InvalidIr(#[from] Error),
+}
+
+impl ColumnRewriteError {
+    pub(super) fn at_comparison(
+        error: KeyComparisonError,
+        next_name: u64,
+        warnings: &mut Vec<SimplifyWarning>,
+    ) -> Self {
+        match error {
+            KeyComparisonError::MissingDeclaration(name) => Self::MissingDeclaration {
+                name,
+                next_name,
+                warnings: std::mem::take(warnings),
+            },
+            KeyComparisonError::InvalidIr(error) => Self::InvalidIr(error),
+        }
+    }
+
+    pub(super) fn decline<T>(self) -> Result<Option<T>, Error> {
+        match self {
+            Self::MissingDeclaration { .. } => Ok(None),
+            Self::InvalidIr(error) => Err(error),
+        }
+    }
 }
 
 /// Speculative rewrites leave an unresolved key to the caller. A temporal
@@ -188,7 +227,7 @@ pub(crate) fn compare_expressions<'a>(
     speculative(compare_keys(edit, left, right, parameters))
 }
 
-fn compare_keys<'a>(
+pub(super) fn compare_keys<'a>(
     edit: &'a CircuitEditor,
     left: NodeId,
     right: NodeId,

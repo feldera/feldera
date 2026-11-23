@@ -7,7 +7,7 @@ use feldera_sql_ir::{
     TypeKind as Ty,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SimplifyWarning {
     pub position: feldera_sql_ir::provenance::SourceRange,
     pub kind: &'static str,

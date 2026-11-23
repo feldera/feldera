@@ -8,7 +8,8 @@ pub use groups::{
 };
 
 use crate::{
-    index_key_equivalence::compare_expressions, rebuild::ProjectionNames,
+    index_key_equivalence::{ColumnRewriteError, compare_keys},
+    rebuild::ProjectionNames,
     stream_rewrites::body_members,
 };
 use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
@@ -91,10 +92,12 @@ impl FusionColumns {
         row: ExpressionId,
         row_name: &str,
         context: &mut FusionContext,
-    ) -> Result<Option<usize>, Error> {
+    ) -> Result<Option<usize>, ColumnRewriteError> {
         for (index, &previous) in self.fields.iter().enumerate() {
-            let native =
-                compare_expressions(edit, previous.into(), field.into(), [(row_name, row_name)])?;
+            let native = compare_keys(edit, previous.into(), field.into(), [(row_name, row_name)])
+                .map_err(|error| {
+                    ColumnRewriteError::at_comparison(error, context.next, &mut context.warnings)
+                })?;
             let matched = match native {
                 Some(answer) => Some(answer),
                 None => (context.compare)(FusionComparison {
@@ -125,7 +128,7 @@ fn collect_columns(
     members: &[(NodeId, NodeId)],
     row: ExpressionId,
     context: &mut FusionContext,
-) -> Result<Option<FusionColumns>, Error> {
+) -> Result<Option<FusionColumns>, ColumnRewriteError> {
     let mut columns = FusionColumns::default();
     let name = edit
         .node(row.into())?
@@ -147,7 +150,7 @@ fn collect_columns(
             tuple.inner_kind(),
             Some(InnerKind::Expression(ExpressionKind::Tuple))
         ) {
-            return Err(Error::new("fused map must return a SQL tuple"));
+            return Err(Error::new("fused map must return a SQL tuple").into());
         }
         let mut projection = Vec::new();
         for field in tuple.edges("fields")? {
@@ -169,10 +172,10 @@ fn fuse_cluster(
     members: &[(NodeId, NodeId)],
     replacements: &mut BTreeMap<NodeId, OutputPort>,
     context: &mut FusionContext,
-) -> Result<bool, Error> {
+) -> Result<bool, ColumnRewriteError> {
     let (first, function) = members[0];
     let [parameter] = edit.node(function)?.edges("parameters")?[..] else {
-        return Err(Error::new("fused map requires one input parameter"));
+        return Err(Error::new("fused map requires one input parameter").into());
     };
     let input = edit
         .node(first)?
@@ -193,7 +196,7 @@ fn fuse_cluster(
     for (&(member, _), indices) in members.iter().zip(projections) {
         let operator = edit.node(member)?;
         if operator.operator_kind() != Some(OperatorKind::Map) || !operator.inputs().eq([input]) {
-            return Err(Error::new("fused maps must share an input port"));
+            return Err(Error::new("fused maps must share an input port").into());
         }
         let output = edit
             .node(operator.edge("outputType")?)?
@@ -213,7 +216,7 @@ fn fuse_cluster(
             json!({"class":"IsProjection","outputSize":columns.len()}),
         )?;
         if replacements.insert(member, projected).is_some() {
-            return Err(Error::new("map occurs in more than one fusion cluster"));
+            return Err(Error::new("map occurs in more than one fusion cluster").into());
         }
     }
     edit.place_before(body, fused.operator, first)?;
@@ -227,6 +230,7 @@ pub fn fuse_expensive_maps(
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<Circuit>, Error> {
     fuse_expensive_maps_with(circuit, clusters, next, warnings, |_| Ok(None))
+        .or_else(ColumnRewriteError::decline)
 }
 
 /// Resolve individual undecided comparisons without restarting the rewrite.
@@ -238,7 +242,7 @@ pub fn fuse_expensive_maps_with(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
     mut compare: impl FnMut(FusionComparison<'_>) -> Result<Option<bool>, Error>,
-) -> Result<Option<Circuit>, Error> {
+) -> Result<Option<Circuit>, ColumnRewriteError> {
     if clusters.is_empty() {
         return Ok(Some(circuit));
     }
@@ -248,7 +252,7 @@ pub fn fuse_expensive_maps_with(
     let mut groups = Vec::with_capacity(clusters.len());
     for cluster in clusters {
         if cluster.is_empty() {
-            return Err(Error::new("empty map fusion cluster"));
+            return Err(Error::new("empty map fusion cluster").into());
         }
         groups.push(
             cluster
@@ -276,9 +280,7 @@ pub fn fuse_expensive_maps_with(
             .get(&first)
             .ok_or_else(|| Error::new("unknown map fusion root"))?;
         if group.iter().any(|id| bodies.get(id) != Some(body)) {
-            return Err(Error::new(
-                "fused maps must belong to the same circuit body",
-            ));
+            return Err(Error::new("fused maps must belong to the same circuit body").into());
         }
         let count = group.len();
         let members = group
@@ -286,7 +288,7 @@ pub fn fuse_expensive_maps_with(
             .zip(functions.by_ref().take(count))
             .collect::<Vec<_>>();
         if plans.insert(first, members).is_some() {
-            return Err(Error::new("duplicate map fusion root"));
+            return Err(Error::new("duplicate map fusion root").into());
         }
     }
     let order = circuit.operator_order(BodyOrder::Postorder)?;

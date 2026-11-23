@@ -1,0 +1,57 @@
+{
+  "scope": "Rust diagnoses missing declarations when comparing index or fused-map columns and preserves prior warnings and generated names. Live comparison failures are reported to the coverage observer.",
+  "source_base": "3f11d9be34c5dacce69532680b98f052a8bdbb13",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/casts/simplify.rs": "312ea0d9fb58f332a9ecd9a37caed5d712d81a3eb9874e48b189aa17e9edbf54",
+    "crates/sql/sql-opt-jni/src/live_equality.rs": "abb1b50c6075baf039d10f11c3fe30ee73d715f46afbda7cb296de2f1891d341",
+    "crates/sql/sql-opt-jni/src/shared_indexes.rs": "23b6eef3a60633112c22d4bdd13c40496c8545eb25294c9d8de4ad4168600c36",
+    "crates/sql/sql-opt/src/index_key_equivalence.rs": "4e657999e0096ce58b797ede7748607ce0d8266cd446293469b05f88c6c984a4",
+    "crates/sql/sql-opt/src/lib.rs": "2eab83bc419fc7573cf5cb77d6e7c3f11333d0447dfc1d892537a05bb4bda3a5",
+    "crates/sql/sql-opt/src/map_fusion.rs": "d3de7b607614468d1820a7d606cbfa5c2dbd4efa4e5fbbae527d07e88ffc5703",
+    "crates/sql/sql-opt/src/replace_shared_indexes.rs": "615129632242ddfd664a1f1d451ba732dc41385294b225e7380e84d47fe0ca7d",
+    "crates/sql/sql-opt/src/wide_index.rs": "147999c7804a123b8e7b386f09228e77a6541d1cbf9d0ecf83b480fa5e1bf708",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "08f9814c2dbaa9792e3c6503b5c0016fb023122e32d17adcee65ff414a5f0ae1",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "c30c361ca80d3e15170c6b9ba0dbec17d86527de8c1bf00c4ef0e71747b3b5ca",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ShareIndexesTests.java": "7096a5aa9c19c5665e80e11a3c3dfb4223b340ea72c1ed8f6ccd793c3409ba1a"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "b26b198d871f4def556f7794605fdd654ef086b99f948c65fa86ccdbe28b7d8e",
+    "bin/sql-difftest": "fa23475bdae10b8459cc91a25efc5a8e4063d483bd570c37ea498b98add67fc8",
+    "maven/tests.jar": "eabc0e0d4deea47cbce625cbafc214789f17df6f528ada19977869809c3d0344",
+    "maven/sql-compiler.jar": "ff2463ae921863e097ceff2bf79288782d98fc638bf68464edc7c796fbd5de40"
+  },
+  "negative_control": {
+    "library_sha256": "08dfb512e60e47743ba6a4f5e05b49476afb25b140dfec72b3b1557addcf2eca",
+    "failed_tests": [
+      "sharedIndexColumnErrorPreservesTheComparisonPrefix",
+      "fusionReportsALiveColumnErrorWithoutReplayingThePass",
+      "fusionReportsTheFirstUnboundColumnInRust"
+    ],
+    "java_compiler_sha256": "a6164eb97184fcc2d9ad139e124c30c40b25ea774d5ab5c1575539e1e6ec75d0"
+  },
+  "rust_tests": 225,
+  "junit_tests": 181,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "cd4f23344401e39e03ad68e29b5617037ef42b4788d62afcc866a46e7981fd34"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "266b89f283e765300ceb5db9463c66cc04f857213099da3359a788e72281864a"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 221,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  }
+}

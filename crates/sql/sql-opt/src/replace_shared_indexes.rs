@@ -1,4 +1,5 @@
 //! Replace narrow indexes with a common index at the first consumer that needs it.
+use crate::index_key_equivalence::{ColumnRewriteError, KeyComparisonError};
 use crate::index_reader::{IndexParameter, rewrite_index_reader};
 use crate::rebuild::ProjectionNames;
 use crate::shared_index_candidates::IndexReader;
@@ -147,7 +148,7 @@ impl Sharing {
         next: &mut u64,
         warnings: &mut Vec<SimplifyWarning>,
         compare: &mut CompareColumn,
-    ) -> Result<Option<Self>, Error> {
+    ) -> Result<Option<Self>, KeyComparisonError> {
         let mut result = Self {
             indexes: Vec::new(),
             inputs: HashMap::new(),
@@ -159,9 +160,9 @@ impl Sharing {
                 let index = NodeId::Outer(member.index);
                 let consumer = edit.node(NodeId::Outer(member.consumer))?;
                 if consumer.inputs().nth(member.slot).map(|p| p.operator) != Some(index) {
-                    return Err(Error::new(
-                        "shared-index candidate differs from consumer input",
-                    ));
+                    return Err(
+                        Error::new("shared-index candidate differs from consumer input").into(),
+                    );
                 }
                 functions.push(edit.node(index)?.edge("function")?);
                 fixed.push(fixed_index(consumer, member.slot)?);
@@ -202,7 +203,8 @@ impl Sharing {
                     {
                         return Err(Error::new(
                             "consumer input belongs to multiple shared indexes",
-                        ));
+                        )
+                        .into());
                     }
                 }
             }
@@ -276,6 +278,7 @@ pub fn replace_shared_indexes(
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<Circuit>, Error> {
     replace_shared_indexes_with(circuit, candidates, next, warnings, |_| Ok(None))
+        .or_else(ColumnRewriteError::decline)
 }
 
 /// Keep candidate selection, column layout and reader rewrites in Rust when
@@ -286,7 +289,7 @@ pub fn replace_shared_indexes_with(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
     mut compare: impl FnMut(IndexComparison<'_>) -> Result<Option<bool>, Error>,
-) -> Result<Option<Circuit>, Error> {
+) -> Result<Option<Circuit>, ColumnRewriteError> {
     if candidates.is_empty() {
         return Ok(Some(circuit));
     }
@@ -299,7 +302,8 @@ pub fn replace_shared_indexes_with(
         &mut counter,
         &mut emitted,
         &mut compare,
-    )?
+    )
+    .map_err(|error| ColumnRewriteError::at_comparison(error, counter, &mut emitted))?
     else {
         return Ok(None);
     };

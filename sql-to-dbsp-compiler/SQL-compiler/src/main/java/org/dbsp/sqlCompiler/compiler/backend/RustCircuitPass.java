@@ -2323,8 +2323,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var missing = reply.value.get("missingDeclaration");
             if (missing != null) {
                 if (reportMissingDeclaration)
-                    Utilities.enforce(false, () -> "Declaration for variable " +
-                            Utilities.singleQuote(missing.textValue()) + " not found");
+                    reportMissingDeclaration(missing);
                 return null;
             }
             return reply;
@@ -3581,6 +3580,22 @@ public final class RustCircuitPass implements CircuitTransform {
         return MAPPER.readTree(result);
     }
 
+    private static void reportMissingDeclaration(JsonNode variable) {
+        Utilities.fail("Declaration for variable " + Utilities.singleQuote(variable.textValue()) + " not found");
+    }
+
+    private JsonNode columnRewriteReply(String operation, byte[] result) throws IOException {
+        var reply = MAPPER.readTree(result);
+        if (this.compiler.stateObserver != null)
+            this.compiler.stateObserver.nativeDecision(operation, reply.required("native_columns").booleanValue());
+        var missing = reply.get("missingDeclaration");
+        if (missing != null) {
+            finishLowering(this.compiler, reply);
+            reportMissingDeclaration(missing);
+        }
+        return reply;
+    }
+
     private JsonNode fuseMapClusters(ToJsonOuterVisitor writer, byte[] snapshot, long next) throws IOException {
         byte[] clusters = MapFusionState.encode(writer, Objects.requireNonNull(this.mapFusion));
         byte[] result = fuseMaps(snapshot, next, clusters, bytes -> {
@@ -3595,13 +3610,12 @@ public final class RustCircuitPass implements CircuitTransform {
             } catch (RuntimeException failure) {
                 // The pass will not return its final diagnostics after a failed comparison.
                 finishLowering(this.compiler, request);
+                if (this.compiler.stateObserver != null)
+                    this.compiler.stateObserver.nativeDecision("FuseExpensiveMaps/Columns", false);
                 throw failure;
             }
         });
-        var reply = MAPPER.readTree(result);
-        if (this.compiler.stateObserver != null)
-            this.compiler.stateObserver.nativeDecision("FuseExpensiveMaps/Columns", reply.required("native_columns").booleanValue());
-        return reply;
+        return this.columnRewriteReply("FuseExpensiveMaps/Columns", result);
     }
 
     private JsonNode replaceIndexGroups(ToJsonOuterVisitor writer, byte[] snapshot, long next, byte[] groups) throws IOException {
@@ -3620,10 +3634,7 @@ public final class RustCircuitPass implements CircuitTransform {
                 throw failure;
             }
         });
-        var reply = MAPPER.readTree(result);
-        if (this.compiler.stateObserver != null)
-            this.compiler.stateObserver.nativeDecision("ReplaceSharedIndexes", reply.required("native_columns").booleanValue());
-        return reply;
+        return this.columnRewriteReply("ReplaceSharedIndexes", result);
     }
 
     private DBSPCircuit declareComparators(DBSPCircuit circuit, long next) throws IOException {
