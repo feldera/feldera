@@ -1,0 +1,89 @@
+{
+  "commit": "42d63cb45f8106dd608d5e91ae3742c76a6cddaf",
+  "scope": "SimplifyConditionals replay at the frozen pass boundary and SQL-to-artifact comparisons for a guarded arithmetic expression with 16 and 144 nested SIGN calls.",
+  "baseline_commit": "1226f2b55a6aaae6e849b97fe841a7092382e911",
+  "build_sha256": {
+    "bin/check_pass_corpus": "1083430c23213a980c1f274b57006546503da273e67c1c9ae787797fa58514a1",
+    "bin/libfeldera_sql_opt_jni.so": "583919dd17f229eb3c2616e351a055c8e997570a497384e7e3d6a6b473590442",
+    "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+    "bin/sql2dbsp": "bafb21b5809b08f971af3b5bf2ac70eaa7a119974752275f104f97ba0f751d95",
+    "maven/sql-compiler.jar": "0d736082567a217b038e3121ba3c95feff91d0414cffd92fe1f6374f5cec6bd1",
+    "maven/tests.jar": "d49c72d507f5e1f2721b7531057f4d44c018d017f30c15ffbc8e51c16ff93a74"
+  },
+  "baseline_hybrid_failure": "Java compiler failure: \"Rust error: SimplifyConditionals/Root: conditional exceeds the expression nesting limit\"",
+  "tests": {
+    "rust": 200,
+    "packaged_junit": 67,
+    "clippy": "passed"
+  },
+  "engines": {
+    "classic": {
+      "cases": 8571,
+      "matched_pass_invocations": 8571,
+      "changed": 913,
+      "shard_results_sha256": [
+        "84bca3cd22061914e48839d9d6c1c7cadf20be1c93df3bd4dbace3516ff3fb6f",
+        "7b336d321ece31363e4325f062be5f7704aeb0d2f5e7840052a1ef8c968a004a",
+        "972d450bd58c6fe12272f13cf1801425b0536e376d185a5d907e5f74c24b5055",
+        "d4ac24a429a34e8a899d0be0e2345e15b50dfb7fb6f1ebac09a8d256cf32b326"
+      ],
+      "directed_sql": {
+        "16": {
+          "sql_sha256": "478e65d555d1cd6c86af687c147574e216902b9ba1ea3defe5813e73c15f3af0",
+          "matched_artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ]
+        },
+        "144": {
+          "sql_sha256": "3e62858f211d881f3b8e2cc8cfc2ff98c595024d4a2b7af697a758cd18697154",
+          "matched_artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ]
+        }
+      },
+      "detached_cases": 2,
+      "ordered_s4_observations": 744,
+      "mismatches": 0,
+      "detached_receipt_sha256": "f734c97744223d398bd3047ab640f85f3b20b4090cc89c843ba48d6212ac3e2b"
+    },
+    "gen2": {
+      "cases": 8527,
+      "matched_pass_invocations": 8527,
+      "changed": 896,
+      "shard_results_sha256": [
+        "a2cc08e5ebaaed87979381cfa1689fda615dda44a728df4bacd5ec62bad649ea",
+        "a528fc04ed3e2483f9c48657c450689a29ef64c66c3d215ed9b44fa1afe55843",
+        "b3b33f1f2c91dabfa6b1d79b87bbc17ce05e16ced2c2d438f473710dc3b605ff",
+        "e9667fa50624d27406cb77dc44ed41b35a202d97fc24d8cdddec6bc355b7f7f6"
+      ],
+      "directed_sql": {
+        "16": {
+          "sql_sha256": "478e65d555d1cd6c86af687c147574e216902b9ba1ea3defe5813e73c15f3af0",
+          "matched_artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ]
+        },
+        "144": {
+          "sql_sha256": "3e62858f211d881f3b8e2cc8cfc2ff98c595024d4a2b7af697a758cd18697154",
+          "matched_artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ]
+        }
+      },
+      "detached_cases": 2,
+      "ordered_s4_observations": 748,
+      "mismatches": 0,
+      "detached_receipt_sha256": "44895090489074fc47e98142f4bd395a61cea2ea9fdbc196b7aa16cd10cb80ab"
+    }
+  }
+}

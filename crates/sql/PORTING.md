@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `42d63cb45`, all 17,098 frozen SimplifyConditionals results matched Java.
+A CASE with 144 nested SIGN calls previously failed in the hybrid while direct
+Java emitted code. Classic and Gen-2 now match on both that query and its
+16-call control, including all ordered observations in detached S2 replay.
+[Conditional rewrite and emission comparisons](evidence/p3-deep-conditionals.json)
+
 On `1226f2b55`, the JNI test passed with 144 nested aggregate fields. All
 550 selected monotonicity comparisons and 16 detached compilations matched
 direct Java through 11,178 ordered S4 observations and emission. Both engines
