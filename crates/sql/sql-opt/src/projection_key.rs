@@ -32,6 +32,7 @@ enum Term {
         nullable: bool,
     },
     AbsentTuple,
+    NullLiteral,
     VariantNullLiteral,
     NullPoint {
         nullable: bool,
@@ -321,6 +322,7 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
             (term, fields)
         }
         Expr::Tuple | Expr::RawTuple => (Term::AbsentTuple, vec![]),
+        Expr::NullLiteral => (Term::NullLiteral, vec![]),
         Expr::VariantNullLiteral => (Term::VariantNullLiteral, vec![]),
         Expr::GeoPointConstructor => {
             let ty = edit.expression_type(id)?;
@@ -717,6 +719,7 @@ fn type_term(edit: &CircuitEditor, ty: TypeId) -> Result<Option<(Term, Vec<NodeI
 fn scalar_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Error> {
     let node = edit.node(ty.into())?;
     let mut text = match edit.type_kind(ty)? {
+        Ty::Null => "null".to_owned(),
         Ty::GeoPoint => "geopoint".to_owned(),
         kind @ (Ty::LongInterval | Ty::ShortInterval) => {
             let Some(units) = string(node, "units") else {

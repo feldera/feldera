@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.junit.Assert;
 import org.junit.Assume;
@@ -115,6 +116,32 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
                 Assert.assertEquals(List.of(candidates.get(0), candidates.get(2), candidates.get(3)),
                         scan.clusters.get(maps.get(i)));
         }
+    }
+
+    @Test
+    public void siblingFusionDistinguishesUntypedAndTypedNull() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var compiler = this.testCompiler();
+        var nullValue = new DBSPNullLiteral();
+        var rowType = b.tup(b.i32(), nullValue.getType());
+        var site = CalciteEmptyRel.INSTANCE;
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+        var maps = new ArrayList<DBSPMapOperator>();
+        for (var argument : List.of(nullValue, b.i32n().none(), new DBSPNullLiteral())) {
+            var row = b.refVar(rowType);
+            var call = b.call("f", b.field(row, 0), argument);
+            maps.add(new DBSPMapOperator(site, b.tuple(call).closure(row), input.outputPort()));
+        }
+        var nativeScan = RustCircuitPass.scanMapFusion(compiler, maps);
+        Assert.assertArrayEquals(new int[][]{{0, 2}}, nativeScan.clusters());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(input);
+        maps.forEach(circuit::addOperator);
+        var direct = new FuseExpensiveMaps.FindFusableMaps(compiler);
+        direct.apply(circuit);
+        Assert.assertEquals(List.of(maps.get(0), maps.get(2)),
+                direct.clusters.get(maps.get(0)).stream().map(MapInfo::operator).toList());
+        Assert.assertNull(direct.clusters.get(maps.get(1)));
     }
 
     /** Collect the minimal expensive expressions of |param| expression */
