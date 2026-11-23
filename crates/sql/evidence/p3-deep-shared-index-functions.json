@@ -1,0 +1,41 @@
+{
+  "scope": "Preserve remapped columns and shared wide projections when a shared-index reader contains a 160-call expression.",
+  "source_base": "1d9449cb8fa7a4a9a9b713ec56bdfe57de599c18",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "66113a8f9e6ce1163405ad48b65719dc4013bb102f84680b6a1c6accc923d7dc",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "d3c0508095436c1d988eca587e25c4dfc36b7351338bead6eee530e44a88ad35",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ShareIndexesTests.java": "5f7c2d52815718288b777d3f48d5e9d9d3f7cacfd0c7247329cc0efb25846e71"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "3f3bb5454bd24de85b780efb2d6d7623a882ed0cc46311227afea1fc754e9039",
+    "bin/sql-difftest": "766b760e999609aebb11aee6edc9f638dd3f2649d8f8b90af58f6881da34e1bf",
+    "maven/tests.jar": "e6df63963fbd9af09570c69e2f30ddddbef6e5e4a5b10d27ddbec51431e30b8c",
+    "maven/sql-compiler.jar": "40297d817004c26ab305fd104dab5ce2f30c3e068b49f6addd1ec65b6f137258"
+  },
+  "negative_control": {
+    "library_sha256": "cf2aa3f1215efbe898ce24552ffb8aa360b8d71f6e71f4754d3d0094a2daa05c",
+    "failed_tests": [
+      "aDeepSharedIndexReaderUsesTheRemappedColumn",
+      "wideIndexFieldsShareADeepProjectionAcrossNarrowIndexes"
+    ]
+  },
+  "rust_tests": 225,
+  "junit_tests": 174,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "c96335c6edc6611fc683f51414ddc84bf22844c0a4e1ee4162b267cbb5527fcf"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "10f3f59a0086142232a02a34c48e523b3f745c7b036c42601f599bbbfd579d49"
+    }
+  }
+}

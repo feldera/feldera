@@ -711,8 +711,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 feldera_sql_opt::IndexParameter { declaration, variable, columns }
             }).collect();
             let reader = feldera_sql_opt::rewrite_index_reader(&mut edit, *reader, &parameters)?;
-            let nodes = edit.circuit().additional_inner_nodes(&arena, [reader])?;
-            return Ok(nodes.into_iter().next().expect("one shared-index reader"));
+            return Ok(edit.circuit().live_inner_node(&arena, reader)?);
         }
         ("SharedIndexes/Split", roots) => {
             let fixed: Vec<bool> = serde_json::from_slice(state)?;
@@ -730,8 +729,8 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 Some(layout) => (layout.columns, Some(layout.positions)),
                 None => (fields.rows.into_iter().flatten().collect(), None),
             };
-            let roots: Vec<_> = [fields.variable, fields.key].into_iter().chain(columns).collect();
-            let expressions = edit.circuit().additional_expressions(&arena, &roots)?;
+            let roots: Vec<_> = [fields.variable, fields.key].into_iter().chain(columns).map(NodeId::from).collect();
+            let expressions = edit.circuit().live_inner_roots(&arena, &roots)?;
             return Ok(json!({"expressions": expressions, "widths": widths, "layout": layout, "nullable": fields.nullable,
                 "next_generated_name": next, "warnings": warnings.into_iter().map(|w| json!({
                     "range":w.position, "error_type":w.kind, "message":w.message,

@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Shared-index readers remap a column beneath 160 nested calls. Indexes that
+project the same nested expression still share one output column. Both
+operations exceeded the inline snapshot limit on the preceding build.
+The corrected build passed 174 JUnit tests and matched 11,965 ordered S4
+observations and emission on 12 classic and 12 Gen-2 cases.
+[Shared-index readers and projections](evidence/p3-deep-shared-index-functions.json)
+
 Rust merges adjacent temporal filters in producer order. When it needs the
 general analyzer for one predicate pair, it passes the current closures,
 queued warnings and generated-name counter to Java. Two directed cases

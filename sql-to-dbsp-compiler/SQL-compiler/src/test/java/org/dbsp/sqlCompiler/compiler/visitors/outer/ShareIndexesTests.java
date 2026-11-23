@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndex
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ReplaceSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -68,6 +69,44 @@ import java.util.Set;
 
 /** Tests for {@link ShareIndexes} and {@link ShareOutputIntegrators}. */
 public class ShareIndexesTests extends StreamingTestBase {
+    private static DBSPExpression nestedCalls(DBSPExpression value) {
+        for (int i = 0; i < 160; i++)
+            value = new DBSPApplyExpression("transform", value.getType(), value);
+        return value;
+    }
+
+    @Test
+    public void aDeepSharedIndexReaderUsesTheRemappedColumn() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes"));
+        var integer = new DBSPI32Literal(0).getType();
+        var narrow = new DBSPTypeTuple(integer).ref().var();
+        var wide = new DBSPTypeTuple(integer, integer).ref().var();
+        var reader = nestedCalls(narrow.deref().field(0)).closure(narrow);
+        var actual = RustCircuitPass.rewriteIndexReader(this.testCompiler(),
+                List.of(reader, reader.parameters[0], wide), List.of(List.of(1))).to(DBSPClosureExpression.class);
+        var expected = nestedCalls(wide.deref().field(1)).closure(wide);
+        Assert.assertTrue(expected.equivalent(actual));
+    }
+
+    @Test
+    public void wideIndexFieldsShareADeepProjectionAcrossNarrowIndexes() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes"));
+        var integer = new DBSPI32Literal(0).getType();
+        var type = new DBSPTypeTuple(integer, integer);
+        var functions = new ArrayList<DBSPClosureExpression>();
+        for (int column : List.of(0, 1)) {
+            var row = type.ref().var();
+            var key = new DBSPTupleExpression(row.deref().field(0));
+            var fields = new DBSPTupleExpression(nestedCalls(row.deref().field(1)), row.deref().field(column));
+            functions.add(new DBSPRawTupleExpression(key, fields).closure(row));
+        }
+        var wide = RustCircuitPass.wideIndexFields(this.testCompiler(), functions);
+        Assert.assertEquals(List.of(List.of(0, 1), List.of(0, 2)), wide.layout());
+        Assert.assertEquals(3, wide.fields().size());
+        var expected = nestedCalls(wide.variable().deref().field(1)).closure(wide.variable());
+        Assert.assertTrue(expected.equivalent(wide.fields().get(0).closure(wide.variable())));
+    }
+
     private static final String TABLES = """
             CREATE TABLE T(k INT NOT NULL, a INT, s VARCHAR, d DOUBLE);
             CREATE TABLE S(k INT NOT NULL, b INT);

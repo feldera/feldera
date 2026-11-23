@@ -3465,7 +3465,7 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             var reply = invokeLowering(compiler, "SharedIndexes/Reader",
                     MAPPER.writeValueAsBytes(columns), roots.toArray(IDBSPInnerNode[]::new));
-            return expressionDecoder(reply.writer).decodeInner(reply.value, IDBSPInnerNode.class);
+            return decodeLiveRoot(expressionDecoder(reply.writer), reply.value, IDBSPInnerNode.class);
         } catch (IOException error) {
             throw new UncheckedIOException("Could not encode shared-index reader columns", error);
         }
@@ -3479,11 +3479,11 @@ public final class RustCircuitPass implements CircuitTransform {
         var reply = invokeLowering(compiler, "SharedIndexes/WideFields", functions.toArray(DBSPClosureExpression[]::new));
         var decoder = expressionDecoder(reply.writer);
         var expressions = reply.value.required("expressions");
-        var variable = decoder.decodeInner(expressions.required(0), DBSPVariablePath.class);
-        var key = decoder.decodeInner(expressions.required(1), DBSPExpression.class);
+        var variable = decodeLiveRoot(decoder, expressions.required(0), DBSPVariablePath.class);
+        var key = decodeLiveRoot(decoder, expressions.required(1), DBSPExpression.class);
         var fields = new ArrayList<DBSPExpression>(expressions.size() - 2);
         for (int i = 2; i < expressions.size(); i++)
-            fields.add(decoder.decodeInner(expressions.required(i), DBSPExpression.class));
+            fields.add(decodeLiveRoot(decoder, expressions.required(i), DBSPExpression.class));
         List<List<Integer>> layout = MAPPER.convertValue(reply.value.required("layout"), new TypeReference<>() {});
         var rows = new ArrayList<List<DBSPExpression>>();
         if (!answered(compiler, "SharedIndexes/WideFields", reply.value.required("layout"))) {
