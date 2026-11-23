@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.MapInfo;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -16,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
+import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.junit.Assert;
 import org.junit.Assume;
@@ -142,6 +144,31 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
         Assert.assertEquals(List.of(maps.get(0), maps.get(2)),
                 direct.clusters.get(maps.get(0)).stream().map(MapInfo::operator).toList());
         Assert.assertNull(direct.clusters.get(maps.get(1)));
+    }
+
+    @Test
+    public void siblingBlockFingerprintsRespectDeclarationOrderAndMutability() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var compiler = this.testCompiler();
+        var finder = new FuseExpensiveMaps.FindFusableMaps(compiler);
+        var siblings = new ArrayList<MapInfo>();
+        var prints = new ArrayList<String>();
+        for (int i = 0; i < 5; i++) {
+            var row = b.refVar(this.pair);
+            // In the first block the local shadows the row after its initializer.
+            String name = i == 0 ? row.variable : "local" + i;
+            var local = new DBSPLetStatement(name, b.field(row, i == 2 ? 1 : 0), i == 3);
+            var read = local.getVarReference();
+            var statement = b.call(i == 4 ? "other" : "visit", read).toStatement();
+            var block = new DBSPBlockExpression(List.of(local, statement), b.call("f", read.deepCopy()));
+            var info = new MapInfo(null, b.tuple(block).closure(row), List.of(block));
+            siblings.add(info);
+            prints.add(finder.fingerprint(info, block));
+        }
+        Assert.assertEquals(prints.get(0), prints.get(1));
+        Assert.assertEquals(4, prints.stream().distinct().count());
+        Assert.assertArrayEquals(new int[][]{{0, 1}, {2}, {3}, {4}},
+                RustCircuitPass.siblingMapGroups(compiler, siblings));
     }
 
     /** Collect the minimal expensive expressions of |param| expression */

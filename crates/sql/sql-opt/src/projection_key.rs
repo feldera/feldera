@@ -20,6 +20,7 @@ enum Term {
     Variable(usize),
     Closure,
     Let,
+    Block(Vec<BlockStatement>),
     ReferenceType {
         mutable: bool,
         nullable: bool,
@@ -76,6 +77,12 @@ enum Term {
         value: i64,
         nullable: bool,
     },
+}
+
+#[derive(Eq, Hash, PartialEq)]
+enum BlockStatement {
+    Expression,
+    Let { mutable: bool, initialized: bool },
 }
 
 /// A binding's position within the active parameter list identifies its uses
@@ -214,6 +221,7 @@ fn scoped_term<'a>(
     let node = edit.node(at.id)?;
     let same_scope = |id| ScopedNode { id, ..at };
     Ok(Some(match node.inner_kind() {
+        Some(InnerKind::Expression(Expr::Block)) => return block_term(edit, at, scopes),
         Some(InnerKind::Expression(Expr::Closure)) => {
             let mut scope = at.scope;
             let mut children = Vec::new();
@@ -275,6 +283,51 @@ fn scoped_term<'a>(
             (term, children.into_iter().map(same_scope).collect())
         }
     }))
+}
+
+fn block_term<'a>(
+    edit: &'a CircuitEditor,
+    at: ScopedNode,
+    scopes: &mut Vec<Binding<'a>>,
+) -> Result<Option<(Term, Vec<ScopedNode>)>, Error> {
+    let block = edit.node(at.id)?;
+    let mut scope = at.scope;
+    let mut statements = Vec::new();
+    let mut children = Vec::new();
+    for id in block.edges("contents")? {
+        let statement = edit.node(id)?;
+        let in_scope = |id| ScopedNode { id, scope, ..at };
+        match statement.class() {
+            "DBSPExpressionStatement" => {
+                statements.push(BlockStatement::Expression);
+                children.push(in_scope(statement.edge("expression")?));
+            }
+            "DBSPLetStatement" => {
+                let ty = edit.type_id(statement.edge("type")?)?;
+                let name = string(statement, "variable")
+                    .ok_or_else(|| Error::new("missing block variable name"))?;
+                let mutable = statement
+                    .data("mutable")
+                    .and_then(|v| v.as_bool())
+                    .ok_or_else(|| Error::new("missing block variable mutability"))?;
+                let initializer = statement.field("initializer").and_then(|f| f.node_id());
+                statements.push(BlockStatement::Let {
+                    mutable,
+                    initialized: initializer.is_some(),
+                });
+                children.push(in_scope(ty.into()));
+                children.extend(initializer.map(in_scope));
+                // The initializer can read a shadowed name. Only subsequent
+                // statements and the block result see this declaration.
+                scope = bind(scopes, scope, RowParameter { name, ty });
+            }
+            _ => return Ok(None),
+        }
+    }
+    if let Some(id) = block.field("lastExpression").and_then(|f| f.node_id()) {
+        children.push(ScopedNode { id, scope, ..at });
+    }
+    Ok(Some((Term::Block(statements), children)))
 }
 
 fn bind<'a>(scopes: &mut Vec<Binding<'a>>, parent: usize, variable: RowParameter<'a>) -> usize {
