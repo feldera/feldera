@@ -1,0 +1,146 @@
+{
+  "scope": "38 frozen and four directed programs per engine. Instrumented lazy cell reads and the separate InnerCSE pass comparisons use the packaged compiler.",
+  "optimizer_library_sha256": "7ea5e13dda041c318e1f3be6f0da7f6969e8a78812ef8b30f425095d0c89d099",
+  "classpath_sha256": [
+    "658438eb45239a6297aff5456af581e344f4db42e1e0842bffe793fb4447a3d3",
+    "4daed5fcf6482ae94ca17a1e3731f905c31856938b598ca1f616c61decae9e7a"
+  ],
+  "comparator_sha256": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+  "engines": {
+    "classic": {
+      "cases": 42,
+      "population_sha256": "b82f2abb07c82c416baa776086748c23adc7047351e0657ad524b7ded2eccf04",
+      "ordered_s4_observations": 21111,
+      "native_requests": 10080,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "receipt_sha256": "1f56c07c3918795dfdbe10c099aacc0f01c1606eee0cb3ddd62ffadb38a5cfb3",
+      "cse_requests": {
+        "InnerCSE/NumberValues": 1942,
+        "InnerCSE/ReadLazy": 93
+      },
+      "inner_cse": "InnerCSE matched at 291 invocations across 291 cases"
+    },
+    "gen2": {
+      "cases": 42,
+      "population_sha256": "d75f7ff84d4b91b83120193acef7083005d3c244a8e384d55b463cf0b1b0be69",
+      "ordered_s4_observations": 21104,
+      "native_requests": 9491,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "receipt_sha256": "b8281905d71402cad2b287d63369ce969f54c0b7fa9486c4070ff0be3fe0e2f4",
+      "cse_requests": {
+        "InnerCSE/NumberValues": 1804,
+        "InnerCSE/ReadLazy": 91
+      },
+      "inner_cse": "InnerCSE matched at 259 invocations across 259 cases"
+    }
+  },
+  "restores": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a206fc-f1af-7ed0-b21a-6f072306a749",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a206fc-f1d7-7800-8d76-6225867aa04d",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "8ec737c6adeeb589dd8d599775a554179ae0d0db48da9064b127eb1a82371de8"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a206fe-242f-7253-9272-474f67aaca06",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a206fe-245f-7b72-bbbf-893aab64aa27",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "deb3179a8443180a58ad70b602161c2f17a20c7f2a82b3f4d904d905260807e1"
+    }
+  },
+  "junit": {
+    "passed": 88
+  },
+  "rust_tests": 215,
+  "log_sha256": {
+    "tests.log": "bb2e9a486be14fdb13fe55be4d139499f6eebc3bcbbafc3897f4b0dd56d3d051",
+    "clippy.log": "786ea7407530d92e425d1a791aaf69087544561be7fb19a5d81070a8f2790d8f",
+    "build.log": "20f7f83c25e7d0d43149b2b7dfbc43bb4e07853dbb90d72fd95dee6d905e8cf4",
+    "junit.log": "a7d704f4082ba95cb2c6381a4640832b87c6d1a8d17ba0243c70524917a0b915",
+    "maven/build.log": "1070a6ad65df1331156b44d54ea86204fdbcc7a60ef061d9aed8a53456274fa2"
+  }
+}

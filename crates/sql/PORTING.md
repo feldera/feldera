@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `17681d65a`, Rust constructed 184 lazy-cell reads in 84 detached
+compilations. All 42,215 ordered S4 observations and emitted artifacts
+matched direct Java. Both engines also matched in 550 isolated InnerCSE
+comparisons. COUNT and LATENESS checkpoints restored in both directions.
+[CSE replay and restores](evidence/p3-lazy-cse-reads.json) · [Cold compilation](BENCHMARKS.md#lazy-cse-reads-2026-11-22)
+
 The Rust optimizer groups temporal windows over calls to external SQL
 functions. It compares the method name, receiver and ordered arguments.
 On classic and Gen-2, two calls to the same function shared a window index

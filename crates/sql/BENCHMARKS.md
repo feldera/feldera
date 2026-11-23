@@ -4,6 +4,21 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Lazy CSE reads, 2026-11-22
+
+On `17681d65a`, all 69 cold compile pairs matched through classic artifact
+emission. Each workload ran two warmup pairs and 21 timed pairs with
+alternating compiler order on CPU 14 of the ARM64 devcontainer. Frozen corpus
+replays ran on the same VM during measurement.
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 3.157 | 2.522 | 0.799× |
+| Nexmark suite | 6.585 | 7.656 | 1.163× |
+| Outer join | 2.485 | 2.497 | 1.005× |
+
+[Paired timings and build identities](evidence/p3-lazy-cse-reads-cold.json)
+
 ## Partially bounded row casts, 2026-11-22
 
 Build `cb578c70d` matched direct Java through classic artifact emission in
