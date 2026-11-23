@@ -159,15 +159,13 @@ pub(super) fn unary_bound(
     expression: ExpressionId,
     source: ProjectedValue,
 ) -> Result<Option<ProjectedValue>, Error> {
-    if !matches!(source.shape, Shape::Scalar(_)) {
-        return Ok(None);
-    }
-    let reduced = match source.reduced {
-        None => None,
-        Some(bound) if edit.expr_kind(expression)? == Expr::Cast => {
-            super::super::casts::cast_bound(edit, expression, bound)?
-        }
-        Some(bound) => super::super::unary_waterline(edit, expression, bound)?,
+    let reduced = match (edit.expr_kind(expression)?, source.reduced) {
+        // A cast of an unbounded ROW takes its shape from the target type.
+        (Expr::Cast, None) => None,
+        _ if !matches!(source.shape, Shape::Scalar(_)) => return Ok(None),
+        (Expr::Cast, Some(bound)) => super::super::casts::cast_bound(edit, expression, bound)?,
+        (_, Some(bound)) => super::super::unary_waterline(edit, expression, bound)?,
+        (_, None) => None,
     };
     if let Some(bound) = reduced {
         return ProjectedValue::bounded(edit, expression, bound, source.constant).map(Some);
@@ -236,6 +234,32 @@ mod tests {
     use super::*;
     use feldera_sql_ir::Circuit;
     use serde_json::json;
+
+    #[test]
+    fn unbounded_row_cast_uses_the_nullable_target_type() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let field = edit.bool_type(site, false)?;
+        let row = edit.tuple_type(site, false, [field.into()])?;
+        let target = edit.with_nullability(row, true)?;
+        let input = edit.named_variable(row, "payload")?;
+        let cast = edit.cast(site, input, target)?;
+        for constant in [false, true] {
+            let mut source = super::super::unbounded(&mut edit, input)?.unwrap();
+            source.constant = constant;
+            let value = unary_bound(&mut edit, cast, source)?.expect("unbounded row cast");
+            assert!(value.reduced.is_none());
+            assert_eq!(value.constant, constant);
+            assert!(matches!(value.shape, Shape::Tuple { nullable: true, .. }));
+            assert!(
+                matches!(value.row_type, RowType::Unbounded { type_id } if type_id == type_number(target))
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn deep_arithmetic_and_unary_clock_bounds_include_each_intermediate_expression(
