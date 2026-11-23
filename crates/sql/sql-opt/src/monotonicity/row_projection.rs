@@ -305,9 +305,7 @@ pub fn project_rows(
     projections: &[Projection],
     indexed: bool,
 ) -> Result<Option<ProjectedValue>, Error> {
-    let Some(mut row) = Row::new(edit, bounds, projections, indexed)? else {
-        return Ok(None);
-    };
+    let mut row = Row::new(edit, bounds, projections, indexed)?;
     row.visit(edit, body)
 }
 
@@ -317,7 +315,7 @@ impl Row {
         bounds: &[ExpressionId],
         projections: &[Projection],
         indexed: bool,
-    ) -> Result<Option<Self>, Error> {
+    ) -> Result<Self, Error> {
         if (indexed && (projections.len() != 2 || bounds.len() != 1))
             || (!indexed && projections.len() != bounds.len())
         {
@@ -325,13 +323,10 @@ impl Row {
                 "waterline shapes do not match closure parameters",
             ));
         }
-        let Some(mut shapes) = projections
+        let mut shapes: Vec<_> = projections
             .iter()
-            .map(|p| Shape::from_input(p).map(|shape| Shape::Reference(shape.into())))
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(None);
-        };
+            .map(|p| Shape::Reference(Shape::from_input(p).into()))
+            .collect();
         if indexed {
             // The original pair holds (&key, &value). Ordinary field projection
             // computes the compressed index when either reference lacks a bound.
@@ -351,11 +346,11 @@ impl Row {
                 shape,
             });
         }
-        Ok(Some(Self {
+        Ok(Self {
             bindings,
             locals: Vec::new(),
             observations: Observations::ResultOnly,
-        }))
+        })
     }
 }
 
@@ -527,9 +522,7 @@ fn project_validated_closure(
         variables.push(edit.named_variable(ty, &name)?);
         names.push(name);
     }
-    let Some(mut row) = Row::new(edit, &variables, projections, indexed)? else {
-        return Ok(None);
-    };
+    let mut row = Row::new(edit, &variables, projections, indexed)?;
     row.observations = observations;
     let Some(value) = row.visit(edit, body)? else {
         return Ok(None);

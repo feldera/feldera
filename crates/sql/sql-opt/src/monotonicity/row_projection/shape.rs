@@ -8,6 +8,8 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub(super) enum Shape {
     Scalar(bool),
+    /// A function field can occupy a projected slot without supporting scalar transfers.
+    Opaque(bool),
     Reference(Rc<Self>),
     Tuple {
         fields: Rc<[Self]>,
@@ -26,18 +28,15 @@ impl Shape {
         }
     }
 
-    pub fn from_input(shape: &Projection) -> Option<Self> {
-        Some(match shape {
-            Projection::Other { .. } => return None,
+    pub fn from_input(shape: &Projection) -> Self {
+        match shape {
+            Projection::Other { monotone } => Self::Opaque(*monotone),
             Projection::Scalar { monotone } => Self::Scalar(*monotone),
-            Projection::Reference { base } => Self::Reference(Self::from_input(base)?.into()),
+            Projection::Reference { base } => Self::Reference(Self::from_input(base).into()),
             Projection::Tuple {
                 fields, nullable, ..
-            } => Self::tuple(
-                fields.iter().map(Self::from_input).collect::<Option<_>>()?,
-                *nullable,
-            ),
-        })
+            } => Self::tuple(fields.iter().map(Self::from_input).collect(), *nullable),
+        }
     }
 
     pub fn monotone(&self) -> bool {
@@ -45,7 +44,7 @@ impl Shape {
         loop {
             match value {
                 Self::Reference(inner) => value = inner,
-                Self::Scalar(bound) => return *bound,
+                Self::Scalar(bound) | Self::Opaque(bound) => return *bound,
                 Self::Tuple {
                     fields,
                     any_bound,

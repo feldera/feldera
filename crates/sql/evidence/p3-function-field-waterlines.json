@@ -1,0 +1,35 @@
+{
+  "scope": "Function-valued input fields in row waterline projection. Compare bounded and unbounded function results and the position of a neighboring scalar against the Java visitor. Replay twelve frozen LATENESS programs per engine, selected at evenly spaced positions in each population.",
+  "source_base": "15b92e31327e8e652fe0b0739b57734ef8e6e2db",
+  "source_files_sha256": {
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "9fa3fb06925eb1785f98f25ab211cbc4260e0e221468641a7dd18923ef7497e1",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/reads.rs": "ed1387c64eaffc72bfc939153dbc22da42e34ab6e0a7a70cbc87c204d96da924",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/shape.rs": "f1de36295cc364ec91e4d8c3eded915c1fc9182b0b35cbbc06251e0f99efdf94",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "0615a8b87253f5f577afeb0a3b729a49587116a8a32bd099f5d86a49fde89d3a"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "fca2d700a71702352bae56b12f052e7eafdf03e16621900e6fbf01a1b73ed1d9",
+    "bin/sql-difftest": "ddfab8d1807af0364a9b5fcc9f6f4842db93c28a5d73e361fc2bc920c16d6b32",
+    "maven/sql-compiler.jar": "ea84277f86134d0676e6b24e9b0a4d0279f8f63795901ac5b9e9b9d87146fe27",
+    "maven/tests.jar": "c97e23bc8396e5a27241c33c297da389ed4b959978ce02b2e949f691df261dd8"
+  },
+  "rust_tests": 207,
+  "junit_tests": 137,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "receipt_sha256": "0c028d9b325f48d361c3f98730ed2558a64b05f34b6807ea9b97877134a0a57a",
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "receipt_sha256": "23d24e134fb58513fa41b574b8bed0935b4d9f529fe560eed2cab8fe350c5800",
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb"
+    }
+  }
+}

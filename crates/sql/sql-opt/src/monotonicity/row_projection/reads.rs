@@ -25,9 +25,7 @@ impl RowRead {
         source: &Projection,
         bound: Option<ExpressionId>,
     ) -> Result<Option<ProjectedValue>, Error> {
-        let Some(shape) = Shape::from_input(source) else {
-            return Ok(None);
-        };
+        let shape = Shape::from_input(source);
         if shape.monotone() && bound.is_none() {
             // Let the general visitor report the missing bound at the original read.
             return Ok(None);
@@ -66,6 +64,11 @@ impl RowRead {
             }
             Self::Some | Self::Unwrap => {
                 let nullable = matches!(self, Self::Some);
+                // A closure has no withMaybeNull operation. Preserve the diagnostic
+                // at the live expression even when its result is later discarded.
+                if matches!(value.shape, Shape::Opaque(_)) {
+                    return Ok(None);
+                }
                 value.row_type = RowType::WithNullability {
                     value: Box::new(value.row_type),
                     nullable,
@@ -122,6 +125,9 @@ impl RowRead {
                 let Some(field) = fields.get(index) else {
                     return Ok(None);
                 };
+                if nullable && matches!(field, Shape::Opaque(_)) {
+                    return Ok(None);
+                }
                 let mut shape = field.clone();
                 if let Shape::Tuple {
                     nullable: inner, ..

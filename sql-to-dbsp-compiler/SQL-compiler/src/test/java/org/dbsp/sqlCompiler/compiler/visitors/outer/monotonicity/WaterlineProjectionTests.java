@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.CombinedBounds;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneClosureType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
@@ -35,6 +36,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -1294,6 +1296,39 @@ public class WaterlineProjectionTests {
             Assert.assertSame(wide, shape.getFieldType(0).getType());
             Assert.assertFalse(shape.getFieldType(2).mayBeMonotone());
             Assert.assertFalse(shape.getFieldType(5).mayBeMonotone());
+        }
+    }
+
+    @Test
+    public void functionFieldsCountTowardsTheCompressedWaterline() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var node = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(0).getType();
+        var bounded = new MonotoneType(integer);
+        var operator = new DBSPConstantOperator(node, DBSPZSetExpression.emptyWithElementType(integer));
+        for (IMaybeMonotoneType functionResult : List.of(bounded, new NonMonotoneType(integer))) {
+            var function = new MonotoneClosureType(functionResult, new DBSPParameter[0], new DBSPParameter[0]);
+            var row = new PartiallyMonotoneTuple(List.of(function, bounded), false, false);
+            var input = new DBSPVariablePath("row", row.getType().ref());
+            var bound = new DBSPVariablePath("row", row.getProjectedType().ref());
+            for (int column : List.of(0, 1)) {
+                var body = input.deref().field(column);
+                var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet,
+                        row).applyAnalysis(body.closure(input));
+                var projected = RustCircuitPass.projectRow(compiler, body, bound, row);
+                Assert.assertNotNull(projected);
+                Assert.assertSame(row.getFieldType(column), projected.getMonotoneType());
+                if (column == 0 && !function.mayBeMonotone()) {
+                    Assert.assertNull(direct);
+                    Assert.assertFalse(projected.mayBeMonotone());
+                } else {
+                    var actual = projected.getReducedExpression().closure(bound);
+                    Assert.assertTrue(direct.getReducedExpression().equivalent(actual));
+                    int index = column == 1 && function.mayBeMonotone() ? 1 : 0;
+                    Assert.assertTrue(bound.deref().field(index).closure(bound).equivalent(actual));
+                }
+            }
         }
     }
 
