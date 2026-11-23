@@ -2017,7 +2017,7 @@ impl Controller {
         );
         metrics.histogram(
             "storage_write_latency_seconds",
-            "Write latency for storage blocks in seconds",
+            "Latency in seconds of writes to storage, each of which carries one or more blocks.",
             labels,
             &HistogramDiv::new(WRITE_LATENCY_MICROSECONDS.snapshot(), 1_000_000.0),
         );
@@ -2042,7 +2042,7 @@ impl Controller {
         );
         metrics.histogram(
             "storage_write_block_bytes",
-            "Sizes in bytes of blocks written to storage.",
+            "Sizes in bytes of writes to storage, each of which carries one or more blocks.",
             labels,
             &WRITE_BLOCKS_BYTES.snapshot(),
         );

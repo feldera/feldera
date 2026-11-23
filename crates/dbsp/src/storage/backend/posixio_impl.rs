@@ -657,6 +657,10 @@ impl DeleteOnDrop {
     }
 }
 
+/// How many bytes [PosixWriter] queues before writing them out, so that a
+/// file's blocks go out many to a `writev` instead of one each.
+const WRITE_BATCH_BYTES: u64 = 1024 * 1024;
+
 /// Meta-data we keep per file we created.
 struct PosixWriter {
     file_id: FileId,
@@ -664,8 +668,11 @@ struct PosixWriter {
     drop: DeleteOnDrop,
     name: StoragePath,
 
+    /// Blocks waiting to be written, in file order.
     buffers: Vec<Arc<FBuf>>,
-    len: u64,
+
+    /// The total size of [Self::buffers], in bytes.
+    queued_bytes: u64,
 
     async_threads: bool,
     ioop_delay: Duration,
@@ -733,12 +740,17 @@ impl PosixWriter {
             name,
             drop: DeleteOnDrop::new(path, false, 0, usage),
             buffers: Vec::new(),
-            len: 0,
+            queued_bytes: 0,
             async_threads,
             ioop_delay,
         }
     }
 
+    /// Writes the queued blocks to the file and empties the queue.
+    ///
+    /// # Returns
+    ///
+    /// An error if storage is over its configured limit or the write fails.
     fn flush(&mut self) -> Result<(), StorageError> {
         WRITE_LATENCY_MICROSECONDS.record_callback(|| {
             if let Some(storage_max) = Runtime::with_dev_tweaks(|tweaks| tweaks.storage_max) {
@@ -775,15 +787,26 @@ impl PosixWriter {
                 IoSlice::advance_slices(&mut cursor, n);
             }
             self.buffers.clear();
+            self.queued_bytes = 0;
             Ok(())
         })
     }
 
+    /// Queues `buffer` to be written, first writing out the queue if it
+    /// already holds at least [WRITE_BATCH_BYTES].
+    ///
+    /// # Arguments
+    ///
+    /// * `buffer` - The file's next block.
+    ///
+    /// # Returns
+    ///
+    /// An error if writing out the queue failed.
     fn write(&mut self, buffer: &Arc<FBuf>) -> Result<(), StorageError> {
-        if self.len >= 1024 * 1024 {
+        if self.queued_bytes >= WRITE_BATCH_BYTES {
             self.flush()?;
         }
-        self.len += buffer.len() as u64;
+        self.queued_bytes += buffer.len() as u64;
         self.buffers.push(buffer.clone());
         Ok(())
     }
@@ -1125,8 +1148,8 @@ mod tests {
     #[cfg(target_os = "linux")]
     use super::syncfs::{mount_is_exclusive, unescape_mountinfo};
     use super::{
-        CONCURRENT_SYNCS, PosixBackend, SyncStrategy, SyncfsObstacle, commit_in_parallel,
-        syncfs::has_own_filesystem,
+        CONCURRENT_SYNCS, MUTABLE_EXTENSION, PosixBackend, SyncStrategy, SyncfsObstacle,
+        WRITE_BATCH_BYTES, append_to_path, commit_in_parallel, syncfs::has_own_filesystem,
     };
     use super::{FileId, FileRw, StorageError};
     use feldera_storage::FileCommitter;
@@ -1515,9 +1538,75 @@ mod tests {
         );
     }
 
-    /// Write 10 MiB total in 1 KiB chunks.  `VectoredWrite` flushes its buffer when it
-    /// reaches 1 MiB of sequential data, and we limit the amount of queued work
-    /// to 4 MiB, so this has a chance to trigger both limits.
+    /// Writes blocks of `sizes` bytes to a new file and checks how the writer
+    /// batches them.
+    ///
+    /// The writer appends, so the file's size on disk shows each write as it
+    /// lands.  Until `complete`, every write must carry at least
+    /// [WRITE_BATCH_BYTES], and less than that plus the largest block may wait
+    /// in memory.  Afterward the file must hold every block, in order.
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - Names the case in failure messages.
+    /// * `sizes` - The size of each block, in bytes.
+    fn check_write_batching(label: &str, sizes: &[usize]) {
+        let tempdir = tempfile::tempdir().unwrap();
+        let backend = create_posix_backend(tempdir.path());
+        let path = tempdir.path().join("batched");
+        let queued_path = append_to_path(path.clone(), MUTABLE_EXTENSION);
+        let mut writer = backend.create_named(&StoragePath::from("batched")).unwrap();
+
+        let largest = *sizes.iter().max().unwrap() as u64;
+        let mut contents = Vec::new();
+        let mut on_disk = 0;
+        for (index, &size) in sizes.iter().enumerate() {
+            let block: Vec<u8> = (0..size).map(|offset| (index + offset) as u8).collect();
+            contents.extend_from_slice(&block);
+            writer.write_block(FBuf::from_slice(&block)).unwrap();
+
+            let size_now = std::fs::metadata(&queued_path).unwrap().len();
+            let written = size_now - on_disk;
+            assert!(
+                written == 0 || written >= WRITE_BATCH_BYTES,
+                "{label}: block {index} set off a write of only {written} bytes"
+            );
+            on_disk = size_now;
+            let waiting = contents.len() as u64 - on_disk;
+            assert!(
+                waiting < WRITE_BATCH_BYTES + largest,
+                "{label}: {waiting} bytes are waiting after block {index}"
+            );
+        }
+
+        // Dropping the reader deletes the file, so keep it until the check.
+        let _reader = writer.complete().unwrap();
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            contents,
+            "{label}: the file does not hold the blocks written"
+        );
+    }
+
+    /// A writer writes in batches of at least [WRITE_BATCH_BYTES] all the way
+    /// through a file, not only for its first batch.
+    ///
+    /// The cases are a block size that divides the batch; the smallest block
+    /// a layer file has, at which one batch holds more blocks than one
+    /// `writev` accepts on Linux; a run of mixed sizes; and a block larger
+    /// than a whole batch.
+    #[test]
+    fn writes_are_batched_throughout_the_file() {
+        const MIB: usize = 1024 * 1024;
+        check_write_batching("8 KiB blocks", &vec![8192; 4 * MIB / 8192 + 1]);
+        check_write_batching("512-byte blocks", &vec![512; 4 * MIB / 512 + 1]);
+        let mixed: Vec<usize> = (0..400).map(|i| 512 * (i * 37 % 128 + 1)).collect();
+        check_write_batching("mixed blocks", &mixed);
+        check_write_batching("a block larger than a batch", &[8192, 3 * MIB, 8192, 8192]);
+    }
+
+    /// Write 10 MiB total in 1 KiB chunks, so that each batch the writer
+    /// writes out holds as many blocks as one `writev` accepts on Linux.
     #[test]
     fn sequential_1024() {
         test_backend(Box::new(create_posix_backend), &[1024; 1024 * 10], true)

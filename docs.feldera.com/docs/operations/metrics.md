@@ -149,8 +149,8 @@ to work with data larger than memory.
 | <a name='storage_read_latency_seconds'>`storage_read_latency_seconds`</a> |histogram | Read latency for storage blocks in seconds |
 | <a name='storage_sync_latency_seconds'>`storage_sync_latency_seconds`</a> |histogram | Latency in seconds of syncing one file to stable storage. |
 | <a name='storage_usage_bytes'>`storage_usage_bytes`</a> |gauge | The number of bytes of storage currently in use |
-| <a name='storage_write_block_bytes'>`storage_write_block_bytes`</a> |histogram | Sizes in bytes of blocks written to storage. |
-| <a name='storage_write_latency_seconds'>`storage_write_latency_seconds`</a> |histogram | Write latency for storage blocks in seconds |
+| <a name='storage_write_block_bytes'>`storage_write_block_bytes`</a> |histogram | Sizes in bytes of writes to storage, each of which carries one or more blocks. |
+| <a name='storage_write_latency_seconds'>`storage_write_latency_seconds`</a> |histogram | Latency in seconds of writes to storage, each of which carries one or more blocks. |
 
 ## Pipeline Status
 
