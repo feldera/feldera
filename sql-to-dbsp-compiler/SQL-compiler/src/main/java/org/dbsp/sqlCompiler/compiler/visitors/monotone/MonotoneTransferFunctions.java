@@ -227,15 +227,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         }
 
         if (this.projectsClosure()) {
-            var projected = RustCircuitPass.projectWaterlineClosure(this.compiler, expression.body, expression.parameters,
+            var analysis = RustCircuitPass.projectWaterlineClosure(this.compiler, expression.body, expression.parameters,
                     projectedTypes, this.parameterTypes, indexed);
-            if (projected != null) {
+            if (analysis instanceof RustCircuitPass.ProjectedWaterline projected) {
                 if (projected.bodyType().mayBeMonotone())
                     this.recordClosure(expression, projected.bodyType(), Objects.requireNonNull(projected.closure()));
                 return VisitDecision.STOP;
             }
-            // Resolve the live nodes for the visitor, including its original diagnostics.
-            this.resolveReferences(expression);
+            this.inspection = (RustCircuitPass.WaterlineInspection) analysis;
         }
         if (this.inspection != null)
             this.inspection.checkTree();

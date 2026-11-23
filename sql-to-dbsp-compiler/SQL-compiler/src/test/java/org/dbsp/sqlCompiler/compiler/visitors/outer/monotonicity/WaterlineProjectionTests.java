@@ -217,6 +217,8 @@ public class WaterlineProjectionTests {
         var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
         for (var body : List.of(new DBSPTupleExpression(value, value),
                 new DBSPTupleExpression(value, missing.closure(inner)),
+                // Resolution must finish before the visitor reports a repeated node.
+                new DBSPTupleExpression(value, value, missing.closure(inner)),
                 new DBSPTupleExpression(new DBSPVariablePath("row", integer)))) {
             var closure = body.closure(input);
             RuntimeException direct = null;
@@ -224,9 +226,6 @@ public class WaterlineProjectionTests {
                 if (hybrid && !Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
                     break;
                 compiler.options.ioOptions.rustOptimizerPasses = hybrid;
-                if (hybrid)
-                    Assert.assertNull(RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
-                            new DBSPType[]{row.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(row)}, false));
                 // The type diagnostic includes the caller's stack. Exercise both modes at the same site.
                 var failure = Assert.assertThrows(RuntimeException.class, () ->
                         new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet,
@@ -504,7 +503,7 @@ public class WaterlineProjectionTests {
         var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
         var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
         var direct = new MonotoneTransferFunctions(compiler, operator, kind, nested).applyAnalysis(closure);
-        var projected = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+        var projected = (RustCircuitPass.ProjectedWaterline) RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
                 new DBSPType[]{nested.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(nested)}, false);
         Assert.assertNotNull(projected);
         Assert.assertSame(kept, projected.bodyType());
@@ -535,7 +534,7 @@ public class WaterlineProjectionTests {
         var direct = new MonotoneTransferFunctions(compiler, operator, kind, field)
                 .applyAnalysis(closure).getReducedExpression();
         if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
-            var projected = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+            var projected = (RustCircuitPass.ProjectedWaterline) RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
                     new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(field)}, false);
             Assert.assertNotNull(projected);
             Assert.assertSame(integer, projected.bodyType().getType());
@@ -704,7 +703,7 @@ public class WaterlineProjectionTests {
             var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
             var direct = new MonotoneTransferFunctions(compiler, operator,
                     MonotoneTransferFunctions.ArgumentKind.ZSet, shape).applyAnalysis(closure);
-            var result = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+            var result = (RustCircuitPass.ProjectedWaterline) RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
                     new DBSPType[]{shape.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)}, false);
             Assert.assertNotNull(result);
             var fields = result.bodyType().to(PartiallyMonotoneTuple.class);
@@ -732,7 +731,7 @@ public class WaterlineProjectionTests {
         Assert.assertFalse(expected.getFieldType(0).mayBeMonotone());
         Assert.assertSame(kept, expected.getFieldType(1));
         if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
-            var projected = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+            var projected = (RustCircuitPass.ProjectedWaterline) RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
                     new DBSPType[]{input.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(input)}, false);
             Assert.assertNotNull(projected);
             var result = projected.bodyType().to(PartiallyMonotoneTuple.class);
@@ -762,7 +761,7 @@ public class WaterlineProjectionTests {
         Assert.assertFalse(fields.getFieldType(0).mayBeMonotone());
         Assert.assertTrue(fields.getFieldType(1).mayBeMonotone());
         if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
-            var projected = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+            var projected = (RustCircuitPass.ProjectedWaterline) RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
                     new DBSPType[]{inputShape.getProjectedType()},
                     new IMaybeMonotoneType[]{new MonotoneRefType(inputShape)}, false);
             Assert.assertNotNull(projected);

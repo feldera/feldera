@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+When a waterline closure needs the general visitor, Rust returns the variable
+bindings and shared-expression check from its first traversal. A binding
+error takes precedence over a shared-expression diagnostic, as in direct
+Java. All 102 targeted JUnit tests passed. The 47 classic and 47 Gen-2
+compilations matched through 46,351 ordered S4 observations and emission.
+[Waterline fallback replay](evidence/p3-closure-inspection.json)
+
 Rust checks waterline closure bodies for shared expressions when it resolves
 their variables. Both visitor entry points report the same first repeated
 node and enclosing expressions as direct Java. The 102 targeted JUnit tests

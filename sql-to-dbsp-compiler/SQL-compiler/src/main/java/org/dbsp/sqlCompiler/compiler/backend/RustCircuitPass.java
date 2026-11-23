@@ -556,9 +556,13 @@ public final class RustCircuitPass implements CircuitTransform {
         return new MonotoneExpression(body, result, decodeLiveRoot(reply.writer, reduced, DBSPExpression.class));
     }
 
-    public record ProjectedWaterline(IMaybeMonotoneType bodyType, @Nullable DBSPClosureExpression closure) {}
+    public sealed interface WaterlineAnalysis permits ProjectedWaterline, WaterlineInspection {}
 
-    public record WaterlineInspection(ReferenceMap references, List<IDBSPInnerNode> repeatedPath) {
+    public record ProjectedWaterline(IMaybeMonotoneType bodyType, @Nullable DBSPClosureExpression closure)
+            implements WaterlineAnalysis {}
+
+    public record WaterlineInspection(ReferenceMap references, List<IDBSPInnerNode> repeatedPath)
+            implements WaterlineAnalysis {
         public void checkTree() {
             if (!this.repeatedPath.isEmpty()) {
                 int last = this.repeatedPath.size() - 1;
@@ -571,25 +575,28 @@ public final class RustCircuitPass implements CircuitTransform {
     /** Resolve bindings and check expression occurrences in the same serialized graph. */
     public static WaterlineInspection inspectWaterline(DBSPCompiler compiler, IDBSPInnerNode root) {
         var reply = invokeLowering(compiler, "Monotonicity/InspectBody", root);
-        var nodes = Objects.requireNonNull(reply.writer.liveNodes);
-        if (reply.value.has("free")) {
-            var variable = Utilities.getExists(nodes, reply.value.required("free").longValue());
+        return readWaterlineInspection(reply.writer, reply.value);
+    }
+
+    private static WaterlineInspection readWaterlineInspection(ToJsonInnerVisitor writer, JsonNode value) {
+        var nodes = Objects.requireNonNull(writer.liveNodes);
+        if (value.has("free")) {
+            var variable = Utilities.getExists(nodes, value.required("free").longValue());
             throw new InternalCompilerError("Could not resolve " + variable);
         }
         var references = new ReferenceMap();
-        for (var pair : reply.value.required("bindings")) {
+        for (var pair : value.required("bindings")) {
             var variable = Utilities.getExists(nodes, pair.required(0).longValue()).to(DBSPVariablePath.class);
             var declaration = Utilities.getExists(nodes, pair.required(1).longValue()).to(IDBSPDeclaration.class);
             references.declare(variable, declaration);
         }
         var path = new ArrayList<IDBSPInnerNode>();
-        for (var id : reply.value.required("repeated"))
+        for (var id : value.required("repeated"))
             path.add(Utilities.getExists(nodes, id.longValue()));
         return new WaterlineInspection(references, path);
     }
 
-    @Nullable
-    public static ProjectedWaterline projectWaterlineClosure(DBSPCompiler compiler, DBSPExpression body,
+    public static WaterlineAnalysis projectWaterlineClosure(DBSPCompiler compiler, DBSPExpression body,
             DBSPParameter[] parameters, DBSPType[] projectedTypes, IMaybeMonotoneType[] argumentShapes, boolean indexed) {
         var roots = new ArrayList<IDBSPInnerNode>();
         roots.add(body);
@@ -603,8 +610,11 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             var reply = invokeLowering(compiler, "Monotonicity/ProjectClosure",
                     MAPPER.writeValueAsBytes(request), roots.toArray(IDBSPInnerNode[]::new));
-            if (!answered(compiler, "Monotonicity/ProjectClosure", reply.value))
-                return null;
+            var inspection = reply.value.get("inspection");
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision("Monotonicity/ProjectClosure", inspection == null);
+            if (inspection != null)
+                return readWaterlineInspection(reply.writer, inspection);
             var nodes = Objects.requireNonNull(reply.writer.liveNodes);
             var type = WaterlineProjection.resolveType(reply.value.required("row_type"),
                     id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes);

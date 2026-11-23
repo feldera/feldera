@@ -428,6 +428,26 @@ fn lowering_arguments(base: Circuit, input: &[u8]) -> Result<(Circuit, Vec<NodeI
     }
 }
 
+fn waterline_inspection(inspection: feldera_sql_opt::WaterlineInspection) -> Value {
+    use feldera_sql_opt::WaterlineInspection;
+    let inner = |id| match id {
+        NodeId::Inner(id) => id,
+        NodeId::Outer(_) => unreachable!("waterline variables and expressions are inner nodes"),
+    };
+    match inspection {
+        WaterlineInspection::Free(variable) => json!({"free": inner(variable)}),
+        WaterlineInspection::Conflict { variable, previous, current } => {
+            // ReferenceMap reports the conflict with both original declarations.
+            json!({"bindings": [[inner(variable), inner(previous)], [inner(variable), inner(current)]], "repeated": []})
+        }
+        WaterlineInspection::Bound { references, repeated } => {
+            let mut bindings: Vec<_> = references.into_iter().map(|(v, d)| (inner(v), inner(d))).collect();
+            bindings.sort_unstable();
+            json!({"bindings": bindings, "repeated": repeated.into_iter().map(inner).collect::<Vec<_>>()})
+        }
+    }
+}
+
 fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     if pass == "Simplify/Root" {
         let cached = LIVE_COMPILATIONS.with_borrow(|stack| stack.last()?.simplified.get(input).copied());
@@ -525,31 +545,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     }
     let function = match (pass, roots.as_slice()) {
         ("Monotonicity/InspectBody", [root]) => {
-            use feldera_sql_ir::{ExpressionKind, InnerKind};
-            use feldera_sql_opt::LexicalResolution;
-            let inner = |id| match id {
-                NodeId::Inner(id) => id,
-                NodeId::Outer(_) => unreachable!("lexical references address inner nodes"),
-            };
-            let bindings = match feldera_sql_opt::lexical_references(&arena, *root)? {
-                LexicalResolution::Free { variable, .. } => return Ok(json!({"free": inner(variable)})),
-                LexicalResolution::Conflict { variable, previous, current } => {
-                    // Install both bindings in order to report the conflict on the live declarations.
-                    vec![(inner(variable), inner(previous)), (inner(variable), inner(current))]
-                }
-                LexicalResolution::Bound(map) => {
-                    let mut pairs: Vec<_> = map.into_iter().map(|(v, d)| (inner(v), inner(d))).collect();
-                    pairs.sort_unstable();
-                    pairs
-                }
-            };
-            let node = edit.node(*root)?;
-            let repeated = if matches!(node.inner_kind(), Some(InnerKind::Expression(ExpressionKind::Closure))) {
-                feldera_sql_expr::first_repeated_expression(&edit, node.edge("body")?)?.unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-            return Ok(json!({"bindings": bindings, "repeated": repeated.into_iter().map(inner).collect::<Vec<_>>()}));
+            return Ok(waterline_inspection(feldera_sql_opt::WaterlineInspection::for_root(&edit, *root)?));
         }
         ("FuseExpensiveMaps/Fragments", [closure]) => {
             return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_fragments(&arena, *closure)?)?);
@@ -871,11 +867,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let parameters = pairs.iter()
                 .map(|&[parameter, ty]| edit.type_id(ty).map(|ty| (parameter, ty)))
                 .collect::<Result<Vec<_>, _>>()?;
-            let Some(result) = feldera_sql_opt::project_closure(&mut edit, body, &parameters, &request.shapes, request.indexed)? else {
-                return Ok(Value::Null);
-            };
-            let closure = result.closure.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
-            return Ok(json!({"row_type": result.row_type, "closure": closure}));
+            let result = feldera_sql_opt::project_closure(&mut edit, body, &parameters, &request.shapes, request.indexed)?;
+            return Ok(match result {
+                feldera_sql_opt::ClosureAnalysis::Projected(result) => {
+                    let closure = result.closure.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
+                    json!({"row_type": result.row_type, "closure": closure})
+                }
+                feldera_sql_opt::ClosureAnalysis::Visit(inspection) => {
+                    json!({"inspection": waterline_inspection(inspection)})
+                }
+            });
         }
         ("Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow", [body, bounds @ ..]) => {
             let bounds = bounds.iter().map(|&id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;

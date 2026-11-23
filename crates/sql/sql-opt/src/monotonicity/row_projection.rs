@@ -15,7 +15,7 @@ use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
     TypeId,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Rebuild the analyzed type using the original input's field objects. Equal SQL
 /// types from the closure body can have different source positions and sharing.
@@ -324,36 +324,89 @@ pub struct ProjectedClosure {
     pub closure: Option<ExpressionId>,
 }
 
-/// Project the body and bind its reduced reads to the Apply operator's input.
-/// Keep both operations in the same arena so repeated reads share the same variable.
+/// Bindings and diagnostics for the general visitor, all in the original node-ID space.
+pub enum WaterlineInspection {
+    Free(NodeId),
+    Conflict { variable: NodeId, previous: NodeId, current: NodeId },
+    Bound { references: HashMap<NodeId, NodeId>, repeated: Vec<NodeId> },
+}
+
+impl WaterlineInspection {
+    fn inspect(
+        edit: &CircuitEditor,
+        resolution: crate::LexicalResolution<'_>,
+        body: Option<NodeId>,
+    ) -> Result<Self, Error> {
+        use crate::LexicalResolution;
+        Ok(match resolution {
+            LexicalResolution::Free { variable, .. } => Self::Free(variable),
+            LexicalResolution::Conflict { variable, previous, current } =>
+                Self::Conflict { variable, previous, current },
+            LexicalResolution::Bound(references) => {
+                let repeated = match body {
+                    Some(body) => feldera_sql_expr::first_repeated_expression(edit, body)?,
+                    None => None,
+                };
+                Self::Bound { references, repeated: repeated.unwrap_or_default() }
+            }
+        })
+    }
+
+    pub fn for_root(edit: &CircuitEditor, root: NodeId) -> Result<Self, Error> {
+        let node = edit.node(root)?;
+        let body = match node.inner_kind() {
+            Some(InnerKind::Expression(Expr::Closure)) => Some(node.edge("body")?),
+            _ => None,
+        };
+        Self::inspect(edit, crate::lexical_references(edit.circuit(), root)?, body)
+    }
+}
+
+pub enum ClosureAnalysis {
+    Projected(ProjectedClosure),
+    Visit(WaterlineInspection),
+}
+
+/// Bind projected reads to the Apply input. If the general visitor is needed,
+/// give it the results of this inspection so it can resume at the closure body.
 pub fn project_closure(
     edit: &mut CircuitEditor,
     body: ExpressionId,
     parameters: &[(NodeId, TypeId)],
     projections: &[Projection],
     indexed: bool,
-) -> Result<Option<ProjectedClosure>, Error> {
-    // Projection skips the bodies of nested lambdas, but their references
-    // and expression occurrences must still be valid before accepting the closure.
-    let body_id = body.into();
-    if !feldera_sql_expr::is_expression_tree(edit, body_id)? {
-        return Ok(None);
-    }
+) -> Result<ClosureAnalysis, Error> {
     let declared = parameters.iter().map(|&(parameter, _)| parameter);
-    let Some(references) =
-        crate::lexical_scope::body_references(edit.circuit(), declared, body_id)?
-    else {
-        return Ok(None);
+    let resolution = crate::lexical_scope::resolve_body(edit.circuit(), declared, body.into())?;
+    let inspection = WaterlineInspection::inspect(edit, resolution, Some(body.into()))?;
+    let WaterlineInspection::Bound { references, repeated } = &inspection else {
+        return Ok(ClosureAnalysis::Visit(inspection));
     };
-    for (read, binding) in references {
+    if !repeated.is_empty() {
+        return Ok(ClosureAnalysis::Visit(inspection));
+    }
+    for (&read, &binding) in references {
         let declaration = edit.node(binding)?;
         if matches!(declaration.inner_kind(), Some(InnerKind::Parameter)) {
             let expected = edit.type_id(declaration.edge("type")?)?;
             if !edit.same_type(edit.expression_type(edit.expression(read)?)?, expected)? {
-                return Ok(None);
+                return Ok(ClosureAnalysis::Visit(inspection));
             }
         }
     }
+    if let Some(projected) = project_validated_closure(edit, body, parameters, projections, indexed)? {
+        return Ok(ClosureAnalysis::Projected(projected));
+    }
+    Ok(ClosureAnalysis::Visit(inspection))
+}
+
+fn project_validated_closure(
+    edit: &mut CircuitEditor,
+    body: ExpressionId,
+    parameters: &[(NodeId, TypeId)],
+    projections: &[Projection],
+    indexed: bool,
+) -> Result<Option<ProjectedClosure>, Error> {
     let mut variables = Vec::with_capacity(parameters.len());
     let mut names = Vec::with_capacity(parameters.len());
     for &(parameter, projected) in parameters {

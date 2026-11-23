@@ -71,15 +71,15 @@ pub(crate) fn predicate_references(
     parameter: NodeId,
     body: NodeId,
 ) -> Result<Option<References>, Error> {
-    body_references(circuit, [parameter], body)
+    resolve_body(circuit, [parameter], body)?.optional()
 }
 
 /// A detached closure body may have separate key, left and right parameters.
-pub(crate) fn body_references(
+pub(crate) fn resolve_body(
     circuit: &Circuit,
     parameters: impl IntoIterator<Item = NodeId>,
     body: NodeId,
-) -> Result<Option<References>, Error> {
+) -> Result<Resolution<'_>, Error> {
     let mut bindings = Vec::new();
     for id in parameters {
         let parameter = circuit
@@ -87,7 +87,7 @@ pub(crate) fn body_references(
             .ok_or_else(|| Error::new("missing closure parameter"))?;
         bindings.push((name(parameter, "name")?, id));
     }
-    resolve_variables(circuit, body, bindings)?.optional()
+    resolve_variables(circuit, body, bindings)
 }
 
 /// An unbound name is a normal outcome when testing a partially projected closure.
