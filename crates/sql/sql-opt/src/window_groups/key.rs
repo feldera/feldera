@@ -16,7 +16,13 @@ pub(super) struct TimestampKey(Vec<(Term, Vec<usize>)>);
 
 #[derive(Eq, Hash, PartialEq)]
 enum Term {
-    Parameter,
+    Variable(usize),
+    Closure,
+    Let,
+    ReferenceType {
+        mutable: bool,
+        nullable: bool,
+    },
     Array,
     Map,
     Tuple,
@@ -60,9 +66,24 @@ enum Term {
     },
 }
 
+/// A binding's position within the active parameter list identifies its uses
+/// across renaming. Its index in the arena distinguishes sibling scopes when
+/// memoizing shared expressions.
+struct Binding<'a> {
+    variable: RowParameter<'a>,
+    parent: Option<usize>,
+    position: usize,
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+struct ScopedNode {
+    id: NodeId,
+    scope: usize,
+}
+
 enum Visit {
-    Read(NodeId),
-    Intern(NodeId, Term, Vec<NodeId>),
+    Read(ScopedNode),
+    Intern(ScopedNode, Term, Vec<ScopedNode>),
 }
 
 impl TimestampKey {
@@ -71,30 +92,35 @@ impl TimestampKey {
         root: ExpressionId,
         parameter: RowParameter<'_>,
     ) -> Result<Option<Self>, Error> {
+        let mut scopes = vec![Binding {
+            variable: parameter,
+            parent: None,
+            position: 0,
+        }];
         let mut terms = IndexSet::new();
         let mut numbers = HashMap::new();
         let mut active = HashSet::new();
-        let mut work = vec![Visit::Read(root.into())];
+        let mut work = vec![Visit::Read(ScopedNode {
+            id: root.into(),
+            scope: 0,
+        })];
         while let Some(visit) = work.pop() {
             match visit {
-                Visit::Read(id) => {
-                    if numbers.contains_key(&id) {
+                Visit::Read(at) => {
+                    if numbers.contains_key(&at) {
                         continue;
                     }
-                    if !active.insert(id) {
+                    if !active.insert(at.id) {
                         return Err(Error::new("cycle in a window key expression"));
                     }
-                    let entry = match edit.node(id)?.inner_kind() {
-                        Some(InnerKind::Type(_)) => type_term(edit, edit.type_id(id)?)?,
-                        _ => key_term(edit, edit.expression(id)?, parameter)?,
-                    };
-                    let Some((term, children)) = entry else {
+                    let Some((term, children)) = scoped_term(edit, at, &mut scopes)? else {
                         return Ok(None);
                     };
-                    work.push(Visit::Intern(id, term, children.clone()));
+                    work.push(Visit::Intern(at, term, children.clone()));
                     work.extend(children.into_iter().rev().map(Visit::Read));
                 }
-                Visit::Intern(id, term, children) => {
+                Visit::Intern(at, term, children) => {
+                    let id = at.id;
                     let operands = children.into_iter().map(|child| numbers[&child]).collect();
                     // The literal printer and an explicit Some use the same spelling.
                     let wrap = matches!(
@@ -115,7 +141,7 @@ impl TimestampKey {
                             .insert_full((Term::Call("Some".into()), vec![number]))
                             .0;
                     }
-                    numbers.insert(id, number);
+                    numbers.insert(at, number);
                     active.remove(&id);
                 }
             }
@@ -124,11 +150,89 @@ impl TimestampKey {
     }
 }
 
-fn key_term(
-    edit: &CircuitEditor,
-    id: ExpressionId,
-    parameter: RowParameter<'_>,
-) -> Result<Option<(Term, Vec<NodeId>)>, Error> {
+fn scoped_term<'a>(
+    edit: &'a CircuitEditor,
+    at: ScopedNode,
+    scopes: &mut Vec<Binding<'a>>,
+) -> Result<Option<(Term, Vec<ScopedNode>)>, Error> {
+    let node = edit.node(at.id)?;
+    let same_scope = |id| ScopedNode {
+        id,
+        scope: at.scope,
+    };
+    Ok(Some(match node.inner_kind() {
+        Some(InnerKind::Expression(Expr::Closure)) => {
+            let mut scope = at.scope;
+            let mut children = Vec::new();
+            for param in node.edges("parameters")? {
+                let variable = row_parameter(edit, param)?;
+                children.push(same_scope(variable.ty.into()));
+                scope = bind(scopes, scope, variable);
+            }
+            children.push(ScopedNode {
+                id: node.edge("body")?,
+                scope,
+            });
+            (Term::Closure, children)
+        }
+        Some(InnerKind::Expression(Expr::Let)) => {
+            let path = edit.node(node.edge("variable")?)?;
+            let variable = RowParameter {
+                name: string(path, "variable")
+                    .ok_or_else(|| Error::new("missing LET binding name"))?,
+                ty: edit.type_id(path.edge("type")?)?,
+            };
+            let scope = bind(scopes, at.scope, variable);
+            // Only the consumer sees the new binding.
+            (
+                Term::Let,
+                vec![
+                    same_scope(node.edge("initializer")?),
+                    ScopedNode {
+                        id: node.edge("consumer")?,
+                        scope,
+                    },
+                ],
+            )
+        }
+        Some(InnerKind::Expression(Expr::VariablePath)) => {
+            let name = string(node, "variable")
+                .ok_or_else(|| Error::new("missing window key variable name"))?;
+            let binding = std::iter::successors(Some(at.scope), |&s| scopes[s].parent)
+                .map(|s| &scopes[s])
+                .find(|b| b.variable.name == name);
+            let Some(binding) = binding else {
+                return Ok(None);
+            };
+            if !edit.same_type(binding.variable.ty, edit.type_id(node.edge("type")?)?)? {
+                return Ok(None);
+            }
+            (Term::Variable(binding.position), Vec::new())
+        }
+        kind => {
+            let term = match kind {
+                Some(InnerKind::Type(_)) => type_term(edit, edit.type_id(at.id)?)?,
+                _ => key_term(edit, edit.expression(at.id)?)?,
+            };
+            let Some((term, children)) = term else {
+                return Ok(None);
+            };
+            (term, children.into_iter().map(same_scope).collect())
+        }
+    }))
+}
+
+fn bind<'a>(scopes: &mut Vec<Binding<'a>>, parent: usize, variable: RowParameter<'a>) -> usize {
+    let scope = scopes.len();
+    scopes.push(Binding {
+        variable,
+        parent: Some(parent),
+        position: scopes[parent].position + 1,
+    });
+    scope
+}
+
+fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<NodeId>)>, Error> {
     let node = edit.node(id.into())?;
     let child = |field| edit.expression(node.edge(field)?).map(NodeId::from);
     let children = |field| {
@@ -139,12 +243,6 @@ fn key_term(
     };
     let kind = edit.expr_kind(id)?;
     Ok(Some(match kind {
-        Expr::VariablePath
-            if string(node, "variable") == Some(parameter.name)
-                && edit.same_type(edit.expression_type(id)?, parameter.ty)? =>
-        {
-            (Term::Parameter, vec![])
-        }
         Expr::Field => {
             let column = node
                 .data("fieldNo")
@@ -444,6 +542,19 @@ pub(super) fn row_parameter(
 fn type_term(edit: &CircuitEditor, ty: TypeId) -> Result<Option<(Term, Vec<NodeId>)>, Error> {
     let kind = edit.type_kind(ty)?;
     let field = match kind {
+        Ty::Ref => {
+            let node = edit.node(ty.into())?;
+            let Some(mutable) = node.data("mutable").and_then(|v| v.as_bool()) else {
+                return Ok(None);
+            };
+            return Ok(Some((
+                Term::ReferenceType {
+                    mutable,
+                    nullable: edit.nullable(ty)?,
+                },
+                vec![node.edge("type")?],
+            )));
+        }
         Ty::Tuple | Ty::RawTuple => "tupFields",
         Ty::Array | Ty::Map => "typeArgs",
         _ => return Ok(scalar_spelling(edit, ty)?.map(|name| (Term::ScalarType(name), vec![]))),
@@ -652,6 +763,60 @@ mod tests {
         assert!(key(absent)? == key(sql_null)? && key(absent)? != key(variant_null)?);
         assert!(key(wrapped)? == key(some)? && key(wrapped)? != key(tuple)?);
         assert!(key(absent_tuple)? != key(absent)? && key(absent_tuple)? != key(wrapped)?);
+        Ok(())
+    }
+
+    #[test]
+    fn closure_and_let_keys_preserve_the_declaration_each_use_reads() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[]
+        }))?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let ty = edit.bool_type(site, false)?;
+        let outer = edit.named_variable(ty, "row")?;
+        let row = RowParameter { name: "row", ty };
+        let mut key = |parameter_name, local_name, capture| -> Result<TimestampKey, Error> {
+            let parameter = edit.named_variable(ty, parameter_name)?;
+            let local = edit.named_variable(ty, local_name)?;
+            // The initializer reads the lambda parameter even when the LET shadows its name.
+            let initializer = edit.named_variable(ty, parameter_name)?;
+            let body =
+                edit.let_expression(local, initializer, if capture { outer } else { local })?;
+            let lambda = edit.closure_from_variables(body, &[parameter])?;
+            Ok(TimestampKey::read(&edit, lambda, row)?.expect("bound lambda key"))
+        };
+        let shadow = key("x", "x", false)?;
+        assert!(shadow == key("y", "z", false)?);
+        assert!(shadow != key("y", "z", true)?);
+        let free = edit.named_variable(ty, "p1")?;
+        let lambda = edit.closure_from_variables(free, &[outer])?;
+        assert!(TimestampKey::read(&edit, lambda, row)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn a_shared_lambda_body_is_numbered_once_per_scope() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[]
+        }))?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let ty = edit.bool_type(site, false)?;
+        let row = RowParameter { name: "x", ty };
+        let x = edit.named_variable(ty, "x")?;
+        let y = edit.named_variable(ty, "y")?;
+        let mut body = x;
+        for _ in 0..128 {
+            body = edit.binary_expression(site, ty, BinaryOp::And, body, body)?;
+        }
+        let shadow = edit.closure_from_variables(body, &[x])?;
+        let capture = edit.closure_from_variables(body, &[y])?;
+        let both = edit.tuple_expr(site, false, &[shadow, capture])?;
+        let same = edit.tuple_expr(site, false, &[shadow, shadow])?;
+        let key = TimestampKey::read(&edit, both, row)?.expect("two bound lambdas");
+        assert!(key.0.len() < 270);
+        assert!(Some(key) != TimestampKey::read(&edit, same, row)?);
         Ok(())
     }
 

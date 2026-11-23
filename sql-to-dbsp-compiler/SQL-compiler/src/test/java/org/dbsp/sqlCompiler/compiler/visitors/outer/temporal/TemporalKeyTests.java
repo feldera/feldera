@@ -116,6 +116,13 @@ public class TemporalKeyTests {
                 key.formatted("ARRAY_CONTAINS(ARRAY[ROW(id, tag)], ROW(id, tag))"));
     }
 
+    @Test
+    public void lambdaWindowKeysCompareBindingsAndBodies() {
+        String key = "TIMESTAMPADD(SECOND, ARRAY_MAX(TRANSFORM(arr, %s)), ts)";
+        checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, arr INT ARRAY",
+                key.formatted("x -> x + x"), key.formatted("y -> y + y"), key.formatted("y -> y + 1"));
+    }
+
     private static void checkOffsetKeys(String shared, String different) {
         String key = "TIMESTAMPADD(SECOND, %s, ts)";
         checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, flag BOOLEAN, label VARCHAR",
@@ -123,6 +130,10 @@ public class TemporalKeyTests {
     }
 
     private static void checkSharedWindowKeys(String fields, String shared, String different) {
+        checkSharedWindowKeys(fields, shared, shared, different);
+    }
+
+    private static void checkSharedWindowKeys(String fields, String first, String second, String different) {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         for (boolean gen2 : List.of(false, true)) {
             var options = new CompilerOptions();
@@ -153,7 +164,7 @@ public class TemporalKeyTests {
                     CREATE VIEW a AS SELECT id FROM t WHERE (%s) >= NOW() - INTERVAL '1' DAY AND id > 0;
                     CREATE VIEW b AS SELECT id FROM t WHERE (%s) >= NOW() - INTERVAL '2' DAY AND id > 1;
                     CREATE VIEW c AS SELECT id FROM t WHERE (%s) >= NOW() - INTERVAL '3' DAY AND id > 2;
-                    """.formatted(fields, shared, shared, different));
+                    """.formatted(fields, first, second, different));
             var circuit = compiler.getFinalCircuit(false);
             compiler.throwIfErrorsOccurred();
             Assert.assertEquals(analyses, answered);
