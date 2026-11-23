@@ -2970,12 +2970,18 @@ export type HealthStatus = {
 }
 
 /**
- * CPU and memory of one host.
+ * CPU and memory of one host, and restarts of its pipeline process.
  */
 export type HostCompute = Transition & {
   current?: ComputeResources | null
   desired?: ComputeResources | null
+  last_termination?: ProcessTermination | null
   manager: ResourceManager
+  /**
+   * Times the pipeline process restarted (Kubernetes `restartCount`). Absent when the runner
+   * has not reported the process.
+   */
+  restart_count?: number | null
 }
 
 /**
@@ -5327,6 +5333,27 @@ export type PreprocessorConfig = {
    * All preprocessors with the same name will perform the same task.
    */
   name: string
+}
+
+/**
+ * How the pipeline process ended (Kubernetes `ContainerStateTerminated`).
+ */
+export type ProcessTermination = {
+  exit_code: number
+  /**
+   * Identifies one termination: the same termination keeps the same time.
+   */
+  finished_at?: string | null
+  message?: string | null
+  /**
+   * Machine-readable cause, for example `OOMKilled`, `Error` or `Completed`.
+   */
+  reason?: string | null
+  /**
+   * Absent when the platform does not report it.
+   */
+  signal?: number | null
+  started_at?: string | null
 }
 
 /**

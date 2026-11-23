@@ -133,7 +133,7 @@ pub struct StorageResources {
     pub storage_mb: Option<u64>,
 }
 
-/// CPU and memory of one host.
+/// CPU and memory of one host, and restarts of its pipeline process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct HostCompute {
     #[serde(flatten)]
@@ -144,6 +144,33 @@ pub struct HostCompute {
     /// Absent when there is no pod, it cannot be read, or the kubelet has not reported its
     /// resources.
     pub current: Option<ComputeResources>,
+    /// Times the pipeline process restarted (Kubernetes `restartCount`). Absent when the runner
+    /// has not reported the process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restart_count: Option<u32>,
+    /// Most recent termination of the pipeline process (Kubernetes `lastState.terminated`), for
+    /// example by an OOM kill. Absent when the process did not terminate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_termination: Option<ProcessTermination>,
+}
+
+/// How the pipeline process ended (Kubernetes `ContainerStateTerminated`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ProcessTermination {
+    pub exit_code: i32,
+    /// Absent when the platform does not report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signal: Option<i32>,
+    /// Machine-readable cause, for example `OOMKilled`, `Error` or `Completed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<DateTime<Utc>>,
+    /// Identifies one termination: the same termination keeps the same time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<DateTime<Utc>>,
 }
 
 /// Storage volume of one host.
@@ -247,6 +274,8 @@ mod test {
                 manager: ResourceManager::User,
                 desired: None,
                 current: None,
+                restart_count: None,
+                last_termination: None,
             },
             storage: storage.map(|transition| HostStorage {
                 transition,
@@ -426,5 +455,52 @@ mod test {
                 }]
             })
         );
+    }
+
+    #[test]
+    fn serializes_restarts() {
+        let mut status = host(Transition::new(Current), None);
+        status.compute.restart_count = Some(1);
+        status.compute.last_termination = Some(ProcessTermination {
+            exit_code: 137,
+            signal: None,
+            reason: Some("OOMKilled".to_string()),
+            message: None,
+            started_at: None,
+            finished_at: Some("2026-10-14T12:00:00Z".parse().unwrap()),
+        });
+        let json = serde_json::json!({
+            "ordinal": 0,
+            "compute": {
+                "state": "Current",
+                "manager": "User",
+                "desired": null,
+                "current": null,
+                "restart_count": 1,
+                "last_termination": {
+                    "exit_code": 137,
+                    "reason": "OOMKilled",
+                    "finished_at": "2026-10-14T12:00:00Z"
+                }
+            }
+        });
+        assert_eq!(serde_json::to_value(&status).unwrap(), json);
+        assert_eq!(serde_json::from_value::<HostStatus>(json).unwrap(), status);
+    }
+
+    /// A payload from before `restart_count` and `last_termination` existed.
+    #[test]
+    fn deserializes_without_restarts() {
+        let status: HostStatus = serde_json::from_value(serde_json::json!({
+            "ordinal": 0,
+            "compute": {
+                "state": "Current",
+                "manager": "User",
+                "desired": null,
+                "current": null
+            }
+        }))
+        .unwrap();
+        assert_eq!(status, host(Transition::new(Current), None));
     }
 }
