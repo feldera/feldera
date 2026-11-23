@@ -175,6 +175,7 @@ public class FuseExpensiveMaps extends Passes {
     static class FindFusableMaps extends CircuitVisitor {
         final ContainsNow containsNow;
         final Map<OutputPort, List<MapInfo>> groups = new LinkedHashMap<>();
+        final List<DBSPMapOperator> pendingMaps = new ArrayList<>();
         /** The cluster each fused map belongs to, keyed by cluster member.
          * A single-member cluster computes an expensive expression twice. */
         final Map<DBSPMapOperator, List<MapInfo>> clusters = new HashMap<>();
@@ -188,11 +189,17 @@ public class FuseExpensiveMaps extends Passes {
         public void postorder(DBSPMapOperator operator) {
             if (!operator.getFunction().is(DBSPClosureExpression.class))
                 return;
-            var candidate = this.compiler().options.ioOptions.rustOptimizerPasses
-                    ? RustCircuitPass.mapFusionCandidate(this.compiler(), operator)
-                    : this.candidate(operator);
+            if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+                this.pendingMaps.add(operator);
+                return;
+            }
+            var candidate = this.candidate(operator);
             if (candidate != null)
-                this.groups.computeIfAbsent(operator.input(), p -> new ArrayList<>()).add(candidate);
+                this.addCandidate(candidate);
+        }
+
+        private void addCandidate(MapInfo candidate) {
+            this.groups.computeIfAbsent(candidate.operator().input(), p -> new ArrayList<>()).add(candidate);
         }
 
         @Nullable
@@ -304,6 +311,22 @@ public class FuseExpensiveMaps extends Passes {
 
         @Override
         public void endVisit() {
+            if (!this.pendingMaps.isEmpty()) {
+                var scan = RustCircuitPass.scanMapFusion(this.compiler(), this.pendingMaps);
+                this.pendingMaps.clear();
+                boolean firstScan = this.groups.isEmpty();
+                scan.candidates().forEach(this::addCandidate);
+                if (firstScan && scan.clusters() != null) {
+                    for (int[] indices : scan.clusters()) {
+                        var members = new ArrayList<MapInfo>(indices.length);
+                        for (int index : indices)
+                            members.add(scan.candidates().get(index));
+                        this.addCluster(members);
+                    }
+                    super.endVisit();
+                    return;
+                }
+            }
             for (List<MapInfo> group : this.groups.values()) {
                 var components = this.compiler().options.ioOptions.rustOptimizerPasses
                         ? this.nativeComponents(group) : this.javaComponents(group);
@@ -312,11 +335,15 @@ public class FuseExpensiveMaps extends Passes {
                             !this.hasDuplicatedExpensiveField(members.get(0)))
                         // "Fusing" a single map when it contains a repeated computation
                         continue;
-                    for (MapInfo member : members)
-                        Utilities.putNew(this.clusters, member.operator(), members);
+                    this.addCluster(members);
                 }
             }
             super.endVisit();
+        }
+
+        private void addCluster(List<MapInfo> members) {
+            for (MapInfo member : members)
+                Utilities.putNew(this.clusters, member.operator(), members);
         }
     }
 

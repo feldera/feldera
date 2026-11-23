@@ -3,7 +3,7 @@ mod fragments;
 mod groups;
 
 pub use fragments::{has_duplicate_expensive_field, map_fusion_candidate, map_fusion_fragments};
-pub use groups::{map_fusion_groups, sibling_map_groups};
+pub use groups::{map_fusion_groups, scan_map_fusion, sibling_map_groups, FusionCandidate, FusionScan};
 
 use crate::{rebuild::ProjectionNames, stream_rewrites::body_members, terms::Terms};
 use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};

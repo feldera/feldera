@@ -45,7 +45,7 @@ pub use static_items::{renumber_static_errors, static_initializer, static_item};
 pub use static_candidates::{static_candidates, StaticCandidates};
 pub use map_fusion::{
     fuse_expensive_maps, has_duplicate_expensive_field, map_fusion_candidate, map_fusion_fragments,
-    map_fusion_groups, sibling_map_groups, FusionMember,
+    map_fusion_groups, scan_map_fusion, sibling_map_groups, FusionCandidate, FusionMember, FusionScan,
 };
 mod star_joins;
 pub use star_joins::{expand_star_delta, DeltaStarJoin, expand_star_term, BinaryJoin, StarJoinExpansion, expand_star_join_layer, find_join_trees, names_after_isolated_joins, remove_star_joins, replace_star_joins, StarJoinTree};

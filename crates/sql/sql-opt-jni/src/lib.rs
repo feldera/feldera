@@ -630,16 +630,19 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("Monotonicity/InspectBody", [root]) => {
             return Ok(waterline_inspection(feldera_sql_opt::WaterlineInspection::for_root(&edit, *root)?));
         }
-        ("FuseExpensiveMaps/Candidate", [closure]) => {
+        ("FuseExpensiveMaps/Scan", functions) => {
+            let ports: Vec<usize> = serde_json::from_slice(state)?;
+            let scan = feldera_sql_opt::scan_map_fusion(&mut edit, functions, &ports, &mut warnings)?;
             let mut roots = Vec::new();
-            if let Some((function, fragments)) =
-                feldera_sql_opt::map_fusion_candidate(&mut edit, *closure, &mut warnings)?
-            {
-                roots.push(function);
-                roots.extend(fragments.into_iter().map(NodeId::Inner));
+            let mut members = Vec::with_capacity(scan.candidates.len());
+            for candidate in scan.candidates {
+                members.push((candidate.map, candidate.fragments.len()));
+                roots.push(candidate.function);
+                roots.extend(candidate.fragments.into_iter().map(NodeId::Inner));
             }
             let roots = edit.circuit().live_inner_roots(&arena, &roots)?;
-            return Ok(json!({"roots": roots, "warnings": pass_warnings(warnings)}));
+            return Ok(json!({"members": members, "roots": roots, "clusters": scan.clusters,
+                "warnings": pass_warnings(warnings)}));
         }
         ("FuseExpensiveMaps/Fragments", [closure]) => {
             return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_fragments(&arena, *closure)?)?);
@@ -1443,7 +1446,7 @@ fn transform(
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
-        | "FuseExpensiveMaps/Candidate" | "FuseExpensiveMaps/DuplicateField" | "FuseExpensiveMaps/Siblings" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
+        | "FuseExpensiveMaps/Scan" | "FuseExpensiveMaps/DuplicateField" | "FuseExpensiveMaps/Siblings" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
             return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Groups" => {

@@ -85,9 +85,14 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
         var compiler = this.testCompiler();
         var site = CalciteEmptyRel.INSTANCE;
         var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
+        var secondInput = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
         var circuit = new DBSPCircuit(new ProgramMetadata(), false);
         circuit.addOperator(input);
+        circuit.addOperator(secondInput);
         var maps = new ArrayList<DBSPMapOperator>();
+        var separateRow = b.refVar(this.pair);
+        var separate = new DBSPMapOperator(site, b.tuple(b.call("f", b.field(separateRow, 0))).closure(separateRow),
+                secondInput.outputPort());
         for (var functions : List.of(List.of("f"), List.of("other"), List.of("g"), List.of("f", "g"))) {
             var row = b.refVar(this.pair);
             var fields = functions.stream().map(name -> b.call(name, b.field(row, 0)))
@@ -95,6 +100,8 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
             var map = new DBSPMapOperator(site, b.tuple(fields).closure(row), input.outputPort());
             maps.add(map);
             circuit.addOperator(map);
+            if (maps.size() == 1)
+                circuit.addOperator(separate);
         }
         for (boolean hybrid : List.of(false, true)) {
             compiler.options.ioOptions.rustOptimizerPasses = hybrid;
@@ -103,6 +110,7 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
             var candidates = scan.groups.get(input.outputPort());
             Assert.assertArrayEquals(new int[][]{{0, 2, 3}, {1}}, RustCircuitPass.siblingMapGroups(compiler, candidates));
             Assert.assertNull(scan.clusters.get(maps.get(1)));
+            Assert.assertNull(scan.clusters.get(separate));
             for (int i : List.of(0, 2, 3))
                 Assert.assertEquals(List.of(candidates.get(0), candidates.get(2), candidates.get(3)),
                         scan.clusters.get(maps.get(i)));

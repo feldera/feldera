@@ -1590,7 +1590,7 @@ public final class RustCircuitPass implements CircuitTransform {
             default -> new OptimizerExpressionWriter(compiler);
         };
         if (pass.equals("SharedIndexes/Split") || pass.equals("SharedIndexes/WideFields")
-                || pass.equals("FuseExpensiveMaps/DuplicateField"))
+                || pass.equals("FuseExpensiveMaps/DuplicateField") || pass.equals("FuseExpensiveMaps/Scan"))
             inner.includeShuffleIdentities();
         try {
             byte[] reply = transformWithContext(pass, inner.encode(inputs), DBSPVariablePath.nextGeneratedName(), "", state);
@@ -1934,21 +1934,39 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    @Nullable
-    public static FuseExpensiveMaps.MapInfo mapFusionCandidate(DBSPCompiler compiler, DBSPMapOperator operator) {
-        String pass = "FuseExpensiveMaps/Candidate";
-        var reply = invokeLowering(compiler, pass, operator.getClosureFunction());
-        reportWarnings(compiler, reply.value.required("warnings"));
-        if (compiler.stateObserver != null)
-            compiler.stateObserver.nativeDecision(pass, true);
-        var roots = reply.value.required("roots").elements();
-        if (!roots.hasNext())
-            return null;
-        var decoder = expressionDecoder(reply.writer);
-        var function = decodeLiveRoot(decoder, roots.next(), DBSPClosureExpression.class);
-        var fragments = new ArrayList<DBSPExpression>();
-        roots.forEachRemaining(node -> fragments.add(decodeLiveRoot(decoder, node, DBSPExpression.class)));
-        return new FuseExpensiveMaps.MapInfo(operator, function, fragments);
+    public record MapFusionScan(List<FuseExpensiveMaps.MapInfo> candidates, @Nullable int[][] clusters) {}
+
+    public static MapFusionScan scanMapFusion(DBSPCompiler compiler, List<DBSPMapOperator> maps) {
+        String pass = "FuseExpensiveMaps/Scan";
+        var ports = new HashMap<OutputPort, Integer>();
+        var inputs = new int[maps.size()];
+        var functions = new DBSPClosureExpression[maps.size()];
+        for (int i = 0; i < maps.size(); i++) {
+            var map = maps.get(i);
+            inputs[i] = ports.computeIfAbsent(map.input(), ignored -> ports.size());
+            functions[i] = map.getClosureFunction();
+        }
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(inputs), functions);
+            reportWarnings(compiler, reply.value.required("warnings"));
+            var roots = reply.value.required("roots").elements();
+            var decoder = expressionDecoder(reply.writer);
+            var candidates = new ArrayList<FuseExpensiveMaps.MapInfo>();
+            for (var member : reply.value.required("members")) {
+                var map = maps.get(member.required(0).intValue());
+                var function = decodeLiveRoot(decoder, roots.next(), DBSPClosureExpression.class);
+                var fragments = new ArrayList<DBSPExpression>();
+                for (int i = 0; i < member.required(1).intValue(); i++)
+                    fragments.add(decodeLiveRoot(decoder, roots.next(), DBSPExpression.class));
+                candidates.add(new FuseExpensiveMaps.MapInfo(map, function, fragments));
+            }
+            Utilities.enforce(!roots.hasNext());
+            var clusters = reply.value.required("clusters");
+            return new MapFusionScan(candidates, answered(compiler, pass, clusters)
+                    ? MAPPER.treeToValue(clusters, int[][].class) : null);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid map fusion scan from Rust", error);
+        }
     }
 
     @Nullable
