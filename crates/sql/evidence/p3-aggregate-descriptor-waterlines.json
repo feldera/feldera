@@ -1,0 +1,37 @@
+{
+  "scope": "Aggregate descriptors expose their visited children without supplying a result fact. A required descriptor result retains the direct visitor diagnostic.",
+  "source_base": "3d4fd14a087a3ff19d410a90fb0cc1b8906f8f46",
+  "source_files_sha256": {
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "2d1c1b73cce43784e7e99df1e66ec84b94842d24b1b76a3c71e909f2637f2732",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "cea3536eb1c139e42cd8e7e7dbb4c839c3b39dc5380c87ad05bbd0b36c0fd849"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "0f8cc68870ffdbdfbc798e51590de5dd048c8baceb4bad29307e1d2c6e2a6d64",
+    "bin/sql-difftest": "b85f049b3c40d466e10eb7d173a2038d6650f4891e46be6207a5fb0c083a057a",
+    "maven/tests.jar": "4a32563d7308e04e3728e3420445e019ff5c73cce09d2ed15c05c390e454cf36",
+    "maven/sql-compiler.jar": "19e442f89f08c7e695a9199a33c035fc09933e9dea647d27e71e809dda6f10b4"
+  },
+  "negative_control": {
+    "library_sha256": "1a565c848919f2afe07b9d94559f9c2aff75c7dbf8e1b52b1cb09cf826fa100b",
+    "failed_test": "aggregateDescriptorsExposeChildrenWithoutAResultFact"
+  },
+  "rust_tests": 221,
+  "junit_tests": 146,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "8040ddb8f1b3e3b9c67f068cf92d8ee9e9cad4c144a898b4b47271d313d1ca85"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "6c1cd2a5cbca7c8fb0b1d192e4ddb5c40223dd77b01a0312628ac0b24230493a"
+    }
+  }
+}

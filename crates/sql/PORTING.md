@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust visits the children of linear, nonlinear and min/max aggregate descriptors
+without assigning the descriptor a waterline. The previous hybrid failed the
+regression when a closure discarded the descriptor. The fix passed 221 Rust
+tests and 146 targeted JUnit tests. Twelve LATENESS programs per engine matched
+direct Java through 10,929 ordered S4 observations and artifact emission.
+[Aggregate descriptor replay](evidence/p3-aggregate-descriptor-waterlines.json)
+
 Temporal filters now use the same Rust waterline transfer as LATENESS for
 scalar and structured clock operands. All 71 classic and 62 Gen-2 programs
 in the frozen clock population matched direct Java, as did 20 directed

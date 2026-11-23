@@ -39,6 +39,10 @@ import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -92,6 +96,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -757,6 +762,55 @@ public class WaterlineProjectionTests {
         var equality = new DBSPBinaryExpression(CalciteEmptyRel.INSTANCE, DBSPTypeBool.create(false), DBSPOpcode.EQ,
                 empty, new DBSPRawTupleExpression());
         assertUnusedOperandWaterline(empty, equality);
+    }
+
+    @Test
+    public void aggregateDescriptorsExposeChildrenWithoutAResultFact() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(0).getType();
+        var shape = new MonotoneType(integer);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var row = integer.var();
+        var map = row.closure(row);
+        var acc = integer.var();
+        var weight = DBSPTypeWeight.INSTANCE.var();
+        var increment = acc.closure(acc, row, weight);
+        var post = acc.deepCopy().closure(acc);
+        for (IAggregate descriptor : List.of(
+                new LinearAggregate(site, map, post, new DBSPI32Literal(0)),
+                new NonLinearAggregate(site, new DBSPI32Literal(1), increment, new DBSPI32Literal(0),
+                        DBSPTypeWeight.INSTANCE),
+                new MinMaxAggregate(site, new DBSPI32Literal(1), increment, new DBSPI32Literal(0),
+                        DBSPTypeWeight.INSTANCE, map, post, MinMaxAggregate.Operation.Min))) {
+            var input = integer.ref().var();
+            var body = new DBSPBlockExpression(List.of(descriptor.toStatement()), input.deref());
+            var closure = body.closure(input);
+            var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+            direct.apply(closure);
+            Assert.assertNull(direct.maybeGet(descriptor));
+            Assert.assertTrue(direct.get(descriptor.getEmptySetResult()).mayBeMonotone());
+            var required = descriptor.closure(input);
+            Assert.assertThrows(RuntimeException.class, () -> new MonotoneTransferFunctions(compiler, operator,
+                    MonotoneTransferFunctions.ArgumentKind.ZSet, shape).apply(required));
+            for (boolean observe : List.of(false, true)) {
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var result = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                        new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                        false, observe ? facts::put : null);
+                Assert.assertTrue(result instanceof RustCircuitPass.ProjectedWaterline);
+                Assert.assertTrue(direct.get(closure).getReducedExpression()
+                        .equivalent(((RustCircuitPass.ProjectedWaterline) result).closure()));
+                if (observe) {
+                    Assert.assertFalse(facts.containsKey(descriptor));
+                    Assert.assertTrue(facts.get(descriptor.getEmptySetResult()).mayBeMonotone());
+                }
+                Assert.assertTrue(RustCircuitPass.projectWaterlineClosure(compiler, descriptor, required.parameters,
+                        new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                        false, observe ? facts::put : null) instanceof RustCircuitPass.WaterlineInspection);
+            }
+        }
     }
 
     @Test

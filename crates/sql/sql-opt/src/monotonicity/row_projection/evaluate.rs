@@ -11,6 +11,7 @@ use std::collections::HashSet;
 
 pub(super) enum Step {
     Read(ExpressionId),
+    NoFact(ExpressionId),
     Reduce(ExpressionId, Operation, usize),
     Discard,
     Bind {
@@ -82,19 +83,21 @@ fn schedule(
     let node = edit.node(id.into())?;
     let child = |name| edit.expression(node.edge(name)?);
     let mark = work.len();
-    let operation = match edit.expr_kind(id)? {
+    let kind = edit.expr_kind(id)?;
+    let reduce = |op| Step::Reduce(id, op, base);
+    let finish = match kind {
         Expr::Borrow | Expr::Deref | Expr::Field | Expr::Clone | Expr::Some | Expr::Unwrap => {
             work.push(Step::Read(child("expression")?));
-            Operation::Wrapper
+            reduce(Operation::Wrapper)
         }
         Expr::Cast | Expr::Unary | Expr::UnsignedWrap | Expr::UnsignedUnwrap => {
             work.push(Step::Read(child("source")?));
-            Operation::Unary
+            reduce(Operation::Unary)
         }
         Expr::Binary | Expr::TimeAddSub => {
             let operands = [child("left")?, child("right")?];
             work.extend(operands.map(Step::Read));
-            Operation::Binary(operands)
+            reduce(Operation::Binary(operands))
         }
         Expr::Apply => {
             let name = function_name(edit.circuit(), node)?.map(|s| s.into_owned());
@@ -105,13 +108,13 @@ fn schedule(
             for arg in node.edges("arguments")? {
                 work.push(Step::Read(edit.expression(arg)?));
             }
-            Operation::Call(name)
+            reduce(Operation::Call(name))
         }
         Expr::Tuple | Expr::RawTuple if node.field("fields").is_some() => {
             for field in node.edges("fields")? {
                 work.push(Step::Read(edit.expression(field)?));
             }
-            Operation::Tuple
+            reduce(Operation::Tuple)
         }
         // A lambda has its own binding scope. Its body is opaque to this visitor.
         Expr::Tuple
@@ -127,7 +130,7 @@ fn schedule(
         | Expr::StringLiteral
         | Expr::BinaryLiteral
         | Expr::UuidLiteral
-        | Expr::VariantNullLiteral => Operation::Unbounded,
+        | Expr::VariantNullLiteral => reduce(Operation::Unbounded),
         // These results have no transfer rule, but their operands still contribute clock facts.
         Expr::If
         | Expr::IsNull
@@ -159,6 +162,9 @@ fn schedule(
         | Expr::For
         | Expr::Fold
         | Expr::MinMax
+        | Expr::LinearAggregate
+        | Expr::NonLinearAggregate
+        | Expr::MinMaxAggregate
         | Expr::ZSet
         | Expr::IndexedZSet => {
             let mut children = Vec::new();
@@ -174,11 +180,18 @@ fn schedule(
                     _ => return Ok(false),
                 }
             }
-            Operation::Unbounded
+            match kind {
+                // The visitor walks IAggregate's children but never calls
+                // postorder(DBSPExpression) for the descriptor itself.
+                Expr::LinearAggregate | Expr::NonLinearAggregate | Expr::MinMaxAggregate => {
+                    Step::NoFact(id)
+                }
+                _ => reduce(Operation::Unbounded),
+            }
         }
         _ => return Ok(false),
     };
-    work.push(Step::Reduce(id, operation, base));
+    work.push(finish);
     work[mark..].reverse();
     Ok(true)
 }
@@ -244,10 +257,7 @@ impl Row {
                         Expr::VariablePath => match self.variable(edit, id)? {
                             VariableRead::Projected(value) => (id, Some(value)),
                             VariableRead::Uninitialized => {
-                                // The visitor records no fact for this read. Its parent
-                                // decides whether evaluating the operation requires one.
-                                values.push(None);
-                                active.remove(&id);
+                                work.push(Step::NoFact(id));
                                 continue;
                             }
                             VariableRead::NeedsVisitor => {
@@ -270,6 +280,12 @@ impl Row {
                     }
                 }
                 Step::Reduce(id, op, base) => (id, op.reduce(edit, id, values.drain(base..))?),
+                Step::NoFact(id) => {
+                    // Its parent decides whether evaluating the operation requires a fact.
+                    values.push(None);
+                    active.remove(&id);
+                    continue;
+                }
                 Step::Discard => {
                     values.pop().expect("visited expression statement");
                     continue;
