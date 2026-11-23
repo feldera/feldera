@@ -1,0 +1,76 @@
+{
+  "commit": "8bb0f52b13903a2b9b7555a85c633fb943d8cf8f",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "6b1e00936fd7d354419df08b5a279dada91053262cb1d48eff8870d18c8108ae",
+    "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+    "bin/sql2dbsp": "1f511291e896013ae0511c7f5bed1dc673058946c58e0de15e4c6e7f81afa251",
+    "maven/tests.jar": "4abf99256ba64d26120ca123320f3d86311f73cbd9842d289ee640c525867c4a",
+    "maven/sql-compiler.jar": "b18a62afa875b9430d509fc81b58e05cfef4859c98f482570a562b01ecd88cf7"
+  },
+  "rust_tests": 160,
+  "clippy": "passed",
+  "junit_tests": 69,
+  "test_log_sha256": {
+    "tests.log": "19a726047943f4e633e404c3bc40b247905de0e138208ff0974fc44af2366f67",
+    "clippy.log": "bddbcb2b4df6a3bf11eb2c8e17ff4abac0b0b7461f6474facec4bf9274376a29",
+    "packaged-junit.log": "0dea61597afbc4eed67c03008bcb57fe18426ab3dd1f8a575384d4d9f58df50f"
+  },
+  "engines": {
+    "classic": {
+      "monotonicity_pass_comparisons": 291,
+      "direct_pass_sha256": "b22dc1375204a3f91fde907ad98bb95a01a8fc9062cdf40616aee5df36f3a2f9",
+      "hybrid_pass_sha256": "4fd5cef116b08ef7d8753fe6d2db90894cee7f3f5172602f8d774203107d88f3",
+      "directed_ordered_s4_observations": 1740,
+      "detached_cases": 4,
+      "ordered_s4_observations": 1740,
+      "detached_receipt_sha256": [
+        "f88829da838f5627734de1a2793ec52fa72152b0a32ceeb7587366bf893ca936"
+      ],
+      "closure_requests": 12,
+      "closure_fallbacks": 4,
+      "coverage_sha256": "20ad0353e6a71d64dd09fbb5450baedc2a2fb1ad0f65dd2f5e54daf10061b2c3"
+    },
+    "gen2": {
+      "monotonicity_pass_comparisons": 259,
+      "direct_pass_sha256": "f385a9712c76abfe3bdf186bffaf0dc84d594271c2c20770f8b4de7e724ba685",
+      "hybrid_pass_sha256": "b3a452a921840fe451c434bec7246c3bdd813246f7ea22b593af8654d8f756c2",
+      "directed_ordered_s4_observations": 1748,
+      "detached_cases": 4,
+      "ordered_s4_observations": 1748,
+      "detached_receipt_sha256": [
+        "ec2c33ebbd2b34778d229f36c527be69ae395a28c1512ee153e93b9bd829997f"
+      ],
+      "closure_requests": 12,
+      "closure_fallbacks": 4,
+      "coverage_sha256": "082c1989bd0a8fee093b1bb92d3558119611fb93350ef506e510e10077cc7732"
+    }
+  },
+  "runtime": {
+    "executed": 1,
+    "input_commands": 2,
+    "worker_sha256": "1f511291e896013ae0511c7f5bed1dc673058946c58e0de15e4c6e7f81afa251",
+    "population_sha256": "0f8bf0ae3402898cea473c5df157cd5222daf0635b402f1ca6bd74660ead2718",
+    "batch_receipts_sha256": "a9c92e101ac2c46a63540312f660b6e1f6780a3be58a72588266c1768da63350",
+    "receipt_sha256": "1be1d9c64961846a9455a7abf69abf44fad703d4b9db9fcc8062b094686735f4"
+  },
+  "scope": "ARG_MIN with a constructed nested row payload and LATENESS, including retraction and replacement of a nullable payload.",
+  "upstream_pr": "https://github.com/feldera/feldera/pull/8046",
+  "upstream_test": {
+    "before": "shared-expression failure",
+    "after": "passed",
+    "before_log_sha256": "f06f73cdca362889d44515b8ab9342074aa5f760edc15a3067645028d54319ab",
+    "after_log_sha256": "cdb02130c893a1c6291303af36128611a884fae447efe15d6238ec8271861256"
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "directions": 2,
+      "bootstrap": false,
+      "receipt_sha256": "bc9f1b0cfc1224348cb2de11cc029aa77e57c04d1f98e4418dd10db6091e462d"
+    },
+    "watermark": {
+      "directions": 2,
+      "bootstrap": false,
+      "receipt_sha256": "a655838cba1a472138844ac3a204f2d9c081dc864074cd311113f9408e7f711d"
+    }
+  }
+}

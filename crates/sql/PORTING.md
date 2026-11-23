@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `8bb0f52b1`, the Java and Rust optimizers both handled `ARG_MIN` on a
+constructed nested row with `LATENESS`. Eight classic and Gen-2 compilations
+matched through 3,488 ordered S4 observations and emission. The streaming
+regression retracted the old row and emitted the new row with its nullable
+field. All 550 selected monotonicity comparisons matched. COUNT and LATENESS
+checkpoints restored in both directions without bootstrap.
+[Comparison and restore receipts](evidence/p3-constructed-row-arg-min.json) ·
+[Upstream compiler fix](https://github.com/feldera/feldera/pull/8046)
+
 On `e9ec5cf98`, Rust grouped window inputs with TIME, DATE, TIMESTAMP and
 TIMESTAMP WITH TIME ZONE literals. All 423 pass comparisons matched Java
 across 133 frozen clock programs and eight directed compilations. The eight
