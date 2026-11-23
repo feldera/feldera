@@ -1,24 +1,22 @@
 //! Evaluate children before their parents, with lexical bindings in effect at each read.
 use super::{
-    AnalysisError, Interpreter, Merge, Scope, Source, preserves_cast, report::Finding, text,
+    AnalysisError, DeclarationValues, Interpreter, Merge, Source, preserves_cast, report::Finding,
+    text,
 };
-use crate::lexical_scope::expression_children;
+use crate::lexical_scope::{References, expression_children, inspect_references};
 use feldera_sql_ir::{Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId};
 use std::collections::HashSet;
 use std::rc::Rc;
 
-enum Visit<'a> {
+enum Visit {
     Enter(NodeId),
     Finish(NodeId),
-    // A statement publishes its initializer by name. LET expressions publish
-    // it at the declaration's variable node; other same-name reads are masked.
-    Bind(&'a str, Option<NodeId>),
+    BindStatement(NodeId, Option<NodeId>),
     BindLet(NodeId, NodeId),
-    Restore(usize),
 }
 
 impl<'a> Interpreter<'a> {
-    fn value(&self, id: NodeId) -> Result<Source, AnalysisError> {
+    fn value(&self, id: NodeId) -> Result<Source, AnalysisError<'static>> {
         self.values
             .get(&id)
             .cloned()
@@ -27,45 +25,39 @@ impl<'a> Interpreter<'a> {
 
     pub(super) fn eval(
         &mut self,
-        root: NodeId,
-        mut scope: Scope<'a>,
-    ) -> Result<Source, AnalysisError> {
+        closure: NodeId,
+        mut declarations: DeclarationValues,
+    ) -> Result<Source, AnalysisError<'a>> {
+        // Resolve the entire closure before interpreting its first expression.
+        // Shared reads must denote the same declaration at every use.
+        let inspection = inspect_references(self.edit.circuit(), closure, false)?;
+        if let Some(diagnostic) = inspection.diagnostic {
+            return Err(AnalysisError::Binding(diagnostic));
+        }
+        let root = self.edit.node(closure)?.edge("body")?;
         let mut pending = vec![Visit::Enter(root)];
         let mut active = HashSet::new();
-        let mut undo = Vec::new();
         while let Some(step) = pending.pop() {
             let id = match step {
                 Visit::Enter(id) => id,
                 Visit::Finish(id) => {
-                    let value = self.result(id, self.edit.node(id)?, &scope)?;
+                    let value =
+                        self.result(id, self.edit.node(id)?, &inspection.bindings, &declarations)?;
                     self.values.insert(id, value);
                     active.remove(&id);
                     continue;
                 }
-                Visit::Bind(name, init) => {
+                Visit::BindStatement(statement, init) => {
                     let value = init
                         .map(|id| self.value(id))
                         .transpose()?
                         .unwrap_or_default();
-                    undo.push((name, scope.insert(name, value)));
+                    declarations.insert(statement, value);
                     continue;
                 }
                 Visit::BindLet(variable, init) => {
                     let value = self.value(init)?;
                     self.values.insert(variable, value);
-                    let name = text(self.edit.node(variable)?, "variable")?;
-                    undo.push((name, scope.remove(name)));
-                    continue;
-                }
-                Visit::Restore(len) => {
-                    while undo.len() > len {
-                        let (name, prior) = undo.pop().expect("binding to restore");
-                        if let Some(value) = prior {
-                            scope.insert(name, value);
-                        } else {
-                            scope.remove(name);
-                        }
-                    }
                     continue;
                 }
             };
@@ -79,22 +71,15 @@ impl<'a> Interpreter<'a> {
             pending.push(Visit::Finish(id));
             match node.inner_kind() {
                 Some(InnerKind::Expression(Expr::Closure)) => {
-                    pending.push(Visit::Restore(undo.len()));
-                    for id in node.edges("parameters")? {
-                        let name = text(self.edit.node(id)?, "name")?;
-                        undo.push((name, scope.remove(name)));
-                    }
                     pending.push(Visit::Enter(node.edge("body")?));
                 }
                 Some(InnerKind::Expression(Expr::Let)) => {
                     let init = node.edge("initializer")?;
-                    pending.push(Visit::Restore(undo.len()));
                     pending.push(Visit::Enter(node.edge("consumer")?));
                     pending.push(Visit::BindLet(node.edge("variable")?, init));
                     pending.push(Visit::Enter(init));
                 }
                 Some(InnerKind::Expression(Expr::Block)) => {
-                    pending.push(Visit::Restore(undo.len()));
                     if let Some(last) = node.field("lastExpression").and_then(Field::node_id) {
                         pending.push(Visit::Enter(last));
                     }
@@ -102,7 +87,7 @@ impl<'a> Interpreter<'a> {
                         let stmt = self.edit.node(id)?;
                         if stmt.class() == "DBSPLetStatement" {
                             let init = stmt.field("initializer").and_then(Field::node_id);
-                            pending.push(Visit::Bind(text(stmt, "variable")?, init));
+                            pending.push(Visit::BindStatement(id, init));
                             if let Some(init) = init {
                                 pending.push(Visit::Enter(init));
                             }
@@ -134,8 +119,9 @@ impl<'a> Interpreter<'a> {
         &mut self,
         id: NodeId,
         node: &Node,
-        scope: &Scope<'a>,
-    ) -> Result<Source, AnalysisError> {
+        references: &References,
+        declarations: &DeclarationValues,
+    ) -> Result<Source, AnalysisError<'static>> {
         let child = |name| self.value(node.edge(name)?);
         let reporting = self.comparisons.is_some();
         let intersection = if reporting {
@@ -149,8 +135,9 @@ impl<'a> Interpreter<'a> {
                 self.unhandled = true;
                 Source::Unknown
             }
-            Some(InnerKind::Expression(Expr::VariablePath)) => scope
-                .get(text(node, "variable")?)
+            Some(InnerKind::Expression(Expr::VariablePath)) => references
+                .get(&id)
+                .and_then(|declaration| declarations.get(declaration))
                 .cloned()
                 .unwrap_or_default(),
             Some(InnerKind::Expression(Expr::Borrow)) => {

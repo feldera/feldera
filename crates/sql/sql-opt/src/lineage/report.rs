@@ -1,5 +1,5 @@
 //! Trace copied values to SQL table columns for the correlated-column report.
-use super::{AnalysisError, Interpreter, Merge, Scope, Source, text};
+use super::{AnalysisError, Interpreter, Merge, Source};
 use feldera_sql_expr::FlatmapColumns;
 use feldera_sql_ir::{
     BodyOrder, CircuitEditor, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort, TypeKind,
@@ -85,15 +85,15 @@ struct Report<'a> {
     findings: Vec<Finding>,
 }
 
-impl Report<'_> {
-    fn read(&self, input: OutputPort) -> Result<Source, AnalysisError> {
+impl<'a> Report<'a> {
+    fn read(&self, input: OutputPort) -> Result<Source, AnalysisError<'a>> {
         self.outputs
             .get(&input)
             .cloned()
             .ok_or(AnalysisError::Reference("missing lineage for input"))
     }
 
-    fn borrow(&self, port: OutputPort) -> Result<Source, AnalysisError> {
+    fn borrow(&self, port: OutputPort) -> Result<Source, AnalysisError<'a>> {
         let value = self.read(port)?;
         if matches!(value, Source::Unknown) {
             return Ok(value);
@@ -119,7 +119,7 @@ impl Report<'_> {
         ))
     }
 
-    fn closure(&mut self, function: NodeId, args: &[Source]) -> Result<Source, AnalysisError> {
+    fn closure(&mut self, function: NodeId, args: &[Source]) -> Result<Source, AnalysisError<'a>> {
         let closure = self.edit.node(function)?;
         let parameters = closure.edges("parameters")?;
         if parameters.len() != args.len() {
@@ -127,14 +127,11 @@ impl Report<'_> {
                 "unexpected lineage parameter count",
             ));
         }
-        let mut scope = Scope::new();
-        for (p, arg) in parameters.into_iter().zip(args) {
-            scope.insert(text(self.edit.node(p)?, "name")?, arg.clone());
-        }
+        let declarations = parameters.into_iter().zip(args.iter().cloned()).collect();
         let mut interpreter = Interpreter::new(self.edit, false);
         interpreter.track_constants = true;
         interpreter.comparisons = Some(Vec::new());
-        let source = interpreter.eval(closure.edge("body")?, scope)?;
+        let source = interpreter.eval(function, declarations)?;
         if interpreter.unhandled {
             return Err(AnalysisError::Reference(
                 "lineage cannot analyze assignment or return",
@@ -150,8 +147,8 @@ impl Report<'_> {
         op: &Node,
         left: OutputPort,
         right: OutputPort,
-    ) -> Result<Source, AnalysisError> {
-        fn split(source: Source) -> Result<(Option<Source>, Source), AnalysisError> {
+    ) -> Result<Source, AnalysisError<'a>> {
+        fn split(source: Source) -> Result<(Option<Source>, Source), AnalysisError<'static>> {
             match source {
                 Source::Unknown => Ok((None, Source::Unknown)),
                 Source::Tuple(pair) if pair.len() == 2 => {
@@ -183,7 +180,7 @@ impl Report<'_> {
         Ok(result)
     }
 
-    fn flatmap(&self, function: &Node, port: OutputPort) -> Result<Source, AnalysisError> {
+    fn flatmap(&self, function: &Node, port: OutputPort) -> Result<Source, AnalysisError<'a>> {
         let source = self.borrow(port)?;
         if matches!(source, Source::Unknown) || function.class() != "DBSPFlatmap" {
             return Ok(Source::Unknown);
@@ -213,7 +210,7 @@ impl Report<'_> {
         })
     }
 
-    fn visit(&mut self, id: NodeId) -> Result<(), AnalysisError> {
+    fn visit(&mut self, id: NodeId) -> Result<(), AnalysisError<'a>> {
         let node = self.edit.node(id)?;
         let inputs: Vec<_> = node.inputs().collect();
         let input = |n: usize| {
@@ -323,7 +320,14 @@ impl Report<'_> {
     }
 }
 
-pub fn correlated_columns(edit: &CircuitEditor) -> Result<Option<Vec<Finding>>, Error> {
+/// Report findings in visitor order. An invalid closure ends the report before
+/// its body is interpreted, after any findings from preceding operators.
+pub struct LineageReport<'a> {
+    pub findings: Vec<Finding>,
+    pub diagnostic: Option<crate::BindingDiagnostic<'a>>,
+}
+
+pub fn lineage_report(edit: &CircuitEditor) -> Result<Option<LineageReport<'_>>, Error> {
     let mut report = Report {
         edit,
         outputs: HashMap::new(),
@@ -333,8 +337,22 @@ pub fn correlated_columns(edit: &CircuitEditor) -> Result<Option<Vec<Finding>>, 
         match report.visit(id) {
             Ok(()) => {}
             Err(AnalysisError::Reference(_)) => return Ok(None),
+            Err(AnalysisError::Binding(diagnostic)) => {
+                return Ok(Some(LineageReport {
+                    findings: report.findings,
+                    diagnostic: Some(diagnostic),
+                }));
+            }
             Err(AnalysisError::InvalidIr(err)) => return Err(err),
         }
     }
-    Ok(Some(report.findings))
+    Ok(Some(LineageReport {
+        findings: report.findings,
+        diagnostic: None,
+    }))
+}
+
+pub fn correlated_columns(edit: &CircuitEditor) -> Result<Option<Vec<Finding>>, Error> {
+    Ok(lineage_report(edit)?
+        .and_then(|report| report.diagnostic.is_none().then_some(report.findings)))
 }

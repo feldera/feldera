@@ -12,10 +12,10 @@ fn name<'a>(node: &'a Node, field: &str) -> Result<&'a str, Error> {
 
 enum Visit<'a> {
     Enter(NodeId),
-    Leave(NodeId),
+    Leave(NodeId, usize),
     Bind(&'a str, NodeId),
     Record(NodeId, NodeId),
-    Restore(usize),
+    Restore(usize, usize),
 }
 
 pub enum Resolution<'a> {
@@ -40,6 +40,7 @@ pub struct ReferenceInspection<'a> {
     pub diagnostic: Option<BindingDiagnostic<'a>>,
 }
 
+#[derive(Debug)]
 pub enum BindingDiagnostic<'a> {
     Free { variable: NodeId, name: &'a str },
     Conflict { variable: NodeId, previous: NodeId, current: NodeId },
@@ -135,16 +136,27 @@ fn resolve_variables<'a>(
 ) -> Result<ReferenceInspection<'a>, Error> {
     let mut result = ReferenceInspection::default();
     let mut path = HashSet::new();
+    // A shared expression can resolve differently under a shadowing declaration.
+    // Reuse a traversal only in its original scope and only if it left that
+    // scope intact. Statement and parameter declarations must still take effect.
+    let mut completed = HashSet::new();
+    let mut scope = 0;
+    let mut next_scope = 1;
     let mut pending = vec![Visit::Enter(closure)];
     while let Some(visit) = pending.pop() {
         let id = match visit {
             Visit::Enter(id) => id,
-            Visit::Leave(id) => {
+            Visit::Leave(id, entry_scope) => {
                 path.remove(&id);
+                if scope == entry_scope {
+                    completed.insert((id, scope));
+                }
                 continue;
             }
             Visit::Bind(name, id) => {
                 bindings.push((name, id));
+                scope = next_scope;
+                next_scope += 1;
                 continue;
             }
             Visit::Record(variable, current) => {
@@ -155,15 +167,19 @@ fn resolve_variables<'a>(
                 }
                 continue;
             }
-            Visit::Restore(size) => {
+            Visit::Restore(size, outer) => {
+                scope = outer;
                 bindings.truncate(size);
                 continue;
             }
         };
+        if completed.contains(&(id, scope)) {
+            continue;
+        }
         if !path.insert(id) {
             return Err(Error::new("cycle in a closure"));
         }
-        pending.push(Visit::Leave(id));
+        pending.push(Visit::Leave(id, scope));
         let node = circuit.node(id).expect("validated inner edge");
         match node.inner_kind() {
             Some(InnerKind::Expression(Expr::VariablePath)) => {
@@ -183,7 +199,7 @@ fn resolve_variables<'a>(
                 pending.push(Visit::Record(id, declaration));
             }
             Some(InnerKind::Expression(Expr::Closure)) => {
-                pending.push(Visit::Restore(bindings.len()));
+                pending.push(Visit::Restore(bindings.len(), scope));
                 pending.push(Visit::Enter(node.edge("body")?));
                 pending.extend(
                     node.edges("parameters")?
@@ -193,20 +209,20 @@ fn resolve_variables<'a>(
                 );
             }
             Some(InnerKind::Parameter) => {
-                bindings.push((name(node, "name")?, id));
+                pending.push(Visit::Bind(name(node, "name")?, id));
             }
             Some(InnerKind::Expression(Expr::Let)) => {
                 let variable = node.edge("variable")?;
                 let path = circuit.node(variable).expect("validated let variable");
                 // Its initializer sees the outer binding of the same name.
-                pending.push(Visit::Restore(bindings.len()));
+                pending.push(Visit::Restore(bindings.len(), scope));
                 pending.push(Visit::Enter(node.edge("consumer")?));
                 pending.push(Visit::Record(variable, id));
                 pending.push(Visit::Bind(name(path, "variable")?, id));
                 pending.push(Visit::Enter(node.edge("initializer")?));
             }
             Some(InnerKind::Expression(Expr::Block)) => {
-                pending.push(Visit::Restore(bindings.len()));
+                pending.push(Visit::Restore(bindings.len(), scope));
                 if let Some(last) = node.field("lastExpression").and_then(|f| f.node_id()) {
                     pending.push(Visit::Enter(last));
                 }

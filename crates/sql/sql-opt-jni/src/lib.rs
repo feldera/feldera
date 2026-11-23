@@ -442,6 +442,14 @@ fn binding_conflict(variable: NodeId, previous: NodeId, current: NodeId) -> Valu
     json!({"conflict": [inner_number(variable), inner_number(previous), inner_number(current)]})
 }
 
+fn binding_diagnostic(diagnostic: feldera_sql_opt::BindingDiagnostic<'_>) -> Value {
+    use feldera_sql_opt::BindingDiagnostic;
+    match diagnostic {
+        BindingDiagnostic::Free { variable, .. } => json!({"free": inner_number(variable)}),
+        BindingDiagnostic::Conflict { variable, previous, current } => binding_conflict(variable, previous, current),
+    }
+}
+
 fn binding_ids(bindings: std::collections::HashMap<NodeId, NodeId>) -> Vec<(u64, u64)> {
     let mut pairs: Vec<_> = bindings.into_iter()
         .map(|(variable, declaration)| (inner_number(variable), inner_number(declaration)))
@@ -545,13 +553,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         return Ok(serde_json::to_value(copies)?);
     }
     if let ("ResolveReferences", [root]) = (pass, roots.as_slice()) {
-        use feldera_sql_opt::BindingDiagnostic;
         let allow_free = serde_json::from_slice(state)?;
         let inspection = feldera_sql_opt::inspect_references(&arena, *root, allow_free)?;
-        let diagnostic = inspection.diagnostic.map(|issue| match issue {
-            BindingDiagnostic::Free { variable, .. } => json!({"free": inner_number(variable)}),
-            BindingDiagnostic::Conflict { variable, previous, current } => binding_conflict(variable, previous, current),
-        });
+        let diagnostic = inspection.diagnostic.map(binding_diagnostic);
         return Ok(json!({"bindings": binding_ids(inspection.bindings),
             "has_free": inspection.has_free_variables, "diagnostic": diagnostic}));
     }
@@ -1535,7 +1539,13 @@ fn transform(
     }
     if pass == "Lineage" {
         let edit = feldera_sql_ir::CircuitEditor::new(circuit);
-        return Ok(serde_json::to_value(feldera_sql_opt::correlated_columns(&edit)?)?);
+        let Some(report) = feldera_sql_opt::lineage_report(&edit)? else {
+            return Ok(Value::Null);
+        };
+        return Ok(match report.diagnostic {
+            Some(issue) => json!({"findings": report.findings, "diagnostic": binding_diagnostic(issue)}),
+            None => serde_json::to_value(report.findings)?,
+        });
     }
     if live == Some("OptimizeIncrementalVisitor/Signatures") {
         let output = feldera_sql_opt::push_integrals(circuit.clone(), &mut next)?;

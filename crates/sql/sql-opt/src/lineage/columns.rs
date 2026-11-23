@@ -145,6 +145,46 @@ mod tests {
     use std::rc::Rc;
 
     #[test]
+    fn shared_reads_require_the_same_declaration_at_each_use() -> Result<(), Error> {
+        let graph = feldera_sql_ir::Circuit::from_json(serde_json::json!({
+            "class": "DBSPCircuit", "id": 0, "allOperators": [], "declarations": []
+        }))?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let ty = edit.bool_type(site, false)?;
+        let input = edit.named_variable(ty, "x")?;
+        let shared = edit.named_variable(ty, "x")?;
+        let mut repeated = shared;
+        for _ in 0..64 {
+            repeated = edit.binary_expression(
+                site,
+                ty,
+                feldera_sql_ir::BinaryOp::And,
+                repeated,
+                repeated,
+            )?;
+        }
+        let local = edit.named_variable(ty, "x")?;
+        let other = edit.named_variable(ty, "x")?;
+        let shape = OutputShape {
+            width: 2,
+            index_fields: None,
+        };
+        // A shadowed read is valid if it has its own node. Reusing the outer
+        // read in that position makes the closure's reference map ambiguous.
+        for (read, valid) in [(other, true), (shared, false)] {
+            let shadowed = edit.let_expression(local, input, read)?;
+            let pair = edit.tuple_expr(site, false, &[repeated, shadowed])?;
+            let closure = edit.closure_from_variables(pair, &[input])?;
+            assert_eq!(
+                column_copies(&edit, closure.into(), &shape, false)?.is_some(),
+                valid
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn deeply_nested_bindings_preserve_the_input_column() -> Result<(), Error> {
         let graph = feldera_sql_ir::Circuit::from_json(serde_json::json!({
             "class": "DBSPCircuit", "id": 0, "allOperators": [], "declarations": []

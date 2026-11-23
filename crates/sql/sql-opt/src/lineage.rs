@@ -5,7 +5,7 @@ mod evaluate;
 mod report;
 pub use columns::{OutputShape, column_copies, fixed_columns};
 pub use equivalence::equal_computations;
-pub use report::correlated_columns;
+pub use report::{correlated_columns, lineage_report};
 
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionKind as Expr, InnerKind, Node, NodeId, TypeKind as Ty,
@@ -85,7 +85,7 @@ impl Source {
         other: &Self,
         edit: &CircuitEditor,
         merge: Merge,
-    ) -> Result<Self, AnalysisError> {
+    ) -> Result<Self, AnalysisError<'static>> {
         // Tuples can reuse the same computed field many times. Compare each
         // pair of source nodes once, preserving sharing in the result.
         type Pair = (*const Source, *const Source);
@@ -183,22 +183,31 @@ fn text<'a>(node: &'a Node, key: &str) -> Result<&'a str, Error> {
 }
 
 #[derive(Debug)]
-enum AnalysisError {
+enum AnalysisError<'a> {
+    Binding(crate::BindingDiagnostic<'a>),
     InvalidIr(Error),
     Reference(&'static str),
 }
 
-impl From<Error> for AnalysisError {
+impl From<Error> for AnalysisError<'_> {
     fn from(error: Error) -> Self {
         Self::InvalidIr(error)
     }
 }
 
-impl From<AnalysisError> for Error {
-    fn from(error: AnalysisError) -> Self {
+impl From<AnalysisError<'_>> for Error {
+    fn from(error: AnalysisError<'_>) -> Self {
         match error {
             AnalysisError::InvalidIr(error) => error,
             AnalysisError::Reference(message) => Error::new(message),
+            AnalysisError::Binding(crate::BindingDiagnostic::Free { name, .. }) => {
+                Error::new(format!("unbound variable {name} in lineage closure"))
+            }
+            AnalysisError::Binding(crate::BindingDiagnostic::Conflict { variable, .. }) => {
+                Error::new(format!(
+                    "shared variable {variable:?} refers to two declarations"
+                ))
+            }
         }
     }
 }
@@ -208,7 +217,7 @@ fn initial(
     ty: NodeId,
     parameter: usize,
     part: Part,
-) -> Result<(Source, bool), AnalysisError> {
+) -> Result<(Source, bool), AnalysisError<'static>> {
     let mut id = edit.type_id(ty)?;
     let mut reference_count = 0;
     let mut nullable_reference = false;
@@ -301,7 +310,7 @@ fn preserves_cast(edit: &CircuitEditor, node: &Node, lossless_casts: bool) -> Re
     edit.same_type_ignoring_nullability(from, to)
 }
 
-type Scope<'a> = HashMap<&'a str, Source>;
+type DeclarationValues = HashMap<NodeId, Source>;
 
 struct Interpreter<'a> {
     edit: &'a CircuitEditor,
@@ -328,20 +337,20 @@ impl<'a> Interpreter<'a> {
     fn analyze(&mut self, closure: NodeId) -> Result<Option<Source>, Error> {
         match self.closure_result(closure) {
             Ok(value) if !self.unhandled => Ok(Some(value)),
-            Ok(_) | Err(AnalysisError::Reference(_)) => Ok(None),
+            Ok(_) | Err(AnalysisError::Reference(_) | AnalysisError::Binding(_)) => Ok(None),
             Err(AnalysisError::InvalidIr(error)) => Err(error),
         }
     }
 
-    fn closure_result(&mut self, id: NodeId) -> Result<Source, AnalysisError> {
+    fn closure_result(&mut self, id: NodeId) -> Result<Source, AnalysisError<'a>> {
         let closure = self.edit.node(id)?;
-        let mut scope = Scope::new();
+        let mut declarations = DeclarationValues::new();
         for (i, param) in closure.edges("parameters")?.into_iter().enumerate() {
             let parameter = self.edit.node(param)?;
             let (source, _) = initial(self.edit, parameter.edge("type")?, i, Part::None)?;
-            scope.insert(text(parameter, "name")?, source);
+            declarations.insert(param, source);
         }
-        self.eval(closure.edge("body")?, scope)
+        self.eval(id, declarations)
     }
 }
 
@@ -353,7 +362,7 @@ pub(super) fn injective(edit: &CircuitEditor, id: NodeId, first_only: bool) -> R
     ) {
         return Ok(false);
     }
-    let mut scope = Scope::new();
+    let mut declarations = DeclarationValues::new();
     let mut required = BTreeSet::new();
     for (i, param) in closure.edges("parameters")?.into_iter().enumerate() {
         let parameter = edit.node(param)?;
@@ -362,10 +371,10 @@ pub(super) fn injective(edit: &CircuitEditor, id: NodeId, first_only: bool) -> R
         if needed && !source.collect(&mut required) {
             return Ok(false);
         }
-        scope.insert(text(parameter, "name")?, source);
+        declarations.insert(param, source);
     }
     let mut interpreter = Interpreter::new(edit, true);
-    let value = interpreter.eval(closure.edge("body")?, scope)?;
+    let value = interpreter.eval(id, declarations)?;
     let mut copied = BTreeSet::new();
     value.collect(&mut copied);
     Ok(!interpreter.unhandled && required.is_subset(&copied))

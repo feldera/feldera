@@ -3728,7 +3728,8 @@ public final class RustCircuitPass implements CircuitTransform {
                 initial, EMPTY_CONTEXT);
         if (!answered(this.compiler, "Lineage", result))
             return report.apply(circuit);
-        for (var finding : MAPPER.treeToValue(result, LineageFinding[].class)) {
+        var findings = result.isArray() ? result : result.required("findings");
+        for (var finding : MAPPER.treeToValue(findings, LineageFinding[].class)) {
             var columns = new java.util.TreeSet<>(finding.columns());
             switch (finding.kind()) {
                 case "correlated" -> report.reportCorrelated(new Lineage.ColumnSet(columns));
@@ -3741,6 +3742,8 @@ public final class RustCircuitPass implements CircuitTransform {
                 default -> throw new IllegalStateException("Unknown lineage finding " + finding.kind());
             }
         }
+        if (result.has("diagnostic"))
+            checkBindingErrors(writer.innerVisitor, result.required("diagnostic"));
         return circuit;
     }
 

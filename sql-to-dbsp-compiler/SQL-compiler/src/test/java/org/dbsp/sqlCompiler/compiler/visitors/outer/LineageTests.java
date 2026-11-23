@@ -1,6 +1,16 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.CompilerMain;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -21,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -149,6 +160,67 @@ public class LineageTests extends BaseSQLTests {
         Assert.assertEquals(expected, report(input, false));
         if (Boolean.getBoolean("feldera.optimizer.compareRustLineage"))
             Assert.assertEquals(expected, report(input, true));
+    }
+
+    @Test
+    public void lineageReportsEarlierOperatorsBeforeRejectingAnInvalidBinding() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLineage"));
+        var compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("CREATE TABLE t(x INT NOT NULL); CREATE VIEW v AS SELECT x FROM t;");
+        var table = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false));
+        var source = table.asOperator();
+        var site = CalciteEmptyRel.INSTANCE;
+        var row = new DBSPVariablePath("row", source.getOutput(0).getOutputRowType().ref());
+        var positive = new DBSPBinaryExpression(site, DBSPTypeBool.create(false), DBSPOpcode.GT,
+                row.deref().field(0), new DBSPI32Literal(0));
+        var first = new DBSPFilterOperator(site, positive.closure(row), source.getOutput(0));
+        var shared = row.deepCopy();
+        var other = new DBSPVariablePath("row", row.getType());
+        var free = new DBSPVariablePath("missing", row.getType());
+        for (var read : List.of(free, shared)) {
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            circuit.addOperator(source);
+            circuit.addOperator(first);
+            // The second comparison is in the failing closure. Resolution must
+            // inspect the nested lambda before the interpreter reports that comparison.
+            var second = new DBSPBinaryExpression(site, DBSPTypeBool.create(false), DBSPOpcode.LT,
+                    shared.deref().field(0), new DBSPI32Literal(10));
+            var body = new DBSPTupleExpression(second, read.deref().field(0).closure(other));
+            circuit.addOperator(new DBSPMapOperator(site, body.closure(row), first.outputPort()));
+            String expected = null;
+            for (boolean hybrid : List.of(false, true)) {
+                var findings = new ArrayList<String>();
+                var report = new Lineage(compiler, false) {
+                    @Override
+                    public void reportCompared(ColumnCompared compared) {
+                        findings.add(compared.toString());
+                    }
+                };
+                var decisions = new ArrayList<Boolean>();
+                compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                    @Override
+                    public void nativeDecision(String pass, boolean answered) {
+                        if (pass.equals("Lineage"))
+                            decisions.add(answered);
+                    }
+
+                    @Override
+                    public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph) {}
+
+                    @Override
+                    public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
+                };
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                CircuitTransform pass = hybrid ? new RustCircuitPass(compiler, report, new OptimizerSnapshots(compiler)) : report;
+                var error = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+                Assert.assertEquals(List.of("[ t.x > 0 ]"), findings);
+                Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
+                if (hybrid)
+                    Assert.assertEquals(expected, error.getMessage());
+                else
+                    expected = error.getMessage();
+            }
+        }
     }
 
     private static String report(File input, boolean rust) throws SQLException {
