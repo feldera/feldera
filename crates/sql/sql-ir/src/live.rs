@@ -152,11 +152,40 @@ impl Circuit {
         if let Ok(inline) = self.additional_field(&Field::Reference(root), input, &mut emitted, 0) {
             return Ok(inline);
         }
-
-        // The inline encoder bounds document nesting. Emit each definition
-        // separately so the same field checks apply to each shallow document.
-        let mut order = Vec::new();
         emitted.clear();
+        self.ordered_live_root(input, root, &mut emitted)
+    }
+
+    /// Encode related roots for a single live decoder. A deep root can refer to
+    /// definitions emitted by an earlier root in the same reply.
+    pub fn live_inner_roots(
+        &self,
+        input: &Self,
+        roots: &[NodeId],
+    ) -> Result<Vec<Value>, crate::Error> {
+        if let Ok(inline) = self.additional_inner_nodes(input, roots.iter().copied()) {
+            return Ok(inline);
+        }
+        let mut emitted = BTreeSet::new();
+        roots
+            .iter()
+            .map(|&root| self.ordered_live_root(input, root, &mut emitted))
+            .collect()
+    }
+
+    fn ordered_live_root(
+        &self,
+        input: &Self,
+        root: NodeId,
+        emitted: &mut BTreeSet<NodeId>,
+    ) -> Result<Value, crate::Error> {
+        if !matches!(root, NodeId::Inner(_)) {
+            return Err(crate::Error::new("expected an inner node"));
+        }
+        if input.node(root).is_some() || emitted.contains(&root) {
+            return Ok(serde_json::json!({"node": root.number()}));
+        }
+        let mut definitions = Vec::new();
         let mut visiting = BTreeSet::new();
         let mut pending = vec![(root, false)];
         while let Some((id, finish)) = pending.pop() {
@@ -165,8 +194,12 @@ impl Circuit {
             }
             if finish {
                 visiting.remove(&id);
-                emitted.insert(id);
-                order.push(id);
+                definitions.push(self.additional_field(
+                    &Field::Reference(id),
+                    input,
+                    emitted,
+                    0,
+                )?);
                 continue;
             }
             if !visiting.insert(id) {
@@ -182,7 +215,7 @@ impl Circuit {
             }
             pending.extend(children.into_iter().rev().map(|child| (child, false)));
         }
-        self.additional_inner_nodes(input, order).map(Value::Array)
+        Ok(Value::Array(definitions))
     }
 
     /// Serialize a new operator sequence for a caller that owns its inputs.
@@ -275,6 +308,33 @@ mod tests {
     use super::*;
     use crate::{CircuitEditor, OperatorKind, OutputPort};
     use serde_json::json;
+
+    #[test]
+    fn deep_live_roots_share_definitions_and_preserve_root_order() -> Result<(), crate::Error> {
+        let base = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let mut nodes = vec![json!({"class":"DBSPBoolLiteral","id":1,"value":true})];
+        for id in 2..=260 {
+            nodes.push(json!({"class":"DBSPCloneExpression","id":id,"expression":{"node":id-1}}));
+        }
+        let (graph, roots) = base.clone().with_inner_roots(nodes)?;
+        let encoded = graph.live_inner_roots(&base, &[roots[99], roots[259], roots[99]])?;
+        let mut previous = 0;
+        for definitions in &encoded[..2] {
+            for definition in definitions.as_array().expect("postorder definitions") {
+                if previous != 0 {
+                    assert_eq!(definition["expression"], json!({"node":previous}));
+                }
+                previous += 1;
+                assert_eq!(definition["id"], previous);
+            }
+        }
+        assert_eq!(encoded[0].as_array().unwrap().len(), 100);
+        assert_eq!(previous, 260);
+        assert_eq!(encoded[2], json!({"node":100}));
+        Ok(())
+    }
 
     #[test]
     fn operator_fragment_requires_each_input_before_its_reader() -> Result<(), crate::Error> {

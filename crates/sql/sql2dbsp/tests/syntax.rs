@@ -118,6 +118,16 @@ fn deep_checkpoint_artifacts_preserve_definitions_and_exact_literals() {
         assert_eq!(node["value"].to_string(), "12345678901234567890.000001");
         assert_eq!(node["type"]["node"], 1);
     }
+    let mut plan = serde_json::json!({"input": "column"});
+    for _ in 0..150 {
+        plan = serde_json::json!({"args": [plan]});
+    }
+    let deep_plan = checkpoint(&graph, false).replace(r#""calcite_plan":{}"#, &format!(r#""calcite_plan":{plan}"#));
+    let result = invoke("--s3-to-artifacts", &deep_plan);
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    let artifacts = feldera_sql_ir::parse_circuit_json(&result.stdout).unwrap();
+    assert_eq!(artifacts["checkpoint"]["calcite_plan"], plan);
+    assert_eq!(artifacts["dataflow"]["calcite_plan"], plan);
     let duplicate = graph.replace(r#""value":"#, r#""value":0,"value":"#);
     for mode in ["--s3-to-artifacts", "--s3-to-diagnostics"] {
         let result = invoke(mode, &checkpoint(&duplicate, true));

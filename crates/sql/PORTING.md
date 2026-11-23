@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust hoisted repeated calculations in filters with 8 and 144 alternating
+`AND` and `OR` terms. Both engines matched Java through 1,900 ordered S4
+observations and artifact emission. The 144-term streaming test evaluated
+`LOWER(name)` once per row and emitted only ID 145. The S3 worker preserved
+the 299-level Calcite plan in both its checkpoint and dataflow output.
+[Filter replay and runtime receipts](evidence/p3-long-boolean-filters.json)
+
 On `9aec96f7b`, Rust ran limiter insertion on every selected circuit,
 including circuits that combine newly handled operators with stateful ones.
 All 291 classic and 259 Gen-2 selections and four directed cases per engine

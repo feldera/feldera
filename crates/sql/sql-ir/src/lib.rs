@@ -24,7 +24,7 @@ mod wire;
 pub use wire::LiveCircuitDecoder;
 
 pub use inner::{ExpressionKind, InnerKind, TypeKind};
-pub use json::{parse_circuit_json, parse_json};
+pub use json::{parse_circuit_envelope, parse_circuit_json, parse_json};
 pub use operator::OperatorKind;
 mod stream;
 pub use stream::{OutputClocks, StreamKind, StreamViolation};

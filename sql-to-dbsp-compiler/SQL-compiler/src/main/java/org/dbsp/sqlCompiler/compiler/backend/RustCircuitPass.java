@@ -434,7 +434,10 @@ public final class RustCircuitPass implements CircuitTransform {
     private static <T extends IDBSPInnerNode> T decodeLiveRoot(ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
         if (result.isNull())
             return null;
-        var decoder = expressionDecoder(writer);
+        return decodeLiveRoot(expressionDecoder(writer), result, kind);
+    }
+
+    private static <T extends IDBSPInnerNode> T decodeLiveRoot(JsonDecoder decoder, JsonNode result, Class<T> kind) {
         if (result.isArray()) {
             // Rust emits the dependencies of a deep expression before its root.
             int last = result.size() - 1;
@@ -2415,9 +2418,9 @@ public final class RustCircuitPass implements CircuitTransform {
                 }
                 this.visited.add(reader);
                 var decoder = expressionDecoder(lowered.writer);
-                var project = decoder.decodeInner(functions.required(0), DBSPClosureExpression.class);
-                var predicate = decoder.decodeInner(functions.required(1), DBSPClosureExpression.class);
-                var consume = decoder.decodeInner(functions.required(2), DBSPClosureExpression.class);
+                var project = decodeLiveRoot(decoder, functions.required(0), DBSPClosureExpression.class);
+                var predicate = decodeLiveRoot(decoder, functions.required(1), DBSPClosureExpression.class);
+                var consume = decodeLiveRoot(decoder, functions.required(2), DBSPClosureExpression.class);
                 var pre = new DBSPMapOperator(filter.getRelNode(), project, this.mapped(filter.input()));
                 this.addOperator(pre);
                 var narrowed = new DBSPFilterOperator(filter.getRelNode(), predicate, pre.outputPort());

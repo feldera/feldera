@@ -1,0 +1,62 @@
+{
+  "scope": "Alternating AND/OR filters with 8 and 144 terms on classic and Gen-2. The streaming test exercises the 144-term query with two input rows.",
+  "build_sha256": {
+    "verified-bin/sql2dbsp": "63c11b70538bdb9cab806b4fa6d4dced668ac1cb46722c507cc252813441f1ca",
+    "verified-bin/sql-difftest": "bff552098e5e676313045900ad03fb9609c825c32324a6bcc03027690425ca8e",
+    "verified-bin/libfeldera_sql_opt_jni.so": "d7ac3017cb22a4a58ad350fc571c580aec4d734ce2e2235ebecd14efeb151408",
+    "maven/sql-compiler.jar": "6b7f9adaa7b9b2003b3c10cc407eae1b35c5a7250c2986f3d2c28aaa5db9d054",
+    "maven/tests.jar": "d636b142a78fa68400fe805aaf8e03406b2a64a3ed9c2955f842aa78b4c2cf6e"
+  },
+  "engines": {
+    "classic": {
+      "detached_cases": 2,
+      "ordered_s4_observations": 948,
+      "mismatches": 0,
+      "receipt_sha256": "8ed679a92a47e7af4cd6193d99862254f4ff1171491565c861943f7c88375469",
+      "public_artifacts_compared": {
+        "8": {
+          "circuit.rs": "dd92d34d5adfc596f09f746f8b34ecd5d5cbbf059d566117c96bd77e457a3eaa",
+          "schema.json": "7d99a6fc14c223fb288a6973e6b760112704924955b53fe3f9bdd6056b51eb35",
+          "dataflow.json": "8a1255a46d7e3376e3b3851fe23eaf4b49edbd228ff272a2c4a0086671e6bc86",
+          "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+        },
+        "144": {
+          "circuit.rs": "c8cd466d0cb80876c0cf49106158bab0180400b248e7c9280cdd0a1d371d7b43",
+          "schema.json": "7d99a6fc14c223fb288a6973e6b760112704924955b53fe3f9bdd6056b51eb35",
+          "dataflow.json": "f1027da56fafb1d257cb5805ff613bc43aa8a1fbe73708fa3e60ffb632e2be7b",
+          "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+        }
+      }
+    },
+    "gen2": {
+      "detached_cases": 2,
+      "ordered_s4_observations": 952,
+      "mismatches": 0,
+      "receipt_sha256": "5be2534f133c43402666030528622d767bcb8040bbf4085e422f7c7ed2448d92",
+      "public_artifacts_compared": {
+        "8": {
+          "schema.json": "7d99a6fc14c223fb288a6973e6b760112704924955b53fe3f9bdd6056b51eb35",
+          "circuit.json": "b10bca73337e079228c1fb96ab276963c46e4c041848c0f285b66125a777fca8",
+          "dataflow.json": "00dc92b40b71eff5dcc96f88cd220bbc62a3c3f4c762a2ba2258e35408f5cd60"
+        },
+        "144": {
+          "schema.json": "7d99a6fc14c223fb288a6973e6b760112704924955b53fe3f9bdd6056b51eb35",
+          "circuit.json": "772b10191f9acf81061ea65bebb96a47ff19049f4f005a3dfb3dcf1968d2aab9",
+          "dataflow.json": "6de2a0695cd5c101d19021fc5254fd082d290c3b0ffd1b2c843ddbc2597393f9"
+        }
+      }
+    }
+  },
+  "streaming_regression": {
+    "population_sha256": "f9287e919bac4127feaed90f3bb49bdeb1cfc15f7e87f68d54afd8d8e325d71d",
+    "executed": 1,
+    "input_commands": 1,
+    "batch_receipts_sha256": "19372794739015ba6afe0c62904f42cfe4aa4125e1f89b9f36bbbda3c7b104a0"
+  },
+  "worker_regression": {
+    "input_sha256": "c302053ad4b60902c4eb3ccce302c92f6395601523465e3756f384b8471aa6f6",
+    "circuit_depth": 158,
+    "calcite_plan_depth": 299,
+    "plan_equal_in_checkpoint_and_dataflow": true
+  }
+}

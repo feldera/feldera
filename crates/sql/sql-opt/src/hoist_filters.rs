@@ -5,14 +5,15 @@ use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
     OperatorKind as Op, OutputPort,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-/// A connective recurses into its predicates. A comparison or null test considers
-/// each immediate operand as one computation, even if it contains a comparison.
-enum Predicate {
+/// The operands precede the operation that consumes them, in source order.
+enum PredicateStep {
     Operand(NodeId, Option<usize>),
-    Operation(NodeId, Vec<(&'static str, Predicate)>),
+    Rebuild(NodeId, &'static [&'static str]),
 }
+
+struct Predicate(Vec<PredicateStep>);
 
 #[derive(Default)]
 struct Hoisted {
@@ -27,7 +28,7 @@ impl Hoisted {
         edit: &CircuitEditor,
         id: NodeId,
         scope: &[String],
-    ) -> Result<Predicate, Error> {
+    ) -> Result<PredicateStep, Error> {
         let mut value = edit.expression(id)?;
         while edit.expr_kind(value)? == Expr::Clone {
             value = edit.expression(edit.node(value.into())?.edge("expression")?)?;
@@ -52,7 +53,7 @@ impl Hoisted {
         } else {
             None
         };
-        Ok(Predicate::Operand(id, index))
+        Ok(PredicateStep::Operand(id, index))
     }
 
     fn collect(
@@ -60,38 +61,62 @@ impl Hoisted {
         edit: &CircuitEditor,
         id: NodeId,
         scope: &[String],
-        depth: usize,
     ) -> Result<Predicate, Error> {
-        if depth > 128 {
-            return Err(Error::new("filter exceeds the expression nesting limit"));
+        enum Visit {
+            Predicate(NodeId),
+            Operand(NodeId),
+            Rebuild(NodeId, &'static [&'static str]),
         }
-        let node = edit.node(id)?;
-        let op = node.data("opcode").and_then(|v| v.as_str());
-        let (children, recurse): (&[&str], _) = match (edit.expr_kind(edit.expression(id)?)?, op) {
-            (Expr::Binary, Some("AND" | "OR")) => (&["left", "right"], true),
-            (Expr::Binary, Some("EQ" | "NEQ" | "LT" | "GT" | "LTE" | "GTE" | "IS_DISTINCT")) => {
-                (&["left", "right"], false)
+
+        let mut pending = vec![Visit::Predicate(id)];
+        let mut active = HashSet::new();
+        let mut steps = Vec::new();
+        while let Some(visit) = pending.pop() {
+            match visit {
+                Visit::Predicate(id) => {
+                    let node = edit.node(id)?;
+                    let op = node.data("opcode").and_then(|v| v.as_str());
+                    let (fields, recurse): (&'static [&str], bool) =
+                        match (edit.expr_kind(edit.expression(id)?)?, op) {
+                            (Expr::Binary, Some("AND" | "OR")) => (&["left", "right"], true),
+                            (
+                                Expr::Binary,
+                                Some("EQ" | "NEQ" | "LT" | "GT" | "LTE" | "GTE" | "IS_DISTINCT"),
+                            ) => (&["left", "right"], false),
+                            (
+                                Expr::Unary,
+                                Some(
+                                    "NOT" | "WRAP_BOOL" | "IS_TRUE" | "IS_FALSE" | "IS_NOT_TRUE"
+                                    | "IS_NOT_FALSE",
+                                ),
+                            ) => (&["source"], true),
+                            (Expr::IsNull, _) => (&["expression"], false),
+                            _ => {
+                                steps.push(self.operand(edit, id, scope)?);
+                                continue;
+                            }
+                        };
+                    if !active.insert(id) {
+                        return Err(Error::new("cycle in filter predicate"));
+                    }
+                    pending.push(Visit::Rebuild(id, fields));
+                    for field in fields.iter().rev() {
+                        let child = node.edge(field)?;
+                        pending.push(if recurse {
+                            Visit::Predicate(child)
+                        } else {
+                            Visit::Operand(child)
+                        });
+                    }
+                }
+                Visit::Operand(id) => steps.push(self.operand(edit, id, scope)?),
+                Visit::Rebuild(id, fields) => {
+                    active.remove(&id);
+                    steps.push(PredicateStep::Rebuild(id, fields));
+                }
             }
-            (
-                Expr::Unary,
-                Some("NOT" | "WRAP_BOOL" | "IS_TRUE" | "IS_FALSE" | "IS_NOT_TRUE" | "IS_NOT_FALSE"),
-            ) => (&["source"], true),
-            (Expr::IsNull, _) => (&["expression"], false),
-            _ => return self.operand(edit, id, scope),
-        };
-        let children = children
-            .iter()
-            .map(|&field| {
-                let child = node.edge(field)?;
-                let value = if recurse {
-                    self.collect(edit, child, scope, depth + 1)?
-                } else {
-                    self.operand(edit, child, scope)?
-                };
-                Ok((field, value))
-            })
-            .collect::<Result<_, Error>>()?;
-        Ok(Predicate::Operation(id, children))
+        }
+        Ok(Predicate(steps))
     }
 }
 
@@ -112,19 +137,25 @@ impl Predicate {
         row: ExpressionId,
         base: usize,
     ) -> Result<NodeId, Error> {
-        match self {
-            Self::Operand(id, None) => Ok(*id),
-            Self::Operand(_, Some(index)) => row_field(edit, row, base + index).map(Into::into),
-            Self::Operation(id, children) => {
-                let fields = children
-                    .iter()
-                    .map(|(field, child)| {
-                        Ok((*field, Field::Reference(child.rewrite(edit, row, base)?)))
-                    })
-                    .collect::<Result<Vec<_>, Error>>()?;
-                edit.derive_inner(*id, fields)
-            }
+        let mut values = Vec::new();
+        for step in &self.0 {
+            let value = match *step {
+                PredicateStep::Operand(id, None) => id,
+                PredicateStep::Operand(_, Some(index)) => {
+                    row_field(edit, row, base + index)?.into()
+                }
+                PredicateStep::Rebuild(id, fields) => {
+                    let operands = values.drain(values.len() - fields.len()..);
+                    edit.derive_inner(
+                        id,
+                        fields.iter().copied().zip(operands.map(Field::Reference)),
+                    )?
+                }
+            };
+            values.push(value);
         }
+        debug_assert_eq!(values.len(), 1);
+        Ok(values.pop().expect("filter predicate root"))
     }
 }
 
@@ -179,7 +210,7 @@ fn analyze_predicate(
         .ok_or_else(|| Error::new("unnamed filter parameter"))?
         .to_owned();
     let mut hoisted = Hoisted::default();
-    let predicate = hoisted.collect(edit, original, std::slice::from_ref(&name), 0)?;
+    let predicate = hoisted.collect(edit, original, std::slice::from_ref(&name))?;
     if hoisted.values.is_empty()
         || (hoisted.values.len() == 1 && !contains_now(edit.circuit(), &[function])?)
     {

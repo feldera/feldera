@@ -742,7 +742,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         }
         ("TrimFilters/Closures", [reader, filter]) => {
             let functions = feldera_sql_opt::trim_filter_closures(&mut edit, *reader, *filter, &mut next)?;
-            let encoded = functions.map(|fs| edit.circuit().additional_expressions(&arena, &fs)).transpose()?;
+            let encoded = functions.map(|fs| edit.circuit().live_inner_roots(&arena, &fs.map(NodeId::from))).transpose()?;
             return Ok(json!({"functions": encoded, "next_generated_name": next}));
         }
         ("Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds", [row, projected]) => {

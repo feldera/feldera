@@ -93,6 +93,32 @@ public class DecomposeExpensiveFiltersTests extends SqlIoTest {
         Assert.assertEquals(List.of(), variants.operators);
     }
 
+    @Test
+    public void longAlternatingFilter() {
+        String predicate = "id > CHARACTER_LENGTH(UPPER(name))";
+        for (int i = 0; i < 144; i++) {
+            String connective = i % 2 == 0 ? "AND" : "OR";
+            predicate = "(" + predicate + " " + connective
+                    + " (CHARACTER_LENGTH(LOWER(name)) + " + i + " > id))";
+        }
+        var compiler = this.testCompiler();
+        compiler.options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.rustPasses");
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t (name VARCHAR NOT NULL, id INTEGER NOT NULL, ts TIMESTAMP NOT NULL);
+                CREATE VIEW v AS SELECT id FROM t WHERE %s;
+                """.formatted(predicate));
+        var circuit = this.getCCS(compiler);
+        CountCalls lower = new CountCalls(compiler, "lower");
+        circuit.visit(lower.getCircuitVisitor(false));
+        Assert.assertEquals(1, lower.count);
+        circuit.stepWeightOne("""
+                INSERT INTO t VALUES ('abc', 145, TIMESTAMP '2026-01-01 00:00:00'),
+                                     ('abc', 146, TIMESTAMP '2026-01-01 00:00:00');""", """
+                 id
+                ----
+                 145""");
+    }
+
     /** Operands containing nested closures (array lambdas) must be hoisted
      * whole, and the two structurally equal copies that BETWEEN creates must
      * share one hoisted column despite containing closures. */

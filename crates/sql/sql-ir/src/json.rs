@@ -132,6 +132,41 @@ pub fn parse_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
     }
 }
 
+/// Decode a checkpoint or corpus case. Both the circuit and the Calcite plan
+/// can contain deeply nested SQL expressions. Other fields use the ordinary
+/// artifact decoder.
+pub fn parse_circuit_envelope(bytes: &[u8]) -> Result<Value, serde_json::Error> {
+    struct Envelope;
+    impl<'de> Visitor<'de> for Envelope {
+        type Value = Value;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a compiler checkpoint object")
+        }
+
+        fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Value, M::Error> {
+            let mut fields = serde_json::Map::new();
+            while let Some(name) = map.next_key::<String>()? {
+                let serde_json::map::Entry::Vacant(slot) = fields.entry(name) else {
+                    return Err(de::Error::custom("duplicate checkpoint field"));
+                };
+                let raw: &serde_json::value::RawValue = map.next_value()?;
+                let decode = if matches!(slot.key().as_str(), "circuit" | "calcite_plan") {
+                    parse_circuit_json
+                } else {
+                    parse_json
+                };
+                slot.insert(decode(raw.get().as_bytes()).map_err(de::Error::custom)?);
+            }
+            Ok(Value::Object(fields))
+        }
+    }
+    let mut input = serde_json::Deserializer::from_slice(bytes);
+    let envelope = (&mut input).deserialize_map(Envelope)?;
+    input.end()?;
+    Ok(envelope)
+}
+
 // Jackson's default checkpoint reader accepts at most 1,000 nested containers.
 pub(crate) const MAX_CIRCUIT_DEPTH: usize = 1000;
 

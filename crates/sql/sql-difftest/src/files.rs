@@ -27,7 +27,7 @@ pub fn read_circuit(path: &Path) -> Result<Value, Error> {
     read_with(path, feldera_sql_ir::parse_circuit_json)
 }
 
-fn read_with(
+pub(super) fn read_with(
     path: &Path,
     decode: fn(&[u8]) -> Result<Value, serde_json::Error>,
 ) -> Result<Value, Error> {

@@ -1,4 +1,4 @@
-use crate::files::{read, Error};
+use crate::files::{read, read_with, Error};
 use feldera_sql_difftest::corpus::{portable_output_zset, validate_case};
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, fs, path::Path};
@@ -70,7 +70,7 @@ pub fn validate(directory: &Path, portable_outputs: bool) -> Result<Value, Error
         let (mut test_exported, mut test_skipped) = (0_u64, 0_u64);
         for index in 0..count {
             let case_path = path.join(format!("case-{index:04}.json"));
-            let case = read(&case_path)?;
+            let case = read_with(&case_path, feldera_sql_ir::parse_circuit_envelope)?;
             let summary = validate_case(&case).map_err(|e| invalid(&case_path, &e.to_string()))?;
             if case["source_test"] != source || case["case_index"].as_u64() != Some(index) {
                 return Err(invalid(
