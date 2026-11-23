@@ -1,0 +1,59 @@
+{
+  "scope": "Native temporal window keys preserve unwrap messages and group runtime error handlers with their printed calls.",
+  "parent_commit": "0c9a2abeb",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "317588f6c417376dac4960b5833587b285cb9fda86d7fff2e6367cb1e89975c5",
+    "bin/sql-difftest": "86eaa0848bbd5c06673d3e15e28c06f894edcd204c99c59d1cbdd48112b1da70",
+    "maven/sql-compiler.jar": "b21c45a260e2c7a2ffac0e98f762bd7166d1b03eda8f70521fcbf1c86a75a503",
+    "maven/tests.jar": "b9983e238ec0eaf28702e0b574a6cd21ed063a99eef82280f749cb0885f01479",
+    "maven/build.log": "2303458779f8aae8a8c76151d0be32f31c0e891e06cd882d6db6e609b8f83d7d",
+    "tests.log": "6fb981e0eece9809baee575e74b661ae9282482c0d4b36a41fe145dd39771fd3",
+    "clippy.log": "db2a9dcfe69c616cdb02dad7ea22ae7cd3d1e4ffcad87a82bc5d3ec8d9cc4b81",
+    "build.log": "ad24230a3261c5cd9896c6534f62f0eaf04a9fb3741290787a95a10ba7fe28be",
+    "junit.log": "8e776a8b242253df0c90ef6ee70743931e0d8064fae0e7426433b90cc6458764"
+  },
+  "rust_tests": 207,
+  "junit_tests": 100,
+  "engines": {
+    "classic": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18310,
+      "mismatches": 0,
+      "receipt_sha256": "ae59ab38a941c3f8aab157a3dbcf395c33fc850cfad9f1a959147651ff47b85f",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 210,
+        "Monotonicity/Transfer": 388,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    },
+    "gen2": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18484,
+      "mismatches": 0,
+      "receipt_sha256": "ba5d1cb10c1e3d756d28af1986c95524ac7162b2c915066d1809e54127b01b0a",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 268,
+        "Monotonicity/Transfer": 536,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    }
+  }
+}

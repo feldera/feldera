@@ -157,15 +157,18 @@ pub(crate) fn compare_expressions<'a>(
     parameters: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<Option<bool>, Error> {
     let mut bindings = Bindings::default();
-    let outer = parameters.into_iter().fold(None, |scope, (left, right)| {
-        bindings.bind(left, right, scope)
-    });
+    let outer = parameters
+        .into_iter()
+        .fold(Scope::Root, |scope, (left, right)| {
+            bindings.bind(left, right, scope)
+        });
     let mut pending = vec![Work::Compare(left, right, outer)];
     let mut seen = HashSet::new();
     let mut active_binders = HashSet::new();
     while let Some(work) = pending.pop() {
         let (a, b, scope) = match work {
             Work::Compare(a, b, scope) => (a, b, scope),
+            Work::Answer(answer) => return Ok(answer),
             Work::FlatmapOutput(a, b) => {
                 let left = edit.node(a)?;
                 let right = edit.node(b)?;
@@ -182,7 +185,7 @@ pub(crate) fn compare_expressions<'a>(
                     }
                 }
                 if !same_type(edit, left, right)?
-                    || !compare_children(left, right, "postProcess", None, &mut pending)?
+                    || !compare_children(left, right, "postProcess", Scope::Root, &mut pending)?
                 {
                     return Ok(Some(false));
                 }
@@ -225,19 +228,22 @@ pub(crate) fn compare_expressions<'a>(
                 continue;
             }
             Expr::For => {
-                let Some(variable) = left.data("variable").and_then(|v| v.as_str()) else {
-                    return Ok(None);
-                };
-                if scope.is_none() {
-                    return Ok(None);
+                // The iterated expressions are compared before Java binds the loop variable.
+                if let Some(variable) = left
+                    .data("variable")
+                    .and_then(|v| v.as_str())
+                    .filter(|_| scope != Scope::Root)
+                {
+                    // DBSPForExpression.equivalent enters the left name in both maps.
+                    let local = bindings.bind(variable, variable, scope);
+                    pending.push(Work::Compare(
+                        left.edge("block")?,
+                        right.edge("block")?,
+                        local,
+                    ));
+                } else {
+                    pending.push(Work::Answer(None));
                 }
-                // DBSPForExpression.equivalent enters the left name in both maps.
-                let local = bindings.bind(variable, variable, scope);
-                pending.push(Work::Compare(
-                    left.edge("block")?,
-                    right.edge("block")?,
-                    local,
-                ));
                 pending.push(Work::Compare(
                     left.edge("iterated")?,
                     right.edge("iterated")?,
@@ -255,10 +261,12 @@ pub(crate) fn compare_expressions<'a>(
                 }
                 continue;
             }
-            Expr::Block => match bindings.block(edit, left, right, scope, &mut pending)? {
-                Some(true) => continue,
-                answer => return Ok(answer),
-            },
+            Expr::Block => {
+                if !bindings.block(edit, left, right, scope, &mut pending)? {
+                    return Ok(Some(false));
+                }
+                continue;
+            }
             Expr::Tuple | Expr::RawTuple | Expr::Array | Expr::Map => {
                 if !same_type(edit, left, right)? {
                     return Ok(Some(false));
@@ -507,6 +515,64 @@ mod tests {
         let captured = key("a", "b", "c", "d", false)?;
         assert_eq!(equivalent(&edit, left, renamed)?, Some(true));
         assert_eq!(equivalent(&edit, left, captured)?, Some(false));
+        Ok(())
+    }
+
+    #[test]
+    fn loops_can_bind_the_first_name_in_an_empty_block_or_closure() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let mut edit = CircuitEditor::new(graph);
+        let site = edit.circuit().root_id();
+        let boolean = edit.bool_type(site, false)?;
+        let unit = edit.tuple_type(site, true, [])?;
+        let mut key = |value| -> Result<_, Error> {
+            let input = edit.make_expr(
+                site,
+                Expr::BoolLiteral,
+                boolean,
+                [("value", Field::Data(value))],
+            )?;
+            let body = edit.named_variable(boolean, "item")?;
+            let block = |edit: &mut CircuitEditor, value: ExpressionId| {
+                edit.make_expr(
+                    site,
+                    Expr::Block,
+                    edit.expression_type(value)?,
+                    [
+                        ("contents", Field::Array(vec![])),
+                        ("lastExpression", Field::Reference(value.into())),
+                    ],
+                )
+            };
+            let body = block(&mut edit, body)?;
+            let loop_expr = edit.make_expr(
+                site,
+                Expr::For,
+                unit,
+                [
+                    ("variable", Field::Data("item".into())),
+                    ("iterated", Field::Reference(input.into())),
+                    ("block", Field::Reference(body.into())),
+                ],
+            )?;
+            Ok([
+                loop_expr,
+                block(&mut edit, loop_expr)?,
+                edit.closure_from_variables(loop_expr, &[])?,
+            ])
+        };
+        let a = key(true.into())?;
+        let b = key(true.into())?;
+        let c = key(false.into())?;
+        for (i, ((a, b), c)) in a.into_iter().zip(b).zip(c).enumerate() {
+            let empty_context = |l: ExpressionId, r: ExpressionId| {
+                compare_expressions(&edit, l.into(), r.into(), [])
+            };
+            assert_eq!(empty_context(a, b)?, (i != 0).then_some(true));
+            assert_eq!(empty_context(a, c)?, Some(false));
+        }
         Ok(())
     }
 

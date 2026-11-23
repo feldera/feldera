@@ -1,0 +1,59 @@
+{
+  "scope": "Structural key equivalence processes block statements in source order and distinguishes an empty declaration scope from an absent one.",
+  "parent_commit": "0c9a2abeb",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "3195cd9c2f4ccfdac62d87d2384b127992ded59ce8429c0ced180b8ecf547de9",
+    "bin/sql-difftest": "86eaa0848bbd5c06673d3e15e28c06f894edcd204c99c59d1cbdd48112b1da70",
+    "maven/sql-compiler.jar": "0b8d579ee18f0922634993d0abb0c8f6446c55bcad917a16e8e83f862d1338d8",
+    "maven/tests.jar": "581b557d3893471ae63def30e0fec34c58a1c5566d40867d3109f5c37591a3e8",
+    "maven/build.log": "42697714c8a4b8e1454462d78beaf06f44ad284290110b70ba845bceedaced74",
+    "tests.log": "374dee4ae9be6295301a8da8497d8b45d8ec37f84f21ed7d8ec07be5e07c468c",
+    "clippy.log": "df6f9b329395d2729155ea86e2ecdf917974971470cb63c81a7fe55fccca4949",
+    "build.log": "2fbb423b207fe89ce6b65cfaa9b1f03bc0c01c77608ba27b20498c383550a6d3",
+    "junit.log": "2236939be99fd80600d76261dc36723172b4cc489994661315849f261e5c4ea2"
+  },
+  "rust_tests": 207,
+  "junit_tests": 99,
+  "engines": {
+    "classic": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18310,
+      "mismatches": 0,
+      "receipt_sha256": "c22d2b42159d6240f24869e9ac0eed60ae690b75a2e8b94074e485d6c9604816",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 210,
+        "Monotonicity/Transfer": 388,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    },
+    "gen2": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 18484,
+      "mismatches": 0,
+      "receipt_sha256": "f8ba5ab2468675814ad931ea38953611aba3ff0aa1dfb6801cdf06d63f78535c",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 440,
+        "InnerCSE/ReadLazy": 8,
+        "KeyAnalysis/Circuit": 90,
+        "LeftJoinChains/Steps": 30,
+        "MergeFilters": 30,
+        "Monotonicity/ProjectClosure": 268,
+        "Monotonicity/Transfer": 536,
+        "OptimizeProjections/Producer": 2650,
+        "RewriteNow/Filter": 90,
+        "WindowGroups/Indexes": 30,
+        "WindowGroups/Reorder": 30,
+        "WindowGroups/Scan": 30
+      }
+    }
+  }
+}

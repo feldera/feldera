@@ -39,6 +39,7 @@ enum Term {
     Deref,
     Clone,
     IsNull,
+    Unwrap(String),
     If,
     Call(String),
     Method(String),
@@ -324,6 +325,23 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         Expr::Deref => (Term::Deref, vec![child("expression")?]),
         Expr::Clone => (Term::Clone, vec![child("expression")?]),
         Expr::IsNull => (Term::IsNull, vec![child("expression")?]),
+        Expr::Unwrap => {
+            // The empty message prints .unwrap(); other messages print .expect("…").
+            let Some(message) = string(node, "message") else {
+                return Ok(None);
+            };
+            (Term::Unwrap(message.to_owned()), vec![child("expression")?])
+        }
+        Expr::HandleError => {
+            // The printed key is an ordinary call. The debug printer omits the site and index.
+            let name = match string(node, "runtimeBehavior") {
+                Some("Panic") => "handle_error",
+                Some("PanicWithSource") => "handle_error_with_position",
+                Some("ReturnNone") => "handle_error_safe",
+                _ => return Ok(None),
+            };
+            (Term::Call(name.into()), vec![child("source")?])
+        }
         Expr::If => {
             let mut branches = vec![child("condition")?, child("positive")?];
             if node.field("negative").is_some() {

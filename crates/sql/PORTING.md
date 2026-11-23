@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust compares block initializers and loop inputs in lexical order when
+matching index keys. Temporal window keys also preserve the message in
+`.expect(message)` and group runtime error handlers with their printed
+calls. On each build, 60 detached compilations matched direct Java through
+36,794 ordered S4 observations and artifact emission.
+[Lexical key comparisons](evidence/p3-block-key-order.json) ·
+[Checked window keys](evidence/p3-checked-window-keys.json)
+
 Rust projects clones, `Some` and unwraps in both waterline visitors. The
 general visitor exposes the original bound for `Some(())` even though the
 nullable unit contributes no bound to its parent row. All 550 isolated

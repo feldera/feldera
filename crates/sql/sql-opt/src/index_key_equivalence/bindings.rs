@@ -4,10 +4,28 @@ use feldera_sql_ir::{CircuitEditor, Error, Node, NodeId};
 
 /// Each pending comparison sees the bindings in scope at that expression.
 /// Two branches may use the same variable names for different declarations.
-pub(super) type Scope = Option<usize>;
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub(super) enum Scope {
+    /// The initial EquivalenceContext has no declaration scope.
+    Root,
+    Empty,
+    Bound(usize),
+}
+
+impl Scope {
+    fn enter(self) -> Self {
+        if self == Self::Root {
+            Self::Empty
+        } else {
+            self
+        }
+    }
+}
 pub(super) enum Work {
     Compare(NodeId, NodeId, Scope),
     FlatmapOutput(NodeId, NodeId),
+    /// Stop after earlier comparisons have had a chance to report their result.
+    Answer(Option<bool>),
     Leave(NodeId, NodeId),
 }
 
@@ -26,7 +44,7 @@ impl<'a> Bindings<'a> {
     pub fn bind(&mut self, left: &'a str, right: &'a str, parent: Scope) -> Scope {
         let index = self.pairs.len();
         self.pairs.push((left, right, parent));
-        Some(index)
+        Scope::Bound(index)
     }
 
     pub fn variables(
@@ -38,7 +56,7 @@ impl<'a> Bindings<'a> {
         let left = name(left, "variable")?;
         let right = name(right, "variable")?;
         let mut declarations = (None, None);
-        while let Some(index) = scope {
+        while let Scope::Bound(index) = scope {
             let (l, r, parent) = self.pairs[index];
             if l == left && declarations.0.is_none() {
                 declarations.0 = Some(index);
@@ -94,6 +112,7 @@ impl<'a> Bindings<'a> {
         if left_params.len() != right_params.len() {
             return Ok(false);
         }
+        scope = scope.enter();
         for (l, r) in left_params.into_iter().zip(right_params) {
             let l = edit.node(l)?;
             let r = edit.node(r)?;
@@ -117,7 +136,7 @@ impl<'a> Bindings<'a> {
         right: &Node,
         mut scope: Scope,
         pending: &mut Vec<Work>,
-    ) -> Result<Option<bool>, Error> {
+    ) -> Result<bool, Error> {
         let statements = |block: &Node| -> Result<Vec<&Node>, Error> {
             let mut result = Vec::new();
             for id in block.edges("contents")? {
@@ -131,20 +150,23 @@ impl<'a> Bindings<'a> {
         let left_statements = statements(left)?;
         let right_statements = statements(right)?;
         if left_statements.len() != right_statements.len() {
-            return Ok(Some(false));
+            return Ok(false);
         }
         // Process initializers before consumers, even if their names shadow.
         let start = pending.len();
+        scope = scope.enter();
         for (l, r) in left_statements.into_iter().zip(right_statements) {
             if l.class() != r.class() {
-                return Ok(Some(false));
+                pending.push(Work::Answer(Some(false)));
+                break;
             }
             match l.class() {
                 "DBSPLetStatement" => {
-                    if l.data("mutable") != r.data("mutable")
-                        || !optional_child(l, r, "initializer", scope, pending)?
+                    if !optional_child(l, r, "initializer", scope, pending)?
+                        || l.data("mutable") != r.data("mutable")
                     {
-                        return Ok(Some(false));
+                        pending.push(Work::Answer(Some(false)));
+                        break;
                     }
                     scope = self.bind(name(l, "variable")?, name(r, "variable")?, scope);
                 }
@@ -153,13 +175,23 @@ impl<'a> Bindings<'a> {
                     r.edge("expression")?,
                     scope,
                 )),
-                _ => return Ok(None),
+                // Java's item declarations never compare equivalent, even to themselves.
+                "DBSPComparatorItem" | "DBSPFunctionItem" | "DBSPStaticItem" | "DBSPStructItem" => {
+                    pending.push(Work::Answer(Some(false)));
+                    break;
+                }
+                _ => {
+                    pending.push(Work::Answer(None));
+                    break;
+                }
             }
         }
-        if !optional_child(left, right, "lastExpression", scope, pending)? {
-            return Ok(Some(false));
+        if !matches!(pending[start..].last(), Some(Work::Answer(_)))
+            && !optional_child(left, right, "lastExpression", scope, pending)?
+        {
+            pending.push(Work::Answer(Some(false)));
         }
         pending[start..].reverse();
-        Ok(Some(true))
+        Ok(true)
     }
 }

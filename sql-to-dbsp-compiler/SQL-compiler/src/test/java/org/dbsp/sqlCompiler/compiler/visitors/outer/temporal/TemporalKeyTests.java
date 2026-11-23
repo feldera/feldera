@@ -25,7 +25,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
@@ -33,11 +36,13 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
@@ -79,7 +84,9 @@ public class TemporalKeyTests {
             if (replayPaths) {
                 // This key needs the canonical printer after the preceding map has emitted its warning.
                 var second = b.refVar(inputType);
-                var condition = b.binary(DBSPOpcode.GTE, b.unwrap(b.field(second, 0)), clock.deepCopy());
+                var offset = new DBSPStaticExpression(rel, b.lit(1), "offset");
+                var key = b.call(time, "shift_timestamp", b.unwrap(b.field(second, 0)), offset);
+                var condition = b.binary(DBSPOpcode.GTE, key, clock.deepCopy());
                 circuit.addOperator(new DBSPFilterOperator(rel, condition.closure(second), input.outputPort()));
             }
 
@@ -119,6 +126,50 @@ public class TemporalKeyTests {
         else
             scan.apply(circuit);
         return scan;
+    }
+
+    @Test
+    public void windowKeysKeepUnwrapMessagesAndGroupThePrintedErrorHandler() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var rowType = b.tup(time.withMayBeNull(true));
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+        circuit.addOperator(input);
+        var expected = new ArrayList<DBSPFilterOperator>();
+        for (var behavior : DBSPHandleErrorExpression.RuntimeBehavior.values()) {
+            for (boolean namedCall : List.of(false, true))
+                expected.add(addCheckedWindow(circuit, input, behavior, namedCall, ""));
+        }
+        for (String message : List.of("missing time", "missing date"))
+            addCheckedWindow(circuit, input, DBSPHandleErrorExpression.RuntimeBehavior.Panic, false, message);
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.metadata.set(ProgramMetadata.WINDOW_SHARING_THRESHOLD, b.lit(2), SourcePositionRange.INVALID, compiler);
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var decisions = new ArrayList<Boolean>();
+            var scan = scanWindows(compiler, circuit, decisions);
+            Assert.assertEquals(expected, List.copyOf(scan.chosenConjunct.keySet()));
+            Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
+        }
+    }
+
+    private static DBSPFilterOperator addCheckedWindow(DBSPCircuit circuit, DBSPConstantOperator input,
+            DBSPHandleErrorExpression.RuntimeBehavior behavior, boolean namedCall, String message) {
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var site = CalciteEmptyRel.INSTANCE;
+        var row = b.refVar(input.outputPort().getOutputRowType());
+        var value = new DBSPUnwrapExpression(site, message, b.field(row, 0));
+        var checked = b.call(new DBSPTypeSqlResult(time), "check_time", value);
+        var handler = new DBSPHandleErrorExpression(site, 0, behavior, checked, false);
+        var key = namedCall ? b.call(time, handler.getFunction(), checked) : handler;
+        var condition = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+        var filter = new DBSPFilterOperator(site, condition.closure(row), input.outputPort());
+        circuit.addOperator(filter);
+        return filter;
     }
 
     @Test
@@ -472,6 +523,24 @@ public class TemporalKeyTests {
         var zero = new DBSPI32Literal(0);
         return new TemporalFilter(new DBSPVariablePath("row", zero.getType()).asParameter(),
                 key, zero, DBSPOpcode.GTE);
+    }
+
+    @Test
+    public void blockItemsCompareUnequalAfterCheckingEarlierInitializers() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var literal = new DBSPI32Literal(1);
+        var item = new DBSPStaticItem(new DBSPStaticExpression(CalciteObject.EMPTY, literal, "saved"));
+        var single = bound(new DBSPBlockExpression(List.of(item), literal));
+        assertCompatible(compiler, single, single, false);
+
+        var missing = new DBSPVariablePath("missing", literal.getType());
+        var first = bound(new DBSPBlockExpression(List.of(new DBSPLetStatement("x", missing, false), item), literal));
+        var second = bound(new DBSPBlockExpression(List.of(new DBSPLetStatement("y", missing.deepCopy(), true), item), literal));
+        Assert.assertThrows(RuntimeException.class, () -> first.compatible(second));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys")) {
+            Assert.assertNull(RustCircuitPass.acceptsTemporalBound(compiler, List.of("GTE", "GTE"),
+                    List.of(first.parameter(), first.noNow(), second.parameter(), second.noNow())));
+        }
     }
 
     private static TemporalFilter loop(String variable, String read, int input) {
