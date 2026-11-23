@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust grouped windows on array and map lookups in six classic and Gen-2
+compilations. The three window analyses answered every request, eliminating
+ten Java fallbacks. Detached replay matched all 3,616 ordered S4 observations
+and emitted artifacts. The same build passed all 181 input commands in the
+52 executable classic clock cases. [Collection window keys](evidence/p3-collection-window-keys.json)
+
 On `4b83f145e`, Rust answered all 24 closure projections in the eight
 constructed-row `ARG_MIN` compilations. Previously, one cast per compilation
 fell back to Java. All eight compilations matched Java at every S4 observation

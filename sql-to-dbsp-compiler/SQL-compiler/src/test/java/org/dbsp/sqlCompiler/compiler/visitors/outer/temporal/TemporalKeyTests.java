@@ -76,12 +76,21 @@ public class TemporalKeyTests {
                 "CASE WHEN label IS NOT NULL THEN id ELSE 1 END");
     }
 
-    private static void checkOffsetKeys(String shared, String different) {
-        String key = "TIMESTAMPADD(SECOND, %s, ts)";
-        checkSharedWindowKeys(key.formatted(shared), key.formatted(different));
+    @Test
+    public void collectionWindowKeysPreserveTheSelectedElement() {
+        String fields = "id INT NOT NULL, ts TIMESTAMP, alt TIMESTAMP, times TIMESTAMP ARRAY";
+        checkSharedWindowKeys(fields, "ARRAY[ts, alt][id]", "ARRAY[alt, ts][id]");
+        checkSharedWindowKeys(fields, "MAP[1, ts, 2, alt][id]", "MAP[1, alt, 2, ts][id]");
+        checkSharedWindowKeys(fields, "times[id]", "times[id + 1]");
     }
 
-    private static void checkSharedWindowKeys(String shared, String different) {
+    private static void checkOffsetKeys(String shared, String different) {
+        String key = "TIMESTAMPADD(SECOND, %s, ts)";
+        checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, flag BOOLEAN, label VARCHAR",
+                key.formatted(shared), key.formatted(different));
+    }
+
+    private static void checkSharedWindowKeys(String fields, String shared, String different) {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         for (boolean gen2 : List.of(false, true)) {
             var options = new CompilerOptions();
@@ -108,11 +117,11 @@ public class TemporalKeyTests {
             };
             compiler.submitStatementsForCompilation("""
                     SET feldera_window_sharing_threshold = 2;
-                    CREATE TABLE t (id INT NOT NULL, ts TIMESTAMP, flag BOOLEAN, label VARCHAR);
+                    CREATE TABLE t (%s);
                     CREATE VIEW a AS SELECT id FROM t WHERE (%s) >= NOW() - INTERVAL '1' DAY AND id > 0;
                     CREATE VIEW b AS SELECT id FROM t WHERE (%s) >= NOW() - INTERVAL '2' DAY AND id > 1;
                     CREATE VIEW c AS SELECT id FROM t WHERE (%s) >= NOW() - INTERVAL '3' DAY AND id > 2;
-                    """.formatted(shared, shared, different));
+                    """.formatted(fields, shared, shared, different));
             var circuit = compiler.getFinalCircuit(false);
             compiler.throwIfErrorsOccurred();
             Assert.assertEquals(analyses, answered);

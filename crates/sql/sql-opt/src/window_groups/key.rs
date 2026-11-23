@@ -16,6 +16,8 @@ pub(super) struct TimestampKey(Vec<(Term, Vec<usize>)>);
 #[derive(Eq, Hash, PartialEq)]
 enum Term {
     Parameter,
+    Array,
+    Map,
     Field(u64),
     Deref,
     Clone,
@@ -114,6 +116,12 @@ fn key_term(
 ) -> Result<Option<(Term, Vec<ExpressionId>)>, Error> {
     let node = edit.node(id.into())?;
     let child = |field| edit.expression(node.edge(field)?);
+    let children = |field| {
+        node.edges(field)?
+            .into_iter()
+            .map(|id| edit.expression(id))
+            .collect::<Result<Vec<_>, Error>>()
+    };
     let kind = edit.expr_kind(id)?;
     Ok(Some(match kind {
         Expr::VariablePath
@@ -128,6 +136,23 @@ fn key_term(
                 .and_then(|v| v.as_u64())
                 .ok_or_else(|| Error::new("invalid window key column"))?;
             (Term::Field(column), vec![child("expression")?])
+        }
+        // Non-null constructors print their contents in order and omit their type.
+        Expr::Array if node.field("data").is_some() => (Term::Array, children("data")?),
+        Expr::Map if node.field("keys").is_some() => {
+            let keys = children("keys")?;
+            let values = children("values")?;
+            if keys.len() != values.len() {
+                return Err(Error::new(
+                    "window key map has different key and value counts",
+                ));
+            }
+            let entries = keys
+                .into_iter()
+                .zip(values)
+                .flat_map(|(key, value)| [key, value])
+                .collect();
+            (Term::Map, entries)
         }
         Expr::Deref => (Term::Deref, vec![child("expression")?]),
         Expr::Clone => (Term::Clone, vec![child("expression")?]),
@@ -184,12 +209,7 @@ fn key_term(
             if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
                 return Ok(None);
             }
-            let arguments = node
-                .edges("arguments")?
-                .into_iter()
-                .map(|arg| edit.expression(arg))
-                .collect::<Result<_, _>>()?;
-            (Term::Call(name.to_owned()), arguments)
+            (Term::Call(name.to_owned()), children("arguments")?)
         }
         Expr::Binary | Expr::TimeAddSub => {
             let left = child("left")?;
@@ -453,9 +473,13 @@ pub(super) fn same_row_spelling(
                     edit.type_id(b.edge("type")?)?,
                 ));
             }
-            Ty::Tuple | Ty::RawTuple => {
-                let a = edit.node(left.into())?.edges("tupFields")?;
-                let b = edit.node(right.into())?.edges("tupFields")?;
+            Ty::Tuple | Ty::RawTuple | Ty::Array | Ty::Map => {
+                let field = match kind {
+                    Ty::Array | Ty::Map => "typeArgs",
+                    _ => "tupFields",
+                };
+                let a = edit.node(left.into())?.edges(field)?;
+                let b = edit.node(right.into())?.edges(field)?;
                 if a.len() != b.len() {
                     return Ok(false);
                 }

@@ -1,0 +1,53 @@
+{
+  "scope": "Temporal window grouping on dynamic ARRAY and MAP lookups and an indexed ARRAY column.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "344d13cb567b7ea14e29afd704dd961b77cf00b15fcaed99974c28c52844c3e7",
+    "maven/sql-compiler.jar": "6f922576571cc0fbb56472eaa5a2b4ff7a0ce9d0f5c06ba3d2e51dc0c75a75e0",
+    "maven/tests.jar": "fdb0865ce6ae8d8792a0067b6b35abed1da883ff2ebe614b464310701c3b0e14"
+  },
+  "engines": {
+    "classic": {
+      "cases": 3,
+      "ordered_s4_observations": 1799,
+      "mismatches": 0,
+      "receipt_sha256": "3535f337a95530bd916f0a4a39d21a3ea4c945731b3aca6e3fac01e315778fb4",
+      "analysis_fallbacks_before": {
+        "WindowGroups/Scan": 3,
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Indexes": 0
+      },
+      "analysis_fallbacks_after": {
+        "WindowGroups/Scan": 0,
+        "WindowGroups/Reorder": 0,
+        "WindowGroups/Indexes": 0
+      }
+    },
+    "gen2": {
+      "cases": 3,
+      "ordered_s4_observations": 1817,
+      "mismatches": 0,
+      "receipt_sha256": "dabe4a98babf63fc5dfdfb0f2a78a6898c7eff11dd1a5e5b8a40a72034a4b5f5",
+      "analysis_fallbacks_before": {
+        "WindowGroups/Scan": 3,
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Indexes": 2
+      },
+      "analysis_fallbacks_after": {
+        "WindowGroups/Scan": 0,
+        "WindowGroups/Reorder": 0,
+        "WindowGroups/Indexes": 0
+      }
+    }
+  },
+  "classic_clock_runtime": {
+    "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+    "executed": 52,
+    "compile_only": 19,
+    "input_commands": 181,
+    "batch_receipts_sha256": "5372a90f89c239fb43db5e647ed59bef4652719289cc79017f3a1c5f323b93e8"
+  },
+  "tests": {
+    "rust_passed": 161,
+    "jni_enabled_junit_passed": 70
+  }
+}
