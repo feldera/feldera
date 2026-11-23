@@ -1,0 +1,41 @@
+{
+  "scope": "Compare stable static collection initializers and printed comment lines when grouping temporal window keys, preserving diagnostic order.",
+  "source_base": "fbe698516fc3d4de15fd644b4bbbbb22d589c797",
+  "source_files_sha256": {
+    "crates/sql/sql-opt/src/projection_key.rs": "4d206a423d0a85b62f2137d3e47225ada26e380a081fe2a077cc600a78e67435",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "4f11ad91e88f8b2fb34709bb63692f00113079baf36a5d65708ba82eaed68b1e"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ae363bcd464c58153e5af814d110983e95e355be70b7318680a737c99b30e2d1",
+    "bin/sql-difftest": "1aae72a8fbcc7f43eb75a52fa5bd9c462ffac4edd00af9fef145d03329415aff",
+    "maven/tests.jar": "876fdb4f7fe7fb3b335ce18b3510e4bb7cc6a2e652f928f2f41070bfc589e327",
+    "maven/sql-compiler.jar": "64469d143d42005f8997562d15afaf07652b7b6cbad281c116734c8e04d0c4f3"
+  },
+  "negative_control": {
+    "library_sha256": "ba9a972cf43916b78f645da603df3d94abf342edeba5124a1b62a050476f6848",
+    "failed_tests": [
+      "windowSharingComparesPrintedCommentLines",
+      "windowSharingUsesTheFieldsOfStaticCollectionInitializers",
+      "windowScanReportsCastWarningAtItsOriginalRange"
+    ]
+  },
+  "rust_tests": 221,
+  "junit_tests": 154,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "eb101f0d1a14718e9bba36fe3523274445c3909982ac25ed5b40c2af4d13b417"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "fbbdc25885518d4cf6f79124e28171f823361f1138d3a5b12b72b7a6cefc40b9"
+    }
+  }
+}

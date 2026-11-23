@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust groups temporal filters by the printed contents of comments and static
+collection initializers in their window keys. The directed cases cover
+trailing newlines, a changed map value and the source range of an earlier
+cast warning. All 221 Rust tests and 154 targeted JUnit tests passed. The
+20 selected classic and Gen-2 compilations matched direct Java at all 8,778
+ordered S4 observations and through emission.
+[Window key replay](evidence/p3-static-collection-window-keys.json)
+
 Rust now identifies the operand whose waterline is missing and the literal
 whose target type has no maximum. Both visitor modes publish the facts
 computed up to the failure so Java can report the diagnostic on the original

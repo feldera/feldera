@@ -84,6 +84,7 @@ enum Term {
 #[derive(Eq, Hash, PartialEq)]
 enum BlockStatement {
     Expression,
+    Comment(Option<String>),
     Let { mutable: bool, initialized: bool },
 }
 
@@ -165,12 +166,7 @@ impl ProjectionKey {
                             work.extend([Visit::Alias(at, value), Visit::Read(value)]);
                             continue;
                         }
-                        // CanonicalForm requires a static initializer to retain its
-                        // identity. Calls and blocks can reuse unchanged children.
-                        if at.in_static
-                            && !matches!(kind, Expr::Apply | Expr::ApplyMethod | Expr::Constructor | Expr::Block)
-                            && !kind.wire_name().ends_with("Literal")
-                        {
+                        if at.in_static && !preserves_static_children(*kind) {
                             return Ok(None);
                         }
                     }
@@ -295,6 +291,19 @@ fn scoped_term<'a>(
     }))
 }
 
+/// CanonicalForm keeps these constructors when every visited child keeps its
+/// identity. A declaration or a simplifying constructor can replace the
+/// initializer, which the Java visitor diagnoses at the static expression.
+fn preserves_static_children(kind: Expr) -> bool {
+    kind.wire_name().ends_with("Literal")
+        || matches!(
+            kind,
+            Expr::Apply | Expr::ApplyMethod | Expr::Constructor | Expr::Block
+                | Expr::Tuple | Expr::RawTuple | Expr::Array | Expr::Map
+                | Expr::If | Expr::Binary | Expr::TimeAddSub | Expr::Unary
+        )
+}
+
 fn block_term<'a>(
     edit: &'a CircuitEditor,
     at: ScopedNode,
@@ -308,6 +317,16 @@ fn block_term<'a>(
         let statement = edit.node(id)?;
         let in_scope = |id| ScopedNode { id, scope, ..at };
         match statement.class() {
+            "DBSPComment" => {
+                let comment = string(statement, "comment")
+                    .ok_or_else(|| Error::new("missing window key comment"))?;
+                // Java's split("\n") drops trailing empty lines. An empty comment
+                // prints one comment line, while a string of newlines prints none.
+                let lines = comment.trim_end_matches('\n');
+                statements.push(BlockStatement::Comment(
+                    (comment.is_empty() || !lines.is_empty()).then(|| lines.to_owned()),
+                ));
+            }
             "DBSPExpressionStatement" => {
                 statements.push(BlockStatement::Expression);
                 children.push(in_scope(statement.edge("expression")?));

@@ -22,6 +22,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
@@ -29,6 +30,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
@@ -50,6 +52,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
@@ -96,7 +99,7 @@ public class TemporalKeyTests {
         var rel = CalciteEmptyRel.INSTANCE;
         var time = DBSPTypeTimestamp.INSTANCE;
         var inputType = b.tup(time.withMayBeNull(true));
-        for (boolean replayPaths : List.of(false, true)) {
+        for (boolean withComment : List.of(false, true)) {
             var circuit = new DBSPCircuit(new ProgramMetadata(), false);
             var input = new DBSPConstantOperator(rel, DBSPZSetExpression.emptyWithElementType(inputType));
             circuit.addOperator(input);
@@ -111,9 +114,8 @@ public class TemporalKeyTests {
             circuit.addOperator(new DBSPFilterOperator(rel, b.binary(DBSPOpcode.GTE, cast, clock).closure(row),
                     map.outputPort()));
             var second = b.refVar(inputType);
-            // Both paths see the warning. A comment in the printed key still requires Java replay.
             var initializer = new DBSPBlockExpression(
-                    replayPaths ? List.of(new DBSPComment("offset")) : List.of(b.call("prepare_offset").toStatement()),
+                    withComment ? List.of(new DBSPComment("offset")) : List.of(b.call("prepare_offset").toStatement()),
                     b.call("get_offset", b.lit(1)));
             var offset = new DBSPStaticExpression(rel, initializer, "offset");
             var key = b.call(time, "shift_timestamp", b.unwrap(b.field(second, 0)), offset);
@@ -131,7 +133,64 @@ public class TemporalKeyTests {
                 Assert.assertEquals("Not a TIMESTAMP", warning.errorType);
                 Assert.assertTrue(warning.message.contains("invalid timestamp"));
             }
-            Assert.assertEquals(List.of(!replayPaths), decisions);
+            Assert.assertEquals(List.of(true), decisions);
+        }
+    }
+
+    @Test
+    public void windowSharingComparesPrintedCommentLines() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var offsets = new ArrayList<DBSPExpression>();
+        for (String comment : List.of("first\n\nsecond", "first\n\nsecond\n\n", "first\nsecond", "", "\n", "\n\n"))
+            offsets.add(new DBSPBlockExpression(List.of(new DBSPComment(comment)), b.lit(1)));
+        assertStaticWindowGroups(offsets, Set.of(0, 1, 4, 5));
+    }
+
+    @Test
+    public void windowSharingUsesTheFieldsOfStaticCollectionInitializers() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var offsets = new ArrayList<DBSPExpression>();
+        for (int value : List.of(3, 3, 4)) {
+            var number = b.call(b.lit(0).getType(), "get_offset");
+            var selected = b.ifThenElse(b.binary(DBSPOpcode.LT, number, b.lit(1)),
+                    b.neg(b.lit(2)), b.add(number.deepCopy(), b.lit(value)));
+            var array = new DBSPArrayExpression(selected);
+            var string = b.lit("key");
+            var map = new DBSPMapExpression(new DBSPTypeMap(string.getType(), array.getType(), false),
+                    List.of(string), List.of(array));
+            offsets.add(b.tuple(map, b.lit(0)));
+        }
+        assertStaticWindowGroups(offsets, Set.of(0, 1));
+    }
+
+    private static void assertStaticWindowGroups(List<DBSPExpression> offsets, Set<Integer> shared) {
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var rowType = b.tup(time);
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+        circuit.addOperator(input);
+        var expected = new ArrayList<DBSPFilterOperator>();
+        for (int i = 0; i < offsets.size(); i++) {
+            var row = b.refVar(rowType);
+            var key = b.call(time, "shift_timestamp", b.field(row, 0), new DBSPStaticExpression(site, offsets.get(i), "offset"));
+            var condition = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+            var filter = new DBSPFilterOperator(site, condition.closure(row), input.outputPort());
+            circuit.addOperator(filter);
+            if (shared.contains(i))
+                expected.add(filter);
+        }
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.metadata.set(ProgramMetadata.WINDOW_SHARING_THRESHOLD, b.lit(2), SourcePositionRange.INVALID, compiler);
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var decisions = new ArrayList<Boolean>();
+            var scan = scanWindows(compiler, circuit, decisions);
+            Assert.assertEquals(expected, List.copyOf(scan.chosenConjunct.keySet()));
+            Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
         }
     }
 
