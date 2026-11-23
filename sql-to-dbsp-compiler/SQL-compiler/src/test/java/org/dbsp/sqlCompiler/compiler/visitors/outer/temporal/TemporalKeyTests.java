@@ -178,7 +178,7 @@ public class TemporalKeyTests {
         var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertTrue(pass.usedGeneralTemporalAnalysis());
+        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test
@@ -227,6 +227,7 @@ public class TemporalKeyTests {
         var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test

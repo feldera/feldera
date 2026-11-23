@@ -91,9 +91,23 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         )
         .map_err(|e| error(e.to_string()))?
         .ok_or_else(|| error("missing pair decision".into()))?;
-        let mut result = json!({"diagnostics": super::pass_warnings(warnings),
-            "next_generated_name": next, "unused_sources": []});
-        result["circuit"] = output.changed_live_graph(&input).unwrap_or(Value::Null);
+        let result = match output {
+            feldera_sql_opt::TemporalMerge::Rewritten(circuit) => json!({
+                "diagnostics": super::pass_warnings(warnings),
+                "next_generated_name": next, "unused_sources": [],
+                "circuit": circuit.changed_live_graph(&input),
+            }),
+            feldera_sql_opt::TemporalMerge::MissingKey {
+                key,
+                next_name,
+                warnings,
+            } => json!({
+                "missing_clock_key": super::inner_number(key.expression().into()),
+                "key_is_node_id": matches!(key, feldera_sql_opt::MissingClockKey::Fact(_)),
+                "next_generated_name": next_name,
+                "warnings": super::pass_warnings(warnings),
+            }),
+        };
         let bytes = serde_json::to_vec(&result).map_err(|e| error(e.to_string()))?;
         if bytes.len() > super::MAX_BYTES {
             return Err(error("output exceeds 64 MiB".into()));

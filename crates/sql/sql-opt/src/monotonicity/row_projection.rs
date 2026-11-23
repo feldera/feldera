@@ -13,7 +13,8 @@ use self::{
 };
 use crate::limiters::Projection;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId, TypeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
+    TypeId,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -241,20 +242,15 @@ fn project_tuple(
     }))
 }
 
-/// Clock analysis exposes original operand identities and the temporary names
-/// consumed by synthesized UNNEST closures. Those closures never escape.
-pub(crate) struct ClockFacts {
-    pub operands: HashSet<ExpressionId>,
-    pub generated_names: u64,
-}
-
 /// A temporal filter's input has no declared waterline. Record the original
 /// operand IDs as the row visitor encounters them, including inside LETs.
 pub(crate) fn clock_facts(
     edit: &mut CircuitEditor,
     parameter: NodeId,
     body: ExpressionId,
-) -> Result<Option<ClockFacts>, Error> {
+    next: &mut u64,
+) -> Result<Option<HashSet<ExpressionId>>, crate::temporal_comparisons::ClockError> {
+    use crate::temporal_comparisons::{ClockError, MissingClockKey};
     let node = edit.node(parameter)?;
     let ty = edit.type_id(node.edge("type")?)?;
     let Some(name) = node
@@ -268,10 +264,11 @@ pub(crate) fn clock_facts(
     else {
         return Ok(None);
     };
-    if crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?.is_none()
-    {
+    let Some(references) =
+        crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?
+    else {
         return Ok(None);
-    }
+    };
     let variable = edit.named_variable(projected.unwrap_or(ty), &name)?;
     let mut row = Row {
         bindings: vec![Binding {
@@ -283,20 +280,33 @@ pub(crate) fn clock_facts(
         locals: Vec::new(),
         observations: Observations::Clocks(HashSet::new()),
     };
-    let mut generated_names = 0;
-    if !matches!(
-        row.visit(edit, body, Some(&mut generated_names))?,
-        Evaluation::Value(_)
-    ) {
-        return Ok(None);
+    match row.visit(edit, body, Some(next))? {
+        Evaluation::Value(_) => {}
+        Evaluation::Failed(WaterlineError::MissingReference(id)) => {
+            return Err(ClockError::Missing(MissingClockKey::Reference(id)));
+        }
+        Evaluation::Failed(WaterlineError::MissingOperand(id)) => {
+            // A read of an uninitialized LET has no entry in the visitor's fact map.
+            // Other operands can have an entry whose reduced expression is absent.
+            if let Some(&declaration) = references.get(&id.into()) {
+                let declaration = edit.node(declaration)?;
+                if declaration.class() == "DBSPLetStatement"
+                    && declaration
+                        .field("initializer")
+                        .and_then(Field::node_id)
+                        .is_none()
+                {
+                    return Err(ClockError::Missing(MissingClockKey::Fact(id)));
+                }
+            }
+            return Ok(None);
+        }
+        _ => return Ok(None),
     }
     let Observations::Clocks(clocks) = row.observations else {
         unreachable!()
     };
-    Ok(Some(ClockFacts {
-        operands: clocks,
-        generated_names,
-    }))
+    Ok(Some(clocks))
 }
 
 #[cfg(test)]
@@ -305,7 +315,9 @@ pub(crate) fn clock_operands(
     parameter: NodeId,
     body: ExpressionId,
 ) -> Result<Option<HashSet<ExpressionId>>, Error> {
-    Ok(clock_facts(edit, parameter, body)?.map(|facts| facts.operands))
+    crate::temporal_comparisons::speculative_clock(&mut 0, |names| {
+        clock_facts(edit, parameter, body, names)
+    })
 }
 
 pub fn project_row(

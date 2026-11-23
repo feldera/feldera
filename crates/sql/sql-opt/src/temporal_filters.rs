@@ -1,7 +1,11 @@
 //! Split temporal predicates and merge bounds that share a NOW window.
 use crate::{
-    TemporalPredicate, WindowTerm, accepts_temporal_bound, filters::rewrite_filters,
-    function_calls::contains_now, infer_temporal_predicates,
+    TemporalPredicate, WindowTerm, accepts_temporal_bound,
+    filters::rewrite_filters,
+    function_calls::contains_now,
+    temporal_comparisons::{
+        ClockError, MissingClockKey, checked_temporal_predicates, speculative_clock,
+    },
 };
 use feldera_sql_expr::{SimplifyWarning, ensure_expression_tree, simplify_closure_with_warnings};
 use feldera_sql_ir::{
@@ -17,26 +21,22 @@ fn can_merge_temporal_filters(
     source: ExpressionId,
     filter: ExpressionId,
     next: &mut u64,
-) -> Result<Option<bool>, Error> {
+) -> Result<Option<bool>, ClockError> {
     if !contains_now(edit.circuit(), &[filter.into()])?
         || !contains_now(edit.circuit(), &[source.into()])?
     {
         return Ok(Some(false));
     }
-    let mut names = *next;
-    let Some(upstream) = window_terms(edit, source, &mut names)? else {
+    let Some(upstream) = window_terms(edit, source, next)? else {
         return Ok(None);
     };
-    let Some(downstream) = window_terms(edit, filter, &mut names)? else {
+    let Some(downstream) = window_terms(edit, filter, next)? else {
         return Ok(None);
     };
     let decision = match downstream.as_slice() {
         [term] => accepts_temporal_bound(edit, &upstream, *term)?,
         _ => Some(false),
     };
-    if decision.is_some() {
-        *next = names;
-    }
     Ok(decision)
 }
 
@@ -48,7 +48,10 @@ pub fn merge_temporal_filters(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<Circuit>, Error> {
-    merge_temporal_filters_with(circuit, next, warnings, |_| Ok(None))
+    match merge_temporal_filters_with(circuit, next, warnings, |_| Ok(None))? {
+        Some(TemporalMerge::Rewritten(circuit)) => Ok(Some(circuit)),
+        _ => Ok(None),
+    }
 }
 
 /// The upstream closure can already contain earlier merges. The live analyzer
@@ -61,14 +64,25 @@ pub struct TemporalFilterPair<'a> {
     pub warnings: &'a mut Vec<SimplifyWarning>,
 }
 
+/// The live caller publishes earlier diagnostics and names before reporting
+/// a missing key. A detached caller can discard this state and replay the pass.
+pub enum TemporalMerge {
+    Rewritten(Circuit),
+    MissingKey {
+        key: MissingClockKey,
+        next_name: u64,
+        warnings: Vec<SimplifyWarning>,
+    },
+}
+
 pub fn merge_temporal_filters_with(
     circuit: Circuit,
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
     mut analyze: impl FnMut(TemporalFilterPair<'_>) -> Result<Option<bool>, Error>,
-) -> Result<Option<Circuit>, Error> {
+) -> Result<Option<TemporalMerge>, Error> {
     let order = circuit.operator_order(feldera_sql_ir::BodyOrder::Postorder)?;
-    let mut edit = CircuitEditor::new(circuit);
+    let mut edit = CircuitEditor::new(circuit.clone());
     let mut projections = crate::rebuild::ProjectionNames::default();
     let mut names = *next;
     let mut diagnostics = Vec::new();
@@ -95,10 +109,26 @@ pub fn merge_temporal_filters_with(
             .inputs()
             .next()
             .ok_or_else(|| Error::new("upstream filter requires an input"))?;
+        let mut trial_names = names;
         let decision =
-            match can_merge_temporal_filters(&mut edit, upstream, downstream, &mut names)? {
-                Some(merge) => Some(merge),
-                None => analyze(TemporalFilterPair {
+            match can_merge_temporal_filters(&mut edit, upstream, downstream, &mut trial_names) {
+                Ok(Some(merge)) => {
+                    names = trial_names;
+                    Some(merge)
+                }
+                Err(ClockError::Missing(key))
+                    if circuit.node(key.expression().into()).is_some() =>
+                {
+                    return Ok(Some(TemporalMerge::MissingKey {
+                        key,
+                        next_name: trial_names,
+                        warnings: diagnostics,
+                    }));
+                }
+                Err(ClockError::InvalidIr(error)) => return Err(error),
+                // Recreated expressions lack a live Java ID. Resume from the start
+                // of this predicate pair when the diagnostic needs one.
+                Ok(None) | Err(ClockError::Missing(_)) => analyze(TemporalFilterPair {
                     graph: edit.circuit(),
                     operators: [input.operator, id],
                     closures: [upstream, downstream],
@@ -126,16 +156,16 @@ pub fn merge_temporal_filters_with(
     let circuit = projections.finish(edit.finish_with_rewrites()?)?;
     *next = names;
     warnings.extend(diagnostics);
-    Ok(Some(circuit))
+    Ok(Some(TemporalMerge::Rewritten(circuit)))
 }
 
 fn window_terms(
     edit: &mut CircuitEditor,
     closure: ExpressionId,
     next: &mut u64,
-) -> Result<Option<Vec<WindowTerm>>, Error> {
+) -> Result<Option<Vec<WindowTerm>>, ClockError> {
     Ok(
-        classify_closure(edit, closure, next)?.map(|(parameter, predicates)| {
+        checked_closure(edit, closure, next)?.map(|(parameter, predicates)| {
             predicates
                 .iter()
                 .map(|predicate| WindowTerm::from_predicate(parameter, predicate))
@@ -149,13 +179,21 @@ pub(super) fn classify_closure(
     closure: ExpressionId,
     next: &mut u64,
 ) -> Result<Option<(NodeId, Vec<TemporalPredicate>)>, Error> {
+    speculative_clock(next, |names| checked_closure(edit, closure, names))
+}
+
+fn checked_closure(
+    edit: &mut CircuitEditor,
+    closure: ExpressionId,
+    next: &mut u64,
+) -> Result<Option<(NodeId, Vec<TemporalPredicate>)>, ClockError> {
     let tree = ensure_expression_tree(edit, closure.into())?;
     let node = edit.node(tree)?;
     let [parameter] = node.edges("parameters")?[..] else {
-        return Err(Error::new("a temporal filter requires one row parameter"));
+        return Err(Error::new("a temporal filter requires one row parameter").into());
     };
     let body = crate::filters::strip_wrap_bool(edit, edit.expression(node.edge("body")?)?)?;
-    Ok(infer_temporal_predicates(edit, parameter, body, next)?
+    Ok(checked_temporal_predicates(edit, parameter, body, next)?
         .map(|predicates| (parameter, predicates)))
 }
 
@@ -425,8 +463,7 @@ mod tests {
             Some(port(source))
         );
 
-        // An uninitialized read needs the general visitor's diagnostic. Discard
-        // names and warnings from earlier merges when handing the pass back.
+        // A detached caller can replay the diagnostic with its original names and warnings.
         let mut edit = CircuitEditor::new(circuit);
         let missing = edit.inner_at(
             site,

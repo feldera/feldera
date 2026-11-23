@@ -3577,7 +3577,16 @@ public final class RustCircuitPass implements CircuitTransform {
             reply.put("next_generated_name", DBSPVariablePath.nextGeneratedName());
             return MAPPER.writeValueAsBytes(reply);
         });
-        return MAPPER.readTree(result);
+        var reply = MAPPER.readTree(result);
+        var missing = reply.get("missing_clock_key");
+        if (missing != null) {
+            finishLowering(this.compiler, reply);
+            if (!this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
+                this.compiler.stateObserver.nativeDecision("MergeFilters", true);
+            var expression = Utilities.getExists(Objects.requireNonNull(writer.innerVisitor.liveNodes), missing.longValue());
+            throw Utilities.missingKey(reply.required("key_is_node_id").booleanValue() ? expression.getId() : expression);
+        }
+        return reply;
     }
 
     private static void reportMissingDeclaration(JsonNode variable) {

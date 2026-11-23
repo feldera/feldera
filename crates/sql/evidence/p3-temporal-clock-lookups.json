@@ -1,0 +1,61 @@
+{
+  "scope": "Rust reports missing original waterline facts and references at temporal filter merges with the generated names and warnings preceding the lookup.",
+  "source_base": "3f11d9be34c5dacce69532680b98f052a8bdbb13",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/casts/simplify.rs": "312ea0d9fb58f332a9ecd9a37caed5d712d81a3eb9874e48b189aa17e9edbf54",
+    "crates/sql/sql-opt-jni/src/live_equality.rs": "abb1b50c6075baf039d10f11c3fe30ee73d715f46afbda7cb296de2f1891d341",
+    "crates/sql/sql-opt-jni/src/shared_indexes.rs": "23b6eef3a60633112c22d4bdd13c40496c8545eb25294c9d8de4ad4168600c36",
+    "crates/sql/sql-opt-jni/src/temporal.rs": "8f751ec98a953c3d4473f72c317ee726b272a6714c14099330d7eb64b55611b2",
+    "crates/sql/sql-opt/src/index_key_equivalence.rs": "4e657999e0096ce58b797ede7748607ce0d8266cd446293469b05f88c6c984a4",
+    "crates/sql/sql-opt/src/lib.rs": "84970a1ff301afbf4ddf2aff3d20f649cb163b1ba7195dba1f03368730227ed4",
+    "crates/sql/sql-opt/src/map_fusion.rs": "d3de7b607614468d1820a7d606cbfa5c2dbd4efa4e5fbbae527d07e88ffc5703",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "a777790f75395b37ad34e5617d2c432850ec8cf1ee1834e086e507f27f00a85e",
+    "crates/sql/sql-opt/src/replace_shared_indexes.rs": "615129632242ddfd664a1f1d451ba732dc41385294b225e7380e84d47fe0ca7d",
+    "crates/sql/sql-opt/src/temporal_comparisons.rs": "45e971c7ea41f5ef2f7933d813a092872f8c50a2f48b95d9970569fddba47897",
+    "crates/sql/sql-opt/src/temporal_filters.rs": "d7dc4f7f2eb059e998decf80c9c049d12a37dd9b21376e22d534a315bbb9a595",
+    "crates/sql/sql-opt/src/wide_index.rs": "147999c7804a123b8e7b386f09228e77a6541d1cbf9d0ecf83b480fa5e1bf708",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "65a27827833eab0debeb25a067c6d6968e22eca1847daba6de216d62aa5023b1",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "c30c361ca80d3e15170c6b9ba0dbec17d86527de8c1bf00c4ef0e71747b3b5ca",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ShareIndexesTests.java": "7096a5aa9c19c5665e80e11a3c3dfb4223b340ea72c1ed8f6ccd793c3409ba1a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "177f45f6427d4b83558abdeed6110a04b43445581703dbbe3dc90c9d9931823e"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "215aaa12151284adabfa7816641b3132fff720ba7c93ddee4597795f9caf1a6d",
+    "bin/sql-difftest": "2a99b4d9bbdfccf05a3c81a699576dafdeac271082c8a4cb9872ca5b086f2fb9",
+    "maven/tests.jar": "348ea83a6ffad03e94c796fa34e1762533e80f2d6d7cd4a63a2fb3a4f107c097",
+    "maven/sql-compiler.jar": "ba2d6ca503bc0ecc89dfd45e121a1b195306501a891467af5868f79b299a5351"
+  },
+  "negative_control": {
+    "library_sha256": "b26b198d871f4def556f7794605fdd654ef086b99f948c65fa86ccdbe28b7d8e",
+    "failed_tests": [
+      "temporalMergeReportsAnUninitializedClockWithoutReplayingTheGraph",
+      "temporalMergePreservesTheReferenceErrorAfterANestedFlatmap"
+    ],
+    "java_compiler_sha256": "ff2463ae921863e097ceff2bf79288782d98fc638bf68464edc7c796fbd5de40"
+  },
+  "rust_tests": 225,
+  "junit_tests": 181,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "bc112062553608c711f8f4c06f7a5b113d9aecaf368dce487e749fe9ea5fd810"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "2511a4b269785b6a14162b14a21bd11011de16953fcd8a1e2cf55064887f41f3"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 221,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  }
+}

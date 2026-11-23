@@ -498,6 +498,13 @@ programs. A separate 24-program replay matched Java through 11,965 ordered
 S4 observations and emission.
 [Nested flatmaps in waterline closures](evidence/p3-nested-flatmap-closure-facts.json)
 
+When a temporal filter reads an uninitialized local, Rust reports the ID of
+the expression whose waterline fact is missing. A read after a nested flatmap
+can instead lose its lexical reference, in which case the diagnostic names
+the variable. Both failures preserve the number of names allocated by earlier
+merges. Directed tests verified the exception class and message against Java.
+[Temporal clock lookups](evidence/p3-temporal-clock-lookups.json)
+
 Shared-index readers remap a column beneath 160 nested calls. Indexes that
 project the same nested expression still share one output column. Both
 operations exceeded the inline snapshot limit on the preceding build.

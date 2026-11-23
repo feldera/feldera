@@ -86,6 +86,48 @@ pub(super) fn analyze_conjuncts(
     Ok(Some(analyzed))
 }
 
+/// Java keys its waterline facts by node ID and its lexical references by expression.
+#[derive(Clone, Copy)]
+pub enum MissingClockKey {
+    Fact(ExpressionId),
+    Reference(ExpressionId),
+}
+
+impl MissingClockKey {
+    pub fn expression(self) -> ExpressionId {
+        match self {
+            Self::Fact(id) | Self::Reference(id) => id,
+        }
+    }
+}
+
+pub(crate) enum ClockError {
+    Missing(MissingClockKey),
+    InvalidIr(Error),
+}
+
+impl From<Error> for ClockError {
+    fn from(error: Error) -> Self {
+        Self::InvalidIr(error)
+    }
+}
+
+/// A speculative classifier leaves the name allocator intact on a refusal.
+pub(super) fn speculative_clock<T>(
+    next: &mut u64,
+    check: impl FnOnce(&mut u64) -> Result<Option<T>, ClockError>,
+) -> Result<Option<T>, Error> {
+    let mut names = *next;
+    match check(&mut names) {
+        Ok(Some(result)) => {
+            *next = names;
+            Ok(Some(result))
+        }
+        Ok(None) | Err(ClockError::Missing(_)) => Ok(None),
+        Err(ClockError::InvalidIr(error)) => Err(error),
+    }
+}
+
 /// Classify clock operands with the same waterline transfer as other filter closures.
 pub fn infer_temporal_predicates(
     edit: &mut CircuitEditor,
@@ -93,15 +135,23 @@ pub fn infer_temporal_predicates(
     body: ExpressionId,
     next: &mut u64,
 ) -> Result<Option<Vec<TemporalPredicate>>, Error> {
-    let Some(facts) = crate::monotonicity::row_projection::clock_facts(edit, parameter, body)?
+    speculative_clock(next, |names| {
+        checked_temporal_predicates(edit, parameter, body, names)
+    })
+}
+
+pub(super) fn checked_temporal_predicates(
+    edit: &mut CircuitEditor,
+    parameter: NodeId,
+    body: ExpressionId,
+    next: &mut u64,
+) -> Result<Option<Vec<TemporalPredicate>>, ClockError> {
+    let Some(operands) =
+        crate::monotonicity::row_projection::clock_facts(edit, parameter, body, next)?
     else {
         return Ok(None);
     };
-    let parts = classify_temporal_predicates(edit, body, &facts.operands)?;
-    *next = next
-        .checked_add(facts.generated_names)
-        .ok_or_else(|| Error::new("generated names exhausted classifying a temporal predicate"))?;
-    Ok(Some(parts))
+    Ok(Some(classify_temporal_predicates(edit, body, &operands)?))
 }
 
 fn comparison(opcode: &str, clock_on_left: bool) -> Option<WindowComparison> {
