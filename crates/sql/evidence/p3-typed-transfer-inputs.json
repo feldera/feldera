@@ -1,0 +1,146 @@
+{
+  "commit": "4324adf5a9120001a8003cddcbacec666152ed4e",
+  "scope": "Selected frozen detached compilations with all instrumented native optimizer requests required.",
+  "optimizer_library_sha256": "14073dd345ea42dbd4cd0380decc55afe1cbb8498f6690d31d2ae95a888ff3f2",
+  "rust_tests": 212,
+  "junit_tests": 55,
+  "engines": {
+    "classic": {
+      "detached_cases": 29,
+      "ordered_s4_observations": 15564,
+      "native_requests": 7445,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "shard_receipts_sha256": [
+        "cf8e622c67fd0c1f89a306e8dfa2d9a80ce25488221945959b9a01add8cbf29b",
+        "0614328ab8cd4aff246600f40b98d1046e45a9e6e92adb75d985b28d3684389c"
+      ],
+      "population_sha256": "11d8f992f5c40d1d30015dd432ae87eb6017665dd1c6f75c41288b32f78b3dad",
+      "combined_validation_sha256": "50773e6915d2a7137ec0409d29cd251f495b939a6094b0b86ea0e9d944eb2469",
+      "monotonicity": "MonotoneAnalyzer matched at 291 invocations across 291 cases"
+    },
+    "gen2": {
+      "detached_cases": 30,
+      "ordered_s4_observations": 16051,
+      "native_requests": 7387,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "shard_receipts_sha256": [
+        "e5a9496150d9e60efad98b14dd75f78f8a99865f8c73216b79d5de76230a704a",
+        "41085ecfa982615b75c07643edb051a0a3d9a8e8eb0a2b3e72dcf7da083693a6"
+      ],
+      "population_sha256": "3dcdc6a39acbc5aa2c2f59624d09c1310351e07832a21fd1fc648a5b02c1e472",
+      "combined_validation_sha256": "c6bcdf3a6647939fe8478d45186b1e35a28188a57a211f69b3e922fd4b10e67d",
+      "monotonicity": "MonotoneAnalyzer matched at 259 invocations across 259 cases"
+    }
+  },
+  "classpath_sha256": [
+    "465bf985624e7e40c5b666c45b3f33b9b50fa4ac36baa35f8c0bba76e75609fa",
+    "dea0d935320787a914a5da7d284193ecab1c3d7de5f2a3d1b40228066b73adf9"
+  ],
+  "comparator_sha256": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+  "restores": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a206df-a798-72a1-a662-e46e97de4cc0",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a206df-a7b4-7ea0-8d67-789f733cc3c4",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "ed89508c1e09472fcbe1bd780b0aa73e9f512adfcc822e4bf87441ba3771fcb2"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a206e0-b6bf-7013-b3d9-00b535494dc4",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a206e0-b701-70a2-b815-ff16970d5afa",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "723325f0fc8f8b8e298649f3c03dc8a39602645a233ac79ec41cfbe0af6c1d66"
+    }
+  },
+  "log_sha256": {
+    "tests.log": "6c6ab7caf82c9af470f04823b5951406f57eaa1c0bbc2a2cbd90c7530365f8a1",
+    "clippy.log": "d4fb1d909d1a6b82849eb9698bb7eb681b223ac2e733050feba3fb0471dd40ee",
+    "build.log": "442a064398a3fcdebf9a7df261f510f81aee9c1a77e1a4103c746581b3774709",
+    "junit.log": "d68d3bd1d10823ce7f8964a82657a3ef1ff7bac86e4f9c6d637d16625e8ecf92",
+    "maven/build.log": "8eb62f6fe88d6ea38147e0c121f47730776daabf9951d43eaf38dc145a0b7105",
+    "driver.log": "a26095a1bd45ac3ef95d8a541f5a0c6e33195a69c51e6f284feaa1cf356efc24"
+  }
+}

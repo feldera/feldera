@@ -1,12 +1,46 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from validate_live_optimizer import FROZEN_SCHEDULE, check_artifacts, compare_observations, native_calls, verify_placements
+from validate_live_optimizer import FROZEN_SCHEDULE, check_artifacts, compare_observations, native_calls, shard_evidence, verify_placements
 
 
 BASE_COUNTS = {name: count for name, count in FROZEN_SCHEDULE.items() if count}
 
 
 class FrozenPlacements(unittest.TestCase):
+    def test_replay_shards_require_the_same_build_and_the_original_records(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            references, candidates = [], []
+            for name in ["first", "second"]:
+                root = Path(temporary) / name
+                manifest = {"producer": "sql", "runtime": "dbsp", "input_sha256": name,
+                            "cases": 1, "records_file": "cases.jsonl"}
+                for mode, group in [("live-s3", references), ("live-s2", candidates)]:
+                    directory = root / mode
+                    directory.mkdir(parents=True)
+                    (directory / "complete.json").write_text(json.dumps(manifest))
+                    (directory / "cases.jsonl").write_text(name + mode)
+                    group.append(directory)
+                receipt = {**manifest, "stage": "S2", "equal": True, "optimizer_library_sha256": "a" * 64,
+                           "comparator_sha256": "b" * 64, "classpath": {name + "/tests": "c" * 64, "jar": "d" * 64},
+                           **shard_evidence(references[-1:], candidates[-1:], False)}
+                path = root / "complete.json"
+                path.write_text(json.dumps(receipt))
+            checked = shard_evidence(references, candidates, True)
+            self.assertEqual(checked["build"]["classpath_sha256"], ["c" * 64, "d" * 64])
+            self.assertEqual(len(checked["shards"]), 4)
+            for change in [{"optimizer_library_sha256": "e" * 64},
+                           {"classpath": dict(reversed(list(receipt["classpath"].items())))}]:
+                path.write_text(json.dumps({**receipt, **change}))
+                with self.assertRaisesRegex(ValueError, "different builds"):
+                    shard_evidence(references, candidates, True)
+            path.write_text(json.dumps(receipt))
+            (candidates[1] / "cases.jsonl").write_text("records from another run")
+            with self.assertRaisesRegex(ValueError, "records do not match"):
+                shard_evidence(references, candidates, True)
+
     def test_native_requests_need_a_java_control_and_no_fallbacks(self):
         direct = {"native_requests": {}}
         counts = {"calls": 3, "fallbacks": 0}

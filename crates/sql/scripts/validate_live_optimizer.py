@@ -255,8 +255,44 @@ def native_calls(case, control, candidate):
     return calls
 
 
+def shard_evidence(references, candidates, require_same_build):
+    """Bind each completed replay's records to the binaries that produced them."""
+    fingerprints = []
+    build = None
+    for directories, mode, index in [(references, "live-s3", 0), (candidates, "live-s2", 1)]:
+        for directory in directories:
+            manifest = directory / "complete.json"
+            run = json.loads(manifest.read_bytes())
+            fingerprint = {"manifest_sha256": file_digest(manifest),
+                           "records_sha256": file_digest(directory / run["records_file"])}
+            fingerprints.append(fingerprint)
+            if not require_same_build:
+                continue
+            receipt_path = directory.parent / "complete.json"
+            if not receipt_path.is_file():
+                raise ValueError(f"{directory}: missing completed S2 replay receipt at {receipt_path}")
+            receipt = json.loads(receipt_path.read_bytes())
+            if (directory.name != mode or receipt.get("stage") != "S2" or receipt.get("equal") is not True
+                    or receipt.get("shards", [])[index:index + 1] != [fingerprint]
+                    or any(receipt.get(key) != run[key] for key in ("producer", "runtime", "input_sha256", "cases"))):
+                raise ValueError(f"{directory}: records do not match their completed S2 replay")
+            # The classpath order affects Java class loading. Paths can differ across machines.
+            classpath = list(receipt["classpath"].values())
+            identity = {"producer": run["producer"], "runtime": run["runtime"], "classpath_sha256": classpath,
+                        "comparator_sha256": receipt["comparator_sha256"],
+                        "optimizer_library_sha256": receipt["optimizer_library_sha256"]}
+            digests = [*classpath, identity["comparator_sha256"], identity["optimizer_library_sha256"]]
+            if not classpath or any(not isinstance(d, str) or not re.fullmatch("[0-9a-f]{64}", d) for d in digests):
+                raise ValueError(f"{directory}: missing compiler build digests")
+            if build is not None and identity != build:
+                raise ValueError(f"{directory}: optimizer replay shards use different builds")
+            build = identity
+    return {"shards": fingerprints, **({"build": build} if build is not None else {})}
+
+
 def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, full_trace=False,
-            require_native_limiters=False, require_native_decisions=False):
+            require_native_limiters=False, require_native_decisions=False, require_same_build=False):
+    evidence = shard_evidence(references, candidates, require_same_build)
     expected = {}
     for row in records(population):
         key = row["id"]
@@ -278,6 +314,7 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
         raise ValueError("Java reference does not cover the frozen population")
     invocations = Counter()
     native_requests = Counter()
+    s4_observations = 0
     merge_fallbacks = 0
     merge_records = 0
     for directory in candidates:
@@ -289,6 +326,8 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
             if require_native_decisions:
                 native_requests.update(native_calls(key, control, row))
             compare_observations(key, control["observations"], row["observations"])
+            if full_trace:
+                s4_observations += control["observations"]["S4"]["count"]
             for field in ("input_sha256", "schema", "diagnostics", "hash_inputs",
                           "gen2" if expected[key][1] else "rust"):
                 if row[field] != control[field]:
@@ -360,11 +399,10 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
         raise ValueError(f"{len(controls)} cases missing from S2 replay")
     return {"cases": len(expected), "mismatches": 0, "population_sha256": file_digest(population),
             "rust_pass_invocations": dict(sorted(invocations.items())),
+            **({"ordered_s4_observations": s4_observations} if full_trace else {}),
             **({"native_request_calls": dict(sorted(native_requests.items()))} if require_native_decisions else {}),
             **({"temporal_merge_fallbacks": merge_fallbacks} if merge_records == len(expected) else {}),
-            "shards": [{"manifest_sha256": file_digest(d / "complete.json"),
-                        "records_sha256": file_digest(d / json.loads((d / "complete.json").read_bytes())["records_file"])}
-                       for d in [*references, *candidates]]}
+            **evidence}
 
 
 if __name__ == "__main__":
@@ -375,9 +413,13 @@ if __name__ == "__main__":
                         help="Require Rust limiter insertion for every frozen input")
     parser.add_argument("--require-native-decisions", action="store_true",
                         help="Require recorded Rust answers for every instrumented optimizer request")
+    parser.add_argument("--require-same-build", action="store_true",
+                        help="Verify completed run_s2_corpus.py receipts (automatic for multi-shard full traces)")
     parser.add_argument("--reference", type=Path, required=True, action="append", help="direct Java SQL shard")
     parser.add_argument("candidates", nargs="+", type=Path)
     args = parser.parse_args()
+    multi_shard_trace = args.full_optimizer_trace and (len(args.reference) > 1 or len(args.candidates) > 1)
     print(json.dumps(compare(args.population, args.reference, args.candidates, full_trace=args.full_optimizer_trace,
                              require_native_limiters=args.require_native_limiters,
-                             require_native_decisions=args.require_native_decisions), indent=2))
+                             require_native_decisions=args.require_native_decisions,
+                             require_same_build=args.require_same_build or multi_shard_trace), indent=2))

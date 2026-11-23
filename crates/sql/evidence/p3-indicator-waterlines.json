@@ -1,0 +1,44 @@
+{
+  "commit": "32b5c673ef1a93f4ce76c47b62c94e55c3200420",
+  "scope": "Selected frozen detached compilations with all instrumented native optimizer requests required.",
+  "optimizer_library_sha256": "b5983d4a73bde812ec89bf494f267a8b8ddb4e87bd8ea575a5cb01a56da730ad",
+  "rust_tests": 168,
+  "junit_tests": 30,
+  "engines": {
+    "classic": {
+      "detached_cases": 9,
+      "ordered_s4_observations": 5142,
+      "native_requests": 4131,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "shard_receipts_sha256": [
+        "54544f803516c91b11204eaad21d505948580211ad8511f31b31a7a5c79aba2b"
+      ],
+      "population_sha256": "52ab9a50168920d20c32e4ae05dfda539c86162cde237be0532adc3f11bfa235"
+    },
+    "gen2": {
+      "detached_cases": 9,
+      "ordered_s4_observations": 5160,
+      "native_requests": 4131,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "shard_receipts_sha256": [
+        "3691f3ab581bbe166ad4a44470c8e912b758f8278de9acd11a095597a1bfef50"
+      ],
+      "population_sha256": "e290df976d29845664062d3a6fb7e19cc01f4b7bdffdf6d5751fb8fc75b61416"
+    }
+  },
+  "classpath_sha256": [
+    "d1c7f4babcd61f5e2b0d053c699a3739f916a88612008c8921e45539f9066eb9",
+    "c15d92c80af14a5bc1e693c50acd860ef204c3702d992f42ec1f638ab96f85c1"
+  ],
+  "comparator_sha256": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+  "negative_control": "countIndicatorDropsOnlyItsOwnWaterline failed on the preceding JNI library.",
+  "log_sha256": {
+    "tests.log": "36fd0dc090ecd14313451d9ffc20a19a21d2f06ab6d4addf10e29bd3f7e606f6",
+    "clippy.log": "ab9305c689edeb605eb5ec8155a45888c2f7bee504e1f637265b3ff2d31b6e6d",
+    "build.log": "f0e3edc952176e5b952185792f720c5473bf095a8b0f30ac8f2c5a1127364069",
+    "after.log": "13e99275c163c9fa27cc2cd61b9a3af1b1e54aecef1b38f11ab256a429ffd3aa",
+    "before.log": "0ba35b9164ed76ad18e26e1e1ac194a9e22dae947ddbebd67546e16c4541489a"
+  }
+}
