@@ -1,0 +1,51 @@
+{
+  "scope": "Rust validates nested UNNEST argument shapes and result types at the original visit, preserving earlier waterline facts and generated names.",
+  "source_base": "2982f75694d8ca980d3abe9e6af13ccaeb08b337",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "1ec9ecf57c1729827cd986d5a1f91cf99e0c270d193a32f66a51e20e210d02c9",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "ca214e0e12c3854535380abe0c172bab565e1d5e0fe96aef6692191e34e61779",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "cc396c1d39c8693a91c257e1e0b4e81dec2a3becede45168c9aaadaa552dc758",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "ddee4f9407244ad9ac6355f6c3b3925ea57d6ca157e17f036d1f337b0b3b5403",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneTransferFunctions.java": "0d195d7bb95dc5350dde72b1ebbdeaf144b043b25a109fe6a3cd96c84c430084",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/ir/expression/DBSPFlatmap.java": "b777de31bdf6f74498c227cbfd116f4eaca591c7573d2a152d59a3567323be4a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "7c79f9005c2f750b6b9be235a43966294a29e5817c322901bdac028e1c5937bf"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "6f85acf7ef848b8abfb4ec6db6cb499a1854f2bff50b270d01cf6ecccb9a228d",
+    "bin/sql-difftest": "b134cddae4132022a573997890975b0d846f5879bdd671c314ce6ca0e9fc895b",
+    "maven/tests.jar": "cfbf90923d292ffdd174fbabde1830cac34e80bbffe5602e142dfc3399d85e85",
+    "maven/sql-compiler.jar": "ed92ca5996c2d45f1156dcae4ac09c3807ad1dfdb7fb1d4a831aab48062a3aa3"
+  },
+  "negative_control": {
+    "library_sha256": "e5182a4d46780095fecd94fc88f727b3e56c6531a9c03c859c6416c862514c79",
+    "failed_tests": [
+      "nestedFlatmapValidationKeepsEarlierFactsAndAllocatedNames"
+    ],
+    "java_compiler_sha256": "c8b4daa575cc7ef1452fad2dd23499dff7049bd9c57e8ebab11b35c1ad93454c"
+  },
+  "rust_tests": 226,
+  "junit_tests": 187,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "6deb2ee99ca84b19a51ba32c7c7d0b23b88afb58ba3f4b743cc7b5bf1ebe59b9"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "fef52004b0120d65512be5d6ed2ab8c98e8093465556348935068b208fec7d7d"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 227,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  }
+}

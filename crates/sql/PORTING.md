@@ -498,6 +498,13 @@ programs. A separate 24-program replay matched Java through 11,965 ordered
 S4 observations and emission.
 [Nested flatmaps in waterline closures](evidence/p3-nested-flatmap-closure-facts.json)
 
+Rust validates each nested flatmap's input kind and projected result type
+when it visits that expression. A failure preserves the facts and fresh names
+allocated earlier in the same closure. On `ad747bd41`, 187 focused and 227
+nightly JUnit tests passed, and 24 strict replays matched all 11,965 ordered
+S4 observations and emission.
+[Nested flatmap validation](evidence/p3-flatmap-validation.json)
+
 When a temporal filter reads an uninitialized local, Rust reports the ID of
 the expression whose waterline fact is missing. A read after a nested flatmap
 can instead lose its lexical reference, in which case the diagnostic names
@@ -1262,6 +1269,14 @@ the same SQL explicitly in Gen-2 also matched through all 479 S4 observations
 and emission. Run `CandidateKeyOracle POPULATION` with the packaged test
 classes and JNI library to compare both key analyses on each live circuit.
 [Candidate key comparisons and checkpoint receipts](evidence/p3-projected-candidate-keys.json)
+
+On `14f656d66`, candidate-key analysis distinguished separate flatmap shuffles
+and grouped projections that reused the same shuffle. Both the per-closure
+and whole-circuit paths passed. The build passed 188 focused and 228 nightly
+JUnit tests and matched all 11,965 ordered S4 observations across 24 replays.
+COUNT and LATENESS restored Java and hybrid checkpoints in both directions.
+Four-worker cancellation p95 was 20.81 ms against the 25 ms limit.
+[Candidate-key shuffle identity and checkpoint results](evidence/p3-candidate-key-shuffles.json)
 
 On `5964e657b`, Rust derived filter keys from constant equalities, including
 columns that name the same value. The Java and hybrid analyses agreed on
