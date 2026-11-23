@@ -143,6 +143,12 @@ fn exact_value(node: &Node) -> Result<bigdecimal::BigDecimal, Error> {
         .ok_or_else(|| Error::new("invalid exact numeric literal"))
 }
 
+/// Java's BigDecimal spelling distinguishes the scale as well as the coefficient.
+pub fn decimal_literal_parts(node: &Node) -> Result<(String, i64), Error> {
+    let (coefficient, scale) = exact_value(node)?.into_bigint_and_scale();
+    Ok((coefficient.to_string(), scale))
+}
+
 /// Implements the compiler's strict positive-literal test for waterline scaling.
 /// Java's numeric ordering puts NaN above infinity, but NaN is never a positive factor.
 pub fn literal_is_positive(editor: &CircuitEditor, literal: ExpressionId) -> Result<bool, Error> {

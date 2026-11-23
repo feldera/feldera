@@ -23,7 +23,10 @@ enum Term {
     If,
     Call(String),
     Cast(String),
-    Integer(String),
+    ExactNumber {
+        coefficient: String,
+        scale: i64,
+    },
     Bool(bool),
     String(String),
     TypedNull(String),
@@ -77,8 +80,10 @@ impl TimestampKey {
                 Visit::Intern(id, term, children) => {
                     let operands = children.into_iter().map(|child| numbers[&child]).collect();
                     // The literal printer and an explicit Some use the same spelling.
-                    let wrap = matches!(term, Term::Integer(_) | Term::Bool(_) | Term::String(_))
-                        && edit.nullable(edit.expression_type(id)?)?;
+                    let wrap = matches!(
+                        term,
+                        Term::ExactNumber { .. } | Term::Bool(_) | Term::String(_)
+                    ) && edit.nullable(edit.expression_type(id)?)?;
                     let (mut number, _) = terms.insert_full((term, operands));
                     if wrap {
                         number = terms
@@ -214,6 +219,7 @@ fn key_term(
             }
         }
         Expr::BoolLiteral
+        | Expr::DecimalLiteral
         | Expr::StringLiteral
         | Expr::I8Literal
         | Expr::I16Literal
@@ -233,6 +239,10 @@ fn key_term(
                         return Ok(None);
                     };
                     Term::Bool(value)
+                }
+                Some(_) if kind == Expr::DecimalLiteral => {
+                    let (coefficient, scale) = feldera_sql_expr::decimal_literal_parts(node)?;
+                    Term::ExactNumber { coefficient, scale }
                 }
                 Some(value) if kind == Expr::StringLiteral => {
                     // Quoting and escaping are injective in Java's debug printer.
@@ -256,7 +266,10 @@ fn key_term(
                     let Some(digits) = digits else {
                         return Ok(None);
                     };
-                    Term::Integer(digits)
+                    Term::ExactNumber {
+                        coefficient: digits,
+                        scale: 0,
+                    }
                 }
                 None => {
                     let Some(name) = cast_spelling(edit, edit.expression_type(id)?)? else {
@@ -319,6 +332,16 @@ fn cast_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Err
     let node = edit.node(ty.into())?;
     let mut text = match edit.type_kind(ty)? {
         Ty::Date => "Date".to_owned(),
+        Ty::Real => "f".to_owned(),
+        Ty::Double => "d".to_owned(),
+        Ty::Decimal => {
+            let precision = node.data("precision").and_then(|v| v.as_u64());
+            let scale = node.data("scale").and_then(|v| v.as_u64());
+            let (Some(precision), Some(scale)) = (precision, scale) else {
+                return Ok(None);
+            };
+            format!("DECIMAL({precision}, {scale})")
+        }
         Ty::Bool => "b".to_owned(),
         Ty::Timestamp => "Timestamp".to_owned(),
         Ty::TimestampTz => "TimestampTz".to_owned(),
@@ -457,6 +480,45 @@ mod tests {
         let wrong_type = edit.bool_type(site, false)?;
         let invalid = edit.named_variable(wrong_type, "t")?;
         assert!(TimestampKey::read(&edit, invalid, row)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn decimal_keys_preserve_the_scale_printed_by_java() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[]
+        }))?;
+        let (graph, roots) = graph.with_inner_roots([json!({
+            "class":"DBSPTypeDecimal","id":0,"code":"DECIMAL",
+            "precision":18,"scale":4,"mayBeNull":false
+        })])?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let ty = edit.type_id(roots[0])?;
+        let mut decimal = |value: &str| {
+            edit.make_expr(
+                site,
+                Expr::DecimalLiteral,
+                ty,
+                [("value", Field::Data(value.into()))],
+            )
+        };
+        let whole = decimal("1")?;
+        let tenth = decimal("1.0")?;
+        let hundredth = decimal("1.00")?;
+        let exponent = decimal("100E-2")?;
+        let i32_type = edit.integer_type(ty, 32, true, false)?;
+        let integer = edit.make_expr(
+            site,
+            Expr::I32Literal,
+            i32_type,
+            [("value", Field::Data(1.into()))],
+        )?;
+        let key =
+            |id| TimestampKey::read(&edit, id, RowParameter { name: "r", ty }).map(Option::unwrap);
+        assert!(key(whole)? == key(integer)?);
+        assert!(key(tenth)? != key(integer)? && key(tenth)? != key(hundredth)?);
+        assert!(key(hundredth)? == key(exponent)?);
         Ok(())
     }
 

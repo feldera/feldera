@@ -46,6 +46,14 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void decimalThresholdsAndFloatingCastsDistinguishWindowKeys() {
+        checkOffsetKeys("CASE WHEN CAST(id AS DECIMAL(18,2)) > 1.25 THEN id ELSE 1 END",
+                "CASE WHEN CAST(id AS DECIMAL(18,2)) > 1.75 THEN id ELSE 1 END");
+        checkOffsetKeys("CASE WHEN CAST(id AS DOUBLE) > CAST(id + 1 AS DOUBLE) THEN id ELSE 1 END",
+                "CASE WHEN CAST(id AS REAL) > CAST(id + 1 AS REAL) THEN id ELSE 1 END");
+    }
+
+    @Test
     public void conditionalTimestampKeysDistinguishBranchOrderAndStringValues() {
         checkOffsetKeys("CASE WHEN flag THEN id ELSE 1 END", "CASE WHEN flag THEN 1 ELSE id END");
         checkOffsetKeys("CASE WHEN label = 'déjà' THEN id ELSE 1 END",
