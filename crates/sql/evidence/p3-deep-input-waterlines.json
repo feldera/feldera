@@ -1,0 +1,44 @@
+{
+  "scope": "Rust closure and limiter input decoding. Frozen SQL coverage counts instrumented native requests. Detached replay compares selected SQL and S2 compilations through artifact emission.",
+  "library_sha256": "0451811b94f6ed575fdcdfdde8b388627f410e45ac3d11d37601b428a0a5669c",
+  "regression": {
+    "nested_rows": 144,
+    "previous_failure": "Monotonicity/ProjectClosure: recursion limit exceeded",
+    "previous_junit_sha256": "de2652d8bd5db01c54fb4c833633450c16e0420a1646255a9e90a16102c7b3c1",
+    "passing_tests": 29,
+    "junit_sha256": "e4c7b038454082596a8486bbb485061f493c4a3d6e9c3203746fb420f21990a4"
+  },
+  "rust_tests": 168,
+  "engines": {
+    "classic": {
+      "frozen_programs": 8571,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "coverage_sha256": "186da3db52a6c7f78b6ca27d08db6c4f9165fb74120ee79a8e9299757c461a53",
+      "instrumented_requests": 166490,
+      "fallbacks": 0,
+      "detached_cases": 22,
+      "ordered_s4_observations": 11718,
+      "mismatches": 0,
+      "receipt_sha256": "d27e092260ecd3b9f037bc678c6b5a4e751335ba8ff5467bf66acc5b7d6c1256",
+      "compiler_classpath_sha256": {
+        "tests.jar": "d1c7f4babcd61f5e2b0d053c699a3739f916a88612008c8921e45539f9066eb9",
+        "sql-compiler.jar": "c15d92c80af14a5bc1e693c50acd860ef204c3702d992f42ec1f638ab96f85c1"
+      }
+    },
+    "gen2": {
+      "frozen_programs": 8527,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "coverage_sha256": "f80a47e3cfc4a20354a12575529296bf6e48ed65a2e6c584229074a386b0251c",
+      "instrumented_requests": 170554,
+      "fallbacks": 0,
+      "detached_cases": 23,
+      "ordered_s4_observations": 12191,
+      "mismatches": 0,
+      "receipt_sha256": "b3661b295fa4cd0b723fdc97b7b59e26b75fc1d466a9e40993f6719d21aac024",
+      "compiler_classpath_sha256": {
+        "tests.jar": "d1c7f4babcd61f5e2b0d053c699a3739f916a88612008c8921e45539f9066eb9",
+        "sql-compiler.jar": "c15d92c80af14a5bc1e693c50acd860ef204c3702d992f42ec1f638ab96f85c1"
+      }
+    }
+  }
+}

@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The hybrid compiler projected a field through 144 nested rows and retained
+the same field identity and closure as Java. The previous native library
+failed to decode the input projection. Across 17,098 frozen compilations,
+Rust answered all 337,044 instrumented requests. The 45 selected detached
+replays matched all 23,909 ordered S4 observations and the emitted artifacts.
+[Projection and replay results](evidence/p3-deep-input-waterlines.json)
+
 Rust grouped temporal windows whose timestamps depend on interval casts or
 point distances. It distinguished days from hours, months from years and
 points with reversed coordinates. Eight classic and Gen-2 compilations

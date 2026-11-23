@@ -81,6 +81,18 @@ fn operator_numbers(ids: impl IntoIterator<Item = NodeId>) -> Vec<u64> {
     ids.into_iter().map(operator_number).collect()
 }
 
+/// A waterline projection can nest as deeply as the SQL row it describes.
+/// Keep the ordinary typed decoder on the common path and use the circuit
+/// decoder's checked depth limit for deeply nested compiler input.
+fn waterline_input<T: serde::de::DeserializeOwned>(state: &[u8]) -> serde_json::Result<T> {
+    match serde_json::from_slice(state) {
+        Err(error) if error.is_syntax() => {
+            serde_json::from_value(feldera_sql_ir::parse_circuit_json(state)?)
+        }
+        result => result,
+    }
+}
+
 fn map_chains(state: &[u8]) -> Result<Vec<Vec<NodeId>>, serde_json::Error> {
     let chains: Vec<Vec<u64>> = serde_json::from_slice(state)?;
     Ok(chains.into_iter().map(|chain| chain.into_iter().map(NodeId::Outer).collect()).collect())
@@ -606,7 +618,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let bounds = edit.expression(*bounds)?;
             let input = input.first().map(|id| edit.type_id(*id)).transpose()?;
             let window = feldera_sql_opt::limiters::window_waterline(
-                &mut edit, bounds, input, serde_json::from_slice(state)?, &mut next,
+                &mut edit, bounds, input, waterline_input(state)?, &mut next,
             )?;
             let roots = [Some(window.endpoint), window.combine].into_iter().flatten().collect::<Vec<_>>();
             let functions = edit.circuit().additional_expressions(&arena, &roots)?;
@@ -632,7 +644,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
         ("Limiters/Join", inputs) => {
-            let shapes: [Option<feldera_sql_opt::limiters::Projection>; 2] = serde_json::from_slice(state)?;
+            let shapes: [Option<feldera_sql_opt::limiters::Projection>; 2] = waterline_input(state)?;
             let mut types = inputs.iter();
             let mut side = |shape| -> Result<_, feldera_sql_ir::Error> {
                 let id = types.next().ok_or_else(|| feldera_sql_ir::Error::new("missing join waterline type"))?;
@@ -646,13 +658,13 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             feldera_sql_opt::limiters::join_waterline(&mut edit, sides, &mut next, &mut warnings)?
         }
         ("Limiters/MergeView", [left, right]) => {
-            let [inherited, declared]: [feldera_sql_opt::limiters::Projection; 2] = serde_json::from_slice(state)?;
+            let [inherited, declared]: [feldera_sql_opt::limiters::Projection; 2] = waterline_input(state)?;
             let left = edit.type_id(*left)?;
             let right = edit.type_id(*right)?;
             inherited.merge_view_waterline(&mut edit, left, &declared, right, &mut next)?
         }
         ("Limiters/Project", [input, declared]) => {
-            let [source, destination]: [feldera_sql_opt::limiters::Projection; 2] = serde_json::from_slice(state)?;
+            let [source, destination]: [feldera_sql_opt::limiters::Projection; 2] = waterline_input(state)?;
             let ty = edit.type_id(*input)?;
             let declared = edit.type_id(*declared)?;
             source.project_waterline(&mut edit, ty, &destination, Some(declared), &mut next)?
@@ -772,7 +784,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 indexed: bool,
                 shapes: Vec<feldera_sql_opt::limiters::Projection>,
             }
-            let request: InputShapes = serde_json::from_slice(state)?;
+            let request: InputShapes = waterline_input(state)?;
             let body = edit.expression(*body)?;
             let (pairs, remainder) = inputs.as_chunks::<2>();
             if !remainder.is_empty() {
@@ -790,9 +802,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow", [body, bounds @ ..]) => {
             let indexed = pass == "Monotonicity/ProjectIndexedRow";
             let shapes = if pass == "Monotonicity/ProjectRow" {
-                vec![serde_json::from_slice(state)?]
+                vec![waterline_input(state)?]
             } else {
-                serde_json::from_slice(state)?
+                waterline_input(state)?
             };
             let body = edit.expression(*body)?;
             let bounds = bounds.iter().map(|&id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;
@@ -1874,7 +1886,7 @@ fn transform(
                     let mut warnings = Vec::new();
                     use feldera_sql_opt::limiters::LimiterError;
                     let (output, counter) = match feldera_sql_opt::limiters::insert_limiters_with_warnings(
-                        circuit, serde_json::from_slice(state)?, &mut warnings,
+                        circuit, waterline_input(state)?, &mut warnings,
                     ) {
                         Ok(result) => result,
                         Err(error) => {

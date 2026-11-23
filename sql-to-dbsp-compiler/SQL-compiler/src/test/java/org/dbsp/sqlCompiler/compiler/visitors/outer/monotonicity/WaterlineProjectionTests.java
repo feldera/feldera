@@ -423,6 +423,34 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void projectAClosureOverDeepInputRows() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(1).getType();
+        var kept = new MonotoneType(integer);
+        var dropped = new NonMonotoneType(integer);
+        IMaybeMonotoneType nested = kept;
+        for (int i = 0; i < 144; i++)
+            nested = new PartiallyMonotoneTuple(List.of(dropped, nested), false, false);
+        var input = new DBSPVariablePath("row", nested.getType().ref());
+        DBSPExpression body = input.deref();
+        for (int i = 0; i < 144; i++)
+            body = body.field(1);
+        var closure = body.closure(input);
+        var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        var direct = new MonotoneTransferFunctions(compiler, operator, kind, nested).applyAnalysis(closure);
+        var projected = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                new DBSPType[]{nested.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(nested)}, false);
+        Assert.assertNotNull(projected);
+        Assert.assertSame(kept, projected.bodyType());
+        Assert.assertTrue(direct.getReducedExpression().equivalent(projected.closure()));
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var hybrid = new MonotoneTransferFunctions(compiler, operator, kind, nested).applyAnalysis(closure);
+        Assert.assertTrue(direct.getReducedExpression().equivalent(hybrid.getReducedExpression()));
+    }
+
+    @Test
     public void deepArithmeticRetainsItsWaterlineThroughTheLiveCompiler() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var site = CalciteEmptyRel.INSTANCE;
