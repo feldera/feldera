@@ -417,19 +417,33 @@ jobs:
             --classpath "$java_target/test-classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
             --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA" --timeout 5400
 
-      - name: Compare Rust projections, map fusion, waterlines and temporal keys with Java
+      - name: Compare Rust optimizer decisions with Java
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         shell: bash
         working-directory: ./sql-to-dbsp-compiler
         run: |
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           export LD_LIBRARY_PATH="$target_dir/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          tests=(
+            AggregateFoldTests CollectExpensiveExpressionsTests EquivalenceTests FlatmapLoweringTests
+            InliningTests JoinInputProjectionTests LeftJoinChainsTests LineageTests OptimizerOrderTests
+            ProjectionCompositionTests RepeatTests ResolveReferencesTests StaticCandidatesTests
+            ShareIndexesTests#sharedIndexesCompareShuffleIdentity
+            StreamKindTests#validateEachPassResultIncludingChangesToTheSameCircuit
+            TemporalKeyTests WaterlineProjectionTests
+          )
+          comparisons=(
+            AggregateFold CanonicalForm ChainWalk ExpressionUses FieldUses Flatmap LimiterApply
+            Lineage MapDependencies MapFusionGroups Order ProjectionFields Repeat SharedIndexes
+            Statics StreamKinds TemporalKeys ValueNumbers
+          )
+          flags=()
+          for comparison in "${comparisons[@]}"; do
+            flags+=("-Dfeldera.optimizer.compareRust${comparison}=true")
+          done
+          IFS=,
           mvn test --no-transfer-progress -B -pl SQL-compiler \
-            -Dtest=InliningTests,JoinInputProjectionTests,ProjectionCompositionTests,CollectExpensiveExpressionsTests,TemporalKeyTests,WaterlineProjectionTests \
-            -Dfeldera.optimizer.compareRustCanonicalForm=true -Dfeldera.optimizer.compareRustFieldUses=true \
-            -Dfeldera.optimizer.compareRustMapDependencies=true -Dfeldera.optimizer.compareRustProjectionFields=true \
-            -Dfeldera.optimizer.compareRustTemporalKeys=true -Dfeldera.optimizer.compareRustLimiterApply=true \
-            -Dfeldera.optimizer.compareRustMapFusionGroups=true
+            "-Dtest=${tests[*]}" "${flags[@]}"
 
       - name: Audit optimizer option and metadata activation paths
         if: ${{ vars.CI_DRY_RUN != 'true' }}
