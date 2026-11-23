@@ -232,32 +232,25 @@ pub(super) fn check_bodies(
     let names = parameters
         .map(|(l, r)| Ok::<_, Error>((bindings::name(l, "name")?, bindings::name(r, "name")?)))
         .transpose()?;
-    compare_keys(edit, left, right, names)
+    compare_keys(edit, left, right, names.map(std::iter::once))
 }
 
-/// Resolve distinct variable occurrences in the scope enclosing the two roots.
-/// Nested LET, block and closure declarations shadow those enclosing bindings.
-pub(crate) fn compare_expressions<'a>(
-    edit: &'a CircuitEditor,
-    left: NodeId,
-    right: NodeId,
-    parameters: impl IntoIterator<Item = (&'a str, &'a str)>,
-) -> Result<Option<bool>, Error> {
-    speculative(compare_keys(edit, left, right, parameters))
-}
-
+/// A supplied parameter list opens the enclosing closure's declaration scope,
+/// including for a zero-parameter closure. Standalone comparisons start outside a scope.
 pub(super) fn compare_keys<'a>(
     edit: &'a CircuitEditor,
     left: NodeId,
     right: NodeId,
-    parameters: impl IntoIterator<Item = (&'a str, &'a str)>,
+    parameters: Option<impl IntoIterator<Item = (&'a str, &'a str)>>,
 ) -> Result<Option<bool>, KeyComparisonError> {
     let mut bindings = Bindings::default();
-    let outer = parameters
-        .into_iter()
-        .fold(Scope::Root, |scope, (left, right)| {
-            bindings.bind(left, right, scope)
-        });
+    let outer = parameters.map_or(Scope::Root, |parameters| {
+        parameters
+            .into_iter()
+            .fold(Scope::Empty, |scope, (left, right)| {
+                bindings.bind(left, right, scope)
+            })
+    });
     let mut pending = vec![Work::Compare(left, right, outer)];
     let mut seen = HashSet::new();
     let mut active_binders = HashSet::new();
@@ -389,9 +382,38 @@ pub(super) fn compare_keys<'a>(
                     &["function"]
                 }
             }
-            kind if kind.wire_name().ends_with("Literal")
-                || matches!(kind, Expr::ZSet | Expr::IndexedZSet) =>
-            {
+            Expr::BinaryLiteral
+            | Expr::BoolLiteral
+            | Expr::DateLiteral
+            | Expr::DecimalLiteral
+            | Expr::DoubleLiteral
+            | Expr::I128Literal
+            | Expr::I16Literal
+            | Expr::I32Literal
+            | Expr::I64Literal
+            | Expr::I8Literal
+            | Expr::ISizeLiteral
+            | Expr::KeywordLiteral
+            | Expr::LongIntervalLiteral
+            | Expr::NullLiteral
+            | Expr::RealLiteral
+            | Expr::ShortIntervalLiteral
+            | Expr::StrLiteral
+            | Expr::StringLiteral
+            | Expr::TimeLiteral
+            | Expr::TimestampLiteral
+            | Expr::TimestampTzLiteral
+            | Expr::U128Literal
+            | Expr::U16Literal
+            | Expr::U32Literal
+            | Expr::U64Literal
+            | Expr::U8Literal
+            | Expr::USizeLiteral
+            | Expr::UuidLiteral
+            | Expr::VariantNullLiteral
+            | Expr::VoidLiteral
+            | Expr::ZSet
+            | Expr::IndexedZSet => {
                 let (a, b) = (edit.expression(a)?, edit.expression(b)?);
                 let equal = if matches!(kind, Expr::ZSet | Expr::IndexedZSet) {
                     feldera_sql_expr::constant_rows::compare_values(edit, a, b)
@@ -528,7 +550,6 @@ pub(super) fn compare_keys<'a>(
                 }
                 &[]
             }
-            _ => return Ok(None),
         };
         let attributes: &[&str] = match kind {
             Expr::AsymmetricFieldComparator => &["comparisons"],
@@ -671,7 +692,7 @@ mod tests {
         let c = key(false.into())?;
         for (i, ((a, b), c)) in a.into_iter().zip(b).zip(c).enumerate() {
             let empty_context = |l: ExpressionId, r: ExpressionId| {
-                compare_expressions(&edit, l.into(), r.into(), [])
+                equivalent_bodies(&edit, l.into(), r.into(), None)
             };
             assert_eq!(empty_context(a, b)?, (i != 0).then_some(true));
             assert_eq!(empty_context(a, c)?, Some(false));

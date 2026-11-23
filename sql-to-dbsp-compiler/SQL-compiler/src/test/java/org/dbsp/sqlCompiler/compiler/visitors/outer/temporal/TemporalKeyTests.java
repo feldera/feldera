@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
 import org.apache.calcite.util.TimestampWithTimeZoneString;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -1168,6 +1169,44 @@ public class TemporalKeyTests {
         var element = new DBSPVariablePath("element", type);
         return new DBSPFlatmap(CalciteObject.EMPTY, rowType, row.deref().field(2).closure(row),
                 List.of(passthrough), List.of(projection.closure(element)), null, shuffle);
+    }
+
+    @Test
+    public void candidateKeysOpenAnEmptyScopeForParameterlessProjections() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var first = new DBSPForExpression("item", new DBSPI32Literal(1), new DBSPBlockExpression(List.of(), null));
+        var same = new DBSPForExpression("item", new DBSPI32Literal(1), new DBSPBlockExpression(List.of(), null));
+        var other = new DBSPForExpression("item", new DBSPI32Literal(2), new DBSPBlockExpression(List.of(), null));
+        var context = new EquivalenceContext();
+        context.leftDeclaration.newContext();
+        context.rightDeclaration.newContext();
+        Assert.assertTrue(context.equivalent(first, same));
+        Assert.assertFalse(context.equivalent(first, other));
+        var shape = new ZSetShape(3);
+        var function = new DBSPTupleExpression(first, other, same).closure();
+        Assert.assertEquals(List.of(List.of(shape.output(0), shape.output(2))),
+                RustCircuitPass.outputColumns(compiler, function, shape, false).groups());
+    }
+
+    @Test
+    public void candidateKeysReportTheFirstInvalidComputedColumn() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var type = DBSPTypeTimestampTz.INSTANCE;
+        var east = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
+        var west = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT-20:00"));
+        var shape = new ZSetShape(2);
+        for (var pair : List.of(List.of(east, west), List.of(west, east))) {
+            var first = pair.get(0);
+            var second = pair.get(1);
+            var direct = Assert.assertThrows(java.time.DateTimeException.class, () -> first.equivalent(second));
+            var closure = new DBSPTupleExpression(first, second).closure();
+            var hybrid = Assert.assertThrows(direct.getClass(), () -> RustCircuitPass.outputColumns(compiler, closure, shape, false));
+            Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        }
     }
 
     @Test

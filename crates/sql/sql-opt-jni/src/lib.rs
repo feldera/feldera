@@ -564,7 +564,15 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let copies = feldera_sql_opt::checked_column_copies(&edit, *closure, &request.shape, request.lossless);
         return key_lineage_reply(copies, |copies| {
             if matches!(pass, "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns") {
-                let groups = feldera_sql_opt::equal_computations(&edit, *closure, &request.shape)?;
+                // Java evaluates provenance before grouping computations. If provenance
+                // needs live metadata, defer its successor's diagnostic until that retry.
+                let groups = match feldera_sql_opt::checked_equal_computations(&edit, *closure, &request.shape) {
+                    Ok(groups) => groups,
+                    Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => return Err(error.into()),
+                    Err(feldera_sql_opt::KeyComparisonError::Diagnostic(failure)) if copies.is_some() =>
+                        return Ok(json!({"diagnostic": {"comparison": failure}})),
+                    Err(feldera_sql_opt::KeyComparisonError::Diagnostic(_)) => None,
+                };
                 let keys = if pass == "KeyAnalysis/JoinColumns" {
                     let inputs = request.join.ok_or("join column analysis requires input keys")?;
                     copies.as_ref().map(|copies| inputs.derive(copies))

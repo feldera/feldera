@@ -6,7 +6,7 @@ mod report;
 pub use columns::{
     OutputShape, checked_column_copies, checked_fixed_columns, column_copies, fixed_columns,
 };
-pub use equivalence::equal_computations;
+pub use equivalence::{checked_equal_computations, equal_computations};
 pub use report::{correlated_columns, lineage_report};
 
 use feldera_sql_ir::{

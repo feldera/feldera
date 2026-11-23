@@ -94,10 +94,15 @@ impl FusionColumns {
         context: &mut FusionContext,
     ) -> Result<Option<usize>, ColumnRewriteError> {
         for (index, &previous) in self.fields.iter().enumerate() {
-            let native = compare_keys(edit, previous.into(), field.into(), [(row_name, row_name)])
-                .map_err(|error| {
-                    ColumnRewriteError::at_comparison(error, context.next, &mut context.warnings)
-                })?;
+            let native = compare_keys(
+                edit,
+                previous.into(),
+                field.into(),
+                Some([(row_name, row_name)]),
+            )
+            .map_err(|error| {
+                ColumnRewriteError::at_comparison(error, context.next, &mut context.warnings)
+            })?;
             let matched = match native {
                 Some(answer) => Some(answer),
                 None => (context.compare)(FusionComparison {

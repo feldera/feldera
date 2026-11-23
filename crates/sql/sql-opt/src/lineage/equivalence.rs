@@ -1,6 +1,6 @@
 //! Group output columns whose expressions compute the same value in a closure.
 use super::{Column, OutputShape, text};
-use crate::index_key_equivalence::compare_expressions;
+use crate::index_key_equivalence::{KeyComparisonError, compare_keys, speculative};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, Field, NodeId};
 
 fn tuple_fields(
@@ -29,6 +29,14 @@ pub fn equal_computations(
     closure: NodeId,
     shape: &OutputShape,
 ) -> Result<Option<Vec<Vec<Column>>>, Error> {
+    speculative(checked_equal_computations(edit, closure, shape))
+}
+
+pub fn checked_equal_computations(
+    edit: &CircuitEditor,
+    closure: NodeId,
+    shape: &OutputShape,
+) -> Result<Option<Vec<Vec<Column>>>, KeyComparisonError> {
     let closure = edit.node(closure)?;
     let body = closure.edge("body")?;
     let mut fields = Vec::new();
@@ -62,7 +70,7 @@ pub fn equal_computations(
     'fields: for (expression, column) in fields {
         for (representative, columns) in &mut groups {
             let bindings = parameters.iter().map(|&name| (name, name));
-            match compare_expressions(edit, *representative, expression, bindings)? {
+            match compare_keys(edit, *representative, expression, Some(bindings))? {
                 Some(true) => {
                     columns.push(column);
                     continue 'fields;
