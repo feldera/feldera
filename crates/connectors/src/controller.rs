@@ -9449,7 +9449,7 @@ impl ControllerInner {
             .copied()
             .unwrap_or_default();
         let role = if host == leader_host {
-            let leader = Arc::new(CommitLeader::new(self.layout.n_hosts()));
+            let leader = Arc::new(CommitLeader::new(self.layout.n_hosts(), leader_host));
             self.output_leaders
                 .lock()
                 .unwrap()
