@@ -1,7 +1,7 @@
 //! Compare projected index keys under the bindings of their two row parameters.
 mod bindings;
 use bindings::{Bindings, Scope, Work};
-use feldera_sql_expr::SimplifyWarning;
+use feldera_sql_expr::{SimplifyWarning, ValueComparisonError};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId};
 use std::collections::HashSet;
 
@@ -389,29 +389,26 @@ pub(super) fn compare_keys<'a>(
                     &["function"]
                 }
             }
-            kind if kind.wire_name().ends_with("Literal") => {
-                if !same_type(edit, left, right)? {
-                    return Ok(Some(false));
-                }
-                let equal = if kind == Expr::TimestampTzLiteral && a != b {
-                    use feldera_sql_expr::TimestampComparison;
-                    match feldera_sql_expr::compare_timestamp_literals(left, right)? {
-                        TimestampComparison::Equal(equal) => Some(equal),
-                        TimestampComparison::Unresolved => None,
-                        TimestampComparison::InvalidZone(spelling) => {
-                            return Err(ComparisonDiagnostic::InvalidTimestamp(spelling).into());
-                        }
-                    }
+            kind if kind.wire_name().ends_with("Literal")
+                || matches!(kind, Expr::ZSet | Expr::IndexedZSet) =>
+            {
+                let (a, b) = (edit.expression(a)?, edit.expression(b)?);
+                let equal = if matches!(kind, Expr::ZSet | Expr::IndexedZSet) {
+                    feldera_sql_expr::constant_rows::compare_values(edit, a, b)
                 } else {
-                    feldera_sql_expr::same_literal_value(
-                        edit,
-                        edit.expression(a)?,
-                        edit.expression(b)?,
-                    )?
+                    if !same_type(edit, left, right)? {
+                        return Ok(Some(false));
+                    }
+                    feldera_sql_expr::compare_literal_values(edit, a, b)
                 };
                 match equal {
-                    Some(true) => &[],
-                    result => return Ok(result),
+                    Ok(true) => &[],
+                    Ok(false) => return Ok(Some(false)),
+                    Err(ValueComparisonError::UnresolvedTimestamp) => return Ok(None),
+                    Err(ValueComparisonError::InvalidTimestamp(spelling)) => {
+                        return Err(ComparisonDiagnostic::InvalidTimestamp(spelling).into());
+                    }
+                    Err(ValueComparisonError::InvalidIr(error)) => return Err(error.into()),
                 }
             }
             Expr::GeoPointConstructor => {
@@ -426,16 +423,6 @@ pub(super) fn compare_keys<'a>(
                     pending.push(Work::Answer(Some(false)));
                 }
                 &["expression"]
-            }
-            Expr::ZSet | Expr::IndexedZSet => {
-                if !feldera_sql_expr::constant_rows::equal_collections(
-                    edit,
-                    edit.expression(a)?,
-                    edit.expression(b)?,
-                )? {
-                    return Ok(Some(false));
-                }
-                &[]
             }
             Expr::Fold => {
                 if !same_type_field(edit, left, right, "semigroup")? {

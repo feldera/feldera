@@ -77,9 +77,38 @@ pub fn same_literal_value(
     left: ExpressionId,
     right: ExpressionId,
 ) -> Result<Option<bool>, Error> {
+    match compare_literal_values(editor, left, right) {
+        Ok(equal) => Ok(Some(equal)),
+        Err(ValueComparisonError::InvalidIr(error)) => Err(error),
+        Err(
+            ValueComparisonError::UnresolvedTimestamp | ValueComparisonError::InvalidTimestamp(_),
+        ) => Ok(None),
+    }
+}
+
+/// Live snapshots identify the literal rejected by the JDK. Older snapshots
+/// may lack the instant needed to complete the comparison.
+#[derive(Debug)]
+pub enum ValueComparisonError {
+    InvalidTimestamp(String),
+    UnresolvedTimestamp,
+    InvalidIr(Error),
+}
+
+impl From<Error> for ValueComparisonError {
+    fn from(error: Error) -> Self {
+        Self::InvalidIr(error)
+    }
+}
+
+pub fn compare_literal_values(
+    editor: &CircuitEditor,
+    left: ExpressionId,
+    right: ExpressionId,
+) -> Result<bool, ValueComparisonError> {
     let kind = editor.expr_kind(left)?;
     if kind != editor.expr_kind(right)? {
-        return Ok(Some(false));
+        return Ok(false);
     }
     let a = editor.node(left.into())?;
     let b = editor.node(right.into())?;
@@ -100,12 +129,17 @@ pub fn same_literal_value(
         }
         Expr::TimestampTzLiteral if left != right => match compare_timestamp_literals(a, b)? {
             TimestampComparison::Equal(equal) => equal,
-            _ => return Ok(None),
+            TimestampComparison::InvalidZone(spelling) => {
+                return Err(ValueComparisonError::InvalidTimestamp(spelling));
+            }
+            TimestampComparison::Unresolved => {
+                return Err(ValueComparisonError::UnresolvedTimestamp);
+            }
         },
         kind if kind.wire_name().ends_with("Literal") => a.data("value") == b.data("value"),
-        _ => return Err(Error::new("expected a scalar literal")),
+        _ => return Err(Error::new("expected a scalar literal").into()),
     };
-    Ok(Some(equal))
+    Ok(equal)
 }
 
 fn float_value(node: &Node, ty: TypeKind) -> Result<f64, Error> {

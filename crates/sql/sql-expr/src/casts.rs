@@ -11,7 +11,7 @@ mod collections;
 mod comparison;
 mod zoned_timestamp;
 pub use zoned_timestamp::{TimestampComparison, compare_timestamp_literals};
-pub use comparison::{decimal_literal_parts, literal_is_positive, numeric_value_is_positive, same_literal_value};
+pub use comparison::{ValueComparisonError, compare_literal_values, decimal_literal_parts, literal_is_positive, numeric_value_is_positive, same_literal_value};
 mod literals;
 mod simplify;
 pub(crate) use simplify::SimplifyDefault;

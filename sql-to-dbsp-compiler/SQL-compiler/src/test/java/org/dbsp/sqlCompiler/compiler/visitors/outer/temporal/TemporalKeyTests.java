@@ -1187,6 +1187,30 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void constantRowKeysReportTheFirstInvalidTimestamp() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var type = DBSPTypeTimestampTz.INSTANCE;
+        var east = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
+        var west = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT-20:00"));
+        for (var pair : List.of(List.of(east, west), List.of(west, east))) {
+            for (boolean array : List.of(false, true)) {
+                var a = pair.get(0);
+                var b = pair.get(1);
+                var left = array ? arrayRowKey(a) : bound(new DBSPZSetExpression(a));
+                var right = array ? arrayRowKey(b) : bound(new DBSPZSetExpression(b));
+                var direct = Assert.assertThrows(java.time.DateTimeException.class, () -> left.compatible(right));
+                var hybrid = Assert.assertThrows(direct.getClass(), () -> RustCircuitPass.acceptsTemporalBound(
+                        compiler, List.of("GTE", "GTE"),
+                        List.of(left.parameter(), left.noNow(), right.parameter(), right.noNow()), true));
+                Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+            }
+        }
+    }
+
+    @Test
     public void constantArrayKeysCompareSqlTupleFieldIdentities() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var one = new DBSPI32Literal(1);

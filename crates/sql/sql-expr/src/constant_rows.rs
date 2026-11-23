@@ -1,6 +1,6 @@
 //! Weighted constants consolidate rows by value. Arrays, maps and geographic
 //! points compare their elements using Java expression-object equality.
-use crate::same_literal_value;
+use crate::{ValueComparisonError, compare_literal_values};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
 };
@@ -56,18 +56,26 @@ pub fn entries(edit: &CircuitEditor, set: ExpressionId) -> Result<Vec<Row>, Erro
 
 pub fn append(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Result<(), Error> {
     for (index, &(existing, _)) in rows.iter().enumerate() {
-        if same_value(edit, existing, row.0)? {
+        if compare_values(edit, existing, row.0).map_err(collection_error)? {
             merge_weight(rows, index, row.1);
             return Ok(());
         }
     }
-    store_unmatched(edit, rows, row)
+    store_unmatched(edit, rows, row).map_err(collection_error)
 }
 
 /// Replace the weight at its original position, as LinkedHashMap.put does.
 /// Constant projection uses this operation directly. Z-set append reaches it
 /// only after exhausting the search for a row that can combine weights.
 pub fn put(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Result<(), Error> {
+    put_row(edit, rows, row).map_err(collection_error)
+}
+
+fn put_row(
+    edit: &CircuitEditor,
+    rows: &mut Vec<Row>,
+    row: Row,
+) -> Result<(), ValueComparisonError> {
     for (key, weight) in rows.iter_mut() {
         if equal_map_keys(edit, row.0, *key)? {
             *weight = row.1;
@@ -78,7 +86,11 @@ pub fn put(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Result<(), Er
     Ok(())
 }
 
-fn store_unmatched(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Result<(), Error> {
+fn store_unmatched(
+    edit: &CircuitEditor,
+    rows: &mut Vec<Row>,
+    row: Row,
+) -> Result<(), ValueComparisonError> {
     let kind = edit.expr_kind(row.0)?;
     // For these values, a map-key match would already have matched the value
     // scan. Tuples can contain computed fields that lack value equality.
@@ -86,7 +98,7 @@ fn store_unmatched(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Resul
         rows.push(row);
         Ok(())
     } else {
-        put(edit, rows, row)
+        put_row(edit, rows, row)
     }
 }
 
@@ -99,8 +111,8 @@ fn merge_weight(rows: &mut Vec<Row>, index: usize, weight: i64) {
 }
 
 mod object_equality;
-use object_equality::equal_map_keys;
 pub use object_equality::object_equals;
+use object_equality::{compare_elements, equal_map_keys};
 
 fn has_value_equality(kind: Expr) -> bool {
     kind.wire_name().ends_with("Literal")
@@ -117,9 +129,13 @@ fn has_value_equality(kind: Expr) -> bool {
         )
 }
 
-fn scalar_equals(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<bool, Error> {
-    same_literal_value(edit, a, b)?
-        .ok_or_else(|| Error::new("invalid zoned timestamp in a constant collection"))
+fn collection_error(error: ValueComparisonError) -> Error {
+    match error {
+        ValueComparisonError::InvalidIr(error) => error,
+        ValueComparisonError::InvalidTimestamp(_) | ValueComparisonError::UnresolvedTimestamp => {
+            Error::new("invalid zoned timestamp in a constant collection")
+        }
+    }
 }
 
 /// Compare weighted collection literals under the compiler's row-value equality.
@@ -129,7 +145,7 @@ pub fn equal_collections(
     left: ExpressionId,
     right: ExpressionId,
 ) -> Result<bool, Error> {
-    same_value(edit, left, right)
+    compare_values(edit, left, right).map_err(collection_error)
 }
 
 type Pair = (ExpressionId, ExpressionId);
@@ -157,7 +173,11 @@ impl Difference {
     }
 
     /// Resume the linear search for the incoming row after comparing two values.
-    fn advance(&mut self, edit: &CircuitEditor, matched: Option<bool>) -> Result<Step, Error> {
+    fn advance(
+        &mut self,
+        edit: &CircuitEditor,
+        matched: Option<bool>,
+    ) -> Result<Step, ValueComparisonError> {
         match matched {
             Some(true) => {
                 let (_, weight) = self.incoming.next().expect("row under comparison");
@@ -199,7 +219,11 @@ enum Comparison {
 }
 
 impl Comparison {
-    fn advance(&mut self, edit: &CircuitEditor, matched: Option<bool>) -> Result<Step, Error> {
+    fn advance(
+        &mut self,
+        edit: &CircuitEditor,
+        matched: Option<bool>,
+    ) -> Result<Step, ValueComparisonError> {
         Ok(match self {
             Self::Immediate(equal) => Step::Done(*equal),
             Self::Fields(_) if matched == Some(false) => Step::Done(false),
@@ -214,7 +238,11 @@ impl Comparison {
 
 /// Evaluate tuple fields, VARIANT payloads and weighted rows on a work stack.
 /// Remember successful compound comparisons so shared subtrees are visited once.
-fn same_value(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<bool, Error> {
+pub fn compare_values(
+    edit: &CircuitEditor,
+    a: ExpressionId,
+    b: ExpressionId,
+) -> Result<bool, ValueComparisonError> {
     use std::collections::HashSet;
     let mut equal = HashSet::new();
     let mut active = HashSet::new();
@@ -229,7 +257,7 @@ fn same_value(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<
                 let first = comparison.advance(edit, None)?;
                 if matches!(first, Step::Compare(_)) {
                     if !active.insert(pair) {
-                        return Err(Error::new("cycle in a constant row"));
+                        return Err(Error::new("cycle in a constant row").into());
                     }
                     parents.push((pair, comparison));
                 }
@@ -253,7 +281,11 @@ fn same_value(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<
     }
 }
 
-fn compare(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<Comparison, Error> {
+fn compare(
+    edit: &CircuitEditor,
+    a: ExpressionId,
+    b: ExpressionId,
+) -> Result<Comparison, ValueComparisonError> {
     use Comparison::Immediate;
     let kind = edit.expr_kind(a)?;
     if kind != edit.expr_kind(b)? {
@@ -261,7 +293,7 @@ fn compare(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<Com
     }
     let (left, right) = (edit.node(a.into())?, edit.node(b.into())?);
     let same_type = || edit.same_type(edit.expression_type(a)?, edit.expression_type(b)?);
-    let same_objects = |field: &str| -> Result<bool, Error> {
+    let same_objects = |field: &str| -> Result<bool, ValueComparisonError> {
         match (left.field(field), right.field(field)) {
             (None, None) => Ok(true),
             (Some(_), Some(_)) => {
@@ -270,7 +302,7 @@ fn compare(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<Com
                     return Ok(false);
                 }
                 for (x, y) in xs.into_iter().zip(ys) {
-                    if !object_equals(edit, x, y)? {
+                    if !compare_elements(edit, x, y)? {
                         return Ok(false);
                     }
                 }
@@ -300,7 +332,7 @@ fn compare(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<Com
             for key in ["left", "right"] {
                 match (edge(left, key), edge(right, key)) {
                     (None, None) => {}
-                    (Some(x), Some(y)) if object_equals(edit, x, y)? => {}
+                    (Some(x), Some(y)) if compare_elements(edit, x, y)? => {}
                     _ => return Ok(Immediate(false)),
                 }
             }
@@ -324,7 +356,7 @@ fn compare(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<Com
                 entries(edit, b)?,
             )));
         }
-        kind if kind.wire_name().ends_with("Literal") => scalar_equals(edit, a, b)?,
+        kind if kind.wire_name().ends_with("Literal") => compare_literal_values(edit, a, b)?,
         _ => false,
     };
     Ok(Immediate(equal))
@@ -359,6 +391,36 @@ mod tests {
             [("value", Field::Data(value))],
         )
         .unwrap()
+    }
+
+    #[test]
+    fn legacy_collection_with_an_unknown_instant_declines_only_when_compared() -> Result<(), Error>
+    {
+        let mut edit = editor();
+        let mut set = |first: bool, spelling: &str| -> Result<_, Error> {
+            let flag = literal(&mut edit, Expr::BoolLiteral, TypeKind::Bool, json!(first));
+            let stamp = literal(
+                &mut edit,
+                Expr::TimestampTzLiteral,
+                TypeKind::TimestampTz,
+                json!(spelling),
+            );
+            let row = edit.tuple_expr(flag.into(), false, &[flag, stamp])?;
+            let ty = edit.expression_type(row)?;
+            multiset(&mut edit, ty, [(row, 1)])
+        };
+        let unknown = set(true, "2020-01-01 00:00:00 GMT+19:00")?;
+        let same_prefix = set(true, "2020-01-01 00:00:00 UTC")?;
+        let other_prefix = set(false, "2020-01-01 00:00:00 UTC")?;
+        assert!(matches!(
+            compare_values(&edit, unknown, same_prefix),
+            Err(ValueComparisonError::UnresolvedTimestamp)
+        ));
+        assert!(matches!(
+            compare_values(&edit, unknown, other_prefix),
+            Ok(false)
+        ));
+        Ok(())
     }
 
     #[test]

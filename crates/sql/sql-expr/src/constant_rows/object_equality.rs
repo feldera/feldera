@@ -1,5 +1,5 @@
 //! Expression equality used by collection elements and keys in a LinkedHashMap.
-use super::scalar_equals;
+use crate::{ValueComparisonError, compare_literal_values};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId};
 use std::collections::{HashMap, HashSet};
 
@@ -13,6 +13,14 @@ enum Use {
 
 /// Arrays, maps and point coordinates invoke the element's Java equals method.
 pub fn object_equals(edit: &CircuitEditor, a: NodeId, b: NodeId) -> Result<bool, Error> {
+    compare_elements(edit, a, b).map_err(super::collection_error)
+}
+
+pub(super) fn compare_elements(
+    edit: &CircuitEditor,
+    a: NodeId,
+    b: NodeId,
+) -> Result<bool, ValueComparisonError> {
     compare(edit, (a, b), Use::Element)
 }
 
@@ -20,7 +28,7 @@ pub(super) fn equal_map_keys(
     edit: &CircuitEditor,
     a: ExpressionId,
     b: ExpressionId,
-) -> Result<bool, Error> {
+) -> Result<bool, ValueComparisonError> {
     compare(edit, (a.into(), b.into()), Use::MapKey)
 }
 
@@ -41,7 +49,11 @@ fn string_hash(node: &Node) -> u32 {
         })
 }
 
-fn inspect(edit: &CircuitEditor, (a, b): Pair, usage: Use) -> Result<Comparison, Error> {
+fn inspect(
+    edit: &CircuitEditor,
+    (a, b): Pair,
+    usage: Use,
+) -> Result<Comparison, ValueComparisonError> {
     use Comparison::*;
     if a == b {
         return Ok(Equal(0));
@@ -82,8 +94,8 @@ fn inspect(edit: &CircuitEditor, (a, b): Pair, usage: Use) -> Result<Comparison,
         }
         k if k.wire_name().ends_with("Literal") => {
             let b = edit.expression(b)?;
-            if !edit.same_type(edit.expression_type(a)?, edit.expression_type(b)?)?
-                || !scalar_equals(edit, a, b)?
+            if !compare_literal_values(edit, a, b)?
+                || !edit.same_type(edit.expression_type(a)?, edit.expression_type(b)?)?
             {
                 Unequal
             } else if usage == Use::MapKey && k == Expr::TimestampTzLiteral {
@@ -97,7 +109,7 @@ fn inspect(edit: &CircuitEditor, (a, b): Pair, usage: Use) -> Result<Comparison,
     })
 }
 
-fn compare(edit: &CircuitEditor, root: Pair, usage: Use) -> Result<bool, Error> {
+fn compare(edit: &CircuitEditor, root: Pair, usage: Use) -> Result<bool, ValueComparisonError> {
     let matches = |delta| usage == Use::Element || delta == 0;
     let children = match inspect(edit, root, usage)? {
         Comparison::Unequal => return Ok(false),
@@ -121,7 +133,7 @@ fn compare(edit: &CircuitEditor, root: Pair, usage: Use) -> Result<bool, Error> 
                 Comparison::Equal(child) => *delta = delta.wrapping_add(child),
                 Comparison::Children(fields) => {
                     if !active.insert(pair) {
-                        return Err(Error::new("cycle in collection element equality"));
+                        return Err(Error::new("cycle in collection element equality").into());
                     }
                     stack.push((pair, fields.into_iter(), 0));
                 }
