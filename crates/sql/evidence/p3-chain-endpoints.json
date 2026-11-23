@@ -1,0 +1,67 @@
+{
+  "scope": "Rust selects the last profitable integrator for each source port using the carried-column and key analysis for the entire chain.",
+  "parent_commit": "e4beb1ed9",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "851d84bad7dbed7fd9f181978e62f320fcc12f87cf4f4c73975441c589243165",
+    "bin/sql-difftest": "86eaa0848bbd5c06673d3e15e28c06f894edcd204c99c59d1cbdd48112b1da70",
+    "maven/sql-compiler.jar": "a81b16586f8486a7b68da4f3e6292371f566c935759b85a188b1e138a92ad285",
+    "maven/tests.jar": "0fede1519260354e531af833b0a7ad0bfe9efb1a040973ff77ff8232d498e960",
+    "maven/build.log": "c1e5fd20462e6cd0d3539dc76008717117511c86bb0584e600b6e5a6652b1bce",
+    "tests.log": "68e6eaa207332729e80fb9944886088f0447cd492fb827cf1e5a98b5db4d4236",
+    "clippy.log": "e21cc89abef3298c9f8b91cbed76506222fc8bf0fd2ff1b4b37c1818f7ca0a18",
+    "build.log": "baa3328e7844108ed9ec74bcefe4eece2d529a1c1a011e8f40025332458b9ef7",
+    "junit.log": "79f202e24c837bcde36cbb4e5b42e5562b7031cc6d33efe401509b6cdc2235b9"
+  },
+  "rust_tests": 206,
+  "junit_tests": 97,
+  "engines": {
+    "classic": {
+      "detached_cases": 9,
+      "ordered_s4_observations": 7137,
+      "mismatches": 0,
+      "receipt_sha256": "737e659716854b2b157221599ec07a27929a176b25e2a569d1e02852629d530f",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 111,
+        "KeyAnalysis/Circuit": 27,
+        "LeftJoinChains/Columns": 9,
+        "LeftJoinChains/Steps": 9,
+        "OptimizeProjections/Producer": 615,
+        "ParameterFieldDependencies": 55,
+        "RemoveUnusedFields/IndexedValue": 5,
+        "RemoveUnusedFields/NarrowJoin": 198,
+        "RemoveUnusedFields/ParameterTypes": 5,
+        "RemoveUnusedFields/Reader": 5,
+        "RemoveUnusedFields/TopKComparators": 5,
+        "RemoveUnusedFields/TopKFields": 17,
+        "ReplaceSharedIndexes": 5,
+        "SharedIndexes/Discover": 6
+      },
+      "profitable_rewrites": 10,
+      "key_oracle_sha256": "701f51b22e93c6bea90afb096ebdf318e72ce2831787ba4b473d93807dd0b42c"
+    },
+    "gen2": {
+      "detached_cases": 9,
+      "ordered_s4_observations": 7117,
+      "mismatches": 0,
+      "receipt_sha256": "5f36f480660df6574d30f1cea2fadbcfd3d01afce503a484d9bfea5156a50d63",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 110,
+        "KeyAnalysis/Circuit": 27,
+        "LeftJoinChains/Columns": 9,
+        "LeftJoinChains/Steps": 9,
+        "OptimizeProjections/Producer": 615,
+        "ParameterFieldDependencies": 55,
+        "RemoveUnusedFields/IndexedValue": 5,
+        "RemoveUnusedFields/NarrowJoin": 198,
+        "RemoveUnusedFields/ParameterTypes": 5,
+        "RemoveUnusedFields/Reader": 5,
+        "RemoveUnusedFields/TopKComparators": 5,
+        "RemoveUnusedFields/TopKFields": 17,
+        "ReplaceSharedIndexes": 5,
+        "SharedIndexes/Discover": 9
+      },
+      "profitable_rewrites": 10,
+      "key_oracle_sha256": "85198476a68d027a3cda861338d5782210af9bdc8dd4fa4a3d418ed8e997a26c"
+    }
+  }
+}

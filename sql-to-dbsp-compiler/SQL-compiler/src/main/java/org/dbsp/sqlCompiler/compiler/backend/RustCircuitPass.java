@@ -1919,11 +1919,11 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static List<NativeLeftJoinChains.Carried> carriedColumns(DBSPCompiler compiler, NativeLeftJoinChains.Inputs inputs) {
+    public static List<NativeLeftJoinChains.Endpoint> carriedColumns(DBSPCompiler compiler, NativeLeftJoinChains.Inputs inputs) {
         String pass = "LeftJoinChains/Columns";
         try {
             var bytes = transformWithContext(pass, MAPPER.writeValueAsBytes(inputs), 0, "", EMPTY_CONTEXT);
-            List<NativeLeftJoinChains.Carried> result = MAPPER.readValue(bytes, new TypeReference<>() {});
+            List<NativeLeftJoinChains.Endpoint> result = MAPPER.readValue(bytes, new TypeReference<>() {});
             if (compiler.stateObserver != null)
                 compiler.stateObserver.nativeDecision(pass, true);
             return result;

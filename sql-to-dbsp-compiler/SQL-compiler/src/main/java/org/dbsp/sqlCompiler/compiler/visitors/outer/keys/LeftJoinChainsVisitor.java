@@ -222,7 +222,8 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
     }
 
     /** Install a chain selected for a lookup or the optional end-of-chain report. */
-    void install(OutputPort start, OutputPort end, NativeLeftJoinChains.Carried facts, boolean terminal) {
+    void install(OutputPort start, OutputPort end, NativeLeftJoinChains.Endpoint endpoint) {
+        var facts = endpoint.carried();
         Map<Column, Column> inputToOutput = new LinkedHashMap<>();
         Map<Column, Column> outputToInput = new LinkedHashMap<>();
         for (var copy : facts.copies()) {
@@ -230,9 +231,10 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
             outputToInput.put(copy.result(), copy.source());
         }
         var carried = new Carried(start, facts.length(), inputToOutput, outputToInput, facts.read());
-        if (terminal)
+        if (endpoint.report())
             this.carriedAt.put(end, carried);
-        this.record(carried, end);
+        if (endpoint.choice() != null)
+            this.chainEnd.put(end, this.selected(carried, end, endpoint.choice()));
     }
 
     static boolean isLeftJoin(DBSPOperator operator) {
@@ -331,8 +333,14 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         for (var source : inputShape.columns())
             for (var target : transform.copiesOf(source))
                 copies.add(new DeferCarriedColumns.ColumnCopy(source, target));
-        return new NativeLeftJoinChains.LinkColumns(operator.id, join, seed ? inputShape.columns() : null,
-                reads, copies);
+        var start = operator.inputs.get(0);
+        var source = seed ? new NativeLeftJoinChains.Seed(start.operator.id, start.outputNumber,
+                inputShape.columns(), this.keySets(start), indexWidth(start)) : null;
+        var endShape = output.getShape();
+        if (operator instanceof DBSPIntegrateOperator && endShape == null)
+            return null;
+        Integer width = endShape != null ? endShape.width() : null;
+        return new NativeLeftJoinChains.LinkColumns(operator.id, join, source, width, reads, copies);
     }
 
     /** Extend a chain with one operator that computes each output row from a single input row.
@@ -520,19 +528,29 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
             var key = reuse ? chain.keyInIndexOrder() : Objects.requireNonNull(chain.keyColumns());
             return new SelectedChain(chain, new Lookup(reuse, key, List.copyOf(chain.deferrable())));
         }
-        var keys = this.keys.getKeys(carried.start()).keys;
-        var columns = keys.stream().map(key -> key.sets().stream().map(EquivalentColumnSet::columns).toList()).toList();
-        Integer indexWidth = carried.start().getShape() instanceof IndexedShape shape ? shape.indexFields() : null;
         var endShape = end.getShape();
         Utilities.enforce(endShape != null, () -> "A chain ends at a collection");
-        var facts = new KeyInput(columns, carried.inputToOutputRemap().keySet(), carried.read(),
-                carried.length(), endShape.width(), indexWidth);
+        var facts = new KeyInput(this.keySets(carried.start()), carried.inputToOutputRemap().keySet(), carried.read(),
+                carried.length(), endShape.width(), indexWidth(carried.start()));
         var choice = RustCircuitPass.chooseChainKey(facts);
-        if (choice.lookup() == null)
-            return null;
+        return choice.lookup() == null ? null : this.selected(carried, end, choice);
+    }
+
+    private List<List<SortedSet<Column>>> keySets(OutputPort source) {
+        return this.keys.getKeys(source).keys.stream()
+                .map(key -> key.sets().stream().map(EquivalentColumnSet::columns).toList()).toList();
+    }
+
+    @Nullable
+    private static Integer indexWidth(OutputPort source) {
+        return source.getShape() instanceof IndexedShape shape ? shape.indexFields() : null;
+    }
+
+    private SelectedChain selected(Carried carried, OutputPort end, KeyChoice choice) {
+        var keys = this.keys.getKeys(carried.start()).keys;
         var chain = new Chain(carried.start(), end, carried.length(), keys.get(Objects.requireNonNull(choice.key())),
                 onlyCarried(carried), carried.inputToOutputRemap(), carried.outputToInputRemap());
-        return new SelectedChain(chain, choice.lookup());
+        return new SelectedChain(chain, Objects.requireNonNull(choice.lookup()));
     }
 
     private static Set<Column> onlyCarried(Carried carried) {

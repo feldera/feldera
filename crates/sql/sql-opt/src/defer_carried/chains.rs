@@ -1,5 +1,6 @@
 //! Walk left inputs of left joins. A shared port belongs to the first chain
 //! that claims it. A new chain begins at the collection feeding a differentiator.
+use super::keys::{ChainKeyChoice, select_key};
 use super::{Column, Part};
 use feldera_sql_ir::Error;
 use serde::{Deserialize, Serialize};
@@ -108,11 +109,22 @@ pub struct CarriedCopy {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Seed {
+    operator: u64,
+    port: usize,
+    columns: Vec<Column>,
+    keys: Vec<Vec<Vec<Column>>>,
+    index_width: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LinkColumns {
     operator: u64,
     join: bool,
-    /// Ordered columns of the input when this differentiator seeds a chain.
-    seed: Option<Vec<Column>>,
+    /// The source port and its ordered keys when this differentiator seeds a chain.
+    seed: Option<Seed>,
+    end_width: Option<i32>,
     /// None means an opaque computed expression may read any input column.
     reads: Option<BTreeSet<Column>>,
     copies: Vec<CarriedCopy>,
@@ -131,7 +143,7 @@ pub struct CarriedColumns {
 
 impl CarriedColumns {
     fn start(link: &LinkColumns) -> Result<Self, Error> {
-        let columns = link
+        let seed = link
             .seed
             .as_ref()
             .ok_or_else(|| Error::new("missing chain start columns"))?;
@@ -140,7 +152,8 @@ impl CarriedColumns {
             end: link.operator,
             length: 0,
             read: BTreeSet::new(),
-            copies: columns
+            copies: seed
+                .columns
                 .iter()
                 .map(|&column| CarriedCopy {
                     source: column,
@@ -196,7 +209,16 @@ pub struct ChainInputs {
     logging: bool,
 }
 
-pub fn carried_columns(input: ChainInputs) -> Result<Vec<CarriedColumns>, Error> {
+#[derive(Serialize)]
+pub struct ChainEndpoint {
+    carried: CarriedColumns,
+    /// Present only on the last profitable integrator for this source port.
+    choice: Option<ChainKeyChoice>,
+    /// A terminal chain is also needed by the optional diagnostic log.
+    report: bool,
+}
+
+pub fn carried_columns(input: ChainInputs) -> Result<Vec<ChainEndpoint>, Error> {
     let links: HashMap<_, _> = input
         .links
         .iter()
@@ -209,7 +231,8 @@ pub fn carried_columns(input: ChainInputs) -> Result<Vec<CarriedColumns>, Error>
             .ok_or_else(|| Error::new("missing chain link columns"))
     };
     let mut tails = HashMap::<u64, CarriedColumns>::new();
-    let mut result = Vec::new();
+    let mut endpoints = Vec::<ChainEndpoint>::new();
+    let mut last_by_source = HashMap::new();
     for step in input.steps {
         let mut carried = match step.previous {
             Some(id) => tails
@@ -226,19 +249,50 @@ pub fn carried_columns(input: ChainInputs) -> Result<Vec<CarriedColumns>, Error>
         for id in step.via.iter().chain([&step.end]) {
             carried.extend(link(id)?);
         }
-        let report = carried.length >= 2 && (step.candidate || (input.logging && step.terminal));
-        if step.terminal {
-            if report {
-                result.push(carried);
+        let report = input.logging && step.terminal && carried.length >= 2;
+        let mut choice = None;
+        if step.candidate && carried.length >= 2 {
+            let seed = link(&carried.seed)?
+                .seed
+                .as_ref()
+                .ok_or_else(|| Error::new("missing left-join chain seed"))?;
+            let width = link(&step.end)?
+                .end_width
+                .ok_or_else(|| Error::new("missing integrator output width"))?;
+            let columns = carried.copies.iter().map(|copy| copy.source).collect();
+            let key = select_key(
+                &seed.keys,
+                seed.index_width,
+                &columns,
+                &carried.read,
+                carried.length as i32,
+                width,
+            );
+            if key.profitable() {
+                // Distinct differentiators can read the same output port.
+                if let Some(previous) =
+                    last_by_source.insert((seed.operator, seed.port), endpoints.len())
+                {
+                    endpoints[previous].choice = None;
+                }
+                choice = Some(key);
             }
-        } else {
-            if report {
-                result.push(carried.clone());
+        }
+        if report || choice.is_some() {
+            if !step.terminal {
+                tails.insert(step.end, carried.clone());
             }
+            endpoints.push(ChainEndpoint {
+                carried,
+                choice,
+                report,
+            });
+        } else if !step.terminal {
             tails.insert(step.end, carried);
         }
     }
-    Ok(result)
+    endpoints.retain(|endpoint| endpoint.report || endpoint.choice.is_some());
+    Ok(endpoints)
 }
 
 #[cfg(test)]
@@ -282,6 +336,100 @@ mod tests {
     }
 
     #[test]
+    fn only_the_last_profitable_integrator_per_source_port_gets_a_lookup() -> Result<(), Error> {
+        let columns: Vec<_> = (0..4)
+            .map(|field| Column {
+                part: Part::Value,
+                field,
+            })
+            .collect();
+        for logging in [false, true] {
+            let mut steps = Vec::new();
+            let mut links = Vec::new();
+            for (first, operator, port, end_width) in [
+                (10, 7, 0, 4),
+                (20, 7, 1, 4),
+                (30, 8, 0, 4),
+                (40, 7, 0, 4),
+                (50, 7, 0, 5),
+            ] {
+                let seed = Seed {
+                    operator,
+                    port,
+                    columns: columns.clone(),
+                    keys: vec![vec![vec![columns[0]]]],
+                    index_width: None,
+                };
+                let mut seed = Some(seed);
+                for offset in 0..4 {
+                    links.push(LinkColumns {
+                        operator: first + offset,
+                        join: matches!(offset, 1 | 2),
+                        seed: seed.take(),
+                        end_width: (offset == 3).then_some(end_width),
+                        reads: Some(BTreeSet::new()),
+                        copies: columns
+                            .iter()
+                            .map(|&col| CarriedCopy {
+                                source: col,
+                                result: col,
+                            })
+                            .collect(),
+                    });
+                }
+                steps.extend([
+                    ChainStep {
+                        end: first + 1,
+                        previous: None,
+                        via: vec![first],
+                        candidate: false,
+                        terminal: false,
+                    },
+                    ChainStep {
+                        end: first + 2,
+                        previous: Some(first + 1),
+                        via: vec![],
+                        candidate: false,
+                        terminal: false,
+                    },
+                    ChainStep {
+                        end: first + 3,
+                        previous: Some(first + 2),
+                        via: vec![],
+                        candidate: true,
+                        terminal: true,
+                    },
+                ]);
+            }
+            let endpoints = carried_columns(ChainInputs {
+                steps,
+                links,
+                logging,
+            })?;
+            let selected: Vec<_> = endpoints
+                .iter()
+                .filter(|e| e.choice.is_some())
+                .map(|e| e.carried.end)
+                .collect();
+            assert_eq!(selected, [23, 33, 43]);
+            let reported: Vec<_> = endpoints
+                .iter()
+                .filter(|e| e.report)
+                .map(|e| e.carried.end)
+                .collect();
+            assert_eq!(
+                reported,
+                if logging {
+                    vec![13, 23, 33, 43, 53]
+                } else {
+                    vec![]
+                }
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn join_reads_follow_the_original_column_across_multiple_copies() {
         let col = |part, field| Column { part, field };
         let copy = |source, result| CarriedCopy { source, result };
@@ -301,6 +449,7 @@ mod tests {
             operator: 3,
             join: true,
             seed: None,
+            end_width: None,
             reads: Some([col(Part::None, 1)].into()),
             copies: vec![copy(alias, id), copy(value, payload)],
         });

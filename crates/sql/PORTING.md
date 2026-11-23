@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selects the last profitable integrator for each left-join chain source
+port. A later unprofitable integrator leaves the earlier choice in place.
+Direct Java and the hybrid selected the same 20 rewrites across both engines,
+including the lookup key order and deferred columns. The 18 detached
+compilations matched through 14,254 ordered S4 observations and emission.
+[Endpoint and lookup comparisons](evidence/p3-chain-endpoints.json)
+
 Rust groups temporal filters and lowered window indexes by source port and
 printed input row type. Distinct signatures can share a port. The Rust test
 covers nested row signatures with fixed and variable binary fields. All 60

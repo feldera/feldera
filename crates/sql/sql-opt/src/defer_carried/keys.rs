@@ -2,15 +2,15 @@
 //! surviving keys, prefer the one that leaves the most columns to defer.
 use super::{Column, Part};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainKeys {
     /// In Java's key order (fewest values first), then equivalence-set and column order.
     keys: Vec<Vec<Vec<Column>>>,
-    carried: HashSet<Column>,
-    read: HashSet<Column>,
+    carried: BTreeSet<Column>,
+    read: BTreeSet<Column>,
     length: i32,
     end_width: i32,
     index_width: Option<usize>,
@@ -31,14 +31,38 @@ struct LookupColumns {
 }
 
 pub fn choose_chain_key(input: &ChainKeys) -> ChainKeyChoice {
-    let unread: BTreeSet<_> = input.carried.difference(&input.read).copied().collect();
+    select_key(
+        &input.keys,
+        input.index_width,
+        &input.carried,
+        &input.read,
+        input.length,
+        input.end_width,
+    )
+}
+
+impl ChainKeyChoice {
+    pub(super) fn profitable(&self) -> bool {
+        self.lookup.is_some()
+    }
+}
+
+pub(super) fn select_key(
+    keys: &[Vec<Vec<Column>>],
+    index_width: Option<usize>,
+    carried: &BTreeSet<Column>,
+    read: &BTreeSet<Column>,
+    length: i32,
+    end_width: i32,
+) -> ChainKeyChoice {
+    let unread: BTreeSet<_> = carried.difference(read).copied().collect();
     let mut best = None;
     let mut most_deferred = 0;
-    for (index, key) in input.keys.iter().enumerate() {
+    for (index, key) in keys.iter().enumerate() {
         // Each equivalence set contributes its first surviving copy, in key order.
         let Some(columns) = key
             .iter()
-            .map(|set| set.iter().find(|col| input.carried.contains(col)).copied())
+            .map(|set| set.iter().find(|col| carried.contains(col)).copied())
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -62,33 +86,33 @@ pub fn choose_chain_key(input: &ChainKeys) -> ChainKeyChoice {
             lookup: None,
         };
     };
-    let key = &input.keys[index];
+    let key = &keys[index];
     // A reused index dictates the order of the lookup fields. Each slot may
     // reach the chain output through an equivalent value column.
-    let index_key: Option<Vec<_>> = input
-        .index_width
-        .filter(|&width| width == key.len())
-        .and_then(|width| {
-            (0..width)
-                .map(|field| {
-                    let column = Column {
-                        part: Part::Index,
-                        field,
-                    };
-                    key.iter()
-                        .rposition(|set| set.contains(&column))
-                        .map(|i| columns[i])
-                })
-                .collect()
-        });
+    let index_key: Option<Vec<_>> =
+        index_width
+            .filter(|&width| width == key.len())
+            .and_then(|width| {
+                (0..width)
+                    .map(|field| {
+                        let column = Column {
+                            part: Part::Index,
+                            field,
+                        };
+                        key.iter()
+                            .rposition(|set| set.contains(&column))
+                            .map(|i| columns[i])
+                    })
+                    .collect()
+            });
     // Preserve the Java heuristic's signed 32-bit arithmetic on wide rows.
     let count = most_deferred as i32;
     let added = if index_key.is_some() {
-        input.end_width.wrapping_sub(count)
+        end_width.wrapping_sub(count)
     } else {
-        input.end_width.wrapping_add(key.len() as i32)
+        end_width.wrapping_add(key.len() as i32)
     };
-    let lookup = (count != 0 && input.length.wrapping_mul(count) > added).then(|| {
+    let lookup = (count != 0 && length.wrapping_mul(count) > added).then(|| {
         let mut deferred = unread;
         for column in &columns {
             deferred.remove(column);
@@ -122,7 +146,7 @@ mod tests {
         let mut facts = ChainKeys {
             keys: vec![vec![vec![index(1), value(3)], vec![index(0), value(1)]]],
             carried: [value(3), value(2), value(1), value(0)].into(),
-            read: HashSet::new(),
+            read: BTreeSet::new(),
             length: 5,
             end_width: 4,
             index_width: Some(2),
@@ -197,7 +221,7 @@ mod tests {
         let mut facts = ChainKeys {
             keys: vec![vec![vec![a]], vec![vec![b]]],
             carried: [a, b].into(),
-            read: HashSet::new(),
+            read: BTreeSet::new(),
             length: 3,
             end_width: 2,
             index_width: None,

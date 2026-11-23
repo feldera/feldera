@@ -29,11 +29,15 @@ public final class NativeLeftJoinChains {
     public enum Kind { Unary, Differentiate, Integrate, LeftJoin }
     public record Operator(long operator, @Nullable Long input, Kind kind, boolean collectionInput) {}
     public record Step(long end, @Nullable Long previous, List<Long> via, boolean candidate, boolean terminal) {}
-    public record LinkColumns(long operator, boolean join, @Nullable List<Column> seed,
+    public record Seed(long operator, int port, List<Column> columns, List<List<SortedSet<Column>>> keys,
+                       @Nullable Integer indexWidth) {}
+    public record LinkColumns(long operator, boolean join, @Nullable Seed seed, @Nullable Integer endWidth,
                               @Nullable Set<Column> reads, List<DeferCarriedColumns.ColumnCopy> copies) {}
     public record Inputs(List<Step> steps, List<LinkColumns> links, boolean logging) {}
     public record Carried(long seed, long end, int length, SortedSet<Column> read,
                           List<DeferCarriedColumns.ColumnCopy> copies) {}
+
+    public record Endpoint(Carried carried, @Nullable LeftJoinChainsVisitor.KeyChoice choice, boolean report) {}
 
     private final LeftJoinChainsVisitor visitor;
     private final List<Operator> graph = new ArrayList<>();
@@ -88,14 +92,11 @@ public final class NativeLeftJoinChains {
             return true;
         var selected = new LinkedHashSet<Long>();
         var seeds = new HashSet<Long>();
-        var terminals = new HashSet<Long>();
         for (var step : steps) {
             if (step.previous() == null)
                 seeds.add(step.via().get(0));
             selected.addAll(step.via());
             selected.add(step.end());
-            if (step.terminal())
-                terminals.add(step.end());
         }
         var links = new ArrayList<LinkColumns>(selected.size());
         for (var id : selected) {
@@ -109,10 +110,11 @@ public final class NativeLeftJoinChains {
             links.add(columns);
         }
         boolean logging = Logger.INSTANCE.getLoggingLevel(LeftJoinChainsVisitor.class) >= 1;
-        for (var chain : RustCircuitPass.carriedColumns(this.visitor.compiler(), new Inputs(steps, links, logging))) {
+        for (var endpoint : RustCircuitPass.carriedColumns(this.visitor.compiler(), new Inputs(steps, links, logging))) {
+            var chain = endpoint.carried();
             var start = this.live.get(chain.seed()).inputs.get(0);
             var end = this.live.get(chain.end()).outputPort();
-            this.visitor.install(start, end, chain, terminals.contains(chain.end()));
+            this.visitor.install(start, end, endpoint);
         }
         return true;
     }
