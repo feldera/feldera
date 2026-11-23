@@ -189,6 +189,7 @@ import org.dbsp.util.Utilities;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -1586,6 +1587,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass, byte[] state, IDBSPInnerNode... inputs) {
         var inner = switch (pass) {
             case "MergeTemporalBounds", "TemporalGroups" -> new TemporalKeyWriter(compiler);
+            case "RewriteNow/ClockSites" -> new OptimizerExpressionWriter(compiler, false);
             default -> new OptimizerExpressionWriter(compiler);
         };
         if (pass.equals("SharedIndexes/Split") || pass.equals("SharedIndexes/WideFields"))
@@ -1611,20 +1613,17 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public static Map<Long, DBSPExpression> temporalClockSites(DBSPCompiler compiler,
-                                                               Iterable<DBSPExpression> expressions) {
-        var calls = OptimizerExpressions.callSites(compiler, expressions);
-        if (calls.sites().isEmpty())
+                                                               Collection<DBSPExpression> expressions) {
+        if (expressions.isEmpty())
             return Map.of();
-        try {
-            byte[] reply = transformWithContext("RewriteNow/ClockSites", MAPPER.writeValueAsBytes(calls.sites()),
-                    0, "", EMPTY_CONTEXT);
-            Map<Long, Long> selected = MAPPER.readValue(reply, new TypeReference<>() {});
-            var sites = new HashMap<Long, DBSPExpression>();
-            selected.forEach((root, call) -> sites.put(root, Utilities.getExists(calls.expressions(), call)));
-            return sites;
-        } catch (IOException error) {
-            throw new UncheckedIOException("Invalid clock call sites from the Rust optimizer", error);
+        var reply = invokeLowering(compiler, "RewriteNow/ClockSites", expressions.toArray(IDBSPInnerNode[]::new));
+        var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+        var sites = new HashMap<Long, DBSPExpression>();
+        for (var pair : reply.value) {
+            var call = Utilities.getExists(nodes, pair.required(1).longValue()).to(DBSPApplyExpression.class);
+            sites.put(pair.required(0).longValue(), call);
         }
+        return sites;
     }
 
     public static List<DBSPSimpleOperator> clockJoin(DBSPCompiler compiler, DBSPUnaryOperator consumer,

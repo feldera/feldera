@@ -7,7 +7,7 @@ use feldera_sql_ir::{
 use serde::Serialize;
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashSet},
+    collections::{HashMap, HashSet},
 };
 
 pub struct ConnectorMetadataCall<'a> {
@@ -58,21 +58,42 @@ pub fn is_clock_call(name: &str, arity: usize) -> bool {
     arity == 0 && name.eq_ignore_ascii_case("now")
 }
 
-#[derive(serde::Deserialize)]
-pub struct NamedCallSite {
-    root: u64,
-    id: u64,
-    name: String,
-    arity: usize,
-}
-
-/// The last clock call in visitor order supplies the source position for the join.
-pub fn temporal_clock_sites(calls: Vec<NamedCallSite>) -> BTreeMap<u64, u64> {
-    calls
-        .into_iter()
-        .filter(|call| is_clock_call(&call.name, call.arity))
-        .map(|call| (call.root, call.id))
-        .collect()
+/// Find the last zero-argument NOW call in each root's visitor order. A shared
+/// subtree contributes its last call at every occurrence, including across roots.
+pub fn temporal_clock_sites(
+    circuit: &Circuit,
+    roots: &[NodeId],
+) -> Result<Vec<(NodeId, NodeId)>, Error> {
+    let mut last = HashMap::new();
+    let mut active = HashSet::new();
+    let mut pending: Vec<_> = roots.iter().rev().map(|&root| (root, false)).collect();
+    while let Some((id, leaving)) = pending.pop() {
+        if last.contains_key(&id) {
+            continue;
+        }
+        let node = circuit
+            .node(id)
+            .ok_or_else(|| Error::new("missing clock expression"))?;
+        let children = crate::lexical_scope::expression_children(node);
+        if leaving {
+            let site = children.iter().rev().find_map(|child| last[child]);
+            last.insert(id, site);
+            active.remove(&id);
+        } else if matches!(function_name(circuit, node)?, Some(name) if is_clock_call(&name, node.edges("arguments")?.len()))
+        {
+            last.insert(id, Some(id));
+        } else {
+            if !active.insert(id) {
+                return Err(Error::new("cycle in clock expression"));
+            }
+            pending.push((id, true));
+            pending.extend(children.into_iter().rev().map(|child| (child, false)));
+        }
+    }
+    Ok(roots
+        .iter()
+        .filter_map(|root| Some((*root, last[root]?)))
+        .collect())
 }
 
 pub(super) fn contains_now(circuit: &Circuit, roots: &[NodeId]) -> Result<bool, Error> {
@@ -270,24 +291,26 @@ mod tests {
     use serde_json::{Value, json};
 
     #[test]
-    fn the_last_zero_argument_clock_call_supplies_each_rewrite_site() {
-        let site = |root, id, name: &str, arity| NamedCallSite {
-            root,
-            id,
-            name: name.into(),
-            arity,
-        };
-        let calls = vec![
-            site(1, 10, "now", 0),
-            site(2, 11, "NOW", 0),
-            site(1, 12, "Now", 0),
-            site(1, 13, "now", 1),
-            site(3, 14, "clock::now", 0),
-        ];
+    fn the_last_zero_argument_clock_call_supplies_each_rewrite_site() -> Result<(), Error> {
+        let circuit = Circuit::from_json(
+            json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}),
+        )?;
+        let shared = call(10, "NoW");
+        let distinct = call(20, "now");
+        let mut with_argument = call(30, "now");
+        with_argument["arguments"] = json!([{"node":10}]);
+        let tuple =
+            json!({"class":"DBSPTupleExpression","id":1,"fields":[shared,distinct,with_argument]});
+        let (circuit, roots) =
+            circuit.with_inner_roots([tuple, json!({"node":20}), call(40, "other")])?;
         assert_eq!(
-            temporal_clock_sites(calls),
-            BTreeMap::from([(1, 12), (2, 11)])
+            temporal_clock_sites(&circuit, &roots)?,
+            [
+                (NodeId::Inner(1), NodeId::Inner(10)),
+                (NodeId::Inner(20), NodeId::Inner(20)),
+            ]
         );
+        Ok(())
     }
 
     fn call(id: u64, name: &str) -> Value {

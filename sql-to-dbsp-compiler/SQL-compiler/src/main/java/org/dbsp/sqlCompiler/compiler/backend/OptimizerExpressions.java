@@ -31,10 +31,6 @@ import java.util.EnumSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -44,41 +40,6 @@ final class OptimizerExpressions {
     enum Roots { INITIALIZERS, INDEX_TYPES, DECLARED_FUNCTIONS, FILTER_PREDICATES }
 
     private OptimizerExpressions() {}
-
-    record CallSite(long root, long id, String name, int arity) {}
-    record CallSites(List<CallSite> sites, Map<Long, DBSPExpression> expressions) {}
-
-    static CallSites callSites(DBSPCompiler compiler, Iterable<DBSPExpression> roots) {
-        record Signature(String name, int arity) {}
-        var sites = new ArrayList<CallSite>();
-        var expressions = new HashMap<Long, DBSPExpression>();
-        for (var root : roots) {
-            // A signature's last occurrence supplies its diagnostic position.
-            var last = new LinkedHashMap<Signature, DBSPApplyExpression>();
-            new InnerVisitor(compiler) {
-                @Override
-                public VisitDecision preorder(DBSPType type) {
-                    return VisitDecision.STOP;
-                }
-
-                @Override
-                public VisitDecision preorder(DBSPApplyExpression call) {
-                    String name = call.getFunctionName();
-                    if (name != null) {
-                        var signature = new Signature(name, call.arguments.length);
-                        last.remove(signature);
-                        last.put(signature, call);
-                    }
-                    return super.preorder(call);
-                }
-            }.apply(root);
-            last.forEach((signature, call) -> {
-                sites.add(new CallSite(root.getId(), call.getId(), signature.name(), signature.arity()));
-                expressions.put(call.getId(), call);
-            });
-        }
-        return new CallSites(sites, expressions);
-    }
 
     /** The validator reports the first offending call in Java postorder. Only
      * the first source range for each spelling can contribute a diagnostic. */

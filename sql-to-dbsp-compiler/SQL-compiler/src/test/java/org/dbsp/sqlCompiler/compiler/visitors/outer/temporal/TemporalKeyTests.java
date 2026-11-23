@@ -60,6 +60,22 @@ import java.util.function.Consumer;
 
 public class TemporalKeyTests {
     @Test
+    public void clockSitesUseTheLastOccurrenceInEachExpression() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var first = b.call(time, "NOW");
+        var second = b.call(time, "now");
+        var ordinary = b.call(time, "now", b.lit(1));
+        var root = b.tuple(first, second, first, ordinary);
+        var sites = RustCircuitPass.temporalClockSites(new DBSPCompiler(new CompilerOptions()),
+                List.of(root, second, ordinary));
+        Assert.assertEquals(2, sites.size());
+        Assert.assertSame(first, sites.get(root.id));
+        Assert.assertSame(second, sites.get(second.id));
+    }
+
+    @Test
     public void windowScanReportsCastWarningAtItsOriginalRange() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();
