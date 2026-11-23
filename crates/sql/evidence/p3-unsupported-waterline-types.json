@@ -1,0 +1,47 @@
+{
+  "scope": "Report the first unsupported waterline field before looking up registered call arguments, preserving preceding facts in both visitor modes.",
+  "source_base": "9d36ba1c0a03eec0ee4af743d30462abda63f439",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "40e7b7f600f2a6120da4e461e8b0ab50f2f4288b2002af66d46521cd225dfbd1",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "b0a15eb466a559f9d53cf6bdedadfd335689e5594c84a3c462ef35635e1a0ec4",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "3d2decd0edb944e8559012f471324aa7f9f62198821c1d341c859c9bcfa73f55",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/function.rs": "86c1786ad50c03be5ed7c8bf227f8444deac250ac0c72abd9d0fbeef48126fd9",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/reads.rs": "52f34686a1b59198223f2dbd38f7d4137073a1ac91503647c358930f56239bf8",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/scalar.rs": "a8755f31948c4a496336bcb3555f87c7b81ce8e06612cad76aa936e1a88c1367",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/shape.rs": "8498b2c68e2e57ecda29cc4fd4f97ed52538894b63e6f27ad747598f34e06926",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "21506a91030f5a2c04a338aa9dbaa947674d686cab7650caf2101fc29bf304f7",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/NonMonotoneType.java": "0df710b64fbbd5b504ff2a2befbc403ff1e810502e76b3e67c68091a5b8cc09b",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "e32204ad8971945633b6bbd588a6c13ef53dffc4be43449d105eb5105f47075d"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "af425baf113fbc4318761516de9ee6d191b76edc6519896a981b023de631d795",
+    "bin/sql-difftest": "7b6150f53378f8bb958c7da2caf67591d1f0fd98101fb24a1d837593c4562b30",
+    "maven/tests.jar": "d8cec3a54801d73b22e5b406846a949e6883a44461137125017f4aeef759cb93",
+    "maven/sql-compiler.jar": "e20c24e2b1051c7f2dbf4fd4961391000eaee32a221ac5926ba4cdf65d2b7d87"
+  },
+  "negative_control": {
+    "library_sha256": "ccfff326d33ca5856347c76b78b2839f56fab3e995d5a89451a1768b6a584cd7",
+    "failed_tests": [
+      "unsupportedWaterlineTypesPreserveTheFirstFieldAndEarlierFacts"
+    ]
+  },
+  "rust_tests": 225,
+  "junit_tests": 167,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "5f945e5da38f222e5764966a50936f20d8acc713f8a11e2d26b826631cd02965"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "97d4a02c9a9662c9d16d65b12fb2fa3644b1a114564b89842b2e1e7ac925a9c4"
+    }
+  }
+}

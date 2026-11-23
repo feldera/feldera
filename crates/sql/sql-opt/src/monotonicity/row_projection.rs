@@ -9,7 +9,7 @@ mod shape;
 use self::{
     evaluate::Evaluation,
     scope::Local,
-    shape::{Shape, UnorderedRow},
+    shape::{Shape, UnorderedRow, UnorderedType},
 };
 use crate::limiters::Projection;
 use feldera_sql_ir::{
@@ -126,17 +126,25 @@ fn field_number(node: &Node) -> Result<usize, Error> {
 fn unbounded(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
-) -> Result<Option<ProjectedValue>, Error> {
-    unbounded_type(edit, edit.expression_type(expression)?)
+    constant: bool,
+) -> Result<Evaluation, Error> {
+    unbounded_type(edit, edit.expression_type(expression)?, constant)
 }
 
-fn unbounded_type(edit: &mut CircuitEditor, ty: TypeId) -> Result<Option<ProjectedValue>, Error> {
-    let Some(UnorderedRow { shape, .. }) = UnorderedRow::from_type(edit, ty)? else {
-        return Ok(None);
+fn unbounded_type(
+    edit: &mut CircuitEditor,
+    ty: TypeId,
+    constant: bool,
+) -> Result<Evaluation, Error> {
+    let shape = match UnorderedRow::from_type(edit, ty)? {
+        UnorderedType::Row(row) => row.shape,
+        UnorderedType::Unsupported(field) => {
+            return Ok(Evaluation::Failed(WaterlineError::UnsupportedType(field)));
+        }
     };
-    Ok(Some(ProjectedValue {
+    Ok(Evaluation::Value(ProjectedValue {
         shape,
-        constant: false,
+        constant,
         row_type: RowType::Unbounded {
             type_id: type_number(ty),
         },
@@ -246,7 +254,8 @@ pub(crate) fn clock_operands(
     else {
         return Ok(None);
     };
-    let Some(UnorderedRow { shape, projected }) = UnorderedRow::from_type(edit, ty)? else {
+    let UnorderedType::Row(UnorderedRow { shape, projected }) = UnorderedRow::from_type(edit, ty)?
+    else {
         return Ok(None);
     };
     if crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?.is_none()
@@ -413,6 +422,7 @@ impl WaterlineInspection {
 pub enum WaterlineError {
     MissingOperand(ExpressionId),
     TargetMaximum(ExpressionId),
+    UnsupportedType(TypeId),
 }
 
 pub enum ClosureAnalysis {
@@ -589,13 +599,15 @@ mod tests {
         let dropped = edit.tuple_field(pair, 0)?;
         let bounds = clock_operands(&mut edit, parameter, kept)?.unwrap();
         assert!(bounds.contains(&kept));
-        assert!(!clock_operands(&mut edit, parameter, dropped)?
-            .unwrap()
-            .contains(&dropped));
-        let projected = UnorderedRow::from_type(&mut edit, row)?
-            .unwrap()
-            .projected
-            .unwrap();
+        assert!(
+            !clock_operands(&mut edit, parameter, dropped)?
+                .unwrap()
+                .contains(&dropped)
+        );
+        let UnorderedType::Row(shape) = UnorderedRow::from_type(&mut edit, row)? else {
+            panic!("expected a projected row");
+        };
+        let projected = shape.projected.unwrap();
         let fields = edit.node(projected.into())?.edges("tupFields")?;
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0], fields[1]);

@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Waterline analysis reports the first unsupported nested field before examining
+the arguments of a registered function. Both visitor modes retain facts from
+earlier expressions. The preceding build failed the directed test. The corrected
+build passed 225 Rust tests and 167 JUnit tests. Twelve classic and twelve
+Gen-2 compilations matched Java through 10,929 ordered S4 observations and
+emission. [Waterline diagnostic ordering](evidence/p3-unsupported-waterline-types.json)
+
 Map fusion imported a newly simplified chain of 96 function calls and shared
 the resulting column on `aeb1a517b`. The preceding compiler failed while
 decoding that closure. All 165 targeted JUnit tests passed on the corrected

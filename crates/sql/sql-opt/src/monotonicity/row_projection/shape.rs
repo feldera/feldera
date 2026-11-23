@@ -62,10 +62,15 @@ pub(super) struct UnorderedRow {
     pub projected: Option<TypeId>,
 }
 
+pub(super) enum UnorderedType {
+    Row(UnorderedRow),
+    Unsupported(TypeId),
+}
+
 impl UnorderedRow {
     /// Declarations may reuse a field type in several rows. Compute its shape
     /// once and share the children, including those of an unbounded nested row.
-    pub fn from_type(edit: &mut CircuitEditor, root: TypeId) -> Result<Option<Self>, Error> {
+    pub fn from_type(edit: &mut CircuitEditor, root: TypeId) -> Result<UnorderedType, Error> {
         fn scalar(kind: TypeKind) -> Option<UnorderedRow> {
             // NonMonotoneType has no representation for a struct or a stream.
             (!matches!(kind, TypeKind::Struct | TypeKind::Stream)).then_some(UnorderedRow {
@@ -77,7 +82,10 @@ impl UnorderedRow {
             |kind| matches!(kind, TypeKind::Tuple | TypeKind::RawTuple | TypeKind::Ref);
         let root_kind = edit.type_kind(root)?;
         if !structured(root_kind) {
-            return Ok(scalar(root_kind));
+            return Ok(match scalar(root_kind) {
+                Some(row) => UnorderedType::Row(row),
+                None => UnorderedType::Unsupported(root),
+            });
         }
         let root = NodeId::from(root);
         let mut completed = HashMap::<NodeId, Self>::new();
@@ -92,7 +100,7 @@ impl UnorderedRow {
             let node = edit.node(id)?;
             if !structured(kind) {
                 let Some(shape) = scalar(kind) else {
-                    return Ok(None);
+                    return Ok(UnorderedType::Unsupported(ty));
                 };
                 completed.insert(id, shape);
                 continue;
@@ -143,7 +151,9 @@ impl UnorderedRow {
             active.remove(&id);
             completed.insert(id, row);
         }
-        Ok(completed.remove(&root))
+        Ok(UnorderedType::Row(
+            completed.remove(&root).expect("visited root type"),
+        ))
     }
 }
 
@@ -164,7 +174,7 @@ mod tests {
             ty = edit.tuple_type(root, false, [ty.into(), ty.into()])?;
         }
         let reference = edit.reference_type(ty)?;
-        let Some(UnorderedRow {
+        let UnorderedType::Row(UnorderedRow {
             shape: Shape::Reference(shape),
             projected: None,
         }) = UnorderedRow::from_type(&mut edit, reference)?
@@ -177,8 +187,10 @@ mod tests {
             let Shape::Tuple { fields, .. } = row else {
                 panic!("expected row");
             };
-            let [Shape::Tuple { fields: left, .. }, Shape::Tuple { fields: right, .. }] =
-                fields.as_ref()
+            let [
+                Shape::Tuple { fields: left, .. },
+                Shape::Tuple { fields: right, .. },
+            ] = fields.as_ref()
             else {
                 panic!("expected two nested rows");
             };

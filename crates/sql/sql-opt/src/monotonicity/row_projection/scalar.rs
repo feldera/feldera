@@ -1,9 +1,9 @@
 //! Scalar literals and arithmetic inside a projected waterline closure.
-use super::{evaluate::Evaluation, type_number, ProjectedValue, RowType, Shape, WaterlineError};
+use super::{ProjectedValue, RowType, Shape, WaterlineError, evaluate::Evaluation, type_number};
 use crate::monotonicity::binary::{
-    binary_waterline, BinaryOperation, BinaryWaterline, Domain, Operand,
+    BinaryOperation, BinaryWaterline, Domain, Operand, binary_waterline,
 };
-use crate::monotonicity::literal::{literal_waterline, ordered_literal, LiteralWaterline};
+use crate::monotonicity::literal::{LiteralWaterline, literal_waterline, ordered_literal};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, TypeKind as Ty};
 
 impl ProjectedValue {
@@ -31,7 +31,7 @@ pub(super) fn literal_bound(
         LiteralWaterline::Bounded { bound, constant } => {
             ProjectedValue::bounded(edit, expression, bound, constant).map(Evaluation::Value)
         }
-        LiteralWaterline::Unbounded => super::unbounded(edit, expression).map(Evaluation::from),
+        LiteralWaterline::Unbounded => super::unbounded(edit, expression, false),
         LiteralWaterline::TargetMaximum => Ok(Evaluation::Failed(WaterlineError::TargetMaximum(
             expression,
         ))),
@@ -85,12 +85,14 @@ pub(super) fn unary_bound(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
     source: ProjectedValue,
-) -> Result<Option<ProjectedValue>, Error> {
+) -> Result<Evaluation, Error> {
     let kind = edit.expr_kind(expression)?;
     let reduced = match (kind, source.reduced) {
         (Expr::Cast, None) => None,
         (Expr::Cast, Some(bound)) => super::super::casts::cast_bound(edit, expression, bound)?,
-        (Expr::UnsignedUnwrap, _) if !matches!(source.shape, Shape::Scalar(_)) => return Ok(None),
+        (Expr::UnsignedUnwrap, _) if !matches!(source.shape, Shape::Scalar(_)) => {
+            return Ok(Evaluation::NeedsVisitor);
+        }
         (_, Some(bound)) => super::super::unary_waterline(edit, expression, bound)?,
         (_, None) => None,
     };
@@ -98,15 +100,12 @@ pub(super) fn unary_bound(
         // A successful transfer copies the input's scalar monotonicity. Keep the
         // visitor's diagnostic if that operation is requested on a tuple or reference.
         if !matches!(source.shape, Shape::Scalar(_)) {
-            return Ok(None);
+            return Ok(Evaluation::NeedsVisitor);
         }
-        return ProjectedValue::bounded(edit, expression, bound, source.constant).map(Some);
+        return ProjectedValue::bounded(edit, expression, bound, source.constant)
+            .map(Evaluation::Value);
     }
-    let mut projected = super::unbounded(edit, expression)?;
-    if let Some(value) = &mut projected {
-        value.constant = source.constant;
-    }
-    Ok(projected)
+    super::unbounded(edit, expression, source.constant)
 }
 
 pub(super) fn binary_bound(
@@ -114,7 +113,7 @@ pub(super) fn binary_bound(
     expression: ExpressionId,
     [left, right]: [ExpressionId; 2],
     [lhs, rhs]: [ProjectedValue; 2],
-) -> Result<Option<ProjectedValue>, Error> {
+) -> Result<Evaluation, Error> {
     let opcode = edit
         .node(expression.into())?
         .data("opcode")
@@ -146,23 +145,19 @@ pub(super) fn binary_bound(
         && binary_waterline(domain, &opcode, operation.left, operation.right)
             != BinaryWaterline::None
     {
-        return Ok(None);
+        return Ok(Evaluation::NeedsVisitor);
     }
     let constant = lhs.constant && rhs.constant;
     let (rule, bound) = operation.lower(edit, expression.into(), ty, [lhs.reduced, rhs.reduced])?;
     if let Some(bound) = bound {
-        return ProjectedValue::bounded(edit, expression, bound, constant).map(Some);
+        return ProjectedValue::bounded(edit, expression, bound, constant).map(Evaluation::Value);
     }
     if rule != BinaryWaterline::None {
         // The general visitor reports the missing bound on the original expression.
-        return Ok(None);
+        return Ok(Evaluation::NeedsVisitor);
     }
     // Retain the layout of an unbounded ROW for subsequent field reads.
-    let mut value = super::unbounded(edit, expression)?;
-    if let Some(value) = &mut value {
-        value.constant = constant;
-    }
-    Ok(value)
+    super::unbounded(edit, expression, constant)
 }
 
 #[cfg(test)]
@@ -184,9 +179,12 @@ mod tests {
         let input = edit.named_variable(row, "payload")?;
         let cast = edit.cast(site, input, target)?;
         for constant in [false, true] {
-            let mut source = super::super::unbounded(&mut edit, input)?.unwrap();
-            source.constant = constant;
-            let value = unary_bound(&mut edit, cast, source)?.expect("unbounded row cast");
+            let source = super::super::unbounded(&mut edit, input, constant)?
+                .projected()
+                .unwrap();
+            let value = unary_bound(&mut edit, cast, source)?
+                .projected()
+                .expect("unbounded row cast");
             assert!(value.reduced.is_none());
             assert_eq!(value.constant, constant);
             assert!(matches!(value.shape, Shape::Tuple { nullable: true, .. }));
@@ -198,8 +196,8 @@ mod tests {
     }
 
     #[test]
-    fn deep_arithmetic_and_unary_clock_bounds_include_each_intermediate_expression(
-    ) -> Result<(), Error> {
+    fn deep_arithmetic_and_unary_clock_bounds_include_each_intermediate_expression()
+    -> Result<(), Error> {
         let arena = Circuit::from_json(json!({
             "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
         }))?;

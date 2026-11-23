@@ -116,6 +116,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.WaterlineProjection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.LimiterInputs;
@@ -728,6 +729,9 @@ public final class RustCircuitPass implements CircuitTransform {
         }
         var failure = reply.value.get("failure");
         if (failure != null) {
+            if ("UnsupportedType".equals(failure.required("kind").textValue()))
+                throw NonMonotoneType.unsupportedType(Utilities.getExists(nodes,
+                        failure.required("type").longValue()).to(DBSPType.class));
             var kind = WaterlineError.valueOf(failure.required("kind").textValue());
             var expression = Utilities.getExists(nodes, failure.required("expression").longValue());
             return new FailedWaterline(kind, expression.to(DBSPExpression.class));

@@ -1,6 +1,6 @@
 //! Project a field read or value wrapper against its operand waterline.
 use super::evaluate::Evaluation;
-use super::{unbounded_type, ProjectedValue, RowType, Shape};
+use super::{ProjectedValue, RowType, Shape, unbounded_type};
 use crate::limiters::Projection;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId};
 
@@ -90,11 +90,7 @@ impl RowRead {
             Self::Borrow => {
                 let Some(bound) = value.reduced else {
                     // An unbounded borrow takes its shape from its declared reference type.
-                    let mut result = unbounded_type(edit, ty)?;
-                    if let Some(result) = &mut result {
-                        result.constant = value.constant;
-                    }
-                    return Ok(result.into());
+                    return unbounded_type(edit, ty, value.constant);
                 };
                 ProjectedValue {
                     shape: Shape::Reference(value.shape.into()),

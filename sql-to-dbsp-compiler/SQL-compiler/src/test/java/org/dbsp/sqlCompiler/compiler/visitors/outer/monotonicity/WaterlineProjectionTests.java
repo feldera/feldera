@@ -987,6 +987,50 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void unsupportedWaterlineTypesPreserveTheFirstFieldAndEarlierFacts() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var before = new DBSPI32Literal(4);
+        var integer = before.getType();
+        var shape = new MonotoneType(integer);
+        var input = integer.ref().var();
+        var first = new DBSPTypeStruct(site, new ProgramIdentifier("First"), List.of(), false);
+        var second = new DBSPTypeStruct(site, new ProgramIdentifier("Second"), List.of(), false);
+        var nested = new DBSPTypeTuple(integer, first.ref(), second);
+        var local = new DBSPLetStatement("scratch", integer, true);
+        var op = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        // A registered call checks its result type before demanding its argument's absent fact.
+        for (var invalid : List.of(new NoExpression(nested),
+                new DBSPApplyExpression("sign_i32", nested, local.getVarReference()))) {
+            var later = input.deref();
+            var body = new DBSPBlockExpression(List.of(local, before.toStatement(), invalid.toStatement()), later);
+            var closure = body.closure(input);
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            var direct = new MonotoneTransferFunctions(compiler, op, kind, shape);
+            var expected = Assert.assertThrows(UnsupportedException.class, () -> direct.apply(closure));
+            Assert.assertEquals(Assert.assertThrows(UnsupportedException.class,
+                    () -> NonMonotoneType.nonMonotone(first)).getMessage(), expected.getMessage());
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var hybrid = new MonotoneTransferFunctions(compiler, op, kind, shape);
+            var error = Assert.assertThrows(UnsupportedException.class, () -> hybrid.apply(closure));
+            Assert.assertEquals(expected.getMessage(), error.getMessage());
+            for (boolean resultOnly : List.of(false, true)) {
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var failure = Assert.assertThrows(UnsupportedException.class, () ->
+                        RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                                new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                                false, resultOnly, facts::put));
+                Assert.assertEquals(expected.getMessage(), failure.getMessage());
+                Assert.assertTrue(facts.get(before).mayBeMonotone());
+                Assert.assertFalse(facts.containsKey(invalid));
+                Assert.assertFalse(facts.containsKey(later));
+            }
+        }
+    }
+
+    @Test
     public void blockDeclarationsExposeIntermediateBoundsAndPreserveTheTail() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

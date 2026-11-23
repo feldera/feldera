@@ -40,7 +40,11 @@ public class NonMonotoneType extends ScalarMonotoneType {
         } else if (type.is(DBSPTypeRef.class)) {
             return new MonotoneRefType(nonMonotone(type.to(DBSPTypeRef.class).type));
         }
-        throw new UnsupportedException("Creating a non-monotoneo type from " + type, type.getNode());
+        throw unsupportedType(type);
+    }
+
+    public static UnsupportedException unsupportedType(DBSPType type) {
+        return new UnsupportedException("Creating a non-monotoneo type from " + type, type.getNode());
     }
 
     @Override

@@ -1,9 +1,9 @@
 //! Evaluate children before their parent and bind locals between successive statements.
 use super::{
-    function, project_tuple, project_wrapper, scalar, unbounded, ExpressionWaterline, Observations,
-    ProjectedValue, Row, RowType, WaterlineError,
+    ExpressionWaterline, Observations, ProjectedValue, Row, RowType, WaterlineError, function,
+    project_tuple, project_wrapper, scalar, unbounded,
 };
-use super::{scope::VariableRead, FactType};
+use super::{FactType, scope::VariableRead};
 use crate::function_calls::function_name;
 use crate::monotonicity::literal::ordered_literal;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind};
@@ -97,13 +97,9 @@ impl Operation {
             }
         }
         let mut children = children.filter_map(|child| child.value);
-        let value = match self {
+        match self {
             Self::Wrapper => {
-                return project_wrapper(
-                    edit,
-                    id,
-                    children.next().expect("visited wrapper operand"),
-                );
+                project_wrapper(edit, id, children.next().expect("visited wrapper operand"))
             }
             Self::Unary => {
                 scalar::unary_bound(edit, id, children.next().expect("visited unary operand"))
@@ -113,11 +109,10 @@ impl Operation {
                 let right = children.next().expect("visited right operand");
                 scalar::binary_bound(edit, id, operands, [left, right])
             }
-            Self::Tuple => project_tuple(edit, id, children),
+            Self::Tuple => project_tuple(edit, id, children).map(Evaluation::from),
             Self::Call(_) => unreachable!("calls consume optional argument facts above"),
-            Self::Unbounded => unbounded(edit, id),
-        }?;
-        Ok(value.into())
+            Self::Unbounded => unbounded(edit, id, false),
+        }
     }
 }
 
@@ -359,8 +354,9 @@ impl Row {
                     continue;
                 }
                 Step::EmptyBlock(id) => {
-                    let Some(value) = unbounded(edit, id)? else {
-                        return Ok(Evaluation::NeedsVisitor);
+                    let value = match unbounded(edit, id, false)? {
+                        Evaluation::Value(value) => value,
+                        failure => return Ok(failure),
                     };
                     values.push(Visited {
                         id,

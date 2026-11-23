@@ -998,12 +998,13 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                     json!({"inspection": waterline_inspection(inspection)})
                 }
                 feldera_sql_opt::ClosureAnalysis::Failed { error, facts } => {
-                    let (kind, expression) = match error {
-                        feldera_sql_opt::WaterlineError::MissingOperand(id) => ("MissingOperand", id),
-                        feldera_sql_opt::WaterlineError::TargetMaximum(id) => ("TargetMaximum", id),
-                    };
+                    use feldera_sql_opt::WaterlineError;
                     let mut reply = expression_facts_reply(&arena, &edit, facts, None)?;
-                    reply["failure"] = json!({"kind":kind, "expression":inner_number(expression.into())});
+                    reply["failure"] = match error {
+                        WaterlineError::MissingOperand(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
+                        WaterlineError::TargetMaximum(id) => json!({"kind":"TargetMaximum", "expression":inner_number(id.into())}),
+                        WaterlineError::UnsupportedType(id) => json!({"kind":"UnsupportedType", "type":inner_number(id.into())}),
+                    };
                     reply
                 }
             });
