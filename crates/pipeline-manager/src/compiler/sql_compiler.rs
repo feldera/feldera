@@ -690,6 +690,7 @@ pub(crate) async fn perform_sql_compilation(
         program_config,
         program_code,
         output,
+        shadow_package: None,
     })
     .await;
     let _shadow =
@@ -711,6 +712,8 @@ pub(super) struct SqlCompilationRequest<'a> {
     pub program_config: &'a serde_json::Value,
     pub program_code: &'a str,
     pub output: SqlCompilationOutput,
+    /// The Rust optimizer shadow can return the digest of its deployed compiler package.
+    pub shadow_package: Option<&'a mut String>,
 }
 
 pub(super) type SqlCompilationResult =
@@ -732,6 +735,7 @@ pub(super) async fn perform_sql_compilation_inner(
         program_config,
         program_code,
         output,
+        shadow_package,
     } = request;
     let start = Instant::now();
 
@@ -883,6 +887,9 @@ pub(super) async fn perform_sql_compilation_inner(
         let manifest = working_dir.join("hybrid-request.json");
         create_new_file_with_content(&manifest, &request.to_string()).await?;
         let mut command = Command::new("sql2dbsp");
+        if rust_optimizer && shadow_package.is_some() {
+            command.env("FELDERA_SHADOW_IDENTIFY_PACKAGE", "1");
+        }
         command.arg("--hybrid").arg(manifest).arg(&hybrid_attempt);
         command
     } else {
@@ -1047,6 +1054,7 @@ pub(super) async fn perform_sql_compilation_inner(
             &runtime_selector,
             rust_optimizer,
             exit_status.success(),
+            shadow_package,
         )
         .await?
     } else if stderr_str.is_empty() {

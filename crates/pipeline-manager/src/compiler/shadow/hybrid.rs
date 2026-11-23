@@ -12,6 +12,7 @@ struct Attempt {
     #[serde(default)]
     rust_optimizer_passes: bool,
     producer_commit: String,
+    package_sha256: Option<String>,
     runtime_abi: String,
     engine: String,
     status: String,
@@ -25,6 +26,7 @@ pub(in crate::compiler) async fn messages(
     runtime: &RuntimeSelector,
     rust_optimizer: bool,
     success: bool,
+    package: Option<&mut String>,
 ) -> Result<Vec<SqlCompilerMessage>, SqlCompilationError> {
     let raw = read_file_content(&directory.join("result.json")).await?;
     let attempt: Attempt = serde_json::from_str(&raw).map_err(|error| {
@@ -52,6 +54,14 @@ pub(in crate::compiler) async fn messages(
                 attempt.reason.as_deref().unwrap_or("no reason supplied")
             )));
         }
+    }
+    if let (Some(output), Some(digest)) = (package, attempt.package_sha256)
+        && digest.len() == 64
+        && digest
+            .bytes()
+            .all(|c| c.is_ascii_digit() || matches!(c, b'a'..=b'f'))
+    {
+        *output = digest;
     }
     Ok(attempt.messages)
 }

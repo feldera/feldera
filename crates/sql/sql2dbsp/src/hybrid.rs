@@ -1,5 +1,6 @@
 //! Run the Java front end, the isolated Rust S3 worker and the classic Java
 //! printer as one compilation. Only a completed attempt becomes visible.
+mod package;
 mod supervise;
 
 use self::supervise::Supervisor;
@@ -382,27 +383,30 @@ fn digests(
         if path.is_dir() {
             digests(supervisor, root, &path, hashes)?;
         } else {
-            let mut digest = Sha256::new();
-            let mut file = File::open(&path)?;
-            let mut buffer = [0; 65536];
-            loop {
-                supervisor.remaining()?;
-                let count = file.read(&mut buffer)?;
-                if count == 0 {
-                    break;
-                }
-                digest.update(&buffer[..count]);
-            }
             hashes.insert(
                 path.strip_prefix(root)
                     .expect("artifact inside staging")
                     .to_string_lossy()
                     .into_owned(),
-                hex::encode(digest.finalize()).into(),
+                hex::encode(file_digest(supervisor, &path)?).into(),
             );
         }
     }
     Ok(())
+}
+
+fn file_digest(supervisor: &Supervisor, path: &Path) -> Result<[u8; 32], Failure> {
+    let mut digest = Sha256::new();
+    let mut file = File::open(path)?;
+    let mut buffer = [0; 65536];
+    loop {
+        supervisor.remaining()?;
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            return Ok(digest.finalize().into());
+        }
+        digest.update(&buffer[..count]);
+    }
 }
 
 pub(super) fn run(manifest: &Path, attempt: &Path) -> io::Result<ExitCode> {
@@ -429,12 +433,22 @@ pub(super) fn run(manifest: &Path, attempt: &Path) -> io::Result<ExitCode> {
     let mut family = "hybrid";
     let mut attempts = 0;
     let mut hashes = serde_json::Map::new();
+    let mut package_sha256 = None;
     let result = (|| -> Result<Value, Failure> {
         let supervisor =
             Supervisor::new(&request.slots, Duration::from_millis(request.deadline_ms))?;
         let scratch = tempfile::tempdir_in(attempt)?;
         attempts += 1;
+        let package = if request.rust_optimizer_passes
+            && request.ir_only
+            && env::var_os("FELDERA_SHADOW_IDENTIFY_PACKAGE").is_some()
+        {
+            package::Package::identify(&supervisor, Path::new(&request.java_classpath)).ok()
+        } else {
+            None
+        };
         let first = request.attempt(&supervisor, scratch.path(), ready.path(), false);
+        package_sha256 = package.and_then(package::Package::verified_digest);
         let messages = match first {
             Err(Failure::Internal(_) | Failure::Limit(_))
                 if request.allow_stateless_java_fallback =>
@@ -460,10 +474,13 @@ pub(super) fn run(manifest: &Path, attempt: &Path) -> io::Result<ExitCode> {
             e.fields()
         }
     };
-    let record = json!({"schema_version":1,"compiler":family,"worker_version":env!("CARGO_PKG_VERSION"),
+    let mut record = json!({"schema_version":1,"compiler":family,"worker_version":env!("CARGO_PKG_VERSION"),
         "producer_commit":request.producer_commit,"runtime_abi":request.runtime_abi,
         "rust_optimizer_passes":family == "hybrid" && request.rust_optimizer_passes,
         "engine":request.engine,"status":status,"reason":reason,"messages":messages,"attempts":attempts,"artifacts":hashes});
+    if let Some(digest) = package_sha256.filter(|_| family == "hybrid") {
+        record["package_sha256"] = digest.into();
+    }
     super::write_json(File::create_new(ready.path().join("result.json"))?, &record)?;
     fs::rename(ready.path(), attempt.join("result"))?;
     Ok(if status == "ok" {

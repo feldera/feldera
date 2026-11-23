@@ -2512,11 +2512,17 @@ the two-second deadline. [Decoder campaign](evidence/p3-decoder-campaign.json)
 
 For an exported field window, run the daily counter report on all manager log
 shards for that deployment. It reads structured JSON-lines logs, checks the
-compiler build and counts only completed UTC days. An observed difference
-starts a new window immediately, including on the current day. A day below the sample minimum contributes no qualifying day.
+manager build and compiler package and counts only completed UTC days. The
+package ID hashes the concatenated 32-byte SHA-256 digests of the worker
+executable, native optimizer library and selected compiler JAR, in that order.
+Deploy immutable packages for the field window. The worker checks
+that all three files retain their identities across its compilation. A missing
+package ID contributes zero matches. A difference with a missing ID resets the
+window for that manager build. A difference takes effect immediately, even on
+the current day. A day below the sample minimum contributes no qualifying day.
 
 ```sh
-python3 crates/sql/scripts/shadow_sample.py --build "$COMPILER_BUILD" field-logs/*.jsonl
+python3 crates/sql/scripts/shadow_sample.py --build "$COMPILER_BUILD" --package "$PACKAGE_SHA256" field-logs/*.jsonl
 ```
 
 The owner confirmed on 2026-11-20 that no local field report exists. The P3

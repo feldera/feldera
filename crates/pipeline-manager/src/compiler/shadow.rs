@@ -171,7 +171,7 @@ pub(super) fn launch(
     sql: &str,
     primary: &SqlCompilationResult,
 ) -> Option<JoinHandle<Outcome>> {
-    let compiler = config.shadow_sql_compiler?;
+    config.shadow_sql_compiler?;
     let skipped = |reason: &str| {
         let skipped = SKIPPED.fetch_add(1, Ordering::Relaxed) + 1;
         info!(reason, skipped, "SQL shadow skipped");
@@ -199,16 +199,12 @@ pub(super) fn launch(
     let Ok(program_config) = serde_json::to_value(selected) else {
         return skipped("cannot serialize program configuration");
     };
-    let accepted = matches!(reference, Observation::Success(..));
     let deadline = Duration::from_secs(config.shadow_sql_compiler_timeout_secs);
     let common = common.clone();
     let config = config.clone();
     let sql = sql.to_owned();
     Some(tokio::spawn(async move {
         let outcome = run(&common, &config, &program_config, &sql, reference, deadline).await;
-        if compiler == crate::config::ShadowCompiler::RustOptimizer {
-            sample::record(&sql, accepted, &outcome);
-        }
         drop(permit);
         let completed = COMPLETED.fetch_add(1, Ordering::Release) + 1;
         match &outcome {
@@ -232,6 +228,10 @@ async fn run(
     let id = PipelineId(Uuid::now_v7());
     let directory = ephemeral_compilation_dir(config).join(id.to_string());
     let expires = Instant::now() + deadline;
+    let optimizer =
+        config.shadow_sql_compiler == Some(crate::config::ShadowCompiler::RustOptimizer);
+    let accepted = matches!(reference, Observation::Success(..));
+    let mut package = String::new();
     // Primary compiler logs can contain SQL and connector settings.
     let result = async {
         timeout_at(
@@ -248,26 +248,28 @@ async fn run(
                 program_config,
                 program_code: sql,
                 output: SqlCompilationOutput::Shadow,
+                shadow_package: optimizer.then_some(&mut package),
             }),
         )
         .await
     }
     .with_subscriber(Dispatch::none())
     .await;
+    let package = (!package.is_empty()).then_some(package.as_str());
     let outcome = match result {
         Err(_) => Outcome::TimedOut,
         Ok(result) => match Observation::from_result(&result) {
             Ok(actual) => match actual.compare(reference) {
                 Ok(()) => Outcome::Equal,
                 Err(difference) => {
-                    if config.shadow_sql_compiler
-                        == Some(crate::config::ShadowCompiler::RustOptimizer)
+                    if optimizer
                         && let Err(error) = mismatch::retain(
                             config,
                             program_config,
                             &directory,
                             id.0,
                             difference,
+                            package,
                             expires,
                         )
                         .await
@@ -282,11 +284,15 @@ async fn run(
     };
     // Timeout drops the attempt's ProcessGroupTerminator before cleanup. The
     // semaphore remains held until cleanup finishes, including after a failure.
-    finish(
+    let outcome = finish(
         outcome,
         tokio::fs::remove_dir_all(&directory).await,
         &CLEANUP_HEALTHY,
-    )
+    );
+    if optimizer {
+        sample::record(package, sql, accepted, &outcome);
+    }
+    outcome
 }
 
 fn finish(outcome: Outcome, cleanup: io::Result<()>, healthy: &AtomicBool) -> Outcome {
@@ -629,6 +635,7 @@ mod tests {
         assert_eq!(files.len(), 1);
         let bundle: Value = serde_json::from_slice(&std::fs::read(&files[0]).unwrap()).unwrap();
         assert_eq!(bundle["first_difference"], "verdict");
+        assert_eq!(bundle["package_sha256"].as_str().unwrap().len(), 64);
         assert_eq!(bundle["anonymized_sql_status"], "available");
         let anonymized = bundle["anonymized_sql"].as_str().unwrap().to_lowercase();
         assert!(anonymized.contains("create table id_"));
@@ -663,6 +670,7 @@ mod tests {
             program_config,
             program_code: sql,
             output: SqlCompilationOutput::Full,
+            shadow_package: None,
         })
         .await;
         let program = &full.as_ref().unwrap().0;
@@ -689,7 +697,13 @@ mod tests {
         .with_subscriber(subscriber)
         .await;
         assert_eq!(outcome, Outcome::Equal, "{family:?} shadow for {runtime:?}");
-        assert!(std::fs::read(log_path).unwrap().is_empty());
+        let log = std::fs::read_to_string(log_path).unwrap();
+        if family == crate::config::ShadowCompiler::RustOptimizer {
+            assert!(log.contains("Rust optimizer daily shadow sample"));
+            assert!(!log.contains(sql));
+        } else {
+            assert!(log.is_empty());
+        }
     }
 
     #[tokio::test]

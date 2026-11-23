@@ -4,17 +4,24 @@ import argparse
 from datetime import date, datetime, timezone
 import json
 from pathlib import Path
+import re
 
 EVENT = "Rust optimizer daily shadow sample"
 MIN_PROGRAMS = 200
 MIN_DAYS = 30
 
 
-def summarize(events, build, today):
+def summarize(events, build, package, today):
+    if not re.fullmatch(r"[0-9a-f]{64}", package):
+        raise ValueError("Expected a lowercase SHA-256 compiler package digest")
     days = {}
     for event in events:
         fields = event.get("fields", event)
         if fields.get("message") != EVENT or fields.get("compiler_build") != build:
+            continue
+        observed = fields.get("package_sha256")
+        identified = isinstance(observed, str) and re.fullmatch(r"[0-9a-f]{64}", observed)
+        if identified and observed != package:
             continue
         day = date.fromisoformat(fields["date"])
         if day > today:
@@ -22,6 +29,12 @@ def summarize(events, build, today):
         counts = [fields[key] for key in ("matched_distinct", "differences", "incomplete")]
         if any(type(value) is not int or value < 0 for value in counts) or counts[0] > MIN_PROGRAMS:
             raise ValueError(f"Invalid daily shadow counts on {day}")
+        if not identified:
+            # An older worker or a package replaced during compilation cannot
+            # contribute a match. Its difference may belong to this candidate.
+            if not counts[1]:
+                continue
+            counts[0] = 0
         # These are cumulative process counters. Two processes can see identical programs.
         # A single process reaching the threshold proves the lower bound for the day.
         distinct, differences, incomplete = days.get(day, (0, False, False))
@@ -38,13 +51,14 @@ def summarize(events, build, today):
         if day < today or different:
             report.append({"date": day.isoformat(), "matched_distinct_lower_bound": distinct,
                            "observed_difference": different, "observed_incomplete": incomplete})
-    return {"compiler_build": build, "days": report, "qualifying_dates_since_last_difference": qualified,
+    return {"compiler_build": build, "package_sha256": package, "days": report, "qualifying_dates_since_last_difference": qualified,
             "qualifying_days": len(qualified), "field_sample_satisfied": len(qualified) >= MIN_DAYS}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", required=True, help="compiler_build from the field manager")
+    parser.add_argument("--package", required=True, help="package_sha256 from the field manager")
     parser.add_argument("logs", type=Path, nargs="+", help="complete exported JSON-lines logs for this field window")
     args = parser.parse_args()
 
@@ -55,7 +69,7 @@ def main():
                     if line.strip():
                         yield json.loads(line)
 
-    print(json.dumps(summarize(events(), args.build, datetime.now(timezone.utc).date()), indent=2))
+    print(json.dumps(summarize(events(), args.build, args.package, datetime.now(timezone.utc).date()), indent=2))
 
 
 if __name__ == "__main__":

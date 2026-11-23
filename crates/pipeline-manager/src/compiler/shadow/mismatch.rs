@@ -60,6 +60,7 @@ pub(super) async fn retain(
     attempt: &Path,
     id: Uuid,
     difference: Difference,
+    package: Option<&str>,
     expires: Instant,
 ) -> io::Result<()> {
     let program = ProgramConfig::deserialize(program).map_err(io::Error::other)?;
@@ -67,6 +68,7 @@ pub(super) async fn retain(
     let mut bundle = json!({
         "version": 1,
         "compiler_build": env!("VERGEN_GIT_SHA"),
+        "package_sha256": package,
         "runtime": runtime.to_string(),
         "engine": if runtime.is_gen2() { "gen2" } else { "classic" },
         "use_platform_compiler": program.use_platform_compiler,
@@ -165,6 +167,7 @@ mod tests {
             attempt.path(),
             id,
             Difference::Schema,
+            None,
             Instant::now() + Duration::from_secs(30),
         )
         .await

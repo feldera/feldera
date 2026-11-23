@@ -49,7 +49,8 @@ observation exceeds 4 MiB. The default deadline is 30 seconds. Set
 With `--shadow-sql-compiler rust-optimizer`, a difference also writes a private
 JSON file under `<compiler-working-directory>/sql-shadow-mismatches/`. The
 server keeps the latest 32 bundles. Each file records the compiler manager
-build, runtime, engine, platform compiler override and first differing output.
+build, compiler package digest when available, runtime, engine, platform
+compiler override and first differing output.
 Within the remaining shadow deadline, the platform compiler's `--anonymize`
 option renames identifiers and removes connector properties. Its output can
 contain SQL literals. Administrators can inspect a bundle locally and export
