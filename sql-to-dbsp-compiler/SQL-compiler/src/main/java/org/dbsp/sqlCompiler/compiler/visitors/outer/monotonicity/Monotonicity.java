@@ -924,8 +924,9 @@ public class Monotonicity extends CircuitVisitor {
         DBSPExpression minimum = withFirstField(
             node.getNode(), input.getType(), 
             firstField(input).applyCloneIfNeeded());
+        // Reducing a row cast can reuse the accumulator at several field reads.
         DBSPExpression value = minMax.postProcessing == null ? minimum :
-                minMax.postProcessing.call(minimum.borrow()).reduce(this.compiler());
+                minMax.postProcessing.call(minimum.borrow()).reduce(this.compiler()).ensureTree(this.compiler());
         DBSPType outputType = node.getOutputIndexedZSetType().elementType;
         // An output shape the model does not describe yields no waterline
         if (!value.getType().sameType(outputType))
