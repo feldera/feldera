@@ -11999,13 +11999,28 @@
                 ],
                 "nullable": true
               },
+              "last_termination": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ProcessTermination"
+                  }
+                ],
+                "nullable": true
+              },
               "manager": {
                 "$ref": "#/components/schemas/ResourceManager"
+              },
+              "restart_count": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Times the pipeline process restarted (Kubernetes `restartCount`). Absent when the runner\nhas not reported the process.",
+                "nullable": true,
+                "minimum": 0
               }
             }
           }
         ],
-        "description": "CPU and memory of one host."
+        "description": "CPU and memory of one host, and restarts of its pipeline process."
       },
       "HostMetrics": {
         "type": "object",
@@ -15032,6 +15047,45 @@
           "name": {
             "type": "string",
             "description": "Name of the preprocessor.\nAll preprocessors with the same name will perform the same task."
+          }
+        }
+      },
+      "ProcessTermination": {
+        "type": "object",
+        "description": "How the pipeline process ended (Kubernetes `ContainerStateTerminated`).",
+        "required": [
+          "exit_code"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Identifies one termination: the same termination keeps the same time.",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "description": "Machine-readable cause, for example `OOMKilled`, `Error` or `Completed`.",
+            "nullable": true
+          },
+          "signal": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Absent when the platform does not report it.",
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },

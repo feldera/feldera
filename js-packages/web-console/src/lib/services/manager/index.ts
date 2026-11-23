@@ -617,6 +617,7 @@ export type {
   PostValidateProgramResponse,
   PostValidateProgramResponses,
   PreprocessorConfig,
+  ProcessTermination,
   ProgramConfig,
   ProgramDiff,
   ProgramError,

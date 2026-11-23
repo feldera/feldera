@@ -318,6 +318,7 @@ It contains the following fields:
         feldera_types::deployment::Transition,
         feldera_types::deployment::HostStatus,
         feldera_types::deployment::HostCompute,
+        feldera_types::deployment::ProcessTermination,
         feldera_types::deployment::ComputeResources,
         feldera_types::deployment::HostStorage,
         feldera_types::deployment::StorageResources,
