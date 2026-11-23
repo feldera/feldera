@@ -462,6 +462,18 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Map fusion imported a newly simplified chain of 96 function calls and shared
+the resulting column on `aeb1a517b`. The preceding compiler failed while
+decoding that closure. All 165 targeted JUnit tests passed on the corrected
+build. [Map-fusion snapshot and replay](evidence/p3-map-fusion-closure-snapshots.json)
+
+Rust matched Java when weighted constant arrays contained SQL tuples,
+raw tuples and points. A repeated computed row replaced the stored weight,
+and a repeated constant row added its weight. Projection preserved the first
+key and insertion position on replacement. The selected 12 classic and eight
+Gen-2 cases matched through 8,778 ordered S4 observations on each build.
+[Collection elements](evidence/p3-collection-element-equality.json) · [Row weights and projection](evidence/p3-computed-row-weights.json)
+
 On `091f41bcb`, a 144-level weighted constant row matched the Java window-key
 decision. The preceding build failed at its 128-level comparison limit. All
 223 Rust tests and 161 targeted JUnit tests passed. Twelve classic and eight

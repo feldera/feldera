@@ -1,0 +1,42 @@
+{
+  "scope": "Compare SQL tuple field identities, raw tuple elements and geographic point coordinates inside constant collections.",
+  "source_base": "091f41bcb7fe83b59d3feb7f28df12125575a713",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/constant_rows.rs": "6fe9c43057d35f492df52aa0d6cb0b396c1dcd8a78556e5fa3ff125e0091bb17",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "35896cee5749104dd18d84d534d542135a396389f1f67567edae559047196bfc"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "c630995907fd77c1b91a7feb31ec8751915fe5b0b2383b0ed7016aa76380f715",
+    "bin/sql-difftest": "1e7c31b64d6892923b3dd4c3f5621196382807875cc5d0cd2a50269bb584d293",
+    "maven/tests.jar": "e7b4ebdebdf84cc81802215cadc3569c14381282261a6216d08bae85fb432087",
+    "maven/sql-compiler.jar": "c4502c0e9790d479b0fd7c227f579824a1f014d992d3cdee1703812b8b50d346"
+  },
+  "negative_control": {
+    "library_sha256": "16518f985697742f768253a1bf75b0ec49b2f22394981e45c2d7c04847be8360",
+    "failed_tests": [
+      "constantArrayKeysCompareRawTupleElementsAndPoints",
+      "constantArrayKeysCompareSqlTupleFieldIdentities"
+    ],
+    "compiler_jar_sha256": "fd373813300f3747a727f6339c40bb18453d5f45a687a666d798bbd0993c3b29"
+  },
+  "rust_tests": 223,
+  "junit_tests": 163,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "a6f8d851347ef286e237fbf5f719a44ec6120affe3a39981ef295d1e60c732e5"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "96d05c9ddb055a8f45406ae85fa3ee14b192fd32242c1644dd77be29f12cb06c"
+    }
+  },
+  "source_commit": "be11aae2ed5f88d64a1c21fd48987947e3a94474"
+}

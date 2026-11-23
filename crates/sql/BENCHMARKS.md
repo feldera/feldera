@@ -4,6 +4,19 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Computed row weights, 2026-11-23
+
+On `d393a3e03`, all 69 cold pairs matched at classic source emission.
+Each compiler ran in a new process on CPU 15 of the shared ARM64 VM. Each
+workload used two warmup pairs and 21 measured pairs, alternating order.
+[Paired measurements and build identities](evidence/p3-computed-row-weights-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.493 | 1.929 | 0.774× |
+| Nexmark suite | 4.971 | 5.792 | 1.165× |
+| Outer join | 2.117 | 1.777 | 0.839× |
+
 ## Nested constant rows, 2026-11-23
 
 On `091f41bcb`, all 69 paired invocations produced equal diagnostics and

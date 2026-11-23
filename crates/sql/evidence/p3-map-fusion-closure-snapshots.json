@@ -1,0 +1,44 @@
+{
+  "scope": "Carry deep simplified map closures, shared references and live comparison metadata through the map-fusion snapshot.",
+  "source_base": "d393a3e03191ceccfb3b2c2bff575e8cbebdfa40",
+  "source_files_sha256": {
+    "crates/sql/sql-opt/src/map_fusion.rs": "d683ca8adb6d97050676e49d729c367ae3a158f7393786742cef654b771329ad",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/MapFusionState.java": "5201614ae2413147d3085e3c1142ad84142c87309933e7ce4594132f408fa05f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/ToJsonInnerVisitor.java": "c471bc66faf25906bf9e5223a99710381e15a5d335b8c91323c0e606d3e33612",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/ToJsonOuterVisitor.java": "c573815631370bf906d503e78eaa23aebaab1f6e853dab876c9d6ae8c129a910",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "a5e3dd3bbe067686bcbf99df480dff35df077912182d929147bcd4e3d11e9d32"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "92067c763b8a00fd67fe2d0f4897421fdd4998c9179a8d8305390d3a55be3418",
+    "bin/sql-difftest": "a8755ae3e19aaa26f8cc1cb653dbb75ff944cdb37ba11d9bfd92614cce97058c",
+    "maven/tests.jar": "864efa37399f50feeaadc4ad70804a7421f813e2691aefb7475146a19aafb146",
+    "maven/sql-compiler.jar": "2606f33c06cef4b254fcb9582939679ebe1e979c3155a312c1045e78821ac5fe"
+  },
+  "negative_control": {
+    "library_sha256": "c28c780e821a3e38dc33f46919c1d37edfa9164112de72523fb9c5c719affea5",
+    "failed_tests": [
+      "mapFusionImportsDeepSimplifiedFunctions"
+    ],
+    "compiler_jar_sha256": "559198ad54d356e9ebfaf1f9e5608bf6b1ccc080da0d581e5d031db6658d81ba"
+  },
+  "rust_tests": 225,
+  "junit_tests": 165,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "dc991f190279154c22ce6841ef6c7adc014e24f24d63e9783126048f1828421e"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "4a8ce77997438787c26ab49ca5be08a515aa99e937388fcea5e49087213ed8de"
+    }
+  },
+  "source_commit": "aeb1a517b58bb9eec1e2e7108248a8161ff61bdf"
+}

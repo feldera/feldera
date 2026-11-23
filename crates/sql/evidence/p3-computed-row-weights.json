@@ -1,0 +1,74 @@
+{
+  "scope": "Consolidate weighted values and replace projected map keys with their Java equality and ordering rules.",
+  "source_base": "be11aae2ed5f88d64a1c21fd48987947e3a94474",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/constant_rows.rs": "e5b3e675e0483b3a65e4d77e6edeaaffc4ca3dd6624ea87e3c2ff3cbc6b4fc6a",
+    "crates/sql/sql-opt/src/project_outputs.rs": "a9123db885677cd4edd9861e910a2cc0f6cf655c62bdd57d5363f150c9b38a8a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "6927e9586b621b97908bbe52a95874870459feee58a08f8977735486f82a225c",
+    "crates/sql/sql-expr/src/constant_rows/object_equality.rs": "ace65af394ea0845f0050c7ff8e7df539c1a14899edbfb3deba0acf3b0722147"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "c28c780e821a3e38dc33f46919c1d37edfa9164112de72523fb9c5c719affea5",
+    "bin/sql-difftest": "ec7e4a16b652f77116b74f10763b4be7238def5aa61f112e4a1fcce91d1c1754",
+    "maven/tests.jar": "4d88dbdeec311eba1167d3ab9bbfc938b398d40064c17c24f59c76112be5d9ae",
+    "maven/sql-compiler.jar": "559198ad54d356e9ebfaf1f9e5608bf6b1ccc080da0d581e5d031db6658d81ba"
+  },
+  "negative_control": {
+    "library_sha256": "c630995907fd77c1b91a7feb31ec8751915fe5b0b2383b0ed7016aa76380f715",
+    "failed_tests": [
+      "computedRowKeysReplaceWeightsWithoutCancellation"
+    ],
+    "compiler_jar_sha256": "c4502c0e9790d479b0fd7c227f579824a1f014d992d3cdee1703812b8b50d346"
+  },
+  "rust_tests": 225,
+  "junit_tests": 164,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "c4dd400e4dd03ad9d84705a7f28aa6f28fe432ce70b09d78ae41833de94da283"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "da32d4b57e5ce31763ed49409a1a66fd859412274ca4bdafd87c082cf6c84456"
+    }
+  },
+  "source_commit": "d393a3e03191ceccfb3b2c2bff575e8cbebdfa40",
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      10.110889,
+      9.912305,
+      13.689087,
+      7.245355,
+      6.743064,
+      7.011522,
+      6.908064,
+      6.641065,
+      6.720357,
+      8.606101,
+      4.921195,
+      6.528107,
+      7.776853,
+      6.887314,
+      7.740853,
+      6.651065,
+      9.507098,
+      8.909267,
+      10.070389,
+      7.483604
+    ],
+    "p95_ms": 10.110889,
+    "largest_driver_plus_front_end_rss_bytes": 70623232,
+    "compiler_sha256": "e043b80e7fb31fa32f1fed6c59fb1f61ff751f1e2692635a0a2712ba41001775"
+  }
+}
