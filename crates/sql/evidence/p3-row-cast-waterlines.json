@@ -53,5 +53,34 @@
     "batch_receipts_sha256": "01707e21a4a47cdfd911a4e674c9205f25e1414f4d0083fbe02d0ac488cf48a4",
     "receipt_sha256": "f77242b5fa1ceaec54be9aeb94c48e18fc70a02ac95dae7004821397e2262e21"
   },
-  "scope": "Projection of nested row casts inside the aggregate postprocessor on the eight directed ARG_MIN compilations."
+  "scope": "Projection of nested row casts inside the aggregate postprocessor on the eight directed ARG_MIN compilations.",
+  "frozen_minimum_runtime": {
+    "executed": 9,
+    "compile_only": 0,
+    "input_commands": 130,
+    "population_sha256": "bb1e39073914d905a226fc65250baf96279775b439d77ac98c236207e271be8f",
+    "batch_receipts_sha256": "bf108532eabbbb63aa580fcec0fa65a3ddb063d4adc9b7b3daa42ded08d1b457",
+    "cases": [
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests#minAndMaxOfOneInput/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093NullableAggregate/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests#sameOutputWithoutLateness/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093TwoColumnsData/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093Aggregate/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093Chain/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests#nullComparedBelowWaterline/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests#nullComparedBelowWaterline/1",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093NullTimestamps/0"
+    ],
+    "receipt_sha256": "4270742b58145536a881547dbbae8e5cf44588a4f602fb5819bda6d0373a4f63"
+  },
+  "upstream_java_suites": {
+    "commit": "84b11f56c7674db6089ea1e63997dd61d4721ffa",
+    "junit_tests": 15,
+    "generated_rust_tests_executed": 10,
+    "suites": [
+      "ArgMinGCIncrementalTests",
+      "MinWaterlineIncrementalTests"
+    ],
+    "log_sha256": "a39b4145b24f99536015172e8c3d7fd41097ece5e48523ca4e3af3cc65c6bb5d"
+  }
 }
