@@ -1,12 +1,23 @@
 package org.dbsp.sqlCompiler.compiler.ir;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Maybe;
 import org.junit.Assert;
@@ -14,6 +25,41 @@ import org.junit.Test;
 
 public class InliningTests {
     final ExpressionBuilder b = new ExpressionBuilder();
+
+    @Test
+    public void canonicalizeDeeplyShadowedVariables() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var row = b.tup(b.i32n());
+        var source = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(row));
+        circuit.addOperator(source);
+        var input = new DBSPVariablePath("input", row.ref());
+        var value = new DBSPVariablePath("value", b.i32n());
+        DBSPExpression nested = value.deepCopy();
+        for (int i = 0; i < 144; i++)
+            nested = new DBSPLetExpression(new DBSPVariablePath("value", b.i32n()), value.deepCopy(), nested);
+        nested = new DBSPLetExpression(new DBSPVariablePath("value", b.i32n()), input.deref().field(0), nested);
+        var map = new DBSPMapOperator(site, b.tuple(nested).closure(input), source.outputPort());
+        circuit.addOperator(map);
+        var canonical = new CanonicalForm(compiler).getCircuitRewriter(false);
+        var direct = canonical.apply(circuit).allOperators.get(1).to(DBSPMapOperator.class).getClosureFunction();
+        Assert.assertEquals("p0", direct.parameters[0].name);
+        var body = direct.body.to(DBSPTupleExpression.class).get(0);
+        for (int i = 1; i <= 145; i++) {
+            var binding = body.to(DBSPLetExpression.class);
+            Assert.assertEquals("p" + i, binding.variable.variable);
+            if (i > 1)
+                Assert.assertEquals("p" + (i - 1), binding.initializer.to(DBSPVariablePath.class).variable);
+            body = binding.consumer;
+        }
+        Assert.assertEquals("p145", body.to(DBSPVariablePath.class).variable);
+        if (Boolean.getBoolean("feldera.optimizer.compareRustCanonicalForm")) {
+            var pass = new RustCircuitPass(compiler, canonical, new OptimizerSnapshots(compiler));
+            var hybrid = pass.apply(circuit).allOperators.get(1).to(DBSPMapOperator.class).getClosureFunction();
+            Assert.assertEquals(direct.toString(), hybrid.toString());
+        }
+    }
 
     @Test
     public void testInlining() {

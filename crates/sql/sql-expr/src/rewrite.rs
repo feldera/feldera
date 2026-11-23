@@ -17,6 +17,18 @@ pub enum Visit {
 pub trait Transformation {
     fn preorder(&mut self, editor: &mut CircuitEditor, node: NodeId) -> Result<Visit, Error>;
 
+    /// A declaration can introduce a binding between two independent field visits.
+    /// Return its replacement here, or None to visit the child normally.
+    fn independent_child(
+        &mut self,
+        _editor: &mut CircuitEditor,
+        _parent: NodeId,
+        _field: &str,
+        _child: NodeId,
+    ) -> Result<Option<NodeId>, Error> {
+        Ok(None)
+    }
+
     fn postorder(&mut self, _editor: &mut CircuitEditor, node: NodeId) -> Result<NodeId, Error> {
         Ok(node)
     }
@@ -82,7 +94,7 @@ impl<T: Transformation> Rewrite<T> {
     pub fn apply(&mut self, arena: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
         enum Step {
             Visit(NodeId),
-            Independent(NodeId),
+            Independent(NodeId, &'static str, NodeId),
             RestoreTranslations,
             Follow(NodeId),
             Rebuild(NodeId, Children, usize),
@@ -98,9 +110,15 @@ impl<T: Transformation> Rewrite<T> {
         let mut edges = Vec::new();
         while let Some(step) = pending.pop() {
             let (id, result) = match step {
-                Step::Independent(id) => {
-                    enclosing.push(std::mem::take(&mut self.translations));
-                    pending.extend([Step::RestoreTranslations, Step::Visit(id)]);
+                Step::Independent(parent, field, child) => {
+                    if let Some(result) =
+                        self.rule.independent_child(arena, parent, field, child)?
+                    {
+                        results.push(result);
+                    } else {
+                        enclosing.push(std::mem::take(&mut self.translations));
+                        pending.extend([Step::RestoreTranslations, Step::Visit(child)]);
+                    }
                     continue;
                 }
                 Step::RestoreTranslations => {
@@ -138,13 +156,18 @@ impl<T: Transformation> Rewrite<T> {
                         }
                         Visit::IndependentFields(names) => {
                             let node = arena.node(id)?;
-                            for name in names {
+                            pending.push(Step::RebuildFields(id, names, results.len()));
+                            for &name in names.iter().rev() {
                                 if let Some(field) = node.field(name) {
                                     field.collect_inner_edges(&mut edges);
+                                    pending.extend(
+                                        edges
+                                            .drain(..)
+                                            .rev()
+                                            .map(|child| Step::Independent(id, name, child)),
+                                    );
                                 }
                             }
-                            pending.push(Step::RebuildFields(id, names, results.len()));
-                            pending.extend(edges.drain(..).rev().map(Step::Independent));
                             continue;
                         }
                     }

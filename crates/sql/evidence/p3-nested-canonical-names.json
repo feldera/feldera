@@ -1,0 +1,31 @@
+{
+  "scope": "Deeply nested closure and LET canonical names, including shadowing during initializer and consumer evaluation. Classic and Gen-2 detached SQL replay covers grouped temporal windows and constructed-row ARG_MIN.",
+  "build_sha256": {
+    "sql-difftest": "bff552098e5e676313045900ad03fb9609c825c32324a6bcc03027690425ca8e",
+    "libfeldera_sql_opt_jni.so": "18d926e95277491183c90f3d2c887b6770f576b46bc0c3c8ce073b06ff23cf2d",
+    "sql-compiler.jar": "d5a31dd795d5a18f8fd0e8c263a4d2905b932dfc317891fd0a85ea27004c2295",
+    "tests.jar": "21266296fd2f8d28e78a2a93bacd84491291e04a15483b04145fdad5143c503c"
+  },
+  "jni_regression": {
+    "previous_library_sha256": "d912234cfbeb083cd67523caef4b32a197567ea71ddc4f81ad95a0e563c0a731",
+    "inlining_tests": 4,
+    "nested_let_bindings": 145,
+    "before_log_sha256": "e50b84afe82c45d8e52310b77ae953fb258b32bfc6c82af00cada4bf645bab65",
+    "after_log_sha256": "45caaf98eba43d448f864025ca0b53c79940f4df0a1eca5073c18fa5593ea067"
+  },
+  "rust_tests_passed": 163,
+  "engines": {
+    "classic": {
+      "detached_cases": 6,
+      "ordered_s4_observations": 2932,
+      "mismatches": 0,
+      "receipt_sha256": "10930b2d584c630b99f1f910196760962eddb9a77ae06f181035a305e39f47d4"
+    },
+    "gen2": {
+      "detached_cases": 6,
+      "ordered_s4_observations": 2952,
+      "mismatches": 0,
+      "receipt_sha256": "515706451c0680c381e4445562f835df293d9fbaab2c97e4455110e889a6da3f"
+    }
+  }
+}

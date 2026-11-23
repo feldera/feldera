@@ -1,6 +1,7 @@
 //! Give closure parameters and local bindings deterministic names within each expression root.
 use super::{
-    constant_rows, copy_expression, rebuild_aggregate_cache, Rewrite, Transformation, Visit,
+    constant_rows, copy_expression, rebuild_aggregate_cache, rebuild_result_type, Rewrite,
+    Transformation, Visit,
 };
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, NodeId};
 use std::collections::HashMap;
@@ -13,7 +14,6 @@ enum Binding {
 #[derive(Default)]
 struct Names {
     next: usize,
-    depth: usize,
     aggregate_row: Option<(String, String)>,
     scopes: Vec<HashMap<String, Binding>>,
 }
@@ -25,16 +25,6 @@ impl Names {
         name
     }
 
-    fn rewrite(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<NodeId, Error> {
-        if self.depth >= 128 {
-            return Err(Error::new("canonical expression nesting exceeds 128"));
-        }
-        self.depth += 1;
-        let result = Rewrite::new(&mut *self).apply(edit, id);
-        self.depth -= 1;
-        result
-    }
-
     fn bind(&mut self, original: String, binding: Binding) {
         self.scopes
             .last_mut()
@@ -42,50 +32,25 @@ impl Names {
             .insert(original, binding);
     }
 
-    fn closure(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<NodeId, Error> {
-        let node = edit.node(id)?;
-        let body = node.edge("body")?;
-        let parameters = node.edges("parameters")?;
-        let mut rewritten = Vec::with_capacity(parameters.len());
-        self.scopes.push(HashMap::new());
-        for &param in &parameters {
-            let old_name = name(edit, param, "name")?;
-            let canonical = match &self.aggregate_row {
-                Some((row, canonical)) if *row == old_name => canonical.clone(),
-                _ => self.fresh(),
-            };
-            let new = if old_name == canonical {
-                param
-            } else {
-                edit.derive_inner(param, [("name", Field::Data(canonical.into()))])?
-            };
-            self.bind(old_name, Binding::Parameter(new));
-            rewritten.push(new);
-        }
-        let result = self.rewrite(edit, body)?;
-        self.scopes.pop();
-        if body == result && parameters == rewritten {
-            return Ok(id);
-        }
-        let types = rewritten
-            .iter()
-            .map(|&p| edit.node(p)?.edge("type"))
-            .collect::<Result<Vec<_>, _>>()?;
-        let ty = edit.closure_type(edit.expression(result)?, &types)?;
-        edit.derive_inner(
-            id,
-            [
-                (
-                    "parameters",
-                    Field::Array(rewritten.into_iter().map(Field::Reference).collect()),
-                ),
-                ("body", Field::Reference(result)),
-                ("type", Field::Reference(ty)),
-            ],
-        )
+    fn parameter(&mut self, edit: &mut CircuitEditor, param: NodeId) -> Result<NodeId, Error> {
+        let old_name = name(edit, param, "name")?;
+        let canonical = match &self.aggregate_row {
+            Some((row, canonical)) if *row == old_name => canonical.clone(),
+            _ => self.fresh(),
+        };
+        let new = if old_name == canonical {
+            param
+        } else {
+            edit.derive_inner(param, [("name", Field::Data(canonical.into()))])?
+        };
+        self.bind(old_name, Binding::Parameter(new));
+        Ok(new)
     }
 
     fn aggregate(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<NodeId, Error> {
+        if self.aggregate_row.is_some() {
+            return Err(Error::new("aggregate lists do not nest"));
+        }
         let row = edit.node(id)?.edge("rowVar")?;
         let old_name = name(edit, row, "variable")?;
         let canonical = self.fresh();
@@ -122,7 +87,7 @@ impl Names {
                         child
                     } else {
                         let copy = copy_expression(edit, child)?;
-                        self.rewrite(edit, copy)?
+                        Rewrite::new(&mut *self).apply(edit, copy)?
                     };
                     copied.push((field, Field::Reference(transformed)));
                     if field == "emptySetResult" {
@@ -168,51 +133,23 @@ impl Names {
         }
     }
 
-    fn local(
+    fn declare_local(
         &mut self,
         edit: &mut CircuitEditor,
-        id: NodeId,
-        is_statement: bool,
+        site: NodeId,
+        declaration: NodeId,
     ) -> Result<NodeId, Error> {
-        let node = edit.node(id)?;
-        let initializer = node.field("initializer").and_then(Field::node_id);
-        let declaration = if is_statement {
-            id
-        } else {
-            node.edge("variable")?
-        };
         let variable = name(edit, declaration, "variable")?;
         let ty = edit.type_id(edit.node(declaration)?.edge("type")?)?;
-        let initializer = initializer.map(|i| self.rewrite(edit, i)).transpose()?;
         let canonical = self.fresh();
         let path = edit.make_expr(
-            id,
+            site,
             Expr::VariablePath,
             ty,
-            [("variable", Field::Data(canonical.clone().into()))],
+            [("variable", Field::Data(canonical.into()))],
         )?;
         self.bind(variable, Binding::Local(path.into()));
-        if is_statement {
-            let mut fields = vec![("variable", Field::Data(canonical.into()))];
-            if let Some(init) = initializer {
-                fields.push(("initializer", Field::Reference(init)));
-                fields.push(("type", Field::Reference(edit.node(init)?.edge("type")?)));
-            }
-            return edit.derive_inner(id, fields);
-        }
-        let consumer = self.rewrite(edit, edit.node(id)?.edge("consumer")?)?;
-        let initializer =
-            initializer.ok_or_else(|| Error::new("let expression requires an initializer"))?;
-        edit.inner_at(
-            initializer,
-            InnerKind::Expression(Expr::Let),
-            [
-                ("variable", Field::Reference(path.into())),
-                ("initializer", Field::Reference(initializer)),
-                ("consumer", Field::Reference(consumer)),
-                ("type", Field::Reference(edit.node(consumer)?.edge("type")?)),
-            ],
-        )
+        Ok(path.into())
     }
 }
 
@@ -230,7 +167,10 @@ impl Transformation for &mut Names {
         Ok(match node.inner_kind() {
             Some(InnerKind::Type(_)) => Visit::Keep,
             Some(InnerKind::AggregateList) => Visit::Replace(self.aggregate(edit, id)?),
-            Some(InnerKind::Expression(Expr::Closure)) => Visit::Replace(self.closure(edit, id)?),
+            Some(InnerKind::Expression(Expr::Closure)) => {
+                self.scopes.push(HashMap::new());
+                Visit::IndependentFields(&["parameters", "body"])
+            }
             Some(InnerKind::Expression(Expr::VariablePath)) => Visit::Replace(self.path(edit, id)?),
             Some(InnerKind::Expression(Expr::Apply | Expr::ApplyMethod)) => {
                 Visit::IndependentFields(&["arguments", "function", "self"])
@@ -241,13 +181,25 @@ impl Transformation for &mut Names {
             }
             Some(InnerKind::Expression(Expr::Let)) => {
                 self.scopes.push(HashMap::new());
-                let result = self.local(edit, id, false)?;
-                self.scopes.pop();
-                Visit::Replace(result)
+                Visit::IndependentFields(&["initializer", "variable", "consumer"])
             }
-            _ if node.class() == "DBSPLetStatement" => Visit::Replace(self.local(edit, id, true)?),
+            _ if node.class() == "DBSPLetStatement" => Visit::IndependentFields(&["initializer"]),
             _ => Visit::Children,
         })
+    }
+
+    fn independent_child(
+        &mut self,
+        edit: &mut CircuitEditor,
+        parent: NodeId,
+        field: &str,
+        child: NodeId,
+    ) -> Result<Option<NodeId>, Error> {
+        match field {
+            "parameters" => self.parameter(edit, child).map(Some),
+            "variable" => self.declare_local(edit, parent, child).map(Some),
+            _ => Ok(None),
+        }
     }
 
     fn postorder_rebuilt(
@@ -256,9 +208,46 @@ impl Transformation for &mut Names {
         original: NodeId,
         rebuilt: NodeId,
     ) -> Result<NodeId, Error> {
-        let kind = edit.node(original)?.inner_kind();
-        if matches!(kind, Some(InnerKind::Expression(Expr::Block))) {
-            self.scopes.pop();
+        let node = edit.node(original)?;
+        if node.class() == "DBSPLetStatement" {
+            // The initializer sees the previous binding. Later statements see this one.
+            let path = self.declare_local(edit, original, original)?;
+            let mut fields = vec![(
+                "variable",
+                Field::Data(name(edit, path, "variable")?.into()),
+            )];
+            if let Some(init) = edit
+                .node(rebuilt)?
+                .field("initializer")
+                .and_then(Field::node_id)
+            {
+                fields.push(("type", Field::Reference(edit.node(init)?.edge("type")?)));
+            }
+            return edit.derive_inner(rebuilt, fields);
+        }
+        let kind = node.inner_kind();
+        match kind {
+            Some(InnerKind::Expression(Expr::Closure)) => {
+                self.scopes.pop();
+                if original != rebuilt {
+                    return rebuild_result_type(edit, rebuilt, Some(Expr::Closure), false);
+                }
+            }
+            Some(InnerKind::Expression(Expr::Let)) => {
+                self.scopes.pop();
+                let node = edit.node(rebuilt)?;
+                return edit
+                    .let_expression(
+                        edit.expression(node.edge("variable")?)?,
+                        edit.expression(node.edge("initializer")?)?,
+                        edit.expression(node.edge("consumer")?)?,
+                    )
+                    .map(Into::into);
+            }
+            Some(InnerKind::Expression(Expr::Block)) => {
+                self.scopes.pop();
+            }
+            _ => {}
         }
         if original != rebuilt && matches!(kind, Some(InnerKind::Expression(Expr::RawTuple))) {
             return edit.derive_unlocated_inner(rebuilt, []);
@@ -293,7 +282,7 @@ impl Transformation for &mut Names {
 pub fn canonicalize_names(edit: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
     let mut names = Names::default();
     names.scopes.push(HashMap::new());
-    names.rewrite(edit, root)
+    Rewrite::new(&mut names).apply(edit, root)
 }
 
 #[cfg(test)]
@@ -346,6 +335,59 @@ mod tests {
         }
         assert_eq!(name(&edit, current, "variable")?, "p0");
         assert_eq!(name(&edit, input.into(), "variable")?, "input");
+        Ok(())
+    }
+
+    #[test]
+    fn nested_closures_and_let_initializers_bind_in_evaluation_order() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let ty = edit.bool_type(site, false)?;
+        let value = edit.named_variable(ty, "value")?;
+        let mut body = value;
+        const DEPTH: usize = 160;
+        for _ in 0..DEPTH {
+            let lambda = edit.closure_from_variables(body, &[value])?;
+            let call = edit.make_expr(
+                site,
+                Expr::Apply,
+                ty,
+                [
+                    ("function", Field::Reference(lambda.into())),
+                    (
+                        "arguments",
+                        Field::Array(vec![Field::Reference(value.into())]),
+                    ),
+                ],
+            )?;
+            body = edit.let_expression(value, call, value)?;
+        }
+        let root = edit.closure_from_variables(body, &[value])?;
+        let canonical = canonicalize_names(&mut edit, root.into())?;
+        let mut current = edit.node(canonical)?.edge("body")?;
+        for level in 0..DEPTH {
+            let binding = edit.node(current)?;
+            assert_eq!(binding.edge("consumer")?, binding.edge("variable")?);
+            assert_eq!(
+                name(&edit, binding.edge("variable")?, "variable")?,
+                format!("p{}", 2 * DEPTH - level)
+            );
+            let call = edit.node(binding.edge("initializer")?)?;
+            assert_eq!(
+                name(&edit, call.edges("arguments")?[0], "variable")?,
+                format!("p{level}")
+            );
+            let lambda = edit.node(call.edge("function")?)?;
+            assert_eq!(
+                name(&edit, lambda.edges("parameters")?[0], "name")?,
+                format!("p{}", level + 1)
+            );
+            current = lambda.edge("body")?;
+        }
+        assert_eq!(name(&edit, current, "variable")?, format!("p{DEPTH}"));
         Ok(())
     }
 

@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust canonicalized 145 shadowed LET bindings in the same order as Java.
+Each initializer read the enclosing binding and each consumer read its own
+declaration. All 12 classic and Gen-2 SQL replays matched through 5,884
+ordered S4 observations and emission.
+[Canonical name comparisons](evidence/p3-nested-canonical-names.json)
+
 Rust grouped temporal windows with REAL and DOUBLE thresholds on classic
 and Gen-2. All four compilations matched Java through 2,396 ordered S4
 observations and final emission. A JDK 21 comparison checked 1,099,086
