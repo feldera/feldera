@@ -930,6 +930,42 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void binaryWaterlineReportsTheFirstSelectedMissingBound() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(1).getType();
+        var input = integer.ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var source = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var shape = new MonotoneType(integer);
+        for (int missingSide = 0; missingSide < 3; missingSide++) {
+            // An empty tuple can be monotone while lacking a reduced expression.
+            // An opaque scalar on the opposite side of MAX contributes no bound.
+            var unknown = new NoExpression(integer);
+            var left = missingSide == 1 ? unknown : new NoExpression(DBSPTypeRawTuple.EMPTY);
+            var right = missingSide == 0 ? unknown : new NoExpression(DBSPTypeRawTuple.EMPTY);
+            var maximum = new DBSPBinaryExpression(site, integer, DBSPOpcode.MAX, left, right);
+            var later = new DBSPI32Literal(4);
+            var body = new DBSPBlockExpression(List.of(maximum.toStatement()), later);
+            var closure = body.closure(input);
+            var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+            var direct = new MonotoneTransferFunctions(compiler, source, kind, shape);
+            Assert.assertThrows(NullPointerException.class, () -> direct.apply(closure));
+            for (boolean resultOnly : List.of(false, true)) {
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var failure = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                        new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                        false, resultOnly, facts::put);
+                assertFailure(failure, RustCircuitPass.WaterlineError.MissingOperand, missingSide == 1 ? right : left);
+                Assert.assertTrue(facts.containsKey(left));
+                Assert.assertTrue(facts.containsKey(right));
+                Assert.assertFalse(facts.containsKey(maximum));
+                Assert.assertFalse(facts.containsKey(later));
+            }
+        }
+    }
+
+    @Test
     public void unaryWaterlineReadsOnlyOrderPreservingOperands() {
         var empty = new NoExpression(DBSPTypeRawTuple.EMPTY);
         var integer = new DBSPI32Literal(1).getType();

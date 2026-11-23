@@ -97,6 +97,11 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
                 "next_generated_name": next, "unused_sources": [],
                 "circuit": circuit.changed_live_graph(&input),
             }),
+            feldera_sql_opt::TemporalMerge::MissingBound { next_name, warnings } => json!({
+                "missing_clock_bound": true,
+                "next_generated_name": next_name,
+                "warnings": super::pass_warnings(warnings),
+            }),
             feldera_sql_opt::TemporalMerge::MissingKey {
                 key,
                 next_name,

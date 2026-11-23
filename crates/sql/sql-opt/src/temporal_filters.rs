@@ -68,6 +68,10 @@ pub struct TemporalFilterPair<'a> {
 /// a missing key. A detached caller can discard this state and replay the pass.
 pub enum TemporalMerge {
     Rewritten(Circuit),
+    MissingBound {
+        next_name: u64,
+        warnings: Vec<SimplifyWarning>,
+    },
     MissingKey {
         key: MissingClockKey,
         next_name: u64,
@@ -121,6 +125,12 @@ pub fn merge_temporal_filters_with(
                 {
                     return Ok(Some(TemporalMerge::MissingKey {
                         key,
+                        next_name: trial_names,
+                        warnings: diagnostics,
+                    }));
+                }
+                Err(ClockError::MissingBound) => {
+                    return Ok(Some(TemporalMerge::MissingBound {
                         next_name: trial_names,
                         warnings: diagnostics,
                     }));

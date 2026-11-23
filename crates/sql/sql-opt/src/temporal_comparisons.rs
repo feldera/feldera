@@ -103,6 +103,7 @@ impl MissingClockKey {
 
 pub(crate) enum ClockError {
     Missing(MissingClockKey),
+    MissingBound,
     InvalidIr(Error),
 }
 
@@ -123,7 +124,7 @@ pub(super) fn speculative_clock<T>(
             *next = names;
             Ok(Some(result))
         }
-        Ok(None) | Err(ClockError::Missing(_)) => Ok(None),
+        Ok(None) | Err(ClockError::Missing(_) | ClockError::MissingBound) => Ok(None),
         Err(ClockError::InvalidIr(error)) => Err(error),
     }
 }

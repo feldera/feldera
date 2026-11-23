@@ -133,6 +133,7 @@ pub(super) fn binary_bound(
         left: operand(edit, left, &lhs, &opcode)?,
         right: operand(edit, right, &rhs, &opcode)?,
     };
+    let rule = binary_waterline(domain, &opcode, operation.left, operation.right);
     let scalar_operands = matches!(
         (&lhs.shape, &rhs.shape),
         (Shape::Scalar(_), Shape::Scalar(_))
@@ -141,20 +142,29 @@ pub(super) fn binary_bound(
         result_kind,
         Ty::RawTuple | Ty::Tuple | Ty::Ref | Ty::Stream | Ty::Struct
     );
-    if !(scalar_operands && scalar_result)
-        && binary_waterline(domain, &opcode, operation.left, operation.right)
-            != BinaryWaterline::None
-    {
-        return Ok(Evaluation::NeedsVisitor);
+    if rule != BinaryWaterline::None {
+        // Java constructs the result type (or copies the inherited operand type)
+        // before demanding either bound. Preserve failures at that earlier site.
+        if !scalar_result
+            || (rule == BinaryWaterline::InheritLeft && !matches!(lhs.shape, Shape::Scalar(_)))
+            || (rule == BinaryWaterline::InheritRight && !matches!(rhs.shape, Shape::Scalar(_)))
+        {
+            return Ok(Evaluation::NeedsVisitor);
+        }
+        if rule != BinaryWaterline::Right && lhs.reduced.is_none() {
+            return Ok(Evaluation::Failed(WaterlineError::MissingBound(left)));
+        }
+        if rule != BinaryWaterline::Left && rhs.reduced.is_none() {
+            return Ok(Evaluation::Failed(WaterlineError::MissingBound(right)));
+        }
+        if !scalar_operands {
+            return Ok(Evaluation::NeedsVisitor);
+        }
     }
     let constant = lhs.constant && rhs.constant;
-    let (rule, bound) = operation.lower(edit, expression.into(), ty, [lhs.reduced, rhs.reduced])?;
+    let (_, bound) = operation.lower(edit, expression.into(), ty, [lhs.reduced, rhs.reduced])?;
     if let Some(bound) = bound {
         return ProjectedValue::bounded(edit, expression, bound, constant).map(Evaluation::Value);
-    }
-    if rule != BinaryWaterline::None {
-        // The general visitor reports the missing bound on the original expression.
-        return Ok(Evaluation::NeedsVisitor);
     }
     // Retain the layout of an unbounded ROW for subsequent field reads.
     super::unbounded(edit, expression, constant)

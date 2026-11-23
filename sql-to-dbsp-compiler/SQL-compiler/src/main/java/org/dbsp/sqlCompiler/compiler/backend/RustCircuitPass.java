@@ -3598,10 +3598,13 @@ public final class RustCircuitPass implements CircuitTransform {
         });
         var reply = MAPPER.readTree(result);
         var missing = reply.get("missing_clock_key");
-        if (missing != null) {
+        if (missing != null || reply.has("missing_clock_bound")) {
             finishLowering(this.compiler, reply);
             if (!this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
                 this.compiler.stateObserver.nativeDecision("MergeFilters", true);
+            if (missing == null)
+                // MonotoneExpression.getReducedExpression requires a non-null bound.
+                throw new NullPointerException();
             var expression = Utilities.getExists(Objects.requireNonNull(writer.innerVisitor.liveNodes), missing.longValue());
             throw Utilities.missingKey(reply.required("key_is_node_id").booleanValue() ? expression.getId() : expression);
         }

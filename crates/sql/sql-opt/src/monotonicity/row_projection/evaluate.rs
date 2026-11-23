@@ -36,8 +36,8 @@ impl From<Option<ProjectedValue>> for Evaluation {
 }
 
 impl Evaluation {
-    pub(super) fn missing_operand(id: ExpressionId) -> Self {
-        Self::Failed(WaterlineError::MissingOperand(id))
+    pub(super) fn missing_fact(id: ExpressionId) -> Self {
+        Self::Failed(WaterlineError::MissingFact(id))
     }
 
     pub(super) fn projected(self) -> Option<ProjectedValue> {
@@ -86,7 +86,7 @@ impl Operation {
         // Tuple construction and scalar operations look up every operand's
         // fact before asking any of those facts for a reduced expression.
         if let Some(child) = children.as_slice().iter().find(|v| v.value.is_none()) {
-            return Ok(Evaluation::missing_operand(child.id));
+            return Ok(Evaluation::missing_fact(child.id));
         }
         if let Some(child) = children
             .as_slice()
@@ -100,7 +100,7 @@ impl Operation {
                 _ => edit.expr_kind(id)? != Expr::Field,
             };
             if needs_bound {
-                return Ok(Evaluation::missing_operand(child.id));
+                return Ok(Evaluation::Failed(WaterlineError::MissingBound(child.id)));
             }
         }
         let mut children = children.filter_map(|child| child.value);
@@ -411,7 +411,7 @@ impl Row {
                     let initial = if let Some(expr) = initializer {
                         let initial = values.pop().expect("visited initializer");
                         let Some(value) = initial.value else {
-                            return Ok(Evaluation::missing_operand(initial.id));
+                            return Ok(Evaluation::missing_fact(initial.id));
                         };
                         Some((edit.expression_type(expr)?, value))
                     } else {
@@ -434,7 +434,7 @@ impl Row {
                 Step::FinishScope { scopes, outer } => {
                     let tail = values.pop().expect("visited scope result");
                     let Some(result) = tail.value else {
-                        return Ok(Evaluation::missing_operand(tail.id));
+                        return Ok(Evaluation::missing_fact(tail.id));
                     };
                     let mut value = self.finish_scope(outer, result);
                     // Blocks and LETs take the very same analysis as their tail.
@@ -463,7 +463,8 @@ impl Row {
         let result = values.pop().expect("visited closure body");
         Ok(match result.value {
             Some(value) if !value.missing_bound() => Evaluation::Value(value),
-            _ => Evaluation::missing_operand(result.id),
+            Some(_) => Evaluation::Failed(WaterlineError::MissingBound(result.id)),
+            None => Evaluation::missing_fact(result.id),
         })
     }
 }

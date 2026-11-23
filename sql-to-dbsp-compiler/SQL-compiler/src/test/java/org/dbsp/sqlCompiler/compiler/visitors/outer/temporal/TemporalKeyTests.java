@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
@@ -41,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
+import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
@@ -161,6 +163,28 @@ public class TemporalKeyTests {
             rows = filter.outputPort();
         }
         return circuit;
+    }
+
+    @Test
+    public void temporalMergePreservesAnAbsentBoundAfterAnEarlierMerge() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var empty = new NoExpression(DBSPTypeRawTuple.EMPTY);
+        var missing = new DBSPBinaryExpression(CalciteEmptyRel.INSTANCE, b.i32(), DBSPOpcode.MAX,
+                new NoExpression(b.i32()), empty);
+        var lastClock = new DBSPBlockExpression(List.of(missing.toStatement()), b.call(DBSPTypeTimestamp.INSTANCE, "now"));
+        var circuit = temporalFilterChain(lastClock);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(NullPointerException.class, () -> new MergeFilters(compiler).apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        start = DBSPVariablePath.nextGeneratedName();
+        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test

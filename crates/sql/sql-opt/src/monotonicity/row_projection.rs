@@ -13,7 +13,7 @@ use self::{
 };
 use crate::limiters::Projection;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
     TypeId,
 };
 use std::collections::{HashMap, HashSet};
@@ -264,11 +264,9 @@ pub(crate) fn clock_facts(
     else {
         return Ok(None);
     };
-    let Some(references) =
-        crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?
-    else {
+    if crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?.is_none() {
         return Ok(None);
-    };
+    }
     let variable = edit.named_variable(projected.unwrap_or(ty), &name)?;
     let mut row = Row {
         bindings: vec![Binding {
@@ -285,22 +283,10 @@ pub(crate) fn clock_facts(
         Evaluation::Failed(WaterlineError::MissingReference(id)) => {
             return Err(ClockError::Missing(MissingClockKey::Reference(id)));
         }
-        Evaluation::Failed(WaterlineError::MissingOperand(id)) => {
-            // A read of an uninitialized LET has no entry in the visitor's fact map.
-            // Other operands can have an entry whose reduced expression is absent.
-            if let Some(&declaration) = references.get(&id.into()) {
-                let declaration = edit.node(declaration)?;
-                if declaration.class() == "DBSPLetStatement"
-                    && declaration
-                        .field("initializer")
-                        .and_then(Field::node_id)
-                        .is_none()
-                {
-                    return Err(ClockError::Missing(MissingClockKey::Fact(id)));
-                }
-            }
-            return Ok(None);
+        Evaluation::Failed(WaterlineError::MissingFact(id)) => {
+            return Err(ClockError::Missing(MissingClockKey::Fact(id)));
         }
+        Evaluation::Failed(WaterlineError::MissingBound(_)) => return Err(ClockError::MissingBound),
         _ => return Ok(None),
     }
     let Observations::Clocks(clocks) = row.observations else {
@@ -490,7 +476,8 @@ pub enum WaterlineError {
     FlatmapResult { flatmap: ExpressionId, computed: TypeId },
     VariableTypeMismatch(ExpressionId),
     MissingReference(ExpressionId),
-    MissingOperand(ExpressionId),
+    MissingFact(ExpressionId),
+    MissingBound(ExpressionId),
     TargetMaximum(ExpressionId),
     UnsupportedType(TypeId),
     /// Adding nullability to a reference fails at the live reference type's

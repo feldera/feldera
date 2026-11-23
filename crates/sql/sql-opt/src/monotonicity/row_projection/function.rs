@@ -1,6 +1,6 @@
 //! Derive lower bounds for named scalar calls from the bounds of their arguments.
 use super::evaluate::{Evaluation, Visited};
-use super::{ProjectedValue, Shape, unbounded};
+use super::{ProjectedValue, Shape, WaterlineError, unbounded};
 use crate::monotonicity::functions::{
     Argument, FunctionRule, build_function_waterline, clock_waterline, double_literal_above_one,
     function_rule,
@@ -29,8 +29,12 @@ pub(super) fn call_bound(
     let mut first_missing = None;
     for arg in values {
         let value = arg.value.as_ref();
-        if value.is_none_or(ProjectedValue::missing_bound) {
-            first_missing.get_or_insert(arg.id);
+        if first_missing.is_none() {
+            first_missing = match value {
+                None => Some(WaterlineError::MissingFact(arg.id)),
+                Some(value) if value.missing_bound() => Some(WaterlineError::MissingBound(arg.id)),
+                Some(_) => None,
+            };
         }
         let bound = value.and_then(|v| v.reduced);
         facts.push(Argument {
@@ -43,8 +47,8 @@ pub(super) fn call_bound(
     let constant = facts.iter().all(|fact| fact.constant);
     let rule = name.map_or(FunctionRule::Unknown, |name| function_rule(name, &facts));
     if !matches!(rule, FunctionRule::Unknown) {
-        if let Some(operand) = first_missing {
-            return Ok(Evaluation::missing_operand(operand));
+        if let Some(error) = first_missing {
+            return Ok(Evaluation::Failed(error));
         }
     }
     let Some(target) = rule.target() else {

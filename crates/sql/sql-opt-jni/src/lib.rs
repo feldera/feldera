@@ -1026,7 +1026,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                         }
                         WaterlineError::VariableTypeMismatch(id) => json!({"kind":"VariableTypeMismatch", "expression":inner_number(id.into())}),
                         WaterlineError::MissingReference(id) => json!({"kind":"MissingReference", "expression":inner_number(id.into())}),
-                        WaterlineError::MissingOperand(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
+                        WaterlineError::MissingFact(id) | WaterlineError::MissingBound(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
                         WaterlineError::TargetMaximum(id) => json!({"kind":"TargetMaximum", "expression":inner_number(id.into())}),
                         WaterlineError::NullableReference { source, field } =>
                             json!({"kind":"NullableReference", "source":source, "field":field}),

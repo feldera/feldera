@@ -151,7 +151,7 @@ impl RowRead {
                         // The requested field has a bound, so Java reads the
                         // tuple's reduced expression before compressing its index.
                         let operand = edit.expression(edit.node(site)?.edge("expression")?)?;
-                        return Ok(Evaluation::missing_operand(operand));
+                        return Ok(Evaluation::Failed(WaterlineError::MissingBound(operand)));
                     };
                     let compressed = fields[..index]
                         .iter()
