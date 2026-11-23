@@ -1,6 +1,8 @@
 //! Resolve block locals in statement order. Only a block's final expression contributes its result.
 use super::{Observations, ProjectedValue, Row, RowType, Shape, evaluate::Step};
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, TypeId};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, TypeId,
+};
 
 pub(super) struct Local {
     name: String,
@@ -12,6 +14,55 @@ struct Initializer {
     ty: TypeId,
     shape: Shape,
     reduced: Option<ExpressionId>,
+}
+
+fn schedule_statement(
+    edit: &CircuitEditor,
+    statement: &Node,
+    work: &mut Vec<Step>,
+) -> Result<bool, Error> {
+    match statement.class() {
+        "DBSPComment" | "DBSPStructItem" => {}
+        "DBSPExpressionStatement" | "DBSPStaticItem" | "DBSPComparatorItem" => work.extend([
+            Step::Read(edit.expression(statement.edge("expression")?)?),
+            Step::Discard,
+        ]),
+        "DBSPFunctionItem" => {
+            let function = edit.node(statement.edge("function")?)?;
+            // The resolver enters these names in the enclosing block. Unlike
+            // the analyzed closure's inputs, they have no projected values.
+            for parameter in function.edges("parameters")? {
+                work.push(Step::Bind {
+                    name: binding_name(edit.node(parameter)?, "name")?,
+                    initializer: None,
+                });
+            }
+            if let Some(body) = function.field("body").and_then(Field::node_id) {
+                work.extend([Step::Read(edit.expression(body)?), Step::Discard]);
+            }
+        }
+        "DBSPLetStatement" => {
+            let initializer = statement
+                .field("initializer")
+                .and_then(Field::node_id)
+                .map(|id| edit.expression(id))
+                .transpose()?;
+            work.extend(initializer.map(Step::Read));
+            work.push(Step::Bind {
+                name: binding_name(statement, "variable")?,
+                initializer,
+            });
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+fn binding_name(node: &Node, field: &str) -> Result<String, Error> {
+    node.data(field)
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| Error::new(format!("missing {field} in {}", node.class())))
 }
 
 /// Consecutive tail scopes share the same lifetime. Flatten their declarations so
@@ -34,11 +85,7 @@ pub(super) fn schedule(
         let node = edit.node(tail.into())?;
         let next = if edit.expr_kind(tail)? == Expr::Let {
             let variable = edit.node(node.edge("variable")?)?;
-            let name = variable
-                .data("variable")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::new("expected a LET variable name"))?
-                .to_owned();
+            let name = binding_name(variable, "variable")?;
             let init = edit.expression(node.edge("initializer")?)?;
             work.extend([
                 Step::Read(init),
@@ -50,28 +97,8 @@ pub(super) fn schedule(
             Some(edit.expression(node.edge("consumer")?)?)
         } else {
             for statement in node.edges("contents")? {
-                let statement = edit.node(statement)?;
-                match statement.class() {
-                    "DBSPComment" => {}
-                    "DBSPExpressionStatement" => work.extend([
-                        Step::Read(edit.expression(statement.edge("expression")?)?),
-                        Step::Discard,
-                    ]),
-                    "DBSPLetStatement" => {
-                        let name = statement
-                            .data("variable")
-                            .and_then(|v| v.as_str())
-                            .ok_or_else(|| Error::new("expected a block variable name"))?
-                            .to_owned();
-                        let initializer = statement
-                            .field("initializer")
-                            .and_then(Field::node_id)
-                            .map(|id| edit.expression(id))
-                            .transpose()?;
-                        work.extend(initializer.map(Step::Read));
-                        work.push(Step::Bind { name, initializer });
-                    }
-                    _ => return Ok(false),
+                if !schedule_statement(edit, edit.node(statement)?, work)? {
+                    return Ok(false);
                 }
             }
             node.field("lastExpression")

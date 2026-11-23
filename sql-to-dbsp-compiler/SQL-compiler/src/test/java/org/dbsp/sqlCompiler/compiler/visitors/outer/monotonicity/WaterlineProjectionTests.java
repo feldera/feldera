@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -51,6 +52,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -67,8 +70,12 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComparatorItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -699,6 +706,39 @@ public class WaterlineProjectionTests {
             Assert.assertSame(row.getFieldType(0), fields.getFieldType(0));
             Assert.assertFalse(fields.getFieldType(1).mayBeMonotone());
         }
+    }
+
+    @Test
+    public void blockDeclarationsExposeIntermediateBoundsAndPreserveTheTail() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var literal = new DBSPI32Literal(4);
+        var integer = literal.getType();
+        var row = new MonotoneType(integer);
+        var input = integer.ref().var();
+        var tail = input.deref();
+        var saved = new DBSPStaticExpression(site, literal, "saved");
+        var comparator = new DBSPNoComparatorExpression(site, integer);
+        var struct = new DBSPTypeStruct(site, new ProgramIdentifier("S"), List.of(), false);
+        var body = new DBSPI32Literal(7);
+        var function = new DBSPFunction(site, "f", List.of(integer.var().asParameter()), integer, body, List.of());
+        var block = new DBSPBlockExpression(List.of(new DBSPStaticItem(saved), new DBSPComparatorItem(comparator),
+                new DBSPStructItem(struct, null), new DBSPFunctionItem(function)), tail);
+        var closure = block.closure(input);
+        var op = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, op, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+        direct.apply(closure);
+        var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+        var result = RustCircuitPass.projectWaterlineClosure(compiler, block, closure.parameters,
+                new DBSPType[]{row.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(row)},
+                false, facts::put);
+        Assert.assertTrue(result instanceof RustCircuitPass.ProjectedWaterline);
+        for (var expression : List.of(literal, saved, comparator, body, tail, block))
+            Assert.assertEquals(direct.get(expression).mayBeMonotone(), facts.get(expression).mayBeMonotone());
+        Assert.assertSame(facts.get(tail), facts.get(block));
+        Assert.assertTrue(direct.get(closure).getReducedExpression().equivalent(
+                ((RustCircuitPass.ProjectedWaterline) result).closure()));
     }
 
     @Test
