@@ -31,6 +31,8 @@ enum Term {
     },
     Bool(bool),
     String(String),
+    Bytes(String),
+    Uuid(String),
     TemporalText(String),
     Date(i64),
     Timestamp(i64),
@@ -90,6 +92,8 @@ impl TimestampKey {
                         Term::ExactNumber { .. }
                             | Term::Bool(_)
                             | Term::String(_)
+                            | Term::Bytes(_)
+                            | Term::Uuid(_)
                             | Term::TemporalText(_)
                             | Term::Date(_)
                             | Term::Timestamp(_)
@@ -246,13 +250,15 @@ fn key_term(
                 }
             }
         }
-        Expr::BoolLiteral
+        Expr::BinaryLiteral
+        | Expr::BoolLiteral
         | Expr::DateLiteral
         | Expr::DecimalLiteral
         | Expr::StringLiteral
         | Expr::TimeLiteral
         | Expr::TimestampLiteral
         | Expr::TimestampTzLiteral
+        | Expr::UuidLiteral
         | Expr::I8Literal
         | Expr::I16Literal
         | Expr::I32Literal
@@ -282,6 +288,18 @@ fn key_term(
                         return Ok(None);
                     };
                     Term::String(value.to_owned())
+                }
+                Some(value) if matches!(kind, Expr::BinaryLiteral | Expr::UuidLiteral) => {
+                    // The checkpoint writer uses padded base64 for bytes and the
+                    // canonical UUID string. Each uniquely identifies the printed literal.
+                    let Some(value) = value.as_str() else {
+                        return Ok(None);
+                    };
+                    if kind == Expr::BinaryLiteral {
+                        Term::Bytes(value.to_owned())
+                    } else {
+                        Term::Uuid(value.to_owned())
+                    }
                 }
                 Some(value) if matches!(kind, Expr::TimeLiteral | Expr::TimestampTzLiteral) => {
                     // Java prints the wire text unquoted, including the original zone.
@@ -391,6 +409,18 @@ pub(super) fn row_parameter(
 fn cast_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Error> {
     let node = edit.node(ty.into())?;
     let mut text = match edit.type_kind(ty)? {
+        Ty::Uuid => "Uuid".to_owned(),
+        Ty::Binary => {
+            let Some(precision) = node.data("precision").and_then(|v| v.as_i64()) else {
+                return Ok(None);
+            };
+            // The binary type printer omits the fixed-width flag.
+            if precision == -1 {
+                "bytes".to_owned()
+            } else {
+                format!("bytes({precision})")
+            }
+        }
         Ty::Date => "Date".to_owned(),
         Ty::Time => "Time".to_owned(),
         Ty::Real => "f".to_owned(),

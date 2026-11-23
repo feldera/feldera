@@ -1,0 +1,41 @@
+{
+  "scope": "TIMESTAMPADD offsets chosen by a UUID or VARBINARY equality predicate. Three views per compilation share two distinct timestamp keys.",
+  "optimizer_library_sha256": "7260c73219653bf1581f2832e85be54a751db60bd0aebc3ec4ab4ebdc2f89bc5",
+  "prior_library_sha256": "d7ac3017cb22a4a58ad350fc571c580aec4d734ce2e2235ebecd14efeb151408",
+  "java_compiler_sha256": "6b7f9adaa7b9b2003b3c10cc407eae1b35c5a7250c2986f3d2c28aaa5db9d054",
+  "jni_junit_tests": 15,
+  "engines": {
+    "classic": {
+      "detached_cases": 2,
+      "ordered_s4_observations": 1192,
+      "mismatches": 0,
+      "receipt_sha256": "8ecdc27e4fd4e5908e891e9d123614366342b19cbc9d9e0b51e003531f794c5d",
+      "before": {
+        "WindowGroups/Scan": 2,
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Indexes": 0
+      },
+      "after": {
+        "WindowGroups/Scan": 0,
+        "WindowGroups/Reorder": 0,
+        "WindowGroups/Indexes": 0
+      }
+    },
+    "gen2": {
+      "detached_cases": 2,
+      "ordered_s4_observations": 1204,
+      "mismatches": 0,
+      "receipt_sha256": "7b8df2b5e88e7680862d00bdd257eeb8b5974ddf700c6bd22a79a6ef22decab2",
+      "before": {
+        "WindowGroups/Scan": 2,
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Indexes": 2
+      },
+      "after": {
+        "WindowGroups/Scan": 0,
+        "WindowGroups/Reorder": 0,
+        "WindowGroups/Indexes": 0
+      }
+    }
+  }
+}

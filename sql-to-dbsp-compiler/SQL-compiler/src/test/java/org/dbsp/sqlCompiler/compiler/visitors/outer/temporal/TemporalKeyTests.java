@@ -84,6 +84,16 @@ public class TemporalKeyTests {
         checkSharedWindowKeys(fields, "times[id]", "times[id + 1]");
     }
 
+    @Test
+    public void literalComparisonsPreserveBinaryAndUuidWindowKeys() {
+        String key = "TIMESTAMPADD(SECOND, CASE WHEN tag = %s THEN id ELSE 1 END, ts)";
+        String columns = "id INT NOT NULL, ts TIMESTAMP, tag ";
+        checkSharedWindowKeys(columns + "UUID",
+                key.formatted("UUID '123e4567-e89b-12d3-a456-426655440000'"),
+                key.formatted("UUID '123e4567-e89b-12d3-a456-426655440001'"));
+        checkSharedWindowKeys(columns + "VARBINARY", key.formatted("X'00FF'"), key.formatted("X'FF00'"));
+    }
+
     private static void checkOffsetKeys(String shared, String different) {
         String key = "TIMESTAMPADD(SECOND, %s, ts)";
         checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, flag BOOLEAN, label VARCHAR",

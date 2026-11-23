@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selected shared windows whose timestamp offset depends on a UUID or
+VARBINARY comparison. Four compilations on classic and Gen-2 matched Java at
+all 2,396 ordered S4 observations and through emission. The three window
+analyses answered the ten requests that previously needed Java.
+[Temporal key comparisons](evidence/p3-binary-uuid-window-keys.json)
+
 Rust hoisted repeated calculations in filters with 8 and 144 alternating
 `AND` and `OR` terms. Both engines matched Java through 1,900 ordered S4
 observations and artifact emission. The 144-term streaming test evaluated
