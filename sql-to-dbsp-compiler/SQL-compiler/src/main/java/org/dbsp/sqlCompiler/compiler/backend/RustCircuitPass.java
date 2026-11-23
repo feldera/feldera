@@ -472,6 +472,16 @@ public final class RustCircuitPass implements CircuitTransform {
         return tryLowerFunction(compiler, "Monotonicity/Unary", operation, bound, DBSPExpression.class);
     }
 
+    public static boolean unaryPreservesOrder(DBSPOpcode opcode) {
+        try {
+            var reply = transformWithContext("Monotonicity/UnaryPreservesOrder",
+                    MAPPER.writeValueAsBytes(opcode.name()), 0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, Boolean.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid Rust unary waterline decision", error);
+        }
+    }
+
     @Nullable
     public static MonotoneExpression projectRow(DBSPCompiler compiler, DBSPExpression body,
                                                 DBSPVariablePath bound, IMaybeMonotoneType input) {

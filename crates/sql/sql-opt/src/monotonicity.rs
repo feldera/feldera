@@ -75,7 +75,8 @@ pub fn unary_waterline(
     Ok(Some(edit.expression(reduced)?))
 }
 
-pub(crate) fn unary_preserves_order(op: &str) -> bool {
+/// Ordinary unary opcodes that transfer the lower bound of their operand.
+pub fn unary_preserves_order(op: &str) -> bool {
     matches!(
         op,
         "UNARY_PLUS"

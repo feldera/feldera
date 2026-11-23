@@ -70,7 +70,20 @@ pub(super) fn unary_bound(
     expression: ExpressionId,
     source: ProjectedValue,
 ) -> Result<Option<ProjectedValue>, Error> {
-    let reduced = match (edit.expr_kind(expression)?, source.reduced) {
+    let kind = edit.expr_kind(expression)?;
+    if source.missing_bound() {
+        // Casts and unsigned wrappers read the input bound before testing their
+        // transfer rule. Ordinary unary operators read it only if they preserve order.
+        if kind != Expr::Unary {
+            return Ok(None);
+        }
+        let opcode = super::super::opcode(edit.node(expression.into())?)
+            .ok_or_else(|| Error::new("missing unary opcode"))?;
+        if super::super::unary_preserves_order(opcode) {
+            return Ok(None);
+        }
+    }
+    let reduced = match (kind, source.reduced) {
         (Expr::Cast, None) => None,
         (Expr::Cast, Some(bound)) => super::super::casts::cast_bound(edit, expression, bound)?,
         (Expr::UnsignedUnwrap, _) if !matches!(source.shape, Shape::Scalar(_)) => return Ok(None),

@@ -38,7 +38,7 @@ pub use monotonicity::binary::{
 };
 pub use monotonicity::identity::identity_bounds;
 pub use monotonicity::row_projection::{expression_waterlines, project_closure, project_row, project_rows, tuple_waterline, ClosureAnalysis, FactType, ProjectedClosure, RowRead, WaterlineInspection};
-pub use monotonicity::{filter_lower_bounds, filter_transfer, unary_waterline, FilterBound};
+pub use monotonicity::{filter_lower_bounds, filter_transfer, unary_preserves_order, unary_waterline, FilterBound};
 mod static_candidates;
 mod static_items;
 pub use static_items::{renumber_static_errors, static_initializer, static_item};

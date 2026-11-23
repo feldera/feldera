@@ -1410,6 +1410,10 @@ fn transform(
                 .map(|bound| BoundReply::encode(bound, state));
             return Ok(serde_json::to_value(reply)?);
         }
+        "Monotonicity/UnaryPreservesOrder" => {
+            let opcode: &str = serde_json::from_slice(input)?;
+            return Ok(json!(feldera_sql_opt::unary_preserves_order(opcode)));
+        }
         "Monotonicity/Function" | "Monotonicity/FunctionRule" => {
             let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;
             let rule = feldera_sql_opt::function_rule(&name, &arguments);

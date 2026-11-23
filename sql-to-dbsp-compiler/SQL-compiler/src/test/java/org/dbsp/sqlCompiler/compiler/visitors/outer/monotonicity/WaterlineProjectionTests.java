@@ -89,6 +89,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.junit.Assert;
@@ -752,29 +753,58 @@ public class WaterlineProjectionTests {
 
     @Test
     public void rowEqualityDoesNotDemandOperandWaterlines() {
+        var empty = new NoExpression(DBSPTypeRawTuple.EMPTY);
+        var equality = new DBSPBinaryExpression(CalciteEmptyRel.INSTANCE, DBSPTypeBool.create(false), DBSPOpcode.EQ,
+                empty, new DBSPRawTupleExpression());
+        assertUnusedOperandWaterline(empty, equality);
+    }
+
+    @Test
+    public void unaryWaterlineReadsOnlyOrderPreservingOperands() {
+        var empty = new NoExpression(DBSPTypeRawTuple.EMPTY);
+        var integer = new DBSPI32Literal(1).getType();
+        var indicator = new DBSPUnaryExpression(CalciteEmptyRel.INSTANCE, integer, DBSPOpcode.INDICATOR, empty);
+        assertUnusedOperandWaterline(empty, indicator);
+
+        var boxed = DBSPTypeTypedBox.wrapTypedBox(empty, true);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var shape = new MonotoneType(integer);
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var visitor = new MonotoneTransferFunctions(compiler, op, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+            Assert.assertThrows(NullPointerException.class, () -> visitor.apply(boxed));
+        }
+        var input = integer.ref().var();
+        var body = new DBSPBlockExpression(List.of(boxed.toStatement()), input.deref());
+        for (boolean observe : List.of(false, true)) {
+            var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+            Assert.assertTrue(RustCircuitPass.projectWaterlineClosure(compiler, body, body.closure(input).parameters,
+                    new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                    false, observe ? facts::put : null) instanceof RustCircuitPass.WaterlineInspection);
+        }
+    }
+
+    private static void assertUnusedOperandWaterline(DBSPExpression operand, DBSPExpression operation) {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());
-        var site = CalciteEmptyRel.INSTANCE;
         var integer = new DBSPI32Literal(1).getType();
         var input = integer.ref().var();
         var shape = new MonotoneType(integer);
-        var op = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
         var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
-        var empty = new NoExpression(DBSPTypeRawTuple.EMPTY);
-        var equality = new DBSPBinaryExpression(site, DBSPTypeBool.create(false), DBSPOpcode.EQ,
-                empty, new DBSPRawTupleExpression());
 
         // Visiting the expression directly also exercises the general visitor.
         for (boolean hybrid : List.of(false, true)) {
             compiler.options.ioOptions.rustOptimizerPasses = hybrid;
             var visitor = new MonotoneTransferFunctions(compiler, op, kind, shape);
-            visitor.apply(equality);
-            Assert.assertTrue(visitor.get(empty).mayBeMonotone());
-            Assert.assertThrows(NullPointerException.class, () -> visitor.get(empty).getReducedExpression());
-            Assert.assertFalse(visitor.get(equality).mayBeMonotone());
+            visitor.apply(operation);
+            Assert.assertTrue(visitor.get(operand).mayBeMonotone());
+            Assert.assertThrows(NullPointerException.class, () -> visitor.get(operand).getReducedExpression());
+            Assert.assertFalse(visitor.get(operation).mayBeMonotone());
         }
         var tail = input.deref();
-        var body = new DBSPBlockExpression(List.of(equality.toStatement()), tail);
+        var body = new DBSPBlockExpression(List.of(operation.toStatement()), tail);
         var closure = body.closure(input);
         for (boolean observe : List.of(false, true)) {
             var facts = new HashMap<DBSPExpression, MonotoneExpression>();
@@ -784,7 +814,7 @@ public class WaterlineProjectionTests {
             Assert.assertTrue(result instanceof RustCircuitPass.ProjectedWaterline);
             Assert.assertTrue(tail.closure(input).equivalent(((RustCircuitPass.ProjectedWaterline) result).closure()));
             if (observe) {
-                Assert.assertFalse(facts.get(equality).mayBeMonotone());
+                Assert.assertFalse(facts.get(operation).mayBeMonotone());
                 Assert.assertSame(facts.get(tail), facts.get(body));
             }
         }

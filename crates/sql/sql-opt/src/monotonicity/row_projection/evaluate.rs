@@ -43,9 +43,9 @@ impl Operation {
         if let Self::Call(name) = self {
             return function::call_bound(edit, id, name.as_deref(), children);
         }
-        // A field read or a binary rule may consume the operand's shape
-        // without ever reading its bound.
-        let selects_bounds = matches!(self, Self::Binary(_)) || edit.expr_kind(id)? == Expr::Field;
+        // Field reads and scalar operators decide which operand bounds they need.
+        let selects_bounds =
+            matches!(self, Self::Binary(_) | Self::Unary) || edit.expr_kind(id)? == Expr::Field;
         if !children.as_slice().iter().all(|v| {
             v.as_ref().is_some_and(|v| selects_bounds || !v.missing_bound())
         }) {

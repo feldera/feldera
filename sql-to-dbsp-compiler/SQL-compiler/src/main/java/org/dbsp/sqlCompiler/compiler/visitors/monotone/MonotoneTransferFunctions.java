@@ -952,9 +952,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPExpression reduced = null;
         IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.getType());
         if (source.mayBeMonotone()) {
-            if (this.compiler.options.ioOptions.rustOptimizerPasses)
-                reduced = RustCircuitPass.unaryWaterline(this.compiler, expression, source.getReducedExpression());
-            else if (monotoneUnary.contains(expression.opcode))
+            if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                if (source.reducedExpression != null || RustCircuitPass.unaryPreservesOrder(expression.opcode))
+                    reduced = RustCircuitPass.unaryWaterline(this.compiler, expression, source.getReducedExpression());
+            } else if (monotoneUnary.contains(expression.opcode))
                 reduced = new DBSPUnaryExpression(expression.getNode(), expression.getType().withMayBeNull(false),
                         expression.opcode, source.getReducedExpression());
         }

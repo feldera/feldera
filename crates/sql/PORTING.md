@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The hybrid accepts an `INDICATOR` whose operand has no materialized waterline
+and preserves the direct visitor's diagnostic when `TYPEDBOX` needs that
+operand. Both native closure observation modes passed. The build passed
+221 Rust tests and 145 targeted JUnit tests. Twelve programs per engine
+matched through 10,929 ordered S4 observations and emission.
+[Unary operand waterlines](evidence/p3-unary-operand-waterlines.json)
+
 Row equality over an empty tuple now agrees with direct Java when the tuple
 has no materialized waterline. Rust reads only the bounds required by the
 binary operation. The regression failed on the previous hybrid compiler.

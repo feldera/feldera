@@ -1,0 +1,45 @@
+{
+  "scope": "Unary transfer consults the opcode before requiring a missing input bound. INDICATOR ignores it and TYPEDBOX preserves the direct visitor diagnostic.",
+  "source_base": "9e1ab9a01e347dda390974c126e334333e3370b2",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "c6f232204393dd77790b0688ac9c6bfc77ac2a195d66d73bf527d1b707c10426",
+    "crates/sql/sql-opt/src/lib.rs": "d681c1609eb7649d5afd8bc9b6022ecc4b2ab34def05cb78ca43a430d29bd191",
+    "crates/sql/sql-opt/src/monotonicity.rs": "fb5fa4ff05172deb7aa6744646d276f5c8384a1cff53f5d64c54ff0ffc58b1d8",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "992391aa7ac29c5ca0337d8bc67e587f2e776cb7ad00b1582e38e4d5f064186a",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/scalar.rs": "f51d05904e50840841e8b3e7d20c785603c8c88a5eafc2a6b0d99d861b05fb19",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "ff5e482203879e57a0c513fa5dd3613b472418efb53d671260f7c8e742aa02b5",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneTransferFunctions.java": "d3fee65eeae46f7a9d606a0eb7c78fa6d1280bd03d46f6fb679311759366e324",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "d4ef7ef6081042532cd0c64e15dd0c009e060c661a87d867086ebf0325911616"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "47b6bdec8bd8ba14c38cbdad5179f4b5b4f7dfe696af8df50281772c6b361063",
+    "bin/sql-difftest": "ebfce7e351f61b2b270b2be7cbb3be162d1dfbcb4a045af159d7aaedd0b808f3",
+    "maven/tests.jar": "f7700f221cc9dd075679343f51bf746d309a0dfa14f9ade1f14782573483e5d9",
+    "maven/sql-compiler.jar": "a1aa05e2ad1b9192a8cee0393a57ae9d32b07314902d25cbb3c46d64e4edd618"
+  },
+  "negative_control": {
+    "library_sha256": "d2ea2c201e7422c59616bcb7ff4fe93e7bd94c7a26fd47cc903d9218b1c63d1c",
+    "failed_test": "unaryWaterlineReadsOnlyOrderPreservingOperands",
+    "compiler_jar_sha256": "759321725048bdbe3cab25dbdd9786769d97e1f886e1b08a84afa0975524ae46",
+    "observed": "Direct Java accepted INDICATOR over an empty tuple. The previous hybrid compiler threw NullPointerException while reading its operand."
+  },
+  "rust_tests": 221,
+  "junit_tests": 145,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "02a26975203870556aa473613b8c3d97a2614ee896c976bf8aa63ce36726e5fb"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "419b713570708e4aa6fabbddb180ee22b1c33e88072463a0cae5cab05a37ff54"
+    }
+  }
+}
