@@ -53,8 +53,7 @@ public class InnerCSE implements IRTransform {
         // needs a separate translation in each closure.
         DBSPExpression tree = node.to(DBSPExpression.class).ensureTree(this.compiler);
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-            var plan = RustCircuitPass.planCse(this.compiler, tree);
-            return plan == null ? node : this.cse.applyPlan(tree, plan);
+            return RustCircuitPass.rewriteCse(this.compiler, tree, node.to(DBSPExpression.class));
         }
         this.numbering.apply(tree);
         if (!this.numbering.foundAssignment) {

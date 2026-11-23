@@ -23,7 +23,7 @@ fn select(fields: &[NodeId], indexes: Option<&Field>) -> Result<Vec<NodeId>, Err
         .collect()
 }
 
-pub(super) fn rebuild(
+pub fn rebuild_flatmap(
     edit: &mut CircuitEditor,
     original: NodeId,
     id: NodeId,

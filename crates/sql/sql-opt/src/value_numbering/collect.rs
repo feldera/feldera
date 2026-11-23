@@ -1,6 +1,6 @@
 //! Collect value-numbering events in the order the CSE visitor observes the live graph.
 use super::key::{Form, Operator};
-use super::{Definition, Event, LiveNumbering, NumberingInput, ResolvedNumbers, UseSite};
+use super::{Definition, Event, LiveNumbering, NumberingInput, ResolvedNumbers, UseSite, inner};
 use crate::lexical_scope::{References, expression_children};
 use feldera_sql_ir::{Circuit, Error, ExpressionKind as Expr, InnerKind, Node, NodeId, TypeKind};
 use serde::{Deserialize, Serialize};
@@ -22,13 +22,6 @@ pub struct CollectedNumbers {
     #[serde(flatten)]
     pub(super) numbers: ResolvedNumbers,
     sites: Vec<UseSite>,
-}
-
-fn inner(id: NodeId) -> u64 {
-    let NodeId::Inner(id) = id else {
-        unreachable!("inner visitor follows inner edges")
-    };
-    id
 }
 
 fn text<'a>(node: &'a Node, field: &str) -> Result<&'a str, Error> {

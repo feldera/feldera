@@ -33,6 +33,12 @@ pub trait Transformation {
         Ok(node)
     }
 
+    /// Some consumers retain the freshly constructed expression before the visitor's
+    /// same-fields check. Request its constructor even when all operands were retained.
+    fn rebuild_unchanged(&self, _node: NodeId) -> bool {
+        false
+    }
+
     /// Most rewrites simplify a rebuilt null test. Visitors that preserve the
     /// written test can use its location and its translated operand here.
     fn rebuild_null_test(
@@ -183,7 +189,7 @@ impl<T: Transformation> Rewrite<T> {
                         .iter()
                         .filter_map(|&name| Some((name, node.field(name)?)));
                     let changed = changed_fields(fields, results.drain(start..))?;
-                    let rebuilt = if changed.is_empty() {
+                    let rebuilt = if changed.is_empty() && !self.rule.rebuild_unchanged(id) {
                         id
                     } else if matches!(
                         node.inner_kind(),
@@ -214,7 +220,7 @@ impl<T: Transformation> Rewrite<T> {
         results: impl Iterator<Item = NodeId>,
     ) -> Result<NodeId, Error> {
         let changed = changed_fields(children.fields(), results)?;
-        if changed.is_empty() {
+        if changed.is_empty() && !self.rule.rebuild_unchanged(id) {
             return Ok(id);
         }
         let expr = children.expression;

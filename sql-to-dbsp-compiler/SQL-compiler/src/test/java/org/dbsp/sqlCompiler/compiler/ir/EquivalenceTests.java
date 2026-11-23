@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
@@ -21,6 +22,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -69,12 +72,23 @@ public class EquivalenceTests {
     }
 
     static IDBSPInnerNode cse(DBSPCompiler compiler, DBSPClosureExpression closure) {
-        compiler.options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.compareRustExpressionUses");
+        boolean compare = Boolean.getBoolean("feldera.optimizer.compareRustExpressionUses");
+        compiler.options.ioOptions.rustOptimizerPasses = false;
         DBSPOperator fake = new DBSPConstantOperator(
                 CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()));
         InnerCSE cse = new InnerCSE(compiler);
         cse.setOperatorContext(fake);
-        return cse.apply(closure);
+        long firstName = DBSPVariablePath.nextGeneratedName();
+        var expected = cse.apply(closure);
+        if (!compare)
+            return expected;
+        long nextName = DBSPVariablePath.nextGeneratedName();
+        DBSPVariablePath.restoreGeneratedNames(firstName);
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var actual = cse.apply(closure);
+        Assert.assertEquals(nextName, DBSPVariablePath.nextGeneratedName());
+        Assert.assertEquals(expected.toString(), actual.toString());
+        return actual;
     }
 
     /** Fails if 'node' references a variable that is not in scope */
@@ -137,6 +151,44 @@ public class EquivalenceTests {
             Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
             Assert.assertSame(root.parameters[0], actual.parameters[0]);
             assertResolves(compiler, actual);
+        }
+    }
+
+    @Test
+    public void testCseConstructorsWithoutSharedValues() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var x = b.i32().var();
+        var clone = x.applyClone();
+        var nested = new DBSPCloneExpression(CalciteObject.EMPTY, clone);
+        var closure = b.tuple(nested, DBSPVariantExpression.sqlNull(true)).closure(x);
+        var rewritten = cse(compiler, closure).to(DBSPClosureExpression.class);
+        var fields = rewritten.body.to(DBSPTupleExpression.class).fields;
+        Assert.assertSame(clone, fields[0]);
+        Assert.assertSame(x, fields[0].to(DBSPCloneExpression.class).expression);
+        Assert.assertSame(closure.parameters[0], rewritten.parameters[0]);
+    }
+
+    @Test
+    public void testCseRetainsMutabilityWhenRewritingAnInitializer() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var x = b.i32().var();
+        var init = b.call("f", x);
+        var local = new DBSPLetStatement("local", init, true);
+        var block = new DBSPBlockExpression(Linq.list(local), b.tuple(local.getVarReference(), init.deepCopy()));
+        var result = cse(compiler, block.closure(x)).to(DBSPClosureExpression.class);
+        var body = result.body.to(DBSPLetExpression.class).consumer.to(DBSPBlockExpression.class);
+        Assert.assertTrue(body.contents.get(0).to(DBSPLetStatement.class).mutable);
+    }
+
+    @Test
+    public void testCseReportsUnsupportedFor() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var loop = new DBSPForExpression("item", b.lit(1), new DBSPBlockExpression(Linq.list(), null));
+        for (boolean nativePass : new boolean[] {false, true}) {
+            if (nativePass && !Boolean.getBoolean("feldera.optimizer.compareRustExpressionUses"))
+                continue;
+            compiler.options.ioOptions.rustOptimizerPasses = nativePass;
+            Assert.assertThrows(UnimplementedException.class, () -> new InnerCSE(compiler).apply(loop));
         }
     }
 

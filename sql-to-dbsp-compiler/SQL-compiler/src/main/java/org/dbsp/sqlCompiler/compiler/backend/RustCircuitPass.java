@@ -178,7 +178,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.NativeCsePlan;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.NativeValueNumbering;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
@@ -1973,23 +1972,22 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    /** An unknown write disables CSE for this root. */
-    @Nullable
-    public static NativeCsePlan planCse(DBSPCompiler compiler, DBSPExpression tree) {
-        var reply = analyzeCse(compiler, tree, true, "InnerCSE/Plan");
-        try {
-            return MAPPER.treeToValue(reply.value.required("plan"), NativeCsePlan.class);
-        } catch (IOException error) {
-            throw new UncheckedIOException("Invalid CSE binding plan", error);
-        }
+    /** An unknown write keeps the original DAG. Other roots use the Rust translation of the normalized tree. */
+    public static DBSPExpression rewriteCse(DBSPCompiler compiler, DBSPExpression tree, DBSPExpression original) {
+        var reply = analyzeCse(compiler, tree, true, "InnerCSE/Rewrite");
+        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+        if (reply.value.has("unimplemented_for"))
+            throw new UnimplementedException();
+        var result = decodeLiveRoot(reply.writer, reply.value.required("root"), DBSPExpression.class);
+        return result == null ? original : result;
     }
 
     private static LoweringReply analyzeCse(DBSPCompiler compiler, IDBSPInnerNode root, boolean rewrite, String pass) {
-        var writer = new OptimizerExpressionWriter(compiler, false);
+        var writer = new OptimizerExpressionWriter(compiler, pass.equals("InnerCSE/Rewrite"));
         var graph = writer.encode(root);
         try {
             var spellings = NativeValueNumbering.spellings(Objects.requireNonNull(writer.liveNodes).values(), rewrite);
-            var bytes = transformWithContext(pass, graph, 0, "", MAPPER.writeValueAsBytes(spellings));
+            var bytes = transformWithContext(pass, graph, DBSPVariablePath.nextGeneratedName(), "", MAPPER.writeValueAsBytes(spellings));
             var value = MAPPER.readTree(bytes);
             checkBindingErrors(writer, value);
             if (compiler.stateObserver != null)

@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust rewrites common subexpressions into closure-local lazy cells and returns
+the rewritten tree and the next generated name to the compiler. It performed
+4,444 rewrites across 47 classic and 47 Gen-2 compilations. All 46,351 ordered
+S4 observations and emitted artifacts matched direct Java. The build passed
+207 Rust tests and 108 targeted JUnit tests. The largest cold p95 ratio was
+1.121× on Nexmark (4.297 s hybrid and 3.833 s direct).
+[Expression rewrite replay](evidence/p3-cse-tree-rewrite.json) ·
+[Paired compilation timings](evidence/p3-cse-tree-rewrite-cold.json)
+
 Rust chooses the first read of each closure-local lazy cell, whether a read
 borrows its value, and where each binding becomes visible. The direct and
 hybrid compilers used the same generated names for a method called across

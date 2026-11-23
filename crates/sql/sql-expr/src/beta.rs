@@ -393,7 +393,7 @@ impl Transformation for SimplifyArgument<'_> {
                 edit.derive_unlocated_inner(id, [])
             }
             Some(InnerKind::Expression(Expr::Flatmap)) => {
-                crate::flatmap::rebuild(edit, original, id)
+                crate::flatmap::rebuild_flatmap(edit, original, id)
             }
             Some(InnerKind::Expression(kind @ (Expr::Borrow | Expr::Deref))) => {
                 let source = edit.node(node.edge("expression")?)?;

@@ -519,13 +519,22 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         return Ok(json!({"bindings": binding_ids(inspection.bindings),
             "has_free": inspection.has_free_variables, "diagnostic": diagnostic}));
     }
-    if let ("InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan", [root]) = (pass, roots.as_slice()) {
+    if let ("InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite", [root]) = (pass, roots.as_slice()) {
         use feldera_sql_opt::LexicalResolution;
         return Ok(match feldera_sql_opt::lexical_references(&arena, *root)? {
             LexicalResolution::Bound(references) if pass != "InnerCSE/ResolveAndNumber" => {
                 let spellings: feldera_sql_opt::NumberingSpellings = serde_json::from_slice(state)?;
                 let numbers = spellings.number(&arena, *root, &references)?;
-                if pass == "InnerCSE/Plan" {
+                if pass == "InnerCSE/Rewrite" {
+                    let Some(plan) = numbers.plan(&arena, *root)? else {
+                        return Ok(json!({"root": null, "next_generated_name": next}));
+                    };
+                    let mut edit = CircuitEditor::new(arena.clone());
+                    let Some(result) = plan.apply(&mut edit, *root, &mut next)? else {
+                        return Ok(json!({"unimplemented_for": true, "next_generated_name": next}));
+                    };
+                    json!({"root": edit.circuit().live_inner_node(&arena, result)?, "next_generated_name": next})
+                } else if pass == "InnerCSE/Plan" {
                     json!({"plan": numbers.plan(&arena, *root)?})
                 } else {
                     serde_json::to_value(numbers)?
@@ -1384,7 +1393,7 @@ fn transform(
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
-        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" => {
+        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
             return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Groups" => {

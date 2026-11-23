@@ -2,6 +2,7 @@
 //! printer's text between operands and the value number of each operand.
 mod collect;
 mod key;
+mod materialize;
 mod plan;
 pub use collect::NumberingSpellings;
 
@@ -11,6 +12,13 @@ use feldera_sql_ir::{Circuit, Error, ExpressionKind, InnerKind, NodeId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
+
+fn inner(id: NodeId) -> u64 {
+    let NodeId::Inner(id) = id else {
+        unreachable!("inner visitor follows inner edges")
+    };
+    id
+}
 
 /// Find the variable whose stored value can change through a mutable borrow.
 /// A borrow of a computed value has no known declaration and disables CSE for
