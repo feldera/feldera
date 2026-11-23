@@ -192,10 +192,6 @@ class TestTransactions(PipelineTestCase):
 
         pipeline.stop(force=True)
 
-    @unittest.skipIf(
-        FELDERA_TEST_NUM_HOSTS > 1,
-        "the multihost coordinator does not check the transaction ID yet",
-    )
     def test_commit_transaction_by_id(self):
         """A commit names its transaction and incarnation.  A retry of it
         succeeds, and a commit of another transaction or incarnation fails."""
@@ -204,7 +200,10 @@ class TestTransactions(PipelineTestCase):
             TEST_CLIENT,
             name=self.register_for_cleanup("test_commit_transaction_by_id"),
             sql="CREATE TABLE t1 (id INT NOT NULL) WITH ('materialized' = 'true');",
-            runtime_config=RuntimeConfig(workers=FELDERA_TEST_NUM_WORKERS),
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+            ),
         ).create_or_replace()
         pipeline.start()
 
