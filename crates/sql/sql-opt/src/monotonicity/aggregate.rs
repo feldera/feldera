@@ -5,34 +5,64 @@ use feldera_sql_expr::{
 };
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, TypeId, TypeKind};
 
-/// Tuple fields are analyzed individually. Preserve the tuple constructor,
-/// including its type and nullability, and mark each leaf as unknown.
-fn unknown_value(
+/// Rebuild the accumulator's declared tuple shape. A minimum bounds its first
+/// scalar leaf. Other leaves are fresh placeholders, even for repeated types.
+fn accumulator_value(
     edit: &mut CircuitEditor,
     ty: TypeId,
-    depth: usize,
+    mut minimum: Option<(NodeId, ExpressionId)>,
 ) -> Result<ExpressionId, Error> {
-    if depth > 128 {
-        return Err(Error::new(
-            "aggregate waterline exceeds the circuit nesting limit",
-        ));
+    enum Step {
+        Field(TypeId),
+        Tuple(TypeId, usize),
     }
-    match edit.type_kind(ty)? {
-        TypeKind::Tuple | TypeKind::RawTuple => {
-            let members = edit.node(ty.into())?.edges("tupFields")?;
-            let mut fields = Vec::with_capacity(members.len());
-            for member in members {
-                fields.push(unknown_value(edit, edit.type_id(member)?, depth + 1)?);
+
+    let mut work = vec![Step::Field(ty)];
+    let mut fields = Vec::new();
+    let mut active = std::collections::HashSet::new();
+    while let Some(step) = work.pop() {
+        match step {
+            Step::Field(ty) => match edit.type_kind(ty)? {
+                TypeKind::Tuple | TypeKind::RawTuple => {
+                    if !active.insert(NodeId::from(ty)) {
+                        return Err(Error::new("cycle in an aggregate waterline type"));
+                    }
+                    let members = edit.node(ty.into())?.edges("tupFields")?;
+                    if minimum.is_some() && members.is_empty() {
+                        return Err(Error::new("minimum waterline requires a compared field"));
+                    }
+                    work.push(Step::Tuple(ty, fields.len()));
+                    for member in members.into_iter().rev() {
+                        work.push(Step::Field(edit.type_id(member)?));
+                    }
+                }
+                kind => {
+                    let field = match (minimum.take(), kind) {
+                        (Some((origin, value)), _) => edit.cast(origin, value, ty)?,
+                        (
+                            None,
+                            TypeKind::Any
+                            | TypeKind::Function
+                            | TypeKind::Ref
+                            | TypeKind::Stream
+                            | TypeKind::Struct,
+                        ) => {
+                            return Err(Error::new("expected a SQL value in aggregate waterline"));
+                        }
+                        (None, _) => unknown(edit, ty.into())?,
+                    };
+                    fields.push(field);
+                }
+            },
+            Step::Tuple(ty, start) => {
+                let tuple = edit.tuple_with_type(ty, &fields[start..])?;
+                fields.truncate(start);
+                fields.push(tuple);
+                active.remove(&NodeId::from(ty));
             }
-            edit.tuple_with_type(ty, &fields)
         }
-        TypeKind::Any
-        | TypeKind::Function
-        | TypeKind::Ref
-        | TypeKind::Stream
-        | TypeKind::Struct => Err(Error::new("expected a SQL value in aggregate waterline")),
-        _ => unknown(edit, ty.into()),
     }
+    Ok(fields.pop().expect("completed accumulator"))
 }
 
 pub enum AggregateTransfer {
@@ -52,41 +82,6 @@ pub(super) fn first_leaf(
         value = edit.tuple_field(value, 0)?;
     }
     Ok(value)
-}
-
-/// Place the bound in the first leaf of the accumulator. ARG_MIN can also
-/// carry a payload alongside that leaf. Its fields have no known lower bound.
-fn with_first_leaf(
-    edit: &mut CircuitEditor,
-    origin: NodeId,
-    value: ExpressionId,
-    ty: TypeId,
-    depth: usize,
-) -> Result<ExpressionId, Error> {
-    if depth > 128 {
-        return Err(Error::new(
-            "minimum waterline exceeds the circuit nesting limit",
-        ));
-    }
-    if !matches!(edit.type_kind(ty)?, TypeKind::Tuple | TypeKind::RawTuple) {
-        return edit.cast(origin, value, ty);
-    }
-    let members = edit.node(ty.into())?.edges("tupFields")?;
-    let (first, payload) = members
-        .split_first()
-        .ok_or_else(|| Error::new("minimum waterline requires a compared field"))?;
-    let mut fields = Vec::with_capacity(members.len());
-    fields.push(with_first_leaf(
-        edit,
-        origin,
-        value,
-        edit.type_id(*first)?,
-        depth + 1,
-    )?);
-    for &field in payload {
-        fields.push(unknown_value(edit, edit.type_id(field)?, depth + 1)?);
-    }
-    edit.tuple_with_type(ty, &fields)
 }
 
 pub fn minimum_transfer(
@@ -109,7 +104,7 @@ pub fn minimum_transfer(
     let value = edit.dereference(value)?;
     let first = first_leaf(edit, value)?;
     let owned = edit.clone_if_needed(first)?;
-    let minimum = with_first_leaf(edit, origin, owned, value_type, 0)?;
+    let minimum = accumulator_value(edit, value_type, Some((origin, owned)))?;
     let output = if let Some(function) = postprocess {
         let borrowed = edit.borrow_value(minimum)?;
         apply_closure(edit, function, &[borrowed], warnings)?
@@ -168,7 +163,7 @@ pub fn chain_minimum_transfer(
         )?;
         let copy = copy_expression(edit, reduced)?;
         let field_type = edit.type_id(field)?;
-        let bound = with_first_leaf(edit, origin, edit.expression(copy)?, field_type, 0)?;
+        let bound = accumulator_value(edit, field_type, Some((origin, edit.expression(copy)?)))?;
         if !edit.same_type(edit.expression_type(bound)?, field_type)? {
             return Ok(None);
         }
@@ -205,7 +200,7 @@ pub fn aggregate_transfer(
             if !edit.same_type(key, output_key)? {
                 return Err(Error::new("aggregate changed the group key type"));
             }
-            (input_key, unknown_value(edit, output_value, 0)?)
+            (input_key, accumulator_value(edit, output_value, None)?)
         }
         AggregateTransfer::Rolling => {
             let [timestamp, aggregate] = edit
@@ -218,8 +213,8 @@ pub fn aggregate_transfer(
             if !edit.same_type(key, edit.type_id(timestamp)?)? {
                 return Err(Error::new("rolling aggregate changed the timestamp type"));
             }
-            let partition = unknown_value(edit, output_key, 0)?;
-            let aggregate = unknown_value(edit, edit.type_id(aggregate)?, 0)?;
+            let partition = accumulator_value(edit, output_key, None)?;
+            let aggregate = accumulator_value(edit, edit.type_id(aggregate)?, None)?;
             let aggregate = edit.some_at(aggregate.into(), aggregate)?;
             (
                 partition,

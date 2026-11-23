@@ -58,6 +58,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -67,6 +68,34 @@ import java.util.Map;
 import java.util.Set;
 
 public class WaterlineProjectionTests {
+    @Test
+    public void deepAggregatePayloadsRetainOnlyTheComparedLeaf() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(site, 32, true, false);
+        DBSPType value = integer;
+        for (int i = 0; i < 144; i++)
+            value = new DBSPTypeTuple(value, integer.withMayBeNull(true));
+        var input = new DBSPTypeRawTuple(integer, value);
+        var grouped = RustCircuitPass.aggregateTransfer(compiler, input, new DBSPTypeIndexedZSet(input), false);
+        var groupedValue = grouped.body.to(DBSPRawTupleExpression.class).get(1);
+        Assert.assertTrue(groupedValue.equivalent(Monotonicity.makeNoExpression(value)));
+        Assert.assertTrue(groupedValue.getType().sameType(value));
+
+        var minimum = RustCircuitPass.minimumTransfer(compiler, site, input, null);
+        var compared = minimum.body.to(DBSPRawTupleExpression.class).get(1);
+        DBSPExpression expected = minimum.parameters[0].asVariable().field(1).deref();
+        for (int i = 0; i < 144; i++) {
+            var tuple = compared.to(DBSPTupleExpression.class);
+            Assert.assertTrue(tuple.get(1).is(NoExpression.class));
+            Assert.assertTrue(tuple.get(1).getType().mayBeNull);
+            compared = tuple.get(0);
+            expected = expected.field(0);
+        }
+        Assert.assertTrue(compared.closure(minimum.parameters).equivalent(expected.closure(minimum.parameters)));
+    }
+
     @Test
     public void weighRebuildsItsOutputWhenLimitersReplaceItsInput() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));

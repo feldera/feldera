@@ -986,9 +986,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
 fn lowered_function_reply(arena: &Circuit, edit: &feldera_sql_ir::CircuitEditor,
     function: Option<feldera_sql_ir::ExpressionId>, next: u64, warnings: Vec<feldera_sql_expr::SimplifyWarning>,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    let mut functions = edit.circuit().additional_expressions(arena, function.as_slice())?;
+    let function = function.map(|root| edit.circuit().live_expression(arena, root)).transpose()?;
     Ok(json!({
-        "function": functions.pop(),
+        "function": function,
         "next_generated_name": next,
         "warnings": warnings.into_iter().map(|w| json!({
             "range": w.position, "error_type": w.kind, "message": w.message,

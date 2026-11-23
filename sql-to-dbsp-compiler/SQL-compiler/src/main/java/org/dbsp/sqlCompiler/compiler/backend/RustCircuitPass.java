@@ -447,7 +447,7 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static <T extends DBSPExpression> T loweredFunction(DBSPCompiler compiler,
             ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
-        T function = expressionDecoder(writer).decodeInner(result.required("function"), kind);
+        T function = Objects.requireNonNull(decodeLiveRoot(writer, result.required("function"), kind));
         for (var warning : result.required("warnings"))
             compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
                     warning.required("error_type").textValue(), warning.required("message").textValue());
@@ -2333,8 +2333,7 @@ public final class RustCircuitPass implements CircuitTransform {
             case Aggregate -> invokeLowering(compiler, "PullFilters/Aggregate",
                     producer.inputs.get(0).outputType(), producer.outputPort().outputType(), predicate);
         };
-        var function = reply.value.required("function");
-        var result = function.isNull() ? null : expressionDecoder(reply.writer).decodeInner(function, DBSPClosureExpression.class);
+        var result = decodeLiveRoot(reply.writer, reply.value.required("function"), DBSPClosureExpression.class);
         // Even a rejected aggregate predicate can consume a variable name and emit warnings.
         finishLowering(compiler, reply.value);
         return result;
