@@ -1,6 +1,8 @@
 //! Intern expression values in evaluation order. A key contains the original
 //! printer's text between operands and the value number of each operand.
+mod collect;
 mod key;
+pub use collect::NumberingSpellings;
 
 use self::key::{Form, Key, Number};
 use crate::expression_uses::{shared_expression_uses, NumberedExpression, OperandUse};
@@ -53,7 +55,7 @@ pub struct NumberingInput {
     mutable: HashSet<u64>,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Serialize, Eq, Hash, PartialEq)]
 struct UseSite {
     parent: u64,
     operand: usize,

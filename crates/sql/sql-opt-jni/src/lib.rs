@@ -519,11 +519,17 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         return Ok(json!({"bindings": binding_ids(inspection.bindings),
             "has_free": inspection.has_free_variables, "diagnostic": diagnostic}));
     }
-    if let ("InnerCSE/ResolveAndNumber", [root]) = (pass, roots.as_slice()) {
+    if let ("InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph", [root]) = (pass, roots.as_slice()) {
         use feldera_sql_opt::LexicalResolution;
-        let request: feldera_sql_opt::LiveNumbering = serde_json::from_slice(state)?;
         return Ok(match feldera_sql_opt::lexical_references(&arena, *root)? {
-            LexicalResolution::Bound(references) => serde_json::to_value(request.number(&arena, &references)?)?,
+            LexicalResolution::Bound(references) if pass == "InnerCSE/NumberGraph" => {
+                let spellings: feldera_sql_opt::NumberingSpellings = serde_json::from_slice(state)?;
+                serde_json::to_value(spellings.number(&arena, *root, &references)?)?
+            }
+            LexicalResolution::Bound(references) => {
+                let request: feldera_sql_opt::LiveNumbering = serde_json::from_slice(state)?;
+                serde_json::to_value(request.number(&arena, &references)?)?
+            }
             LexicalResolution::Free { variable, .. } => json!({"free": inner_number(variable)}),
             LexicalResolution::Conflict { variable, previous, current } =>
                 binding_conflict(variable, previous, current),
@@ -1373,7 +1379,7 @@ fn transform(
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
-        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" => {
+        | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" => {
             return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Groups" => {

@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -459,9 +460,7 @@ public class ValueNumbering extends InnerVisitor {
         if (!this.compiler.options.ioOptions.rustOptimizerPasses)
             return super.apply(node);
         this.startVisit(node);
-        var collector = new NativeValueNumbering(this);
-        node.accept(collector);
-        collector.finish(node, this.canonical, this.mutable, this.rewrite);
+        RustCircuitPass.numberValues(this.compiler, node, this, this.rewrite);
         this.endVisit();
         return node;
     }

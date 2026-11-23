@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust walks the original expression graph to number values, track mutable
+reads and identify shared subexpressions within each closure. Java supplies
+the printer spellings used in the value keys. Rust handled 4,444 numbering
+requests across the 94 detached compilations. All 46,351 ordered S4
+observations and emitted artifacts matched direct Java. The largest cold
+p95 ratio was 1.115× on Nexmark (4.491 s hybrid, 4.027 s direct).
+[Graph numbering replay](evidence/p3-graph-value-numbers.json) ·
+[Paired compilation timings](evidence/p3-graph-value-numbers-cold.json)
+
 Rust resolves variable references for optimizer visitors that accept free
 variables and for those that require closed expressions. Both preserve the
 bindings established before a diagnostic. All 104 targeted JUnit tests

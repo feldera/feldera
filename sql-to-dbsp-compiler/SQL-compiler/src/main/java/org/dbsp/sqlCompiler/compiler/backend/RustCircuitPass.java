@@ -179,6 +179,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.NativeValueNumbering;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
@@ -1960,29 +1961,22 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public record ResolvedNumbers(NativeValueNumbering.Group[] groups, Map<Long, IDBSPInnerNode> nodes,
-                                  List<IDBSPDeclaration> mutable, boolean unknownWrite) {
-        public IDBSPDeclaration declaration(long id) {
-            return Utilities.getExists(this.nodes, id).to(IDBSPDeclaration.class);
-        }
-    }
-
-    /** Resolve each read and mutable borrow in the same graph used to number the expressions. */
-    public static ResolvedNumbers resolveAndNumber(DBSPCompiler compiler, IDBSPInnerNode root,
-                                                   NativeValueNumbering.Request request) {
+    /** Send the original DAG once. Rust collects operand uses and chooses value numbers in lexical scope. */
+    public static void numberValues(DBSPCompiler compiler, IDBSPInnerNode root, ValueNumbering analysis, boolean rewrite) {
+        var writer = new OptimizerExpressionWriter(compiler, false);
+        var graph = writer.encode(root);
+        var nodes = Objects.requireNonNull(writer.liveNodes);
+        String pass = "InnerCSE/NumberGraph";
         try {
-            var reply = invokeLowering(compiler, "InnerCSE/ResolveAndNumber", MAPPER.writeValueAsBytes(request), root);
-            checkBindingErrors(reply.writer, reply.value);
-            var nodes = Objects.requireNonNull(reply.writer.liveNodes);
-            var mutable = new ArrayList<IDBSPDeclaration>();
-            for (var id : reply.value.required("mutable"))
-                mutable.add(Utilities.getExists(nodes, id.longValue()).to(IDBSPDeclaration.class));
+            var spellings = NativeValueNumbering.spellings(nodes.values(), rewrite);
+            var bytes = transformWithContext(pass, graph, 0, "", MAPPER.writeValueAsBytes(spellings));
+            var value = MAPPER.readTree(bytes);
+            checkBindingErrors(writer, value);
+            NativeValueNumbering.bind(MAPPER.treeToValue(value, NativeValueNumbering.Result.class), nodes, analysis, rewrite);
             if (compiler.stateObserver != null)
-                compiler.stateObserver.nativeDecision("InnerCSE/ResolveAndNumber", true);
-            return new ResolvedNumbers(MAPPER.treeToValue(reply.value.required("groups"), NativeValueNumbering.Group[].class),
-                    nodes, mutable, reply.value.required("unknown_write").booleanValue());
+                compiler.stateObserver.nativeDecision(pass, true);
         } catch (IOException error) {
-            throw new UncheckedIOException("Invalid CSE variable bindings or value numbers", error);
+            throw new UncheckedIOException("Invalid CSE graph value numbers", error);
         }
     }
 
