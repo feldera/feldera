@@ -80,6 +80,8 @@ impl ProjectedValue {
 
 struct Binding {
     name: String,
+    /// Type before waterline projection, when the caller supplies the declaration.
+    declared_type: Option<TypeId>,
     variable: ExpressionId,
     shape: Shape,
 }
@@ -246,22 +248,14 @@ pub(crate) fn clock_operands(
     let Some(UnorderedRow { shape, projected }) = UnorderedRow::from_type(edit, ty)? else {
         return Ok(None);
     };
-    let Some(references) =
-        crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?
-    else {
+    if crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?.is_none() {
         return Ok(None);
-    };
-    for (read, declaration) in references {
-        if declaration == parameter
-            && !edit.same_type(edit.expression_type(edit.expression(read)?)?, ty)?
-        {
-            return Ok(None);
-        }
     }
     let variable = edit.named_variable(projected.unwrap_or(ty), &name)?;
     let mut row = Row {
         bindings: vec![Binding {
             name,
+            declared_type: Some(ty),
             variable,
             shape,
         }],
@@ -338,6 +332,7 @@ impl Row {
                 .to_owned();
             bindings.push(Binding {
                 name,
+                declared_type: None,
                 variable,
                 shape,
             });
@@ -466,24 +461,12 @@ fn analyze_closure(
     let declared = parameters.iter().map(|&(parameter, _)| parameter);
     let resolution = crate::lexical_scope::resolve_body(edit.circuit(), declared, body.into())?;
     let inspection = WaterlineInspection::inspect(edit, resolution, Some(body.into()))?;
-    let WaterlineInspection::Bound {
-        references,
-        repeated,
-    } = &inspection
+    let WaterlineInspection::Bound { repeated, .. } = &inspection
     else {
         return Ok(ClosureAnalysis::Visit(inspection));
     };
     if !repeated.is_empty() {
         return Ok(ClosureAnalysis::Visit(inspection));
-    }
-    for (&read, &binding) in references {
-        let declaration = edit.node(binding)?;
-        if matches!(declaration.inner_kind(), Some(InnerKind::Parameter)) {
-            let expected = edit.type_id(declaration.edge("type")?)?;
-            if !edit.same_type(edit.expression_type(edit.expression(read)?)?, expected)? {
-                return Ok(ClosureAnalysis::Visit(inspection));
-            }
-        }
     }
     if let Some(projected) =
         project_validated_closure(edit, body, parameters, projections, indexed, observations)?
@@ -519,6 +502,9 @@ fn project_validated_closure(
         names.push(name);
     }
     let mut row = Row::new(edit, &variables, projections, indexed)?;
+    for (binding, &(parameter, _)) in row.bindings.iter_mut().zip(parameters) {
+        binding.declared_type = Some(edit.type_id(edit.node(parameter)?.edge("type")?)?);
+    }
     row.observations = observations;
     let Some(value) = row.visit(edit, body)? else {
         return Ok(None);

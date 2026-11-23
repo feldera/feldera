@@ -195,6 +195,11 @@ impl Row {
             .rev()
             .find(|(_, p)| p.name == name)
         {
+            if let Some(declared) = parameter.declared_type {
+                if !edit.same_type(edit.expression_type(expression)?, declared)? {
+                    return Ok(VariableRead::NeedsVisitor);
+                }
+            }
             (
                 &parameter.shape,
                 RowType::Parameter { index },

@@ -1,0 +1,38 @@
+{
+  "scope": "Check original parameter types on visits to waterline reads, including temporal predicates. Preserve whole-body name resolution and repeated-expression diagnostics.",
+  "source_base": "6ef296ec7bf1313c8d4008598076d60bfaf6030d",
+  "source_files_sha256": {
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "6375a872d7b236d5e0bc7d87519301a6c27d0d07b2540aa971c1523acffc2e1a",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/scope.rs": "c5b5973949fa333984c9bf1748640152f2a141d8c74a7b6e79a377cfc49c9bea",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "f606da0b8474c3e3bcbffe4348127190c47d4bc95aad4cec8868bf37107aef50"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "a79288a5c2a1ec3ec05fc14aecc077fe0302fa1965b4f9879153c36707479e6b",
+    "bin/sql-difftest": "eebd89afce6117965b35d8c897e78ee36d14a5b7d0503609cdaeeeee5535d841",
+    "maven/tests.jar": "6d4c958415e7e1535264dfed50c131774c60ee22e072b706680a29b30db9976e",
+    "maven/sql-compiler.jar": "7378de893619a21c669b17ab212b4f8b0ad1cbaa73d0aa2f1852fbe1c80c34db"
+  },
+  "negative_control": {
+    "library_sha256": "750d55025ed72ed9446935abec8fb67ede622ccfd5a029020d1708cec5a6e3c8",
+    "failed_test": "parameterTypesAreCheckedOnVisitedWaterlineReads"
+  },
+  "rust_tests": 221,
+  "junit_tests": 150,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5348,
+      "mismatches": 0,
+      "population_sha256": "e52a820c73ae9ba93e0128257373ce8c024d22390bc4ff8d21901188a98048bc",
+      "receipt_sha256": "7d22e032d557cea4aa570272a18cba953909e21a2ba44e7c852b0e9cc5a01a1d"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 5581,
+      "mismatches": 0,
+      "population_sha256": "720c456e0c204aeb88a8ef061c1f5147b819405613455ff08e6004375580bfeb",
+      "receipt_sha256": "06825f686262abf8e3a5e0c07fbdfd47e58fa016a45f4453209ade619054739e"
+    }
+  }
+}

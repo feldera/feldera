@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The waterline visitor checks a parameter's original type when it visits a read.
+It resolves names inside nested lambdas, whose bodies have no waterline facts.
+The regression checks both observation modes, a temporal predicate and the
+diagnostic on a visited read. It failed on the previous library. All 221 Rust
+tests and 150 targeted JUnit tests passed. The 24 LATENESS compilations
+matched through 10,929 ordered S4 observations and emission.
+[Parameter read parity](evidence/p3-visited-parameter-types.json)
+
 The detached timestamp comparator now handles the JDK's System V daylight
 rules and compact GMT offsets. All 198 directed zone/date pairs agreed with
 Java, and 58 frozen compilations matched through 23,242 ordered S4 observations
@@ -472,6 +480,11 @@ microseconds resolved by the producing JVM along with its original spelling.
 All 3,792 zone/date comparisons then agreed. The new build passed 221 Rust
 tests, 149 targeted JUnit tests and the same 58 frozen compilations.
 [Detached zoned keys](evidence/p3-jdk-zoned-keys.json) · [Live instant comparison](evidence/p3-zoned-runtime-instants.json)
+
+On `6ef296ec7`, cold SQL-to-classic emission met the 1.2× p95 ceiling on
+the array subquery (0.806×), Nexmark (1.145×) and the outer join (0.826×).
+All 69 alternating pairs matched on diagnostics and emitted artifacts.
+[Paired compilation measurements](evidence/p3-zoned-runtime-instants-cold.json)
 
 Rust now reports the first missing declaration when grouping or merging
 temporal bounds. A regression compares the exception class and variable name

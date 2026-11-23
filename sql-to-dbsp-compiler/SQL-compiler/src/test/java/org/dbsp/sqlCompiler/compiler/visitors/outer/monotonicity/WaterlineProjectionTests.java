@@ -1195,6 +1195,56 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void parameterTypesAreCheckedOnVisitedWaterlineReads() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var timestamp = DBSPTypeTimestamp.INSTANCE;
+        var row = new PartiallyMonotoneTuple(List.of(new MonotoneType(timestamp)), false, false);
+        var input = new DBSPVariablePath("row", row.getType().ref());
+        var mistyped = new DBSPVariablePath("row", DBSPTypeBool.create(false));
+        var nested = mistyped.closure();
+        var key = input.deref().field(0);
+        var body = new DBSPBlockExpression(List.of(nested.toStatement()), key);
+        var closure = body.closure(input);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(row.getType()));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        var direct = new MonotoneTransferFunctions(compiler, operator, kind, row);
+        direct.apply(closure);
+        for (boolean observe : List.of(false, true)) {
+            var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+            var result = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{row.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(row)},
+                    false, observe ? facts::put : null);
+            Assert.assertTrue(result instanceof RustCircuitPass.ProjectedWaterline);
+            Assert.assertTrue(direct.get(closure).getReducedExpression().equivalent(
+                    ((RustCircuitPass.ProjectedWaterline) result).closure()));
+            if (observe) {
+                Assert.assertFalse(facts.get(nested).mayBeMonotone());
+                Assert.assertFalse(facts.containsKey(mistyped));
+                Assert.assertSame(facts.get(key), facts.get(body));
+            }
+        }
+
+        var clock = new DBSPApplyExpression("now", timestamp);
+        var comparison = new DBSPBinaryExpression(site, DBSPTypeBool.create(false), DBSPOpcode.GTE, body, clock);
+        var terms = RustCircuitPass.inferTemporalPredicates(compiler, closure.parameters[0], comparison);
+        Assert.assertNotNull(terms);
+        Assert.assertEquals(1, terms.size());
+        Assert.assertSame(body, terms.get(0).expression());
+        Assert.assertSame(clock, terms.get(0).clock());
+
+        var visited = mistyped.closure(input);
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var analyzer = new MonotoneTransferFunctions(compiler, operator, kind, row);
+            var error = Assert.assertThrows(RuntimeException.class, () -> analyzer.apply(visited));
+            Assert.assertTrue(error.getMessage().contains("Variable row(" + mistyped.getId() + ") type"));
+            Assert.assertTrue(error.getMessage().contains("does not match expected type"));
+        }
+    }
+
+    @Test
     public void conditionalsAndNestedFunctionsPreserveIndependentFieldBounds() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var node = CalciteEmptyRel.INSTANCE;
