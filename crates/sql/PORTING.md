@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | On `b1cc5637e`, all 17,098 frozen compilations matched direct Java through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. COUNT and LATENESS restored in both directions. The decoder completed one CPU-hour on `bf609aab1`. On `4b83f145e`, all three cold SQL-to-artifact workloads met the 1.2× ceiling. The largest ratio was 1.118× on Nexmark. [Frozen replay, runtime and restores](evidence/p3-weigh-limiter-replay.json) · [Decoder campaign](evidence/p3-empty-row-clock-inputs.json) · [Latency](evidence/p3-row-cast-waterlines-cold.json) | Port the remaining Java optimizer logic, including general monotonicity analysis and temporal fallbacks. Repeat the exit checks on the finished build and collect 30 qualifying field-shadow days on at least 200 distinct programs. |
+| P3 | On `b1cc5637e`, all 17,098 frozen compilations matched direct Java through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. COUNT and LATENESS restored in both directions. The decoder completed one CPU-hour on `bf609aab1`. On `cb578c70d`, all three cold SQL-to-artifact workloads met the 1.2× ceiling. The largest ratio was 1.154× on Nexmark. [Frozen replay, runtime and restores](evidence/p3-weigh-limiter-replay.json) · [Decoder campaign](evidence/p3-empty-row-clock-inputs.json) · [Latency](evidence/p3-partial-row-cast-cold.json) | Port the remaining Java optimizer logic, including general monotonicity analysis and temporal fallbacks. Repeat the exit checks on the finished build and collect 30 qualifying field-shadow days on at least 200 distinct programs. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -461,6 +461,13 @@ The result in `/campaign/results/decoder.json` records whether the worker
 reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
+
+On `cb578c70d`, casting a partially bounded row can remove its bound while
+preserving the bound and original field identity of an adjacent input
+column. The new JNI regression failed on the previous native library. All
+27 waterline tests passed with the correction.
+[Waterline projection regression](../../sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java) ·
+[Cold compilation measurements](evidence/p3-partial-row-cast-cold.json)
 
 Rust selected shared windows whose timestamp offset depends on a UUID or
 VARBINARY comparison. Four compilations on classic and Gen-2 matched Java at
