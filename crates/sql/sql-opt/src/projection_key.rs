@@ -186,7 +186,7 @@ impl ProjectionKey {
                 }
                 Visit::Intern(at, term, children) => {
                     let id = at.id;
-                    let operands = children.into_iter().map(|child| numbers[&child]).collect();
+                    let operands: Vec<_> = children.into_iter().map(|child| numbers[&child]).collect();
                     // The literal printer and an explicit Some use the same spelling.
                     let wrap = matches!(
                         term,
@@ -199,7 +199,15 @@ impl ProjectionKey {
                             | Term::TemporalText(_)
                             | Term::Date(_)
                             | Term::Timestamp(_)
-                    ) && edit.nullable(edit.expression_type(edit.expression(id)?)?)?;
+                    ) && edit.nullable(edit.expression_type(edit.expression(id)?)?)?
+                        && edit.expr_kind(edit.expression(id)?)? != Expr::StrLiteral;
+                    // Nonempty tuple constructors have a trailing separator after
+                    // each field. An empty one prints as an ordinary zero-argument call.
+                    let term = if matches!(term, Term::Tuple) && operands.is_empty() {
+                        Term::Call("Tup0::new".into())
+                    } else {
+                        term
+                    };
                     let (mut number, _) = terms.insert_full((term, operands));
                     if wrap {
                         number = terms
@@ -377,6 +385,14 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
             (term, fields)
         }
         Expr::Tuple | Expr::RawTuple => (Term::AbsentTuple, vec![]),
+        Expr::VoidLiteral => (Term::RawTuple { nullable: false }, vec![]),
+        Expr::StrLiteral => {
+            let Some(text) = string(node, "value") else {
+                return Ok(None);
+            };
+            // Both Rust string literal forms use the same quoting as SQL strings here.
+            (Term::String(text.to_owned()), vec![])
+        }
         Expr::NullLiteral => (Term::NullLiteral, vec![]),
         Expr::VariantNullLiteral => (Term::VariantNullLiteral, vec![]),
         Expr::GeoPointConstructor => {

@@ -4,6 +4,18 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Waterlines for scalar function arguments, 2026-11-23
+
+On `5951efa75`, all 69 pairs matched through classic source emission. The
+shared ARM64 VM ran each compiler on CPU 15 in alternating order, with two
+warmup pairs and 21 measured pairs per workload. [Paired measurements](evidence/p3-call-argument-waterlines-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.233 | 1.915 | 0.857× |
+| Nexmark suite | 4.985 | 5.381 | 1.079× |
+| Outer join | 2.088 | 1.687 | 0.808× |
+
 ## Waterlines for uninitialized locals, 2026-11-23
 
 On `b72c1de73`, all 69 direct and hybrid compilation pairs emitted equal

@@ -462,6 +462,11 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust matches Java's six map-fusion groups for eleven empty tuples, factory
+calls, unit values and string literals. All 143 targeted JUnit tests and
+220 Rust tests passed. Twelve classic and Gen-2 compilations matched through
+4,774 ordered S4 observations and emission. [Fusion comparisons](evidence/p3-printed-empty-values.json)
+
 The hybrid visitor now reports the same error as direct Java when a registered
 scalar function reads an uninitialized local. Rust also projects calls to
 unregistered functions when an argument has no waterline fact. Both visitor

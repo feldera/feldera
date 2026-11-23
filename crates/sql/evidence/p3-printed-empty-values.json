@@ -1,0 +1,37 @@
+{
+  "scope": "Map fusion compares eleven empty tuple constructors, unit values and string literal forms against the six fingerprint groups produced by Java.",
+  "source_base": "5951efa75650c96fcf5e9879a77ea1bdb0a7115f",
+  "source_files_sha256": {
+    "crates/sql/sql-opt/src/projection_key.rs": "b4b0ebf4d2e48f68794c4dfc5566135d21a12bf025f3a622cc7cf272034c5485",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "72c5ca3147933a92a45cd9c79e1f5fd7b17a2eeacf60cba8d6c7dd94352b934a"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "d1f60984a9beb3a9452a6b2780677fb376b538646a81998067e5663d091b9eb2",
+    "bin/sql-difftest": "a0978de526aa413948d1dc34fb54302483df6fdf2eb7d571b20e7f5e958d114a",
+    "maven/tests.jar": "1a0296fd0b0450363b2332d8020317a276daa78d185742a9fe5d1ca7fa7868d9",
+    "maven/sql-compiler.jar": "496832dbc0cead4e13fc30e7643a47bef9ee03131e24988984ef0e77fef8b090"
+  },
+  "negative_control": {
+    "library_sha256": "9ca7e4eb1461f3cb00d7b636e8e109e2095b15e955d715b715b98056e5172b8f",
+    "failed_test": "fusionFingerprintsMatchPrintedEmptyTuplesAndStrings"
+  },
+  "rust_tests": 220,
+  "junit_tests": 143,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 6,
+      "ordered_s4_observations": 2375,
+      "mismatches": 0,
+      "population_sha256": "77119c444566bc487149db0ced29097eb55a59f719a065eed13249b3ab532c46",
+      "receipt_sha256": "ac28820fe18d80977ba27600e69a6114f00c54e18fb3fc2241791528ea12ee01"
+    },
+    "gen2": {
+      "cases": 6,
+      "ordered_s4_observations": 2399,
+      "mismatches": 0,
+      "population_sha256": "dd60ea2d81d994f76576b3475e3ec6b47bf87c88f1d5f15214f1e331a3244457",
+      "receipt_sha256": "a24fefaa24e121261db74d04595589b55cfcec8a2588b9ecd6421e34076fe11d"
+    }
+  }
+}

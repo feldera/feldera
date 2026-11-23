@@ -21,8 +21,12 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVoidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -291,6 +295,36 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
         for (var group : expected)
             for (int i : group)
                 Assert.assertEquals(prints.get(group[0]), prints.get(i));
+        Assert.assertArrayEquals(expected, RustCircuitPass.siblingMapGroups(compiler, siblings));
+    }
+
+    @Test
+    public void fusionFingerprintsMatchPrintedEmptyTuplesAndStrings() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var compiler = this.testCompiler();
+        var finder = new FuseExpensiveMaps.FindFusableMaps(compiler);
+        var siblings = new ArrayList<MapInfo>();
+        var prints = new ArrayList<String>();
+        var tuple = new DBSPTupleExpression();
+        var factory = new DBSPApplyExpression("Tup0::new", tuple.getType());
+        String text = "line\n\"🍎";
+        for (var value : List.of(tuple, factory, new DBSPTupleExpression(true), factory.some(),
+                new DBSPVoidLiteral(), new DBSPRawTupleExpression(), new DBSPStrLiteral(text),
+                new DBSPStrLiteral(text, true), new DBSPStringLiteral(text),
+                new DBSPStringLiteral(text, true), new DBSPStringLiteral("other"))) {
+            var row = b.refVar(this.pair);
+            var call = b.call("f", b.field(row, 0), value);
+            var info = new MapInfo(null, b.tuple(call).closure(row), List.of(call));
+            prints.add(finder.fingerprint(info, call));
+            siblings.add(info);
+        }
+        int[][] expected = {{0, 1}, {2, 3}, {4, 5}, {6, 7, 8}, {9}, {10}};
+        Assert.assertEquals(expected.length, prints.stream().distinct().count());
+        for (var group : expected)
+            for (int i : group)
+                Assert.assertEquals(prints.get(group[0]), prints.get(i));
+        Assert.assertArrayEquals(new int[][]{{0, 1}, {2, 3}},
+                RustCircuitPass.siblingMapGroups(compiler, siblings.subList(0, 4)));
         Assert.assertArrayEquals(expected, RustCircuitPass.siblingMapGroups(compiler, siblings));
     }
 
