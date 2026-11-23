@@ -89,10 +89,12 @@ struct Binding<'a> {
 struct ScopedNode {
     id: NodeId,
     scope: usize,
+    in_static: bool,
 }
 
 enum Visit {
     Read(ScopedNode),
+    Alias(ScopedNode, ScopedNode),
     Intern(ScopedNode, Term, Vec<ScopedNode>),
 }
 
@@ -113,6 +115,7 @@ impl TimestampKey {
         let mut work = vec![Visit::Read(ScopedNode {
             id: root.into(),
             scope: 0,
+            in_static: false,
         })];
         while let Some(visit) = work.pop() {
             match visit {
@@ -123,11 +126,36 @@ impl TimestampKey {
                     if !active.insert(at.id) {
                         return Err(Error::new("cycle in a window key expression"));
                     }
+                    let node = edit.node(at.id)?;
+                    if let Some(InnerKind::Expression(kind)) = node.inner_kind() {
+                        if *kind == Expr::Static {
+                            // The key printer renders the initializer in place.
+                            let value = ScopedNode {
+                                id: node.edge("initializer")?,
+                                in_static: true,
+                                ..at
+                            };
+                            work.extend([Visit::Alias(at, value), Visit::Read(value)]);
+                            continue;
+                        }
+                        // CanonicalForm rejects changes to a static's initializer.
+                        // Named calls on literals retain identity throughout renaming.
+                        if at.in_static
+                            && !matches!(kind, Expr::Apply | Expr::ApplyMethod | Expr::Constructor)
+                            && !kind.wire_name().ends_with("Literal")
+                        {
+                            return Ok(None);
+                        }
+                    }
                     let Some((term, children)) = scoped_term(edit, at, &mut scopes)? else {
                         return Ok(None);
                     };
                     work.push(Visit::Intern(at, term, children.clone()));
                     work.extend(children.into_iter().rev().map(Visit::Read));
+                }
+                Visit::Alias(at, child) => {
+                    numbers.insert(at, numbers[&child]);
+                    active.remove(&at.id);
                 }
                 Visit::Intern(at, term, children) => {
                     let id = at.id;
@@ -166,10 +194,7 @@ fn scoped_term<'a>(
     scopes: &mut Vec<Binding<'a>>,
 ) -> Result<Option<(Term, Vec<ScopedNode>)>, Error> {
     let node = edit.node(at.id)?;
-    let same_scope = |id| ScopedNode {
-        id,
-        scope: at.scope,
-    };
+    let same_scope = |id| ScopedNode { id, ..at };
     Ok(Some(match node.inner_kind() {
         Some(InnerKind::Expression(Expr::Closure)) => {
             let mut scope = at.scope;
@@ -182,6 +207,7 @@ fn scoped_term<'a>(
             children.push(ScopedNode {
                 id: node.edge("body")?,
                 scope,
+                ..at
             });
             (Term::Closure, children)
         }
@@ -201,6 +227,7 @@ fn scoped_term<'a>(
                     ScopedNode {
                         id: node.edge("consumer")?,
                         scope,
+                        ..at
                     },
                 ],
             )
@@ -243,17 +270,6 @@ fn bind<'a>(scopes: &mut Vec<Binding<'a>>, parent: usize, variable: RowParameter
 }
 
 fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<NodeId>)>, Error> {
-    // Static references print their initializer. A literal also survives
-    // canonical renaming unchanged, as required by the static's cached name.
-    let id = if edit.expr_kind(id)? == Expr::Static {
-        let initializer = edit.expression(edit.node(id.into())?.edge("initializer")?)?;
-        if !edit.expr_kind(initializer)?.wire_name().ends_with("Literal") {
-            return Ok(None);
-        }
-        initializer
-    } else {
-        id
-    };
     let node = edit.node(id.into())?;
     let child = |field| edit.expression(node.edge(field)?).map(NodeId::from);
     let children = |field| {

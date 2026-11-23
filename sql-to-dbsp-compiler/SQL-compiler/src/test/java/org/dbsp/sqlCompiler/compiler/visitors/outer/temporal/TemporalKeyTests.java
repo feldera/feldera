@@ -103,7 +103,8 @@ public class TemporalKeyTests {
             if (replayPaths) {
                 // Keep exercising the path replay after the preceding map has emitted its warning.
                 var second = b.refVar(inputType);
-                var offset = new DBSPStaticExpression(rel, b.call("get_offset", b.lit(1)), "offset");
+                var initializer = new DBSPBlockExpression(List.of(), b.call("get_offset", b.lit(1)));
+                var offset = new DBSPStaticExpression(rel, initializer, "offset");
                 var key = b.call(time, "shift_timestamp", b.unwrap(b.field(second, 0)), offset);
                 var condition = b.binary(DBSPOpcode.GTE, key, clock.deepCopy());
                 circuit.addOperator(new DBSPFilterOperator(rel, condition.closure(second), input.outputPort()));
@@ -139,10 +140,11 @@ public class TemporalKeyTests {
             var row = b.refVar(inputType);
             var field = b.field(row, 0);
             var literal = b.lit(i == 2 ? 2 : 1);
+            var offset = b.call("get_offset", b.call("offset_unit", literal), literal.deepCopy());
             var namespace = i == 3 ? "other" : "clock";
             var path = new DBSPPathExpression(time, new DBSPPath(namespace, "shift"));
-            DBSPExpression key = i == 0 ? b.call(time, "clock::shift", field, literal)
-                    : new DBSPConstructorExpression(path, time, field, new DBSPStaticExpression(site, literal, "offset"));
+            DBSPExpression key = i == 0 ? b.call(time, "clock::shift", field, offset)
+                    : new DBSPConstructorExpression(path, time, field, new DBSPStaticExpression(site, offset, "offset"));
             var predicate = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
             var filter = new DBSPFilterOperator(site, predicate.closure(row), input.outputPort());
             circuit.addOperator(filter);
