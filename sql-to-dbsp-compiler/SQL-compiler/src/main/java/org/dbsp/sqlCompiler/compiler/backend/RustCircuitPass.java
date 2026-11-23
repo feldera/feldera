@@ -1598,6 +1598,28 @@ public final class RustCircuitPass implements CircuitTransform {
         DBSPExpression expression();
     }
 
+    public record LazyRead(DBSPVariablePath variable, DBSPExpression value) {}
+
+    /** The first read allocates the cell. Later reads refer to that same live variable. */
+    public static LazyRead readLazyValue(DBSPCompiler compiler, DBSPType resultType,
+                                         @Nullable DBSPVariablePath variable, boolean borrowed) {
+        try {
+            String pass = "InnerCSE/ReadLazy";
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(borrowed),
+                    variable == null ? resultType : variable);
+            var decoder = expressionDecoder(reply.writer);
+            var roots = reply.value.required("roots");
+            var cell = decodeLiveRoot(decoder, roots.required(0), DBSPVariablePath.class);
+            var read = decodeLiveRoot(decoder, roots.required(1), DBSPExpression.class);
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return new LazyRead(cell, read);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode the CSE borrow mode", error);
+        }
+    }
+
     /** Keep live references shared between the consumer and all its initializers. */
     private static LoweringReply lowerBindings(DBSPCompiler compiler, List<? extends LazyBinding> bindings,
             @Nullable DBSPExpression consumer) {

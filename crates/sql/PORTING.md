@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `72c33626c`, Rust constructed common-subexpression keys and classified
+their costs. The 84 selected detached compilations matched Java at 42,215
+ordered S4 observations. Rust answered all 3,746 value-numbering requests.
+All 550 separate InnerCSE pass comparisons matched, and COUNT and LATENESS
+restored checkpoints in both directions.
+[Value-numbering comparisons](evidence/p3-typed-cse-keys.json)
+
 Rust groups windows whose timestamp expression contains a typed NULL interval
 or a lowered array or map conversion. The two directed interval programs on
 each engine matched direct Java through 2,416 ordered S4 observations. With
@@ -475,7 +482,8 @@ types, primitive aggregate functions and ASOF comparators. All 550 selected
 monotonicity analyses matched Java. Across 29 classic and 30 Gen-2 detached
 compilations, all 31,615 ordered S4 observations matched and Rust answered
 all 14,832 instrumented optimizer requests. COUNT and LATENESS restored
-checkpoints in both directions. In a development run with concurrent
+checkpoints in both directions. All 8,256 executable classic cases passed,
+including 232 expected runtime errors. In a development run with concurrent
 verification, the largest cold compile p95 ratio was 1.069× on Nexmark.
 [Selected replay and restores](evidence/p3-typed-transfer-inputs.json) ·
 [Cold compile measurements](evidence/p3-typed-transfer-inputs-cold.json)

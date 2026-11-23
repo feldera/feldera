@@ -1,5 +1,7 @@
 //! Choose where pending lazy bindings become visible during the bottom-up CSE rewrite.
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeKind};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind, Field, InnerKind, NodeId, TypeKind,
+};
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -40,6 +42,41 @@ impl BindingScope {
             })
             .collect()
     }
+}
+
+/// A result type starts a new lazy cell. Subsequent reads pass the variable
+/// itself so the initializer and every use share one binding.
+pub fn read_lazy_value(
+    edit: &mut CircuitEditor,
+    source: NodeId,
+    borrowed: bool,
+    next_name: &mut u64,
+) -> Result<[ExpressionId; 2], Error> {
+    let variable = match edit.node(source)?.inner_kind() {
+        Some(InnerKind::Type(_)) => {
+            let result = edit.type_id(source)?;
+            let inferred = edit.standard_type(source, TypeKind::Any)?;
+            let cell = edit.lazy_type(result, inferred)?;
+            edit.variable(cell, next_name)?
+        }
+        Some(InnerKind::Expression(ExpressionKind::VariablePath)) => {
+            let variable = edit.expression(source)?;
+            if edit.type_kind(edit.expression_type(variable)?)? != TypeKind::Lazy {
+                return Err(Error::new("CSE read requires a lazy variable"));
+            }
+            variable
+        }
+        _ => {
+            return Err(Error::new(
+                "CSE read requires a result type or a lazy variable",
+            ))
+        }
+    };
+    let mut value = edit.dereference(variable)?;
+    if !borrowed {
+        value = edit.clone_if_needed(value)?;
+    }
+    Ok([variable, value])
 }
 
 /// A previously allocated CSE variable and the expression computed on its first read.
@@ -119,6 +156,31 @@ pub fn lazy_statements(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lazy_reads_share_a_cell_and_clone_only_owned_noncopy_values() -> Result<(), Error> {
+        let circuit = feldera_sql_ir::Circuit::from_json(serde_json::json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let text = edit.standard_type(site, TypeKind::String)?;
+        let mut next = 7;
+        let [cell, borrowed] = read_lazy_value(&mut edit, text.into(), true, &mut next)?;
+        let [reused, owned] = read_lazy_value(&mut edit, cell.into(), false, &mut next)?;
+        assert_eq!(next, 8);
+        assert_eq!(cell, reused);
+        assert_eq!(edit.expr_kind(borrowed)?, ExpressionKind::Deref);
+        assert_eq!(edit.node(borrowed.into())?.edge("expression")?, cell.into());
+        assert_eq!(edit.expr_kind(owned)?, ExpressionKind::Clone);
+        let deref = edit.node(owned.into())?.edge("expression")?;
+        assert_eq!(edit.node(deref)?.edge("expression")?, cell.into());
+        let boolean = edit.bool_type(site, false)?;
+        let [_, copied] = read_lazy_value(&mut edit, boolean.into(), false, &mut next)?;
+        assert_eq!(edit.expr_kind(copied)?, ExpressionKind::Deref);
+        assert_eq!(next, 9);
+        Ok(())
+    }
 
     #[test]
     fn inner_scopes_consume_only_the_bindings_they_own() {

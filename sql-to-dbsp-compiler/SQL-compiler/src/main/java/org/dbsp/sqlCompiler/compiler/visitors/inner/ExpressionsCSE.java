@@ -113,28 +113,29 @@ public class ExpressionsCSE extends ExpressionTranslator {
         if (canonical != null && owner != null) {
             Map<DBSPExpression, DBSPVariablePath> variables =
                     this.cseVariables.computeIfAbsent(owner, o -> new HashMap<>());
-            DBSPVariablePath var = null;
-            if (variables.containsKey(canonical.expression)) {
-                // Variable already exists
-                var = Utilities.getExists(variables, canonical.expression);
-            } else if (canonical.expression != result &&
-                    canonical.expensive &&
-                    canonical.manyUsers(this.numbering, owner)) {
-                // Variable is worth creating and expression is used at least twice in 'owner'
-                var = new DBSPTypeLazy(expression.getType()).var();
-                Utilities.putNew(variables, canonical.expression, var);
-                this.assignments.add(new Assignment(owner, var, result, canonical.dependsOn));
+            DBSPVariablePath var = variables.get(canonical.expression);
+            if (var != null || (canonical.expression != result && canonical.expensive
+                    && canonical.manyUsers(this.numbering, owner))) {
+                boolean declare = var == null;
+                boolean borrowed = this.getParent() instanceof DBSPBorrowExpression borrow && !borrow.mut;
+                DBSPExpression read;
+                if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                    var replacement = RustCircuitPass.readLazyValue(this.compiler, expression.getType(), var, borrowed);
+                    var = replacement.variable();
+                    read = replacement.value();
+                } else {
+                    if (declare)
+                        var = new DBSPTypeLazy(expression.getType()).var();
+                    read = var.deref();
+                    if (!borrowed)
+                        read = read.applyCloneIfNeeded();
+                }
+                if (declare) {
+                    Utilities.putNew(variables, canonical.expression, var);
+                    this.assignments.add(new Assignment(owner, var, result, canonical.dependsOn));
+                }
+                result = read;
             }
-            if (var != null) {
-                // An immutable borrow of the shared value needs no clone
-                IDBSPInnerNode parent = this.getParent();
-                DBSPBorrowExpression borrow = parent == null ? null : parent.as(DBSPBorrowExpression.class);
-                if (borrow != null && !borrow.mut)
-                    result = var.deref();
-                else
-                    result = var.deref().applyCloneIfNeeded();
-            }
-            // If variable hasn't been created now, use the 'result' received as parameter
         }
         if (!this.translationMap.containsKey(expression)) {
             super.map(expression, result);

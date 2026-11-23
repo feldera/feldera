@@ -1,0 +1,144 @@
+{
+  "scope": "38 frozen and four directed programs per engine with all instrumented Rust answers required. Separate InnerCSE comparisons use 291 classic and 259 Gen-2 cases.",
+  "optimizer_library_sha256": "873553fb27cfaad0cfa95bccc240eb2177ee21585d30f3369b025fd8a2d1b6f7",
+  "classpath_sha256": [
+    "f1a62ffef25b4e7acbee27fd21aba15ab4a3e959b0a96c181493d8f51beea481",
+    "721d8605e181de1edc560440780fc8a3de240739017dc3e051b8e6394cfaeae1"
+  ],
+  "comparator_sha256": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+  "engines": {
+    "classic": {
+      "cases": 42,
+      "population_sha256": "b82f2abb07c82c416baa776086748c23adc7047351e0657ad524b7ded2eccf04",
+      "ordered_s4_observations": 21111,
+      "native_requests": 9987,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "receipt_sha256": "e9cd6e7ea4d49c29ca493c21d65c0fc2411dff9640d00648762fa6eb2bb5842f",
+      "cse_requests": {
+        "InnerCSE/NumberValues": 1942
+      },
+      "inner_cse": "InnerCSE matched at 291 invocations across 291 cases"
+    },
+    "gen2": {
+      "cases": 42,
+      "population_sha256": "d75f7ff84d4b91b83120193acef7083005d3c244a8e384d55b463cf0b1b0be69",
+      "ordered_s4_observations": 21104,
+      "native_requests": 9400,
+      "native_fallbacks": 0,
+      "mismatches": 0,
+      "receipt_sha256": "dd337db345b861e17d69fce7fdd5a3018a77b7b41e32c2e9b9898d8734721dbc",
+      "cse_requests": {
+        "InnerCSE/NumberValues": 1804
+      },
+      "inner_cse": "InnerCSE matched at 259 invocations across 259 cases"
+    }
+  },
+  "restores": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a206f0-0bc1-7342-8e29-76844c18de3a",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a206f0-0bdd-7173-9444-80e0c8bf21a9",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "c93277df804e7a8e812a15c0cffd2d02b59884b7eaee5dffd38b61a0c55abb63"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a206f1-316f-7eb0-8a3b-6c7099202db5",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a206f1-318e-7610-a377-32804388b18e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "b84ac3f65056bfbff978dbadfd18fe4589debbc4f9d2a54ae8464d5ac67f0ac2"
+    }
+  },
+  "junit": {
+    "passed": 86
+  },
+  "rust_tests": 213,
+  "log_sha256": {
+    "tests.log": "e8801c72c91cad01c1d9cc4aa932730b47e638bc3f949bd4d7357bdaf5ba66eb",
+    "clippy.log": "ee29ed020a76abc9d3c731919a4edf11e62d59f29b01bdd519b96918ce445124",
+    "build.log": "a7a02c0adba80f3e0e14c4ed10c9d07f39fb885732338e29523d8e1e14ccb721",
+    "junit.log": "44b33737f35feb9077084f72132164a80965a471ae50e23b36b5a969436d86bf",
+    "maven/build.log": "48a00ecd4993bd711e116867658495a8901e147e44fce0ceec4e97410253f72a"
+  }
+}

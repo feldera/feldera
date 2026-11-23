@@ -86,7 +86,7 @@ mod error_consumers;
 mod error_wrappers;
 mod expand_aggregates;
 mod binding_placement;
-pub use binding_placement::{BindingScope, PendingBinding, bind_lazy_expression, lazy_statements};
+pub use binding_placement::{BindingScope, PendingBinding, bind_lazy_expression, lazy_statements, read_lazy_value};
 mod value_numbering;
 pub use value_numbering::NumberingInput;
 mod expression_uses;
