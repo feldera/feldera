@@ -1,0 +1,76 @@
+{
+  "scope": "Rust builds the nested flatmap closure during waterline analysis, preserves shared facts and generated names, and publishes preceding facts at a missing reference.",
+  "source_base": "97341483c44c7fe0e8362a5e4a1acbac85b72a7c",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "265a73a4e35da6ed766c9659ce70227d22551ff4cbdb28cd371c4ccc62fdf510",
+    "crates/sql/sql-opt-jni/src/temporal.rs": "393df5766739c9fdc8edbc4cbc337c79379949bf33347a508f9884192a1d9fc9",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "e1afdf7524b465bedba4d1c7e1cfaaffbd4d5eeec7db33ad8f5383681202948a",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "512f0491c6972c0774b7417b71f91b7fc515b13948f7e0ee65be70621baf2b39",
+    "crates/sql/sql-opt/src/temporal_comparisons.rs": "4f24e0fa078ad5bd0e2aca2324877b6ebc03f34b8a7ede413a264c7a5bb000cb",
+    "crates/sql/sql-opt/src/temporal_comparisons/clock_bounds.rs": "7c1ade16fb70932beb82f18f914bb15441019fc5f9cb6238b72ddbb1aa5c3b0f",
+    "crates/sql/sql-opt/src/temporal_filter_lowering.rs": "85916b127dc29db7da75adf630455421f8462d3549bd7f9a0664cbe387272150",
+    "crates/sql/sql-opt/src/temporal_filters.rs": "fe3324fa18a070db9d9ac85f2b6f4267afecfa0c95097e82aea028cc0aa91991",
+    "crates/sql/sql-opt/src/window_groups/reorder.rs": "e48669995dde40461614b168f0c829be097bcc7ed4dcf4c04838e363d19d7936",
+    "crates/sql/sql-opt/src/window_groups/scan.rs": "497c7f3b888867090d68a8fe175567437c4a18f1b9a9dd4a6a1bb9a4b79afb60",
+    "crates/sql/sql-opt/src/window_groups/temporal.rs": "4098a2db297532e69e0628cc6dc86db71fd86e98275aaa5cd39e48dfa6d15654",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "fe6e3f3c6248ab168767624a619fce242faa7521227e74aae9b21d4cbcdc2d6f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneTransferFunctions.java": "49fdad44a3048f6f83a60dcd474a83aba42d239715def65f22e34fb7df833db5",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters.java": "78bc3eacde4a6eaa921eeff2e6b54da1dbdd5f38ecc32111f33b413d9fd0fd4c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/util/Utilities.java": "9bb7c0aa5c01883359454bea78a84191eed00e2133fdaaaa422aebdd04b82d8a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "53e4f82c80448aabf02fde5f43586e07196e52836ea9e7a02b839ce24e6adae3"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "08dfb512e60e47743ba6a4f5e05b49476afb25b140dfec72b3b1557addcf2eca",
+    "bin/sql-difftest": "178b49a5f47c754237a0cf71b1317df92912ed9317137eecc2e466c744ada2ea",
+    "maven/tests.jar": "10d54dd01ba96651b0390b60a58392ceef215892472b3beb213fd5da1a341ed7",
+    "maven/sql-compiler.jar": "a6164eb97184fcc2d9ad139e124c30c40b25ea774d5ab5c1575539e1e6ec75d0"
+  },
+  "negative_control": {
+    "library_sha256": "1a4e17a6232c1ca1d79c2beb9d1b35e1fa0eaaedec042ee4800472100140f2ca",
+    "failed_tests": [
+      "nestedFlatmapFactsRetainTheSyntheticClosureAndItsGeneratedName"
+    ],
+    "java_compiler_sha256": "ae6476720a46af5593e32be9e8eb0cfc13fc8f416ecdf1de503e12b923acbc04"
+  },
+  "rust_tests": 225,
+  "junit_tests": 180,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "bf4195e8241f6873cad1668764d8f57b0423c5a9a59514758c4a9d067c474017"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "fc26dca5799d818a18f08b50fabbb0cf2e3a2fc25c31b715fb088b4bbcdee971"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 220,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "frozen_decision_coverage": {
+    "classic": {
+      "programs": 8571,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "observations_sha256": "8d32fc3b0a1d1e33d206f3e9aac03dcb30edfeec100cb1acaa12e44ac6b4f178",
+      "calls": 207912,
+      "fallbacks": 0
+    },
+    "gen2": {
+      "programs": 8527,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "observations_sha256": "589025cddc6bde4c692cb52a99fccd9bb1a85a5a20889061e3018ae3c3ec6e13",
+      "calls": 210562,
+      "fallbacks": 0
+    }
+  }
+}

@@ -251,7 +251,7 @@ impl Row {
             Observations::ResultOnly => {}
             Observations::Clocks(clocks) => {
                 if value.shape.monotone() {
-                    clocks.operands.insert(id);
+                    clocks.insert(id);
                 }
             }
             Observations::Facts(facts) => {
@@ -262,9 +262,10 @@ impl Row {
                         FactType::Parameter(index),
                         Some(self.bindings[index].variable),
                     ),
-                    (Expr::VariablePath | Expr::Let | Expr::Block, RowType::Prior { index }) => {
-                        (FactType::Alias(index), None)
-                    }
+                    (
+                        Expr::VariablePath | Expr::Let | Expr::Block | Expr::Flatmap,
+                        RowType::Prior { index },
+                    ) => (FactType::Alias(index), None),
                     (_, ty) => (FactType::Computed(ty), value.reduced),
                 };
                 facts.push(ExpressionWaterline {
@@ -277,13 +278,45 @@ impl Row {
         Ok(())
     }
 
+    fn nested_flatmap(
+        &mut self,
+        edit: &mut CircuitEditor,
+        id: ExpressionId,
+        next: &mut u64,
+    ) -> Result<Evaluation, Error> {
+        let closure = crate::flatmap_waterline(edit, id.into(), next)?;
+        let result_type = |expr| {
+            let function = edit.expression_type(expr)?;
+            edit.type_id(edit.node(function.into())?.edge("resultType")?)
+        };
+        if !edit.same_type(result_type(id)?, result_type(closure)?)? {
+            return Ok(Evaluation::NeedsVisitor);
+        }
+        // Nested closures are opaque. The synthetic closure and the flatmap
+        // point to the very same analysis, whose type belongs to the closure.
+        let mut result = unbounded(edit, closure, false)?;
+        if let (Evaluation::Value(value), Observations::Facts(facts)) =
+            (&mut result, &mut self.observations)
+        {
+            value.row_type = RowType::Prior { index: facts.len() };
+            facts.push(ExpressionWaterline {
+                expression: id,
+                origin: FactType::Synthesized(closure),
+                bound: None,
+            });
+        }
+        Ok(result)
+    }
+
     pub(super) fn visit(
         &mut self,
         edit: &mut CircuitEditor,
         expression: ExpressionId,
+        mut next: Option<&mut u64>,
     ) -> Result<Evaluation, Error> {
         let mut work = vec![Step::Read(expression)];
         let mut values = Vec::new();
+        let mut references_replaced = false;
         let mut active = HashSet::new();
         while let Some(step) = work.pop() {
             let (id, value) = match step {
@@ -299,35 +332,17 @@ impl Row {
                             continue;
                         }
                         Expr::Flatmap => {
-                            let Observations::Clocks(clocks) = &mut self.observations else {
+                            let Some(names) = next.as_deref_mut() else {
                                 return Ok(Evaluation::NeedsVisitor);
                             };
-                            let closure = crate::flatmap_waterline(
-                                edit,
-                                id.into(),
-                                &mut clocks.generated_names,
-                            )?;
-                            let result_type = |expr| {
-                                let function = edit.expression_type(expr)?;
-                                edit.type_id(edit.node(function.into())?.edge("resultType")?)
-                            };
-                            if !edit.same_type(result_type(id)?, result_type(closure)?)? {
-                                return Ok(Evaluation::NeedsVisitor);
-                            }
-                            // The nested closure has no clock bound. Its body belongs
-                            // to a separate reference map and is opaque to this visit.
-                            match unbounded(edit, closure, false)? {
+                            references_replaced = true;
+                            match self.nested_flatmap(edit, id, names)? {
                                 Evaluation::Value(value) => (id, Some(value)),
-                                failure => return Ok(failure),
+                                other => return Ok(other),
                             }
                         }
-                        Expr::VariablePath
-                            if matches!(&self.observations,
-                            Observations::Clocks(clocks) if clocks.generated_names > 0) =>
-                        {
-                            // Resolving the synthesized closure replaced the outer
-                            // reference map. The live visitor formats the missing key.
-                            return Ok(Evaluation::NeedsVisitor);
+                        Expr::VariablePath if references_replaced => {
+                            return Ok(Evaluation::Failed(WaterlineError::MissingReference(id)));
                         }
                         Expr::VariablePath => match self.variable(edit, id)? {
                             VariableRead::Projected(value) => (id, Some(value)),

@@ -478,6 +478,7 @@ fn expression_facts_reply(
     let facts = facts.into_iter().map(|fact| {
         let id = inner_number(fact.expression.into());
         match fact.origin {
+            FactType::Synthesized(closure) => json!({ "synthesized": add_bound(Some(closure)) }),
             FactType::Alias(index) => json!({ "id": id, "alias": index }),
             FactType::Parameter(index) => json!({ "id": id, "parameter": index, "bound": add_bound(fact.bound) }),
             FactType::Computed(ty) => json!({ "id": id, "type": ty, "bound": add_bound(fact.bound) }),
@@ -985,9 +986,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 .collect::<Result<Vec<_>, _>>()?;
             let collect = pass == "Monotonicity/ExpressionFacts";
             let analyze = if collect { feldera_sql_opt::expression_waterlines } else { feldera_sql_opt::project_closure };
-            let result = analyze(&mut edit, body, &parameters, &request.shapes, request.indexed)?;
-            return Ok(match result {
-                feldera_sql_opt::ClosureAnalysis::Projected(result) if collect => {
+            let result = analyze(&mut edit, body, &parameters, &request.shapes, request.indexed, &mut next)?;
+            let mut reply = match result {
+                feldera_sql_opt::ClosureAnalysis::Projected(result) if collect || !result.facts.is_empty() => {
                     expression_facts_reply(&arena, &edit, result.facts, result.closure)?
                 }
                 feldera_sql_opt::ClosureAnalysis::Projected(result) => {
@@ -1006,6 +1007,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                             binding_conflict(variable, previous, current),
                         WaterlineError::RepeatedExpression(path) =>
                             json!({"repeated":path.into_iter().map(inner_number).collect::<Vec<_>>()}),
+                        WaterlineError::MissingReference(id) => json!({"kind":"MissingReference", "expression":inner_number(id.into())}),
                         WaterlineError::MissingOperand(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
                         WaterlineError::TargetMaximum(id) => json!({"kind":"TargetMaximum", "expression":inner_number(id.into())}),
                         WaterlineError::NullableReference { source, field } =>
@@ -1014,7 +1016,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                     };
                     reply
                 }
-            });
+            };
+            reply["next_generated_name"] = json!(next);
+            return Ok(reply);
         }
         ("Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow", [body, bounds @ ..]) => {
             let bounds = bounds.iter().map(|&id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;

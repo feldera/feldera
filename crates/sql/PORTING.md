@@ -481,6 +481,15 @@ build passed 179 targeted JUnit tests and matched Java through 11,965 ordered
 S4 observations and emission on 24 classic and Gen-2 compilations.
 [Nested flatmaps in temporal predicates](evidence/p3-nested-flatmap-window-order.json)
 
+Waterline analysis builds a nested flatmap's synthetic closure and records
+the same fact for the closure and the flatmap. If a later reference fails,
+its diagnostic retains the facts and generated names from the preceding
+expressions. This build passed 180 targeted and 220 nightly JUnit tests.
+All 418,474 instrumented decisions ran in Rust across the 17,098 frozen
+programs. A separate 24-program replay matched Java through 11,965 ordered
+S4 observations and emission.
+[Nested flatmaps in waterline closures](evidence/p3-nested-flatmap-closure-facts.json)
+
 Shared-index readers remap a column beneath 160 nested calls. Indexes that
 project the same nested expression still share one output column. Both
 operations exceeded the inline snapshot limit on the preceding build.

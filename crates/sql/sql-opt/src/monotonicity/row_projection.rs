@@ -93,6 +93,9 @@ pub enum FactType {
     Parameter(usize),
     /// A local read or the result of a block or LET reuses an earlier analysis.
     Alias(usize),
+    /// A nested UNNEST analyzes a synthetic closure, then aliases the same
+    /// fact at the original flatmap. Both identities are visible to observers.
+    Synthesized(ExpressionId),
     Computed(RowType),
 }
 
@@ -106,7 +109,7 @@ pub struct ExpressionWaterline {
 enum Observations {
     #[default]
     ResultOnly,
-    Clocks(ClockFacts),
+    Clocks(HashSet<ExpressionId>),
     Facts(Vec<ExpressionWaterline>),
 }
 
@@ -240,7 +243,6 @@ fn project_tuple(
 
 /// Clock analysis exposes original operand identities and the temporary names
 /// consumed by synthesized UNNEST closures. Those closures never escape.
-#[derive(Default)]
 pub(crate) struct ClockFacts {
     pub operands: HashSet<ExpressionId>,
     pub generated_names: u64,
@@ -279,15 +281,22 @@ pub(crate) fn clock_facts(
             shape,
         }],
         locals: Vec::new(),
-        observations: Observations::Clocks(ClockFacts::default()),
+        observations: Observations::Clocks(HashSet::new()),
     };
-    if !matches!(row.visit(edit, body)?, Evaluation::Value(_)) {
+    let mut generated_names = 0;
+    if !matches!(
+        row.visit(edit, body, Some(&mut generated_names))?,
+        Evaluation::Value(_)
+    ) {
         return Ok(None);
     }
     let Observations::Clocks(clocks) = row.observations else {
         unreachable!()
     };
-    Ok(Some(clocks))
+    Ok(Some(ClockFacts {
+        operands: clocks,
+        generated_names,
+    }))
 }
 
 #[cfg(test)]
@@ -324,7 +333,7 @@ pub fn project_rows(
     indexed: bool,
 ) -> Result<Option<ProjectedValue>, Error> {
     let mut row = Row::new(edit, bounds, projections, indexed)?;
-    Ok(row.visit(edit, body)?.projected())
+    Ok(row.visit(edit, body, None)?.projected())
 }
 
 impl Row {
@@ -465,6 +474,7 @@ pub enum WaterlineError {
         current: NodeId,
     },
     RepeatedExpression(Vec<NodeId>),
+    MissingReference(ExpressionId),
     MissingOperand(ExpressionId),
     TargetMaximum(ExpressionId),
     UnsupportedType(TypeId),
@@ -496,6 +506,7 @@ pub fn project_closure(
     parameters: &[(NodeId, TypeId)],
     projections: &[Projection],
     indexed: bool,
+    next: &mut u64,
 ) -> Result<ClosureAnalysis, Error> {
     analyze_closure(
         edit,
@@ -504,6 +515,7 @@ pub fn project_closure(
         projections,
         indexed,
         Observations::ResultOnly,
+        next,
     )
 }
 
@@ -514,6 +526,7 @@ pub fn expression_waterlines(
     parameters: &[(NodeId, TypeId)],
     projections: &[Projection],
     indexed: bool,
+    next: &mut u64,
 ) -> Result<ClosureAnalysis, Error> {
     analyze_closure(
         edit,
@@ -522,6 +535,7 @@ pub fn expression_waterlines(
         projections,
         indexed,
         Observations::Facts(Vec::new()),
+        next,
     )
 }
 
@@ -532,6 +546,7 @@ fn analyze_closure(
     projections: &[Projection],
     indexed: bool,
     observations: Observations,
+    next: &mut u64,
 ) -> Result<ClosureAnalysis, Error> {
     let declared = parameters.iter().map(|&(parameter, _)| parameter);
     let resolution = crate::lexical_scope::resolve_body(edit.circuit(), declared, body.into())?;
@@ -546,11 +561,23 @@ fn analyze_closure(
         }
     };
     let result_only = matches!(observations, Observations::ResultOnly);
-    let mut result =
-        project_validated_closure(edit, body, parameters, projections, indexed, observations)?;
-    if result_only && matches!(result, Some(ClosureAnalysis::Failed { .. })) {
-        // Errors expose the facts computed before the failing read, even to a
-        // caller that originally asked only for the closure result.
+    let mut names = *next;
+    let mut result = project_validated_closure(
+        edit,
+        body,
+        parameters,
+        projections,
+        indexed,
+        observations,
+        &mut names,
+    )?;
+    if result_only
+        && result.is_some()
+        && (names != *next || matches!(result, Some(ClosureAnalysis::Failed { .. })))
+    {
+        // Diagnostics expose the earlier facts. A synthesized closure also owns
+        // its function type, which the caller recovers from the observed closure.
+        names = *next;
         result = project_validated_closure(
             edit,
             body,
@@ -558,9 +585,15 @@ fn analyze_closure(
             projections,
             indexed,
             Observations::Facts(Vec::new()),
+            &mut names,
         )?;
     }
-    Ok(result.unwrap_or(ClosureAnalysis::Visit { references }))
+    if let Some(analysis) = result {
+        *next = names;
+        Ok(analysis)
+    } else {
+        Ok(ClosureAnalysis::Visit { references })
+    }
 }
 
 fn project_validated_closure(
@@ -570,6 +603,7 @@ fn project_validated_closure(
     projections: &[Projection],
     indexed: bool,
     observations: Observations,
+    next: &mut u64,
 ) -> Result<Option<ClosureAnalysis>, Error> {
     let mut variables = Vec::with_capacity(parameters.len());
     let mut names = Vec::with_capacity(parameters.len());
@@ -593,7 +627,10 @@ fn project_validated_closure(
         binding.declared_type = Some(edit.type_id(edit.node(parameter)?.edge("type")?)?);
     }
     row.observations = observations;
-    let result = row.visit(edit, body)?;
+    // UNNEST requires a single ZSet input. Other argument kinds retain the
+    // live visitor's assertion at the nested expression.
+    let flatmap_names = (!indexed && parameters.len() == 1).then_some(next);
+    let result = row.visit(edit, body, flatmap_names)?;
     let facts = match row.observations {
         Observations::Facts(facts) => facts,
         _ => Vec::new(),

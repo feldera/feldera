@@ -688,8 +688,11 @@ public final class RustCircuitPass implements CircuitTransform {
                 compiler.stateObserver.nativeDecision(pass, inspection == null);
             if (inspection != null)
                 return readWaterlineInspection(reply.writer, inspection);
-            if (!resultOnly || reply.value.has("failure"))
-                return readExpressionFacts(reply, parameters, argumentShapes, observe);
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            if (reply.value.has("facts")) {
+                var observer = resultOnly && !reply.value.has("failure") ? null : observe;
+                return readExpressionFacts(reply, parameters, argumentShapes, observer);
+            }
             var nodes = Objects.requireNonNull(reply.writer.liveNodes);
             var type = WaterlineProjection.resolveType(reply.value.required("row_type"),
                     id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes);
@@ -712,9 +715,14 @@ public final class RustCircuitPass implements CircuitTransform {
         var facts = new ArrayList<MonotoneExpression>();
         var inputs = new MonotoneExpression[parameters.length];
         for (var entry : reply.value.required("facts")) {
-            var expression = Utilities.getExists(nodes, entry.required("id").longValue()).to(DBSPExpression.class);
+            var synthetic = entry.get("synthesized");
+            var expression = synthetic == null
+                    ? Utilities.getExists(nodes, entry.required("id").longValue()).to(DBSPExpression.class)
+                    : bounds.get(synthetic.intValue());
             MonotoneExpression value;
-            if (entry.has("alias")) {
+            if (synthetic != null) {
+                value = new MonotoneExpression(expression, NonMonotoneType.nonMonotone(expression.getType()), null);
+            } else if (entry.has("alias")) {
                 value = facts.get(entry.required("alias").intValue());
             } else if (entry.has("parameter")) {
                 int index = entry.required("parameter").intValue();
@@ -738,6 +746,8 @@ public final class RustCircuitPass implements CircuitTransform {
             checkBindingErrors(reply.writer, failure);
             if (failure.has("repeated"))
                 throw repeatedExpressionError(repeatedPath(reply.writer, failure.required("repeated")));
+            if ("MissingReference".equals(failure.required("kind").textValue()))
+                throw Utilities.missingKey(Utilities.getExists(nodes, failure.required("expression").longValue()));
             if ("UnsupportedType".equals(failure.required("kind").textValue()))
                 throw NonMonotoneType.unsupportedType(Utilities.getExists(nodes,
                         failure.required("type").longValue()).to(DBSPType.class));

@@ -14,6 +14,11 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.WindowInputStats;
@@ -26,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -49,6 +55,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
@@ -72,6 +79,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -268,6 +276,60 @@ public class TemporalKeyTests {
                 var expected = direct.allOperators.get(1).to(DBSPFilterOperator.class);
                 var actual = hybrid.allOperators.get(1).to(DBSPFilterOperator.class);
                 Assert.assertTrue(expected.getClosureFunction().equivalent(actual.getClosureFunction()));
+            }
+        }
+    }
+
+    @Test
+    public void nestedFlatmapFactsRetainTheSyntheticClosureAndItsGeneratedName() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var b = new ExpressionBuilder();
+        var integer = b.i32();
+        var parameter = b.refVar(integer);
+        var shape = new MonotoneType(integer);
+        var input = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        for (boolean fail : List.of(false, true)) {
+            var nested = flatmap(new IdShuffle(2), 0, b.lit(1));
+            var read = parameter.deepCopy();
+            var body = fail ? new DBSPBlockExpression(List.of(nested.toStatement()), read) : nested;
+            var closure = body.closure(parameter);
+            var direct = new MonotoneTransferFunctions(compiler, input, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+            long start = DBSPVariablePath.nextGeneratedName();
+            RuntimeException expected = null;
+            if (fail)
+                expected = Assert.assertThrows(RuntimeException.class, () -> direct.apply(closure));
+            else
+                direct.apply(closure);
+            long names = DBSPVariablePath.nextGeneratedName() - start;
+            Assert.assertEquals(1, names);
+            var flatmapType = direct.maybeGet(nested).getMonotoneType();
+            for (boolean resultOnly : List.of(true, false)) {
+                var facts = new LinkedHashMap<DBSPExpression, MonotoneExpression>();
+                start = DBSPVariablePath.nextGeneratedName();
+                java.util.function.Supplier<RustCircuitPass.WaterlineAnalysis> analyze = () ->
+                        RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                                new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                                false, resultOnly, facts::put);
+                if (fail) {
+                    var error = Assert.assertThrows(expected.getClass(), analyze::get);
+                    Assert.assertEquals(expected.getMessage(), error.getMessage());
+                    Assert.assertFalse(facts.containsKey(read));
+                } else {
+                    var result = (RustCircuitPass.ProjectedWaterline) analyze.get();
+                    Assert.assertTrue(flatmapType.getType().sameType(result.bodyType().getType()));
+                    Assert.assertNull(result.closure());
+                }
+                Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+                if (resultOnly && !fail) {
+                    Assert.assertTrue(facts.isEmpty());
+                } else {
+                    Assert.assertEquals(2, facts.size());
+                    var synthetic = facts.keySet().iterator().next().to(DBSPClosureExpression.class);
+                    Assert.assertEquals("t_" + start, synthetic.parameters[0].getName());
+                    Assert.assertSame(facts.get(synthetic), facts.get(nested));
+                    Assert.assertSame(synthetic.getType(), facts.get(nested).getMonotoneType().getType());
+                }
             }
         }
     }

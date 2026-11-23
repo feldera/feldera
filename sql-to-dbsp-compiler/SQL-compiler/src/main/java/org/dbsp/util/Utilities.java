@@ -389,8 +389,12 @@ public class Utilities {
     public static <K, V> V getExists(Map<K, V> map, K key) {
         V result = map.get(key);
         if (result == null)
-            throw new RuntimeException("Key '" + key + "' does not exist in map");
+            throw missingKey(key);
         return result;
+    }
+
+    public static RuntimeException missingKey(Object key) {
+        return new RuntimeException("Key '" + key + "' does not exist in map");
     }
 
     /** True when a simple identifier is quoted. */
