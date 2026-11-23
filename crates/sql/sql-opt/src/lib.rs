@@ -265,7 +265,7 @@ pub use recursive_views::{resolve_view_references, ViewReferences, ViewResolutio
 pub use regions::{conflicting_regions, tag_regions};
 pub use remove_noops::{bypassed_noops, optimize_noops, remove_noops};
 pub use remove_table::{remove_table, unreferenced_table_sources, TableRemoval};
-pub use shared_index_candidates::{find_shared_indexes, shared_index_payloads, IndexReader, SharedIndexes};
+pub use shared_index_candidates::{find_shared_indexes, shared_index_payloads, IndexDiscoveryError, IndexReader, SharedIndexes};
 pub use index_reader::{rewrite_index_reader, IndexParameter};
 pub use replace_shared_indexes::{replace_shared_indexes, replace_shared_indexes_with};
 pub use wide_index::{split_shared_indexes, wide_index_fields, IndexComparison, WideIndexFields, WideIndexLayout};

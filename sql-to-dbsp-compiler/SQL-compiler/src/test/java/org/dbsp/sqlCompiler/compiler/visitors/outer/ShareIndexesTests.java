@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
@@ -48,12 +49,14 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -64,12 +67,14 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
+import java.time.DateTimeException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.IntFunction;
 
 /** Tests for {@link ShareIndexes} and {@link ShareOutputIntegrators}. */
 public class ShareIndexesTests extends StreamingTestBase {
@@ -657,6 +662,88 @@ public class ShareIndexesTests extends StreamingTestBase {
         }
     }
 
+    private static List<String> observeDecisions(DBSPCompiler compiler) {
+        var decisions = new ArrayList<String>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void nativeDecision(String operation, boolean answered) {
+                decisions.add(operation + "=" + answered);
+            }
+
+            @Override
+            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
+
+            @Override
+            public void after(String parent, int index, int iteration, CircuitTransform pass,
+                              DBSPCircuit circuit, boolean completed) {}
+        };
+        return decisions;
+    }
+
+    @Test
+    public void sharedIndexDiscoveryKeepsCompletedGroupsAtAFailedKey() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes"));
+        // Reference resolution fails before visiting the seed. A bad timestamp
+        // fails later, when comparing the seed to its sibling.
+        this.checkDiscoveryFailure(i -> new DBSPVariablePath("free" + i, INT), InternalCompilerError.class, 2);
+        this.checkDiscoveryFailure(i -> new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 " + (i == 0 ? "GMT+19:00" : "GMT-20:00"))),
+                DateTimeException.class, 3);
+    }
+
+    private void checkDiscoveryFailure(IntFunction<DBSPExpression> failingField,
+                                       Class<? extends RuntimeException> expectedClass, int expectedVisited) {
+        var site = CalciteEmptyRel.INSTANCE;
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        for (var name : List.of("A", "B")) {
+            var source = table(circuit, name, "k");
+            var inputs = new ArrayList<OutputPort>();
+            for (int i = 0; i < 2; i++) {
+                var row = source.getOutputZSetElementType().ref().var();
+                var divided = new DBSPBinaryExpression(CalciteObject.EMPTY, INT, DBSPOpcode.DIV,
+                        new DBSPI32Literal(1), new DBSPI32Literal(0));
+                DBSPExpression field = name.equals("A") ? row.deref().field(0) : failingField.apply(i);
+                var key = new DBSPTupleExpression(divided, field);
+                var function = new DBSPRawTupleExpression(key, new DBSPTupleExpression(row.deref().field(0))).closure(row);
+                var index = new DBSPMapIndexOperator(site, function, source.outputPort());
+                circuit.addOperator(index);
+                inputs.add(index.outputPort());
+            }
+            var reader = firstFields(inputs);
+            circuit.addOperator(new DBSPJoinOperator(site, new DBSPTypeZSet(reader.getResultType()),
+                    reader, inputs.get(0), inputs.get(1), false));
+        }
+
+        var directCompiler = this.testCompiler();
+        var graph = new Graph(directCompiler);
+        graph.apply(circuit);
+        var direct = new FindSharedIndexes(directCompiler, graph.getGraphs());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var expected = Assert.assertThrows(expectedClass, () -> direct.apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        Assert.assertEquals(1, direct.candidateIds().size());
+        Assert.assertEquals(expectedVisited, direct.visitedIds().size());
+        Assert.assertTrue(directCompiler.messages.warningCount() > 0);
+
+        var compiler = this.testCompiler();
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var decisions = observeDecisions(compiler);
+        var hybrid = new FindSharedIndexes(compiler, graph.getGraphs());
+        var pass = new RustCircuitPass(compiler, hybrid, new OptimizerSnapshots(compiler));
+        start = DBSPVariablePath.nextGeneratedName();
+        var actual = Assert.assertThrows(expected.getClass(), () -> pass.apply(circuit));
+        Assert.assertEquals(expected.getMessage(), actual.getMessage());
+        if (expected instanceof InternalCompilerError error)
+            Assert.assertEquals(error.getPositionRange(), ((InternalCompilerError) actual).getPositionRange());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertEquals(directCompiler.messages.replaySnapshot(), compiler.messages.replaySnapshot());
+        Assert.assertEquals(direct.visitedIds(), hybrid.visitedIds());
+        Assert.assertEquals(1, hybrid.candidateIds().size());
+        Assert.assertArrayEquals(direct.candidateIds().getFirst().toArray(long[][]::new),
+                hybrid.candidateIds().getFirst().toArray(long[][]::new));
+        Assert.assertEquals(List.of("SharedIndexes/Discover=true"), decisions);
+    }
+
     @Test
     public void sharedIndexColumnErrorPreservesTheComparisonPrefix() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes"));
@@ -701,20 +788,7 @@ public class ShareIndexesTests extends StreamingTestBase {
 
         var hybridCompiler = this.testCompiler();
         hybridCompiler.options.ioOptions.rustOptimizerPasses = true;
-        var decisions = new ArrayList<String>();
-        hybridCompiler.stateObserver = new DBSPCompiler.StateObserver() {
-            @Override
-            public void nativeDecision(String operation, boolean answered) {
-                decisions.add(operation + "=" + answered);
-            }
-
-            @Override
-            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
-
-            @Override
-            public void after(String parent, int index, int iteration, CircuitTransform pass,
-                              DBSPCircuit circuit, boolean completed) {}
-        };
+        var decisions = observeDecisions(hybridCompiler);
         start = DBSPVariablePath.nextGeneratedName();
         var hybrid = Assert.assertThrows(direct.getClass(), () -> new RustCircuitPass(
                 hybridCompiler, new ReplaceSharedIndexes(hybridCompiler, find), new OptimizerSnapshots(hybridCompiler)).apply(circuit));

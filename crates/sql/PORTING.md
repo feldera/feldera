@@ -503,6 +503,9 @@ the expression whose waterline fact is missing. A read after a nested flatmap
 can instead lose its lexical reference, in which case the diagnostic names
 the variable. Both failures preserve the number of names allocated by earlier
 merges. Directed tests verified the exception class and message against Java.
+On `ad1c02edd`, all 520 frozen programs that exercised temporal filter merging,
+map-fusion column comparison or shared-index replacement matched Java through
+255,346 ordered S4 observations and emission.
 [Temporal clock lookups](evidence/p3-temporal-clock-lookups.json)
 
 Map fusion and temporal bounds compare zoned timestamp literals in operand
@@ -511,6 +514,13 @@ renders the JDK diagnostic. Directed tests exercised invalid offsets on both
 sides. The build passed 182 targeted and 222 nightly JUnit tests and matched
 Java on 12 classic and 12 Gen-2 programs.
 [Timestamp comparison tests](evidence/p3-timestamp-comparison-errors.json)
+
+Shared-index discovery checks bindings as it visits each eligible index.
+A failed binding leaves the index unvisited. A failure during key comparison
+retains the seed visit. Earlier groups, warnings and generated names survive
+both errors. The candidate passed 183 targeted and 223 nightly JUnit tests
+and matched Java on 24 classic and Gen-2 compilations.
+[Shared-index discovery tests](evidence/p3-shared-index-discovery-prefix.json)
 
 Shared-index readers remap a column beneath 160 nested calls. Indexes that
 project the same nested expression still share one output column. Both

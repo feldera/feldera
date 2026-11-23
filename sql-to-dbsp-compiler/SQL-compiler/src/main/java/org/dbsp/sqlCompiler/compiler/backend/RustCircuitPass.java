@@ -3713,13 +3713,28 @@ public final class RustCircuitPass implements CircuitTransform {
         var writer = OptimizerTopology.selectedForRewrite(this.compiler, circuit, selected, details);
         byte[] result = discoverIndexes(writer.getJsonString().getBytes(StandardCharsets.UTF_8), next,
                 MAPPER.writeValueAsBytes(find.visitedIds()), bytes -> {
-                    var keys = decodeClosurePair(new LoweringReply(writer.innerVisitor, MAPPER.readTree(bytes)));
-                    return keys.left.equivalent(keys.right);
+                    var prefix = MAPPER.readTree(bytes);
+                    var keys = decodeClosurePair(new LoweringReply(writer.innerVisitor, prefix.required("keys")));
+                    try {
+                        return keys.left.equivalent(keys.right);
+                    } catch (RuntimeException failure) {
+                        this.finishIndexDiscovery(circuit, find, prefix, false);
+                        throw failure;
+                    }
                 });
         var state = MAPPER.readTree(result);
+        this.finishIndexDiscovery(circuit, find, state, state.required("compared_all_keys").booleanValue());
+        if (state.has("binding_error"))
+            checkBindingErrors(writer.innerVisitor, state.required("binding_error"));
+        var failure = state.get("comparison_failure");
+        if (failure != null)
+            reportComparisonFailure(failure);
+    }
+
+    private void finishIndexDiscovery(DBSPCircuit circuit, FindSharedIndexes find, JsonNode state,
+                                      boolean nativeKeys) throws IOException {
         if (this.compiler.stateObserver != null)
-            this.compiler.stateObserver.nativeDecision("SharedIndexes/Discover",
-                    state.required("compared_all_keys").booleanValue());
+            this.compiler.stateObserver.nativeDecision("SharedIndexes/Discover", nativeKeys);
         find.record(MAPPER.treeToValue(state.required("groups"), FindSharedIndexes.IndexReader[][].class),
                 MAPPER.treeToValue(state.required("visited"), long[].class), operatorsById(circuit));
         finishLowering(this.compiler, state);

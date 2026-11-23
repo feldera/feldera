@@ -57,5 +57,37 @@
     "errors": 0,
     "failures": 0,
     "skipped": 0
+  },
+  "source_commit": "ad1c02eddae8772070f9121d4f27a988c791c142",
+  "affected_operations": [
+    "ReplaceSharedIndexes",
+    "MergeFilters",
+    "FuseExpensiveMaps/Columns"
+  ],
+  "affected_population": {
+    "classic": {
+      "cases": 241,
+      "ordered_s4_observations": 118005,
+      "mismatches": 0,
+      "population_sha256": "14ae8ca9744f6f39ad3e3ae20e7280a55edf8abbfd4e1cdcf519e03e265e1019",
+      "receipt_sha256": "73cb55575d3d71a0f392e874e004cb50250edbec27838a9fff088809b06cf20b",
+      "shards_sha256": {
+        "shard-000": "f6becdd6c697f17bc4cb8e6e3165c502ecb0c280c358994c29a714e504805633",
+        "shard-001": "4e785649768ab72d1581326f3b8ecf0ec6805499df1cdd40d23daa3284b35ac5",
+        "shard-002": "30c535f4580de38408496a7c69a010527ffaa31cccf17ab9f125490c267be98e"
+      }
+    },
+    "gen2": {
+      "cases": 279,
+      "ordered_s4_observations": 137341,
+      "mismatches": 0,
+      "population_sha256": "26af8c37f282fa0990fd1eb8280ac311ecb31071b5cfebb231fb2dc746cc2045",
+      "receipt_sha256": "d14b245754db46a4a64a562815795ff10ee2ab7595daa3322b5a11263e02da3f",
+      "shards_sha256": {
+        "shard-000": "026325ddb9b2ff00fcc6d0d8e0e782409e48816180b1f1fdbdd1807b04e62754",
+        "shard-001": "43463460653c87148b7241b070e044ec19f06a0361c285df06a94ef4051265bc",
+        "shard-002": "db290b5bd52367eccf10121f9df52118061c48c4e959a2d3c56ab4f9eae1151c"
+      }
+    }
   }
 }

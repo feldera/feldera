@@ -176,6 +176,14 @@ pub(super) fn equivalent(
     left: ExpressionId,
     right: ExpressionId,
 ) -> Result<Option<bool>, Error> {
+    speculative(check_closures(edit, left, right))
+}
+
+pub(super) fn check_closures(
+    edit: &CircuitEditor,
+    left: ExpressionId,
+    right: ExpressionId,
+) -> Result<Option<bool>, KeyComparisonError> {
     let left = edit.node(left.into())?;
     let right = edit.node(right.into())?;
     let [lp] = left
@@ -194,7 +202,7 @@ pub(super) fn equivalent(
     )? {
         return Ok(Some(false));
     }
-    equivalent_bodies(
+    check_bodies(
         edit,
         left.edge("body")?,
         right.edge("body")?,

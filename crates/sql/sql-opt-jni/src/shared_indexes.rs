@@ -1,16 +1,27 @@
 //! Return index groups and their visitor state. Java compares residual key
 //! expressions in the same object namespace as the original circuit.
-use crate::{BridgeError, MAX_BYTES, decode_live_circuit, live_equality};
+use crate::{BridgeError, MAX_BYTES, decode_live_circuit, live_equality, pass_warnings};
 use feldera_sql_ir::{Circuit, CircuitEditor};
+use feldera_sql_opt::{IndexDiscoveryError, KeyComparisonError, SharedIndexes};
 use jni::{
     EnvUnowned,
     errors::ThrowRuntimeExAndDefault,
     objects::{JByteArray, JClass, JObject},
 };
-use serde_json::json;
+use serde_json::{Value, json};
+use std::collections::BTreeSet;
 
 fn optimizer_error(error: impl std::fmt::Display) -> BridgeError {
     BridgeError::Optimizer(format!("FindSharedIndexes: {error}"))
+}
+
+fn discovery_state(state: &SharedIndexes, visited: &BTreeSet<u64>, next: u64) -> Value {
+    json!({
+        "groups": state.groups,
+        "visited": state.visited.difference(visited).collect::<Vec<_>>(),
+        "warnings": pass_warnings(state.warnings.clone()),
+        "next_generated_name": next,
+    })
 }
 
 // SAFETY: the symbol and signature match the static native method on RustCircuitPass.
@@ -37,25 +48,36 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         let mut next = u64::try_from(next).map_err(optimizer_error)?;
         let mut edit = CircuitEditor::new(input.clone());
         let mut compared_all_keys = true;
-        let groups =
-            feldera_sql_opt::find_shared_indexes(&mut edit, &visited, &mut next, |edit, keys| {
-                compared_all_keys = false;
-                let keys = edit
-                    .circuit()
-                    .live_inner_roots(&input, &keys.map(Into::into))?;
-                live_equality::compare(env, &equality, &serde_json::Value::Array(keys))
-            })
-            .map_err(optimizer_error)?;
-        let bytes = serde_json::to_vec(&json!({
-            "compared_all_keys": compared_all_keys,
-            "groups": groups.groups,
-            "visited": groups.visited.difference(&visited).collect::<Vec<_>>(),
-            "warnings": groups.warnings.into_iter().map(|w| json!({
-                "range": w.position, "error_type": w.kind, "message": w.message
-            })).collect::<Vec<_>>(),
-            "next_generated_name": next,
-        }))
-        .map_err(optimizer_error)?;
+        let mut state = SharedIndexes::new(BTreeSet::clone(&visited));
+        let discovery = state.discover(&mut edit, &mut next, |edit, keys, prefix, names| {
+            compared_all_keys = false;
+            let mut request = discovery_state(prefix, &visited, names);
+            request["keys"] = Value::Array(
+                edit.circuit()
+                    .live_inner_roots(&input, &keys.map(Into::into))?,
+            );
+            live_equality::compare(env, &equality, &request)
+        });
+        let mut reply = discovery_state(&state, &visited, next);
+        reply["compared_all_keys"] = compared_all_keys.into();
+        match discovery {
+            Ok(()) => {}
+            Err(IndexDiscoveryError::Comparison(KeyComparisonError::Diagnostic(diagnostic))) => {
+                reply["comparison_failure"] = json!(diagnostic)
+            }
+            Err(IndexDiscoveryError::FreeVariable(variable)) => {
+                reply["binding_error"] = json!({"free": crate::inner_number(variable)});
+            }
+            Err(IndexDiscoveryError::ConflictingDeclarations {
+                variable,
+                previous,
+                current,
+            }) => {
+                reply["binding_error"] = crate::binding_conflict(variable, previous, current);
+            }
+            Err(error) => return Err(optimizer_error(error)),
+        }
+        let bytes = serde_json::to_vec(&reply).map_err(optimizer_error)?;
         if bytes.len() > MAX_BYTES {
             return Err(optimizer_error("output exceeds 64 MiB"));
         }

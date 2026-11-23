@@ -1,0 +1,51 @@
+{
+  "scope": "Rust checks index closure bindings at the first seed or sibling visit and reports the completed discovery state on admission and comparison errors.",
+  "source_base": "03f3f8af0f97567bb8d619115f3bbabe951cc7e5",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/shared_indexes.rs": "1edf499de1b0e098c6cab5741b6d5daa59ac37d9a282e6873574cc3f549feba3",
+    "crates/sql/sql-opt/src/index_key_equivalence.rs": "e5fdad2b0e7bfc4e51a97ea1999195d5a119057f7848442c79c536cbd56400d2",
+    "crates/sql/sql-opt/src/lib.rs": "e398f110d551f56acfef6da3705ca2574020e955eb65568bb7f6adc1b6f69cf0",
+    "crates/sql/sql-opt/src/shared_index_candidates.rs": "bfe9608440886bf7889f0eed198eaa809d7031d80cd935e229bfbeb267616f17",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "d13816577cd98ed2c0734f80226c4ee2f7653c1fcdc9bafa543ce3c80bab8538",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ShareIndexesTests.java": "0579ef80a7d19c09e8139a9ce952314b31a9aea5441d2578071cb8b6fe218955",
+    ".github/workflows/test-p0-nightly.yml": "6274e59c9485b8dbfcc1999ad035ee3d6395ce42d2f1b9ebc2dbf34635306537"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "942787be7ec61dd07ecc1878191e9cbdde8d85051a1337912107b3dd3548e008",
+    "bin/sql-difftest": "ecabba5f475aa904f5ecb411148c88e228472fc084b891a694a3c0a13827bb14",
+    "maven/tests.jar": "3bb013eb66d5a32946374be97d3c0de7a5d8ecc57980a95897f6c6302d9cb8ce",
+    "maven/sql-compiler.jar": "98410d41c2b3b614d4909a6f4100b3c84f47adbef451d76326944a90a1aa16c7"
+  },
+  "negative_control": {
+    "library_sha256": "68b14c8d53dd63f78ffc0e388a5e4ce05fa1ce44dd185ee729e7cfb7e942f64f",
+    "failed_tests": [
+      "sharedIndexDiscoveryKeepsCompletedGroupsAtAFailedKey"
+    ],
+    "java_compiler_sha256": "3cec223cb9f8a169167d569e9c275a6aff76179613afb4450985d8cc75c878c6"
+  },
+  "rust_tests": 225,
+  "junit_tests": 183,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "0da9e2dcb5a88e51780d749b5e033b1376aa1a6063132f04e9281aaa0f79b0f5"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "b73c2bb0e2962312fc98771b7d80cc743b5f8370767132e067e91e8746e5a0f7"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 223,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  }
+}
