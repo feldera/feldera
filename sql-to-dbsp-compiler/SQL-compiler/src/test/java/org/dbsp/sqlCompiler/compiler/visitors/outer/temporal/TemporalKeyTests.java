@@ -73,6 +73,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.function.Consumer;
@@ -173,11 +174,12 @@ public class TemporalKeyTests {
     }
 
     @Test
-    public void temporalMergeResumesAfterAnalyzingAPairOfPredicates() {
+    public void temporalMergeAnalyzesNestedFlatmapsInRust() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();
         var nested = flatmap(new IdShuffle(2), 0, b.lit(1));
-        var lastClock = new DBSPBlockExpression(List.of(new DBSPLetStatement("unused", nested)),
+        var lastClock = new DBSPBlockExpression(List.of(new DBSPLetStatement("unused", nested),
+                new DBSPLetStatement("second", flatmap(new IdShuffle(2), 1, b.lit(2)))),
                 b.call(DBSPTypeTimestamp.INSTANCE, "now"));
         var circuit = temporalFilterChain(lastClock);
         var compiler = new DBSPCompiler(new CompilerOptions());
@@ -194,7 +196,80 @@ public class TemporalKeyTests {
                 hybrid.allOperators.indexOf(actual.input().node()));
         Assert.assertTrue(expected.getClosureFunction().equivalent(actual.getClosureFunction()));
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertTrue(pass.usedGeneralTemporalAnalysis());
+        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
+    }
+
+    @Test
+    public void temporalMergePreservesTheReferenceErrorAfterANestedFlatmap() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var clock = new DBSPLetStatement("saved_clock", b.call(DBSPTypeTimestamp.INSTANCE, "now"));
+        var nested = flatmap(new IdShuffle(2), 0, b.lit(1));
+        var lastClock = new DBSPBlockExpression(List.of(clock, new DBSPLetStatement("unused", nested)),
+                clock.getVarReference());
+        var circuit = temporalFilterChain(lastClock);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(RuntimeException.class, () -> new MergeFilters(compiler).apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        Assert.assertTrue(direct.getMessage(), direct.getMessage().contains("saved_clock"));
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        start = DBSPVariablePath.nextGeneratedName();
+        var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+    }
+
+    @Test
+    public void reorderCountsNestedFlatmapsAtEachWindowClassification() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        for (boolean single : List.of(false, true)) {
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            var rowType = b.tup(time, time);
+            var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+            circuit.addOperator(input);
+            var row = b.refVar(rowType);
+            var clock = new DBSPBlockExpression(List.of(flatmap(new IdShuffle(2), 0, b.lit(1)).toStatement()),
+                    b.call(time, "now"));
+            var upper = b.binary(DBSPOpcode.LT, b.field(row, 0), clock);
+            var lower = b.binary(DBSPOpcode.GTE, b.field(row, 1), b.call(time, "now"));
+            var condition = single ? upper : b.binary(DBSPOpcode.AND, upper, lower);
+            var filter = new DBSPFilterOperator(site, condition.closure(row), input.outputPort());
+            circuit.addOperator(filter);
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            long start = DBSPVariablePath.nextGeneratedName();
+            scanWindows(compiler, circuit, new ArrayList<>());
+            long scanNames = DBSPVariablePath.nextGeneratedName() - start;
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var decisions = new ArrayList<Boolean>();
+            start = DBSPVariablePath.nextGeneratedName();
+            scanWindows(compiler, circuit, decisions);
+            Assert.assertEquals(scanNames, DBSPVariablePath.nextGeneratedName() - start);
+            Assert.assertEquals(List.of(true), decisions);
+
+            for (boolean shared : List.of(false, true)) {
+                Map<DBSPFilterOperator, Integer> chosen = shared ? Map.of(filter, 0) : Map.of();
+                compiler.options.ioOptions.rustOptimizerPasses = false;
+                var directPass = new ReorderTemporalFilters.Reorder(compiler, chosen);
+                start = DBSPVariablePath.nextGeneratedName();
+                var direct = directPass.apply(circuit);
+                long names = DBSPVariablePath.nextGeneratedName() - start;
+                Assert.assertTrue(names > 0);
+                compiler.options.ioOptions.rustOptimizerPasses = true;
+                var reorder = new ReorderTemporalFilters.Reorder(compiler, chosen);
+                var hybridPass = new RustCircuitPass(compiler, reorder, new OptimizerSnapshots(compiler));
+                start = DBSPVariablePath.nextGeneratedName();
+                var hybrid = hybridPass.apply(circuit);
+                Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+                var expected = direct.allOperators.get(1).to(DBSPFilterOperator.class);
+                var actual = hybrid.allOperators.get(1).to(DBSPFilterOperator.class);
+                Assert.assertTrue(expected.getClosureFunction().equivalent(actual.getClosureFunction()));
+            }
+        }
     }
 
     @Test

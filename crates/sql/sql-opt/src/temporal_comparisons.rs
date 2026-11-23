@@ -29,12 +29,38 @@ pub fn conjunct_windows(
     edit: &mut CircuitEditor,
     parameter: NodeId,
     body: ExpressionId,
+    next: &mut u64,
 ) -> Result<Option<Vec<Option<ConjunctWindow>>>, Error> {
-    let terms = crate::filters::conjuncts(edit, body)?;
+    let Some(terms) = analyze_conjuncts(edit, parameter, body)? else {
+        return Ok(None);
+    };
     let mut windows = Vec::with_capacity(terms.len());
     for term in terms {
-        let term = crate::filters::strip_wrap_bool(edit, term)?;
-        let Some(parts) = infer_temporal_predicates(edit, parameter, term)? else {
+        *next = next
+            .checked_add(term.names)
+            .ok_or_else(|| Error::new("generated names exhausted classifying conjuncts"))?;
+        windows.push(term.window);
+    }
+    Ok(Some(windows))
+}
+
+pub(super) struct AnalyzedConjunct {
+    pub expression: ExpressionId,
+    pub window: Option<ConjunctWindow>,
+    pub names: u64,
+}
+
+pub(super) fn analyze_conjuncts(
+    edit: &mut CircuitEditor,
+    parameter: NodeId,
+    body: ExpressionId,
+) -> Result<Option<Vec<AnalyzedConjunct>>, Error> {
+    let terms = crate::filters::conjuncts(edit, body)?;
+    let mut analyzed = Vec::with_capacity(terms.len());
+    for expression in terms {
+        let term = crate::filters::strip_wrap_bool(edit, expression)?;
+        let mut names = 0;
+        let Some(parts) = infer_temporal_predicates(edit, parameter, term, &mut names)? else {
             return Ok(None);
         };
         let window = match parts.as_slice() {
@@ -51,9 +77,13 @@ pub fn conjunct_windows(
             }),
             _ => None,
         };
-        windows.push(window);
+        analyzed.push(AnalyzedConjunct {
+            expression,
+            names,
+            window,
+        });
     }
-    Ok(Some(windows))
+    Ok(Some(analyzed))
 }
 
 /// Classify clock operands with the same waterline transfer as other filter closures.
@@ -61,12 +91,17 @@ pub fn infer_temporal_predicates(
     edit: &mut CircuitEditor,
     parameter: NodeId,
     body: ExpressionId,
+    next: &mut u64,
 ) -> Result<Option<Vec<TemporalPredicate>>, Error> {
-    let Some(monotone) = crate::monotonicity::row_projection::clock_operands(edit, parameter, body)?
+    let Some(facts) = crate::monotonicity::row_projection::clock_facts(edit, parameter, body)?
     else {
         return Ok(None);
     };
-    classify_temporal_predicates(edit, body, &monotone).map(Some)
+    let parts = classify_temporal_predicates(edit, body, &facts.operands)?;
+    *next = next
+        .checked_add(facts.generated_names)
+        .ok_or_else(|| Error::new("generated names exhausted classifying a temporal predicate"))?;
+    Ok(Some(parts))
 }
 
 fn comparison(opcode: &str, clock_on_left: bool) -> Option<WindowComparison> {

@@ -81,7 +81,7 @@ impl TemporalFilterLowering {
         filter: ClockFilter,
         next: &mut u64,
     ) -> Result<Option<LoweredClockFilter>, Error> {
-        let Some((parameter, predicates)) = classify_closure(edit, filter.function)? else {
+        let Some((parameter, predicates)) = classify_closure(edit, filter.function, next)? else {
             return Ok(None);
         };
         let terms: Vec<_> = predicates

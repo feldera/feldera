@@ -41,12 +41,11 @@ pub(super) fn temporal_filter_order<'a, K: Eq + Hash>(
         .copied()
         .filter(|k| Some(*k) != shared)
         .collect();
-    if !trailing.is_empty() {
-        partitions.push(TimestampPartition {
-            first: false,
-            timestamps: trailing,
-        });
-    }
+    // The first partition examines every conjunct even if none can move.
+    partitions.push(TimestampPartition {
+        first: false,
+        timestamps: trailing,
+    });
     if let Some(key) = shared {
         partitions.push(TimestampPartition {
             first: true,

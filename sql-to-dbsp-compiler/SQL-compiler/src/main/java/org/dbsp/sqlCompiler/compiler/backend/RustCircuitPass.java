@@ -2223,8 +2223,10 @@ public final class RustCircuitPass implements CircuitTransform {
         if (!answered(compiler, "WindowGroups/Conjuncts", reply.value))
             return null;
         var nodes = Objects.requireNonNull(reply.writer.liveNodes);
-        var windows = new ArrayList<ConjunctWindow>(reply.value.size());
-        for (var window : reply.value) {
+        advanceTemporalNames(reply.value);
+        var entries = reply.value.required("windows");
+        var windows = new ArrayList<ConjunctWindow>(entries.size());
+        for (var window : entries) {
             windows.add(window.isNull() ? null : new ConjunctWindow(
                     Utilities.getExists(nodes, window.required("key").longValue()).to(DBSPExpression.class),
                     window.required("lower").booleanValue()));
@@ -2249,10 +2251,17 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    private static void advanceTemporalNames(JsonNode reply) {
+        long count = reply.required("generated_names").longValue();
+        DBSPVariablePath.restoreGeneratedNames(Math.addExact(DBSPVariablePath.nextGeneratedName(), count));
+    }
+
     private static List<TemporalComparison> temporalComparisons(LoweringReply reply) {
+        advanceTemporalNames(reply.value);
         var decoder = expressionDecoder(reply.writer);
-        var parts = new ArrayList<TemporalComparison>(reply.value.size());
-        for (var part : reply.value) {
+        var entries = reply.value.required("comparisons");
+        var parts = new ArrayList<TemporalComparison>(entries.size());
+        for (var part : entries) {
             var kind = PredicateKind.valueOf(part.required("kind").textValue());
             var expression = decodeLiveRoot(decoder, part.required("expression"), DBSPExpression.class);
             var clock = part.has("clock") ? decodeLiveRoot(decoder, part.required("clock"), DBSPExpression.class) : null;
@@ -2341,6 +2350,7 @@ public final class RustCircuitPass implements CircuitTransform {
             if (compiler.stateObserver != null)
                 compiler.stateObserver.nativeDecision("WindowGroups/Scan", groups != null);
             if (groups != null) {
+                advanceTemporalNames(reply);
                 reportWarnings(compiler, reply.required("warnings"));
                 var chosen = new LinkedHashMap<DBSPFilterOperator, Integer>();
                 for (var group : groups)
@@ -2505,7 +2515,9 @@ public final class RustCircuitPass implements CircuitTransform {
 
             @Override
             public Shuffle decodeShuffle(JsonNode flatmap) {
-                return Shuffle.fromJson(flatmap.required("shuffle"), shuffles.get(flatmap.required("id").longValue()));
+                // A copied flatmap has a new node ID and retains its input shuffle.
+                long owner = flatmap.path("shuffleIdentity").asLong(flatmap.required("id").longValue());
+                return Shuffle.fromJson(flatmap.required("shuffle"), shuffles.get(owner));
             }
 
             @Override
@@ -4125,6 +4137,7 @@ public final class RustCircuitPass implements CircuitTransform {
                     var chosen = new LinkedHashMap<Long, Integer>();
                     reorder.chosenConjunct.forEach((filter, index) -> chosen.put(filter.id, index));
                     writer = this.snapshots.writer(this.reusesOperators());
+                    writer.innerVisitor.includeShuffleIdentities();
                     writer.innerVisitor.liveNodes = new HashMap<>();
                     writer.apply(circuit);
                     byte[] input = writer.getJsonString().getBytes(StandardCharsets.UTF_8);

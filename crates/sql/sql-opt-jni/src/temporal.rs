@@ -133,7 +133,11 @@ pub(super) fn scan(
     use feldera_sql_opt::TemporalScan;
     Ok(
         match feldera_sql_opt::scan_temporal_windows(circuit, threshold)? {
-            TemporalScan::Groups { groups, warnings } => {
+            TemporalScan::Groups {
+                groups,
+                warnings,
+                generated_names,
+            } => {
                 let groups: Vec<Vec<_>> = groups
                     .into_iter()
                     .map(|group| {
@@ -143,7 +147,7 @@ pub(super) fn scan(
                             .collect()
                     })
                     .collect();
-                json!({ "groups": groups, "warnings": super::pass_warnings(warnings) })
+                json!({ "groups": groups, "warnings": super::pass_warnings(warnings), "generated_names": generated_names })
             }
             TemporalScan::Paths(paths) => json!({ "paths": source_paths(paths) }),
         },
@@ -394,10 +398,16 @@ pub(super) fn classify(
     roots: &[NodeId],
     state: &[u8],
 ) -> Result<Value, Box<dyn std::error::Error>> {
+    let mut generated_names = 0;
     let parts = match *roots {
         [parameter, body] => {
             let body = edit.expression(body)?;
-            let Some(parts) = feldera_sql_opt::infer_temporal_predicates(edit, parameter, body)?
+            let Some(parts) = feldera_sql_opt::infer_temporal_predicates(
+                edit,
+                parameter,
+                body,
+                &mut generated_names,
+            )?
             else {
                 return Ok(Value::Null);
             };
@@ -437,18 +447,17 @@ pub(super) fn classify(
 
     let mut expressions = edit.circuit().live_inner_roots(input, &roots)?.into_iter();
     let mut next = || expressions.next().expect("one encoded expression per root");
-    Ok(Value::Array(
-        headers
-            .into_iter()
-            .map(|(kind, has_clock)| {
-                let mut part = json!({"kind":kind, "expression":next()});
-                if has_clock {
-                    part["clock"] = next();
-                }
-                part
-            })
-            .collect(),
-    ))
+    let parts = headers
+        .into_iter()
+        .map(|(kind, has_clock)| {
+            let mut part = json!({"kind":kind, "expression":next()});
+            if has_clock {
+                part["clock"] = next();
+            }
+            part
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({"comparisons": parts, "generated_names": generated_names}))
 }
 
 /// A bound supplies its declaring parameter and key. A residual supplies just

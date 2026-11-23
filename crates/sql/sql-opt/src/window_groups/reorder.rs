@@ -1,8 +1,11 @@
 //! Rebuild a filter's conjunction in the order chosen for its temporal windows.
-use crate::projection_key::{ProjectionKey, row_parameter};
-use super::temporal::{temporal_filter_order, TemporalBound};
+use super::temporal::{TemporalBound, temporal_filter_order};
 use crate::filters::{conjuncts, is_boolean_wrapper, rewrite_filters, strip_wrap_bool};
-use crate::{conjunct_windows, function_calls::contains_now};
+use crate::projection_key::{ProjectionKey, row_parameter};
+use crate::{
+    function_calls::contains_now,
+    temporal_comparisons::{AnalyzedConjunct, analyze_conjuncts},
+};
 use feldera_sql_expr::ensure_expression_tree;
 use feldera_sql_ir::{
     BinaryOp, BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr,
@@ -15,9 +18,19 @@ use std::{collections::HashMap, hash::Hash};
 /// cast around a rebuilt subtree is an opaque conjunct in subsequent partitions.
 pub fn reorder_temporal_predicate<K: Eq + Hash>(
     edit: &mut CircuitEditor,
+    body: ExpressionId,
+    bounds: &[Option<TemporalBound<K>>],
+    chosen: Option<usize>,
+) -> Result<ExpressionId, Error> {
+    reorder_partitions(edit, body, bounds, chosen, |_, _| Ok(()))
+}
+
+fn reorder_partitions<K: Eq + Hash>(
+    edit: &mut CircuitEditor,
     mut body: ExpressionId,
     bounds: &[Option<TemporalBound<K>>],
     chosen: Option<usize>,
+    mut visit: impl FnMut(&mut CircuitEditor, &[ExpressionId]) -> Result<(), Error>,
 ) -> Result<ExpressionId, Error> {
     let terms = conjuncts(edit, body)?;
     if terms.len() != bounds.len() {
@@ -41,6 +54,10 @@ pub fn reorder_temporal_predicate<K: Eq + Hash>(
         .collect();
     for partition in temporal_filter_order(bounds, shared) {
         let terms = conjuncts(edit, body)?;
+        if terms.len() < 2 {
+            continue;
+        }
+        visit(edit, &terms)?;
         let mut ordered = terms.clone();
         ordered.sort_by_key(|term| {
             let selected = keys
@@ -105,33 +122,30 @@ pub fn reorder_shared_windows(
         {
             continue;
         }
-        let body = strip_wrap_bool(&edit, edit.expression(closure.edge("body")?)?)?;
-        if edit.expr_kind(body)? != Expr::Binary
-            || edit
-                .node(body.into())?
-                .data("opcode")
-                .and_then(|op| op.as_str())
-                != Some("AND")
-            || !contains_now(edit.circuit(), &[function])?
-        {
+        if !contains_now(edit.circuit(), &[function])? {
             continue;
         }
         let tree = ensure_expression_tree(&mut edit, function)?;
         let condition = edit.node(tree)?;
         let parameter = condition.edges("parameters")?[0];
         let body = edit.expression(condition.edge("body")?)?;
-        let Some(windows) = conjunct_windows(&mut edit, parameter, body)? else {
+        let Some(terms) = analyze_conjuncts(&mut edit, parameter, body)? else {
             return Ok(None);
         };
-        if windows.iter().all(Option::is_none) {
+        let has_names = terms.iter().any(|term| term.names != 0);
+        if !has_names && (terms.len() < 2 || terms.iter().all(|term| term.window.is_none())) {
             continue;
         }
-        let parameter = row_parameter(&edit, parameter)?;
-        let mut bounds = Vec::with_capacity(windows.len());
-        for window in windows {
-            bounds.push(match window {
+        let NodeId::Outer(number) = id else {
+            return Err(Error::new("expected a filter operator"));
+        };
+        let chosen = chosen.get(&number).copied();
+        let mut bounds = Vec::with_capacity(terms.len());
+        let row = row_parameter(&edit, parameter)?;
+        for term in &terms {
+            bounds.push(match &term.window {
                 Some(window) => {
-                    let Some(fingerprint) = ProjectionKey::read(&edit, window.key, parameter)? else {
+                    let Some(fingerprint) = ProjectionKey::read(&edit, window.key, row)? else {
                         return Ok(None);
                     };
                     Some(TemporalBound {
@@ -142,15 +156,17 @@ pub fn reorder_shared_windows(
                 None => None,
             });
         }
-        let NodeId::Outer(number) = id else {
-            return Err(Error::new("expected a filter operator"));
+        let Some(classification_names) =
+            classification_names(&mut edit, parameter, body, &terms, &bounds, chosen)?
+        else {
+            return Ok(None);
         };
         orders.insert(
             number,
             TemporalOrder {
                 bounds,
-                chosen: chosen.get(&number).copied(),
-                classification_names: 0,
+                chosen,
+                classification_names,
             },
         );
     }
@@ -159,6 +175,62 @@ pub fn reorder_shared_windows(
         return Ok(Some(circuit));
     }
     apply_orders(circuit, orders, next).map(Some)
+}
+
+/// Account for the repeated classifications in Reorder.reorderWithJava.
+fn classification_names(
+    edit: &mut CircuitEditor,
+    parameter: NodeId,
+    body: ExpressionId,
+    terms: &[AnalyzedConjunct],
+    bounds: &[Option<TemporalBound<ProjectionKey>>],
+    chosen: Option<usize>,
+) -> Result<Option<u64>, Error> {
+    if terms.iter().all(|term| term.names == 0) {
+        return Ok(Some(0));
+    }
+    let mut classification_names = 0;
+    // The shared fingerprint is read twice. Checking for a lower bound
+    // visits each original conjunct once, and each window a second time.
+    if let Some(index) = chosen {
+        let term = terms
+            .get(index)
+            .ok_or_else(|| Error::new("shared conjunct is out of range"))?;
+        classification_names += 2 * term.names;
+    }
+    let mut costs = HashMap::new();
+    for term in terms {
+        costs.insert(term.expression, term.names);
+        classification_names += if term.window.is_some() {
+            2 * term.names
+        } else {
+            term.names
+        };
+    }
+    // Stable partitioning classifies its current operands. A nullable
+    // cast around a rebuilt AND can make a later partition see a new term.
+    let mut resolved = true;
+    reorder_partitions(edit, body, bounds, chosen, |edit, operands| {
+        for operand in operands {
+            if let Some(cost) = costs.get(operand) {
+                classification_names += cost;
+            } else {
+                let term = strip_wrap_bool(edit, *operand)?;
+                let mut names = 0;
+                if crate::infer_temporal_predicates(edit, parameter, term, &mut names)?.is_none() {
+                    resolved = false;
+                    break;
+                }
+                costs.insert(*operand, names);
+                classification_names += names;
+            }
+        }
+        Ok(())
+    })?;
+    if !resolved {
+        return Ok(None);
+    }
+    Ok(Some(classification_names))
 }
 
 pub fn reorder_temporal_filters(

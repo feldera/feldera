@@ -251,7 +251,7 @@ impl Row {
             Observations::ResultOnly => {}
             Observations::Clocks(clocks) => {
                 if value.shape.monotone() {
-                    clocks.insert(id);
+                    clocks.operands.insert(id);
                 }
             }
             Observations::Facts(facts) => {
@@ -297,6 +297,37 @@ impl Row {
                                 return Ok(Evaluation::NeedsVisitor);
                             }
                             continue;
+                        }
+                        Expr::Flatmap => {
+                            let Observations::Clocks(clocks) = &mut self.observations else {
+                                return Ok(Evaluation::NeedsVisitor);
+                            };
+                            let closure = crate::flatmap_waterline(
+                                edit,
+                                id.into(),
+                                &mut clocks.generated_names,
+                            )?;
+                            let result_type = |expr| {
+                                let function = edit.expression_type(expr)?;
+                                edit.type_id(edit.node(function.into())?.edge("resultType")?)
+                            };
+                            if !edit.same_type(result_type(id)?, result_type(closure)?)? {
+                                return Ok(Evaluation::NeedsVisitor);
+                            }
+                            // The nested closure has no clock bound. Its body belongs
+                            // to a separate reference map and is opaque to this visit.
+                            match unbounded(edit, closure, false)? {
+                                Evaluation::Value(value) => (id, Some(value)),
+                                failure => return Ok(failure),
+                            }
+                        }
+                        Expr::VariablePath
+                            if matches!(&self.observations,
+                            Observations::Clocks(clocks) if clocks.generated_names > 0) =>
+                        {
+                            // Resolving the synthesized closure replaced the outer
+                            // reference map. The live visitor formats the missing key.
+                            return Ok(Evaluation::NeedsVisitor);
                         }
                         Expr::VariablePath => match self.variable(edit, id)? {
                             VariableRead::Projected(value) => (id, Some(value)),

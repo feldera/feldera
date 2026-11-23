@@ -337,7 +337,7 @@ fn clock_minus_interval_needs_a_constant_nonnull_offset() -> Result<(), Error> {
             TemporalPredicate::Residual(body)
         };
         assert_eq!(
-            infer_temporal_predicates(&mut edit, parameter, body)?,
+            infer_temporal_predicates(&mut edit, parameter, body, &mut 0)?,
             Some(vec![expected])
         );
     }
@@ -359,7 +359,7 @@ fn clock_minus_interval_needs_a_constant_nonnull_offset() -> Result<(), Error> {
     )?;
     let comparison = edit.binary_expression(roots[0], boolean, BinaryOp::Gt, key, block)?;
     assert_eq!(
-        infer_temporal_predicates(&mut edit, parameter, comparison)?,
+        infer_temporal_predicates(&mut edit, parameter, comparison, &mut 0)?,
         Some(vec![TemporalPredicate::Bound {
             key,
             clock: block,

@@ -170,7 +170,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         Utilities.enforce(computed.sameType(resultType),
                 () -> "Flatmap result type " + resultType + " does not match computed type " + computed);
         // This is the same as this.apply(closure)
-        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses || !this.context.isEmpty())
             this.resolveReferences(closure);
         this.preorder(closure);
         // The result applies to the original expression

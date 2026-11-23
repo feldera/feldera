@@ -746,14 +746,15 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("TemporalComparisons", roots) => return temporal::classify(&arena, &mut edit, roots, state),
         ("WindowGroups/Conjuncts", [parameter, body]) => {
             let body = edit.expression(*body)?;
-            let Some(windows) = feldera_sql_opt::conjunct_windows(&mut edit, *parameter, body)? else {
+            let mut generated_names = 0;
+            let Some(windows) = feldera_sql_opt::conjunct_windows(&mut edit, *parameter, body, &mut generated_names)? else {
                 return Ok(Value::Null);
             };
             let windows = windows.into_iter().map(|window| window.map(|window| {
                 let NodeId::Inner(key) = window.key.into() else { unreachable!("expression has inner identity") };
                 json!({"key": key, "lower": window.lower})
             })).collect::<Vec<_>>();
-            return Ok(serde_json::to_value(windows)?);
+            return Ok(json!({"windows":windows,"generated_names":generated_names}));
         }
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;

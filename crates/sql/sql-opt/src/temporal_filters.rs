@@ -10,28 +10,34 @@ use feldera_sql_ir::{
 };
 
 /// Decide if adjacent filters can use a single window. An unknown result asks
-/// the caller for its general closure analysis. A known rejection preserves
-/// both original predicates and consumes no generated names.
+/// the caller for its general closure analysis. Publish temporary names only
+/// after both predicates and their key comparisons have been decided.
 fn can_merge_temporal_filters(
     edit: &mut CircuitEditor,
     source: ExpressionId,
     filter: ExpressionId,
+    next: &mut u64,
 ) -> Result<Option<bool>, Error> {
     if !contains_now(edit.circuit(), &[filter.into()])?
         || !contains_now(edit.circuit(), &[source.into()])?
     {
         return Ok(Some(false));
     }
-    let Some(upstream) = window_terms(edit, source)? else {
+    let mut names = *next;
+    let Some(upstream) = window_terms(edit, source, &mut names)? else {
         return Ok(None);
     };
-    let Some(downstream) = window_terms(edit, filter)? else {
+    let Some(downstream) = window_terms(edit, filter, &mut names)? else {
         return Ok(None);
     };
-    match downstream.as_slice() {
-        [term] => accepts_temporal_bound(edit, &upstream, *term),
-        _ => Ok(Some(false)),
+    let decision = match downstream.as_slice() {
+        [term] => accepts_temporal_bound(edit, &upstream, *term)?,
+        _ => Some(false),
+    };
+    if decision.is_some() {
+        *next = names;
     }
+    Ok(decision)
 }
 
 /// Merge adjacent bounds in producer order. An intermediate filter remains
@@ -89,16 +95,17 @@ pub fn merge_temporal_filters_with(
             .inputs()
             .next()
             .ok_or_else(|| Error::new("upstream filter requires an input"))?;
-        let decision = match can_merge_temporal_filters(&mut edit, upstream, downstream)? {
-            Some(merge) => Some(merge),
-            None => analyze(TemporalFilterPair {
-                graph: edit.circuit(),
-                operators: [input.operator, id],
-                closures: [upstream, downstream],
-                next: &mut names,
-                warnings: &mut diagnostics,
-            })?,
-        };
+        let decision =
+            match can_merge_temporal_filters(&mut edit, upstream, downstream, &mut names)? {
+                Some(merge) => Some(merge),
+                None => analyze(TemporalFilterPair {
+                    graph: edit.circuit(),
+                    operators: [input.operator, id],
+                    closures: [upstream, downstream],
+                    next: &mut names,
+                    warnings: &mut diagnostics,
+                })?,
+            };
         match decision {
             None => return Ok(None),
             Some(false) => continue,
@@ -125,9 +132,10 @@ pub fn merge_temporal_filters_with(
 fn window_terms(
     edit: &mut CircuitEditor,
     closure: ExpressionId,
+    next: &mut u64,
 ) -> Result<Option<Vec<WindowTerm>>, Error> {
     Ok(
-        classify_closure(edit, closure)?.map(|(parameter, predicates)| {
+        classify_closure(edit, closure, next)?.map(|(parameter, predicates)| {
             predicates
                 .iter()
                 .map(|predicate| WindowTerm::from_predicate(parameter, predicate))
@@ -139,6 +147,7 @@ fn window_terms(
 pub(super) fn classify_closure(
     edit: &mut CircuitEditor,
     closure: ExpressionId,
+    next: &mut u64,
 ) -> Result<Option<(NodeId, Vec<TemporalPredicate>)>, Error> {
     let tree = ensure_expression_tree(edit, closure.into())?;
     let node = edit.node(tree)?;
@@ -146,7 +155,8 @@ pub(super) fn classify_closure(
         return Err(Error::new("a temporal filter requires one row parameter"));
     };
     let body = crate::filters::strip_wrap_bool(edit, edit.expression(node.edge("body")?)?)?;
-    Ok(infer_temporal_predicates(edit, parameter, body)?.map(|predicates| (parameter, predicates)))
+    Ok(infer_temporal_predicates(edit, parameter, body, next)?
+        .map(|predicates| (parameter, predicates)))
 }
 
 /// Combine two compatible temporal bounds on a single row. Both calls use the

@@ -12,6 +12,7 @@ pub enum TemporalScan {
     Groups {
         groups: Vec<Vec<(NodeId, usize)>>,
         warnings: Vec<SimplifyWarning>,
+        generated_names: u64,
     },
     /// Replay expressions that require the general visitor or the full canonical printer.
     Paths(Vec<TemporalFilterSource>),
@@ -23,8 +24,16 @@ pub fn scan_temporal_windows(circuit: Circuit, threshold: usize) -> Result<Tempo
     let mut candidates = Vec::with_capacity(paths.len());
     let mut input_types = SourceRows::default();
     let mut warnings = Vec::new();
+    let mut generated_names = 0;
     for path in &paths {
-        let Some(keys) = source_candidates(&mut edit, path, &mut input_types, &mut warnings)? else {
+        let Some(keys) = source_candidates(
+            &mut edit,
+            path,
+            &mut input_types,
+            &mut warnings,
+            &mut generated_names,
+        )?
+        else {
             // Replaying the paths will report every diagnostic, including earlier ones.
             return Ok(TemporalScan::Paths(paths));
         };
@@ -39,7 +48,11 @@ pub fn scan_temporal_windows(circuit: Circuit, threshold: usize) -> Result<Tempo
                 .collect()
         })
         .collect();
-    Ok(TemporalScan::Groups { groups, warnings })
+    Ok(TemporalScan::Groups {
+        groups,
+        warnings,
+        generated_names,
+    })
 }
 
 type SourceCandidate = TemporalCandidate<(OutputPort, TypeId, ProjectionKey)>;
@@ -49,13 +62,14 @@ fn source_candidates(
     path: &TemporalFilterSource,
     input_types: &mut SourceRows,
     warnings: &mut Vec<SimplifyWarning>,
+    next: &mut u64,
 ) -> Result<Option<Vec<SourceCandidate>>, Error> {
     let function = edit.node(path.filter)?.edge("function")?;
     let tree = ensure_expression_tree(edit, function)?;
     let predicate = edit.node(tree)?;
     let parameter = predicate.edges("parameters")?[0]; // filter_sources checked the arity
     let body = edit.expression(predicate.edge("body")?)?;
-    let Some(windows) = conjunct_windows(edit, parameter, body)? else {
+    let Some(windows) = conjunct_windows(edit, parameter, body, next)? else {
         return Ok(None);
     };
     let maps = path
@@ -178,7 +192,12 @@ mod tests {
                 [("function", Field::Reference(closure.into()))],
             )?);
         }
-        let TemporalScan::Groups { groups, warnings } = scan_temporal_windows(edit.finish()?, 2)? else {
+        let TemporalScan::Groups {
+            groups,
+            warnings,
+            generated_names: 0,
+        } = scan_temporal_windows(edit.finish()?, 2)?
+        else {
             panic!("direct columns must not require printed expressions");
         };
         assert!(warnings.is_empty());

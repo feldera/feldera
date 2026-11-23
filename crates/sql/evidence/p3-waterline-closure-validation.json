@@ -38,5 +38,37 @@
       "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
       "receipt_sha256": "9fdaf7f3db9f5b41603b27f51f923f6f96a8ac04a72ce325b952aa648cb59379"
     }
+  },
+  "source_commit": "97341483c44c7fe0e8362a5e4a1acbac85b72a7c",
+  "nightly_optimizer_junit": {
+    "tests": 217,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "shared_index_population": {
+    "classic": {
+      "cases": 202,
+      "ordered_s4_observations": 95511,
+      "mismatches": 0,
+      "population_sha256": "4c1e9fc0b99df6ea2ae187a9f48f1410200dcb7a6afb8d3543ca5861da827dc2",
+      "receipt_sha256": "a143515fcb7c6856f795a3208324739122f2357e309a64e1a08590037697153f",
+      "shards_sha256": {
+        "shard-000": "a4728cd8b650a3884c54b9cc54302fabc839c05304b2eaa4465c3ef9cc42d33d",
+        "shard-001": "74974f352a677c0d79eba8ba92da1b17f5b675e797d313dc2baed0bddeb6f523"
+      }
+    },
+    "gen2": {
+      "cases": 243,
+      "ordered_s4_observations": 116195,
+      "mismatches": 0,
+      "population_sha256": "70c71fad46e1124d2ee0441387579a9b178adf508d7c9a0b1fa6d963434106d3",
+      "receipt_sha256": "6650022315baa840f90d6913d08cd89c87b55943c60133c4a59efb59b7fc0170",
+      "shards_sha256": {
+        "shard-000": "92b5e62af05f60fe97fea77be90bb103b459fe5bf1e4e47dbb314d5ec97ff26e",
+        "shard-001": "90d3fca29661fe78d5673def47784b511c12e45c1dbef8e1bf9b876c61013c6e",
+        "shard-002": "889322b14b082de80a782d662ae3f17cba6556b10f00cff5bd867be62b2ed433"
+      }
+    }
   }
 }

@@ -106,7 +106,7 @@ pub struct ExpressionWaterline {
 enum Observations {
     #[default]
     ResultOnly,
-    Clocks(HashSet<ExpressionId>),
+    Clocks(ClockFacts),
     Facts(Vec<ExpressionWaterline>),
 }
 
@@ -238,13 +238,21 @@ fn project_tuple(
     }))
 }
 
+/// Clock analysis exposes original operand identities and the temporary names
+/// consumed by synthesized UNNEST closures. Those closures never escape.
+#[derive(Default)]
+pub(crate) struct ClockFacts {
+    pub operands: HashSet<ExpressionId>,
+    pub generated_names: u64,
+}
+
 /// A temporal filter's input has no declared waterline. Record the original
 /// operand IDs as the row visitor encounters them, including inside LETs.
-pub(crate) fn clock_operands(
+pub(crate) fn clock_facts(
     edit: &mut CircuitEditor,
     parameter: NodeId,
     body: ExpressionId,
-) -> Result<Option<HashSet<ExpressionId>>, Error> {
+) -> Result<Option<ClockFacts>, Error> {
     let node = edit.node(parameter)?;
     let ty = edit.type_id(node.edge("type")?)?;
     let Some(name) = node
@@ -271,7 +279,7 @@ pub(crate) fn clock_operands(
             shape,
         }],
         locals: Vec::new(),
-        observations: Observations::Clocks(HashSet::new()),
+        observations: Observations::Clocks(ClockFacts::default()),
     };
     if !matches!(row.visit(edit, body)?, Evaluation::Value(_)) {
         return Ok(None);
@@ -280,6 +288,15 @@ pub(crate) fn clock_operands(
         unreachable!()
     };
     Ok(Some(clocks))
+}
+
+#[cfg(test)]
+pub(crate) fn clock_operands(
+    edit: &mut CircuitEditor,
+    parameter: NodeId,
+    body: ExpressionId,
+) -> Result<Option<HashSet<ExpressionId>>, Error> {
+    Ok(clock_facts(edit, parameter, body)?.map(|facts| facts.operands))
 }
 
 pub fn project_row(

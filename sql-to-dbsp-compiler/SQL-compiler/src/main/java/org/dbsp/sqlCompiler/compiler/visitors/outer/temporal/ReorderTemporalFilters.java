@@ -562,8 +562,6 @@ public class ReorderTemporalFilters extends Passes {
             var condition = condition(this.compiler(), filter);
             if (condition == null)
                 return null;
-            if (!(condition.body.stripWrapBool() instanceof DBSPBinaryExpression binary) || binary.opcode != DBSPOpcode.AND)
-                return null;
             long start = DBSPVariablePath.nextGeneratedName();
             var bounds = new ArrayList<RustCircuitPass.TemporalBound>();
             visitWindows(this.compiler(), filter, condition, (i, window) -> {
@@ -575,7 +573,14 @@ public class ReorderTemporalFilters extends Passes {
                 }
             });
             long names = DBSPVariablePath.nextGeneratedName() - start;
-            if (names == 0 && bounds.stream().allMatch(Objects::isNull))
+            if (names != 0) {
+                // A window can be classified several times while choosing and
+                // partitioning its timestamp group, even for a single conjunct.
+                DBSPVariablePath.restoreGeneratedNames(start);
+                this.reorderWithJava(filter, condition, this.chosenConjunct.get(filter));
+                names = DBSPVariablePath.nextGeneratedName() - start;
+            }
+            if (names == 0 && (bounds.size() < 2 || bounds.stream().allMatch(Objects::isNull)))
                 return null;
             return new TemporalOrder(bounds, this.chosenConjunct.get(filter), names);
         }
