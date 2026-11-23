@@ -3,7 +3,9 @@ mod columns;
 mod equivalence;
 mod evaluate;
 mod report;
-pub use columns::{OutputShape, column_copies, fixed_columns};
+pub use columns::{
+    OutputShape, checked_column_copies, checked_fixed_columns, column_copies, fixed_columns,
+};
 pub use equivalence::equal_computations;
 pub use report::{correlated_columns, lineage_report};
 
@@ -112,9 +114,8 @@ impl Source {
                 }
                 (Source::Column(left), Source::Column(right)) if left == right => a.clone(),
                 (Source::Constant(left), Source::Constant(right)) => {
-                    match crate::index_key_equivalence::equivalent_bodies(
-                        edit, *left, *right, None,
-                    )? {
+                    // Constant.intersect and Constant.union ask the other value first.
+                    match crate::index_key_equivalence::check_bodies(edit, *right, *left, None)? {
                         Some(true) => a.clone(),
                         Some(false) => Source::Unknown,
                         None => {
@@ -183,10 +184,28 @@ fn text<'a>(node: &'a Node, key: &str) -> Result<&'a str, Error> {
 }
 
 #[derive(Debug)]
-enum AnalysisError<'a> {
+pub enum LineageDiagnostic<'a> {
     Binding(crate::BindingDiagnostic<'a>),
+    UnsupportedExpression(NodeId),
+    Comparison(crate::ComparisonDiagnostic),
+}
+
+#[derive(Debug)]
+pub enum AnalysisError<'a> {
+    Diagnostic(LineageDiagnostic<'a>),
     InvalidIr(Error),
     Reference(&'static str),
+}
+
+impl From<crate::KeyComparisonError> for AnalysisError<'_> {
+    fn from(error: crate::KeyComparisonError) -> Self {
+        match error {
+            crate::KeyComparisonError::InvalidIr(error) => Self::InvalidIr(error),
+            crate::KeyComparisonError::Diagnostic(issue) => {
+                Self::Diagnostic(LineageDiagnostic::Comparison(issue))
+            }
+        }
+    }
 }
 
 impl From<Error> for AnalysisError<'_> {
@@ -200,14 +219,20 @@ impl From<AnalysisError<'_>> for Error {
         match error {
             AnalysisError::InvalidIr(error) => error,
             AnalysisError::Reference(message) => Error::new(message),
-            AnalysisError::Binding(crate::BindingDiagnostic::Free { name, .. }) => {
-                Error::new(format!("unbound variable {name} in lineage closure"))
+            AnalysisError::Diagnostic(LineageDiagnostic::Comparison(issue)) => {
+                Error::new(issue.to_string())
             }
-            AnalysisError::Binding(crate::BindingDiagnostic::Conflict { variable, .. }) => {
-                Error::new(format!(
-                    "shared variable {variable:?} refers to two declarations"
-                ))
+            AnalysisError::Diagnostic(LineageDiagnostic::UnsupportedExpression(node)) => {
+                Error::new(format!("unsupported lineage expression {node:?}"))
             }
+            AnalysisError::Diagnostic(LineageDiagnostic::Binding(
+                crate::BindingDiagnostic::Free { name, .. },
+            )) => Error::new(format!("unbound variable {name} in lineage closure")),
+            AnalysisError::Diagnostic(LineageDiagnostic::Binding(
+                crate::BindingDiagnostic::Conflict { variable, .. },
+            )) => Error::new(format!(
+                "shared variable {variable:?} refers to two declarations"
+            )),
         }
     }
 }
@@ -312,11 +337,18 @@ fn preserves_cast(edit: &CircuitEditor, node: &Node, lossless_casts: bool) -> Re
 
 type DeclarationValues = HashMap<NodeId, Source>;
 
+enum UnsupportedExpressions {
+    Reject,
+    Track { found: bool },
+}
+
 struct Interpreter<'a> {
     edit: &'a CircuitEditor,
     // The Java visitor resolves each shared expression in its declaration scope.
     values: HashMap<NodeId, Source>,
-    unhandled: bool,
+    // Injectivity uses unknown values for assignments and returns and rejects
+    // the closure after traversal. Key and report visitors fail at the node.
+    unsupported: UnsupportedExpressions,
     lossless_casts: bool,
     track_constants: bool,
     comparisons: Option<Vec<report::Finding>>,
@@ -328,17 +360,9 @@ impl<'a> Interpreter<'a> {
             edit,
             lossless_casts,
             values: HashMap::new(),
-            unhandled: false,
+            unsupported: UnsupportedExpressions::Reject,
             track_constants: false,
             comparisons: None,
-        }
-    }
-
-    fn analyze(&mut self, closure: NodeId) -> Result<Option<Source>, Error> {
-        match self.closure_result(closure) {
-            Ok(value) if !self.unhandled => Ok(Some(value)),
-            Ok(_) | Err(AnalysisError::Reference(_) | AnalysisError::Binding(_)) => Ok(None),
-            Err(AnalysisError::InvalidIr(error)) => Err(error),
         }
     }
 
@@ -374,10 +398,14 @@ pub(super) fn injective(edit: &CircuitEditor, id: NodeId, first_only: bool) -> R
         declarations.insert(param, source);
     }
     let mut interpreter = Interpreter::new(edit, true);
+    interpreter.unsupported = UnsupportedExpressions::Track { found: false };
     let value = interpreter.eval(id, declarations)?;
     let mut copied = BTreeSet::new();
     value.collect(&mut copied);
-    Ok(!interpreter.unhandled && required.is_subset(&copied))
+    Ok(matches!(
+        interpreter.unsupported,
+        UnsupportedExpressions::Track { found: false }
+    ) && required.is_subset(&copied))
 }
 
 #[cfg(test)]

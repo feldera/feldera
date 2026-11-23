@@ -489,6 +489,28 @@ fn expression_facts_reply(
     Ok(json!({ "facts": facts, "bounds": bounds, "closure": closure }))
 }
 
+fn lineage_diagnostic(issue: feldera_sql_opt::LineageDiagnostic<'_>) -> Value {
+    use feldera_sql_opt::LineageDiagnostic;
+    match issue {
+        LineageDiagnostic::Binding(binding) => binding_diagnostic(binding),
+        LineageDiagnostic::UnsupportedExpression(node) => json!({"unsupported": inner_number(node)}),
+        LineageDiagnostic::Comparison(failure) => json!({"comparison": failure}),
+    }
+}
+
+fn key_lineage_reply<T>(
+    analysis: Result<T, feldera_sql_opt::LineageError<'_>>,
+    finish: impl FnOnce(Option<T>) -> Result<Value, Box<dyn std::error::Error>>,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    use feldera_sql_opt::LineageError;
+    match analysis {
+        Ok(value) => finish(Some(value)),
+        Err(LineageError::Reference(_)) => finish(None),
+        Err(LineageError::InvalidIr(error)) => Err(error.into()),
+        Err(LineageError::Diagnostic(issue)) => Ok(json!({"diagnostic": lineage_diagnostic(issue)})),
+    }
+}
+
 fn waterline_inspection(inspection: feldera_sql_opt::WaterlineInspection) -> Value {
     use feldera_sql_opt::WaterlineInspection;
     match inspection {
@@ -530,29 +552,33 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let request: Request = serde_json::from_slice(state)?;
         let edit = CircuitEditor::new(arena);
         if matches!(pass, "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys") {
-            let fixed = feldera_sql_opt::fixed_columns(&edit, *closure, &request.shape, request.lossless)?;
-            if pass == "KeyAnalysis/FilterKeys" {
-                let keys = request.keys.ok_or("filter key analysis requires input keys")?;
-                return Ok(serde_json::to_value(fixed.map(|fixed| feldera_sql_opt::filter_keys(keys, &fixed)))?);
-            }
-            return Ok(serde_json::to_value(fixed)?);
-        }
-        let copies = feldera_sql_opt::column_copies(&edit, *closure, &request.shape, request.lossless)?;
-        if matches!(pass, "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns") {
-            let groups = feldera_sql_opt::equal_computations(&edit, *closure, &request.shape)?;
-            let keys = if pass == "KeyAnalysis/JoinColumns" {
-                let inputs = request.join.ok_or("join column analysis requires input keys")?;
-                copies.as_ref().map(|copies| inputs.derive(copies))
-            } else {
-                match (request.projection, request.keys) {
-                    (Some(projection), Some(keys)) => copies.as_ref().map(|copies| projection.keys(&keys, copies)),
-                    (None, None) => None,
-                    _ => return Err("column projection requires a row layout and input keys".into()),
+            let fixed = feldera_sql_opt::checked_fixed_columns(&edit, *closure, &request.shape, request.lossless);
+            return key_lineage_reply(fixed, |fixed| {
+                if pass == "KeyAnalysis/FilterKeys" {
+                    let keys = request.keys.ok_or("filter key analysis requires input keys")?;
+                    return Ok(serde_json::to_value(fixed.map(|fixed| feldera_sql_opt::filter_keys(keys, &fixed)))?);
                 }
-            };
-            return Ok(json!({"copies": copies, "groups": groups, "keys": keys}));
+                Ok(serde_json::to_value(fixed)?)
+            });
         }
-        return Ok(serde_json::to_value(copies)?);
+        let copies = feldera_sql_opt::checked_column_copies(&edit, *closure, &request.shape, request.lossless);
+        return key_lineage_reply(copies, |copies| {
+            if matches!(pass, "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns") {
+                let groups = feldera_sql_opt::equal_computations(&edit, *closure, &request.shape)?;
+                let keys = if pass == "KeyAnalysis/JoinColumns" {
+                    let inputs = request.join.ok_or("join column analysis requires input keys")?;
+                    copies.as_ref().map(|copies| inputs.derive(copies))
+                } else {
+                    match (request.projection, request.keys) {
+                        (Some(projection), Some(keys)) => copies.as_ref().map(|copies| projection.keys(&keys, copies)),
+                        (None, None) => None,
+                        _ => return Err("column projection requires a row layout and input keys".into()),
+                    }
+                };
+                return Ok(json!({"copies": copies, "groups": groups, "keys": keys}));
+            }
+            Ok(serde_json::to_value(copies)?)
+        });
     }
     if let ("ResolveReferences", [root]) = (pass, roots.as_slice()) {
         let allow_free = serde_json::from_slice(state)?;
@@ -1556,7 +1582,7 @@ fn transform(
             return Ok(Value::Null);
         };
         return Ok(match report.diagnostic {
-            Some(issue) => json!({"findings": report.findings, "diagnostic": binding_diagnostic(issue)}),
+            Some(issue) => json!({"findings": report.findings, "diagnostic": lineage_diagnostic(issue)}),
             None => serde_json::to_value(report.findings)?,
         });
     }

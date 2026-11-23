@@ -1,7 +1,7 @@
 //! Evaluate children before their parents, with lexical bindings in effect at each read.
 use super::{
-    AnalysisError, DeclarationValues, Interpreter, Merge, Source, preserves_cast, report::Finding,
-    text,
+    AnalysisError, DeclarationValues, Interpreter, LineageDiagnostic, Merge, Source,
+    UnsupportedExpressions, preserves_cast, report::Finding, text,
 };
 use crate::lexical_scope::{References, expression_children, inspect_references};
 use feldera_sql_ir::{Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId};
@@ -32,7 +32,9 @@ impl<'a> Interpreter<'a> {
         // Shared reads must denote the same declaration at every use.
         let inspection = inspect_references(self.edit.circuit(), closure, false)?;
         if let Some(diagnostic) = inspection.diagnostic {
-            return Err(AnalysisError::Binding(diagnostic));
+            return Err(AnalysisError::Diagnostic(LineageDiagnostic::Binding(
+                diagnostic,
+            )));
         }
         let root = self.edit.node(closure)?.edge("body")?;
         let mut pending = vec![Visit::Enter(root)];
@@ -103,7 +105,6 @@ impl<'a> Interpreter<'a> {
                     pending.push(Visit::Enter(node.edge("positive")?));
                     pending.push(Visit::Enter(node.edge("condition")?));
                 }
-                Some(InnerKind::Expression(Expr::Return | Expr::Assignment)) => {}
                 _ => pending.extend(
                     expression_children(node)
                         .into_iter()
@@ -132,7 +133,12 @@ impl<'a> Interpreter<'a> {
         Ok(match node.inner_kind() {
             Some(InnerKind::Type(_)) => return Ok(Source::Unknown),
             Some(InnerKind::Expression(Expr::Return | Expr::Assignment)) => {
-                self.unhandled = true;
+                let UnsupportedExpressions::Track { found } = &mut self.unsupported else {
+                    return Err(AnalysisError::Diagnostic(
+                        LineageDiagnostic::UnsupportedExpression(id),
+                    ));
+                };
+                *found = true;
                 Source::Unknown
             }
             Some(InnerKind::Expression(Expr::VariablePath)) => references

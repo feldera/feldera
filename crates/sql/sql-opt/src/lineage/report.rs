@@ -1,5 +1,5 @@
 //! Trace copied values to SQL table columns for the correlated-column report.
-use super::{AnalysisError, Interpreter, Merge, Source};
+use super::{AnalysisError, Interpreter, LineageDiagnostic, Merge, Source};
 use feldera_sql_expr::FlatmapColumns;
 use feldera_sql_ir::{
     BodyOrder, CircuitEditor, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort, TypeKind,
@@ -131,15 +131,10 @@ impl<'a> Report<'a> {
         let mut interpreter = Interpreter::new(self.edit, false);
         interpreter.track_constants = true;
         interpreter.comparisons = Some(Vec::new());
-        let source = interpreter.eval(function, declarations)?;
-        if interpreter.unhandled {
-            return Err(AnalysisError::Reference(
-                "lineage cannot analyze assignment or return",
-            ));
-        }
+        let source = interpreter.eval(function, declarations);
         self.findings
             .extend(interpreter.comparisons.into_iter().flatten());
-        Ok(source)
+        source
     }
 
     fn join(
@@ -320,11 +315,10 @@ impl<'a> Report<'a> {
     }
 }
 
-/// Report findings in visitor order. An invalid closure ends the report before
-/// its body is interpreted, after any findings from preceding operators.
+/// Findings from all operators and operands visited before the first diagnostic.
 pub struct LineageReport<'a> {
     pub findings: Vec<Finding>,
-    pub diagnostic: Option<crate::BindingDiagnostic<'a>>,
+    pub diagnostic: Option<LineageDiagnostic<'a>>,
 }
 
 pub fn lineage_report(edit: &CircuitEditor) -> Result<Option<LineageReport<'_>>, Error> {
@@ -337,7 +331,7 @@ pub fn lineage_report(edit: &CircuitEditor) -> Result<Option<LineageReport<'_>>,
         match report.visit(id) {
             Ok(()) => {}
             Err(AnalysisError::Reference(_)) => return Ok(None),
-            Err(AnalysisError::Binding(diagnostic)) => {
+            Err(AnalysisError::Diagnostic(diagnostic)) => {
                 return Ok(Some(LineageReport {
                     findings: report.findings,
                     diagnostic: Some(diagnostic),

@@ -825,7 +825,7 @@ public class Lineage extends CircuitVisitor {
         @Override
         public void postorder(DBSPAssignmentExpression expression) {
             // We do not plan to analyze any function which may contain assignment expressions
-            throw new InternalCompilerError("Unexpected assignment: " + expression);
+            rejectUnsupported(expression);
         }
 
         @Override
@@ -918,7 +918,16 @@ public class Lineage extends CircuitVisitor {
          * which is what the analysis takes as the result. */
         @Override
         public void postorder(DBSPReturnExpression expression) {
-            Utilities.fail("Lineage analysis does not support return: " + expression);
+            rejectUnsupported(expression);
+        }
+
+        /** Render the failure at the original IR node for both optimizer implementations. */
+        public static void rejectUnsupported(DBSPExpression expression) {
+            if (expression instanceof DBSPAssignmentExpression)
+                throw new InternalCompilerError("Unexpected assignment: " + expression);
+            if (expression instanceof DBSPReturnExpression)
+                Utilities.fail("Lineage analysis does not support return: " + expression);
+            throw new IllegalArgumentException("Unexpected lineage diagnostic for " + expression);
         }
 
         /** Wrapping a value in Some does not change where it comes from */

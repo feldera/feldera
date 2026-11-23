@@ -1,5 +1,5 @@
 //! Interpret a closure result using the row layout of its collection.
-use super::{Column, ColumnCopy, Interpreter, Part, Source, text};
+use super::{AnalysisError, Column, ColumnCopy, Interpreter, Part, Source, text};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, NodeId, TypeKind as Ty};
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -86,20 +86,36 @@ fn copies(result: &Source, raw_pair: bool, shape: &OutputShape) -> Result<Vec<Co
     Ok(output)
 }
 
-/// The reference visitor handles unusually deep closures and reports diagnostics for assignments and returns.
+/// Detached callers can retry the analysis when it requires a live diagnostic.
+fn speculative<T>(result: Result<T, AnalysisError<'_>>) -> Result<Option<T>, Error> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(AnalysisError::InvalidIr(error)) => Err(error),
+        Err(AnalysisError::Diagnostic(_) | AnalysisError::Reference(_)) => Ok(None),
+    }
+}
+
 pub fn column_copies(
     edit: &CircuitEditor,
     id: NodeId,
     shape: &OutputShape,
     lossless_casts: bool,
 ) -> Result<Option<Vec<ColumnCopy>>, Error> {
+    speculative(checked_column_copies(edit, id, shape, lossless_casts))
+}
+
+pub fn checked_column_copies<'a>(
+    edit: &'a CircuitEditor,
+    id: NodeId,
+    shape: &OutputShape,
+    lossless_casts: bool,
+) -> Result<Vec<ColumnCopy>, AnalysisError<'a>> {
     let mut interpreter = Interpreter::new(edit, lossless_casts);
-    let Some(value) = interpreter.analyze(id)? else {
-        return Ok(None);
-    };
+    interpreter.track_constants = true;
+    let value = interpreter.closure_result(id)?;
     let body = edit.node(id)?.edge("body")?;
     let ty = edit.expression_type(edit.expression(body)?)?;
-    copies(&value, edit.type_kind(ty)? == Ty::RawTuple, shape).map(Some)
+    Ok(copies(&value, edit.type_kind(ty)? == Ty::RawTuple, shape)?)
 }
 
 /// Columns equated with a constant by a top-level conjunct no longer contribute to a key.
@@ -109,11 +125,18 @@ pub fn fixed_columns(
     shape: &OutputShape,
     lossless_casts: bool,
 ) -> Result<Option<BTreeSet<Column>>, Error> {
+    speculative(checked_fixed_columns(edit, closure, shape, lossless_casts))
+}
+
+pub fn checked_fixed_columns<'a>(
+    edit: &'a CircuitEditor,
+    closure: NodeId,
+    shape: &OutputShape,
+    lossless_casts: bool,
+) -> Result<BTreeSet<Column>, AnalysisError<'a>> {
     let mut interpreter = Interpreter::new(edit, lossless_casts);
     interpreter.track_constants = true;
-    if interpreter.analyze(closure)?.is_none() {
-        return Ok(None);
-    }
+    interpreter.closure_result(closure)?;
     let body = edit.expression(edit.node(closure)?.edge("body")?)?;
     let mut fixed = BTreeSet::new();
     for term in crate::filters::conjuncts(edit, body)? {
@@ -135,7 +158,7 @@ pub fn fixed_columns(
             }
         }
     }
-    Ok(Some(fixed))
+    Ok(fixed)
 }
 
 #[cfg(test)]

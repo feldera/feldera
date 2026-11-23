@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -15,20 +16,25 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.ZSetShape;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Assume;
@@ -187,40 +193,115 @@ public class LineageTests extends BaseSQLTests {
                     shared.deref().field(0), new DBSPI32Literal(10));
             var body = new DBSPTupleExpression(second, read.deref().field(0).closure(other));
             circuit.addOperator(new DBSPMapOperator(site, body.closure(row), first.outputPort()));
-            String expected = null;
-            for (boolean hybrid : List.of(false, true)) {
-                var findings = new ArrayList<String>();
-                var report = new Lineage(compiler, false) {
-                    @Override
-                    public void reportCompared(ColumnCompared compared) {
-                        findings.add(compared.toString());
-                    }
-                };
-                var decisions = new ArrayList<Boolean>();
-                compiler.stateObserver = new DBSPCompiler.StateObserver() {
-                    @Override
-                    public void nativeDecision(String pass, boolean answered) {
-                        if (pass.equals("Lineage"))
-                            decisions.add(answered);
-                    }
+            assertLineageFailure(compiler, circuit, InternalCompilerError.class, List.of("[ t.x > 0 ]"));
+        }
+    }
 
-                    @Override
-                    public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph) {}
-
-                    @Override
-                    public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
-                };
-                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
-                CircuitTransform pass = hybrid ? new RustCircuitPass(compiler, report, new OptimizerSnapshots(compiler)) : report;
-                var error = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
-                Assert.assertEquals(List.of("[ t.x > 0 ]"), findings);
-                Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
-                if (hybrid)
-                    Assert.assertEquals(expected, error.getMessage());
-                else
-                    expected = error.getMessage();
+    @Test
+    public void lineageVisitsOperandsBeforeRejectingAssignmentOrReturn() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLineage"));
+        var compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("CREATE TABLE t(x INT NOT NULL); CREATE VIEW v AS SELECT x FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var site = CalciteEmptyRel.INSTANCE;
+        var row = new DBSPVariablePath("row", source.getOutput(0).getOutputRowType().ref());
+        var compared = new DBSPBinaryExpression(site, DBSPTypeBool.INSTANCE, DBSPOpcode.GT,
+                row.deref().field(0), new DBSPI32Literal(3));
+        var returned = new DBSPReturnExpression(site, compared);
+        var assignment = new DBSPAssignmentExpression(row.deref().field(0), compared);
+        for (var failed : List.of(returned, assignment, new DBSPReturnExpression(site, assignment),
+                new DBSPAssignmentExpression(returned, new DBSPI32Literal(10)))) {
+            // A following comparison must never reach the report.
+            var later = new DBSPBinaryExpression(site, DBSPTypeBool.INSTANCE, DBSPOpcode.LT,
+                    row.deepCopy().deref().field(0), new DBSPI32Literal(5));
+            var closure = new DBSPTupleExpression(failed, later).closure(row);
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            circuit.addOperator(source);
+            circuit.addOperator(new DBSPMapOperator(site, closure, source.getOutput(0)));
+            var message = assertLineageFailure(compiler, circuit, InternalCompilerError.class, List.of("[ t.x > 3 ]"));
+            for (boolean lossless : List.of(false, true)) {
+                var shape = new ZSetShape(2);
+                var copy = Assert.assertThrows(InternalCompilerError.class,
+                        () -> RustCircuitPass.columnCopies(compiler, closure, shape, lossless));
+                var fixed = Assert.assertThrows(InternalCompilerError.class,
+                        () -> RustCircuitPass.fixedColumns(compiler, closure, shape, lossless));
+                Assert.assertEquals(message, lineageMessage(copy));
+                Assert.assertEquals(message, lineageMessage(fixed));
             }
         }
+    }
+
+    @Test
+    public void lineageIntersectsZonedConstantsInJavaOperandOrder() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLineage"));
+        var compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("CREATE TABLE t(x INT NOT NULL); CREATE VIEW v AS SELECT x FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var site = CalciteEmptyRel.INSTANCE;
+        var row = new DBSPVariablePath("row", source.getOutput(0).getOutputRowType().ref());
+        var type = DBSPTypeTimestampTz.INSTANCE;
+        var east = new DBSPTimestampTzLiteral(site, type, new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
+        var west = new DBSPTimestampTzLiteral(site, type, new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT-20:00"));
+        for (var values : List.of(List.of(east, west), List.of(west, east))) {
+            var compared = new DBSPBinaryExpression(site, DBSPTypeBool.INSTANCE, DBSPOpcode.GT,
+                    row.deref().field(0), new DBSPI32Literal(7));
+            var merged = new DBSPIfExpression(site, compared, values.get(0), values.get(1));
+            var closure = new DBSPTupleExpression(merged).closure(row);
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            circuit.addOperator(source);
+            circuit.addOperator(new DBSPMapOperator(site, closure, source.getOutput(0)));
+            var message = assertLineageFailure(compiler, circuit, java.time.DateTimeException.class, List.of("[ t.x > 7 ]"));
+            var error = Assert.assertThrows(java.time.DateTimeException.class,
+                    () -> RustCircuitPass.columnCopies(compiler, closure, new ZSetShape(1), false));
+            Assert.assertEquals(message, error.getMessage());
+        }
+    }
+
+    private static String assertLineageFailure(DBSPCompiler compiler, DBSPCircuit circuit,
+                                               Class<? extends RuntimeException> errorClass,
+                                               List<String> expectedFindings) {
+        String expected = null;
+        for (boolean hybrid : List.of(false, true)) {
+            var findings = new ArrayList<String>();
+            var report = new Lineage(compiler, false) {
+                @Override
+                public void reportCompared(ColumnCompared compared) {
+                    findings.add(compared.toString());
+                }
+            };
+            var decisions = new ArrayList<Boolean>();
+            compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                @Override
+                public void nativeDecision(String pass, boolean answered) {
+                    if (pass.equals("Lineage"))
+                        decisions.add(answered);
+                }
+
+                @Override
+                public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph) {}
+
+                @Override
+                public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
+            };
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            CircuitTransform pass = hybrid ? new RustCircuitPass(compiler, report, new OptimizerSnapshots(compiler)) : report;
+            var error = Assert.assertThrows(errorClass, () -> pass.apply(circuit));
+            Assert.assertEquals(expectedFindings, findings);
+            Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
+            String message = lineageMessage(error);
+            if (hybrid)
+                Assert.assertEquals(expected, message);
+            else
+                expected = message;
+        }
+        return expected;
+    }
+
+    private static String lineageMessage(RuntimeException error) {
+        // Utilities.fail appends the stack of the active optimizer to a return diagnostic.
+        String message = error.getMessage();
+        return message.startsWith("Lineage analysis does not support return:")
+                ? message.lines().findFirst().orElseThrow() : message;
     }
 
     private static String report(File input, boolean rust) throws SQLException {

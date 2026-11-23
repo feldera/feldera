@@ -3340,7 +3340,13 @@ public final class RustCircuitPass implements CircuitTransform {
                 writer.includeShuffleIdentities();
             var graph = writer.encode(closure);
             var reply = transformWithContext(pass, graph, 0, "", MAPPER.writeValueAsBytes(request));
-            return MAPPER.readValue(reply, type);
+            var value = MAPPER.readTree(reply);
+            if (value.has("diagnostic")) {
+                if (compiler.stateObserver != null)
+                    compiler.stateObserver.nativeDecision(pass, true);
+                reportLineageFailure(writer, value.required("diagnostic"));
+            }
+            return MAPPER.readerFor(type).readValue(value);
         } catch (IOException error) {
             throw new UncheckedIOException("Could not exchange column provenance with Rust", error);
         }
@@ -3901,6 +3907,18 @@ public final class RustCircuitPass implements CircuitTransform {
         analysis.restore(facts);
     }
 
+    private static void reportLineageFailure(ToJsonInnerVisitor writer, JsonNode diagnostic) {
+        if (diagnostic.has("unsupported")) {
+            var nodes = Objects.requireNonNull(writer.liveNodes);
+            Lineage.InnerLineage.rejectUnsupported(
+                    Utilities.getExists(nodes, diagnostic.required("unsupported").longValue()).to(DBSPExpression.class));
+        }
+        if (diagnostic.has("comparison"))
+            reportComparisonFailure(diagnostic.required("comparison"));
+        checkBindingErrors(writer, diagnostic);
+        throw new IllegalStateException("Unknown lineage diagnostic " + diagnostic);
+    }
+
     private record LineageFinding(String kind, List<Lineage.TableColumn> columns, long comparison, long literal) {}
 
     private DBSPCircuit reportLineage(DBSPCircuit circuit, Lineage report, long initial) throws IOException {
@@ -3927,7 +3945,7 @@ public final class RustCircuitPass implements CircuitTransform {
             }
         }
         if (result.has("diagnostic"))
-            checkBindingErrors(writer.innerVisitor, result.required("diagnostic"));
+            reportLineageFailure(writer.innerVisitor, result.required("diagnostic"));
         return circuit;
     }
 

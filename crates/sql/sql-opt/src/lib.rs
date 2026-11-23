@@ -118,7 +118,7 @@ mod input_fields;
 pub use input_fields::{input_field_uses, input_projections, map_field_dependencies, InputFieldUse};
 mod integrate;
 mod lineage;
-pub use lineage::{correlated_columns, lineage_report, column_copies, equal_computations, fixed_columns, Column, OutputShape};
+pub use lineage::{AnalysisError as LineageError, LineageDiagnostic, checked_column_copies, checked_fixed_columns, correlated_columns, lineage_report, column_copies, equal_computations, fixed_columns, Column, OutputShape};
 mod collection_keys;
 pub use collection_keys::{JoinInputs, JoinKeys, KeyColumns, KeyProjection, circuit_keys, filter_keys};
 mod join_filter_map;
