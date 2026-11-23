@@ -327,6 +327,11 @@ impl TestProducer {
         self.producer.send(record).unwrap();
         self.producer.flush(Timeout::Never).unwrap();
     }
+
+    /// Waits for delivery of the messages sent so far.
+    pub fn flush(&self) {
+        self.producer.flush(Timeout::Never).unwrap();
+    }
 }
 
 /// A callback that a [`BufferConsumer`] calls for each message it receives.

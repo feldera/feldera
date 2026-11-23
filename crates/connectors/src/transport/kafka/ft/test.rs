@@ -2219,7 +2219,6 @@ fn check_fault_tolerance(
     let mut n_partitions = 1;
     let mut kafka_resources = KafkaResources::create_topics(&[(topic, n_partitions as i32)]);
     sleep(Duration::from_secs(1));
-    let producer = TestProducer::new();
     let tempdir = TempDir::new().unwrap();
     let storage_dir = tempdir.path().join("storage");
     create_dir(&storage_dir).unwrap();
@@ -2294,7 +2293,14 @@ fn check_fault_tolerance(
             let messages = csv(&singletons(&[for_ids(
                 total_records..total_records + step.n_records,
             )]));
-            producer.send_to_topic(&messages, topic);
+            // Spread the records over the partitions by number. A producer knows only the
+            // partitions that the topic had when it started, so start one for each round.
+            let producer = TestProducer::new();
+            for (index, message) in messages.iter().enumerate() {
+                let partition = (index % n_partitions) as i32;
+                producer.send_to_topic_partition(std::slice::from_ref(message), topic, partition);
+            }
+            producer.flush();
             total_records += step.n_records;
         }
 
@@ -2368,7 +2374,8 @@ fn check_fault_tolerance(
         }
         if step.delete_topics_afterward {
             drop(kafka_resources);
-            kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+            n_partitions = 1;
+            kafka_resources = KafkaResources::create_topics(&[(topic, n_partitions as i32)]);
         }
         if step.add_partition_afterward {
             n_partitions += 1;
