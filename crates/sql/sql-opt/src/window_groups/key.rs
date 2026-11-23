@@ -25,6 +25,7 @@ enum Term {
     },
     Array,
     Map,
+    NullCollection,
     Tuple,
     AbsentTuple,
     VariantNullLiteral,
@@ -300,6 +301,9 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
                 .collect();
             (Term::Map, entries)
         }
+        // Both NULL constructors print their complete collection type, including
+        // the element type of an array and both type arguments of a map.
+        Expr::Array | Expr::Map => (Term::NullCollection, vec![edit.expression_type(id)?.into()]),
         Expr::Deref => (Term::Deref, vec![child("expression")?]),
         Expr::Clone => (Term::Clone, vec![child("expression")?]),
         Expr::IsNull => (Term::IsNull, vec![child("expression")?]),

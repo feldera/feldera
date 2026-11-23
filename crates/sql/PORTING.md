@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust groups shared windows whose timestamp comes from a nullable array or map
+lookup. In both engine modes, two equivalent lookups shared an index and a
+different subscript used its own index. All four detached compilations matched
+Java through 2,410 ordered S4 observations and artifact emission. The previous
+library delegated ten window-analysis requests to Java on these programs.
+[Nullable collection replay](evidence/p3-nullable-collection-keys.json)
+
 The hybrid compiler projected a field through 144 nested rows and retained
 the same field identity and closure as Java. The previous native library
 failed to decode the input projection. Across 17,098 frozen compilations,

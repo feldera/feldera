@@ -99,6 +99,15 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void windowKeysPreserveNullableCollections() {
+        String fields = "id INT NOT NULL, ts TIMESTAMP, times TIMESTAMP ARRAY, by_id MAP<INT, TIMESTAMP>";
+        String array = "(CASE WHEN id > 0 THEN times ELSE CAST(NULL AS TIMESTAMP ARRAY) END)";
+        String map = "(CASE WHEN id > 0 THEN by_id ELSE CAST(NULL AS MAP<INT, TIMESTAMP>) END)";
+        checkSharedWindowKeys(fields, array + "[id]", array + "[id + 1]");
+        checkSharedWindowKeys(fields, map + "[id]", map + "[id + 1]");
+    }
+
+    @Test
     public void literalComparisonsPreserveBinaryAndUuidWindowKeys() {
         String key = "TIMESTAMPADD(SECOND, CASE WHEN tag = %s THEN id ELSE 1 END, ts)";
         String columns = "id INT NOT NULL, ts TIMESTAMP, tag ";

@@ -1,0 +1,40 @@
+{
+  "scope": "Shared temporal windows over a typed NULL ARRAY or MAP in a CASE expression. Each program contains two equal lookups and one different lookup.",
+  "native_library_sha256": "d8cf487a1575c306b81098340968a84d92338af0cfa2fe85f248488be46e6a36",
+  "rust_tests": 168,
+  "junit": {
+    "passed": 21,
+    "previous_failure": "WindowGroups/Scan",
+    "previous_log_sha256": "b8b33fc631eba54e922fbef7bbb63c3da82b313e7a6bb596dd3df8262ced9f28",
+    "log_sha256": "688268a34aa0b7fa3a9e749f86774c2972c424702213427bbcd42dac401b9028"
+  },
+  "engines": {
+    "classic": {
+      "programs": 2,
+      "input_sha256": "cf614be1adbe8aa4b97a770e0a83e4af52a794061bc5b432cf13861eeb73ed59",
+      "ordered_s4_observations": 1199,
+      "mismatches": 0,
+      "native_requests": 236,
+      "fallbacks": 0,
+      "prior_fallbacks": {
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Scan": 2
+      },
+      "receipt_sha256": "6ef985ad4d972972ef943091ea67d5ea8b31f7a15e0ede4a90bfacbb28799fad"
+    },
+    "gen2": {
+      "programs": 2,
+      "input_sha256": "44c7b7896b865297b723fa3767ab388ff53067b9c32892844643a68b6bcd37e8",
+      "ordered_s4_observations": 1211,
+      "mismatches": 0,
+      "native_requests": 250,
+      "fallbacks": 0,
+      "prior_fallbacks": {
+        "WindowGroups/Indexes": 2,
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Scan": 2
+      },
+      "receipt_sha256": "9eea19e843269a9718361bc92d092c2d9430edb44c037fb1a03b23c01a9bd818"
+    }
+  }
+}
