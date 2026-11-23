@@ -1,0 +1,58 @@
+{
+  "commit": "9aec96f7b162f3d279e2842d97c6fabab005ed06",
+  "scope": "Detached S2 replay of selected limiter cases and mixed-operator regression programs. Each placement must invoke Rust.",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "5ab3318d285ae1bef04b72dc32a1d7459eb41678f2dee59d4cda9055658528e5",
+    "bin/sql-difftest": "0968cbe148de7d78e57e5f8990f6855861d446fd9bb380b6168cb19911c4b4ee",
+    "maven/sql-compiler.jar": "6f922576571cc0fbb56472eaa5a2b4ff7a0ce9d0f5c06ba3d2e51dc0c75a75e0",
+    "maven/tests.jar": "5ea4c8be659abec238953a74cfab9d920e5e47dd89765caf36bad8936a6e8b6d"
+  },
+  "engines": {
+    "classic": {
+      "selected_cases": {
+        "cases": 291,
+        "ordered_s4_observations": 138299,
+        "rust_limiter_invocations": 291,
+        "mismatches": 0,
+        "receipt_sha256": [
+          "4621a2f7d9a889af7602c01ffeb36f8a917a6eb7669709d0802753a1b8dd8a9c",
+          "1b077946fe1a8aedc5e84e2223c293280d6bf7e378942dd224e9f9a225fa500b"
+        ]
+      },
+      "directed_cases": {
+        "cases": 4,
+        "ordered_s4_observations": 1740,
+        "rust_limiter_invocations": 4,
+        "mismatches": 0,
+        "receipt_sha256": [
+          "6b5c07db808804e988d3019f4bb01d8ca64495d823694d3e043ba9f3ea799e33"
+        ]
+      }
+    },
+    "gen2": {
+      "selected_cases": {
+        "cases": 259,
+        "ordered_s4_observations": 124845,
+        "rust_limiter_invocations": 259,
+        "mismatches": 0,
+        "receipt_sha256": [
+          "90088bfa74d3515729259d6d193941addc4372c698f4c0dfbaf916b55629aa6f",
+          "bee99e97ad53ae10bcfd788d932bab9f792825100687f43a602842b55ed9339d"
+        ]
+      },
+      "directed_cases": {
+        "cases": 4,
+        "ordered_s4_observations": 1748,
+        "rust_limiter_invocations": 4,
+        "mismatches": 0,
+        "receipt_sha256": [
+          "22ae6e0144ebfae04ec44f73c4506e05f197081dd75c12486c0bd70e511c21ac"
+        ]
+      }
+    }
+  },
+  "tests": {
+    "rust_passed": 191,
+    "jni_enabled_junit_passed": 69
+  }
+}

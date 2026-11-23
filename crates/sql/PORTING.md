@@ -462,6 +462,12 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `9aec96f7b`, Rust ran limiter insertion on every selected circuit,
+including circuits that combine newly handled operators with stateful ones.
+All 291 classic and 259 Gen-2 selections and four directed cases per engine
+matched Java through detached S2 replay and artifact emission.
+[Limiter replay receipts](evidence/p3-mixed-limiter-replay.json)
+
 Rust grouped windows on array and map lookups in six classic and Gen-2
 compilations. The three window analyses answered every request, eliminating
 ten Java fallbacks. Detached replay matched all 3,616 ordered S4 observations
