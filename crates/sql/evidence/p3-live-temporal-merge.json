@@ -1,0 +1,61 @@
+{
+  "scope": "Merge the temporal filter graph in Rust, asking the live visitor only about an undecided predicate pair and preserving names and diagnostics across that call.",
+  "source_base": "8a34c89075500ed92c50ef7208ea217cdd397d15",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/temporal.rs": "12495bd378695bcbdb949806d27f301b66bf1b4dd9ad8af5003626f7656dea82",
+    "crates/sql/sql-opt/src/lib.rs": "2dc46ec259d648d6a14ee796e1ff0769da2fd60d53550b02e0642c99295eb5d7",
+    "crates/sql/sql-opt/src/temporal_filters.rs": "101cf24e1b49a5acd00b210d35fc18ca9e7fa7019be7581c7287cf99c7adf27c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "f63bae0aa923103cf78bd721b4af8533b4ef1e30363d277bbd27619902c574df",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/MergeFilters.java": "816e310a88da1a163d0522f1325344ba348b3e8025b1edcac336979d1f5a3a99",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "a59d9f4d9d4ed8645f680351ce9cf84e940efec6f9f20e7887e8c3cd78e7f377"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "cf2aa3f1215efbe898ce24552ffb8aa360b8d71f6e71f4754d3d0094a2daa05c",
+    "bin/sql-difftest": "db18005f60300ed0cdfb2cf637eb45c674f1d30c45658ae3794a9bd9e9952f58",
+    "maven/tests.jar": "eaf7adbb9754f9fda74c851a6661be32ca3b5a8577e6f5f5b64a9881cb7e3e95",
+    "maven/sql-compiler.jar": "ea1f219fbb737c0af9369dc92b569a2dd7d3760c3d8768afa3b63510c40b3572"
+  },
+  "negative_control": {
+    "library_sha256": "096404fe5e91f0543a328ba0cd310038a3bf337d19096eb049703aedc74c6bf1",
+    "failed_tests": [
+      "temporalMergeReportsAnUninitializedClockWithoutReplayingTheGraph",
+      "temporalMergeResumesAfterAnalyzingAPairOfPredicates"
+    ],
+    "java_compiler_sha256": "dc0d49936aaaa2cda1ca05572b239a352e7f5de657512afe704c5120add49ffc"
+  },
+  "rust_tests": 225,
+  "junit_tests": 171,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "a93c191d5b32ca368449092141f97d580b458312375964e5b8245ecfd286062e"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "91f8d3a6f205dd6ee8a78e2396b7b44977aa08c4f2e48a96a3940eaa7d972609"
+    }
+  },
+  "temporal_classification_corpus": {
+    "classic": {
+      "cases": 71,
+      "ordered_s4_observations": 38281,
+      "mismatches": 0,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "receipt_sha256": "0dbfa1a469719e660cde71f01e8d93528228b09abc61e90ff4aa0100915c64d7"
+    },
+    "gen2": {
+      "cases": 62,
+      "ordered_s4_observations": 34141,
+      "mismatches": 0,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "receipt_sha256": "b9068033b14c99a961603d8102bd4d6d5270a5db92db82ec0ba7f138bc48526b"
+    }
+  }
+}

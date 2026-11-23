@@ -6,6 +6,103 @@ use feldera_sql_opt::limiters::{Stream, StreamKind};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
+/// A live temporal analysis can report diagnostics and allocate variable names.
+/// Publish the Rust prefix before invoking it, even if it throws.
+fn analyze_live_pair(
+    env: &mut jni::Env,
+    analyzer: &jni::objects::JObject,
+    input: &Circuit,
+    pair: feldera_sql_opt::TemporalFilterPair<'_>,
+) -> Result<Option<bool>, Error> {
+    use jni::{JValue, jni_sig, jni_str, objects::JByteArray};
+    #[derive(serde::Deserialize)]
+    struct Decision {
+        merge: bool,
+        next_generated_name: u64,
+    }
+
+    let roots = pair
+        .graph
+        .live_inner_roots(input, &pair.closures.map(NodeId::from))?;
+    let request = json!({
+        "operators": pair.operators.map(super::operator_number),
+        "closures": roots,
+        "next_generated_name": *pair.next,
+        "warnings": super::pass_warnings(std::mem::take(pair.warnings)),
+    });
+    let bytes = serde_json::to_vec(&request).map_err(|e| Error::new(e.to_string()))?;
+    if bytes.len() > super::MAX_BYTES {
+        return Err(Error::new("temporal predicate pair exceeds 64 MiB"));
+    }
+    let reply = env
+        .with_local_frame(4, |env| -> jni::errors::Result<Vec<u8>> {
+            let request = env.byte_array_from_slice(&bytes)?;
+            let result = env
+                .call_method(
+                    analyzer,
+                    jni_str!("analyze"),
+                    jni_sig!("([B)[B"),
+                    &[JValue::Object(&request)],
+                )?
+                .l()?;
+            let result = JByteArray::cast_local(env, result)?;
+            env.convert_byte_array(&result)
+        })
+        .map_err(|e| Error::new(e.to_string()))?;
+    let decision: Decision =
+        serde_json::from_slice(&reply).map_err(|e| Error::new(e.to_string()))?;
+    if decision.next_generated_name < *pair.next {
+        return Err(Error::new(
+            "temporal analysis moved the name counter backwards",
+        ));
+    }
+    *pair.next = decision.next_generated_name;
+    Ok(Some(decision.merge))
+}
+
+// SAFETY: the symbol matches RustCircuitPass.mergeFilters. EnvUnowned contains
+// panics at the JVM boundary and preserves exceptions raised by the analyzer.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPass_mergeFilters<
+    'local,
+>(
+    mut env: jni::EnvUnowned<'local>,
+    _class: jni::objects::JClass<'local>,
+    snapshot: jni::objects::JByteArray<'local>,
+    next: i64,
+    analyzer: jni::objects::JObject<'local>,
+) -> jni::objects::JByteArray<'local> {
+    use super::BridgeError;
+    use jni::errors::ThrowRuntimeExAndDefault;
+    let error = |message: String| BridgeError::Optimizer(format!("Live/MergeFilters: {message}"));
+    env.with_env(|env| -> Result<_, BridgeError> {
+        if snapshot.len(env)? > super::MAX_BYTES {
+            return Err(error("input exceeds 64 MiB".into()));
+        }
+        let input = super::decode_live_circuit(&env.convert_byte_array(&snapshot)?)
+            .map_err(|e| error(e.to_string()))?;
+        let mut next = u64::try_from(next).map_err(|e| error(e.to_string()))?;
+        let mut warnings = Vec::new();
+        let output = feldera_sql_opt::merge_temporal_filters_with(
+            input.clone(),
+            &mut next,
+            &mut warnings,
+            |pair| analyze_live_pair(env, &analyzer, &input, pair),
+        )
+        .map_err(|e| error(e.to_string()))?
+        .ok_or_else(|| error("missing pair decision".into()))?;
+        let mut result = json!({"diagnostics": super::pass_warnings(warnings),
+            "next_generated_name": next, "unused_sources": []});
+        result["circuit"] = output.changed_live_graph(&input).unwrap_or(Value::Null);
+        let bytes = serde_json::to_vec(&result).map_err(|e| error(e.to_string()))?;
+        if bytes.len() > super::MAX_BYTES {
+            return Err(error("output exceeds 64 MiB".into()));
+        }
+        Ok(env.byte_array_from_slice(&bytes)?)
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
 /// Java warns about negative settings but retains the signed value. Its
 /// nonempty sharing groups then all meet the threshold. Zero disables sharing.
 pub(super) fn sharing_threshold(state: &[u8]) -> Result<usize, serde_json::Error> {
@@ -173,9 +270,7 @@ pub(super) fn filter(
     let mut reply = fragment.reply(&edit, next)?;
     if let LoweredClockFilter::Joined(predicate) = result {
         // This expression is read only for source positions. It carries its own node definitions.
-        reply["warning_predicate"] = edit
-            .circuit()
-            .live_expression(&fragment.base, predicate)?;
+        reply["warning_predicate"] = edit.circuit().live_expression(&fragment.base, predicate)?;
     }
     Ok(reply)
 }

@@ -42,6 +42,25 @@ pub fn merge_temporal_filters(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<Circuit>, Error> {
+    merge_temporal_filters_with(circuit, next, warnings, |_| Ok(None))
+}
+
+/// The upstream closure can already contain earlier merges. The live analyzer
+/// consumes queued warnings and resumes the same generated-name sequence.
+pub struct TemporalFilterPair<'a> {
+    pub graph: &'a Circuit,
+    pub operators: [NodeId; 2],
+    pub closures: [ExpressionId; 2],
+    pub next: &'a mut u64,
+    pub warnings: &'a mut Vec<SimplifyWarning>,
+}
+
+pub fn merge_temporal_filters_with(
+    circuit: Circuit,
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+    mut analyze: impl FnMut(TemporalFilterPair<'_>) -> Result<Option<bool>, Error>,
+) -> Result<Option<Circuit>, Error> {
     let order = circuit.operator_order(feldera_sql_ir::BodyOrder::Postorder)?;
     let mut edit = CircuitEditor::new(circuit);
     let mut projections = crate::rebuild::ProjectionNames::default();
@@ -70,7 +89,17 @@ pub fn merge_temporal_filters(
             .inputs()
             .next()
             .ok_or_else(|| Error::new("upstream filter requires an input"))?;
-        match can_merge_temporal_filters(&mut edit, upstream, downstream)? {
+        let decision = match can_merge_temporal_filters(&mut edit, upstream, downstream)? {
+            Some(merge) => Some(merge),
+            None => analyze(TemporalFilterPair {
+                graph: edit.circuit(),
+                operators: [input.operator, id],
+                closures: [upstream, downstream],
+                next: &mut names,
+                warnings: &mut diagnostics,
+            })?,
+        };
+        match decision {
             None => return Ok(None),
             Some(false) => continue,
             Some(true) => {}

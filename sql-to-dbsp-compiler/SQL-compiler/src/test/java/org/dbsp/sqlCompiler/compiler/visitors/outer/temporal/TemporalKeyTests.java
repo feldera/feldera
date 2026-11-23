@@ -121,6 +121,82 @@ public class TemporalKeyTests {
         assertSameConjuncts(body, parts.get(0).expression());
     }
 
+    private static MergeFilters pairAnalysisOnly(DBSPCompiler compiler) {
+        return new MergeFilters(compiler) {
+            @Override
+            public String getName() { return "MergeFilters"; }
+
+            @Override
+            public void postorder(DBSPFilterOperator filter) { Assert.fail("restarted the Java filter pass"); }
+        };
+    }
+
+    private static DBSPCircuit temporalFilterChain(DBSPExpression lastClock) {
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var rowType = b.tup(b.i32(), b.i32(), new DBSPTypeArray(b.i32(), false));
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+        circuit.addOperator(input);
+        var rows = input.outputPort();
+        for (var clock : List.of(b.call(DBSPTypeTimestamp.INSTANCE, "now"),
+                b.call(DBSPTypeTimestamp.INSTANCE, "now"), lastClock)) {
+            var row = b.refVar(rowType);
+            var key = b.call(DBSPTypeTimestamp.INSTANCE, "timestamp_key", b.field(row, 0));
+            var filter = new DBSPFilterOperator(site, b.binary(DBSPOpcode.GTE, key, clock).closure(row), rows);
+            circuit.addOperator(filter);
+            rows = filter.outputPort();
+        }
+        return circuit;
+    }
+
+    @Test
+    public void temporalMergeReportsAnUninitializedClockWithoutReplayingTheGraph() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var missing = new DBSPLetStatement("missing", time, true);
+        var lastClock = new DBSPBlockExpression(List.of(missing, new DBSPLetStatement("clock", b.call(time, "now"))),
+                missing.getVarReference());
+        var circuit = temporalFilterChain(lastClock);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(RuntimeException.class, () -> new MergeFilters(compiler).apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        start = DBSPVariablePath.nextGeneratedName();
+        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertTrue(pass.usedGeneralTemporalAnalysis());
+    }
+
+    @Test
+    public void temporalMergeResumesAfterAnalyzingAPairOfPredicates() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var nested = flatmap(new IdShuffle(2), 0, b.lit(1));
+        var lastClock = new DBSPBlockExpression(List.of(new DBSPLetStatement("unused", nested)),
+                b.call(DBSPTypeTimestamp.INSTANCE, "now"));
+        var circuit = temporalFilterChain(lastClock);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = new MergeFilters(compiler).apply(circuit);
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        start = DBSPVariablePath.nextGeneratedName();
+        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var hybrid = pass.apply(circuit);
+        var expected = direct.allOperators.get(direct.allOperators.size() - 1).to(DBSPFilterOperator.class);
+        var actual = hybrid.allOperators.get(hybrid.allOperators.size() - 1).to(DBSPFilterOperator.class);
+        Assert.assertEquals(direct.allOperators.indexOf(expected.input().node()),
+                hybrid.allOperators.indexOf(actual.input().node()));
+        Assert.assertTrue(expected.getClosureFunction().equivalent(actual.getClosureFunction()));
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertTrue(pass.usedGeneralTemporalAnalysis());
+    }
+
     @Test
     public void clockSitesUseTheLastOccurrenceInEachExpression() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));

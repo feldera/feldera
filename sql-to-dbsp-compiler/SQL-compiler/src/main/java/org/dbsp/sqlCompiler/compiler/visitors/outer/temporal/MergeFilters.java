@@ -23,13 +23,15 @@ public class MergeFilters extends CircuitCloneVisitor {
         this.cn = new ContainsNow(compiler, true);
     }
 
-    private boolean canBeMerged(DBSPFilterOperator source, DBSPFilterOperator filter) {
+    /** Analyze the supplied predicates. An earlier merge can have changed the source closure. */
+    public boolean canBeMerged(DBSPFilterOperator source, DBSPClosureExpression sourceFunction,
+                               DBSPFilterOperator filter, DBSPClosureExpression function) {
         // We want to only merge filters that can be combined into a single window.
         // They should look like "col > expression0" and "col < expression1", respectively, for the same column.
         var s = FindComparisons.decomposeIntoTemporalFilters(this.compiler, source,
-                source.getClosureFunction().ensureTree(this.compiler).to(DBSPClosureExpression.class));
+                sourceFunction.ensureTree(this.compiler).to(DBSPClosureExpression.class));
         var f = FindComparisons.decomposeIntoTemporalFilters(this.compiler, filter,
-                filter.getClosureFunction().ensureTree(this.compiler).to(DBSPClosureExpression.class));
+                function.ensureTree(this.compiler).to(DBSPClosureExpression.class));
         if (s.isEmpty() || f.size() != 1)
             return false;
         BooleanExpression fe = f.get(0);
@@ -64,7 +66,7 @@ public class MergeFilters extends CircuitCloneVisitor {
             return;
         }
 
-        if (!this.canBeMerged(source, filter)) {
+        if (!this.canBeMerged(source, sourceFunction, filter, function)) {
             super.postorder(filter);
             return;
         }

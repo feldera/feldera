@@ -3509,6 +3509,38 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] fuseMaps(byte[] snapshot, long next, byte[] clusters, KeyEquality equality);
 
+    @FunctionalInterface
+    private interface TemporalAnalysis {
+        byte[] analyze(byte[] predicates) throws IOException;
+    }
+
+    private static native byte[] mergeFilters(byte[] snapshot, long next, TemporalAnalysis analysis);
+
+    private JsonNode mergeTemporalFilters(DBSPCircuit circuit, ToJsonOuterVisitor writer,
+                                          byte[] snapshot, long next) throws IOException {
+        var result = mergeFilters(snapshot, next, bytes -> {
+            if (!this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
+                this.compiler.stateObserver.nativeDecision("MergeFilters", false);
+            this.usedGeneralTemporalAnalysis = true;
+            var request = MAPPER.readTree(bytes);
+            finishLowering(this.compiler, request);
+            var operators = request.required("operators");
+            var closures = request.required("closures");
+            var decoder = expressionDecoder(writer.innerVisitor);
+            var source = Objects.requireNonNull(findOperator(circuit.allOperators, operators.required(0).longValue()));
+            var target = Objects.requireNonNull(findOperator(circuit.allOperators, operators.required(1).longValue()));
+            boolean merge = Objects.requireNonNull(this.mergeFilters).canBeMerged(source.to(DBSPFilterOperator.class),
+                    decodeLiveRoot(decoder, closures.required(0), DBSPClosureExpression.class),
+                    target.to(DBSPFilterOperator.class),
+                    decodeLiveRoot(decoder, closures.required(1), DBSPClosureExpression.class));
+            var reply = MAPPER.createObjectNode();
+            reply.put("merge", merge);
+            reply.put("next_generated_name", DBSPVariablePath.nextGeneratedName());
+            return MAPPER.writeValueAsBytes(reply);
+        });
+        return MAPPER.readTree(result);
+    }
+
     private JsonNode fuseMapClusters(ToJsonOuterVisitor writer, byte[] snapshot, long next) throws IOException {
         byte[] clusters = MapFusionState.encode(writer, Objects.requireNonNull(this.mapFusion));
         byte[] result = fuseMaps(snapshot, next, clusters, bytes -> {
@@ -4229,16 +4261,16 @@ public final class RustCircuitPass implements CircuitTransform {
                 byte[] snapshot = writer.getJsonString().getBytes(StandardCharsets.UTF_8);
                 if (this.mapFusion != null) {
                     result = this.fuseMapClusters(writer, snapshot, initial);
+                } else if (this.mergeFilters != null) {
+                    result = this.mergeTemporalFilters(circuit, writer, snapshot, initial);
                 } else {
                     if (state == EMPTY_CONTEXT)
                         state = this.passState(circuit, writer);
                     result = this.invoke("Live/" + this.nativeName, snapshot, initial, state);
                 }
             }
-            if (this.mergeFilters != null && !answered(this.compiler, "MergeFilters", result)) {
-                this.usedGeneralTemporalAnalysis = true;
-                return this.mergeFilters.apply(circuit);
-            }
+            if (this.mergeFilters != null && !this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
+                this.compiler.stateObserver.nativeDecision("MergeFilters", true);
             if (this.replaceSharedIndexes != null && !answered(this.compiler, "ReplaceSharedIndexes", result))
                 return this.replaceSharedIndexes.apply(circuit);
             JsonNode counter = result.required("next_generated_name");

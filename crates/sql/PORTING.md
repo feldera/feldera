@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust merges adjacent temporal filters in producer order. When it needs the
+general analyzer for one predicate pair, it passes the current closures,
+queued warnings and generated-name counter to Java. Two directed cases
+verified continued merging and the error from an uninitialized clock.
+The preceding compiler restarted the Java graph traversal in both cases.
+The temporal-classification corpus matched on 71 classic and 62 Gen-2
+compilations through 72,422 ordered S4 observations and emission.
+[Temporal merge tests and replay](evidence/p3-live-temporal-merge.json)
+
 Temporal classification and grouping preserve the order and identity of all
 192 leaves in a deep conjunction. Both operations exceeded the inline
 snapshot limit on the preceding build. The corrected build passed 169 JUnit
