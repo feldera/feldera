@@ -462,6 +462,23 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust grouped temporal windows whose timestamps depend on interval casts or
+point distances. It distinguished days from hours, months from years and
+points with reversed coordinates. Eight classic and Gen-2 compilations
+matched Java through 5,202 ordered S4 observations and artifact emission.
+Rust answered all 1,098 instrumented requests. The previous library
+delegated 14 of these requests to Java.
+[Interval and spatial window comparisons](evidence/p3-interval-spatial-window-keys.json)
+
+The nightly optimizer replay now rejects a Java fallback on any instrumented
+request. On the scoped-lambda build, 18 classic and 19 Gen-2 frozen programs
+covered all 28 previously measured operator and transfer-rule combinations on
+each engine. All 10,564 requests had Rust answers, and all 18,707 ordered S4
+observations matched. A separate SQL case grouped equivalent lambdas with
+different parameter names on both engines. Running it against the preceding
+library made the new check fail at `WindowGroups/Scan`.
+[Request counts and negative control](evidence/p3-native-request-replay.json)
+
 On `5740b1a0f`, Rust read rolling-frame upper bounds from the circuit and
 selected timestamp waterlines at 56 rolling aggregates. It grouped windows
 on VARIANT and array-of-ROW predicates on both engines. All 49 selected

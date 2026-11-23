@@ -62,6 +62,20 @@ public class TemporalKeyTests {
                 "2020-01-02 10:11:12 UTC", "2020-01-02 10:11:12 America/New_York");
     }
 
+    @Test
+    public void windowKeysPreserveIntervalUnits() {
+        String columns = "id INT NOT NULL, ts TIMESTAMP, i INT";
+        checkSharedWindowKeys(columns, "ts + CAST(i AS INTERVAL DAY)", "ts + CAST(i AS INTERVAL HOUR)");
+        checkSharedWindowKeys(columns, "ts + CAST(i AS INTERVAL MONTH)", "ts + CAST(i AS INTERVAL YEAR)");
+    }
+
+    @Test
+    public void windowKeysPreservePointCoordinates() {
+        String key = "TIMESTAMPADD(SECOND, CAST(ST_DISTANCE(ST_POINT(x,y), %s) AS INTEGER), ts)";
+        checkSharedWindowKeys("id INT NOT NULL, ts TIMESTAMP, x DOUBLE, y DOUBLE",
+                key.formatted("ST_POINT(1.0, 2.0)"), key.formatted("ST_POINT(2.0, 1.0)"));
+    }
+
     private static void checkTemporalThreshold(String type, String first, String second) {
         var offset = "CASE WHEN CAST(ts AS %1$s) > %1$s '%2$s' THEN id ELSE 1 END";
         checkOffsetKeys(offset.formatted(type, first), offset.formatted(type, second));

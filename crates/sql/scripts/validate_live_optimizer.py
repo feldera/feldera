@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 
 from run_determinism import file_digest
+from summarize_optimizer_coverage import checked_requests
 from validate_corpus_tail import records
 
 
@@ -241,8 +242,21 @@ def compare_observations(case, reference, candidate):
             raise ValueError(f"{case}: {stage} observations differ from direct Java")
 
 
+def native_calls(case, control, candidate):
+    if control.get("native_requests") != {}:
+        raise ValueError(f"{case}: expected a direct Java control with no native requests")
+    if not candidate.get("native_requests"):
+        raise ValueError(f"{case}: no native optimizer requests recorded during S2 replay")
+    calls = {}
+    for op, count, fallbacks in checked_requests(case, candidate["native_requests"]):
+        if fallbacks:
+            raise ValueError(f"{case}: {op} fell back to Java on {fallbacks} of {count} requests")
+        calls[op] = count
+    return calls
+
+
 def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, full_trace=False,
-            require_native_limiters=False):
+            require_native_limiters=False, require_native_decisions=False):
     expected = {}
     for row in records(population):
         key = row["id"]
@@ -263,6 +277,7 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
     if controls.keys() != expected.keys():
         raise ValueError("Java reference does not cover the frozen population")
     invocations = Counter()
+    native_requests = Counter()
     merge_fallbacks = 0
     merge_records = 0
     for directory in candidates:
@@ -271,6 +286,8 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
             control = controls.pop(key, None)
             if control is None:
                 raise ValueError(f"Unexpected or repeated candidate {key}")
+            if require_native_decisions:
+                native_requests.update(native_calls(key, control, row))
             compare_observations(key, control["observations"], row["observations"])
             for field in ("input_sha256", "schema", "diagnostics", "hash_inputs",
                           "gen2" if expected[key][1] else "rust"):
@@ -343,6 +360,7 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE, *, ful
         raise ValueError(f"{len(controls)} cases missing from S2 replay")
     return {"cases": len(expected), "mismatches": 0, "population_sha256": file_digest(population),
             "rust_pass_invocations": dict(sorted(invocations.items())),
+            **({"native_request_calls": dict(sorted(native_requests.items()))} if require_native_decisions else {}),
             **({"temporal_merge_fallbacks": merge_fallbacks} if merge_records == len(expected) else {}),
             "shards": [{"manifest_sha256": file_digest(d / "complete.json"),
                         "records_sha256": file_digest(d / json.loads((d / "complete.json").read_bytes())["records_file"])}
@@ -355,8 +373,11 @@ if __name__ == "__main__":
     parser.add_argument("--full-optimizer-trace", action="store_true")
     parser.add_argument("--require-native-limiters", action="store_true",
                         help="Require Rust limiter insertion for every frozen input")
+    parser.add_argument("--require-native-decisions", action="store_true",
+                        help="Require recorded Rust answers for every instrumented optimizer request")
     parser.add_argument("--reference", type=Path, required=True, action="append", help="direct Java SQL shard")
     parser.add_argument("candidates", nargs="+", type=Path)
     args = parser.parse_args()
     print(json.dumps(compare(args.population, args.reference, args.candidates, full_trace=args.full_optimizer_trace,
-                             require_native_limiters=args.require_native_limiters), indent=2))
+                             require_native_limiters=args.require_native_limiters,
+                             require_native_decisions=args.require_native_decisions), indent=2))

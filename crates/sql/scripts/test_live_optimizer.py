@@ -1,12 +1,24 @@
 import unittest
 
-from validate_live_optimizer import FROZEN_SCHEDULE, check_artifacts, compare_observations, verify_placements
+from validate_live_optimizer import FROZEN_SCHEDULE, check_artifacts, compare_observations, native_calls, verify_placements
 
 
 BASE_COUNTS = {name: count for name, count in FROZEN_SCHEDULE.items() if count}
 
 
 class FrozenPlacements(unittest.TestCase):
+    def test_native_requests_need_a_java_control_and_no_fallbacks(self):
+        direct = {"native_requests": {}}
+        counts = {"calls": 3, "fallbacks": 0}
+        replay = {"native_requests": {"WindowGroups/Scan": counts}}
+        self.assertEqual(native_calls("window", direct, replay), {"WindowGroups/Scan": 3})
+        for old, new in [(direct, direct), ({}, replay), (direct, {}), (replay, replay)]:
+            with self.assertRaises(ValueError):
+                native_calls("window", old, new)
+        counts["fallbacks"] = 1
+        with self.assertRaisesRegex(ValueError, "WindowGroups/Scan fell back to Java on 1 of 3"):
+            native_calls("window", direct, replay)
+
     def test_final_circuit_equality_does_not_hide_a_missing_nested_observation(self):
         expected = {"S2": {"count": 1}, "S4": {"count": 422, "sha256": "full"}, "S3": {"count": 1}}
         actual = {**expected, "S4": {"count": 421, "sha256": "short"}}

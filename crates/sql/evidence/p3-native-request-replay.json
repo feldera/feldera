@@ -1,0 +1,141 @@
+{
+  "scope": "Detached S2 versus direct Java through S4, persistent-ID hash inputs and artifact emission. Selected frozen programs and separately generated SQL on each engine. The Rust library is from 9c66d63d8.",
+  "build_sha256": {
+    "native_library": "441fefee50eddbde6d7854e113106b08141b4c6786951d7d58afc797846bf948",
+    "compiler": "c15d92c80af14a5bc1e693c50acd860ef204c3702d992f42ec1f638ab96f85c1",
+    "tests": "d1c7f4babcd61f5e2b0d053c699a3739f916a88612008c8921e45539f9066eb9",
+    "comparator": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413"
+  },
+  "junit": {
+    "tests": 73,
+    "skipped": 0,
+    "log_sha256": "30967e74abb07303843645d40081049749719fe5c49e17424a52f0696c255890"
+  },
+  "engines": {
+    "classic": {
+      "frozen_selection": {
+        "cases": 18,
+        "input_sha256": "14ff0784bdbe9173237a6e4ba3890393c3ae6e9caa3d57ca90e2f9203a37cde6",
+        "ordered_s4_observations": 9129,
+        "mismatches": 0,
+        "request_calls": {
+          "KeyAnalysis/Circuit": 54,
+          "LeftJoinChains/Columns": 2,
+          "LeftJoinChains/Steps": 18,
+          "MergeFilters": 3,
+          "Monotonicity/AntiJoinProjection": 3,
+          "Monotonicity/Intersection": 39,
+          "Monotonicity/IsMinimumChain": 26,
+          "Monotonicity/JoinArguments": 154,
+          "Monotonicity/ProjectClosure": 500,
+          "Monotonicity/Transfer": 896,
+          "OptimizeProjections/Producer": 2755,
+          "ParameterFieldDependencies": 416,
+          "RemoveUnusedFields/AggregateReader": 95,
+          "RemoveUnusedFields/FlatmapInput": 7,
+          "RemoveUnusedFields/IndexedValue": 67,
+          "RemoveUnusedFields/NarrowAsof": 5,
+          "RemoveUnusedFields/NarrowJoin": 106,
+          "RemoveUnusedFields/ParameterTypes": 101,
+          "RemoveUnusedFields/Reader": 6,
+          "RemoveUnusedFields/TopKComparators": 6,
+          "RemoveUnusedFields/TopKFields": 21,
+          "ReplaceSharedIndexes": 3,
+          "RewriteNow/Filter": 29,
+          "SharedIndexes/Discover": 4,
+          "WindowGroups/Indexes": 3,
+          "WindowGroups/Reorder": 3,
+          "WindowGroups/Scan": 3
+        },
+        "fallbacks": 0,
+        "receipt_sha256": "db4ddb1af75781d4dbf14e28e8b7522b1f8a7a97f60cb2c9ebe70d328c40646a",
+        "previously_measured_transfer_rules_covered": 28
+      },
+      "scoped_lambda_sql": {
+        "cases": 1,
+        "input_sha256": "e6aeb4d51563f0b1304f79ce1765d7bbb1a1f6d5294b4466cf33cdbfdeb24a64",
+        "ordered_s4_observations": 696,
+        "mismatches": 0,
+        "request_calls": {
+          "KeyAnalysis/Circuit": 3,
+          "LeftJoinChains/Steps": 1,
+          "MergeFilters": 1,
+          "Monotonicity/ProjectClosure": 7,
+          "Monotonicity/Transfer": 13,
+          "OptimizeProjections/Producer": 127,
+          "RewriteNow/Filter": 3,
+          "WindowGroups/Indexes": 1,
+          "WindowGroups/Reorder": 1,
+          "WindowGroups/Scan": 1
+        },
+        "fallbacks": 0,
+        "receipt_sha256": "03d110fdaf6b45abdde29ebd6be2cb9f77a08b06bbd4050c74b3fe87d049d5cf"
+      }
+    },
+    "gen2": {
+      "frozen_selection": {
+        "cases": 19,
+        "input_sha256": "be46a882813907bfaa8ea673c03baacd95216ef4632ec5959e7cfe704a4ff6a9",
+        "ordered_s4_observations": 9578,
+        "mismatches": 0,
+        "request_calls": {
+          "KeyAnalysis/Circuit": 57,
+          "LeftJoinChains/Columns": 3,
+          "LeftJoinChains/Steps": 19,
+          "MergeFilters": 2,
+          "Monotonicity/AntiJoinProjection": 3,
+          "Monotonicity/Intersection": 38,
+          "Monotonicity/IsMinimumChain": 26,
+          "Monotonicity/JoinArguments": 153,
+          "Monotonicity/ProjectClosure": 497,
+          "Monotonicity/Transfer": 890,
+          "OptimizeProjections/Producer": 2696,
+          "ParameterFieldDependencies": 410,
+          "RemoveUnusedFields/AggregateReader": 94,
+          "RemoveUnusedFields/FlatmapInput": 5,
+          "RemoveUnusedFields/IndexedValue": 66,
+          "RemoveUnusedFields/NarrowAsof": 5,
+          "RemoveUnusedFields/NarrowJoin": 106,
+          "RemoveUnusedFields/ParameterTypes": 99,
+          "RemoveUnusedFields/Reader": 5,
+          "RemoveUnusedFields/TopKComparators": 5,
+          "RemoveUnusedFields/TopKFields": 17,
+          "ReplaceSharedIndexes": 2,
+          "RewriteNow/Filter": 28,
+          "SharedIndexes/Discover": 4,
+          "WindowGroups/Indexes": 3,
+          "WindowGroups/Reorder": 3,
+          "WindowGroups/Scan": 3
+        },
+        "fallbacks": 0,
+        "receipt_sha256": "c34e00ace46269da868d50ae3773803fd1c282fe8ef8cfcb738389637dd50998",
+        "previously_measured_transfer_rules_covered": 28
+      },
+      "scoped_lambda_sql": {
+        "cases": 1,
+        "input_sha256": "ec261dc2f2fda60771b43fc4d503e374f860982decb9200effe234d964a36bea",
+        "ordered_s4_observations": 702,
+        "mismatches": 0,
+        "request_calls": {
+          "KeyAnalysis/Circuit": 3,
+          "LeftJoinChains/Steps": 1,
+          "MergeFilters": 1,
+          "Monotonicity/ProjectClosure": 9,
+          "Monotonicity/Transfer": 18,
+          "OptimizeProjections/Producer": 127,
+          "RewriteNow/Filter": 3,
+          "WindowGroups/Indexes": 1,
+          "WindowGroups/Reorder": 1,
+          "WindowGroups/Scan": 1
+        },
+        "fallbacks": 0,
+        "receipt_sha256": "cf8eeff0e391261c57c39ee7b3d8c43fcc5803c7bded674959e2f447ad486b7c"
+      }
+    }
+  },
+  "negative_control": {
+    "reason": "WindowGroups/Scan fell back to Java on 1 of 1 requests",
+    "library_sha256": "a968de8cf1e5d63d848f34acf3c404dd370fd801e7245361debc5d6d6e6fe6b5",
+    "log_sha256": "f1a3f78b67aed535f86106e4f885f17289646e540ad9d8bb90f4c9747b18009f"
+  }
+}

@@ -28,6 +28,9 @@ enum Term {
     Tuple,
     AbsentTuple,
     VariantNullLiteral,
+    NullPoint {
+        nullable: bool,
+    },
     Field(u64),
     Deref,
     Clone,
@@ -256,6 +259,24 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         Expr::Tuple if node.field("fields").is_some() => (Term::Tuple, children("fields")?),
         Expr::Tuple => (Term::AbsentTuple, vec![]),
         Expr::VariantNullLiteral => (Term::VariantNullLiteral, vec![]),
+        Expr::GeoPointConstructor => {
+            let ty = edit.expression_type(id)?;
+            match (node.field("left"), node.field("right")) {
+                (Some(_), Some(_)) => {
+                    let Some(name) = scalar_spelling(edit, ty)? else {
+                        return Ok(None);
+                    };
+                    (Term::Call(name), vec![child("left")?, child("right")?])
+                }
+                (None, None) => (
+                    Term::NullPoint {
+                        nullable: edit.nullable(ty)?,
+                    },
+                    vec![],
+                ),
+                _ => return Ok(None),
+            }
+        }
         Expr::Variant => match node.field("value").and_then(|field| field.node_id()) {
             Some(value) => (
                 Term::Call("VARIANT".into()),
@@ -573,6 +594,20 @@ fn type_term(edit: &CircuitEditor, ty: TypeId) -> Result<Option<(Term, Vec<NodeI
 fn scalar_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option<String>, Error> {
     let node = edit.node(ty.into())?;
     let mut text = match edit.type_kind(ty)? {
+        Ty::GeoPoint => "geopoint".to_owned(),
+        kind @ (Ty::LongInterval | Ty::ShortInterval) => {
+            let Some(units) = string(node, "units") else {
+                return Ok(None);
+            };
+            let name = if kind == Ty::LongInterval {
+                "LongInterval"
+            } else {
+                "ShortInterval"
+            };
+            // The Java printer puts the nullability marker before the unit qualifier.
+            let suffix = if edit.nullable(ty)? { "?" } else { "" };
+            return Ok(Some(format!("{name}{suffix}({units})")));
+        }
         Ty::Variant => "VARIANT".to_owned(),
         Ty::Uuid => "Uuid".to_owned(),
         Ty::Binary => {

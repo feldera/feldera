@@ -11,8 +11,7 @@ import java.util.TreeMap;
 
 /** Count native answers and Java fallbacks on each frozen hybrid compilation. */
 public final class OptimizerCoverageOracle extends FrozenCircuitObserver {
-    private final TreeMap<String, Integer> requests = new TreeMap<>();
-    private final TreeMap<String, Integer> fallbacks = new TreeMap<>();
+    private final NativeOptimizerRequests requests = new NativeOptimizerRequests();
     private final TreeMap<String, TreeMap<String, Integer>> transfers = new TreeMap<>();
 
     private OptimizerCoverageOracle(DBSPCompiler compiler, ObjectNode observation) {
@@ -22,9 +21,7 @@ public final class OptimizerCoverageOracle extends FrozenCircuitObserver {
 
     @Override
     public void nativeDecision(String operation, boolean answered) {
-        this.requests.merge(operation, 1, Integer::sum);
-        if (!answered)
-            this.fallbacks.merge(operation, 1, Integer::sum);
+        this.requests.record(operation, answered);
     }
 
     @Override
@@ -40,9 +37,7 @@ public final class OptimizerCoverageOracle extends FrozenCircuitObserver {
 
     @Override
     void finish() {
-        var measured = this.observation.putObject("requests");
-        this.requests.forEach((operation, count) -> measured.putObject(operation)
-                .put("calls", count).put("fallbacks", this.fallbacks.getOrDefault(operation, 0)));
+        this.requests.writeTo(this.observation.putObject("requests"));
         var operators = this.observation.putObject("transfers");
         this.transfers.forEach((operator, counts) -> counts.forEach(operators.putObject(operator)::put));
     }

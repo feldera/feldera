@@ -9,6 +9,18 @@ from pathlib import Path
 from run_determinism import file_digest
 
 
+def checked_requests(case, requests):
+    if not isinstance(requests, dict):
+        raise ValueError(f"Missing optimizer request counts at {case}")
+    for operation, counts in requests.items():
+        if not isinstance(counts, dict):
+            raise ValueError(f"Invalid {operation} request counts at {case}")
+        calls, fallbacks = counts.get("calls"), counts.get("fallbacks")
+        if type(calls) is not int or type(fallbacks) is not int or not 0 <= fallbacks <= calls or calls == 0:
+            raise ValueError(f"Invalid {operation} request counts at {case}")
+        yield operation, calls, fallbacks
+
+
 def summarize(population, observations, checkpoints=None):
     seen = set()
     requests = defaultdict(Counter)
@@ -33,15 +45,7 @@ def summarize(population, observations, checkpoints=None):
                     raise ValueError(f"Wrong S2 checkpoint for {case}")
             elif "s2_sha256" in result:
                 raise ValueError(f"S2 replay for {case} requires its checkpoint directory")
-            for operation, counts in result["requests"].items():
-                calls, fallbacks = counts["calls"], counts["fallbacks"]
-                if (
-                    type(calls) is not int
-                    or type(fallbacks) is not int
-                    or not 0 <= fallbacks <= calls
-                    or calls == 0
-                ):
-                    raise ValueError(f"Invalid {operation} request counts at {case}")
+            for operation, calls, fallbacks in checked_requests(case, result["requests"]):
                 requests[operation].update(calls=calls, fallbacks=fallbacks)
                 if fallbacks:
                     fallbacks_by_operation[operation].append(case)

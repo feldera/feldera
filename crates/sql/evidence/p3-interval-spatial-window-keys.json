@@ -1,0 +1,69 @@
+{
+  "scope": "Window sharing with month and day interval casts and point coordinates. Four directed programs per engine, including distinct points built from literals and points built from row fields.",
+  "build_sha256": {
+    "native_library": "fec7543b166241dade0059797ed01fb69aec7f2b93357e72a9e0d19de95bc0ec",
+    "compiler": "c15d92c80af14a5bc1e693c50acd860ef204c3702d992f42ec1f638ab96f85c1",
+    "tests": "d1c7f4babcd61f5e2b0d053c699a3739f916a88612008c8921e45539f9066eb9",
+    "comparator": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413"
+  },
+  "engines": {
+    "classic": {
+      "cases": 4,
+      "input_sha256": "2afa92868572233aa4efa2b79f004b528797f8b97f0f44c9b599a2cd3ee62302",
+      "ordered_s4_observations": 2589,
+      "mismatches": 0,
+      "request_calls": {
+        "KeyAnalysis/Circuit": 12,
+        "LeftJoinChains/Steps": 4,
+        "MergeFilters": 4,
+        "Monotonicity/ProjectClosure": 28,
+        "Monotonicity/Transfer": 52,
+        "OptimizeProjections/Producer": 411,
+        "RewriteNow/Filter": 12,
+        "WindowGroups/Indexes": 4,
+        "WindowGroups/Reorder": 4,
+        "WindowGroups/Scan": 4
+      },
+      "fallbacks": 0,
+      "receipt_sha256": "2ff1eec78124a384cd95d49350e7311204cf7f678adbcd3a7f85e00ac4fdb245",
+      "prior_library_sha256": "441fefee50eddbde6d7854e113106b08141b4c6786951d7d58afc797846bf948",
+      "prior_fallbacks": {
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Scan": 4
+      }
+    },
+    "gen2": {
+      "cases": 4,
+      "input_sha256": "5d9f895ac4d3934481458c8650378145624814e3fdff0c1c81f9703a950c123b",
+      "ordered_s4_observations": 2613,
+      "mismatches": 0,
+      "request_calls": {
+        "KeyAnalysis/Circuit": 12,
+        "LeftJoinChains/Steps": 4,
+        "MergeFilters": 4,
+        "Monotonicity/ProjectClosure": 36,
+        "Monotonicity/Transfer": 72,
+        "OptimizeProjections/Producer": 411,
+        "RewriteNow/Filter": 12,
+        "WindowGroups/Indexes": 4,
+        "WindowGroups/Reorder": 4,
+        "WindowGroups/Scan": 4
+      },
+      "fallbacks": 0,
+      "receipt_sha256": "54804dbbe56270d8c9ef9c92d285596accb290649f9da358ac15e5daa8d05b43",
+      "prior_library_sha256": "441fefee50eddbde6d7854e113106b08141b4c6786951d7d58afc797846bf948",
+      "prior_fallbacks": {
+        "WindowGroups/Indexes": 2,
+        "WindowGroups/Reorder": 2,
+        "WindowGroups/Scan": 4
+      }
+    }
+  },
+  "junit": {
+    "passed": 20,
+    "prior_library_failures": 2,
+    "before_sha256": "bb388c816ecbde520bd44ed8091601799f4116d0031f858d0a0e1646a4be4275",
+    "after_sha256": "cd563d38fb3afe39733326c7b76f397b76189298075773c747f37adb1b0e64e1"
+  },
+  "rust_tests": 168
+}

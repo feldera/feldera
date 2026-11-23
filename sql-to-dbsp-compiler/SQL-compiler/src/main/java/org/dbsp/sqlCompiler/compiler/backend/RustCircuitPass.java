@@ -559,20 +559,20 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static JsonNode combineBounds(JsonNode inputs, boolean union) {
-        return exchangeBounds(inputs, union ? "Monotonicity/Union" : "Monotonicity/Intersection");
+    public static JsonNode combineBounds(DBSPCompiler compiler, JsonNode inputs, boolean union) {
+        return exchangeBounds(compiler, inputs, union ? "Monotonicity/Union" : "Monotonicity/Intersection");
     }
 
     public static JsonNode indexedBounds(DBSPCompiler compiler, JsonNode inputs, boolean antiJoin) {
         String operation = antiJoin ? "Monotonicity/AntiJoinProjection" : "Monotonicity/JoinArguments";
-        var result = exchangeBounds(inputs, operation);
-        answered(compiler, operation, result);
-        return result;
+        return exchangeBounds(compiler, inputs, operation);
     }
 
-    private static JsonNode exchangeBounds(JsonNode inputs, String pass) {
+    private static JsonNode exchangeBounds(DBSPCompiler compiler, JsonNode inputs, String pass) {
         try {
-            return MAPPER.readTree(transformWithContext(pass, MAPPER.writeValueAsBytes(inputs), 0, "", POSTORDER_BOUNDS));
+            var result = MAPPER.readTree(transformWithContext(pass, MAPPER.writeValueAsBytes(inputs), 0, "", POSTORDER_BOUNDS));
+            answered(compiler, pass, result);
+            return result;
         } catch (IOException error) {
             throw new UncheckedIOException("Could not combine waterline projections", error);
         }

@@ -327,6 +327,7 @@ public final class CorpusDeterminism {
         Observations observations = new Observations(canonicalizer, finalOnly, replayS3 || (liveFinal && finalOnly));
         Map<String, Map<String, Integer>> childPlacements = new TreeMap<>();
         Map<String, Integer> rustPasses = new TreeMap<>();
+        var nativeRequests = new NativeOptimizerRequests();
         Map<String, Integer> castIterations = new TreeMap<>();
         Map<String, Integer> graphCleanups = new TreeMap<>();
         var unusedFieldIterations = new java.util.concurrent.atomic.AtomicInteger();
@@ -338,6 +339,11 @@ public final class CorpusDeterminism {
         var temporalMergeFallbacks = new java.util.concurrent.atomic.AtomicInteger();
         if (liveFinal) {
             compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                @Override
+                public void nativeDecision(String operation, boolean answered) {
+                    nativeRequests.record(operation, answered);
+                }
+
                 public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {
                     if (pass.getName().equals("InsertLimiters"))
                         nativeLimiterPlacements.incrementAndGet();
@@ -430,6 +436,7 @@ public final class CorpusDeterminism {
             }
             result.set("child_placements", MAPPER.valueToTree(childPlacements));
             result.set("rust_passes", MAPPER.valueToTree(rustPasses));
+            nativeRequests.writeTo(result.putObject("native_requests"));
             result.set("cast_iterations", MAPPER.valueToTree(castIterations));
             result.put("unused_field_iterations", unusedFieldIterations.get());
             result.put("clock_scans", clockScans.get());

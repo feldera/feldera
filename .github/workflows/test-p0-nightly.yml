@@ -125,7 +125,7 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         shell: bash
         run: |
-          cargo test --locked -p feldera-sql-difftest -p feldera-sql-ir -p feldera-sql-source -p feldera-sql-lower -p feldera-sql-opt -p feldera-sql-parser -p feldera-sql-binder -p sql2dbsp
+          cargo test --locked -p feldera-sql-difftest -p feldera-sql-ir -p feldera-sql-source -p feldera-sql-lower -p feldera-sql-expr -p feldera-sql-opt -p feldera-sql-opt-jni -p feldera-sql-parser -p feldera-sql-binder -p sql2dbsp
           cargo run --locked -p feldera-sql-difftest --bin sql-difftest -- \
             --validate-corpus "$RUNNER_TEMP/sql-corpus" > "$RUNNER_TEMP/sql-corpus-summary.json"
           cargo run --locked -p feldera-sql-difftest --bin sql-type-probes -- \
@@ -412,9 +412,22 @@ jobs:
           java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
           python3 crates/sql/scripts/run_s2_corpus.py \
             "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-mixed-optimizer" \
-            --rust-optimizer --comparator "$target_dir/release/sql-difftest" \
+            --rust-optimizer --require-native-decisions --comparator "$target_dir/release/sql-difftest" \
             --classpath "$java_target/test-classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
             --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA" --timeout 5400
+
+      - name: Compare Rust projections, waterlines and temporal keys with Java
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        working-directory: ./sql-to-dbsp-compiler
+        run: |
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          export LD_LIBRARY_PATH="$target_dir/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          mvn test --no-transfer-progress -B -pl SQL-compiler \
+            -Dtest=InliningTests,JoinInputProjectionTests,ProjectionCompositionTests,TemporalKeyTests,WaterlineProjectionTests \
+            -Dfeldera.optimizer.compareRustCanonicalForm=true -Dfeldera.optimizer.compareRustFieldUses=true \
+            -Dfeldera.optimizer.compareRustMapDependencies=true -Dfeldera.optimizer.compareRustProjectionFields=true \
+            -Dfeldera.optimizer.compareRustTemporalKeys=true -Dfeldera.optimizer.compareRustLimiterApply=true
 
       - name: Audit optimizer option and metadata activation paths
         if: ${{ vars.CI_DRY_RUN != 'true' }}

@@ -76,22 +76,22 @@ public final class CombinedBounds {
     public static IMaybeMonotoneType union(DBSPCompiler compiler, IMaybeMonotoneType left, IMaybeMonotoneType right) {
         if (!compiler.options.ioOptions.rustOptimizerPasses)
             return left.union(right);
-        return combine(List.of(left, right), true);
+        return combine(compiler, List.of(left, right), true);
     }
 
     public static IMaybeMonotoneType intersection(DBSPCompiler compiler, List<IMaybeMonotoneType> inputs) {
         if (!compiler.options.ioOptions.rustOptimizerPasses)
             return IMaybeMonotoneType.intersection(inputs);
-        return combine(inputs, false);
+        return combine(compiler, inputs, false);
     }
 
-    private static IMaybeMonotoneType combine(List<IMaybeMonotoneType> inputs, boolean union) {
+    private static IMaybeMonotoneType combine(DBSPCompiler compiler, List<IMaybeMonotoneType> inputs, boolean union) {
         if (inputs.size() == 1)
             return inputs.get(0);
         var bounds = new CombinedBounds();
         var request = JsonNodeFactory.instance.arrayNode();
         inputs.forEach(type -> request.add(bounds.input(type)));
-        var reply = RustCircuitPass.combineBounds(request, union);
+        var reply = RustCircuitPass.combineBounds(compiler, request, union);
         if (!reply.isNull())
             return bounds.result(reply);
         // Preserve the original diagnostic when a closure or incompatible tuple is combined.

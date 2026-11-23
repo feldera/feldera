@@ -22,6 +22,8 @@ def main():
                         help="Compare the ordered S2, S4 and S3 graphs through the mixed optimizer")
     parser.add_argument("--rust-optimizer", action="store_true",
                         help="Replay S2 through the mixed optimizer using the JNI library next to the comparator")
+    parser.add_argument("--require-native-decisions", action="store_true",
+                        help="Fail replay if an instrumented optimizer request uses Java")
     parser.add_argument(
         "--replay-first",
         action="store_true",
@@ -48,6 +50,8 @@ def main():
     args.comparator = args.comparator.resolve(strict=True)
     if args.full_optimizer_trace and not args.rust_optimizer:
         parser.error("--full-optimizer-trace requires --rust-optimizer")
+    if args.require_native_decisions and not args.rust_optimizer:
+        parser.error("--require-native-decisions requires --rust-optimizer")
     library = None
     if args.rust_optimizer:
         if args.stage != "S2":
@@ -114,6 +118,7 @@ def main():
     }
     if library:
         provenance["full_optimizer_trace"] = args.full_optimizer_trace
+        provenance["require_native_decisions"] = args.require_native_decisions
         provenance["optimizer_library_sha256"] = file_digest(library)
     (args.output / "provenance.json").write_text(
         json.dumps(provenance, indent=2) + "\n"
@@ -161,7 +166,7 @@ def main():
         if file_digest(library) != provenance["optimizer_library_sha256"]:
             raise ValueError("Rust optimizer library changed during replay")
         result = compare_live_optimizer(selected, [direct], [replay], full_trace=args.full_optimizer_trace,
-                                        require_native_limiters=True)
+                                        require_native_limiters=True, require_native_decisions=args.require_native_decisions)
         result["equal"] = result["mismatches"] == 0
     else:
         result = compare(direct, replay)

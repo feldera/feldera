@@ -176,9 +176,12 @@ public class Monotonicity extends CircuitVisitor {
         this.startVisit(circuit);
         try {
             for (var transfer : RustCircuitPass.monotonicityTransfers(this.compiler(), circuit)) {
-                if (this.compiler().stateObserver != null)
+                if (this.compiler().stateObserver != null) {
                     this.compiler().stateObserver.monotonicityTransfer(
                             transfer.operator().getClass().getSimpleName(), transfer.rule().name());
+                    this.compiler().stateObserver.nativeDecision("Monotonicity/Transfer",
+                            transfer.rule() != RustCircuitPass.TransferRule.Analyze);
+                }
                 switch (transfer.rule()) {
                     case Identity -> this.identity(transfer.operator().to(DBSPSimpleOperator.class), transfer.input());
                     case DeclaredColumns -> this.installColumnWaterlines(transfer.operator().to(DBSPSimpleOperator.class),
