@@ -568,6 +568,7 @@ mod test {
             compilation_profile: CompilationProfile::Optimized,
             sql_compiler_path: String::new(),
             shadow_sql_compiler: None,
+            retain_sql_shadow_mismatches: false,
             shadow_sql_compiler_timeout_secs: 30,
             sql_compiler_cache_url: String::new(),
             compilation_cargo_lock_path: String::new(),

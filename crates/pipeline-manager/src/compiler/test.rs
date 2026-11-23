@@ -61,6 +61,7 @@ impl CompilerTest {
                 "../../sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar"
                     .to_owned(),
             shadow_sql_compiler: None,
+            retain_sql_shadow_mismatches: false,
             shadow_sql_compiler_timeout_secs: 30,
             sql_compiler_cache_url: "https://example.com".to_owned(),
             compilation_cargo_lock_path: "../../Cargo.lock".to_owned(),

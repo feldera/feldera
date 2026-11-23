@@ -46,8 +46,11 @@ It skips a sample if the worker is busy, the SQL exceeds 1 MiB, or the primary
 observation exceeds 4 MiB. The default deadline is 30 seconds. Set
 `--shadow-sql-compiler-timeout-secs` to change it.
 
-With `--shadow-sql-compiler rust-optimizer`, a difference also writes a private
-JSON file under `<compiler-working-directory>/sql-shadow-mismatches/`. The
+Shadow mismatches are counted with bundle retention off, the default.
+To keep local evidence for investigating a Rust optimizer mismatch, enable
+`--retain-sql-shadow-mismatches` alongside `--shadow-sql-compiler rust-optimizer`.
+Each difference then writes a private JSON file under
+`<compiler-working-directory>/sql-shadow-mismatches/`. The
 server keeps the latest 32 bundles. Each file records the compiler manager
 build, compiler package digest when available, runtime, engine, platform
 compiler override and first differing output.
@@ -56,6 +59,8 @@ option renames identifiers and removes connector properties. Its output can
 contain SQL literals. Administrators can inspect a bundle locally and export
 it manually. If anonymization fails, the bundle contains only review metadata.
 The daily counter records the difference even if bundle creation or cleanup fails.
+Turning retention off stops new writes. Previously saved bundles stay on disk
+until an administrator removes them or a later retained mismatch rotates them out.
 
 ## Examples
 

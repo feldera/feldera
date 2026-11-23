@@ -1955,6 +1955,12 @@ pub struct CompilerConfig {
     #[arg(long, value_enum)]
     pub shadow_sql_compiler: Option<ShadowCompiler>,
 
+    /// Keep the latest 32 Rust optimizer mismatch bundles under sql-shadow-mismatches
+    /// in the compiler working directory. Anonymized SQL can contain original literals.
+    #[serde(default)]
+    #[arg(long)]
+    pub retain_sql_shadow_mismatches: bool,
+
     /// Maximum time in seconds for a shadow compilation. The default is 30.
     #[arg(long, default_value_t = default_shadow_sql_compiler_timeout_secs())]
     #[serde(default = "default_shadow_sql_compiler_timeout_secs")]
@@ -2608,6 +2614,7 @@ mod tests {
             compilation_profile: CompilationProfile::Optimized,
             sql_compiler_path: existing_path.clone(),
             shadow_sql_compiler: None,
+            retain_sql_shadow_mismatches: false,
             shadow_sql_compiler_timeout_secs: 30,
             sql_compiler_cache_url: String::new(),
             compilation_cargo_lock_path: existing_path.clone(),
@@ -2651,6 +2658,7 @@ mod tests {
                 compilation_profile: CompilationProfile::Optimized,
                 sql_compiler_path: existing_path.clone(),
                 shadow_sql_compiler: None,
+                retain_sql_shadow_mismatches: false,
                 shadow_sql_compiler_timeout_secs: 30,
                 sql_compiler_cache_url: String::new(),
                 compilation_cargo_lock_path: existing_path.clone(),

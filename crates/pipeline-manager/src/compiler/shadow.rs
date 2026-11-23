@@ -263,6 +263,7 @@ async fn run(
                 Ok(()) => Outcome::Equal,
                 Err(difference) => {
                     if optimizer
+                        && config.retain_sql_shadow_mismatches
                         && let Err(error) = mismatch::retain(
                             config,
                             program_config,
@@ -561,14 +562,15 @@ mod tests {
         );
     }
 
-    fn real_compiler_config(directory: &std::path::Path) -> CompilerConfig {
-        let mut config = CompilerConfig::parse_from([
+    fn real_compiler_config(directory: &std::path::Path, extra: &[&str]) -> CompilerConfig {
+        let args = [
             "test",
             "--shadow-sql-compiler",
             "java",
             "--shadow-sql-compiler-timeout-secs",
             "120",
-        ]);
+        ];
+        let mut config = CompilerConfig::parse_from(args.into_iter().chain(extra.iter().copied()));
         config.sql_compiler_path = std::env::var("FELDERA_SHADOW_TEST_JAR").unwrap();
         config.compiler_working_directory = directory.to_string_lossy().into_owned();
         config
@@ -612,23 +614,33 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires a matching SQL compiler jar, sql2dbsp and the native optimizer library"]
-    async fn optimizer_difference_retains_only_the_anonymized_review_bundle() {
+    async fn optimizer_difference_retains_a_review_bundle_only_with_opt_in() {
         let root = tempfile::tempdir().unwrap();
-        let mut config = real_compiler_config(root.path());
-        config.shadow_sql_compiler = Some(crate::config::ShadowCompiler::RustOptimizer);
         let sql = "CREATE TABLE private_shadow_input(i INT) WITH ('connectors' = '[]'); \
                    CREATE VIEW private_shadow_view AS SELECT i FROM private_shadow_input;";
-        let outcome = run(
-            &CommonConfig::test_config(),
-            &config,
-            &json!({}),
-            sql,
-            Observation::SqlError(SqlCompilationInfo::success()),
-            Duration::from_secs(120),
-        )
-        .await;
-        assert_eq!(outcome, Outcome::Different);
-        let files: Vec<_> = std::fs::read_dir(root.path().join("sql-shadow-mismatches"))
+        let archive = root.path().join("sql-shadow-mismatches");
+        for extra in [&[][..], &["--retain-sql-shadow-mismatches"]] {
+            let mut config = real_compiler_config(root.path(), extra);
+            config.shadow_sql_compiler = Some(crate::config::ShadowCompiler::RustOptimizer);
+            let outcome = run(
+                &CommonConfig::test_config(),
+                &config,
+                &json!({}),
+                sql,
+                Observation::SqlError(SqlCompilationInfo::success()),
+                Duration::from_secs(120),
+            )
+            .await;
+            assert_eq!(outcome, Outcome::Different);
+            assert_eq!(archive.exists(), !extra.is_empty());
+            assert_eq!(
+                std::fs::read_dir(ephemeral_compilation_dir(&config))
+                    .unwrap()
+                    .count(),
+                0
+            );
+        }
+        let files: Vec<_> = std::fs::read_dir(archive)
             .unwrap()
             .map(|e| e.unwrap().path())
             .collect();
@@ -640,12 +652,6 @@ mod tests {
         let anonymized = bundle["anonymized_sql"].as_str().unwrap().to_lowercase();
         assert!(anonymized.contains("create table id_"));
         assert!(!anonymized.contains("private_shadow") && !anonymized.contains("connectors"));
-        assert_eq!(
-            std::fs::read_dir(ephemeral_compilation_dir(&config))
-                .unwrap()
-                .count(),
-            0
-        );
     }
 
     async fn check_full_primary_against_shadow(
@@ -653,7 +659,7 @@ mod tests {
         program_config: &Value,
     ) {
         let directory = tempfile::tempdir().unwrap();
-        let mut config = real_compiler_config(directory.path());
+        let mut config = real_compiler_config(directory.path(), &[]);
         config.shadow_sql_compiler = Some(family);
         let common = CommonConfig::test_config();
         let id = PipelineId(Uuid::now_v7());
@@ -710,7 +716,7 @@ mod tests {
     #[ignore = "set FELDERA_SHADOW_TEST_JAR to the SQL compiler jar"]
     async fn real_java_shadow_is_bounded_and_does_not_publish() {
         let directory = tempfile::tempdir().unwrap();
-        let config = real_compiler_config(directory.path());
+        let config = real_compiler_config(directory.path(), &[]);
         let common = CommonConfig::test_config();
         let sql = "CREATE TABLE t(i INT); CREATE VIEW v AS SELECT i + 1 AS j FROM t;";
         let id = PipelineId(Uuid::now_v7());
