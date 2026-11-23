@@ -1,12 +1,11 @@
 //! Return index groups and their visitor state. Java compares residual key
 //! expressions in the same object namespace as the original circuit.
-use crate::{BridgeError, MAX_BYTES};
-use feldera_sql_ir::{Circuit, CircuitEditor, Error};
+use crate::{BridgeError, MAX_BYTES, live_equality};
+use feldera_sql_ir::{Circuit, CircuitEditor};
 use jni::{
+    EnvUnowned,
     errors::ThrowRuntimeExAndDefault,
-    jni_sig, jni_str,
     objects::{JByteArray, JClass, JObject},
-    EnvUnowned, JValue,
 };
 use serde_json::json;
 
@@ -41,22 +40,10 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         let groups =
             feldera_sql_opt::find_shared_indexes(&mut edit, &visited, &mut next, |edit, keys| {
                 compared_all_keys = false;
-                let keys = edit.circuit().additional_expressions(&input, &keys)?;
-                let bytes = serde_json::to_vec(&keys).map_err(|e| Error::new(e.to_string()))?;
-                if bytes.len() > MAX_BYTES {
-                    return Err(Error::new("index key expressions exceed 64 MiB"));
-                }
-                env.with_local_frame(4, |env| -> jni::errors::Result<bool> {
-                    let pair = env.byte_array_from_slice(&bytes)?;
-                    env.call_method(
-                        &equality,
-                        jni_str!("equivalent"),
-                        jni_sig!("([B)Z"),
-                        &[JValue::Object(&pair)],
-                    )?
-                    .z()
-                })
-                .map_err(|e| Error::new(e.to_string()))
+                let keys = edit
+                    .circuit()
+                    .live_inner_roots(&input, &keys.map(Into::into))?;
+                live_equality::compare(env, &equality, &serde_json::Value::Array(keys))
             })
             .map_err(optimizer_error)?;
         let bytes = serde_json::to_vec(&json!({

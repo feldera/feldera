@@ -1,0 +1,74 @@
+//! Delegate a single unresolved expression comparison to the live compiler.
+use crate::{BridgeError, MAX_BYTES, decode_live_circuit, pass_warnings};
+use feldera_sql_ir::Error;
+use jni::{
+    Env, EnvUnowned, JValue,
+    errors::ThrowRuntimeExAndDefault,
+    jni_sig, jni_str,
+    objects::{JByteArray, JClass, JObject},
+};
+use serde_json::{Value, json};
+
+pub(super) fn compare(env: &mut Env, equality: &JObject, payload: &Value) -> Result<bool, Error> {
+    let bytes = serde_json::to_vec(payload).map_err(|e| Error::new(e.to_string()))?;
+    if bytes.len() > MAX_BYTES {
+        return Err(Error::new("expression comparison exceeds 64 MiB"));
+    }
+    env.with_local_frame(4, |env| -> jni::errors::Result<bool> {
+        let args = env.byte_array_from_slice(&bytes)?;
+        env.call_method(
+            equality,
+            jni_str!("equivalent"),
+            jni_sig!("([B)Z"),
+            &[JValue::Object(&args)],
+        )?
+        .z()
+    })
+    .map_err(|e| Error::new(e.to_string()))
+}
+
+fn fusion_error(error: impl std::fmt::Display) -> BridgeError {
+    BridgeError::Optimizer(format!("Live/Fuse: {error}"))
+}
+
+// SAFETY: the symbol and signature match RustCircuitPass.fuseMaps. EnvUnowned
+// contains panics at the JVM boundary and preserves a pending Java exception.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPass_fuseMaps<
+    'local,
+>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    snapshot: JByteArray<'local>,
+    next: i64,
+    clusters: JByteArray<'local>,
+    equality: JObject<'local>,
+) -> JByteArray<'local> {
+    env.with_env(|env| -> Result<_, BridgeError> {
+        if snapshot.len(env)?.saturating_add(clusters.len(env)?) > MAX_BYTES {
+            return Err(fusion_error("input exceeds 64 MiB"));
+        }
+        let circuit = decode_live_circuit(&env.convert_byte_array(&snapshot)?).map_err(fusion_error)?;
+        let clusters = serde_json::from_slice(&env.convert_byte_array(&clusters)?).map_err(fusion_error)?;
+        let mut next = u64::try_from(next).map_err(fusion_error)?;
+        let mut warnings = Vec::new();
+        let mut native_columns = true;
+        let output = feldera_sql_opt::fuse_expensive_maps_with(
+            circuit.clone(), clusters, &mut next, &mut warnings, |site| {
+                native_columns = false;
+                let [left, right] = site.fields;
+                let roots = site.graph.live_inner_roots(site.input, &[site.row.into(), left.into(), right.into()])?;
+                let request = json!({"roots":roots, "warnings":pass_warnings(site.warnings.to_vec()), "next_generated_name":site.next_name});
+                compare(env, &equality, &request).map(Some)
+            },
+        ).map_err(fusion_error)?.ok_or_else(|| fusion_error("unanswered column comparison"))?;
+        let mut result = json!({"native_columns":native_columns, "diagnostics":pass_warnings(warnings),
+            "next_generated_name":next, "unused_sources":[]});
+        result["circuit"] = output.changed_live_graph(&circuit).unwrap_or(Value::Null);
+        let bytes = serde_json::to_vec(&result).map_err(fusion_error)?;
+        if bytes.len() > MAX_BYTES {
+            return Err(fusion_error("output exceeds 64 MiB"));
+        }
+        Ok(env.byte_array_from_slice(&bytes)?)
+    }).resolve::<ThrowRuntimeExAndDefault>()
+}

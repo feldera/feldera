@@ -129,6 +129,45 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
     }
 
     @Test
+    public void fusionReportsALiveColumnErrorWithoutReplayingThePass() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var compiler = this.testCompiler();
+        var site = CalciteEmptyRel.INSTANCE;
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
+        var row = b.refVar(this.pair);
+        var call = b.call("costly", b.field(row, 0));
+        var invalid = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
+        var function = b.tuple(call, call.deepCopy(), invalid, invalid.deepCopy()).closure(row);
+        var map = new DBSPMapOperator(site, function, input.outputPort());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(input);
+        circuit.addOperator(map);
+        var scan = new FuseExpensiveMaps.FindFusableMaps(compiler);
+        var cluster = List.of(new MapInfo(map, function, List.of(call)));
+        scan.groups.put(input.outputPort(), cluster);
+        scan.clusters.put(map, cluster);
+
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(java.time.DateTimeException.class,
+                () -> new FuseExpensiveMaps.Fuse(compiler, scan).apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        var fuse = new FuseExpensiveMaps.Fuse(compiler, scan) {
+            @Override
+            public String getName() { return "Fuse"; }
+
+            @Override
+            void fuse(List<MapInfo> members) { Assert.fail("restarted Java map fusion"); }
+        };
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        start = DBSPVariablePath.nextGeneratedName();
+        var hybrid = Assert.assertThrows(direct.getClass(),
+                () -> new RustCircuitPass(compiler, fuse, new OptimizerSnapshots(compiler)).apply(circuit));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+    }
+
+    @Test
     public void fusedColumnsUseTheFirstEquivalentInstant() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
         var site = CalciteEmptyRel.INSTANCE;

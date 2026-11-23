@@ -1,0 +1,44 @@
+{
+  "scope": "Continue map fusion in Rust after an undecided column comparison and preserve diagnostics and the name counter on failure.",
+  "source_base": "aeb1a517b58bb9eec1e2e7108248a8161ff61bdf",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "9b3a685c5de8c2f3c4a206c1a4811b1f884b3d75dcb9b4347640a215562fa7bd",
+    "crates/sql/sql-opt-jni/src/shared_indexes.rs": "2d7fa17b183c9ab0270814d28813f73ecf241ab51941ee5865a2947634152e35",
+    "crates/sql/sql-opt/src/lib.rs": "09967ef22e7bb0bdbd1aefdf771569127df5a12e65380a00e4efd4066c6113ce",
+    "crates/sql/sql-opt/src/map_fusion.rs": "5ae888fcd37e07bdc0f865ecd8e0b1144b03966b25fb457fc2a796bfcf1b7aac",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "9d021559699211e2021c7b874ae6889ed4d4f5f373c3ce145eafdf2ef556a117",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "29dc4248d5b1774378ca3cedc08e95b844f39621e8974d6986cda542aa049abf",
+    "crates/sql/sql-opt-jni/src/live_equality.rs": "bbe87d869803e79b975a292e8eb7a2be47686b5f5f090c5e340c3c5b8f180ae3"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ccfff326d33ca5856347c76b78b2839f56fab3e995d5a89451a1768b6a584cd7",
+    "bin/sql-difftest": "a8276a6f64b84ca829ee86825fb3bcb3288602f39161a360274e2de5ac785714",
+    "maven/tests.jar": "0e6cc1e365e430321fdb8c5caa6703ab6a129d16a8401fd82c794fb4228da65a",
+    "maven/sql-compiler.jar": "24b2dd9bde35d2b116de3ab88ad231dbba5ff3cbe6eb325c069b906b71383704"
+  },
+  "negative_control": {
+    "library_sha256": "92067c763b8a00fd67fe2d0f4897421fdd4998c9179a8d8305390d3a55be3418",
+    "failed_tests": [
+      "fusionReportsALiveColumnErrorWithoutReplayingThePass"
+    ]
+  },
+  "rust_tests": 225,
+  "junit_tests": 166,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "5adeaea22c6aca0bc7d607596c0342e69be2ba23bc14d52dcbb6f1bba05281b8"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "e49362d6004d14691127ae6b34a8a18d5e068424c6d6f170bf0cb2013280090b"
+    }
+  }
+}

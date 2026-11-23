@@ -4,6 +4,7 @@ mod fragment;
 mod repeat;
 mod delta_expansion;
 mod shared_indexes;
+mod live_equality;
 mod star_join;
 mod temporal;
 use feldera_sql_ir::{BodyOrder, Circuit, CircuitEditor, Field, NodeId, OutputPort};
@@ -1271,6 +1272,13 @@ fn bound_result<T: serde::Serialize>(
     }
 }
 
+fn decode_live_circuit(input: &[u8]) -> Result<Circuit, feldera_sql_ir::Error> {
+    LIVE_COMPILATIONS.with_borrow_mut(|stack| match stack.last_mut() {
+        Some(compile) => compile.decoder.decode(input),
+        None => Circuit::from_live_json_bytes(input),
+    })
+}
+
 fn transform(
     pass: &str,
     error_view: &str,
@@ -1537,10 +1545,7 @@ fn transform(
         _ => {}
     }
     let circuit = if live.is_some() {
-        LIVE_COMPILATIONS.with_borrow_mut(|stack| match stack.last_mut() {
-            Some(compile) => compile.decoder.decode(input),
-            None => Circuit::from_live_json_bytes(input),
-        })?
+        decode_live_circuit(input)?
     } else {
         Circuit::from_json_bytes(input)?
     };

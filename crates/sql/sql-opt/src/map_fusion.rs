@@ -56,6 +56,27 @@ fn append_map(
     })
 }
 
+/// Operands of a column comparison that requires the live compiler's equality
+/// implementation. The two fields share a row variable. Warnings and names
+/// describe the prefix to publish if the live comparison raises a diagnostic.
+pub struct FusionComparison<'a> {
+    pub input: &'a Circuit,
+    pub graph: &'a Circuit,
+    pub row: ExpressionId,
+    pub fields: [ExpressionId; 2],
+    pub warnings: &'a [SimplifyWarning],
+    pub next_name: u64,
+}
+
+type Compare<'a> = dyn FnMut(FusionComparison<'_>) -> Result<Option<bool>, Error> + 'a;
+
+struct FusionContext<'a> {
+    input: Circuit,
+    next: u64,
+    warnings: Vec<SimplifyWarning>,
+    compare: &'a mut Compare<'a>,
+}
+
 #[derive(Default)]
 struct FusionColumns {
     fields: Vec<ExpressionId>,
@@ -67,11 +88,25 @@ impl FusionColumns {
         &mut self,
         edit: &CircuitEditor,
         field: ExpressionId,
+        row: ExpressionId,
         row_name: &str,
+        context: &mut FusionContext,
     ) -> Result<Option<usize>, Error> {
         for (index, &previous) in self.fields.iter().enumerate() {
-            match compare_expressions(edit, previous.into(), field.into(), [(row_name, row_name)])?
-            {
+            let native =
+                compare_expressions(edit, previous.into(), field.into(), [(row_name, row_name)])?;
+            let matched = match native {
+                Some(answer) => Some(answer),
+                None => (context.compare)(FusionComparison {
+                    input: &context.input,
+                    graph: edit.circuit(),
+                    row,
+                    fields: [previous, field],
+                    warnings: &context.warnings,
+                    next_name: context.next,
+                })?,
+            };
+            match matched {
                 Some(true) => return Ok(Some(index)),
                 Some(false) => {}
                 None => return Ok(None),
@@ -89,7 +124,7 @@ fn collect_columns(
     edit: &mut CircuitEditor,
     members: &[(NodeId, NodeId)],
     row: ExpressionId,
-    warnings: &mut Vec<SimplifyWarning>,
+    context: &mut FusionContext,
 ) -> Result<Option<FusionColumns>, Error> {
     let mut columns = FusionColumns::default();
     let name = edit
@@ -105,7 +140,7 @@ fn collect_columns(
             closure.edge("body")?,
             &closure.edges("parameters")?,
             &[row.into()],
-            Some(warnings),
+            Some(&mut context.warnings),
         )?;
         let tuple = edit.node(reduced)?;
         if !matches!(
@@ -116,7 +151,9 @@ fn collect_columns(
         }
         let mut projection = Vec::new();
         for field in tuple.edges("fields")? {
-            let Some(index) = columns.position(edit, edit.expression(field)?, &name)? else {
+            let Some(index) =
+                columns.position(edit, edit.expression(field)?, row, &name, context)?
+            else {
                 return Ok(None);
             };
             projection.push(index);
@@ -130,9 +167,8 @@ fn fuse_cluster(
     edit: &mut CircuitEditor,
     body: NodeId,
     members: &[(NodeId, NodeId)],
-    next: &mut u64,
     replacements: &mut BTreeMap<NodeId, OutputPort>,
-    warnings: &mut Vec<SimplifyWarning>,
+    context: &mut FusionContext,
 ) -> Result<bool, Error> {
     let (first, function) = members[0];
     let [parameter] = edit.node(function)?.edges("parameters")?[..] else {
@@ -144,11 +180,11 @@ fn fuse_cluster(
         .next()
         .ok_or_else(|| Error::new("fused map has no input"))?;
     let parameter_type = edit.type_id(edit.node(parameter)?.edge("type")?)?;
-    let row = edit.variable(parameter_type, next)?;
+    let row = edit.variable(parameter_type, &mut context.next)?;
     let Some(FusionColumns {
         fields: columns,
         projections,
-    }) = collect_columns(edit, members, row, warnings)?
+    }) = collect_columns(edit, members, row, context)?
     else {
         return Ok(false);
     };
@@ -163,7 +199,7 @@ fn fuse_cluster(
             .node(operator.edge("outputType")?)?
             .edge("elementType")?;
         let reference = edit.reference_type(edit.expression_type(fused_tuple)?)?;
-        let row = edit.variable(reference, next)?;
+        let row = edit.variable(reference, &mut context.next)?;
         let mut fields = Vec::with_capacity(indices.len());
         for index in indices {
             let value = edit.dereference(row)?;
@@ -190,10 +226,22 @@ pub fn fuse_expensive_maps(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<Circuit>, Error> {
+    fuse_expensive_maps_with(circuit, clusters, next, warnings, |_| Ok(None))
+}
+
+/// Resolve individual undecided comparisons without restarting the rewrite.
+/// A caller without live objects can decline a comparison and resume the
+/// original pass with its allocator and diagnostics intact.
+pub fn fuse_expensive_maps_with(
+    circuit: Circuit,
+    clusters: Vec<Vec<FusionMember>>,
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+    mut compare: impl FnMut(FusionComparison<'_>) -> Result<Option<bool>, Error>,
+) -> Result<Option<Circuit>, Error> {
     if clusters.is_empty() {
         return Ok(Some(circuit));
     }
-    let mut emitted = Vec::new();
     // Decode the additional closures together. They can share circuit nodes and one another's types.
     let mut roots = Vec::new();
     let mut definitions = Vec::new();
@@ -242,20 +290,24 @@ pub fn fuse_expensive_maps(
         }
     }
     let order = circuit.operator_order(BodyOrder::Postorder)?;
+    let mut context = FusionContext {
+        input: circuit.clone(),
+        next: *next,
+        warnings: Vec::new(),
+        compare: &mut compare,
+    };
     let mut edit = CircuitEditor::new(circuit);
     let mut replacements = BTreeMap::new();
     let mut projections = ProjectionNames::default();
-    let mut names = *next;
     for id in order {
-        projections.visit(id, edit.node(id)?, &mut names)?;
+        projections.visit(id, edit.node(id)?, &mut context.next)?;
         if let Some(members) = plans.remove(&id) {
             if !fuse_cluster(
                 &mut edit,
                 bodies[&id],
                 &members,
-                &mut names,
                 &mut replacements,
-                &mut emitted,
+                &mut context,
             )? {
                 return Ok(None);
             }
@@ -265,7 +317,7 @@ pub fn fuse_expensive_maps(
         }
     }
     let circuit = projections.finish(edit.finish_forwarding(&replacements)?)?;
-    *next = names;
-    warnings.extend(emitted);
+    *next = context.next;
+    warnings.extend(context.warnings);
     Ok(Some(circuit))
 }

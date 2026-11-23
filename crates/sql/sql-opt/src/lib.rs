@@ -44,7 +44,7 @@ mod static_items;
 pub use static_items::{renumber_static_errors, static_initializer, static_item};
 pub use static_candidates::{static_candidates, StaticCandidates};
 pub use map_fusion::{
-    fuse_expensive_maps, has_duplicate_expensive_field, map_fusion_candidate, map_fusion_fragments,
+    fuse_expensive_maps, fuse_expensive_maps_with, FusionComparison, has_duplicate_expensive_field, map_fusion_candidate, map_fusion_fragments,
     map_fusion_groups, scan_map_fusion, sibling_map_groups, FusionCandidate, FusionMember, FusionScan,
 };
 mod star_joins;

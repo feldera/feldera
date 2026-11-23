@@ -1549,8 +1549,8 @@ public final class RustCircuitPass implements CircuitTransform {
         if (!functions.isArray() || functions.size() != 2)
             throw new IllegalStateException("Expected two closures from Rust");
         var decoder = expressionDecoder(reply.writer);
-        return Pair.of(decoder.decodeInner(functions.get(0), DBSPClosureExpression.class),
-                decoder.decodeInner(functions.get(1), DBSPClosureExpression.class));
+        return Pair.of(decodeLiveRoot(decoder, functions.get(0), DBSPClosureExpression.class),
+                decodeLiveRoot(decoder, functions.get(1), DBSPClosureExpression.class));
     }
 
     @Nullable
@@ -3503,6 +3503,31 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] discoverIndexes(byte[] snapshot, long next, byte[] visited, KeyEquality equality);
 
+    private static native byte[] fuseMaps(byte[] snapshot, long next, byte[] clusters, KeyEquality equality);
+
+    private JsonNode fuseMapClusters(ToJsonOuterVisitor writer, byte[] snapshot, long next) throws IOException {
+        byte[] clusters = MapFusionState.encode(writer, Objects.requireNonNull(this.mapFusion));
+        byte[] result = fuseMaps(snapshot, next, clusters, bytes -> {
+            var request = MAPPER.readTree(bytes);
+            var roots = request.required("roots");
+            var decoder = expressionDecoder(writer.innerVisitor);
+            var row = decodeLiveRoot(decoder, roots.required(0), DBSPVariablePath.class);
+            var left = decodeLiveRoot(decoder, roots.required(1), DBSPExpression.class);
+            var right = decodeLiveRoot(decoder, roots.required(2), DBSPExpression.class);
+            try {
+                return left.closure(row).equivalent(right.closure(row));
+            } catch (RuntimeException failure) {
+                // The pass will not return its final diagnostics after a failed comparison.
+                finishLowering(this.compiler, request);
+                throw failure;
+            }
+        });
+        var reply = MAPPER.readTree(result);
+        if (this.compiler.stateObserver != null)
+            this.compiler.stateObserver.nativeDecision("FuseExpensiveMaps/Columns", reply.required("native_columns").booleanValue());
+        return reply;
+    }
+
     private DBSPCircuit declareComparators(DBSPCircuit circuit, long next) throws IOException {
         byte[] types = OptimizerExpressions.encode(this.compiler, circuit, OptimizerExpressions.Roots.INDEX_TYPES);
         long[] indexes = MAPPER.treeToValue(this.invoke("Topology/OrderedIndexes", types, next, EMPTY_CONTEXT), long[].class);
@@ -4197,19 +4222,19 @@ public final class RustCircuitPass implements CircuitTransform {
                     writer.innerVisitor.includeShuffleIdentities();
                 writer.innerVisitor.liveNodes = new HashMap<>();
                 writer.apply(circuit);
-                if (this.mapFusion != null)
-                    state = MapFusionState.encode(writer, this.mapFusion);
-                else if (state == EMPTY_CONTEXT)
-                    state = this.passState(circuit, writer);
-                result = this.invoke("Live/" + this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8),
-                        initial, state);
+                byte[] snapshot = writer.getJsonString().getBytes(StandardCharsets.UTF_8);
+                if (this.mapFusion != null) {
+                    result = this.fuseMapClusters(writer, snapshot, initial);
+                } else {
+                    if (state == EMPTY_CONTEXT)
+                        state = this.passState(circuit, writer);
+                    result = this.invoke("Live/" + this.nativeName, snapshot, initial, state);
+                }
             }
             if (this.mergeFilters != null && !answered(this.compiler, "MergeFilters", result)) {
                 this.usedGeneralTemporalAnalysis = true;
                 return this.mergeFilters.apply(circuit);
             }
-            if (this.mapFusion != null && !answered(this.compiler, "FuseExpensiveMaps/Columns", result))
-                return this.mapFusion.apply(circuit);
             if (this.replaceSharedIndexes != null && !answered(this.compiler, "ReplaceSharedIndexes", result))
                 return this.replaceSharedIndexes.apply(circuit);
             JsonNode counter = result.required("next_generated_name");
