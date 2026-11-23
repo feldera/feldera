@@ -2,11 +2,12 @@ package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,36 +21,56 @@ public final class CombinedBounds {
         return slot;
     }
 
-    private ObjectNode input(IMaybeMonotoneType type) {
-        var result = JsonNodeFactory.instance.objectNode().put("slot", this.slot(type));
-        if (type instanceof PartiallyMonotoneTuple tuple) {
-            var fields = result.put("kind", "tuple").putArray("fields");
-            tuple.fields.forEach(field -> fields.add(this.input(field)));
-        } else if (type instanceof MonotoneRefType reference) {
-            result.put("kind", "reference").set("base", this.input(reference.base));
-        } else if (type instanceof ScalarMonotoneType) {
-            result.put("kind", "scalar").put("monotone", type.mayBeMonotone());
-        } else {
-            result.put("kind", "opaque");
+    /** Record the types in preorder. Tuple arity delimits children even for deep row types. */
+    private ArrayNode input(IMaybeMonotoneType root) {
+        var nodes = JsonNodeFactory.instance.arrayNode();
+        var pending = new ArrayDeque<IMaybeMonotoneType>();
+        pending.push(root);
+        while (!pending.isEmpty()) {
+            var type = pending.pop();
+            var node = nodes.addObject().put("slot", this.slot(type));
+            if (type instanceof PartiallyMonotoneTuple tuple) {
+                node.put("kind", "tuple").put("arity", tuple.size());
+                for (int i = tuple.size() - 1; i >= 0; i--)
+                    pending.push(tuple.getFieldType(i));
+            } else if (type instanceof MonotoneRefType reference) {
+                node.put("kind", "reference");
+                pending.push(reference.base);
+            } else if (type instanceof ScalarMonotoneType) {
+                node.put("kind", "scalar").put("monotone", type.mayBeMonotone());
+            } else {
+                node.put("kind", "opaque");
+            }
         }
-        return result;
+        return nodes;
     }
 
-    private IMaybeMonotoneType result(JsonNode selection) {
-        if (selection.isIntegralNumber())
-            return this.types.get(selection.intValue());
-        if (selection.has("unbounded_fields")) {
-            var value = this.types.get(selection.required("unbounded_fields").intValue());
-            return PartiallyMonotoneTuple.noMonotoneFields(value.getType().to(DBSPTypeTupleBase.class));
+    private IMaybeMonotoneType result(JsonNode steps) {
+        var stack = new ArrayList<IMaybeMonotoneType>();
+        for (var step : steps) {
+            if (step.isIntegralNumber()) {
+                stack.add(this.types.get(step.intValue()));
+            } else if (step.has("unbounded_fields")) {
+                var value = this.types.get(step.required("unbounded_fields").intValue());
+                stack.add(PartiallyMonotoneTuple.noMonotoneFields(value.getType().to(DBSPTypeTupleBase.class)));
+            } else {
+                var template = this.types.get(step.required("template").intValue());
+                int arity = step.required("arity").intValue();
+                var fields = stack.subList(stack.size() - arity, stack.size());
+                IMaybeMonotoneType type;
+                if (template instanceof MonotoneRefType) {
+                    type = new MonotoneRefType(fields.get(0));
+                } else {
+                    var tuple = template.to(PartiallyMonotoneTuple.class);
+                    type = new PartiallyMonotoneTuple(new ArrayList<>(fields), tuple.raw, tuple.mayBeNull);
+                }
+                fields.clear();
+                stack.add(type);
+            }
         }
-        var template = this.types.get(selection.required("template").intValue());
-        var fields = selection.required("fields");
-        if (template instanceof MonotoneRefType)
-            return new MonotoneRefType(this.result(fields.required(0)));
-        var tuple = template.to(PartiallyMonotoneTuple.class);
-        var members = new ArrayList<IMaybeMonotoneType>(fields.size());
-        fields.forEach(field -> members.add(this.result(field)));
-        return new PartiallyMonotoneTuple(members, tuple.raw, tuple.mayBeNull);
+        if (stack.size() != 1)
+            throw new IllegalStateException("Expected one combined waterline");
+        return stack.get(0);
     }
 
     public static IMaybeMonotoneType union(DBSPCompiler compiler, IMaybeMonotoneType left, IMaybeMonotoneType right) {

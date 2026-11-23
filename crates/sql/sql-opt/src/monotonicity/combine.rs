@@ -9,17 +9,89 @@ pub enum BoundCombination {
 
 /// Slots refer to the caller's type objects, including their precise SQL types.
 #[derive(Deserialize)]
-pub struct BoundType {
+#[serde(try_from = "WireBound")]
+pub struct BoundType(Vec<BoundEntry>);
+
+/// New callers send a preorder sequence so JSON nesting is independent of SQL row depth.
+/// Earlier compiler packages embedded each field's bound in its parent.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum WireBound {
+    Preorder(Vec<BoundEntry>),
+    Nested {
+        slot: usize,
+        #[serde(flatten)]
+        form: NestedKind,
+    },
+}
+
+#[derive(Clone, Copy, Deserialize)]
+struct BoundEntry {
     slot: usize,
     #[serde(flatten)]
-    form: Form,
+    form: BoundKind,
+    /// Number of consecutive preorder entries occupied by this subtree.
+    #[serde(skip)]
+    span: usize,
     #[serde(skip)]
     rebuilt: bool,
 }
 
+#[derive(Clone, Copy, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum BoundKind {
+    Scalar { monotone: bool },
+    Tuple { arity: usize },
+    Reference,
+    Opaque,
+}
+
+impl BoundKind {
+    fn arity(self) -> usize {
+        match self {
+            Self::Tuple { arity } => arity,
+            Self::Reference => 1,
+            Self::Scalar { .. } | Self::Opaque => 0,
+        }
+    }
+}
+
+impl TryFrom<WireBound> for BoundType {
+    type Error = &'static str;
+
+    fn try_from(input: WireBound) -> Result<Self, Self::Error> {
+        match input {
+            WireBound::Preorder(entries) => Self::from_entries(entries),
+            WireBound::Nested { slot, form } => {
+                let (form, children) = match form {
+                    NestedKind::Scalar { monotone } => (BoundKind::Scalar { monotone }, vec![]),
+                    NestedKind::Opaque => (BoundKind::Opaque, vec![]),
+                    NestedKind::Reference { base } => (BoundKind::Reference, vec![*base]),
+                    NestedKind::Tuple { fields } => (
+                        BoundKind::Tuple {
+                            arity: fields.len(),
+                        },
+                        fields,
+                    ),
+                };
+                let span = 1 + children.iter().map(|child| child.0.len()).sum::<usize>();
+                let mut entries = Vec::with_capacity(span);
+                entries.push(BoundEntry {
+                    slot,
+                    form,
+                    span,
+                    rebuilt: false,
+                });
+                entries.extend(children.into_iter().flat_map(|child| child.0));
+                Ok(Self(entries))
+            }
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-enum Form {
+enum NestedKind {
     Scalar { monotone: bool },
     Tuple { fields: Vec<BoundType> },
     Reference { base: Box<BoundType> },
@@ -41,57 +113,103 @@ pub enum BoundSelection {
     },
 }
 
-impl BoundType {
-    fn combine(self, other: Self, op: BoundCombination) -> Option<Self> {
-        let form = match self.form {
-            Form::Scalar { monotone } => {
-                let keep_left = match op {
-                    BoundCombination::Union => monotone,
-                    BoundCombination::Intersection => !monotone,
-                };
-                return Some(if keep_left { self } else { other });
-            }
-            Form::Tuple { fields } => {
-                let Form::Tuple { fields: right } = other.form else {
-                    return None;
-                };
-                let fields = fields
-                    .into_iter()
-                    .zip(right)
-                    .map(|(a, b)| a.combine(b, op))
-                    .collect::<Option<_>>()?;
-                Form::Tuple { fields }
-            }
-            Form::Reference { base } => {
-                let Form::Reference { base: right } = other.form else {
-                    return None;
-                };
-                Form::Reference {
-                    base: Box::new(base.combine(*right, op)?),
+impl BoundSelection {
+    /// Java rebuilds children before their parent, preserving the original leaf objects.
+    pub fn into_postorder(self) -> Vec<serde_json::Value> {
+        use serde_json::json;
+        let mut steps = Vec::new();
+        let mut pending = vec![self];
+        while let Some(selection) = pending.pop() {
+            steps.push(match selection {
+                Self::Original(slot) => json!(slot),
+                Self::UnboundedFields { unbounded_fields } => {
+                    json!({ "unbounded_fields": unbounded_fields })
                 }
-            }
-            Form::Opaque => return None,
-        };
-        Some(Self {
-            form,
-            rebuilt: true,
-            slot: self.slot,
+                Self::Rebuild { template, fields } => {
+                    let arity = fields.len();
+                    pending.extend(fields);
+                    json!({ "template": template, "arity": arity })
+                }
+            });
+        }
+        steps.reverse();
+        steps
+    }
+}
+
+impl BoundType {
+    fn from_entries(mut entries: Vec<BoundEntry>) -> Result<Self, &'static str> {
+        let mut sizes = Vec::new();
+        for entry in entries.iter_mut().rev() {
+            let first = sizes
+                .len()
+                .checked_sub(entry.form.arity())
+                .ok_or("missing waterline children")?;
+            entry.span = 1 + sizes.drain(first..).sum::<usize>();
+            sizes.push(entry.span);
+        }
+        if sizes.len() != 1 {
+            return Err("expected one waterline root");
+        }
+        Ok(Self(entries))
+    }
+
+    /// Each child's span gives the offset of its next sibling.
+    fn children(mut siblings: &[BoundEntry]) -> impl Iterator<Item = &[BoundEntry]> {
+        std::iter::from_fn(move || {
+            let (child, rest) = siblings.split_at(siblings.first()?.span);
+            siblings = rest;
+            Some(child)
         })
     }
 
+    fn combine(self, other: Self, op: BoundCombination) -> Option<Self> {
+        let mut result = Vec::new();
+        let mut work = vec![(self.0.as_slice(), other.0.as_slice())];
+        while let Some((left, right)) = work.pop() {
+            let form = match (left[0].form, right[0].form) {
+                (BoundKind::Scalar { monotone }, _) => {
+                    let keep_left = match op {
+                        BoundCombination::Union => monotone,
+                        BoundCombination::Intersection => !monotone,
+                    };
+                    result.extend_from_slice(if keep_left { left } else { right });
+                    continue;
+                }
+                (BoundKind::Reference, BoundKind::Reference) => BoundKind::Reference,
+                (BoundKind::Tuple { arity: a }, BoundKind::Tuple { arity: b }) => {
+                    BoundKind::Tuple { arity: a.min(b) }
+                }
+                _ => return None,
+            };
+            result.push(BoundEntry {
+                form,
+                rebuilt: true,
+                ..left[0]
+            });
+            let mark = work.len();
+            work.extend(Self::children(&left[1..]).zip(Self::children(&right[1..])));
+            work[mark..].reverse();
+        }
+        Some(Self::from_entries(result).expect("combined children match each parent's arity"))
+    }
+
     fn selection(self) -> BoundSelection {
-        if !self.rebuilt {
-            return BoundSelection::Original(self.slot);
+        let mut pending = Vec::new();
+        for entry in self.0.into_iter().rev() {
+            let first = pending.len() - entry.form.arity();
+            let value = if entry.rebuilt {
+                BoundSelection::Rebuild {
+                    template: entry.slot,
+                    fields: pending.drain(first..).rev().collect(),
+                }
+            } else {
+                pending.truncate(first);
+                BoundSelection::Original(entry.slot)
+            };
+            pending.push(value);
         }
-        let fields = match self.form {
-            Form::Tuple { fields } => fields.into_iter().map(Self::selection).collect(),
-            Form::Reference { base } => vec![base.selection()],
-            _ => unreachable!("only tuple and reference projections are rebuilt"),
-        };
-        BoundSelection::Rebuild {
-            template: self.slot,
-            fields,
-        }
+        pending.pop().expect("validated waterline root")
     }
 }
 
@@ -141,6 +259,18 @@ pub fn antijoin_waterline([left, right]: [IndexedInput; 2]) -> Option<[BoundSele
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preorder_bounds_require_one_complete_tree() {
+        for input in [
+            r#"[]"#,
+            r#"[{"slot":0,"kind":"reference"}]"#,
+            r#"[{"slot":0,"kind":"tuple","arity":2},{"slot":1,"kind":"opaque"}]"#,
+            r#"[{"slot":0,"kind":"opaque"},{"slot":1,"kind":"opaque"}]"#,
+        ] {
+            assert!(serde_json::from_str::<BoundType>(input).is_err(), "{input}");
+        }
+    }
 
     #[test]
     fn join_parameters_take_bounds_from_both_keys_and_keep_each_value_intact() {

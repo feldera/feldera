@@ -1003,6 +1003,23 @@ fn pass_warnings(warnings: Vec<feldera_sql_expr::SimplifyWarning>) -> Vec<Value>
     })).collect()
 }
 
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum BoundReply {
+    Nested(feldera_sql_opt::BoundSelection),
+    Postorder(Vec<Value>),
+}
+
+impl BoundReply {
+    fn encode(selection: feldera_sql_opt::BoundSelection, format: &[u8]) -> Self {
+        if format == b"postorder" {
+            Self::Postorder(selection.into_postorder())
+        } else {
+            Self::Nested(selection)
+        }
+    }
+}
+
 fn transform(
     pass: &str,
     error_view: &str,
@@ -1154,17 +1171,23 @@ fn transform(
         }
         "Monotonicity/JoinArguments" => {
             let inputs = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::join_arguments(inputs))?);
+            let reply = feldera_sql_opt::join_arguments(inputs)
+                .map(|args| args.map(|arg| BoundReply::encode(arg, state)));
+            return Ok(serde_json::to_value(reply)?);
         }
         "Monotonicity/AntiJoinProjection" => {
             let inputs = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::antijoin_waterline(inputs))?);
+            let reply = feldera_sql_opt::antijoin_waterline(inputs)
+                .map(|args| args.map(|arg| BoundReply::encode(arg, state)));
+            return Ok(serde_json::to_value(reply)?);
         }
         "Monotonicity/Union" | "Monotonicity/Intersection" => {
             use feldera_sql_opt::BoundCombination::{Intersection, Union};
             let mode = if pass == "Monotonicity/Union" { Union } else { Intersection };
             let inputs = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::combine_bounds(inputs, mode))?);
+            let reply = feldera_sql_opt::combine_bounds(inputs, mode)
+                .map(|bound| BoundReply::encode(bound, state));
+            return Ok(serde_json::to_value(reply)?);
         }
         "Monotonicity/Function" => {
             let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;

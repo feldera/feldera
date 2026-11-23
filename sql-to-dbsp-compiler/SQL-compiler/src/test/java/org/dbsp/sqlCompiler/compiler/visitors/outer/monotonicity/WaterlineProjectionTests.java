@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapsho
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.CombinedBounds;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
@@ -68,6 +69,42 @@ import java.util.Map;
 import java.util.Set;
 
 public class WaterlineProjectionTests {
+    @Test
+    public void combinesDeepWaterlinesForUnionsAndJoins() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var type = new DBSPI32Literal(1).getType();
+        IMaybeMonotoneType bounded = new MonotoneType(type);
+        IMaybeMonotoneType unbounded = new NonMonotoneType(type);
+        IMaybeMonotoneType left = bounded;
+        IMaybeMonotoneType right = unbounded;
+        for (int i = 0; i < 144; i++) {
+            left = new PartiallyMonotoneTuple(List.of(unbounded, left), false, false);
+            right = new PartiallyMonotoneTuple(List.of(bounded, right), false, false);
+        }
+        var leftPair = new PartiallyMonotoneTuple(List.of(left, right), true, false);
+        var rightPair = new PartiallyMonotoneTuple(List.of(right, left), true, false);
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var union = CombinedBounds.union(compiler, right, left);
+            var intersection = CombinedBounds.intersection(compiler, List.of(left, left, right));
+            var join = CombinedBounds.joinArguments(compiler, leftPair, rightPair);
+            var anti = CombinedBounds.commonKey(compiler, leftPair, rightPair);
+            Assert.assertSame(right, join[1]);
+            Assert.assertSame(left, join[2]);
+            Assert.assertFalse(anti.getFieldType(1).mayBeMonotone());
+            IMaybeMonotoneType[] keys = {union, intersection, join[0], anti.getFieldType(0)};
+            for (int depth = 0; depth < 144; depth++) {
+                for (int i = 0; i < keys.length; i++) {
+                    var tuple = keys[i].to(PartiallyMonotoneTuple.class);
+                    Assert.assertSame(i % 2 == 0 ? bounded : unbounded, tuple.getFieldType(0));
+                    keys[i] = tuple.getFieldType(1);
+                }
+            }
+            Assert.assertArrayEquals(new IMaybeMonotoneType[]{bounded, unbounded, bounded, unbounded}, keys);
+        }
+    }
+
     @Test
     public void deepAggregatePayloadsRetainOnlyTheComparedLeaf() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
