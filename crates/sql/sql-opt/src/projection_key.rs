@@ -165,10 +165,10 @@ impl ProjectionKey {
                             work.extend([Visit::Alias(at, value), Visit::Read(value)]);
                             continue;
                         }
-                        // CanonicalForm rejects changes to a static's initializer.
-                        // Named calls on literals retain identity throughout renaming.
+                        // CanonicalForm requires a static initializer to retain its
+                        // identity. Calls and blocks can reuse unchanged children.
                         if at.in_static
-                            && !matches!(kind, Expr::Apply | Expr::ApplyMethod | Expr::Constructor)
+                            && !matches!(kind, Expr::Apply | Expr::ApplyMethod | Expr::Constructor | Expr::Block)
                             && !kind.wire_name().ends_with("Literal")
                         {
                             return Ok(None);
@@ -312,7 +312,8 @@ fn block_term<'a>(
                 statements.push(BlockStatement::Expression);
                 children.push(in_scope(statement.edge("expression")?));
             }
-            "DBSPLetStatement" => {
+            // CanonicalForm renames each declaration, even an unused one.
+            "DBSPLetStatement" if !at.in_static => {
                 let ty = edit.type_id(statement.edge("type")?)?;
                 let name = string(statement, "variable")
                     .ok_or_else(|| Error::new("missing block variable name"))?;

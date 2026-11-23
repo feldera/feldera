@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust compares printed window keys for static blocks containing calls and
+expression statements. The directed scan preserved the preceding cast warning
+at its original range. An initializer containing a local declaration produced
+the same canonicalization error as direct Java. The rebuilt library passed
+221 Rust tests, 151 targeted JUnit tests and 20 compilations comparing 8,778
+ordered S4 observations and emitted artifacts.
+[Static window keys](evidence/p3-static-window-blocks.json)
+
 The waterline visitor checks a parameter's original type when it visits a read.
 It resolves names inside nested lambdas, whose bodies have no waterline facts.
 The regression checks both observation modes, a temporal predicate and the

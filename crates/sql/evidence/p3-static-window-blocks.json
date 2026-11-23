@@ -1,0 +1,42 @@
+{
+  "scope": "Build a native printed temporal key for static blocks containing stable calls and expression statements. Preserve the warning location and Java diagnostic for a rewritten LET declaration.",
+  "source_base": "6ef296ec7bf1313c8d4008598076d60bfaf6030d",
+  "source_files_sha256": {
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "6375a872d7b236d5e0bc7d87519301a6c27d0d07b2540aa971c1523acffc2e1a",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/scope.rs": "c5b5973949fa333984c9bf1748640152f2a141d8c74a7b6e79a377cfc49c9bea",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "f606da0b8474c3e3bcbffe4348127190c47d4bc95aad4cec8868bf37107aef50",
+    "crates/sql/sql-opt/src/projection_key.rs": "67807836ae7fc30ead3be4cf7a9dd5b62f824cde06af0ed737e5fd250da3294f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "b0eb6cb5358b21a29ea854923e87386eee87ced1644c532ff1c8dcf8f4c362a6"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "b80ab6f0f5f0c52ac327109c24aa3a418b61ecab6bffd0058113b6bbf91b6151",
+    "bin/sql-difftest": "51b2de551136bb808f59e6266173e686d4783f8bec0e320cbf8439016f45d7e4",
+    "maven/tests.jar": "661806925d189e2d3cc0fcbf042927d2c70546ee6aec3192934afc4cda39bf8b",
+    "maven/sql-compiler.jar": "fd0e4e0426007394890bb2188d80952968d328a5c9bd4f422d552078e45e830a"
+  },
+  "negative_control": {
+    "library_sha256": "a79288a5c2a1ec3ec05fc14aecc077fe0302fa1965b4f9879153c36707479e6b",
+    "failed_tests": [
+      "windowScanReportsCastWarningAtItsOriginalRange"
+    ]
+  },
+  "rust_tests": 221,
+  "junit_tests": 151,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5309,
+      "mismatches": 0,
+      "population_sha256": "64ea7e3b27e20bd443a0e8a1822ba6f9f6f315b099916e2000341bdda80e8079",
+      "receipt_sha256": "1af8765035d0ea5655301a008e5cd2e754d8df504657ad18faa039e12943c72d"
+    },
+    "gen2": {
+      "cases": 8,
+      "ordered_s4_observations": 3469,
+      "mismatches": 0,
+      "population_sha256": "f22a7f8f00d42e6a27914a726b298e1f76ae51639ad5aaed212e294ed4b1ed57",
+      "receipt_sha256": "219b7e5dc8ecbe1178139b77aa5d51dc507193f5d49c7659c9d29b77c1f7efa6"
+    }
+  }
+}

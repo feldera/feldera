@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -109,15 +110,15 @@ public class TemporalKeyTests {
             var clock = new DBSPApplyExpression("now", time);
             circuit.addOperator(new DBSPFilterOperator(rel, b.binary(DBSPOpcode.GTE, cast, clock).closure(row),
                     map.outputPort()));
-            if (replayPaths) {
-                // Keep exercising the path replay after the preceding map has emitted its warning.
-                var second = b.refVar(inputType);
-                var initializer = new DBSPBlockExpression(List.of(), b.call("get_offset", b.lit(1)));
-                var offset = new DBSPStaticExpression(rel, initializer, "offset");
-                var key = b.call(time, "shift_timestamp", b.unwrap(b.field(second, 0)), offset);
-                var condition = b.binary(DBSPOpcode.GTE, key, clock.deepCopy());
-                circuit.addOperator(new DBSPFilterOperator(rel, condition.closure(second), input.outputPort()));
-            }
+            var second = b.refVar(inputType);
+            // Both paths see the warning. A comment in the printed key still requires Java replay.
+            var initializer = new DBSPBlockExpression(
+                    replayPaths ? List.of(new DBSPComment("offset")) : List.of(b.call("prepare_offset").toStatement()),
+                    b.call("get_offset", b.lit(1)));
+            var offset = new DBSPStaticExpression(rel, initializer, "offset");
+            var key = b.call(time, "shift_timestamp", b.unwrap(b.field(second, 0)), offset);
+            var condition = b.binary(DBSPOpcode.GTE, key, clock.deepCopy());
+            circuit.addOperator(new DBSPFilterOperator(rel, condition.closure(second), input.outputPort()));
 
             var decisions = new ArrayList<Boolean>();
             for (boolean hybrid : List.of(false, true)) {
@@ -132,6 +133,32 @@ public class TemporalKeyTests {
             }
             Assert.assertEquals(List.of(!replayPaths), decisions);
         }
+    }
+
+    @Test
+    public void windowScanPreservesTheErrorWhenRenamingChangesAStaticBlock() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var inputType = b.tup(time);
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(inputType));
+        circuit.addOperator(input);
+        var row = b.refVar(inputType);
+        var initializer = new DBSPBlockExpression(List.of(new DBSPLetStatement("offset", b.lit(1))), b.lit(2));
+        var offset = new DBSPStaticExpression(site, initializer, "saved");
+        var key = b.call(time, "shift_timestamp", b.field(row, 0), offset);
+        var predicate = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+        circuit.addOperator(new DBSPFilterOperator(site, predicate.closure(row), input.outputPort()));
+
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var direct = Assert.assertThrows(RuntimeException.class, () -> scanWindows(compiler, circuit, new ArrayList<>()));
+        Assert.assertTrue(direct.getMessage().contains("Changing static expression"));
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var hybrid = Assert.assertThrows(RuntimeException.class, () -> scanWindows(compiler, circuit, new ArrayList<>()));
+        Assert.assertEquals(direct.getClass(), hybrid.getClass());
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
     }
 
     @Test
