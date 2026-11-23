@@ -41,10 +41,20 @@ To compare SQL compiler results, start the compiler server with
 Each server runs at most one shadow at a time. Allow up to about 700 MiB of
 additional resident memory (RSS) and one CPU per compiler server.
 
-The server discards shadow output and logs a count and an outcome or skip reason.
+The server removes temporary compilation output and logs a count and an outcome or skip reason.
 It skips a sample if the worker is busy, the SQL exceeds 1 MiB, or the primary
 observation exceeds 4 MiB. The default deadline is 30 seconds. Set
 `--shadow-sql-compiler-timeout-secs` to change it.
+
+With `--shadow-sql-compiler rust-optimizer`, a difference also writes a private
+JSON file under `<compiler-working-directory>/sql-shadow-mismatches/`. The
+server keeps the latest 32 bundles. Each file records the compiler manager
+build, runtime, engine, platform compiler override and first differing output.
+Within the remaining shadow deadline, the platform compiler's `--anonymize`
+option renames identifiers and removes connector properties. Its output can
+contain SQL literals. Administrators can inspect a bundle locally and export
+it manually. If anonymization fails, the bundle contains only review metadata.
+The daily counter records the difference even if bundle creation or cleanup fails.
 
 ## Examples
 

@@ -1,7 +1,8 @@
 //! Bounded, observational SQL compilation. This module has no database or
-//! artifact-delivery handle; a shadow result can only contribute a log event.
+//! artifact-delivery handle. Differences can produce a private local review bundle.
 
 pub(super) mod hybrid;
+mod mismatch;
 mod sample;
 
 use super::sql_compiler::{
@@ -23,7 +24,7 @@ use tokio::{
     process::{Child, Command},
     sync::Semaphore,
     task::JoinHandle,
-    time::{Duration, timeout},
+    time::{Duration, Instant, timeout_at},
 };
 use tracing::{Dispatch, info, instrument::WithSubscriber, warn};
 use uuid::Uuid;
@@ -41,6 +42,17 @@ static CLEANUP_HEALTHY: AtomicBool = AtomicBool::new(true);
 enum Observation {
     Success(serde_json::Map<String, Value>, SqlCompilationInfo),
     SqlError(SqlCompilationInfo),
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Difference {
+    Verdict,
+    Diagnostics,
+    Schema,
+    Dataflow,
+    CircuitIr,
+    ProgramInfo,
 }
 
 /// Count serialized bytes without buffering or copying a large primary result.
@@ -61,24 +73,37 @@ impl Write for ByteBudget {
 }
 
 impl Observation {
-    fn matches(self, reference: Self) -> bool {
+    fn compare(self, reference: Self) -> Result<(), Difference> {
         match (self, reference) {
             (Self::Success(mut actual, diagnostics), Self::Success(mut expected, other)) => {
+                if diagnostics != other {
+                    return Err(Difference::Diagnostics);
+                }
                 // Gen-2 node numbers are local to each compiler. Compare graph edges,
                 // sharing and persistent IDs using the same contract as corpus replay.
                 let left = actual.remove("circuit_ir");
                 let right = expected.remove("circuit_ir");
-                diagnostics == other
-                    && actual == expected
-                    && match (&left, &right) {
-                        (Some(a), Some(b)) if a.is_object() && b.is_object() => {
-                            feldera_sql_difftest::compare_circuits(a, b).is_ok()
-                        }
-                        _ => left == right,
+                if actual != expected {
+                    return Err(if actual.get("schema") != expected.get("schema") {
+                        Difference::Schema
+                    } else if actual.get("dataflow") != expected.get("dataflow") {
+                        Difference::Dataflow
+                    } else {
+                        Difference::ProgramInfo
+                    });
+                }
+                match (&left, &right) {
+                    (Some(a), Some(b)) if a.is_object() && b.is_object() => {
+                        feldera_sql_difftest::compare_circuits(b, a)
+                            .map_err(|_| Difference::CircuitIr)
                     }
+                    _ if left == right => Ok(()),
+                    _ => Err(Difference::CircuitIr),
+                }
             }
-            (Self::SqlError(actual), Self::SqlError(expected)) => actual == expected,
-            _ => false,
+            (Self::SqlError(actual), Self::SqlError(expected)) if actual == expected => Ok(()),
+            (Self::SqlError(_), Self::SqlError(_)) => Err(Difference::Diagnostics),
+            _ => Err(Difference::Verdict),
         }
     }
 
@@ -206,10 +231,11 @@ async fn run(
 ) -> Outcome {
     let id = PipelineId(Uuid::now_v7());
     let directory = ephemeral_compilation_dir(config).join(id.to_string());
+    let expires = Instant::now() + deadline;
     // Primary compiler logs can contain SQL and connector settings.
     let result = async {
-        timeout(
-            deadline,
+        timeout_at(
+            expires,
             perform_sql_compilation_inner(SqlCompilationRequest {
                 common_config: common,
                 config,
@@ -228,30 +254,55 @@ async fn run(
     }
     .with_subscriber(Dispatch::none())
     .await;
+    let outcome = match result {
+        Err(_) => Outcome::TimedOut,
+        Ok(result) => match Observation::from_result(&result) {
+            Ok(actual) => match actual.compare(reference) {
+                Ok(()) => Outcome::Equal,
+                Err(difference) => {
+                    if config.shadow_sql_compiler
+                        == Some(crate::config::ShadowCompiler::RustOptimizer)
+                        && let Err(error) = mismatch::retain(
+                            config,
+                            program_config,
+                            &directory,
+                            id.0,
+                            difference,
+                            expires,
+                        )
+                        .await
+                    {
+                        warn!(kind = ?error.kind(), "Could not retain the local SQL optimizer mismatch bundle");
+                    }
+                    Outcome::Different
+                }
+            },
+            Err(class) => Outcome::Failed(class),
+        },
+    };
     // Timeout drops the attempt's ProcessGroupTerminator before cleanup. The
     // semaphore remains held until cleanup finishes, including after a failure.
-    if let Err(error) = tokio::fs::remove_dir_all(&directory).await
-        && error.kind() != std::io::ErrorKind::NotFound
+    finish(
+        outcome,
+        tokio::fs::remove_dir_all(&directory).await,
+        &CLEANUP_HEALTHY,
+    )
+}
+
+fn finish(outcome: Outcome, cleanup: io::Result<()>, healthy: &AtomicBool) -> Outcome {
+    if let Err(error) = cleanup
+        && error.kind() != io::ErrorKind::NotFound
     {
-        CLEANUP_HEALTHY.store(false, Ordering::Relaxed);
+        healthy.store(false, Ordering::Relaxed);
         warn!(
             "SQL shadow cleanup failed. Check the compiler working directory and restart the compiler server to enable shadows."
         );
-        return Outcome::Failed(Failure::Cleanup);
+        // A known difference must still reset the field window.
+        if outcome != Outcome::Different {
+            return Outcome::Failed(Failure::Cleanup);
+        }
     }
-    match result {
-        Err(_) => Outcome::TimedOut,
-        Ok(result) => match Observation::from_result(&result) {
-            Ok(actual) => {
-                if actual.matches(reference) {
-                    Outcome::Equal
-                } else {
-                    Outcome::Different
-                }
-            }
-            Err(class) => Outcome::Failed(class),
-        },
-    }
+    outcome
 }
 
 /// Limit each output file in the child. Shadow classic compilation uses
@@ -372,6 +423,22 @@ mod tests {
     use clap::Parser;
     use serde_json::json;
     use std::process::Stdio;
+    use tokio::time::timeout;
+
+    #[test]
+    fn cleanup_failure_preserves_a_known_difference_and_stops_admission() {
+        let healthy = AtomicBool::new(true);
+        let failure = || Err(io::ErrorKind::PermissionDenied.into());
+        assert_eq!(
+            finish(Outcome::Different, failure(), &healthy),
+            Outcome::Different
+        );
+        assert!(!healthy.load(Ordering::Relaxed));
+        assert_eq!(
+            finish(Outcome::Equal, failure(), &healthy),
+            Outcome::Failed(Failure::Cleanup)
+        );
+    }
 
     #[tokio::test]
     async fn exited_shadow_leader_does_not_leave_group_members_running() {
@@ -535,6 +602,43 @@ mod tests {
             )
             .await;
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a matching SQL compiler jar, sql2dbsp and the native optimizer library"]
+    async fn optimizer_difference_retains_only_the_anonymized_review_bundle() {
+        let root = tempfile::tempdir().unwrap();
+        let mut config = real_compiler_config(root.path());
+        config.shadow_sql_compiler = Some(crate::config::ShadowCompiler::RustOptimizer);
+        let sql = "CREATE TABLE private_shadow_input(i INT) WITH ('connectors' = '[]'); \
+                   CREATE VIEW private_shadow_view AS SELECT i FROM private_shadow_input;";
+        let outcome = run(
+            &CommonConfig::test_config(),
+            &config,
+            &json!({}),
+            sql,
+            Observation::SqlError(SqlCompilationInfo::success()),
+            Duration::from_secs(120),
+        )
+        .await;
+        assert_eq!(outcome, Outcome::Different);
+        let files: Vec<_> = std::fs::read_dir(root.path().join("sql-shadow-mismatches"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(files.len(), 1);
+        let bundle: Value = serde_json::from_slice(&std::fs::read(&files[0]).unwrap()).unwrap();
+        assert_eq!(bundle["first_difference"], "verdict");
+        assert_eq!(bundle["anonymized_sql_status"], "available");
+        let anonymized = bundle["anonymized_sql"].as_str().unwrap().to_lowercase();
+        assert!(anonymized.contains("create table id_"));
+        assert!(!anonymized.contains("private_shadow") && !anonymized.contains("connectors"));
+        assert_eq!(
+            std::fs::read_dir(ephemeral_compilation_dir(&config))
+                .unwrap()
+                .count(),
+            0
+        );
     }
 
     async fn check_full_primary_against_shadow(

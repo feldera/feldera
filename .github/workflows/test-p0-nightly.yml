@@ -846,3 +846,4 @@ jobs:
             exit 1
           fi
           grep -Eq '^test .*::full_primary_matches_rust_optimizer_shadow_in_both_engines \.\.\. ok$' "$RUNNER_TEMP/shadow.log"
+          grep -Eq '^test .*::optimizer_difference_retains_only_the_anonymized_review_bundle \.\.\. ok$' "$RUNNER_TEMP/shadow.log"
