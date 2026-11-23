@@ -220,9 +220,11 @@ fn project_wrapper(
                 {
                     *tuple_nullable = nullable;
                 }
-                // Changing the nullability of an empty tuple changes whether it
-                // has a bound. Let the general analysis handle that transition.
-                if value.shape.monotone() != value.reduced.is_some() {
+                if !value.shape.monotone() {
+                    // Some(()) has no usable bound. Its parent projects only bounded fields.
+                    value.reduced = None;
+                } else if value.reduced.is_none() {
+                    // Unwrapping a nullable empty tuple has no input bound to read.
                     return Ok(None);
                 }
             }

@@ -652,6 +652,35 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void nullableEmptyTupleDropsItsWaterlineAndKeepsTheSiblingRead() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(0).getType();
+        var kept = new MonotoneType(integer);
+        var unit = new PartiallyMonotoneTuple(List.of(), false, false);
+        var input = new PartiallyMonotoneTuple(List.of(unit, kept), false, false);
+        var row = new DBSPVariablePath("row", input.getType().ref());
+        var body = new DBSPTupleExpression(row.deref().field(0).some(), row.deepCopy().deref().field(1));
+        var closure = body.closure(row);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet,
+                input).applyAnalysis(closure);
+        var expected = Monotonicity.getBodyType(direct).to(PartiallyMonotoneTuple.class);
+        Assert.assertFalse(expected.getFieldType(0).mayBeMonotone());
+        Assert.assertSame(kept, expected.getFieldType(1));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var projected = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{input.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(input)}, false);
+            Assert.assertNotNull(projected);
+            var result = projected.bodyType().to(PartiallyMonotoneTuple.class);
+            Assert.assertFalse(result.getFieldType(0).mayBeMonotone());
+            Assert.assertTrue(result.getFieldType(0).getType().sameType(expected.getFieldType(0).getType()));
+            Assert.assertSame(kept, result.getFieldType(1));
+            Assert.assertTrue(direct.getReducedExpression().equivalent(projected.closure()));
+        }
+    }
+
+    @Test
     public void castingAPartiallyBoundRowKeepsOnlyTheSiblingWaterline() {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var site = CalciteEmptyRel.INSTANCE;
