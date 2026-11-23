@@ -37,11 +37,7 @@ import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySources;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.JsonStream;
 
 import javax.annotation.Nullable;
@@ -283,22 +279,27 @@ final class OptimizerTopology {
             if ((details == Details.PERSISTENT_IDS || details == Details.STREAM_KINDS) && op instanceof DBSPSinkOperator sink)
                 json.label("metadata").beginObject().label("system").append(sink.metadata.system).endObject();
             if (details == Details.MONOTONICITY) {
+                var inner = java.util.Objects.requireNonNull(types);
                 if (op instanceof DBSPFilterOperator filter) {
-                    json.label("indexedRows").append(filter.getType().is(DBSPTypeIndexedZSet.class));
+                    json.label("outputType");
+                    filter.getType().accept(inner);
                 } else if (op instanceof DBSPPrimitiveAggregateOperator aggregate) {
-                    json.label("aggregateKind").append(aggregate.function instanceof DBSPMinMax minMax
-                            ? minMax.aggregation.name() : "Other");
+                    json.label("function");
+                    if (aggregate.function == null)
+                        json.appendNull();
+                    else
+                        aggregate.function.accept(inner);
                 } else if (op instanceof DBSPAsofJoinOperator join) {
-                    json.label("directComparator").append(join.comparator instanceof DBSPDirectComparatorExpression);
-                    if (join.comparator instanceof DBSPDirectComparatorExpression order)
-                        json.label("ascending").append(order.ascending);
+                    json.label("comparator");
+                    join.comparator.accept(inner);
                 } else if (op instanceof DBSPPartitionedRollingAggregateOperator rolling) {
                     json.label("upper");
-                    rolling.upper.accept(java.util.Objects.requireNonNull(types));
+                    rolling.upper.accept(inner);
                 } else if (op instanceof DBSPSourceMultisetOperator table) {
                     writeColumnLateness(json, "columnMetadata", table);
                 } else if (op instanceof DBSPViewOperator view) {
-                    json.label("tupleRows").append(view.getOutputZSetElementType() instanceof DBSPTypeTuple);
+                    json.label("outputType");
+                    view.getType().accept(inner);
                     writeColumnLateness(json, "columns", view);
                 }
             }

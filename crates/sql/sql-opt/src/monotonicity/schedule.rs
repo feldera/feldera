@@ -72,6 +72,11 @@ pub enum MonotonicityTransfer {
 
 fn primitive_transfer(circuit: &Circuit, node: &Node) -> MonotonicityTransfer {
     use MonotonicityTransfer::{AggregateKey, Analyze, PrimitiveMinimumOrKey};
+    // A known absent function propagates the key. Older compact snapshots
+    // can omit both the function and the classification.
+    if node.data("function").is_some_and(|v| v.is_null()) {
+        return AggregateKey;
+    }
     let kind = node
         .data("aggregateKind")
         .and_then(|v| v.as_str())
@@ -368,6 +373,49 @@ mod tests {
     }
 
     #[test]
+    fn primitive_waterlines_distinguish_minimums_absent_functions_and_missing_details()
+    -> Result<(), Error> {
+        use MonotonicityTransfer::{AggregateKey, Analyze, PrimitiveMinimumOrKey};
+        let input = json!({"operator":{"node":1},"outputNumber":0});
+        let mut operators = vec![
+            json!({"class":"DBSPSourceMultisetOperator","id":1,"inputs":[],
+            "metadata":{"columnMetadata":[{"lateness":true}]}}),
+        ];
+        let mut expected = Vec::new();
+        for (function, rule) in [
+            (
+                Some(json!({"class":"DBSPMinMax","id":1,"aggregation":"Min"})),
+                PrimitiveMinimumOrKey,
+            ),
+            (Some(json!({"node":1})), PrimitiveMinimumOrKey),
+            (
+                Some(json!({"class":"DBSPMinMax","id":2,"aggregation":"MinSome1"})),
+                PrimitiveMinimumOrKey,
+            ),
+            (
+                Some(json!({"class":"DBSPMinMax","id":3,"aggregation":"Max"})),
+                AggregateKey,
+            ),
+            (Some(json!({"class":"DBSPFold","id":4})), AggregateKey),
+            (Some(json!(null)), AggregateKey),
+            (None, Analyze),
+        ] {
+            let id = operators.len() as u64 + 1;
+            let mut aggregate =
+                json!({"class":"DBSPPrimitiveAggregateOperator","id":id,"inputs":[input,input]});
+            if let Some(function) = function {
+                aggregate["function"] = function;
+            }
+            operators.push(aggregate);
+            expected.push((NodeId::Outer(id), rule));
+        }
+        let circuit = Circuit::from_json(json!({"class":"DBSPCircuit","id":0,
+            "declarations":[],"allOperators":operators}))?;
+        assert_eq!(monotonicity_transfers(&circuit)?[1..], expected);
+        Ok(())
+    }
+
+    #[test]
     fn asof_order_and_rolling_upper_bound_control_timestamp_transfers() -> Result<(), Error> {
         use MonotonicityTransfer::{Analyze, JoinClosure, RollingTimestamp};
         let input = json!({"outputNumber": 0, "operator": {"node": 1}});
@@ -393,6 +441,21 @@ mod tests {
                 None,
             ),
             ("DBSPAsofJoinOperator", json!({}), Some(Analyze)),
+            (
+                "DBSPAsofJoinOperator",
+                json!({"comparator":{"class":"DBSPDirectComparatorExpression","id":1,"ascending":true}}),
+                Some(JoinClosure),
+            ),
+            (
+                "DBSPAsofJoinOperator",
+                json!({"comparator":{"class":"DBSPDirectComparatorExpression","id":2,"ascending":false}}),
+                None,
+            ),
+            (
+                "DBSPAsofJoinOperator",
+                json!({"comparator":{"class":"DBSPFieldComparatorExpression","id":3,"ascending":true}}),
+                None,
+            ),
             (
                 "DBSPPartitionedRollingAggregateOperator",
                 json!({"upperPreceding": true}),
@@ -654,7 +717,13 @@ mod tests {
                  "metadata": {"columns": [{"lateness": true}]}},
                 {"class": "DBSPSinkOperator", "id": 4, "inputs": [port(3)]},
                 {"class": "DBSPViewOperator", "id": 5, "inputs": [port(2)], "tupleRows": true,
-                 "metadata": {"columns": [{}, {"lateness": true}, {}]}}
+                 "metadata": {"columns": [{}, {"lateness": true}, {}]}},
+                {"class": "DBSPViewOperator", "id": 6, "inputs": [port(5)],
+                 "outputType":{"class":"DBSPTypeZSet","id":1,"elementType":{"class":"DBSPTypeTuple","id":2}},
+                 "metadata":{"columns":[{},{},{}]}},
+                {"class": "DBSPViewOperator", "id": 7, "inputs": [port(6)],
+                 "outputType":{"class":"DBSPTypeZSet","id":3,"elementType":{"class":"DBSPTypeVec","id":4}},
+                 "metadata":{"columns":[{"lateness":true}]}}
             ]
         }))?;
         assert_eq!(
@@ -683,6 +752,10 @@ mod tests {
                             ColumnWaterline::InheritIfPresent
                         ]
                     }
+                ),
+                (
+                    NodeId::Outer(6),
+                    MonotonicityTransfer::Identity { input: 0 }
                 ),
             ]
         );
