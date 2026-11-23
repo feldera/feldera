@@ -1,0 +1,222 @@
+{
+  "commit": "b1cc5637e744376029036ef4b89fd21b60d280b8",
+  "scope": "Frozen SQL through ordered S4, detached S2 replay and artifact emission. Classic runtime and cross-compiler COUNT and LATENESS restore.",
+  "build_sha256": {
+    "bin/sql-difftest": "9d72b7422c366d306f9bb3809f88f9df5885dda5e6ac1ed8c8d20484c9d45b31",
+    "bin/libfeldera_sql_opt_jni.so": "899a40e7ac35b577bd2b27eee59121198d83da81c320c972d5fec457b3aeb7c1",
+    "bin/sql2dbsp": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "maven/tests.jar": "30299886e9b54998739575ab1d07a060f2448d9e87e0b7d49e6dcef3a519a63b",
+    "maven/sql-compiler.jar": "ef79c8df5e33ca3e642eededf44c127134f629f71b6bfacdf36b6bff4f655c7f"
+  },
+  "replay": {
+    "classic": {
+      "cases": 8571,
+      "ordered_s4_observations": 3486078,
+      "mismatches": 0,
+      "native_limiter_invocations": 8571,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "combined_validation_sha256": "3b73109385d0cc92152ae4035d29ad51ff38fe86f7cd246bc8a5f006c52527d5",
+      "shard_receipts_sha256": [
+        "f211ce915d6210809c5ad58c664efe5621edad7dd7fdc74c74d955396b02e1a3",
+        "ad18756ac34e17681bb120d6e7b0a59f17658fe0bcbc464b48b5803c353f8ce3",
+        "58591b716c1e5bb003e3e545ad1c283cef5e18a1b2998dacb1bc87bb071b17b3",
+        "39f20aee86de7dd25214bb32686a8d48388edcf0ffa0865662d5dc9c9f3016d8",
+        "cd553cb045efbe8417babffacc032ad8e6a9894763e7d4cce691fec7b0f873c4",
+        "1a49d0aa6059c874ad0d1f1a9cd19daed65e43de678f99052798ad25de93ee78",
+        "d57bb15fdfcb4135596575e57fdd9180e8711a50f2a1342d1a879b00d594edff",
+        "6584c185c37c02b9046e3c2f7d5fe207d8d8dd18b064987e638967fa72a1a6e2",
+        "a192cc0295ed6f71c306e84e7ac5e3a8bdfddd0be3512604a202a4451f49d9ee",
+        "c18fd4c939047e902af658452bc599ac39622ead28d914264bdaf53f4309ed25",
+        "a0ba364d39253e277252ab0ae375e6abe0fcf5300f570fd5c2fe74435c25a9d0",
+        "e5d9dc8468ac877ad568b306b2da8535e990b00e1df4c4261f7d11204905e3dd",
+        "1ee702d1772d62f04029b4555517abdbf184dc02b4acae2d8aff224ecf4c44db",
+        "1e940513bcfac23de0c9c8b51a0fcc560b6732aae1c619c7b024207caf9da7dc",
+        "1067bd25968f6320cf996210c6784cb84d331cfe748090036b99e361a1fe50dd",
+        "23b4504233b079b308253a34dfe4ec99a07e4ecac51f8aeaaf9e819eb301f519",
+        "7660a28c4f2c6b07eaee1f39afbc1c00ba385152741a84b8d7ad420b91be7dea",
+        "ef56c82dfc8ba849426769fb80fb6414be4936fbeb9a8c35a891281edfc441d5",
+        "0c6dc4e642081e294799d294955fe7feecbaa2998b5cc36daa6da1b97a2f2ace",
+        "e6f2b52b7a20031b970fd016253dc398e609475e6d21fc58646d0f77a00a0372",
+        "ad47aa01612b664e281f7db1c3841a74a2da779af3908a960fd7022517afa6d9",
+        "0f969251e617615749a24b0375c016f18674cec186ab59538e60df9d676756e1",
+        "d06c3ad389172fa9ac565cd3ad5cd352b4c838fdb9eeb5ec26514cb2b1403093",
+        "0105d6e73e4b7b8518d9c09e02e52087fb5bbffc37f90f9f4b54cf1c7cc32d42",
+        "2ea8325a515377087594592090606c38920c27056cc515bd419f69cb5357660d",
+        "5364afad61cb2549c39eb2a614e78b3e16d98d94f23ed793c430996f0995a694",
+        "e3b9b5cca574e2cf743494e6f67bd5d1765fe032e19bf1a701630b2ab4791ea3",
+        "33ac1cb5d8b19869cfec46116cc7ddaf86fb974083006f6d4e50ae2cbef8b055",
+        "8f0b0778296fcd565b5410ee24a417b2d779099058b23a69d17eee1085579460",
+        "41abc92f987d879afb29623a96a7c5f8aca34d6659bf7d0beb27ed5dc486bf67",
+        "84fd1392ded35da9b84cf32a1abc095d8677e934260b828fe77519b83ab6ea11",
+        "4cf248645f47beacdd7ec66e90f367d46f15aab835327267358a7ba135e1c330"
+      ]
+    },
+    "gen2": {
+      "cases": 8527,
+      "ordered_s4_observations": 3510660,
+      "mismatches": 0,
+      "native_limiter_invocations": 8527,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "combined_validation_sha256": "d7cfea170191b967b13b75f71da55d5883a43f1cb122bd43c257acdbe23cb55d",
+      "shard_receipts_sha256": [
+        "f802fbc7ce19ca2fce41c266c6919608a76b7774f85d69c12d1e3d4ba4bb6ee8",
+        "c0d5a2f98d31755716a2dd782fbc05dd7085c3efa8486064e7de5ba0a5911041",
+        "001af9e507a74d00aaf905b700277371360a6ce37372d7f604a4d1276ceb0ee9",
+        "56146452faa6cbe7a03270decca79d3b3e9bfbc8783bf74e3a999131644e2954",
+        "be3d6eec1e34b85c977f19c38e7f9b00af96b14b88fc1cf5ad5290fa50976247",
+        "8705b6ee278cfdd053a408321048b4cabfbdb4676ca64071e77e8fe5a55ba69f",
+        "6291e19e21346d18d803791eb3dad1dee0f19095fcb137c47dd325fb011f4445",
+        "626edfae41052c88ce8b87fb8015190ed075b4215a0a824042f88671c07b3951",
+        "ccfb1dd18f13bae4c8fcbd76891f6cfd79dc29d06f3eec0f510b6365244b588a",
+        "0369c967916c2c0bff9214a5d621d72e9b57822d28c082547d4b9927a704ca4c",
+        "a3352c68b56fccb8e2dc386b1d1c2047e6674d9f345de66d4004f6693b177184",
+        "ada3809c2728ecf524d2224eff7235ca57b07cccee847ebc6c29b12f8d302120",
+        "6e0a9b98967ef42ba446a5926a0eb778ef929cb09b34747c5e40d273b13f069c",
+        "4b09cbfa928319cfb0b3aa21093bf9c098871393921c81585d98708c92e8b4f3",
+        "07a9b3820ded56e451130d05043c2828292cd87a047657f3367736519680b14e",
+        "d8c58dcc3070e51d14b77084cdaf8ba5f12d38e79c116886d0371ed0d8012ccb",
+        "de290e041e05f0a7d19ca448aeeaa82dcdc926d4e05efb5c06db3f43a6f39b5b",
+        "dc29ab517dfaad02cd11efb05af432d306d8e99b7acc840d4382301dc2c7120d",
+        "eaf467330fa5d0f3bdfe1f1cb5a22f73dba7cbe8f755eed282a317225f07a970",
+        "47ce226b3e682494cedc39cf5f9187394e20b9ec947c81dc9339eaf2d895b9cd",
+        "025c951f9ba2127f7c532f265d99703a80630efedd555f31a6f5f5b6dcf597ff",
+        "39e94285527e2860414967986ee1860ae37cf9513ff08d2bddb684ebd51c4c06",
+        "194317ca4aeca3533589d0790ae286d2d3a21feb7fccb1c231eb105a5631c4ab",
+        "2a40b67199cc2a944067eaa0805c886ca296ced0af8b2a9ac6df5baee51c880d",
+        "7b4b9184bb05dc01093814c128a7ef207f7d66ef0edaf4109c887e9db477e29a",
+        "52264e70d4f44734305b2d5fe25a70e7cb5e9105517e9c294a3907fd2138c59a",
+        "5f8450cf9ac5b7164f79570731e1ddc0ba28c79ee009bfbf026063f8e1c717be",
+        "06c6431318a92c744194518fd32973d430fdbdd953867e0c21b97ba23695f05d",
+        "5adbbb9af74f456eae5e2628047f548460d951243783b89d019a60cdcfefd81d",
+        "30fa4141d5e23484031053a45888dfc658ab4eea634f2a86f30210cfee25b70d",
+        "61bba50c1dda8f53a68933e285c0171072a2fc3d0c44031af4913af3dd1e932b",
+        "b5d54a09028dfe1f31268dcdf91e39aa03f248385abaff76cacbfa941e67302e"
+      ]
+    }
+  },
+  "classic_runtime": {
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "worker_sha256": "bfac9cb8379daf053c8a770252cfcd820ae0a932cbe844db6dcf81602c70f9e3",
+    "batch_size": 64,
+    "rust_min_stack": 8388608,
+    "case_named_tests": true,
+    "optimizer_library_sha256": "899a40e7ac35b577bd2b27eee59121198d83da81c320c972d5fec457b3aeb7c1",
+    "executed": 8256,
+    "compile_only": 315,
+    "batches": 143,
+    "total_frozen_cases": 8571,
+    "input_commands": 11407,
+    "expected_runtime_errors": 232,
+    "catalog_cases": 0,
+    "handle_cases": 8256,
+    "batch_receipts_sha256": "0625b04d753f25262dddc9be60de628c6b093b3ea5acdbc3794f4d7ea0e02c0a",
+    "environment": {
+      "classpath_sha256": [
+        "30299886e9b54998739575ab1d07a060f2448d9e87e0b7d49e6dcef3a519a63b",
+        "ef79c8df5e33ca3e642eededf44c127134f629f71b6bfacdf36b6bff4f655c7f",
+        "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3",
+        "66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9",
+        "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
+      ],
+      "test_manifest_sha256": "86962638f99fc1555ef5f4384f39c4059902e4d3f4dbf4c59b72c3a7943bceac",
+      "test_lock_sha256": "25cac7fffc13522659eb4d06adbc58c05703743735d7421f015d9f5273b76523",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cargo": "/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)\ncargo 1.99.0 (5f94df478 2026-08-27)",
+      "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)"
+    }
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20519-40b8-7be2-ac45-91192a1b116a",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20519-40d3-7423-805f-60efdf08372c",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2051a-0edf-7061-bcfe-1d4f3c9c6995",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2051a-0efb-7ee2-af5f-84ee07467dc4",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}

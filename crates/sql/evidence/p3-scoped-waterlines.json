@@ -1,0 +1,122 @@
+{
+  "scope": "General row-waterline projection, scoped bindings, and canonical naming of deeply nested calls. The 144-call SIGN query passed direct Java and failed hybrid CanonicalForm on 93fef8ab1.",
+  "row_projection": {
+    "commit": "93fef8ab1e80990efbecde0194d3b38fab70647b",
+    "build_sha256": {
+      "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+      "bin/libfeldera_sql_opt_jni.so": "c6685228ec87d4fda7a392232a2300af3f1d8b892e9049c95cf59a53ded0ef97",
+      "bin/sql2dbsp": "c0b23f5bae239cbc76835240f41e1badbef29961eed6e5b0861a13df0df7bb3c",
+      "maven/tests.jar": "9003545f2454f67a63544a2e25c595e6b97f895a8d8b81d282c6d7bf8321438b",
+      "maven/sql-compiler.jar": "79482c46f002d508ace55433338530aafb3959cededa627bc4cc79af8768c80c"
+    },
+    "rust_tests_passed": 145,
+    "clippy": "passed",
+    "packaged_junit_tests": 65,
+    "old_library_control": "b46957434 declined the projection with 180 nested block initializers in nestedFunctionArgumentsBindEachInitializerInItsOuterScope. Other waterline assertions passed.",
+    "engines": {
+      "classic": {
+        "monotonicity_matches": 291,
+        "direct_sha256": "b22dc1375204a3f91fde907ad98bb95a01a8fc9062cdf40616aee5df36f3a2f9",
+        "hybrid_sha256": "4fd5cef116b08ef7d8753fe6d2db90894cee7f3f5172602f8d774203107d88f3",
+        "detached": {
+          "cases": 8,
+          "population_sha256": "b560beb31adafe87b0227b23bcb31a3755702220ff17d8212e0a84c2f2779ca5",
+          "ordered_s4_observations": 5292,
+          "mismatches": 0,
+          "receipt_sha256": "cb3e430c730baf12d4b9da346f4eb5d6490bf078cf6d05b002aedddc53ef0832"
+        }
+      },
+      "gen2": {
+        "monotonicity_matches": 259,
+        "direct_sha256": "f385a9712c76abfe3bdf186bffaf0dc84d594271c2c20770f8b4de7e724ba685",
+        "hybrid_sha256": "b3a452a921840fe451c434bec7246c3bdd813246f7ea22b593af8654d8f756c2",
+        "detached": {
+          "cases": 8,
+          "population_sha256": "f18d18d85a9754a7b5360ef37536bc1072f155e2c3d2bd6ac2f7d626d91f3019",
+          "ordered_s4_observations": 5886,
+          "mismatches": 0,
+          "receipt_sha256": "7a716ef634f4a973e32f3bfcda978118f9e93f0b2ca046fb299769086fc8e812"
+        }
+      }
+    }
+  },
+  "canonical_calls": {
+    "commit": "e5557ed3d2f54a5e01338ee4bfb24d22c4e2caeb",
+    "build_sha256": {
+      "bin/sql-difftest": "ea4dcdbfc6184abad7982f31d1862d935f55deab4b991b418d4c8634a36abe4b",
+      "bin/libfeldera_sql_opt_jni.so": "accf9ba7cbd283c01eece01bf3608886776c23e80c5036a8ed02fdc8bff62959",
+      "bin/sql2dbsp": "ee689b4f5f3473658506b0d54fcead6a62fb3f48ec46a8e4086835f9c95f1552",
+      "maven/tests.jar": "9003545f2454f67a63544a2e25c595e6b97f895a8d8b81d282c6d7bf8321438b",
+      "maven/sql-compiler.jar": "79482c46f002d508ace55433338530aafb3959cededa627bc4cc79af8768c80c"
+    },
+    "rust_tests_passed": 157,
+    "clippy": "passed",
+    "packaged_junit_tests": 65,
+    "engines": {
+      "classic": {
+        "detached": {
+          "cases": 2,
+          "population_sha256": "64a56ec32962d2315215b1ca50836a259cbb068c0ae6e481fce7bcdf1dd79875",
+          "ordered_s4_observations": 756,
+          "mismatches": 0,
+          "receipt_sha256": "59b5d63f7b272669420edc68c3bbcced11066cd44687fe6830ffa61b3b5ab889"
+        },
+        "sql": [
+          {
+            "sign_calls": 16,
+            "sql_sha256": "84179deb95cd2f2287b037c01f0b75547c5ce84a66f8c38f47790cb01188ac79",
+            "direct_artifacts_sha256": {
+              "circuit.rs": "bc14f1c9b78034b0798f1352a3e7f2c1d9fa10c082225aacd4d7c89328d94e95",
+              "dataflow.json": "43b0734f814016c15a9adfa7fc3a2063648c37d190fc729a1f5abf02a86fb865",
+              "diagnostics.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "schema.json": "ec908fb40dc2152b685473d2048f144c757cf80e3e95267985d29043f5cf6974",
+              "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+            }
+          },
+          {
+            "sign_calls": 144,
+            "sql_sha256": "a959e8bee2d4743fe5c900c857b9e64c762bb2ffb1abe62261f812128be7a557",
+            "direct_artifacts_sha256": {
+              "circuit.rs": "5cbcbdff30670eee830a84251e97a0d23b86bf36029bd65a6b0752e3aa079a68",
+              "dataflow.json": "2f868eafebce493dc9625f49f162a4fd7326c68f52f228f90ead2bf0c3cc6ac1",
+              "diagnostics.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "schema.json": "ec908fb40dc2152b685473d2048f144c757cf80e3e95267985d29043f5cf6974",
+              "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+            }
+          }
+        ]
+      },
+      "gen2": {
+        "detached": {
+          "cases": 2,
+          "population_sha256": "2d66cfaf56914cd9113c580926ed2e0836f102078fd2e607f1ddbc37a14527b8",
+          "ordered_s4_observations": 760,
+          "mismatches": 0,
+          "receipt_sha256": "063a7fb6afc2d5b30b440b4f3dfac96ab72620817636b9ea2dc6602be82d24cc"
+        },
+        "sql": [
+          {
+            "sign_calls": 16,
+            "sql_sha256": "84179deb95cd2f2287b037c01f0b75547c5ce84a66f8c38f47790cb01188ac79",
+            "direct_artifacts_sha256": {
+              "circuit.json": "14a377bb7d9e22629e7b4d42f5a963cc76a480ef6a26240047c7ea5460be311a",
+              "dataflow.json": "b76007da1d5ff81807fb185e148145a4c28c5742f6a81a008b5edbbfd4c74a48",
+              "diagnostics.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "schema.json": "ec908fb40dc2152b685473d2048f144c757cf80e3e95267985d29043f5cf6974"
+            }
+          },
+          {
+            "sign_calls": 144,
+            "sql_sha256": "a959e8bee2d4743fe5c900c857b9e64c762bb2ffb1abe62261f812128be7a557",
+            "direct_artifacts_sha256": {
+              "circuit.json": "071d35e5ebcb27f88fc27eecb80d3318b0ccba32f0cfe2555c023b1276442e55",
+              "dataflow.json": "6c564d8201fd365c794987e50a4cebf069d352b33e3e07abb227f2c45281f181",
+              "diagnostics.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "schema.json": "ec908fb40dc2152b685473d2048f144c757cf80e3e95267985d29043f5cf6974"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
