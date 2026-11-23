@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust resolves variable reads and LET binders for the general waterline visitor.
+An initializer sees the outer declaration, including when a shared read would
+conflict with the subsequent binder. All 550 isolated comparisons and 94
+detached compilations matched Java through 46,351 ordered S4 observations.
+COUNT and LATENESS restored in both directions.
+[Binding diagnostics, replay and restores](evidence/p3-lexical-waterlines.json)
+
 Rust compares block initializers and loop inputs in lexical order when
 matching index keys. Temporal window keys also preserve the message in
 `.expect(message)` and group runtime error handlers with their printed

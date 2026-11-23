@@ -1,0 +1,191 @@
+{
+  "scope": "Rust resolves waterline reads and LET binders against live declarations and preserves the first lexical diagnostic.",
+  "parent_commit": "605f8071d",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "3cf1ed47e2a847eda7f95e1fe7bbdf5200166cd86cd1f94ba09695cf35fb2c28",
+    "bin/sql-difftest": "86eaa0848bbd5c06673d3e15e28c06f894edcd204c99c59d1cbdd48112b1da70",
+    "maven/sql-compiler.jar": "48425f3c2a7236397a363872eef51dec6f2418ea4f0e398282342c01ac67ae8b",
+    "maven/tests.jar": "7f3473599838a9573c9f150ac497fffd42445915cd44e285770a660e6f42668b",
+    "maven/build.log": "dfa8f034ffb03bef1ad2e5932252784ea3700020cb154db3acea2a890029b32c",
+    "tests.log": "da68d13237d6ebc2e999ea52287e1b05fc0f505882e44aebab5b149190455d60",
+    "clippy.log": "58237017ce9e917f2ea3fa45a827c8b965338671893f237e6e9aaaa5f2bb5d59",
+    "build.log": "688c251a1ed256d422616d0a92cf7669aed8e4365fe71a7ea8288c39cb95c54f",
+    "junit.log": "be325a856f8bb9d05892d949e48c7c7c00dfa6d05001efa6ce36e31084423b46",
+    "bin/sql2dbsp": "88f208e8e1c61d18ea16c7ed8196334b9b8be2b94bafb1fcf185078292ec94e8"
+  },
+  "rust_tests": 207,
+  "junit_tests": 101,
+  "engines": {
+    "classic": {
+      "detached_cases": 47,
+      "ordered_s4_observations": 23174,
+      "mismatches": 0,
+      "receipt_sha256": "65d6bb9e5825ded1e126f5a854d65935d4ade72caaeaeb58202244012fec2575",
+      "native_request_calls": {
+        "InnerCSE/BorrowedVariables": 4,
+        "InnerCSE/NumberValues": 1962,
+        "InnerCSE/ReadLazy": 93,
+        "KeyAnalysis/Circuit": 141,
+        "LeftJoinChains/Columns": 3,
+        "LeftJoinChains/Steps": 47,
+        "MergeFilters": 7,
+        "Monotonicity/AntiJoinProjection": 3,
+        "Monotonicity/Intersection": 62,
+        "Monotonicity/IsMinimumChain": 44,
+        "Monotonicity/JoinArguments": 241,
+        "Monotonicity/ProjectClosure": 794,
+        "Monotonicity/Transfer": 1358,
+        "OptimizeProjections/Producer": 4165,
+        "ParameterFieldDependencies": 588,
+        "RemoveUnusedFields/AggregateReader": 143,
+        "RemoveUnusedFields/FlatmapInput": 12,
+        "RemoveUnusedFields/IndexedValue": 102,
+        "RemoveUnusedFields/NarrowAsof": 9,
+        "RemoveUnusedFields/NarrowJoin": 173,
+        "RemoveUnusedFields/ParameterTypes": 153,
+        "RemoveUnusedFields/Reader": 10,
+        "RemoveUnusedFields/TopKComparators": 10,
+        "RemoveUnusedFields/TopKFields": 33,
+        "ReplaceSharedIndexes": 5,
+        "RewriteNow/Filter": 42,
+        "SharedIndexes/Discover": 7,
+        "WindowGroups/Indexes": 8,
+        "WindowGroups/Reorder": 8,
+        "WindowGroups/Scan": 8
+      },
+      "isolated_pass": "MonotoneAnalyzer matched at 291 invocations across 291 cases"
+    },
+    "gen2": {
+      "detached_cases": 47,
+      "ordered_s4_observations": 23177,
+      "mismatches": 0,
+      "receipt_sha256": "6d1aaa0f54a8538b0b2397d6bc51afb0ae0a7f6d23509cc167e1bceb58fd77b4",
+      "native_request_calls": {
+        "InnerCSE/NumberValues": 1824,
+        "InnerCSE/ReadLazy": 91,
+        "KeyAnalysis/Circuit": 141,
+        "LeftJoinChains/Columns": 3,
+        "LeftJoinChains/Steps": 47,
+        "MergeFilters": 6,
+        "Monotonicity/AntiJoinProjection": 3,
+        "Monotonicity/Intersection": 58,
+        "Monotonicity/IsMinimumChain": 44,
+        "Monotonicity/JoinArguments": 227,
+        "Monotonicity/ProjectClosure": 753,
+        "Monotonicity/Transfer": 1305,
+        "OptimizeProjections/Producer": 3892,
+        "ParameterFieldDependencies": 559,
+        "RemoveUnusedFields/AggregateReader": 139,
+        "RemoveUnusedFields/FlatmapInput": 10,
+        "RemoveUnusedFields/IndexedValue": 99,
+        "RemoveUnusedFields/NarrowAsof": 9,
+        "RemoveUnusedFields/NarrowJoin": 161,
+        "RemoveUnusedFields/ParameterTypes": 148,
+        "RemoveUnusedFields/Reader": 9,
+        "RemoveUnusedFields/TopKComparators": 9,
+        "RemoveUnusedFields/TopKFields": 29,
+        "ReplaceSharedIndexes": 4,
+        "RewriteNow/Filter": 41,
+        "SharedIndexes/Discover": 7,
+        "WindowGroups/Indexes": 8,
+        "WindowGroups/Reorder": 8,
+        "WindowGroups/Scan": 8
+      },
+      "isolated_pass": "MonotoneAnalyzer matched at 259 invocations across 259 cases"
+    }
+  },
+  "checkpoint_restores": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2075f-a428-78d3-a91e-d8b730f6f015",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2075f-a43f-7c03-b33d-f825f06d99fa",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20760-56d9-7263-957f-70b559cb3cc0",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20760-56f4-7243-8268-f669b06d75d3",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}

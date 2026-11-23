@@ -51,6 +51,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
@@ -125,6 +126,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjectionVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Lineage;
@@ -554,6 +556,22 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public record ProjectedWaterline(IMaybeMonotoneType bodyType, @Nullable DBSPClosureExpression closure) {}
+
+    /** Bind the waterline visitor's live variable paths to their original declarations. */
+    public static void resolveWaterlineReferences(DBSPCompiler compiler, IDBSPInnerNode root, ReferenceMap references) {
+        var reply = invokeLowering(compiler, "Monotonicity/References", root);
+        var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+        references.clear();
+        if (reply.value.has("free")) {
+            var variable = Utilities.getExists(nodes, reply.value.required("free").longValue());
+            throw new InternalCompilerError("Could not resolve " + variable);
+        }
+        for (var pair : reply.value.required("bindings")) {
+            var variable = Utilities.getExists(nodes, pair.required(0).longValue()).to(DBSPVariablePath.class);
+            var declaration = Utilities.getExists(nodes, pair.required(1).longValue()).to(IDBSPDeclaration.class);
+            references.declare(variable, declaration);
+        }
+    }
 
     @Nullable
     public static ProjectedWaterline projectWaterlineClosure(DBSPCompiler compiler, DBSPExpression body,

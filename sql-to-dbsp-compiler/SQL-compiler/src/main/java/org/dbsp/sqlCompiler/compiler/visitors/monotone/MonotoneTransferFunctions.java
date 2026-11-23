@@ -170,7 +170,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 () -> "Flatmap result type " + resultType + " does not match computed type " + computed);
         // This is the same as this.apply(closure)
         if (!this.projectsClosure())
-            this.resolver.apply(closure);
+            this.resolveReferences(closure);
         this.preorder(closure);
         // The result applies to the original expression
         MonotoneExpression result = this.maybeGet(closure);
@@ -234,7 +234,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 return VisitDecision.STOP;
             }
             // Resolve the live nodes for the visitor, including its original diagnostics.
-            this.resolver.apply(expression);
+            this.resolveReferences(expression);
         }
         new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
 
@@ -1046,8 +1046,15 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public IDBSPInnerNode apply(IDBSPInnerNode node) {
         if (!(this.projectsClosure() && node instanceof DBSPClosureExpression))
-            this.resolver.apply(node);
+            this.resolveReferences(node);
         return super.apply(node);
+    }
+
+    private void resolveReferences(IDBSPInnerNode node) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            RustCircuitPass.resolveWaterlineReferences(this.compiler, node, this.resolver.reference);
+        else
+            this.resolver.apply(node);
     }
 
     private boolean projectsClosure() {

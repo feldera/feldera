@@ -10,37 +10,59 @@ fn name<'a>(node: &'a Node, field: &str) -> Result<&'a str, Error> {
         .ok_or_else(|| Error::new(format!("{} needs a {field} name", node.class())))
 }
 
-fn record(references: &mut References, variable: NodeId, declaration: NodeId) -> Result<(), Error> {
-    if references
-        .insert(variable, declaration)
-        .is_some_and(|prior| prior != declaration)
-    {
-        return Err(Error::new(format!(
-            "shared variable {variable:?} refers to two declarations"
-        )));
-    }
-    Ok(())
-}
-
 enum Visit<'a> {
     Enter(NodeId),
     Leave(NodeId),
     Bind(&'a str, NodeId),
+    Record(NodeId, NodeId),
     Restore(usize),
 }
 
-pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, Error> {
-    match resolve_variables(circuit, closure, Vec::new())? {
-        Resolution::Bound(references) => Ok(references),
-        Resolution::Free(name) => Err(Error::new(format!("unbound variable {name} in closure"))),
+pub enum Resolution<'a> {
+    Bound(HashMap<NodeId, NodeId>),
+    Free {
+        variable: NodeId,
+        name: &'a str,
+    },
+    Conflict {
+        variable: NodeId,
+        previous: NodeId,
+        current: NodeId,
+    },
+}
+
+impl Resolution<'_> {
+    fn required(self) -> Result<References, Error> {
+        match self {
+            Self::Bound(references) => Ok(references),
+            Self::Free { name, .. } => {
+                Err(Error::new(format!("unbound variable {name} in closure")))
+            }
+            Self::Conflict { variable, .. } => Err(Error::new(format!(
+                "shared variable {variable:?} refers to two declarations"
+            ))),
+        }
+    }
+
+    fn optional(self) -> Result<Option<References>, Error> {
+        match self {
+            Self::Free { .. } => Ok(None),
+            other => other.required().map(Some),
+        }
     }
 }
 
+/// Keep the identities of failed bindings so the caller can report their live source locations.
+pub fn lexical_references(circuit: &Circuit, root: NodeId) -> Result<Resolution<'_>, Error> {
+    resolve_variables(circuit, root, Vec::new())
+}
+
+pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, Error> {
+    lexical_references(circuit, closure)?.required()
+}
+
 pub(crate) fn has_free_variables(circuit: &Circuit, closure: NodeId) -> Result<bool, Error> {
-    Ok(matches!(
-        resolve_variables(circuit, closure, Vec::new())?,
-        Resolution::Free(_)
-    ))
+    Ok(lexical_references(circuit, closure)?.optional()?.is_none())
 }
 
 /// Resolve a predicate detached from its closure, keeping its row parameter in scope.
@@ -65,15 +87,7 @@ pub(crate) fn body_references(
             .ok_or_else(|| Error::new("missing closure parameter"))?;
         bindings.push((name(parameter, "name")?, id));
     }
-    Ok(match resolve_variables(circuit, body, bindings)? {
-        Resolution::Bound(references) => Some(references),
-        Resolution::Free(_) => None,
-    })
-}
-
-enum Resolution<'a> {
-    Bound(References),
-    Free(&'a str),
+    resolve_variables(circuit, body, bindings)?.optional()
 }
 
 /// An unbound name is a normal outcome when testing a partially projected closure.
@@ -96,6 +110,18 @@ fn resolve_variables<'a>(
                 bindings.push((name, id));
                 continue;
             }
+            Visit::Record(variable, current) => {
+                if let Some(previous) = references.insert(variable, current) {
+                    if previous != current {
+                        return Ok(Resolution::Conflict {
+                            variable,
+                            previous,
+                            current,
+                        });
+                    }
+                }
+                continue;
+            }
             Visit::Restore(size) => {
                 bindings.truncate(size);
                 continue;
@@ -114,25 +140,33 @@ fn resolve_variables<'a>(
                     .rev()
                     .find_map(|&(bound, id)| (bound == variable).then_some(id))
                 else {
-                    return Ok(Resolution::Free(variable));
+                    return Ok(Resolution::Free {
+                        variable: id,
+                        name: variable,
+                    });
                 };
-                record(&mut references, id, declaration)?;
+                pending.push(Visit::Record(id, declaration));
             }
             Some(InnerKind::Expression(Expr::Closure)) => {
                 pending.push(Visit::Restore(bindings.len()));
-                for parameter in node.edges("parameters")? {
-                    let param = circuit.node(parameter).expect("validated parameter");
-                    bindings.push((name(param, "name")?, parameter));
-                }
                 pending.push(Visit::Enter(node.edge("body")?));
+                pending.extend(
+                    node.edges("parameters")?
+                        .into_iter()
+                        .rev()
+                        .map(Visit::Enter),
+                );
+            }
+            Some(InnerKind::Parameter) => {
+                bindings.push((name(node, "name")?, id));
             }
             Some(InnerKind::Expression(Expr::Let)) => {
                 let variable = node.edge("variable")?;
                 let path = circuit.node(variable).expect("validated let variable");
-                record(&mut references, variable, id)?;
                 // Its initializer sees the outer binding of the same name.
                 pending.push(Visit::Restore(bindings.len()));
                 pending.push(Visit::Enter(node.edge("consumer")?));
+                pending.push(Visit::Record(variable, id));
                 pending.push(Visit::Bind(name(path, "variable")?, id));
                 pending.push(Visit::Enter(node.edge("initializer")?));
             }

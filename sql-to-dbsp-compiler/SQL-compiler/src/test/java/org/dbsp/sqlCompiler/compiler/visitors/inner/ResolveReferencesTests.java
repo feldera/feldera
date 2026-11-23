@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
@@ -17,8 +18,14 @@ public class ResolveReferencesTests extends BaseSQLTests {
     final ExpressionBuilder b = new ExpressionBuilder();
 
     ReferenceMap resolve(DBSPExpression expression, boolean allowFree) {
-        ResolveReferences resolver = new ResolveReferences(this.testCompiler(), allowFree);
+        var compiler = this.testCompiler();
+        ResolveReferences resolver = new ResolveReferences(compiler, allowFree);
         resolver.apply(expression);
+        if (!allowFree && Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            var nativeMap = new ReferenceMap();
+            RustCircuitPass.resolveWaterlineReferences(compiler, expression, nativeMap);
+            Assert.assertEquals(resolver.reference.declarations, nativeMap.declarations);
+        }
         return resolver.reference;
     }
 
@@ -189,5 +196,28 @@ public class ResolveReferencesTests extends BaseSQLTests {
 
         Assert.assertThrows(InternalCompilerError.class,
                 () -> this.resolve(expression, false));
+    }
+
+    @Test
+    public void waterlineReportsTheFirstBindingErrorAtTheLiveVariable() {
+        var compiler = this.testCompiler();
+        var parameter = new DBSPVariablePath("x", b.i32());
+        var shared = new DBSPVariablePath("x", b.i32());
+        var free = new DBSPVariablePath("missing", b.i32());
+        for (var initializer : java.util.List.of(shared, b.add(shared, free))) {
+            // The initializer reads the parameter. Reusing its path as the LET
+            // binder conflicts only after every read in the initializer has resolved.
+            var let = new DBSPLetExpression(shared, initializer, shared.deepCopy());
+            var closure = let.closure(parameter);
+            var direct = new ResolveReferences(compiler, false);
+            var error = Assert.assertThrows(InternalCompilerError.class, () -> direct.apply(closure));
+            Assert.assertTrue(error.getMessage(), error.getMessage().contains(
+                    initializer == shared ? "Changing declaration" : "Could not resolve"));
+            if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+                var nativeError = Assert.assertThrows(InternalCompilerError.class,
+                        () -> RustCircuitPass.resolveWaterlineReferences(compiler, closure, new ReferenceMap()));
+                Assert.assertEquals(error.getMessage(), nativeError.getMessage());
+            }
+        }
     }
 }
