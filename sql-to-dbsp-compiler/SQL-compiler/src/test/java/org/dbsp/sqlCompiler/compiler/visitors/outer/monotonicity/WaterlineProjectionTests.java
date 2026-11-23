@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWeighOperator;
@@ -63,6 +64,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -313,6 +315,7 @@ public class WaterlineProjectionTests {
                 parameter.deepCopy().deref().field(0)).closure(parameter);
         Assert.assertTrue(direct.equivalent(expected));
         if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            assertGeneralWaterlineClosure(operator, MonotoneTransferFunctions.ArgumentKind.ZSet, closure, direct, row);
             var result = RustCircuitPass.projectRow(compiler, body, parameter, row);
             Assert.assertNotNull(result);
             Assert.assertTrue(result.getReducedExpression().closure(parameter).equivalent(expected));
@@ -341,6 +344,8 @@ public class WaterlineProjectionTests {
                 indexed).applyAnalysis(closure);
         Assert.assertTrue(direct.mayBeMonotone());
         if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            assertGeneralWaterlineClosure(operator, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, closure,
+                    direct.getReducedExpression(), indexed);
             var bound = new DBSPVariablePath("pair", new DBSPTypeRawTuple(value.getProjectedType().ref()));
             var nativeValue = RustCircuitPass.projectRows(compiler, body, new DBSPVariablePath[]{bound},
                     new IMaybeMonotoneType[]{key, value}, true);
@@ -379,6 +384,7 @@ public class WaterlineProjectionTests {
         var direct = new MonotoneTransferFunctions(compiler, operator, kind, inputs).applyAnalysis(closure);
         Assert.assertTrue(direct.mayBeMonotone());
         if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            assertGeneralWaterlineClosure(operator, kind, closure, direct.getReducedExpression(), inputs);
             var bounds = new DBSPVariablePath[]{new DBSPVariablePath("k", key.getProjectedType().ref()),
                     new DBSPVariablePath("l", left.getProjectedType().ref()), new DBSPVariablePath("r", right.getProjectedType().ref())};
             var projected = RustCircuitPass.projectRows(compiler, body, bounds, inputs, false);
@@ -392,6 +398,24 @@ public class WaterlineProjectionTests {
             var hybrid = new MonotoneTransferFunctions(compiler, operator, kind, inputs).applyAnalysis(closure);
             Assert.assertTrue(direct.getReducedExpression().equivalent(hybrid.getReducedExpression()));
         }
+    }
+
+    private static void assertGeneralWaterlineClosure(DBSPSimpleOperator operator, MonotoneTransferFunctions.ArgumentKind kind,
+            DBSPClosureExpression closure, DBSPExpression expected, IMaybeMonotoneType... inputs) {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var analysis = new MonotoneTransferFunctions(compiler, operator, kind, inputs);
+        analysis.apply(closure);
+        var reduced = analysis.get(closure).getReducedExpression().to(DBSPClosureExpression.class);
+        Assert.assertTrue(expected.equivalent(reduced));
+        var body = analysis.get(closure.body).getReducedExpression();
+        if (kind == MonotoneTransferFunctions.ArgumentKind.ZSet)
+            Assert.assertSame(body, reduced.body);
+        else
+            Assert.assertSame(body, reduced.body.to(DBSPBlockExpression.class).lastExpression);
+        var signature = reduced.getType().to(DBSPTypeFunction.class);
+        Assert.assertSame(body.getType(), signature.resultType);
+        Assert.assertSame(reduced.parameters[0].getType(), signature.parameterTypes[0]);
     }
 
     @Test

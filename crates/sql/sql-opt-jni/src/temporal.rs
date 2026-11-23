@@ -36,7 +36,7 @@ pub(super) fn scan(
     use feldera_sql_opt::TemporalScan;
     Ok(
         match feldera_sql_opt::scan_temporal_windows(circuit, threshold)? {
-            TemporalScan::Groups(groups) => {
+            TemporalScan::Groups { groups, warnings } => {
                 let groups: Vec<Vec<_>> = groups
                     .into_iter()
                     .map(|group| {
@@ -46,7 +46,7 @@ pub(super) fn scan(
                             .collect()
                     })
                     .collect();
-                json!({ "groups": groups })
+                json!({ "groups": groups, "warnings": super::pass_warnings(warnings) })
             }
             TemporalScan::Paths(paths) => json!({ "paths": source_paths(paths) }),
         },

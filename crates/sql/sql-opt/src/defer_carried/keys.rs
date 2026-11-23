@@ -2,7 +2,7 @@
 //! surviving keys, prefer the one that leaves the most columns to defer.
 use super::{Column, Part};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,62 +19,129 @@ pub struct ChainKeys {
 #[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct ChainKeyChoice {
     key: Option<usize>,
-    worthwhile: bool,
+    lookup: Option<LookupColumns>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LookupColumns {
+    reuse_index: bool,
+    key: Vec<Column>,
+    deferred: Vec<Column>,
 }
 
 pub fn choose_chain_key(input: &ChainKeys) -> ChainKeyChoice {
-    let unread: HashSet<_> = input.carried.difference(&input.read).copied().collect();
+    let unread: BTreeSet<_> = input.carried.difference(&input.read).copied().collect();
     let mut best = None;
     let mut most_deferred = 0;
     for (index, key) in input.keys.iter().enumerate() {
-        // Each equivalence set represents one key value. Use its first surviving copy.
+        // Each equivalence set contributes its first surviving copy, in key order.
         let Some(columns) = key
             .iter()
             .map(|set| set.iter().find(|col| input.carried.contains(col)).copied())
-            .collect::<Option<HashSet<_>>>()
+            .collect::<Option<Vec<_>>>()
         else {
             continue;
         };
-        // A zero-column key describes a singleton collection. The lookup
-        // operator needs at least one column on which to join.
+        // A singleton's empty key cannot drive a lookup join.
         let deferred = if columns.is_empty() {
             0
         } else {
-            unread.difference(&columns).count()
+            let key_columns: BTreeSet<_> = columns.iter().copied().collect();
+            unread.difference(&key_columns).count()
         };
         if best.is_none() || deferred > most_deferred {
-            best = Some(index);
+            best = Some((index, columns));
             most_deferred = deferred;
         }
     }
-    let worthwhile = best.is_some_and(|index| {
-        let key = &input.keys[index];
-        let reuse = input.index_width == Some(key.len())
-            && (0..key.len()).all(|field| {
-                let column = Column {
-                    part: Part::Index,
-                    field,
-                };
-                key.iter().any(|set| set.contains(&column))
-            });
-        // Preserve the Java heuristic's signed 32-bit arithmetic on wide rows.
-        let deferred = most_deferred as i32;
-        let added = if reuse {
-            input.end_width.wrapping_sub(deferred)
-        } else {
-            input.end_width.wrapping_add(key.len() as i32)
+
+    let Some((index, columns)) = best else {
+        return ChainKeyChoice {
+            key: None,
+            lookup: None,
         };
-        deferred != 0 && input.length.wrapping_mul(deferred) > added
+    };
+    let key = &input.keys[index];
+    // A reused index dictates the order of the lookup fields. Each slot may
+    // reach the chain output through an equivalent value column.
+    let index_key: Option<Vec<_>> = input
+        .index_width
+        .filter(|&width| width == key.len())
+        .and_then(|width| {
+            (0..width)
+                .map(|field| {
+                    let column = Column {
+                        part: Part::Index,
+                        field,
+                    };
+                    key.iter()
+                        .rposition(|set| set.contains(&column))
+                        .map(|i| columns[i])
+                })
+                .collect()
+        });
+    // Preserve the Java heuristic's signed 32-bit arithmetic on wide rows.
+    let count = most_deferred as i32;
+    let added = if index_key.is_some() {
+        input.end_width.wrapping_sub(count)
+    } else {
+        input.end_width.wrapping_add(key.len() as i32)
+    };
+    let lookup = (count != 0 && input.length.wrapping_mul(count) > added).then(|| {
+        let mut deferred = unread;
+        for column in &columns {
+            deferred.remove(column);
+        }
+        LookupColumns {
+            reuse_index: index_key.is_some(),
+            key: index_key.unwrap_or(columns),
+            deferred: deferred.into_iter().collect(),
+        }
     });
     ChainKeyChoice {
-        key: best,
-        worthwhile,
+        key: Some(index),
+        lookup,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lookup_fields_follow_the_reused_index_or_the_chosen_key() {
+        let index = |field| Column {
+            part: Part::Index,
+            field,
+        };
+        let value = |field| Column {
+            part: Part::Value,
+            field,
+        };
+        let mut facts = ChainKeys {
+            keys: vec![vec![vec![index(1), value(3)], vec![index(0), value(1)]]],
+            carried: [value(3), value(2), value(1), value(0)].into(),
+            read: HashSet::new(),
+            length: 5,
+            end_width: 4,
+            index_width: Some(2),
+        };
+        for (width, reuse_index, key) in [
+            (Some(2), true, vec![value(1), value(3)]),
+            (Some(1), false, vec![value(3), value(1)]),
+        ] {
+            facts.index_width = width;
+            assert_eq!(
+                choose_chain_key(&facts).lookup,
+                Some(LookupColumns {
+                    reuse_index,
+                    key,
+                    deferred: vec![value(0), value(2)],
+                })
+            );
+        }
+    }
 
     #[test]
     fn read_key_wins_and_reuses_an_equivalent_index() {
@@ -98,7 +165,11 @@ mod tests {
             choose_chain_key(&facts),
             ChainKeyChoice {
                 key: Some(1),
-                worthwhile: true
+                lookup: Some(LookupColumns {
+                    reuse_index: true,
+                    key: vec![value(1)],
+                    deferred: vec![value(0), value(2)]
+                })
             }
         );
         facts.index_width = None;
@@ -106,7 +177,7 @@ mod tests {
             choose_chain_key(&facts),
             ChainKeyChoice {
                 key: Some(1),
-                worthwhile: false
+                lookup: None
             }
         );
         facts.carried.remove(&value(1));
@@ -135,7 +206,7 @@ mod tests {
             choose_chain_key(&facts),
             ChainKeyChoice {
                 key: Some(0),
-                worthwhile: false
+                lookup: None
             }
         );
         facts.keys = vec![vec![]];
@@ -143,7 +214,7 @@ mod tests {
             choose_chain_key(&facts),
             ChainKeyChoice {
                 key: Some(0),
-                worthwhile: false
+                lookup: None
             }
         );
     }

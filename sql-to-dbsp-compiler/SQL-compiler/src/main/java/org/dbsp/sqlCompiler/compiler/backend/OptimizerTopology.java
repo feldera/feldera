@@ -184,6 +184,12 @@ final class OptimizerTopology {
                 new OptimizerExpressionWriter(compiler, JsonStream.compactCircuit(), 0, false));
     }
 
+    /** A temporal scan can report a warning while composing expressions from several maps. */
+    static ToJsonOuterVisitor temporalScan(DBSPCompiler compiler, DBSPCircuit circuit, Set<Long> selected) {
+        var inner = new OptimizerExpressionWriter(compiler, JsonStream.compactCircuit(), 1, false);
+        return selectedExpressions(compiler, circuit, selected, Details.NONE, inner);
+    }
+
     /** Keep source ranges and object identities when a pass returns rewritten closures. */
     static ToJsonOuterVisitor selectedForRewrite(DBSPCompiler compiler, DBSPCircuit circuit,
                                                  Set<Long> selected, Details details) {

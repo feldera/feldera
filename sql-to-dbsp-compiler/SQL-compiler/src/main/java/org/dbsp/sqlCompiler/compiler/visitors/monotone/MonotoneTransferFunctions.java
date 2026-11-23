@@ -259,9 +259,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.pop(expression);
         if (bodyValue.mayBeMonotone()) {
             DBSPClosureExpression closure = this.compiler.options.ioOptions.rustOptimizerPasses
-                    && this.argumentKind != ArgumentKind.ZSet
-                    ? RustCircuitPass.bindWaterlineInputs(this.compiler, expression.parameters, projectedTypes,
-                            bodyValue.getReducedExpression())
+                    ? RustCircuitPass.bindWaterlineInputs(this.compiler, projectedParameters, projectedTypes,
+                            bodyValue.getReducedExpression(), this.argumentKind != ArgumentKind.ZSet)
                     : this.applyClosure(expression, projectedParameters, projectedTypes, bodyValue.getReducedExpression());
             this.recordClosure(expression, bodyValue.type, closure);
         }

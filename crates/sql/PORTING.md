@@ -462,6 +462,18 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selects lookup keys and deferred payload columns for left-join chains.
+Across both engines, the 20 profitable rewrites in the frozen corpus matched
+Java's key selection, physical index order and payload layout. All 14,254
+ordered S4 observations and emitted artifacts matched on those compilations.
+[Left-join lookup comparisons](evidence/p3-left-join-lookup.json)
+
+Rust builds waterline closures for row, indexed and join inputs in the general
+monotonicity visitor. The 94 detached compilations matched Java at all 46,351
+ordered S4 observations and on emitted artifacts. All 550 isolated pass
+comparisons matched. COUNT and LATENESS checkpoints restored in both directions.
+[Closure comparisons and restores](evidence/p3-general-waterline-closures.json)
+
 Rust computes literal waterlines in the general visitor and during closure
 projection. A NULL double uses the type maximum, NaN, as its waterline
 and cannot serve as a constant in subtraction. Multiplication distinguishes a positive factor

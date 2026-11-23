@@ -1,10 +1,19 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.WindowInputStats;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -12,6 +21,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
@@ -37,11 +47,73 @@ import org.junit.Assume;
 import org.junit.Test;
 
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
 public class TemporalKeyTests {
+    @Test
+    public void windowScanReportsCastWarningAtItsOriginalRange() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var range = new SourcePositionRange(new SourcePosition(3, 2), new SourcePosition(3, 17));
+        var rel = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var inputType = b.tup(time.withMayBeNull(true));
+        for (boolean replayPaths : List.of(false, true)) {
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            var input = new DBSPConstantOperator(rel, DBSPZSetExpression.emptyWithElementType(inputType));
+            circuit.addOperator(input);
+            var param = b.refVar(inputType);
+            var values = b.tuple(b.lit("invalid timestamp"));
+            var map = new DBSPMapOperator(rel, values.closure(param), input.outputPort());
+            circuit.addOperator(map);
+            var row = b.refVar(values.getType());
+            var cast = new DBSPCastExpression(CalciteObject.create(range), b.field(row, 0), time,
+                    DBSPCastExpression.CastType.SqlUnsafe);
+            var clock = new DBSPApplyExpression("now", time);
+            circuit.addOperator(new DBSPFilterOperator(rel, b.binary(DBSPOpcode.GTE, cast, clock).closure(row),
+                    map.outputPort()));
+            if (replayPaths) {
+                // This key needs the canonical printer after the preceding map has emitted its warning.
+                var second = b.refVar(inputType);
+                var condition = b.binary(DBSPOpcode.GTE, b.unwrap(b.field(second, 0)), clock.deepCopy());
+                circuit.addOperator(new DBSPFilterOperator(rel, condition.closure(second), input.outputPort()));
+            }
+
+            var decisions = new ArrayList<Boolean>();
+            for (boolean hybrid : List.of(false, true)) {
+                var compiler = new DBSPCompiler(new CompilerOptions());
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                    @Override
+                    public void nativeDecision(String operation, boolean success) {
+                        if (operation.equals("WindowGroups/Scan"))
+                            decisions.add(success);
+                    }
+                    @Override
+                    public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph) {}
+                    @Override
+                    public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
+                };
+                var graph = new Graph(compiler);
+                graph.apply(circuit);
+                var scan = new ReorderTemporalFilters.Scan(compiler, graph.getGraphs());
+                if (hybrid)
+                    new RustCircuitPass(compiler, scan, new OptimizerSnapshots(compiler)).apply(circuit);
+                else
+                    scan.apply(circuit);
+                Assert.assertEquals(1, compiler.messages.messages.size());
+                var warning = compiler.messages.messages.get(0);
+                Assert.assertEquals(range, warning.range);
+                Assert.assertEquals("Not a TIMESTAMP", warning.errorType);
+                Assert.assertTrue(warning.message.contains("invalid timestamp"));
+            }
+            Assert.assertEquals(List.of(!replayPaths), decisions);
+        }
+    }
+
     @Test
     public void numericOffsetsShareOnlyMatchingWindowKeys() {
         checkOffsetKeys("id + 1", "id + 2");

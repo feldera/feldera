@@ -181,12 +181,16 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         }
     }
 
+    /** Column order consumed by the lookup join. A reused index dictates the key order. */
+    public record Lookup(boolean reuseIndex, List<Column> key, List<Column> deferred) {}
+    public record SelectedChain(Chain chain, Lookup lookup) {}
+
     private final KeyAnalysis keys;
     /** For each port that a chain reaches after its start, what the chain carries there. */
     private final Map<OutputPort, Carried> carriedAt = new HashMap<>();
     /** Result of this analysis: maps chain outputs to chains.  Chain outputs are
      * always integrator output ports. */
-    public final Map<OutputPort, Chain> chainEnd = new HashMap<>();
+    public final Map<OutputPort, SelectedChain> chainEnd = new HashMap<>();
     /** Maps each chain's start to the integrator output port. */
     private final Map<OutputPort, OutputPort> chainStartToEnd = new HashMap<>();
     /** Ports inside some chain, neither its start nor its end.  A port in {@link #carriedAt}
@@ -453,7 +457,7 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
 
     public record KeyInput(List<List<SortedSet<Column>>> keys, Set<Column> carried, Set<Column> read,
                            int length, int endWidth, @Nullable Integer indexWidth) {}
-    public record KeyChoice(@Nullable Integer key, boolean worthwhile) {}
+    public record KeyChoice(@Nullable Integer key, @Nullable Lookup lookup) {}
 
     /** Logs every chain where it ends. */
     @Override
@@ -496,7 +500,7 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         // the chain must end at the integrator that turns its deltas back into a collection
         if (!end.node().is(DBSPIntegrateOperator.class))
             return;
-        Chain chain = this.profitableChain(carried, end);
+        SelectedChain chain = this.profitableChain(carried, end);
         if (chain == null)
             return;
         // A later integrator of the same chain replaces an earlier one
@@ -507,10 +511,14 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
     }
 
     @Nullable
-    private Chain profitableChain(Carried carried, OutputPort end) {
+    private SelectedChain profitableChain(Carried carried, OutputPort end) {
         if (!this.compiler().options.ioOptions.rustOptimizerPasses) {
             Chain chain = this.chainOf(carried, end);
-            return chain.worthDeferring() ? chain : null;
+            if (!chain.worthDeferring())
+                return null;
+            boolean reuse = chain.startIsIndexedByKey();
+            var key = reuse ? chain.keyInIndexOrder() : Objects.requireNonNull(chain.keyColumns());
+            return new SelectedChain(chain, new Lookup(reuse, key, List.copyOf(chain.deferrable())));
         }
         var keys = this.keys.getKeys(carried.start()).keys;
         var columns = keys.stream().map(key -> key.sets().stream().map(EquivalentColumnSet::columns).toList()).toList();
@@ -520,10 +528,11 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         var facts = new KeyInput(columns, carried.inputToOutputRemap().keySet(), carried.read(),
                 carried.length(), endShape.width(), indexWidth);
         var choice = RustCircuitPass.chooseChainKey(facts);
-        if (!choice.worthwhile())
+        if (choice.lookup() == null)
             return null;
-        return new Chain(carried.start(), end, carried.length(), keys.get(Objects.requireNonNull(choice.key())),
+        var chain = new Chain(carried.start(), end, carried.length(), keys.get(Objects.requireNonNull(choice.key())),
                 onlyCarried(carried), carried.inputToOutputRemap(), carried.outputToInputRemap());
+        return new SelectedChain(chain, choice.lookup());
     }
 
     private static Set<Column> onlyCarried(Carried carried) {

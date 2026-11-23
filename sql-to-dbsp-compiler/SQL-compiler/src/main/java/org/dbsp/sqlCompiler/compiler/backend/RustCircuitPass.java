@@ -150,7 +150,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -166,7 +165,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
@@ -455,9 +453,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private static <T extends DBSPExpression> T loweredFunction(DBSPCompiler compiler,
             ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
         T function = Objects.requireNonNull(decodeLiveRoot(writer, result.required("function"), kind));
-        for (var warning : result.required("warnings"))
-            compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
-                    warning.required("error_type").textValue(), warning.required("message").textValue());
+        reportWarnings(compiler, result.required("warnings"));
         return function;
     }
 
@@ -633,18 +629,29 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    /** Bind the projected inputs without serializing the already analyzed closure body. */
+    /** Bind the projected inputs while retaining the analyzed body in the JVM.
+     * Joined and indexed inputs unpack the single Apply parameter. */
     public static DBSPClosureExpression bindWaterlineInputs(DBSPCompiler compiler, DBSPParameter[] parameters,
-            DBSPType[] types, DBSPExpression body) {
+            DBSPType[] types, DBSPExpression body, boolean packInputs) {
+        var slot = new DBSPVariablePath("body", body.getType());
+        String pass = packInputs ? "Monotonicity/WaterlineBindings" : "Monotonicity/RowClosure";
         try {
-            var names = Linq.map(parameters, DBSPParameter::getName, String.class);
-            var reply = invokeLowering(compiler, "Monotonicity/WaterlineBindings", MAPPER.writeValueAsBytes(names), types);
-            var decoder = expressionDecoder(reply.writer);
-            var nodes = reply.value.elements();
-            var input = decoder.decodeInner(nodes.next(), DBSPParameter.class);
-            var statements = new ArrayList<DBSPStatement>();
-            nodes.forEachRemaining(node -> statements.add(decoder.decodeInner(node, DBSPLetStatement.class)));
-            return new DBSPBlockExpression(statements, body).closure(input);
+            LoweringReply reply;
+            if (packInputs) {
+                var names = Linq.map(parameters, DBSPParameter::getName, String.class);
+                var roots = new IDBSPInnerNode[types.length + 1];
+                roots[0] = slot;
+                System.arraycopy(types, 0, roots, 1, types.length);
+                reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(names), roots);
+            } else {
+                Utilities.enforce(parameters.length == 1);
+                reply = invokeLowering(compiler, pass, slot, parameters[0]);
+            }
+            Objects.requireNonNull(reply.writer.liveNodes).put(slot.id, body);
+            var closure = loweredClosure(compiler, reply);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return closure;
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode waterline parameter names", error);
         }
@@ -1992,7 +1999,7 @@ public final class RustCircuitPass implements CircuitTransform {
         for (var op : operators.values())
             if (op instanceof DBSPFilterOperator || op instanceof DBSPMapOperator || op instanceof DBSPMapIndexOperator)
                 payloads.add(op.id);
-        var writer = OptimizerTopology.selectedExpressions(compiler, circuit, payloads, OptimizerTopology.Details.NONE);
+        var writer = OptimizerTopology.temporalScan(compiler, circuit, payloads);
         try {
             byte[] result = transformWithContext("WindowGroups/Scan",
                     writer.getJsonString().getBytes(StandardCharsets.UTF_8), 0, "",
@@ -2002,6 +2009,7 @@ public final class RustCircuitPass implements CircuitTransform {
             if (compiler.stateObserver != null)
                 compiler.stateObserver.nativeDecision("WindowGroups/Scan", groups != null);
             if (groups != null) {
+                reportWarnings(compiler, reply.required("warnings"));
                 var chosen = new LinkedHashMap<DBSPFilterOperator, Integer>();
                 for (var group : groups)
                     for (var member : group) {
@@ -3114,10 +3122,14 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    private static void finishLowering(DBSPCompiler compiler, JsonNode state) {
-        for (var warning : state.required("warnings"))
+    private static void reportWarnings(DBSPCompiler compiler, JsonNode warnings) {
+        for (var warning : warnings)
             compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
                     warning.required("error_type").textValue(), warning.required("message").textValue());
+    }
+
+    private static void finishLowering(DBSPCompiler compiler, JsonNode state) {
+        reportWarnings(compiler, state.required("warnings"));
         DBSPVariablePath.restoreGeneratedNames(state.required("next_generated_name").longValue());
     }
 

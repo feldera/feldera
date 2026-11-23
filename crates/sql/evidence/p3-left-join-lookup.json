@@ -1,0 +1,38 @@
+{
+  "scope": "Lookup column ordering and index reuse for every profitable left-join chain in the frozen key-analysis corpus",
+  "base_commit": "9328c239e",
+  "changed_source_sha256": {
+    "crates/sql/sql-opt/src/defer_carried/keys.rs": "53fc81eaa6c02f1e4c874d34c478dfde6fc9d27e51ea60f0f293805ab633aced",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/DeferCarriedColumns.java": "80c3568c279964f02cff304efa9e6638777580f9f448ca8f7855c00926091e73",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/LeftJoinChainsVisitor.java": "154a410434302b3dab1e12f328d981d9cd53814f2586450b33582d577294b883"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ade9ed2aaf94b5b74bc9f07151221cb05a929e64bd726dda2a6ec4cb6fb7cbed",
+    "bin/sql-difftest": "8c92225a53baf28c38bbdb6ecb7203ab1aaa21f3cc92f83b22e7092375c8b072",
+    "maven/sql-compiler.jar": "626df5ae3c6d6a95e3bdf10c90aac1c99013f8f4611538864aa487fdf14c2673",
+    "maven/tests.jar": "2e47455c1367308305aa7dafd63cb1a949589f9aeecf0d9d35c712c81d6dbbd0",
+    "tests.log": "468d96586ce11812b6f7868055a9ddea9bb28e6f74ea0a792666d4cc9d205248",
+    "clippy.log": "fff6fd3294bfdc93d889e07c3ff547c8c45065122790d30b2271cf16bf0c9e04",
+    "build.log": "4ce471b66be93820e782a6714fc345a0d38d019ef28f8b01534aa8cd2e52ee9b",
+    "maven/build.log": "b800d8719bdec4e495fb0973cc11703e4c58d09664c64b3c4d1b73038c197868"
+  },
+  "rust_tests": 217,
+  "engines": {
+    "classic": {
+      "detached_cases": 9,
+      "profitable_rewrites": 10,
+      "ordered_s4_observations": 7137,
+      "mismatches": 0,
+      "key_oracle_sha256": "701f51b22e93c6bea90afb096ebdf318e72ce2831787ba4b473d93807dd0b42c",
+      "receipt_sha256": "1040bfab7bf47e48b8d6fb85822166d6efe0a1e44ad60d4a959ffea61c0913b6"
+    },
+    "gen2": {
+      "detached_cases": 9,
+      "profitable_rewrites": 10,
+      "ordered_s4_observations": 7117,
+      "mismatches": 0,
+      "key_oracle_sha256": "85198476a68d027a3cda861338d5782210af9bdc8dd4fa4a3d418ed8e997a26c",
+      "receipt_sha256": "30d0722c952be3c67aa7a7f828469995b1c1f95a1bfe63e762c4eb436ff13d6e"
+    }
+  }
+}

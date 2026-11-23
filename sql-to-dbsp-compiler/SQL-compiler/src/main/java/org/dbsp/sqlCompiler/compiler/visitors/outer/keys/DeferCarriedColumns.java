@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor.Chain;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor.SelectedChain;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -40,9 +41,9 @@ import java.util.Map;
  */
 public class DeferCarriedColumns extends CircuitCloneVisitor {
     /** For each chain output where a lookup belongs, the chain it puts the columns back for. */
-    final Map<OutputPort, Chain> chains;
+    final Map<OutputPort, SelectedChain> chains;
 
-    public DeferCarriedColumns(DBSPCompiler compiler, Map<OutputPort, Chain> chains) {
+    public DeferCarriedColumns(DBSPCompiler compiler, Map<OutputPort, SelectedChain> chains) {
         super(compiler, false);
         this.chains = chains;
     }
@@ -55,16 +56,16 @@ public class DeferCarriedColumns extends CircuitCloneVisitor {
      * this pass builds either index or the final lookup join. */
     public Map<Long, Layout> layouts() {
         var layouts = new LinkedHashMap<Long, Layout>();
-        this.chains.forEach((end, chain) -> {
-            boolean reuse = chain.startIsIndexedByKey();
-            var keys = reuse ? chain.keyInIndexOrder() : chain.keyColumns();
-            var key = keys.stream().map(c -> new ColumnCopy(c, chain.inputToOutputRemap().get(c))).toList();
-            var deferred = chain.deferrable().stream()
+        this.chains.forEach((end, selected) -> {
+            var chain = selected.chain();
+            var lookup = selected.lookup();
+            var key = lookup.key().stream().map(c -> new ColumnCopy(c, chain.inputToOutputRemap().get(c))).toList();
+            var deferred = lookup.deferred().stream()
                     .map(c -> new ColumnCopy(c, chain.inputToOutputRemap().get(c))).toList();
             var copies = chain.outputToInputRemap().entrySet().stream().sorted(Map.Entry.comparingByKey())
                     .map(e -> new ColumnCopy(e.getValue(), e.getKey())).toList();
             layouts.put(end.node().id, new Layout(chain.start().node().id, chain.start().outputNumber,
-                    reuse, key, deferred, copies));
+                    lookup.reuseIndex(), key, deferred, copies));
         });
         return layouts;
     }
@@ -72,19 +73,20 @@ public class DeferCarriedColumns extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPIntegrateOperator endNode) {
         // Every chain the analysis hands over ends at an integrator
-        Chain chain = this.chains.get(endNode.outputPort());
-        if (chain == null) {
+        var selected = this.chains.get(endNode.outputPort());
+        if (selected == null) {
             super.postorder(endNode);
             return;
         }
+        Chain chain = selected.chain();
         CollectionShape resultShape = endNode.outputPort().getShape();
         CollectionShape startShape = chain.start().getShape();
         // When the start operator is indexed by the key, use it as an input for the new join we are inserting
-        boolean reuseStart = chain.startIsIndexedByKey();
-        List<Column> key = reuseStart ? chain.keyInIndexOrder() : chain.keyColumns();
-        List<Column> deferred = new ArrayList<>(chain.deferrable());
+        boolean reuseStart = selected.lookup().reuseIndex();
+        List<Column> key = selected.lookup().key();
+        List<Column> deferred = selected.lookup().deferred();
 
-        Utilities.enforce(key != null && !deferred.isEmpty());
+        Utilities.enforce(!key.isEmpty() && !deferred.isEmpty());
         DBSPVariablePath outputVar = resultShape.rowVariable(endNode.outputPort().outputType());
         List<Column> resultColumns = new ArrayList<>(resultShape.columns());
         List<DBSPExpression> carried = new ArrayList<>();
@@ -150,7 +152,7 @@ public class DeferCarriedColumns extends CircuitCloneVisitor {
         List<DBSPExpression> joinOutputFields = new ArrayList<>();
         for (int i = 0; i < resultColumns.size(); i++) {
             Column fromStart = chain.outputToInputRemap().get(resultColumns.get(i));
-            int from = deferred.indexOf(fromStart);
+            int from = fromStart == null ? -1 : deferred.indexOf(fromStart);
             DBSPExpression field;
             if (from < 0) {
                 field = leftVar.deref().field(i).applyCloneIfNeeded();

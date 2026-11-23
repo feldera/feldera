@@ -3,15 +3,18 @@ use super::key::{row_parameter, same_row_spelling, TimestampKey};
 use super::source::{compose_timestamp, filter_sources, TemporalFilterSource};
 use super::temporal::{shared_temporal_inputs, TemporalCandidate};
 use crate::conjunct_windows;
-use feldera_sql_expr::ensure_expression_tree;
+use feldera_sql_expr::{ensure_expression_tree, SimplifyWarning};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
 use std::collections::HashMap;
 
 pub enum TemporalScan {
     /// Groups and their members are in selection order. Each member identifies
     /// its original filter and the conjunct to move to the front.
-    Groups(Vec<Vec<(NodeId, usize)>>),
-    /// Replay expressions that need diagnostics or the full canonical printer.
+    Groups {
+        groups: Vec<Vec<(NodeId, usize)>>,
+        warnings: Vec<SimplifyWarning>,
+    },
+    /// Replay expressions that require the general visitor or the full canonical printer.
     Paths(Vec<TemporalFilterSource>),
 }
 
@@ -20,8 +23,10 @@ pub fn scan_temporal_windows(circuit: Circuit, threshold: usize) -> Result<Tempo
     let paths = filter_sources(&edit)?;
     let mut candidates = Vec::with_capacity(paths.len());
     let mut input_types = HashMap::new();
+    let mut warnings = Vec::new();
     for path in &paths {
-        let Some(keys) = source_candidates(&mut edit, path, &mut input_types)? else {
+        let Some(keys) = source_candidates(&mut edit, path, &mut input_types, &mut warnings)? else {
+            // Replaying the paths will report every diagnostic, including earlier ones.
             return Ok(TemporalScan::Paths(paths));
         };
         candidates.push(keys);
@@ -35,7 +40,7 @@ pub fn scan_temporal_windows(circuit: Circuit, threshold: usize) -> Result<Tempo
                 .collect()
         })
         .collect();
-    Ok(TemporalScan::Groups(groups))
+    Ok(TemporalScan::Groups { groups, warnings })
 }
 
 type SourceCandidate = TemporalCandidate<(OutputPort, TimestampKey)>;
@@ -44,6 +49,7 @@ fn source_candidates(
     edit: &mut CircuitEditor,
     path: &TemporalFilterSource,
     input_types: &mut HashMap<OutputPort, TypeId>,
+    warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<Vec<SourceCandidate>>, Error> {
     let function = edit.node(path.filter)?.edge("function")?;
     let tree = ensure_expression_tree(edit, function)?;
@@ -61,7 +67,7 @@ fn source_candidates(
     let mut candidates = Vec::new();
     for (conjunct, window) in windows.into_iter().enumerate() {
         let Some(window) = window else { continue };
-        let Some((input, key)) = source_key(edit, parameter, window.key, &maps)? else {
+        let Some((input, key)) = source_key(edit, parameter, window.key, &maps, warnings)? else {
             return Ok(None);
         };
         let common = *input_types.entry(path.source).or_insert(input);
@@ -81,15 +87,11 @@ fn source_key(
     mut parameter: NodeId,
     mut key: ExpressionId,
     maps: &[NodeId],
+    warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<(TypeId, TimestampKey)>, Error> {
     if !maps.is_empty() {
         let closure = edit.closure_with_parameters(key, &[parameter])?;
-        let mut warnings = Vec::new();
-        let timestamp = compose_timestamp(edit, closure, maps, &mut warnings)?;
-        // Replay the ordinary composition when it has a diagnostic to report.
-        if !warnings.is_empty() {
-            return Ok(None);
-        }
+        let timestamp = compose_timestamp(edit, closure, maps, warnings)?;
         let closure = edit.node(timestamp.into())?;
         let [input] = closure.edges("parameters")?[..] else {
             return Ok(None);
@@ -178,9 +180,10 @@ mod tests {
                 [("function", Field::Reference(closure.into()))],
             )?);
         }
-        let TemporalScan::Groups(groups) = scan_temporal_windows(edit.finish()?, 2)? else {
+        let TemporalScan::Groups { groups, warnings } = scan_temporal_windows(edit.finish()?, 2)? else {
             panic!("direct columns must not require printed expressions");
         };
+        assert!(warnings.is_empty());
         assert_eq!(
             groups,
             [

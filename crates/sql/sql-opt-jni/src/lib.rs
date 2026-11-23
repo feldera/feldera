@@ -554,7 +554,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let root = edit.expression(*root)?;
             feldera_sql_expr::prepare_column_default(&mut edit, root, &mut next)?
         }
-        ("Monotonicity/WaterlineBindings", types) => {
+        ("Monotonicity/RowClosure", [body, parameter]) => {
+            let body = edit.expression(*body)?;
+            edit.closure_with_parameters(body, &[*parameter])?
+        }
+        ("Monotonicity/WaterlineBindings", [body, types @ ..]) => {
             let names: Vec<&str> = serde_json::from_slice(state)?;
             if names.len() != types.len() {
                 return Err("expected one name per waterline input type".into());
@@ -563,8 +567,8 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 .map(|(name, &ty)| Ok((name, edit.type_id(ty)?)))
                 .collect::<Result<Vec<_>, feldera_sql_ir::Error>>()?;
             let bindings = feldera_sql_opt::waterline_bindings(&mut edit, &inputs)?;
-            let roots = std::iter::once(bindings.parameter).chain(bindings.statements);
-            return Ok(Value::Array(edit.circuit().additional_inner_nodes(&arena, roots)?));
+            let body = edit.expression(*body)?;
+            bindings.closure(&mut edit, body)?
         }
         ("Monotonicity/IsMinimumChain", [init, update]) => {
             return Ok(json!(feldera_sql_opt::is_minimum_chain(&mut edit, *init, *update)?));
@@ -1286,7 +1290,7 @@ fn transform(
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"
-        | "Monotonicity/Clock"
+        | "Monotonicity/Clock" | "Monotonicity/RowClosure"
         | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
