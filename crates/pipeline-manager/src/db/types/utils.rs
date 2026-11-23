@@ -1,7 +1,7 @@
 use crate::db::error::DBError;
 use crate::db::types::program::{ProgramConfig, ProgramInfo};
 use crate::pipeline_env::validate_pipeline_env;
-use feldera_types::config::{PipelineConfig, RuntimeConfig};
+use feldera_types::config::{FtModel, PipelineConfig, RuntimeConfig};
 use feldera_types::runtime_status::StorageStatusDetails;
 use regex::Regex;
 use serde::Serialize;
@@ -191,6 +191,8 @@ pub enum ValidationError {
     UnsupportedStorage(String),
     #[error("unsupported memory: {0}")]
     UnsupportedMemory(String),
+    #[error("unsupported fault tolerance: {0}")]
+    UnsupportedFaultTolerance(String),
 }
 
 /// Deserializes generic JSON value into [`RuntimeConfig`] and performs any additional validation.
@@ -206,6 +208,22 @@ pub(crate) fn validate_runtime_config(
             #[cfg(not(feature = "feldera-enterprise"))]
             if runtime_config.fault_tolerance.is_enabled() {
                 let e = ValidationError::EnterpriseFeature("fault tolerance".to_string());
+                if log_if_invalid {
+                    error!(
+                        "Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid runtime configuration due to: {e}"
+                    );
+                }
+                return Err(e);
+            }
+            // Exactly-once replay does not work across hosts.
+            if runtime_config.hosts > 1
+                && runtime_config.fault_tolerance.model == Some(FtModel::ExactlyOnce)
+            {
+                let e = ValidationError::UnsupportedFaultTolerance(format!(
+                    "multihost pipelines (hosts = {}) do not support exactly-once fault tolerance; \
+                     set 'fault_tolerance.model' to 'at_least_once' or 'none', or set 'hosts' to 1",
+                    runtime_config.hosts
+                ));
                 if log_if_invalid {
                     error!(
                         "Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid runtime configuration due to: {e}"
@@ -625,6 +643,25 @@ mod tests {
             validate_runtime_config(&json!({ "fault_tolerance": {} }), true),
             Err(ValidationError::EnterpriseFeature(s)) if s == "fault tolerance"
         ));
+
+        // Multihost pipelines reject exactly-once fault tolerance, including
+        // the default model, but accept at-least-once.
+        #[cfg(feature = "feldera-enterprise")]
+        {
+            for ft in [json!({ "model": "exactly_once" }), json!({})] {
+                assert!(matches!(
+                    validate_runtime_config(&json!({ "hosts": 2, "fault_tolerance": ft }), true),
+                    Err(ValidationError::UnsupportedFaultTolerance(s))
+                        if s.contains("do not support exactly-once")
+                ));
+            }
+            for config in [
+                json!({ "hosts": 2, "fault_tolerance": { "model": "at_least_once" } }),
+                json!({ "hosts": 1, "fault_tolerance": { "model": "exactly_once" } }),
+            ] {
+                validate_runtime_config(&config, true).unwrap();
+            }
+        }
 
         assert!(matches!(
             validate_runtime_config(&json!({ "env": { "TOKIO_WORKER_THREADS": "1" } }), true),

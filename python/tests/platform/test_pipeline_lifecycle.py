@@ -1008,19 +1008,20 @@ def test_runtime_config_edit_restricted_enterprise(pipeline_name):
 
     # runtime_config.fault_tolerance
     # The manager stores a duration in its reduced spelling, so "60s" reads
-    # back as "1m".
+    # back as "1m".  The pipeline now has 2 hosts, which rule out
+    # exactly-once.
     helper_test_restricted_runtime_config_edit(
         pipeline_name,
         pipeline,
         "`runtime_config.fault_tolerance`",
         {
             "fault_tolerance": {
-                "model": "exactly_once",
+                "model": "at_least_once",
                 "checkpoint_interval": "60s",
             }
         },
         lambda r: r["fault_tolerance"],
-        {"model": "exactly_once", "checkpoint_interval": "1m"},
+        {"model": "at_least_once", "checkpoint_interval": "1m"},
     )
 
 
