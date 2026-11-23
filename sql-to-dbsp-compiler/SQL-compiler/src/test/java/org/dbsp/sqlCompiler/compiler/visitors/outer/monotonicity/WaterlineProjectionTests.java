@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
@@ -978,6 +979,42 @@ public class WaterlineProjectionTests {
             var projected = RustCircuitPass.projectRow(compiler, body, bound, row);
             Assert.assertNotNull(projected);
             Assert.assertTrue(direct.equivalent(projected.getReducedExpression().closure(bound)));
+        }
+    }
+
+    @Test
+    public void literalWaterlinesDistinguishNullsFromPositiveConstants() {
+        var site = CalciteEmptyRel.INSTANCE;
+        var real = DBSPTypeDouble.create(true);
+        var row = new PartiallyMonotoneTuple(List.of(new MonotoneType(real)), false, false);
+        var input = new DBSPVariablePath("row", row.getType().ref());
+        var factor = new DBSPDoubleLiteral(1.25, true);
+        var nan = new DBSPDoubleLiteral(Double.NaN, true);
+        var absent = new DBSPDoubleLiteral(null, true);
+        var text = new DBSPStringLiteral("literal");
+        var scale = new DBSPBinaryExpression(site, real, DBSPOpcode.MUL, input.deepCopy().deref().field(0), factor);
+        var invalidScale = new DBSPBinaryExpression(site, real, DBSPOpcode.MUL, input.deepCopy().deref().field(0), nan);
+        var difference = new DBSPBinaryExpression(site, real, DBSPOpcode.SUB, input.deepCopy().deref().field(0), absent);
+        var closure = new DBSPTupleExpression(scale, invalidScale, difference, text).closure(input);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(real));
+        for (boolean nativePass : List.of(false, true)) {
+            if (nativePass && !Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
+                continue;
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.options.ioOptions.rustOptimizerPasses = nativePass;
+            var analysis = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+            analysis.apply(closure);
+            Assert.assertTrue(analysis.get(scale).mayBeMonotone());
+            Assert.assertFalse(analysis.get(invalidScale).mayBeMonotone());
+            Assert.assertFalse(analysis.get(difference).mayBeMonotone());
+            Assert.assertFalse(analysis.get(text).mayBeMonotone());
+            var maximum = analysis.get(absent).getReducedExpression().to(DBSPDoubleLiteral.class);
+            Assert.assertFalse(maximum.getType().mayBeNull);
+            Assert.assertTrue(Double.isNaN(maximum.value));
+            var target = new DBSPUSizeLiteral(null, true);
+            var unsupported = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+            var error = Assert.assertThrows(UnsupportedException.class, () -> unsupported.apply(target.closure(input)));
+            Assert.assertSame(target.getType().withMayBeNull(false).getNode(), error.calciteObject);
         }
     }
 

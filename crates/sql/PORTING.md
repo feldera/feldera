@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust computes literal waterlines in the general visitor and during closure
+projection. A NULL double uses the type maximum, NaN, as its waterline
+and cannot serve as a constant in subtraction. Multiplication distinguishes a positive factor
+from NaN. NULL target-sized integers retain the compiler's diagnostic. The
+packaged build passed 93 JUnit tests and matched Java on all 550 selected
+MonotoneAnalyzer invocations and 9,014 ordered S4 observations.
+[Literal comparisons](evidence/p3-literal-waterlines.json)
+
 The general monotonicity visitor uses the same Rust clock and tuple
 constructors as whole-closure projection. A directed test checks that
 a projected SQL row retains its source range and the identities of its

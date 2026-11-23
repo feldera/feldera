@@ -25,6 +25,7 @@ pub use monotonicity::combine::{
 };
 pub use monotonicity::flatmap::flatmap_waterline;
 pub use monotonicity::lag::lag_transfer;
+pub use monotonicity::literal::{literal_waterline, LiteralWaterline};
 pub use monotonicity::schedule::{monotonicity_transfers, MonotonicityTransfer};
 pub use monotonicity::casts::{cast_waterline, CastWaterline};
 pub use monotonicity::functions::{

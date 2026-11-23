@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapsho
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
@@ -562,8 +563,21 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static DBSPExpression nullLiteralWaterline(DBSPCompiler compiler, DBSPType type) {
-        return lowerFunction(compiler, "Monotonicity/NullLiteral", type, null, DBSPExpression.class);
+    public record LiteralWaterline(@Nullable DBSPExpression bound, boolean constant, boolean positive) {}
+
+    public static LiteralWaterline literalWaterline(DBSPCompiler compiler, DBSPLiteral literal) {
+        String pass = "Monotonicity/Literal";
+        var reply = invokeLowering(compiler, pass, literal);
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision(pass, true);
+        return switch (reply.value.required("kind").textValue()) {
+            case "unbounded" -> new LiteralWaterline(null, false, false);
+            case "target_maximum" -> throw new UnsupportedException(literal.getType().withMayBeNull(false).getNode());
+            case "bounded" -> new LiteralWaterline(
+                    Objects.requireNonNull(decodeLiveRoot(reply.writer, reply.value.required("bound"), DBSPExpression.class)),
+                    reply.value.required("constant").booleanValue(), reply.value.required("positive").booleanValue());
+            default -> throw new IllegalStateException("Unknown literal waterline " + reply.value);
+        };
     }
 
     public static DBSPFold lowerAggregateFold(DBSPCompiler compiler, DBSPAggregateList aggregates) {

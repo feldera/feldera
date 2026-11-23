@@ -3,21 +3,8 @@ use super::{type_number, ProjectedValue, RowType, Shape};
 use crate::monotonicity::binary::{
     binary_waterline, BinaryOperation, BinaryWaterline, Domain, Operand,
 };
-use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, TypeKind as Ty,
-};
-
-pub(super) fn literal(kind: Expr) -> bool {
-    kind.is_numeric_literal()
-        || matches!(
-            kind,
-            Expr::BoolLiteral
-                | Expr::DateLiteral
-                | Expr::TimeLiteral
-                | Expr::TimestampLiteral
-                | Expr::TimestampTzLiteral
-        )
-}
+use crate::monotonicity::literal::{literal_waterline, ordered_literal, LiteralWaterline};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, TypeKind as Ty};
 
 impl ProjectedValue {
     pub(super) fn bounded(
@@ -36,77 +23,17 @@ impl ProjectedValue {
     }
 }
 
-/// Mirror getWithNullable(false), including the fresh, unlocated SQL types
-/// built by integer and boolean literal constructors.
 pub(super) fn literal_bound(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
 ) -> Result<Option<ProjectedValue>, Error> {
-    let site = expression.into();
-    let ty = edit.expression_type(expression)?;
-    let kind = edit.expr_kind(expression)?;
-    let Some(value) = edit
-        .node(site)?
-        .data("value")
-        .filter(|v| !v.is_null())
-        .cloned()
-    else {
-        // These maxima depend on the target. Java reports the unsupported
-        // operation at the SQL site when a NULL literal needs that maximum.
-        if matches!(kind, Expr::ISizeLiteral | Expr::USizeLiteral) {
-            return Ok(None);
+    match literal_waterline(edit, expression)? {
+        LiteralWaterline::Bounded { bound, constant } => {
+            ProjectedValue::bounded(edit, expression, bound, constant).map(Some)
         }
-        let required = edit.with_nullability(ty, false)?;
-        let maximum = edit.scalar_maximum(required)?;
-        return ProjectedValue::bounded(edit, expression, maximum, false).map(Some);
-    };
-    let sql_type = edit.type_kind(ty)?;
-    let bound = match sql_type {
-        Ty::ISize | Ty::USize => edit.required_size_literal(expression)?,
-        Ty::Integer | Ty::Bool | Ty::Real | Ty::Double => {
-            let required = match sql_type {
-                Ty::Integer => {
-                    let node = edit.node(ty.into())?;
-                    let property = |key| {
-                        node.data(key)
-                            .cloned()
-                            .map(Field::Data)
-                            .ok_or_else(|| Error::new(format!("missing integer {key}")))
-                    };
-                    let fields = [
-                        ("width", property("width")?),
-                        ("signed", property("signed")?),
-                        ("code", property("code")?),
-                        ("mayBeNull", Field::Data(false.into())),
-                    ];
-                    edit.empty_origin_node(site, InnerKind::Type(Ty::Integer), fields)?
-                }
-                Ty::Bool => edit.empty_origin_node(
-                    site,
-                    InnerKind::Type(Ty::Bool),
-                    [
-                        ("code", Field::Data("BOOL".into())),
-                        ("mayBeNull", Field::Data(false.into())),
-                    ],
-                )?,
-                _ => edit.float_literal_type(ty, false)?.into(),
-            };
-            let bound = edit.empty_origin_node(
-                site,
-                InnerKind::Expression(kind),
-                [
-                    ("type", Field::Reference(required)),
-                    ("value", Field::Data(value)),
-                ],
-            )?;
-            edit.expression(bound)?
-        }
-        _ => {
-            let required = edit.with_nullability(ty, false)?;
-            edit.make_expr(site, kind, required, [("value", Field::Data(value))])?
-        }
-    };
-    ProjectedValue::bounded(edit, expression, bound, true).map(Some)
+        LiteralWaterline::Unbounded => super::unbounded(edit, expression),
+        LiteralWaterline::TargetMaximum => Ok(None),
+    }
 }
 
 fn never_null(edit: &CircuitEditor, mut expression: ExpressionId) -> Result<bool, Error> {
@@ -132,7 +59,7 @@ fn operand(
         monotone: value.reduced.is_some(),
         constant: value.constant,
         positive_literal: matches!(opcode, "MUL" | "DIV" | "MUL_INTERVAL" | "DIV_INTERVAL")
-            && literal(edit.expr_kind(expression)?)
+            && ordered_literal(edit.expr_kind(expression)?)
             && feldera_sql_expr::literal_is_positive(edit, expression)?,
         never_null: opcode == "MAX_IGNORE_NULLS" && never_null(edit, expression)?,
     })
@@ -220,7 +147,7 @@ pub(super) fn binary_bound(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use feldera_sql_ir::Circuit;
+    use feldera_sql_ir::{Circuit, Field};
     use serde_json::json;
 
     #[test]

@@ -755,9 +755,20 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 input, accumulators, *update, &mut next, &mut warnings)?;
             return lowered_function_reply(&arena, &edit, function, next, warnings);
         }
-        ("Monotonicity/NullLiteral", [ty]) => {
-            let ty = edit.type_id(*ty)?;
-            edit.scalar_maximum(ty)?
+        ("Monotonicity/Literal", [id]) => {
+            use feldera_sql_opt::LiteralWaterline;
+            let literal = edit.expression(*id)?;
+            let reply = match feldera_sql_opt::literal_waterline(&mut edit, literal)? {
+                LiteralWaterline::Unbounded => json!({"kind": "unbounded"}),
+                LiteralWaterline::TargetMaximum => json!({"kind": "target_maximum"}),
+                LiteralWaterline::Bounded { bound, constant } => json!({
+                    "kind": "bounded",
+                    "bound": edit.circuit().live_expression(&arena, bound)?,
+                    "constant": constant,
+                    "positive": constant && feldera_sql_expr::literal_is_positive(&edit, literal)?,
+                }),
+            };
+            return Ok(reply);
         }
         ("Monotonicity/Clock", [call]) => {
             let call = edit.expression(*call)?;
@@ -1276,7 +1287,7 @@ fn transform(
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"
         | "Monotonicity/Clock"
-        | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/NullLiteral" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
+        | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"

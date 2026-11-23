@@ -1,6 +1,7 @@
 //! Evaluate children before their parent and bind locals between successive statements.
 use super::{function, project_tuple, project_wrapper, scalar, unbounded, ProjectedValue, Row};
 use crate::function_calls::function_name;
+use crate::monotonicity::literal::ordered_literal;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind};
 use std::collections::HashSet;
 
@@ -187,7 +188,7 @@ impl Row {
                             continue;
                         }
                         Expr::VariablePath => (id, self.variable(edit, id)?),
-                        kind if scalar::literal(kind) => (id, scalar::literal_bound(edit, id)?),
+                        kind if ordered_literal(kind) => (id, scalar::literal_bound(edit, id)?),
                         _ => {
                             if !schedule(edit, id, values.len(), &mut work)? {
                                 return Ok(None);

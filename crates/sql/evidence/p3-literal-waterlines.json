@@ -1,0 +1,61 @@
+{
+  "scope": "Both general visitors analyze the same NULL, NaN, positive literal and text expressions. The directed test checks multiply and subtract decisions and the diagnostic for a target-sized NULL. Detached replay and isolated comparisons cover the packaged compiler.",
+  "verification": {
+    "build_sha256": {
+      "bin/libfeldera_sql_opt_jni.so": "abf3f1b799e968d346bc8c6bf7a1dc7f970c208996e6361718dce47c772924ad",
+      "bin/sql-difftest": "995c5bf676f46776ae8e7cac64e0236309ea00eface1fdb03d4bbd5cbca7a413",
+      "maven/sql-compiler.jar": "d2c719e12aec56faeb6ce6b26da7f109250a87aee376309f473ddd115d6281c9",
+      "maven/tests.jar": "e0023db8bfcb74a5e6407ee889a83f024f399743a3d05107693c839fab150699",
+      "maven/build.log": "27d82dff41abed23c1a5ce5c603eaff9d154b615d811de4542bc5f953cfd6aa0",
+      "tests.log": "4c50fe657c602188e389de8db1d235a064eb60a5ed3004e9b17e79777c5e9cfc",
+      "build.log": "bb64ff65faa44589f808a62e2d180471e730d68aa02c206078c620383235585d",
+      "clippy.log": "fed706bf090efa515c37d16bf43fb261fcf08af912332c7a51ecc3c131ecaad1",
+      "junit.log": "6af83e9eba6b33db98b149abc472de611fb0a63a57074a44464025108e444efd"
+    },
+    "rust_tests": 216,
+    "junit_tests": 93,
+    "engines": {
+      "classic": {
+        "isolated_pass": "MonotoneAnalyzer matched at 291 invocations across 291 cases",
+        "detached_cases": 11,
+        "ordered_s4_observations": 4490,
+        "mismatches": 0,
+        "receipt_sha256": "a7dd1ee53c6a6086cd0cd31411ca9fd942be1aa1b60ad58f3331a4392b620efa",
+        "native_request_calls": {
+          "InnerCSE/BorrowedVariables": 1,
+          "InnerCSE/NumberValues": 35,
+          "InnerCSE/ReadLazy": 72,
+          "KeyAnalysis/Circuit": 33,
+          "LeftJoinChains/Steps": 11,
+          "Monotonicity/ProjectClosure": 3,
+          "Monotonicity/Transfer": 18,
+          "OptimizeProjections/Producer": 114,
+          "ParameterFieldDependencies": 16,
+          "RemoveUnusedFields/AggregateReader": 6,
+          "RemoveUnusedFields/IndexedValue": 6,
+          "RemoveUnusedFields/ParameterTypes": 6
+        }
+      },
+      "gen2": {
+        "isolated_pass": "MonotoneAnalyzer matched at 259 invocations across 259 cases",
+        "detached_cases": 11,
+        "ordered_s4_observations": 4524,
+        "mismatches": 0,
+        "receipt_sha256": "88cd2262ad72bbf5c1583d7c456959302cae33c0e9d37b3852bc1d5087a25719",
+        "native_request_calls": {
+          "InnerCSE/NumberValues": 34,
+          "InnerCSE/ReadLazy": 72,
+          "KeyAnalysis/Circuit": 33,
+          "LeftJoinChains/Steps": 11,
+          "Monotonicity/ProjectClosure": 3,
+          "Monotonicity/Transfer": 18,
+          "OptimizeProjections/Producer": 116,
+          "ParameterFieldDependencies": 16,
+          "RemoveUnusedFields/AggregateReader": 6,
+          "RemoveUnusedFields/IndexedValue": 6,
+          "RemoveUnusedFields/ParameterTypes": 6
+        }
+      }
+    }
+  }
+}
