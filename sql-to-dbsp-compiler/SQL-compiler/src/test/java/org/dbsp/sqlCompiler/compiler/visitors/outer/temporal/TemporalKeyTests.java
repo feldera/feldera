@@ -38,6 +38,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -899,6 +901,29 @@ public class TemporalKeyTests {
         var one = bound(nestedConstantRow(1));
         assertCompatible(compiler, one, bound(nestedConstantRow(1)), true);
         assertCompatible(compiler, one, bound(nestedConstantRow(2)), false);
+    }
+
+    private static TemporalFilter arrayRowKey(DBSPExpression element) {
+        return bound(new DBSPZSetExpression(new DBSPArrayExpression(element)));
+    }
+
+    @Test
+    public void constantArrayKeysCompareSqlTupleFieldIdentities() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var one = new DBSPI32Literal(1);
+        var key = arrayRowKey(new DBSPTupleExpression(one));
+        assertCompatible(compiler, key, arrayRowKey(new DBSPTupleExpression(one)), true);
+        assertCompatible(compiler, key, arrayRowKey(new DBSPTupleExpression(new DBSPI32Literal(1))), false);
+    }
+
+    @Test
+    public void constantArrayKeysCompareRawTupleElementsAndPoints() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var key = arrayRowKey(new DBSPRawTupleExpression(new DBSPI32Literal(1), new DBSPGeoPointConstructor()));
+        assertCompatible(compiler, key,
+                arrayRowKey(new DBSPRawTupleExpression(new DBSPI32Literal(1), new DBSPGeoPointConstructor())), true);
+        assertCompatible(compiler, key,
+                arrayRowKey(new DBSPRawTupleExpression(new DBSPI32Literal(2), new DBSPGeoPointConstructor())), false);
     }
 
     @Test

@@ -1,6 +1,5 @@
-//! Weighted constants use ISameValue when appending rows. Literal elements of
-//! Java collections use equals, which also compares types. Other expressions
-//! in those collections compare by object identity.
+//! Weighted constants consolidate rows by value. Arrays, maps and geographic
+//! points compare their elements using Java expression-object equality.
 use crate::same_literal_value;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
@@ -82,6 +81,54 @@ pub fn object_equals(edit: &CircuitEditor, a: NodeId, b: NodeId) -> Result<bool,
     Ok(edit.expr_kind(a)?.wire_name().ends_with("Literal")
         && edit.same_type(edit.expression_type(a)?, edit.expression_type(b)?)?
         && scalar_equals(edit, a, b)?)
+}
+
+/// Java list equality calls each element's equals method. SQL tuples compare
+/// field identities, while raw tuples and point coordinates call equals again.
+fn equal_elements(edit: &CircuitEditor, a: NodeId, b: NodeId) -> Result<bool, Error> {
+    let mut pending = vec![(a, b)];
+    let mut seen = std::collections::HashSet::new();
+    while let Some((a, b)) = pending.pop() {
+        if a == b || !seen.insert((a, b)) {
+            continue;
+        }
+        let (left, right) = (edit.node(a)?, edit.node(b)?);
+        let kind = edit.expr_kind(edit.expression(a)?)?;
+        if left.class() != right.class() {
+            return Ok(false);
+        }
+        match kind {
+            Expr::Tuple | Expr::RawTuple => match (left.field("fields"), right.field("fields")) {
+                (None, None) => {}
+                (Some(_), Some(_)) => {
+                    let (xs, ys) = (left.edges("fields")?, right.edges("fields")?);
+                    if xs.len() != ys.len() {
+                        return Ok(false);
+                    }
+                    if kind == Expr::Tuple {
+                        if xs != ys {
+                            return Ok(false);
+                        }
+                    } else {
+                        pending.extend(xs.into_iter().zip(ys).rev());
+                    }
+                }
+                _ => return Ok(false),
+            },
+            Expr::GeoPointConstructor => {
+                for field in ["right", "left"] {
+                    match (left.field(field), right.field(field)) {
+                        (None, None) => {}
+                        (Some(_), Some(_)) => pending.push((left.edge(field)?, right.edge(field)?)),
+                        _ => return Ok(false),
+                    }
+                }
+            }
+            _ if object_equals(edit, a, b)? => {}
+            _ => return Ok(false),
+        }
+    }
+    Ok(true)
 }
 
 fn scalar_equals(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<bool, Error> {
@@ -232,7 +279,7 @@ fn compare(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<Com
                     return Ok(false);
                 }
                 for (x, y) in xs.into_iter().zip(ys) {
-                    if !object_equals(edit, x, y)? {
+                    if !equal_elements(edit, x, y)? {
                         return Ok(false);
                     }
                 }
@@ -262,7 +309,7 @@ fn compare(edit: &CircuitEditor, a: ExpressionId, b: ExpressionId) -> Result<Com
             for key in ["left", "right"] {
                 match (edge(left, key), edge(right, key)) {
                     (None, None) => {}
-                    (Some(x), Some(y)) if object_equals(edit, x, y)? => {}
+                    (Some(x), Some(y)) if equal_elements(edit, x, y)? => {}
                     _ => return Ok(Immediate(false)),
                 }
             }
