@@ -10,6 +10,16 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Fix (checkpoint sync, fault tolerance): a pipeline that restores a checkpoint
+  from object storage runs with the fault tolerance model of its
+  configuration.  It used to keep, without saying so, the model of the
+  pipeline that wrote the checkpoint, so that a pipeline that enabled fault
+  tolerance after clearing its storage took no automatic checkpoints and
+  journaled no input.  An exactly-once pipeline that resumes from a restored
+  checkpoint no longer fails to start with `Error with persistent input steps:
+  steps.bin: ... readdir failed`.  See [fault tolerance of a restored
+  pipeline](/pipelines/checkpoint-sync#fault-tolerance-of-a-restored-pipeline).
+
 ## v0.385.0
 
 - Security: pipeline diagnostics replace registered Secret values with their

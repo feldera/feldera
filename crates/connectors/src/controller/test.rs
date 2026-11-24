@@ -3797,16 +3797,7 @@ fn restored_adhoc_insert(engine: &dyn PipelineTestEngine, fault_tolerance: bool,
     // The same program information in both runs tells the restart that the
     // program is unchanged, which is the case that restores the checkpoint's
     // input endpoints.
-    config.program_ir = Some(feldera_types::config::ProgramIr {
-        mir: serde_json::from_value(json!({
-            "0": { "operation": "source", "table": "test_input1", "persistent_id": "test_input1" },
-            "1": { "operation": "sink", "view": "test_output1", "persistent_id": "output" },
-        }))
-        .unwrap(),
-        program_schema: json!({ "inputs": [], "outputs": [] }),
-        circuit_ir: None,
-        udf_library: None,
-    });
+    config.program_ir = Some(identity_program_ir());
     let circuit = identity(&[Some("output")]);
 
     let controller = engine
@@ -3890,6 +3881,278 @@ pub fn restored_adhoc_insert_with_nothing_to_replay(engine: &dyn PipelineTestEng
 #[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn restored_adhoc_insert_after_replay(engine: &dyn PipelineTestEngine) {
     restored_adhoc_insert(engine, true, true);
+}
+
+/// Returns program information for the [identity] circuit.
+///
+/// A restart whose configuration carries the same program information as its
+/// checkpoint treats the program as unchanged, which is the case that replays
+/// the journal and restores the checkpoint's input endpoints.
+fn identity_program_ir() -> feldera_types::config::ProgramIr {
+    feldera_types::config::ProgramIr {
+        mir: serde_json::from_value(json!({
+            "0": { "operation": "source", "table": "test_input1", "persistent_id": "test_input1" },
+            "1": { "operation": "sink", "view": "test_output1", "persistent_id": "output" },
+        }))
+        .unwrap(),
+        program_schema: json!({ "inputs": [], "outputs": [] }),
+        circuit_ir: None,
+        udf_library: None,
+    }
+}
+
+/// Returns the configuration of an [identity] pipeline with storage.
+///
+/// # Arguments
+///
+/// - `storage_dir`: the directory that holds the pipeline's storage.
+/// - `model`: the fault tolerance model, or `None` for no fault tolerance.
+/// - `checkpoint_interval`: the interval between automatic checkpoints, such
+///   as `"1s"`, or `None` for no automatic checkpoints.
+///
+/// # Returns
+///
+/// A configuration with no connectors, whose program is unchanged across
+/// restarts.
+fn ft_model_config(
+    storage_dir: &Path,
+    model: Option<FtModel>,
+    checkpoint_interval: Option<&str>,
+) -> PipelineConfig {
+    let mut config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {
+            "model": model.map_or("none", |model| model.as_str()),
+            "checkpoint_interval": checkpoint_interval,
+        },
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    config.program_ir = Some(identity_program_ir());
+    config
+}
+
+/// Starts a controller for `circuit` with `config` and waits for it to finish
+/// replaying its journal.
+///
+/// # Arguments
+///
+/// - `engine`: the engine that runs the pipeline.
+/// - `circuit`: the circuit to run.
+/// - `config`: the pipeline configuration.
+///
+/// # Returns
+///
+/// The running controller.  Panics if the controller cannot start, reports an
+/// error, or does not finish replaying within the default timeout.
+fn start_after_replay(
+    engine: &dyn PipelineTestEngine,
+    circuit: &TestCircuit,
+    config: &PipelineConfig,
+) -> Controller {
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = engine
+        .controller(
+            circuit,
+            config,
+            Box::new({
+                let errors = errors.clone();
+                move |e, _| errors.lock().unwrap().push(e.to_string())
+            }),
+        )
+        .unwrap_or_else(|e| panic!("start failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        default_timeout_ms(),
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "start failed: {errors:?}");
+    replayed.expect("replay never finished");
+    controller
+}
+
+/// A pipeline that resumes from a checkpoint runs with the fault tolerance
+/// model of its configuration, even when another model wrote the checkpoint.
+///
+/// The pipeline manager changes the model only for a pipeline with cleared
+/// storage, but such a pipeline can still resume from a checkpoint that it
+/// pulls from object storage.  This test writes a checkpoint under
+/// `checkpoint_model`, resumes from it under `resume_model`, and runs an ad
+/// hoc INSERT that no checkpoint covers.  Only exactly-once fault tolerance
+/// journals the INSERT, so whether its row survives another restart shows
+/// which model the resumed pipeline ran with.
+fn resume_with_ft_model(
+    engine: &dyn PipelineTestEngine,
+    checkpoint_model: Option<FtModel>,
+    resume_model: Option<FtModel>,
+) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let circuit = identity(&[Some("output")]);
+
+    // Write a checkpoint that holds the first row.
+    let config = ft_model_config(&storage_dir, checkpoint_model, None);
+    let controller = start_after_replay(engine, &circuit, &config);
+    insert_row(&controller, 1).unwrap();
+    controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+
+    // Resume under the other model, insert a second row, and stop without a
+    // checkpoint.
+    let config = ft_model_config(&storage_dir, resume_model, None);
+    let controller = start_after_replay(engine, &circuit, &config);
+    assert_eq!(
+        controller
+            .status()
+            .pipeline_config
+            .global
+            .fault_tolerance
+            .model,
+        resume_model,
+        "the resumed pipeline does not run with the configured fault tolerance model"
+    );
+    insert_row(&controller, 2).unwrap();
+    controller.stop().unwrap();
+
+    // Restart under the same model.  Only a journal brings the second row
+    // back.
+    let controller = start_after_replay(engine, &circuit, &config);
+    let expected = if resume_model == Some(FtModel::ExactlyOnce) {
+        2
+    } else {
+        1
+    };
+    // An INSERT returns once its step has taken its input, before the ad hoc
+    // snapshot includes it.
+    let _ = wait(
+        || count_rows(&controller, "test_input1") >= expected,
+        default_timeout_ms(),
+    );
+    assert_eq!(count_rows(&controller, "test_input1"), expected);
+    controller.stop().unwrap();
+}
+
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
+pub fn resume_with_ft_model_raised_from_none_to_exactly_once(engine: &dyn PipelineTestEngine) {
+    resume_with_ft_model(engine, None, Some(FtModel::ExactlyOnce));
+}
+
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
+pub fn resume_with_ft_model_raised_from_at_least_once_to_exactly_once(
+    engine: &dyn PipelineTestEngine,
+) {
+    resume_with_ft_model(
+        engine,
+        Some(FtModel::AtLeastOnce),
+        Some(FtModel::ExactlyOnce),
+    );
+}
+
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
+pub fn resume_with_ft_model_lowered_from_exactly_once_to_at_least_once(
+    engine: &dyn PipelineTestEngine,
+) {
+    resume_with_ft_model(
+        engine,
+        Some(FtModel::ExactlyOnce),
+        Some(FtModel::AtLeastOnce),
+    );
+}
+
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
+pub fn resume_with_ft_model_lowered_from_exactly_once_to_none(engine: &dyn PipelineTestEngine) {
+    resume_with_ft_model(engine, Some(FtModel::ExactlyOnce), None);
+}
+
+/// An exactly-once pipeline resumes from a checkpoint that has no journal
+/// beside it, and journals its steps from then on.
+///
+/// Object storage holds checkpoints but no journal, so a pipeline that
+/// restores a checkpoint into cleared storage, such as a standby that
+/// activates, has no journal directory.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance, StaticStorageLayout))]
+pub fn resume_with_exactly_once_without_journal(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let circuit = identity(&[Some("output")]);
+    let config = ft_model_config(&storage_dir, Some(FtModel::ExactlyOnce), None);
+
+    let controller = start_after_replay(engine, &circuit, &config);
+    insert_row(&controller, 1).unwrap();
+    controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+
+    // Leave out what a restore from object storage leaves out.
+    let journal_dir = storage_dir.join(feldera_types::constants::STEPS_FILE);
+    std::fs::remove_dir_all(&journal_dir).unwrap();
+
+    let controller = start_after_replay(engine, &circuit, &config);
+    let _ = wait(
+        || count_rows(&controller, "test_input1") >= 1,
+        default_timeout_ms(),
+    );
+    assert_eq!(count_rows(&controller, "test_input1"), 1);
+    insert_row(&controller, 2).unwrap();
+    controller.stop().unwrap();
+
+    // The journal brings back the row that no checkpoint covers.
+    let controller = start_after_replay(engine, &circuit, &config);
+    let _ = wait(
+        || count_rows(&controller, "test_input1") >= 2,
+        default_timeout_ms(),
+    );
+    assert_eq!(count_rows(&controller, "test_input1"), 2);
+    controller.stop().unwrap();
+}
+
+/// A pipeline that resumes with fault tolerance model `model` from a
+/// checkpoint written without fault tolerance takes automatic checkpoints.
+///
+/// Automatic checkpoints follow the fault tolerance model, so a pipeline that
+/// kept the checkpoint's model would take none.
+fn resume_with_ft_takes_automatic_checkpoints(engine: &dyn PipelineTestEngine, model: FtModel) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let circuit = identity(&[Some("output")]);
+
+    let config = ft_model_config(&storage_dir, None, None);
+    let controller = start_after_replay(engine, &circuit, &config);
+    controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+    let written = published_checkpoints(engine, &config);
+    assert_eq!(written.len(), 1, "{written:?}");
+
+    let config = ft_model_config(&storage_dir, Some(model), Some("1s"));
+    let controller = start_after_replay(engine, &circuit, &config);
+    // Retention can drop old checkpoints from the catalog, so look for a new
+    // latest checkpoint rather than for a longer catalog.  Sixty intervals
+    // leave room for a slow machine.
+    wait(
+        || published_checkpoints(engine, &config).last() != written.last(),
+        60_000,
+    )
+    .expect("the resumed pipeline took no automatic checkpoint");
+    controller.stop().unwrap();
+}
+
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
+pub fn resume_with_at_least_once_takes_automatic_checkpoints(engine: &dyn PipelineTestEngine) {
+    resume_with_ft_takes_automatic_checkpoints(engine, FtModel::AtLeastOnce);
+}
+
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
+pub fn resume_with_exactly_once_takes_automatic_checkpoints(engine: &dyn PipelineTestEngine) {
+    resume_with_ft_takes_automatic_checkpoints(engine, FtModel::ExactlyOnce);
 }
 
 /// The configuration of an `/ingress` endpoint named `name` for `test_input1`.

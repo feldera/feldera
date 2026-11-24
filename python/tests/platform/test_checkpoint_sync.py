@@ -611,6 +611,133 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.stop(force=True)
         self.pipeline.clear_storage()
 
+    def _push_checkpoint(self, model: Optional[FaultToleranceModel]) -> list:
+        """Start the pipeline with fault tolerance *model*, or without fault
+        tolerance if it is None, checkpoint it, and push the checkpoint.
+
+        Automatic checkpoints are off, so that the pushed checkpoint is the
+        only one.
+
+        Returns the contents of `v0` that the checkpoint holds.
+        """
+        self.pipeline.set_runtime_config(
+            build_runtime_config(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=model,
+                checkpoint_interval=None,
+                storage=Storage(config=storage_cfg(self.pipeline.name)),
+            )
+        )
+        self.pipeline.start()
+        _, got_before = self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        time.sleep(1)
+        self._sync_and_verify()
+        return got_before
+
+    @enterprise_only
+    def test_restore_enables_automatic_checkpoints(self):
+        """A restore with fault tolerance takes automatic checkpoints, even
+        from a checkpoint written without fault tolerance.
+
+        The pipeline manager lets a pipeline change its fault tolerance model
+        only with cleared storage, which is when it restores from object
+        storage.  The restore must run with the configured model, not with the
+        model of the checkpoint's writer.
+        """
+        got_before = self._push_checkpoint(None)
+
+        self._restart_from_checkpoint("latest", ft_interval=1)
+        self.assertCountEqual(got_before, list(self.pipeline.query("SELECT * FROM v0")))
+
+        # A checkpoint can come before this listing; then the wait takes one
+        # more interval.
+        restored = {str(c.uuid) for c in self.pipeline.checkpoints()}
+        wait_for_condition(
+            "the restored pipeline takes an automatic checkpoint",
+            lambda: any(
+                str(c.uuid) not in restored for c in self.pipeline.checkpoints()
+            ),
+            timeout_s=30.0,
+            poll_interval_s=0.5,
+        )
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    def _restore_with_exactly_once(
+        self, checkpoint_model: Optional[FaultToleranceModel]
+    ):
+        """Push a checkpoint written with fault tolerance *checkpoint_model*,
+        restore it with exactly-once fault tolerance into cleared storage, and
+        check that rows ingested after the restore survive a force stop.
+
+        Object storage holds no journal, so the restored pipeline starts one.
+        Rows that no checkpoint covers survive a force stop only if the
+        restored pipeline runs with fault tolerance: then the journal replays
+        them, or, for a single-host pipeline on Kubernetes, the checkpoint
+        that the SIGTERM of the force stop triggers holds them.  Automatic
+        checkpoints are off, so that no other checkpoint covers them.
+        """
+        got_before = self._push_checkpoint(checkpoint_model)
+
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+        self.pipeline.set_runtime_config(
+            build_runtime_config(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=FaultToleranceModel.ExactlyOnce,
+                checkpoint_interval=None,
+                storage=Storage(
+                    config=storage_cfg(
+                        self.pipeline.name, start_from_checkpoint="latest"
+                    )
+                ),
+            )
+        )
+        self.pipeline.start()
+        self.assertCountEqual(got_before, list(self.pipeline.query("SELECT * FROM v0")))
+
+        # Ingest rows that no checkpoint covers, then force stop.
+        added = [{"c0": i, "c1": str(i)} for i in range(100, 110)]
+        processed = self.pipeline.stats().global_metrics.total_processed_records
+        self.pipeline.input_json("t0", added)
+        wait_for_condition(
+            "the pipeline processes the added rows",
+            lambda: self.pipeline.stats().global_metrics.total_processed_records
+            == processed + len(added),
+            timeout_s=30.0,
+            poll_interval_s=0.2,
+        )
+        self.pipeline.stop(force=True)
+
+        # Restart from local storage.  Replaying the journal brings the added
+        # rows back.
+        self.pipeline.start()
+        expected = got_before + added
+        wait_for_condition(
+            "the restarted pipeline holds the added rows",
+            lambda: len(list(self.pipeline.query("SELECT * FROM v0"))) == len(expected),
+            timeout_s=30.0,
+            poll_interval_s=0.5,
+        )
+        self.assertCountEqual(expected, list(self.pipeline.query("SELECT * FROM v0")))
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
+    def test_restore_enables_exactly_once(self):
+        """A restore with exactly-once fault tolerance journals its input,
+        even from a checkpoint written without fault tolerance."""
+        self._restore_with_exactly_once(None)
+
+    @enterprise_only
+    def test_exactly_once_restore(self):
+        """An exactly-once pipeline restores its own checkpoint from object
+        storage, which holds no journal, and journals its input from then on."""
+        self._restore_with_exactly_once(FaultToleranceModel.ExactlyOnce)
+
     @enterprise_only
     def test_autherr_fail(self):
         self._configure_and_start()

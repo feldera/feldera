@@ -190,7 +190,7 @@ pub use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::config::{
-    DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, DynamicConfig, FileBackendConfig, FtConfig, FtModel,
+    DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, DynamicConfig, FileBackendConfig, FtModel,
     OutputBufferConfig, PipelineIdentity, StorageBackendConfig, StorageOptions, SyncConfig,
 };
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -6786,6 +6786,21 @@ impl ControllerInit {
             );
         }
 
+        // The pipeline manager changes the fault tolerance model only for a
+        // pipeline with cleared storage, but such a pipeline can still resume
+        // from a checkpoint that it pulls from object storage, and another
+        // model can have written that checkpoint.
+        let checkpoint_ft_model = checkpoint_config.global.fault_tolerance.model;
+        let ft_model = config.global.fault_tolerance.model;
+        if ft_model != checkpoint_ft_model {
+            info!(
+                "the checkpoint was written with {} fault tolerance; resuming with {} fault \
+                 tolerance, which the pipeline configuration specifies",
+                FtModel::option_as_str(checkpoint_ft_model),
+                FtModel::option_as_str(ft_model),
+            );
+        }
+
         // Merge `config` (the configuration provided by the pipeline manager)
         // with `checkpoint_config` (the configuration read from the
         // checkpoint).
@@ -6805,13 +6820,13 @@ impl ControllerInit {
                 max_rss: config.global.max_rss,
                 datafusion_memory: checkpoint_config.global.datafusion_memory,
 
-                // The checkpoint determines the fault tolerance model, but the
-                // pipeline manager can override the details of the
-                // configuration (so far just the checkpoint interval).
-                fault_tolerance: FtConfig {
-                    model: checkpoint_config.global.fault_tolerance.model,
-                    checkpoint_interval: config.global.fault_tolerance.checkpoint_interval,
-                },
+                // Fault tolerance follows the pipeline manager, even when
+                // another model wrote the checkpoint.  A stronger model needs
+                // nothing that a weaker one leaves out of a checkpoint: every
+                // checkpoint records the position of each input endpoint, and
+                // exactly-once fault tolerance journals only the steps after
+                // the checkpoint that it resumes from.
+                fault_tolerance: config.global.fault_tolerance,
 
                 // Take all the other settings from the pipeline manager.
                 storage: config.global.storage,

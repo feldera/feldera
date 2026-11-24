@@ -236,6 +236,17 @@ from using the following priority order:
 4. **Start fresh or fail** — if no checkpoint is found in any source, behavior
    is controlled by `fail_if_no_checkpoint`.
 
+## Fault tolerance of a restored pipeline
+
+A pipeline that restores a checkpoint runs with the fault tolerance model of
+its own configuration, whatever model the writer of the checkpoint used.  To
+enable fault tolerance for a pipeline that pushed its checkpoints without it,
+stop the pipeline, clear its storage, set `fault_tolerance`, and start it with
+`start_from_checkpoint` set to `latest`.  The same holds for a pipeline that
+starts from another pipeline's checkpoints through `read_bucket`.  Object
+storage holds no journal, so a restored pipeline with exactly-once fault
+tolerance starts its journal at the checkpoint that it restores.
+
 ## S3 permissions
 
 The following minimum permissions are required on the bucket being written to:
