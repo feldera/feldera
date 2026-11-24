@@ -3427,7 +3427,7 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public enum TransferRule { Identity, DeclaredColumns, ApplyClosure, ProjectIndex, JoinClosure,
-        AggregateKey, RollingTimestamp, IntersectRows, IntersectKeys, PrimitiveMinimumOrKey,
+        AggregateKey, RollingTimestamp, InvalidRollingOffset, IntersectRows, IntersectKeys, PrimitiveMinimumOrKey,
         ChainMinimumOrKey, InvalidIndexedSource, Analyze }
     public enum ClosureBody { Operator, IndexedValue, Filter, Hop, Lag }
     public enum ColumnWaterline { Declared, InheritIfPresent, Unbounded }

@@ -63,6 +63,7 @@ pub enum MonotonicityTransfer {
     JoinClosure,
     AggregateKey,
     RollingTimestamp,
+    InvalidRollingOffset,
     IntersectRows,
     IntersectKeys,
     PrimitiveMinimumOrKey,
@@ -149,11 +150,18 @@ fn asof_ascending(circuit: &Circuit, node: &Node) -> Option<bool> {
     order.data("ascending")?.as_bool()
 }
 
-fn upper_follows_row(circuit: &Circuit, node: &Node) -> Result<Option<bool>, Error> {
+fn rolling_transfer(
+    circuit: &Circuit,
+    node: &Node,
+    bounded_input: bool,
+) -> Result<Option<MonotonicityTransfer>, Error> {
+    use MonotonicityTransfer::{Analyze, InvalidRollingOffset, RollingTimestamp};
+
+    let timestamp = bounded_input.then_some(RollingTimestamp);
     if let Some(bound) = node.field("upper").and_then(|f| f.node_id()) {
         let bound = circuit.node(bound).expect("validated upper bound");
         match bound.data("isPreceding").and_then(|v| v.as_bool()) {
-            Some(true) => return Ok(Some(false)),
+            Some(true) => return Ok(timestamp),
             Some(false) => {}
             None => return Err(Error::new("rolling upper bound requires isPreceding")),
         }
@@ -162,25 +170,32 @@ fn upper_follows_row(circuit: &Circuit, node: &Node) -> Result<Option<bool>, Err
             .expect("validated offset");
         if !matches!(offset.inner_kind(), Some(InnerKind::Expression(kind)) if kind.is_numeric_literal())
         {
-            return Ok(Some(true));
-        }
-        // Leave a NULL numeric offset to the live compiler's diagnostic.
-        if offset.data("value").is_none_or(|value| value.is_null()) {
             return Ok(None);
         }
-        return feldera_sql_expr::numeric_value_is_positive(offset).map(Some);
+        // The visitor checks the frame before looking for an input waterline.
+        if offset.data("value").is_none_or(|value| value.is_null()) {
+            return Ok(Some(InvalidRollingOffset));
+        }
+        return Ok(if feldera_sql_expr::numeric_value_is_positive(offset)? {
+            None
+        } else {
+            timestamp
+        });
     }
     // Earlier compact topologies sent the frame classification without its expression.
-    Ok(
-        match node.data("upperPreceding").and_then(|v| v.as_bool()) {
-            Some(true) => Some(false),
-            Some(false) if node.data("upperDynamic").and_then(|v| v.as_bool()) == Some(true) => {
-                Some(true)
-            }
-            Some(false) => node.data("upperPositive").and_then(|v| v.as_bool()),
-            None => None,
-        },
-    )
+    let following = match node.data("upperPreceding").and_then(|v| v.as_bool()) {
+        Some(true) => Some(false),
+        Some(false) if node.data("upperDynamic").and_then(|v| v.as_bool()) == Some(true) => {
+            Some(true)
+        }
+        Some(false) => node.data("upperPositive").and_then(|v| v.as_bool()),
+        None => None,
+    };
+    Ok(match following {
+        Some(false) => timestamp,
+        Some(true) => None,
+        None => bounded_input.then_some(Analyze),
+    })
 }
 
 pub fn monotonicity_transfers(
@@ -292,13 +307,7 @@ pub fn monotonicity_transfers(
                 }
             }
             Some(Op::AggregateLinearPostprocess) => first.then_some(AggregateKey),
-            Some(Op::PartitionedRollingAggregate) if first => {
-                match upper_follows_row(circuit, node)? {
-                    Some(false) => Some(RollingTimestamp),
-                    Some(true) => None, // A later input can change an earlier output.
-                    None => Some(Analyze),
-                }
-            }
+            Some(Op::PartitionedRollingAggregate) => rolling_transfer(circuit, node, first)?,
             Some(Op::PrimitiveAggregate) => first.then(|| primitive_transfer(circuit, node)),
             // The other operators have no transfer in the expanded graph.
             // Visiting an input with a bound does not give them a bound.
@@ -504,7 +513,7 @@ mod tests {
 
     #[test]
     fn upper_frame_offsets_use_the_literal_value_from_the_circuit() -> Result<(), Error> {
-        use MonotonicityTransfer::{Analyze, RollingTimestamp};
+        use MonotonicityTransfer::{InvalidRollingOffset, RollingTimestamp};
         for (preceding, class, value, rule) in [
             (true, "DBSPI64Literal", json!("1"), Some(RollingTimestamp)),
             (false, "DBSPU128Literal", json!(u128::MAX.to_string()), None),
@@ -527,7 +536,8 @@ mod tests {
                 json!(f64::NAN.to_bits().cast_signed()),
                 Some(RollingTimestamp),
             ),
-            (false, "DBSPI64Literal", json!(null), Some(Analyze)),
+            (false, "DBSPI64Literal", json!(null), Some(InvalidRollingOffset)),
+            (true, "DBSPI64Literal", json!(null), Some(RollingTimestamp)),
             (false, "DBSPVariablePath", json!(null), None),
         ] {
             let mut offset = json!({"class":class,"id":2});

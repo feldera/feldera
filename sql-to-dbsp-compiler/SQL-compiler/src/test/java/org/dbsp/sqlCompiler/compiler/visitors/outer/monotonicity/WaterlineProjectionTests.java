@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
@@ -39,6 +40,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
@@ -70,6 +72,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -205,6 +208,40 @@ public class WaterlineProjectionTests {
                 var hybrid = Assert.assertThrows(direct.getClass(), operation::run);
                 Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
                 Assert.assertEquals(0, first.visits);
+            }
+        }
+    }
+
+    @Test
+    public void rollingFrameChecksNullOffsetWithoutAnInputWaterline() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(0).getType();
+        var row = integer.ref().var();
+        var partition = new DBSPRawTupleExpression(row.deref(), row.deref()).closure(row);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var index = new DBSPMapIndexOperator(site, partition, input.outputPort());
+        var aggregates = new DBSPAggregateList(site, row, List.of());
+        var lower = new DBSPWindowBoundExpression(site, true, new DBSPI32Literal(1));
+        for (boolean preceding : List.of(true, false)) {
+            var upper = new DBSPWindowBoundExpression(site, preceding, new DBSPI32Literal(null, true));
+            var rolling = new DBSPPartitionedRollingAggregateOperator(site, partition, null, aggregates,
+                    lower, upper, index.getOutputIndexedZSetType(), index.outputPort());
+            var circuit = new DBSPCircuit(new ProgramMetadata(), true);
+            circuit.addOperator(input);
+            circuit.addOperator(index);
+            circuit.addOperator(rolling);
+            for (boolean hybrid : List.of(false, true)) {
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                var analysis = new Monotonicity(compiler);
+                if (preceding) {
+                    analysis.apply(circuit);
+                    Assert.assertNull(analysis.getMonotoneExpression(rolling));
+                } else {
+                    var error = Assert.assertThrows(InternalCompilerError.class, () -> analysis.apply(circuit));
+                    Assert.assertTrue(error.getMessage(), error.getMessage().contains("DBSPI32Literal.gt0"));
+                }
             }
         }
     }

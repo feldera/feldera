@@ -193,6 +193,9 @@ public class Monotonicity extends CircuitVisitor {
                     case JoinClosure -> this.processJoinBase(transfer.operator().to(DBSPJoinBaseOperator.class));
                     case AggregateKey, RollingTimestamp -> this.aggregate(transfer.operator().to(DBSPSimpleOperator.class),
                             transfer.rule() == RustCircuitPass.TransferRule.RollingTimestamp);
+                    // Render the NULL-offset diagnostic at the original numeric literal.
+                    case InvalidRollingOffset -> transfer.operator().to(DBSPPartitionedRollingAggregateOperator.class)
+                            .upper.isFollowing();
                     case IntersectRows -> this.sumOrDifference(transfer.operator().to(DBSPSimpleOperator.class));
                     case IntersectKeys -> this.antiJoin(transfer.operator().to(DBSPAntiJoinOperator.class));
                     case PrimitiveMinimumOrKey -> {
