@@ -121,6 +121,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.WaterlineProjection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.LimiterInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters;
@@ -736,6 +737,16 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    private static RuntimeException waterlineTypeError(ToJsonInnerVisitor writer, JsonNode failure) {
+        var type = Utilities.getExists(Objects.requireNonNull(writer.liveNodes),
+                failure.required("type").longValue()).to(DBSPType.class);
+        return switch (failure.required("kind").textValue()) {
+            case "ExpectedScalar" -> ScalarMonotoneType.expectedScalar(type);
+            case "UnsupportedType" -> NonMonotoneType.unsupportedType(type);
+            default -> throw new IllegalArgumentException("Unknown waterline type error " + failure);
+        };
+    }
+
     /** Decode all bounds with one identity map, including operands shared with the reduced closure. */
     private static WaterlineAnalysis readExpressionFacts(LoweringReply reply,
             DBSPParameter[] parameters, IMaybeMonotoneType[] argumentShapes,
@@ -792,9 +803,8 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             if ("MissingReference".equals(failure.required("kind").textValue()))
                 throw Utilities.missingKey(Utilities.getExists(nodes, failure.required("expression").longValue()));
-            if ("UnsupportedType".equals(failure.required("kind").textValue()))
-                throw NonMonotoneType.unsupportedType(Utilities.getExists(nodes,
-                        failure.required("type").longValue()).to(DBSPType.class));
+            if (failure.has("type"))
+                throw waterlineTypeError(reply.writer, failure);
             if ("NullableReference".equals(failure.required("kind").textValue())) {
                 var source = WaterlineProjection.resolveFactType(failure.required("source"),
                         id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes, facts);
@@ -3639,10 +3649,13 @@ public final class RustCircuitPass implements CircuitTransform {
         });
         var reply = MAPPER.readTree(result);
         var missing = reply.get("missing_clock_key");
-        if (missing != null || reply.has("missing_clock_bound")) {
+        var typeError = reply.get("type_error");
+        if (missing != null || reply.has("missing_clock_bound") || typeError != null) {
             finishLowering(this.compiler, reply);
             if (!this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
                 this.compiler.stateObserver.nativeDecision("MergeFilters", true);
+            if (typeError != null)
+                throw waterlineTypeError(writer.innerVisitor, typeError);
             if (missing == null)
                 // MonotoneExpression.getReducedExpression requires a non-null bound.
                 throw new NullPointerException();

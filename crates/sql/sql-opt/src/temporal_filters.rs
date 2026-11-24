@@ -1,4 +1,5 @@
 //! Split temporal predicates and merge bounds that share a NOW window.
+use crate::monotonicity::row_projection::WaterlineTypeError;
 use crate::{
     TemporalPredicate, WindowTerm, accepts_temporal_bound,
     filters::rewrite_filters,
@@ -10,7 +11,7 @@ use crate::{
 use feldera_sql_expr::{SimplifyWarning, ensure_expression_tree, simplify_closure_with_warnings};
 use feldera_sql_ir::{
     BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
-    OperatorKind as Op, OutputPort,
+    OperatorKind as Op, OutputPort, TypeId,
 };
 
 /// Decide if adjacent filters can use a single window. An unknown result asks
@@ -69,6 +70,12 @@ pub struct TemporalFilterPair<'a> {
 pub enum TemporalMerge {
     Rewritten(Circuit),
     MissingBound {
+        next_name: u64,
+        warnings: Vec<SimplifyWarning>,
+    },
+    TypeError {
+        kind: WaterlineTypeError,
+        ty: TypeId,
         next_name: u64,
         warnings: Vec<SimplifyWarning>,
     },
@@ -135,16 +142,26 @@ pub fn merge_temporal_filters_with(
                         warnings: diagnostics,
                     }));
                 }
+                Err(ClockError::Type(kind, ty)) if circuit.node(ty.into()).is_some() => {
+                    return Ok(Some(TemporalMerge::TypeError {
+                        kind,
+                        ty,
+                        next_name: trial_names,
+                        warnings: diagnostics,
+                    }));
+                }
                 Err(ClockError::InvalidIr(error)) => return Err(error),
                 // Recreated expressions lack a live Java ID. Resume from the start
                 // of this predicate pair when the diagnostic needs one.
-                Ok(None) | Err(ClockError::Missing(_)) => analyze(TemporalFilterPair {
-                    graph: edit.circuit(),
-                    operators: [input.operator, id],
-                    closures: [upstream, downstream],
-                    next: &mut names,
-                    warnings: &mut diagnostics,
-                })?,
+                Ok(None) | Err(ClockError::Missing(_) | ClockError::Type(..)) => {
+                    analyze(TemporalFilterPair {
+                        graph: edit.circuit(),
+                        operators: [input.operator, id],
+                        closures: [upstream, downstream],
+                        next: &mut names,
+                        warnings: &mut diagnostics,
+                    })?
+                }
             };
         match decision {
             None => return Ok(None),

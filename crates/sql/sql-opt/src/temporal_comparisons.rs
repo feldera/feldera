@@ -1,8 +1,11 @@
 //! Split a filter into a prefix of window bounds and the predicates evaluated after it.
 #[cfg(test)]
 mod clock_bounds;
+use crate::monotonicity::row_projection::WaterlineTypeError;
 use crate::{WindowComparison, function_calls::contains_now};
-use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, NodeId};
+use feldera_sql_ir::{
+    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, NodeId, TypeId,
+};
 use std::collections::HashSet;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -104,6 +107,7 @@ impl MissingClockKey {
 pub(crate) enum ClockError {
     Missing(MissingClockKey),
     MissingBound,
+    Type(WaterlineTypeError, TypeId),
     InvalidIr(Error),
 }
 
@@ -124,7 +128,8 @@ pub(super) fn speculative_clock<T>(
             *next = names;
             Ok(Some(result))
         }
-        Ok(None) | Err(ClockError::Missing(_) | ClockError::MissingBound) => Ok(None),
+        Ok(None)
+        | Err(ClockError::Missing(_) | ClockError::MissingBound | ClockError::Type(..)) => Ok(None),
         Err(ClockError::InvalidIr(error)) => Err(error),
     }
 }

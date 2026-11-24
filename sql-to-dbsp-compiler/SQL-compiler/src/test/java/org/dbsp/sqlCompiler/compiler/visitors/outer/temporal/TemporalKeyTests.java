@@ -166,6 +166,28 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void temporalMergeReportsATupleClockAfterAnEarlierMerge() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var bad = b.call(DBSPTypeRawTuple.EMPTY, "now");
+        var clock = new DBSPBlockExpression(List.of(bad.toStatement()), b.call(DBSPTypeTimestamp.INSTANCE, "now"));
+        var circuit = temporalFilterChain(clock);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(InternalCompilerError.class, () -> new MergeFilters(compiler).apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        start = DBSPVariablePath.nextGeneratedName();
+        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var hybrid = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+        var diagnostic = direct.getMessage().lines().findFirst().orElseThrow();
+        Assert.assertTrue(diagnostic.contains("Type should have been scalar"));
+        Assert.assertEquals(diagnostic, hybrid.getMessage().lines().findFirst().orElseThrow());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
+    }
+
+    @Test
     public void temporalMergePreservesAnAbsentBoundAfterAnEarlierMerge() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();

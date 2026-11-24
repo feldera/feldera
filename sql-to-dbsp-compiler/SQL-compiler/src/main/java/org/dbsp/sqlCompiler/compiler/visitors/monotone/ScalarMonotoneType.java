@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.Utilities;
@@ -12,8 +13,14 @@ public abstract class ScalarMonotoneType
 
     protected ScalarMonotoneType(DBSPType type) {
         super();
-        Utilities.enforce(!type.is(DBSPTypeTupleBase.class), () -> "Type should have been scalar " + type);
+        if (type.is(DBSPTypeTupleBase.class))
+            throw expectedScalar(type);
         this.type = type;
+    }
+
+    public static InternalCompilerError expectedScalar(DBSPType type) {
+        return new InternalCompilerError("Type should have been scalar " + type
+                + System.lineSeparator() + Utilities.getCurrentStackTrace());
     }
 
     @Override

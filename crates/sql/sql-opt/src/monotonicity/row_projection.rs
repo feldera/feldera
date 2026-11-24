@@ -143,7 +143,10 @@ fn unbounded_type(
     let shape = match UnorderedRow::from_type(edit, ty)? {
         UnorderedType::Row(row) => row.shape,
         UnorderedType::Unsupported(field) => {
-            return Ok(Evaluation::Failed(WaterlineError::UnsupportedType(field)));
+            return Ok(Evaluation::Failed(WaterlineError::Type(
+                WaterlineTypeError::UnsupportedType,
+                field,
+            )));
         }
     };
     Ok(Evaluation::Value(ProjectedValue {
@@ -287,6 +290,9 @@ pub(crate) fn clock_facts(
             return Err(ClockError::Missing(MissingClockKey::Fact(id)));
         }
         Evaluation::Failed(WaterlineError::MissingBound(_)) => return Err(ClockError::MissingBound),
+        Evaluation::Failed(WaterlineError::Type(kind, ty)) => {
+            return Err(ClockError::Type(kind, ty));
+        }
         _ => return Ok(None),
     }
     let Observations::Clocks(clocks) = row.observations else {
@@ -464,6 +470,13 @@ impl WaterlineInspection {
     }
 }
 
+/// The live SQL type supplies the source position and diagnostic spelling.
+#[derive(Clone, Copy, serde::Serialize)]
+pub enum WaterlineTypeError {
+    ExpectedScalar,
+    UnsupportedType,
+}
+
 pub enum WaterlineError {
     FreeVariable(NodeId),
     ConflictingBinding {
@@ -479,7 +492,7 @@ pub enum WaterlineError {
     MissingFact(ExpressionId),
     MissingBound(ExpressionId),
     TargetMaximum(ExpressionId),
-    UnsupportedType(TypeId),
+    Type(WaterlineTypeError, TypeId),
     /// Adding nullability to a reference fails at the live reference type's
     /// source location. A nullable tuple also lifts each field as it is read.
     NullableReference {

@@ -1684,6 +1684,68 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void tupleReturningCallsFailBeforePublishingTheirWaterline() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var integer = new DBSPI32Literal(1).getType();
+        var row = new MonotoneType(integer);
+        var input = new DBSPVariablePath("input", integer.ref());
+        var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        for (var tuple : List.of(new DBSPTypeTuple(integer), DBSPTypeRawTuple.EMPTY)) {
+            for (var call : List.of(new DBSPApplyExpression("sign_i32", tuple, input.deref()),
+                    new DBSPApplyExpression("now", tuple))) {
+                var prefix = new DBSPI32Literal(7);
+                var after = new DBSPI32Literal(8);
+                var body = new DBSPBlockExpression(List.of(prefix.toStatement(), call.toStatement()), after);
+                var closure = body.closure(input);
+                var compiler = new DBSPCompiler(new CompilerOptions());
+                var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+                var expected = Assert.assertThrows(InternalCompilerError.class, () -> direct.apply(closure));
+                Assert.assertTrue(direct.get(prefix).mayBeMonotone());
+                var diagnostic = expected.getMessage().lines().findFirst().orElseThrow();
+                Assert.assertTrue(diagnostic.contains("Type should have been scalar"));
+                for (boolean resultOnly : List.of(false, true)) {
+                    var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                    var failure = Assert.assertThrows(InternalCompilerError.class,
+                            () -> RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                                    new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(row)},
+                                    false, resultOnly, facts::put));
+                    Assert.assertEquals(diagnostic, failure.getMessage().lines().findFirst().orElseThrow());
+                    Assert.assertTrue(facts.get(prefix).mayBeMonotone());
+                    Assert.assertFalse(facts.containsKey(call));
+                    Assert.assertFalse(facts.containsKey(after));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void referenceReturningCallsKeepTheirScalarWaterline() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(1).getType();
+        var row = new MonotoneType(integer);
+        var input = new DBSPVariablePath("input", integer.ref());
+        var call = new DBSPApplyExpression("sign_i32", integer.ref(), input.deref());
+        var closure = call.closure(input);
+        var operator = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, row);
+        var expected = direct.applyAnalysis(closure).getReducedExpression();
+        for (boolean resultOnly : List.of(false, true)) {
+            var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+            var result = RustCircuitPass.projectWaterlineClosure(compiler, call, closure.parameters,
+                    new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(row)},
+                    false, resultOnly, facts::put);
+            Assert.assertTrue(result instanceof RustCircuitPass.ProjectedWaterline);
+            var projected = (RustCircuitPass.ProjectedWaterline) result;
+            Assert.assertTrue(projected.bodyType() instanceof MonotoneType);
+            Assert.assertSame(call.getType(), projected.bodyType().getType());
+            Assert.assertTrue(expected.equivalent(projected.closure()));
+            if (!resultOnly)
+                Assert.assertSame(call.getType(), facts.get(call).getMonotoneType().getType());
+        }
+    }
+
+    @Test
     public void scalarCallWaterlineReusesTheBoundAndCopiesTheConstant() {
         var site = CalciteEmptyRel.INSTANCE;
         var real = DBSPTypeDouble.create(true);
