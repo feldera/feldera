@@ -1,0 +1,177 @@
+{
+  "scope": "Existing one-level readers keep their boolean-mask JNI request. Nested readers use tuple paths. Selected classic and Gen-2 programs.",
+  "source_base": "95d673248518cffa933ee993b0dc7063fde633e2",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "1b6c88b7af4fda9d6fc00f3cacf399635465dd114314f555f77772b8bc0fdd65",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "9d3e1665b469979355ad9a31790ae70a882d7b6f4df694d5226dbc31fe9c0300",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/RewriteFields.java": "1cf8ef10884e74c7d5341abcbd969dfa1c7c7c268d1865ee26709d3f16cfbe4d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "c418335ca3eb3dcbb5e6ec8d4a04aa4ec6edd02eb399a72d6d83544d22e889fe"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "4a3d96d0e42409199a05938e11384a971c84c2dd8798ea0cfb5e87ed8f58a13e",
+    "bin/sql-difftest": "ff4254e599baf0bb6f4a583f61bc373955f434f0d8d7ce04c8422e72dda6ae10",
+    "maven/tests.jar": "16eb464ba65566d786688868b374677fa272550dfe44c6e02ac2d4d7a6e79f82",
+    "maven/sql-compiler.jar": "2ae2eac5c93f1725bc3364b8f9e426161a252196f3c46d8ddb56bc5db74daf01",
+    "bin/sql2dbsp": "c5f0674724118445342dac2a59e150ab793cf184661c6baa20708324dff9ac71"
+  },
+  "negative_control": {
+    "library_sha256": "9475fb26be31b7dd7439dc22b1774170a00c5e92e5d4a9b52b250c2bd1479fa5",
+    "failed_tests": [
+      "nestedReaderUsesOriginalOffsetsAtEachProjectionDepth"
+    ],
+    "java_compiler_sha256": "efb7c8853cda413e7f0418cf6240b5da6aad822b2dc93ba08c8fa6f3e10e69c4"
+  },
+  "rust_tests": 226,
+  "junit_tests": 247,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "ae4aac64bae696d7158240169ec8874fa67e3b9ccd0b76e27d555f33b390eb42"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "13323f1154cf0e68c8e14f24db56beb4ae672962180a47b68f0ce6a812a66c57"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 264,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "receipt_sha256": "bcf01ba5cbdf21a1056fbb95ce59bfd03cfde822401b3a465430907c08df7bdf",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20dfc-b3ed-7031-9194-a189c54c26ec",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20dfc-b407-7cf1-b614-8066bb201797",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "81eda24727ee1d5f5e0d3340cbfee200af6b4ddd7e616b5194455b1e937bd767",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20dfd-5fc8-7952-91c8-9ab6a82f6393",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20dfd-5fe3-7fe1-8105-57d4002705fb",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      8.349047,
+      8.946214,
+      9.251882,
+      9.204631,
+      6.623088,
+      6.164213,
+      6.285629,
+      6.293963,
+      6.73663,
+      8.465422,
+      8.520172,
+      7.387547,
+      10.124007,
+      5.573421,
+      13.309759,
+      6.032004,
+      6.993463,
+      7.250713,
+      7.996131,
+      7.418879
+    ],
+    "p95_ms": 10.124007,
+    "largest_driver_plus_front_end_rss_bytes": 70418432,
+    "compiler_sha256": "c5f0674724118445342dac2a59e150ab793cf184661c6baa20708324dff9ac71"
+  },
+  "source_commit": "a11850b57da05cc1f2fc6c24b0fee61498239ef3"
+}

@@ -176,5 +176,21 @@
     "largest_driver_plus_front_end_rss_bytes": 70893568,
     "compiler_sha256": "cf0e121a471bc7b6cc40343a4e0ca6268b34742ae10e805e75c3bfbac743107d"
   },
-  "source_commit": "fccd64201a4b3f425ea3f06733bd4f4f7022362b"
+  "source_commit": "fccd64201a4b3f425ea3f06733bd4f4f7022362b",
+  "selected_minimum_replay": {
+    "classic": {
+      "cases": 48,
+      "mismatches": 0,
+      "ordered_s4_observations": 23400,
+      "population_sha256": "7ed4cfe4f76d357d0a9556f8407214a8a5c741ca57ab8941f710a188fde05c15",
+      "receipt_sha256": "917e1a67eda94a1b1e50a3e5aae8e91151a65c8ade2c5a69942ad748c15ccaa3"
+    },
+    "gen2": {
+      "cases": 48,
+      "mismatches": 0,
+      "ordered_s4_observations": 23496,
+      "population_sha256": "2f1983fcb63c0ae8a9da5de32791f84c521d8050d194d568d6ef9314f53db83d",
+      "receipt_sha256": "62f74314a01beb7e1d4acd002de50bd868b75715dbfc129b3408d385ebe52621"
+    }
+  }
 }

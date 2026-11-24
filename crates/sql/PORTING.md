@@ -462,12 +462,27 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `95d673248`, Rust rebinds each projected reader field using its original
+tuple path, including when two fields of the same tuple type retain different
+columns. The regression checks closure parameter identity and matches Java at
+depths one, two and three. The previous build delegated depth two to Java.
+All 24 selected compilations matched through 11,965 ordered S4 observations
+and emission. The devcontainer passed 226 Rust tests, 247 focused JUnit tests
+and 264 nightly JUnit tests. COUNT and LATENESS restored in both directions.
+On `a11850b57`, the same checks passed with the original one-level reader
+API and a separate JNI request for nested layouts. Four-worker cancellation
+p95 was 10.12 ms on that build.
+[Nested reader comparisons](evidence/p3-nested-reader-layouts.json) ·
+[Reader protocol and checkpoint restores](evidence/p3-indexed-reader-protocol.json)
+
 On `fccd64201`, Rust checks the declared output type after reducing a MIN
 accumulator and preserves an empty tuple in the first compared slot of a
 chained MIN. Both regressions failed against the preceding build. The new
 build passed 246 focused and 263 nightly optimizer tests. All 24 selected
 compilations matched Java through 11,965 ordered S4 observations and
-emission. COUNT and LATENESS checkpoints restored in both directions.
+emission. A further replay of 48 MIN cases per engine matched at 23,400
+classic and 23,496 Gen-2 observations. COUNT and LATENESS checkpoints
+restored in both directions.
 [MIN output shapes](evidence/p3-minimum-output-shapes.json)
 
 On `07c9714ea`, Rust checks discarded statements and nested variable bindings

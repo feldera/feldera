@@ -1,0 +1,180 @@
+{
+  "scope": "Rust rebinds projected reader fields against each original tuple path at projection depths one, two and three. Selected classic and Gen-2 cases.",
+  "source_base": "fccd64201a4b3f425ea3f06733bd4f4f7022362b",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "722dafb5c490b210dea03c8ca95960327ca9557d4b84c96699cdba6771bf6ad7",
+    "crates/sql/sql-opt/src/lib.rs": "c69d3dd3fec00dea35b2a6c5b7523842618fa5770fa7ea85ce185c6ec97691db",
+    "crates/sql/sql-opt/src/projected_reader.rs": "605eac959a0a60edb43bfb8fdce10d8f9354c4a7a08ead1222378876122f8ae4",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "0c2ed94d35fb05343875610ad1cce9001ef8b21365ca2888b4ff0d141e714093",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/FieldUseMap.java": "564aaef1b6ae84f77611e04475bd462833d0422de8a3ead35216bee166256240",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/RewriteFields.java": "959ea9702679965e36ac453c80fea7b2be9a64d381d9daf70cfd1ef5b32e12fe",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "76d63d995890c9dabc2f0daf2660b3ad1b54786df241ebc7e7a96c3783c7dffe"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "9475fb26be31b7dd7439dc22b1774170a00c5e92e5d4a9b52b250c2bd1479fa5",
+    "bin/sql-difftest": "a0001de9435a755753f9dbd85f40c5902f876f5c4ac4221e2e99dfc045bec361",
+    "maven/tests.jar": "72460e6abd8c0cd243537839450bf3bb0d1397297bfe2760a242f04fb9ef85b4",
+    "maven/sql-compiler.jar": "efb7c8853cda413e7f0418cf6240b5da6aad822b2dc93ba08c8fa6f3e10e69c4",
+    "bin/sql2dbsp": "bb952dc0b08e083064991260cc5a2e2c16cd4a0b45750ad88836888a4721883e"
+  },
+  "negative_control": {
+    "library_sha256": "99ccdff14fb8359580e16971853d5efcd4167707c50f5b9e4631937b812bc9d0",
+    "failed_tests": [
+      "nestedReaderUsesOriginalOffsetsAtEachProjectionDepth"
+    ],
+    "java_compiler_sha256": "75bde70d15fd08aa7208f81dbbdaae5fc49dac3ec6d748aa9a6a7d0e26bc3ea8"
+  },
+  "rust_tests": 226,
+  "junit_tests": 247,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "d07a0d07317354ce2408a3954070b6eb35dca1bafcf955d83552fb4946d7dc8a"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "bfb92899f3b1b213a866d552196adb8fa2aa3aa5cf6a68e59b6efc71cfe312cb"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 264,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "receipt_sha256": "c17dd2504f127cae1a314e5312ac4f40ff9e4119ea884f11bc6bebf836c05a3f",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20df6-c0e3-77b2-8ea5-be2cd7a8886c",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20df6-c107-7bf3-990e-7be7de1742fc",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "4fe0437b72e17861995a2c06222ec03c9697db7800637017c4c9b110814f177c",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20df7-e2d2-7f03-9713-906e27e6944c",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20df7-e2f2-7f13-af46-1d29fbb80d04",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      18.742053,
+      18.210553,
+      12.998175,
+      21.953972,
+      13.678383,
+      10.021798,
+      14.000467,
+      14.095009,
+      13.830592,
+      14.467509,
+      14.141092,
+      13.979176,
+      10.117798,
+      7.906922,
+      15.394343,
+      7.241129,
+      16.289343,
+      15.791093,
+      12.708841,
+      16.968802
+    ],
+    "p95_ms": 18.742053,
+    "largest_driver_plus_front_end_rss_bytes": 70647808,
+    "compiler_sha256": "bb952dc0b08e083064991260cc5a2e2c16cd4a0b45750ad88836888a4721883e"
+  },
+  "source_commit": "95d673248518cffa933ee993b0dc7063fde633e2"
+}
