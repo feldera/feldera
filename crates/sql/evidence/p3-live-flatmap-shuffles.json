@@ -1,0 +1,52 @@
+{
+  "scope": "UNNEST input narrowing and copying retain the live shuffle. Output projection allocates a new shuffle even with the same representation.",
+  "source_base": "757d64ceca816317adbbad1a9256c21821d5feac",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/flatmap.rs": "b11b7f2470567fa9d17c8d1352bdf40de244cebdba4bf434f5c347de9f15906e",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/OptimizerExpressionWriter.java": "b9b03c504506733daf5e16d565b4a2cbe8d89f49fe1599e5bbfe5f0544639e61",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/OptimizerTopology.java": "79ff5360df377704880f12b5bba11e7f317da108d6b7c13dab7801f565ea0eb4",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "3048b9a269385d75156a9fa12e893040f3c31eaab2ba03ec9d2175c871a2494a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/ToJsonOuterVisitor.java": "c837f801bce3288b5192b5dd5622d8cb475d6ed9e0ceb0a8e83b115d4cb0cb82",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/ir/ProjectionCompositionTests.java": "ccc8cd890bd111c5b73d38956d2ec4a30fd9b13641fa6bc006991b69b5648ffa"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "df5c5305fddf70094448e8f6d43634aa4c0dffc25e2aa250eae0dbf042f55c48",
+    "bin/sql-difftest": "2a2e49c717c38cec3e41f84677e070b04d2da7be61982ffe199b8e651fe1e406",
+    "maven/tests.jar": "d855fe1911017dbb7bcee510065a538cf6319be160df3b4ea43776b2b3068915",
+    "maven/sql-compiler.jar": "0e4f478b053b9f3c9a9645dbaedfb36bd5761a7ac692e6066f0667984d0a7bd7"
+  },
+  "negative_control": {
+    "library_sha256": "d179c218af2cc1fd75a7f4f47fb2f256f862a482c6c6c63dca67cf6c4a8c782c",
+    "failed_tests": [
+      "narrowUnnestInputWithRepeatedPassthroughAndOrdinality",
+      "copyingUnnestKeepsItsShuffleWhileProjectingCreatesOne"
+    ],
+    "java_compiler_sha256": "13574298872b7a122b997877d0e00338e3b54a880679b770551c76744b8cd33e"
+  },
+  "rust_tests": 226,
+  "junit_tests": 210,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "a8418a7ededb9ff250a183cd372cb56b62c664d6101e7502d91cde1eebd7a1e8"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "202d7efb04191e387513705b9776e000ecff33aedcb8aa12c0887ebcdb806182"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 235,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "2191e0dd8d2cf028a8076b6e718f6a4ca3284289"
+}

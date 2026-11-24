@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+An `UNNEST` input rewrite or deep copy retains its original shuffle. Output
+projection creates a distinct shuffle even when the indexes match. Map fusion
+publishes completed clusters before reporting a singleton comparison error.
+A read of an unbounded field succeeds even when its tuple has a different
+monotone field whose bound is missing. The three builds passed 235, 236 and
+237 nightly optimizer tests, respectively. Each matched 11,965 ordered S4
+observations and emission across 12 classic and 12 Gen-2 programs.
+[UNNEST shuffles](evidence/p3-live-flatmap-shuffles.json) · [Map fusion diagnostics](evidence/p3-singleton-fusion-diagnostics.json) · [Selected field bounds](evidence/p3-selected-read-bounds.json)
+
 On `72fdf97df`, lineage retains the comparisons it completes before a
 diagnostic. On `7f6b247ff`, candidate-key analysis preserves the declaration
 scope of a parameterless closure and the order of errors in computed columns.

@@ -1,0 +1,52 @@
+{
+  "scope": "Map fusion reports duplicate-field comparison failures and publishes clusters completed before the failing singleton.",
+  "source_base": "2191e0dd8d2cf028a8076b6e718f6a4ca3284289",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "8823d54bfd4a47e7c2ddb66df6a047a0dd3ff9d3167fdd843af8c9f3d8a50fb9",
+    "crates/sql/sql-opt/src/index_key_equivalence.rs": "ef5c3b3c40ae3583de4253f090752e0478ebc837c046b976c6cd8070cc385a69",
+    "crates/sql/sql-opt/src/map_fusion/fragments.rs": "e6c97f70982ed6e6274a6b3ffa237fc1b9ed60d7055abba49ca3ebe7cb2ba864",
+    "crates/sql/sql-opt/src/map_fusion/groups.rs": "d367bd89ddf788b6bee5cd41510d5605356672a61109b8be2c4cea7798d9521b",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "6c9966b2a62b1ee96bc7e80e42e03b6c4cfdd95a047872c0141308fdfe63fdf4",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FuseExpensiveMaps.java": "763e71109a1a0c90b582a3660d7c120c1e0c1a66345092ebe87b2aa212a08dc6",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CollectExpensiveExpressionsTests.java": "eb4a9b828448ccff2bfb41b522577d7ee61dce1f865034735317df57a20983fe"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ae273afd86ed908dd8af465b4915d01d6eb9d332cb5108e976e25fdb863a45e7",
+    "bin/sql-difftest": "c3a96d1d29328222e60ffdfa7e84bf79b720af3ce9dc47c68f652dd12a2cd72d",
+    "maven/tests.jar": "3487f738cf6d6db3de7eca001286dcd6e19e0302c13d2625fdcd1d4587d72677",
+    "maven/sql-compiler.jar": "bd841bf2b2809696c736b60368014af0572640592e15469d237b46216282d0fc"
+  },
+  "negative_control": {
+    "library_sha256": "df5c5305fddf70094448e8f6d43634aa4c0dffc25e2aa250eae0dbf042f55c48",
+    "failed_tests": [
+      "singletonFusionRetainsEarlierClustersOnComparisonFailure"
+    ],
+    "java_compiler_sha256": "0e4f478b053b9f3c9a9645dbaedfb36bd5761a7ac692e6066f0667984d0a7bd7"
+  },
+  "rust_tests": 226,
+  "junit_tests": 211,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "0e84f707e78ece318ff36a884ac0140a62bb07922acee39413a2eddfa714583b"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "9729c5bdebf444facf01f7082a8408c69a1546c30a540557daac6ce80c15fa63"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 236,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "e91545bbaaba17b48e4396209496aa35199f579e"
+}

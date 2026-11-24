@@ -1,0 +1,51 @@
+{
+  "scope": "A general field or wrapper transfer demands only its selected waterline bound.",
+  "source_base": "e91545bbaaba17b48e4396209496aa35199f579e",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "574e8a530f954faed6f79752a45facf6ce84c43f8fd836c6678865e009693683",
+    "crates/sql/sql-opt/src/lib.rs": "002c926c202898912988c48597aa3ba3cf75c68554febc7a81b40f86ba698347",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "fa91916528c4b8a49429118d931ee11d3d8bbfc65bae77edc4eaa02f971fb02c",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/reads.rs": "07c30871dba2bfc2673f4d91645f32d85a4a15e845b2399ae581dbd5a0c2415d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "a51f084907a5d6bb52636dd25786c4c973c4da65066e41ce7bb713e3976ccbdc",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "2bd2c72867469176ea51e32d51370ea9212ced60fd967a30c8de08db23ae7652"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "47eb4c5487d225269721d07db8f2b33d756b7c870706e508e0b0b7491c4b739e",
+    "bin/sql-difftest": "6dc9cfae87da34d71d3d0245203f4241c5930480be9d8edfa9acf0bdb9a0f253",
+    "maven/tests.jar": "d6520eec95630a8a154b3f9e3892bcf302bfd411f987e05249fd81c8b0d2d87b",
+    "maven/sql-compiler.jar": "d24c14355cf24bee5c244f4ae2fae1fc790eea458ea3064d6ae806f811c4f92a"
+  },
+  "negative_control": {
+    "library_sha256": "ae273afd86ed908dd8af465b4915d01d6eb9d332cb5108e976e25fdb863a45e7",
+    "failed_tests": [
+      "projectedReadsDemandOnlyTheSelectedWaterlineBound"
+    ],
+    "java_compiler_sha256": "bd841bf2b2809696c736b60368014af0572640592e15469d237b46216282d0fc"
+  },
+  "rust_tests": 226,
+  "junit_tests": 212,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "c1f1aaf5fb76bd94a3f0753c470cc2dd5e21dfb2c4700ec7959fd5fd3edfef66"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "19aa908fe2e6ffe6cb2cc427a25bd8fc6d9e45513e8fff98c56e5cfe7a833eb8"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 237,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "e85d117c67a17dce67f6d478bad2a7bce09c5814"
+}
