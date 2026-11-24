@@ -368,6 +368,27 @@ class Audit:
             out |= self.checkpoints[uuid].batches or frozenset()
         return out
 
+    def batches_of_unfinished_push(self) -> set:
+        """Returns the orphan batch files that a push which was cut short
+        can have left: the ones no older than the newest zip.
+
+        A push uploads the batch files of its checkpoint before the zip, so
+        the files of a push that never got to its zip are no older than the
+        zip of the push before it. A remote GC only removes files, so any
+        other orphan comes from an earlier push and is older.
+
+        :return: a subset of `orphan_batches`.
+        """
+        newest_zip = max(
+            (info.mtime for rel, info in self.objects.items() if rel.endswith(".zip")),
+            default=None,
+        )
+        return {
+            rel
+            for rel in self.orphan_batches
+            if newest_zip is None or self.objects[rel].mtime >= newest_zip
+        }
+
     def problems(
         self,
         allow_incomplete: Iterable[str] = (),
@@ -667,6 +688,44 @@ def uuid_time(uuid: str) -> float:
     return (UUID(uuid).int >> 80) / 1000.0
 
 
+# The most that the clock of a pipeline's host and the clock of the test may
+# differ, in seconds. The remote GC measures the age of a checkpoint on the
+# pipeline's host, and the audit of a push predicts it on the test's clock.
+# The tests run the pipelines on the test's own host or on hosts that keep
+# their clocks in sync, where the clocks differ by far less.
+CLOCK_SKEW_S = 2.0
+# The remote GC compares creation times in whole seconds.
+_GC_ROUNDING_S = 1.0
+
+
+def surely_older_at(created: float, age_s: float) -> float:
+    """Returns the time after which the audit of a push counts a checkpoint
+    as older than `age_s` (see :meth:`SyncPipeline.expected_retention`).
+
+    :param created: when the checkpoint was made, on the test's clock.
+    :param age_s: the age, in seconds.
+    :return: a time on the test's clock, with a second to spare.
+    """
+    # The UUID of the checkpoint can be up to `CLOCK_SKEW_S` ahead of
+    # `created`, and the audit allows for the skew and the rounding once more.
+    return created + age_s + 2 * CLOCK_SKEW_S + _GC_ROUNDING_S + 1.0
+
+
+def _redact(text: str) -> str:
+    """Hides the secret key of the object store in text that the harness
+    logs or prints.
+
+    A test can pass the key to rclone in `SyncConfig.flags`. The harness logs
+    the options of every start and prints an excerpt of the pipeline's log
+    after a failure, and CI keeps both in public logs.
+
+    :param text: the text to log or print.
+    :return: `text` with every occurrence of the secret key replaced.
+    """
+    secret = ObjectStore.from_env().secret_key
+    return text.replace(secret, "<secret key>") if secret else text
+
+
 @dataclass
 class Checkpoint:
     """A checkpoint that a :class:`SyncPipeline` made."""
@@ -821,6 +880,7 @@ class SyncPipeline:
         )
 
     def _log(self, message: str) -> None:
+        message = _redact(message)
         self.timeline.append(f"{time.strftime('%H:%M:%S')} {self.role}: {message}")
         LOGGER.info("%s: %s", self.role, message)
 
@@ -1356,19 +1416,27 @@ class SyncPipeline:
         it must remove.
 
         The GC removes the oldest checkpoints beyond `retention_min_count`,
-        but none younger than `min_retention`; it compares creation times in
-        whole seconds. The GC ran at some time in [`gc_from`, `gc_to`] on the
-        pipeline's clock, so a checkpoint whose age was near `min_retention`
+        but none younger than `min_retention`. It takes the creation time of
+        a checkpoint from the checkpoint's UUID and the current time from the
+        clock of the pipeline's host, and compares the two in whole seconds.
+        The test knows only that the GC ran at some time in [`gc_from`,
+        `gc_to`] on its own clock, which can differ from the pipeline's by up
+        to `CLOCK_SKEW_S`. So a checkpoint whose age was near `min_retention`
         then may be either kept or removed.
 
+        :param gc_from: the earliest time the GC can have run, on the test's
+            clock.
+        :param gc_to: the latest such time.
         :return: `(must_keep, must_remove)`, as sets of UUIDs. A multihost
             pipeline has no remote GC and must keep everything.
         """
-        pushed = [c.uuid for c in self.pushed()]
+        # The GC takes the oldest checkpoints by UUID, which is not the order
+        # of the pushes if pipelines on hosts with different clocks made them.
+        pushed = sorted(c.uuid for c in self.pushed())
         if MULTIHOST:
             return set(pushed), set()
         min_age = _seconds(self.options.min_retention)
-        slack = 2.0
+        slack = CLOCK_SKEW_S + _GC_ROUNDING_S
         surely_old = [u for u in pushed if uuid_time(u) < gc_from - min_age - slack]
         maybe_old = [u for u in pushed if uuid_time(u) < gc_to - min_age + slack]
         excess = len(pushed) - self.options.retention_min_count
@@ -1430,7 +1498,7 @@ class SyncPipeline:
     def diagnostics(self) -> str:
         """Returns what a failed test needs: the steps so far, the sync
         status, the state of the bucket and an excerpt of the pipeline's
-        log."""
+        log, without the secret key of the object store."""
         lines = list(self.timeline)
         try:
             lines.append(f"sync status: {self.sync_status()}")
@@ -1446,7 +1514,7 @@ class SyncPipeline:
             lines.extend(self._log_excerpt())
         except Exception as error:
             lines.append(f"log of {self.name} unavailable: {error}")
-        return "\n".join(lines)
+        return _redact("\n".join(lines))
 
     def _log_excerpt(self) -> list[str]:
         """Returns the part of the pipeline's log that a failed test needs.

@@ -37,6 +37,7 @@ from .checkpoint_sync_harness import (
     Checkpoint,
     Scenario,
     golden_bucket,
+    surely_older_at,
 )
 
 
@@ -785,16 +786,24 @@ def test_automatic_checkpoint_and_push(scenario, checkpoint_interval, push_inter
     # An audit needs a bucket at rest, and with both timers on the pipeline
     # never stops pushing. So stop it first. The stop can cut a remote GC
     # short, which leaves a checkpoint without some of its files, but never
-    # the checkpoint that the catalog names. It cannot leave a file that
-    # nothing refers to: no input arrived after `made`, so a later checkpoint
-    # needs no batch file that the bucket lacks.
+    # the checkpoint that the catalog names. With both timers on, it can also
+    # cut a push short after the push uploaded batch files and before it
+    # uploaded the zip. Merges in the background make new batch files without
+    # new input, so a checkpoint made after `made` can need files that the
+    # bucket lacks, and a push cut short leaves them without a checkpoint.
     p.stop()
     audit = p.bucket.audit()
     assert audit.latest() and audit.latest() <= audit.restorable(), audit.summary()
+    pushing_on = (
+        checkpoint_interval != NO_AUTOMATIC_CHECKPOINTS and push_interval is not None
+    )
     assert (
         audit.problems(
             allow_incomplete=audit.uuids() - audit.latest(),
             allow_orphan_dependencies=audit.orphan_dependencies,
+            allow_orphan_batches=(
+                audit.batches_of_unfinished_push() if pushing_on else ()
+            ),
         )
         == []
     )
@@ -836,7 +845,9 @@ def test_retention_by_age(scenario):
     p.stop()
     p.start(retention_min_count=1, min_retention=f"{min_retention_s}s")
     p.restored(young[-1])
-    time.sleep(max(0.0, young[-1].created + min_retention_s + 4 - time.time()))
+    time.sleep(
+        max(0.0, surely_older_at(young[-1].created, min_retention_s) - time.time())
+    )
     p.checkpoint()
     newest = p.push()
     assert p.bucket.audit().uuids() == {newest.uuid}
