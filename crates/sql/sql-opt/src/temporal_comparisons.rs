@@ -2,6 +2,7 @@
 #[cfg(test)]
 mod clock_bounds;
 use crate::monotonicity::row_projection::WaterlineTypeError;
+use crate::monotonicity::functions::FunctionArgumentError;
 use crate::{WindowComparison, function_calls::contains_now};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, NodeId, TypeId,
@@ -108,6 +109,7 @@ pub enum TemporalDiagnostic {
     Missing(MissingClockKey),
     MissingBound,
     Type(WaterlineTypeError, TypeId),
+    FunctionArgument(ExpressionId, FunctionArgumentError),
     Comparison(crate::ComparisonDiagnostic),
     /// The diagnostic needs the live types of earlier expressions in this predicate.
     Predicate { parameter: NodeId, body: ExpressionId },

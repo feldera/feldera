@@ -111,6 +111,9 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
                     Diagnostic::Type(kind, ty) => json!({"type_error": {
                         "kind": kind, "type": live_root(ty.into())?,
                     }}),
+                    Diagnostic::FunctionArgument(call, error) => json!({
+                        "call": live_root(call.into())?, "argument_error": error,
+                    }),
                     Diagnostic::Missing(key) => json!({
                         "missing_clock_key": live_root(key.expression().into())?,
                         "key_is_node_id": matches!(key, feldera_sql_opt::MissingClockKey::Fact(_)),

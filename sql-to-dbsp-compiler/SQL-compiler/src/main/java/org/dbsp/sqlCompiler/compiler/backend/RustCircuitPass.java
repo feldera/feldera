@@ -767,6 +767,7 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             case "ExpectedScalar" -> ScalarMonotoneType.expectedScalar(type);
             case "UnsupportedType" -> NonMonotoneType.unsupportedType(type);
+            case "TargetMaximum" -> new UnsupportedException(type.withMayBeNull(false).getNode());
             default -> throw new IllegalArgumentException("Unknown waterline type error " + kind);
         };
     }
@@ -3776,6 +3777,10 @@ public final class RustCircuitPass implements CircuitTransform {
             if (typeError != null) {
                 var type = decodeLiveRoot(expressionDecoder(writer.innerVisitor), typeError.required("type"), DBSPType.class);
                 throw waterlineTypeError(type, typeError.required("kind").textValue());
+            }
+            if (failure.has("argument_error")) {
+                var call = decodeLiveRoot(expressionDecoder(writer.innerVisitor), failure.required("call"), DBSPApplyExpression.class);
+                throw MAPPER.convertValue(failure.required("argument_error"), FunctionArgumentError.class).exception(call);
             }
             if (failure.has("missing_clock_bound"))
                 // MonotoneExpression.getReducedExpression requires a non-null bound.

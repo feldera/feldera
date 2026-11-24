@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
@@ -262,6 +263,46 @@ public class TemporalKeyTests {
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
         Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
+    }
+
+    @Test
+    public void temporalMergeReportsInvalidCallArgumentsAndLiteralMaximaInOneVisit() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        for (var invalid : List.of(b.call(b.i32(), "sign_i32"),
+                b.call(b.i32(), "sign_i32", b.lit(1), new NoExpression(b.i32())), new DBSPUSizeLiteral(null, true))) {
+            var nested = flatmap(new IdShuffle(2), 0, b.lit(1));
+            var clock = new DBSPBlockExpression(List.of(nested.toStatement(), invalid.toStatement()), b.call(time, "now"));
+            var circuit = temporalFilterChain(clock);
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            long start = DBSPVariablePath.nextGeneratedName();
+            var expected = Assert.assertThrows(RuntimeException.class, () -> new MergeFilters(compiler).apply(circuit));
+            long names = DBSPVariablePath.nextGeneratedName() - start;
+            if (invalid instanceof DBSPApplyExpression call) {
+                if (call.arguments.length == 0)
+                    Assert.assertEquals(IndexOutOfBoundsException.class, expected.getClass());
+                else
+                    Assert.assertTrue(expected.getMessage(), expected.getMessage().contains("is not constant"));
+            } else {
+                Assert.assertEquals(UnsupportedException.class, expected.getClass());
+            }
+            var decisions = new LinkedHashMap<String, Boolean>();
+            compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                @Override public void nativeDecision(String op, boolean success) { decisions.put(op, success); }
+                @Override public void before(String p, int i, int n, CircuitTransform pass, DBSPCircuit graph) {}
+                @Override public void after(String p, int i, int n, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
+            };
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+            start = DBSPVariablePath.nextGeneratedName();
+            var actual = Assert.assertThrows(expected.getClass(), () -> pass.apply(circuit));
+            Assert.assertEquals(expected.getMessage().lines().findFirst(), actual.getMessage().lines().findFirst());
+            Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+            Assert.assertEquals(Boolean.TRUE, decisions.get("MergeFilters"));
+            Assert.assertFalse(decisions.containsKey("Monotonicity/ProjectClosure"));
+            Assert.assertFalse(decisions.containsKey("Monotonicity/ExpressionFacts"));
+        }
     }
 
     @Test

@@ -313,6 +313,13 @@ pub(crate) fn clock_facts(
         Evaluation::Failed(WaterlineError::Type(kind, ty)) => {
             return Err(TemporalDiagnostic::Type(kind, ty).into());
         }
+        Evaluation::Failed(WaterlineError::TargetMaximum(id)) => {
+            let ty = edit.expression_type(id)?;
+            return Err(TemporalDiagnostic::Type(WaterlineTypeError::TargetMaximum, ty).into());
+        }
+        Evaluation::Failed(WaterlineError::FunctionArgument(call, error)) => {
+            return Err(TemporalDiagnostic::FunctionArgument(call, error).into());
+        }
         Evaluation::Failed(_) if live_row => {
             // The live projection repeats any name allocations made in the failing
             // predicate. Earlier predicates and merges have already committed theirs.
@@ -504,6 +511,7 @@ pub enum WaterlineTypeError {
     ExpectedScalar,
     NullableRawTuple,
     RequiredType,
+    TargetMaximum,
     UnsupportedType,
 }
 
