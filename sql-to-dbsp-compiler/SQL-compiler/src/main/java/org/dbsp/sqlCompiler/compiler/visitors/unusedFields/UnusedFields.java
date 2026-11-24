@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -119,9 +120,14 @@ public class UnusedFields extends Passes {
             }
         }
 
-        public void record(DBSPUnaryOperator operator, List<List<Integer>> paths) {
+        public void record(DBSPUnaryOperator operator, @Nullable List<List<Integer>> paths) {
             var source = operator.input().to(DBSPSourceMultisetOperator.class);
-            var parameter = operator.getClosureFunction().parameters[0];
+            var closure = operator.getClosureFunction();
+            var parameter = closure.parameters[0];
+            if (paths == null) {
+                this.record(operator, source, parameter, new FindUsedFields(this.compiler).findUsedFields(closure));
+                return;
+            }
             var uses = new ParameterFieldUse();
             uses.set(parameter, new FieldUseMap(parameter.getType(), false));
             for (var path : paths)

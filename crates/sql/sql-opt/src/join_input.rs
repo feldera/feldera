@@ -1,6 +1,6 @@
 //! Narrow an indexed join input while retaining its key and the nullability of its value.
 use crate::row_fields::RowFields;
-use feldera_sql_expr::{copy_expression, live_parameter_field_paths};
+use feldera_sql_expr::copy_expression;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId, TypeKind,
 };
@@ -44,7 +44,7 @@ pub fn narrow_join_inputs(
             return Ok(JoinInputRewrite::Unsupported);
         }
     }
-    let Some(mut paths) = live_parameter_field_paths(edit.circuit(), reader)? else {
+    let Some(mut paths) = crate::live_field_dependencies(edit.circuit(), reader)? else {
         return Ok(JoinInputRewrite::Unsupported);
     };
     let parameters = edit.node(reader)?.edges("parameters")?;

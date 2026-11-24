@@ -3915,9 +3915,12 @@ public final class RustCircuitPass implements CircuitTransform {
                 ? MAPPER.convertValue(result, new TypeReference<>() {}) : null;
     }
 
+    public enum MapInputAction { Keep, Project, Inspect }
+    public record MapInputLayout(MapInputAction kind, @Nullable List<List<Integer>> paths) {}
+
     /** Analyze each distinct reader closure once per unused-field iteration. */
-    public static Map<Long, List<List<Integer>>> mapFieldDependencies(DBSPCompiler compiler, DBSPCircuit circuit,
-                                                                       Predicate<DBSPUnaryOperator> eligible) {
+    public static Map<Long, MapInputLayout> mapFieldDependencies(DBSPCompiler compiler, DBSPCircuit circuit,
+            Predicate<DBSPUnaryOperator> eligible) {
         var readers = new LinkedHashMap<Long, DBSPUnaryOperator>();
         visitOperators(circuit.getAllOperators(), op -> {
             if (op instanceof DBSPMapOperator || op instanceof DBSPMapIndexOperator) {
@@ -3929,14 +3932,14 @@ public final class RustCircuitPass implements CircuitTransform {
         return mapFieldDependencies(compiler, circuit, readers);
     }
 
-    private static Map<Long, List<List<Integer>>> mapFieldDependencies(DBSPCompiler compiler, DBSPCircuit circuit,
-                                                                      Map<Long, DBSPUnaryOperator> readers) {
+    private static Map<Long, MapInputLayout> mapFieldDependencies(DBSPCompiler compiler, DBSPCircuit circuit,
+            Map<Long, DBSPUnaryOperator> readers) {
         if (readers.isEmpty())
             return Map.of();
         try {
             var input = OptimizerExpressions.mapFunctions(compiler, circuit, readers.values());
             var reply = transformWithContext("MapFieldDependencies", input, 0, "", EMPTY_CONTEXT);
-            Map<Long, List<List<Integer>>> paths = MAPPER.readValue(reply, new TypeReference<>() {});
+            Map<Long, MapInputLayout> paths = MAPPER.readValue(reply, new TypeReference<>() {});
             if (!paths.keySet().equals(readers.keySet()))
                 throw new IllegalStateException("Incomplete map closure dependencies");
             return paths;
@@ -3945,7 +3948,7 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    private record InputFieldUse(long reader, List<List<Integer>> paths) {}
+    private record InputFieldUse(long reader, @Nullable List<List<Integer>> paths) {}
 
     private void findInputFields(DBSPCircuit circuit, long next, FindUnusedInputFields analysis) throws IOException {
         var readers = this.invoke("Topology/FindUnusedInputFields", OptimizerTopology.encode(circuit), next, EMPTY_CONTEXT);

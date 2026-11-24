@@ -4,6 +4,24 @@ use crate::stream_rewrites::{body_members, reader_counts};
 use feldera_sql_ir::{BodyOrder, Circuit, Error, InnerKind, NodeId, OperatorKind as Op, TypeKind};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub type ParameterPaths = Vec<BTreeSet<Vec<usize>>>;
+
+/// Nested closures contribute no field paths, but the compiler resolves their
+/// variables before interpreting the outer reader. On a binding conflict the
+/// live visitor first copies shared expressions and then resolves that tree.
+pub fn live_field_dependencies(
+    circuit: &Circuit,
+    function: NodeId,
+) -> Result<Option<ParameterPaths>, Error> {
+    if !matches!(
+        crate::lexical_references(circuit, function)?,
+        crate::LexicalResolution::Bound(_)
+    ) {
+        return Ok(None);
+    }
+    feldera_sql_expr::live_parameter_field_paths(circuit, function)
+}
+
 pub fn input_projections(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
     let readers = reader_counts(circuit, &body_members(circuit)?);
     Ok(circuit
@@ -24,7 +42,22 @@ pub fn input_projections(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
 #[derive(serde::Serialize)]
 pub struct InputFieldUse {
     pub reader: u64,
-    pub paths: BTreeSet<Vec<usize>>,
+    pub paths: Option<BTreeSet<Vec<usize>>>,
+}
+
+/// A discarded statement can fail even when the result uses no input fields.
+/// Keep an unanswered reader distinct from a reader that returns a constant.
+fn checked_paths(
+    circuit: &Circuit,
+    function: NodeId,
+) -> Result<Option<BTreeSet<Vec<usize>>>, Error> {
+    let Some(paths) = live_field_dependencies(circuit, function)? else {
+        return Ok(None);
+    };
+    let [paths] = paths
+        .try_into()
+        .map_err(|_| Error::new("expected a unary map"))?;
+    Ok(Some(paths))
 }
 
 pub fn input_field_uses(circuit: &Circuit) -> Result<Vec<InputFieldUse>, Error> {
@@ -40,18 +73,22 @@ pub fn input_field_uses(circuit: &Circuit) -> Result<Vec<InputFieldUse>, Error> 
             };
             Ok(InputFieldUse {
                 reader,
-                paths: feldera_sql_expr::input_field_paths(circuit, function)?,
+                paths: checked_paths(circuit, function)?,
             })
         })
         .collect()
 }
 
-/// Record the paths to retain for each closure with unused fields. A fully used
-/// input has a null layout, distinct from a constant reader with no paths.
-/// The caller supplies a distinct closure for each root in the sparse circuit.
-pub type MapInputLayouts = BTreeMap<u64, Option<BTreeSet<Vec<usize>>>>;
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", content = "paths")]
+pub enum MapInputLayout {
+    Keep,
+    Project(BTreeSet<Vec<usize>>),
+    /// Resume at this reader's turn so earlier diagnostics and edits survive.
+    Inspect,
+}
 
-pub fn map_field_dependencies(circuit: &Circuit) -> Result<MapInputLayouts, Error> {
+pub fn map_field_dependencies(circuit: &Circuit) -> Result<BTreeMap<u64, MapInputLayout>, Error> {
     let mut fields = RowFields::new(circuit);
     circuit
         .root()
@@ -65,7 +102,9 @@ pub fn map_field_dependencies(circuit: &Circuit) -> Result<MapInputLayouts, Erro
             let NodeId::Inner(number) = function else {
                 return Err(Error::new("expected an inner map closure"));
             };
-            let paths = feldera_sql_expr::input_field_paths(circuit, function)?;
+            let Some(paths) = checked_paths(circuit, function)? else {
+                return Ok((number, MapInputLayout::Inspect));
+            };
             let [param] = circuit
                 .node(function)
                 .expect("validated closure")
@@ -82,7 +121,14 @@ pub fn map_field_dependencies(circuit: &Circuit) -> Result<MapInputLayouts, Erro
             );
             let depth = if borrowed { 1 } else { 2 };
             let unused = fields.unused(ty, &[], &paths, depth)?;
-            Ok((number, unused.then_some(paths)))
+            Ok((
+                number,
+                if unused {
+                    MapInputLayout::Project(paths)
+                } else {
+                    MapInputLayout::Keep
+                },
+            ))
         })
         .collect()
 }

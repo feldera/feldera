@@ -115,7 +115,9 @@ mod identity;
 mod incrementalize;
 mod indexed_inputs;
 mod input_fields;
-pub use input_fields::{input_field_uses, input_projections, map_field_dependencies, InputFieldUse};
+pub use input_fields::{
+    input_field_uses, input_projections, live_field_dependencies, map_field_dependencies, InputFieldUse,
+};
 mod integrate;
 mod lineage;
 pub use lineage::{AnalysisError as LineageError, LineageDiagnostic, checked_column_copies, checked_fixed_columns, checked_equal_computations, correlated_columns, lineage_report, column_copies, equal_computations, fixed_columns, Column, OutputShape};

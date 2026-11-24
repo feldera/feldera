@@ -1,20 +1,28 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -29,6 +37,63 @@ import java.util.HashSet;
 import java.util.List;
 
 public class JoinInputProjectionTests {
+    @Test
+    public void batchedReadersPreserveErrorsInDiscardedExpressions() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var row = source.getOutput(0).getOutputRowType().ref().var();
+        var first = row.deref().field(0);
+        var second = row.deepCopy().deref().field(1);
+        var free = new DBSPVariablePath("missing", first.getType());
+        for (var discarded : List.of(new DBSPAssignmentExpression(first, second), free.closure())) {
+            var body = new DBSPBlockExpression(List.of(discarded.toStatement()),
+                    new DBSPTupleExpression(second.deepCopy()));
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            circuit.addOperator(source);
+            circuit.addOperator(new DBSPMapOperator(CalciteEmptyRel.INSTANCE, body.closure(row), source.getOutput(0)));
+            var graph = new Graph(compiler);
+            graph.apply(circuit);
+            for (boolean trimSource : List.of(false, true)) {
+                String expected = null;
+                for (boolean hybrid : List.of(false, true)) {
+                    compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                    CircuitTransform pass;
+                    if (trimSource) {
+                        var analysis = new UnusedFields.FindUnusedInputFields(compiler, graph.getGraphs());
+                        pass = hybrid ? new RustCircuitPass(compiler, analysis, new OptimizerSnapshots(compiler)) : analysis;
+                    } else {
+                        pass = new RemoveUnusedFields(compiler, new AnalyzedSet<>());
+                    }
+                    var failure = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+                    if (hybrid)
+                        Assert.assertEquals(expected, failure.getMessage());
+                    else
+                        expected = failure.getMessage();
+                }
+            }
+        }
+    }
+
+    @Test
+    public void statementOnlyBlocksAndLoopsCanBeDiscardedDuringFieldAnalysis() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var text = DBSPTypeString.varchar(false);
+        var row = new DBSPTypeTuple(text, text).ref().var();
+        var block = new DBSPBlockExpression(List.of(row.deref().field(0).toStatement()), null);
+        var loop = new DBSPForExpression("unused", row.deepCopy().deref(), block);
+        var body = new DBSPBlockExpression(List.of(loop.toStatement()), row.deepCopy().deref().field(1));
+        var reader = body.closure(row);
+        var paths = RustCircuitPass.parameterFieldDependencies(compiler, reader);
+        Assert.assertEquals(List.of(List.of(List.of(1))), paths);
+        var reference = new FindUsedFields(compiler).findUsedFields(reader);
+        Assert.assertEquals(reference.getUse().toString(), FindUsedFields.fromPaths(reader, paths).getUse().toString());
+        Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, loop.closure(row)));
+        Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, block.closure(row)));
+    }
+
     @Test
     public void discardedStatementsAreCheckedBeforeTheFinalFieldRead() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));

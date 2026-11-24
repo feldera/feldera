@@ -78,7 +78,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
     /** Functions analyzed before which have no unused fields.  An operator whose inputs
      * changed is a new operator with the same function, which needs no new analysis. */
     final AnalyzedSet<DBSPExpression> fullyUsedFunctions;
-    private Map<Long, List<List<Integer>>> nativeMapFields = Map.of();
+    private Map<Long, RustCircuitPass.MapInputLayout> nativeMapFields = Map.of();
 
     public RemoveUnusedFields(DBSPCompiler compiler, AnalyzedSet<DBSPOperator> operatorsAnalyzed) {
         super(compiler, false);
@@ -564,8 +564,12 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         boolean indexedOutput = map instanceof DBSPMapIndexOperator;
         Pair<DBSPClosureExpression, DBSPClosureExpression> split;
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-            var paths = this.nativeMapFields.get(closure.id);
-            split = paths == null ? null : RustCircuitPass.splitMapInput(this.compiler, map, paths);
+            var layout = Utilities.getExists(this.nativeMapFields, closure.id);
+            split = switch (layout.kind()) {
+                case Keep -> null;
+                case Project -> RustCircuitPass.splitMapInput(this.compiler, map, Objects.requireNonNull(layout.paths()));
+                case Inspect -> this.splitMapClosure(closure, indexedInput, indexedOutput);
+            };
         } else {
             split = this.splitMapClosure(closure, indexedInput, indexedOutput);
         }

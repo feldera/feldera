@@ -292,8 +292,9 @@ pub fn live_parameter_field_paths(
     };
     let mut pending = vec![(body, false)];
     let mut active = HashSet::new();
+    let mut without_value = HashSet::new();
     while let Some((id, finish)) = pending.pop() {
-        if analysis.known.contains_key(&id) {
+        if analysis.known.contains_key(&id) || without_value.contains(&id) {
             continue;
         }
         let node = circuit
@@ -303,6 +304,19 @@ pub fn live_parameter_field_paths(
             continue;
         };
         if finish {
+            // The interpreter evaluates a loop or a statement-only block but
+            // records no value for it. A discarded statement needs no value.
+            if *kind == Expr::For
+                || (*kind == Expr::Block
+                    && node
+                        .field("lastExpression")
+                        .and_then(Field::node_id)
+                        .is_none())
+            {
+                without_value.insert(id);
+                active.remove(&id);
+                continue;
+            }
             // Every operand has already been evaluated in this scope. A live
             // caller handles unsupported expressions at their original SQL site.
             if *kind == Expr::Assignment {
@@ -338,7 +352,7 @@ pub fn live_parameter_field_paths(
         let mut children = Vec::new();
         match kind {
             Expr::Closure => {}
-            Expr::Let | Expr::For => return Ok(None),
+            Expr::Let => return Ok(None),
             Expr::Block => {
                 for statement in node.edges("contents")? {
                     let statement = circuit.node(statement).expect("validated block statement");
@@ -348,10 +362,7 @@ pub fn live_parameter_field_paths(
                         _ => return Ok(None),
                     }
                 }
-                let Some(last) = node.field("lastExpression").and_then(Field::node_id) else {
-                    return Ok(None);
-                };
-                children.push(last);
+                children.extend(node.field("lastExpression").and_then(Field::node_id));
             }
             _ => {
                 for (_, field) in node.fields() {
@@ -361,11 +372,10 @@ pub fn live_parameter_field_paths(
         }
         pending.extend(children.into_iter().rev().map(|child| (child, false)));
     }
-    let value = analysis
+    Ok(analysis
         .known
         .remove(&body)
-        .ok_or_else(|| Error::new("expected field-use expression"))?;
-    Ok(Some(analysis.paths(value)))
+        .map(|value| analysis.paths(value)))
 }
 
 impl<'a> RowProjection<'a> {

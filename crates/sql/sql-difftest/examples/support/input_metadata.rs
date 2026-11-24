@@ -8,6 +8,10 @@ pub fn mark_unused(input: &Circuit, uses: &[InputFieldUse]) -> Result<Circuit, B
     let mut graph = input.to_json();
     let mut edits = BTreeMap::new();
     for usage in uses {
+        let paths = usage
+            .paths
+            .as_ref()
+            .ok_or("input reader requires live field-use analysis")?;
         let reader = input
             .node(NodeId::Outer(usage.reader))
             .ok_or("missing input projection")?;
@@ -32,8 +36,7 @@ pub fn mark_unused(input: &Circuit, uses: &[InputFieldUse]) -> Result<Circuit, B
                 return Err("missing primary key flag".into());
             };
             if !key
-                && !usage
-                    .paths
+                && !paths
                     .iter()
                     .any(|path| path.is_empty() || path.first() == Some(&index))
             {
