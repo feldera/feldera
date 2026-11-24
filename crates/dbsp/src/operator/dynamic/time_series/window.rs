@@ -222,11 +222,14 @@ where
             })?;
 
         *self.window.borrow_mut() = committed.window.map(|(a, b)| {
-            // Serialize the window bounds back into the key.
+            // Deserialize the window bounds back into keys.
             let mut boxed_a = self.factories.key_factory().default_box();
             let mut boxed_b = self.factories.key_factory().default_box();
-            unsafe { boxed_a.deserialize_from_bytes(&a, 0) };
-            unsafe { boxed_b.deserialize_from_bytes(&b, 0) };
+            // SAFETY: `checkpoint` wrote `a` and `b` from keys of this type,
+            // and DBSP trusts its storage to give back the bytes that it
+            // wrote.
+            unsafe { boxed_a.deserialize_root(&a) };
+            unsafe { boxed_b.deserialize_root(&b) };
 
             (boxed_a, boxed_b)
         });
@@ -1082,6 +1085,66 @@ mod test {
                 output.iter().collect::<Vec<_>>(),
                 expected_outputs.next().unwrap().iter().collect::<Vec<_>>()
             );
+
+            let cpm = circuit.checkpoint().run().unwrap();
+            checkpoint = Some(cpm.uuid);
+            circuit.kill().unwrap();
+        }
+    }
+
+    /// Checkpoints and restores a window whose bounds have out-of-line data,
+    /// so that the restore must read each bound's root object from the end of
+    /// its buffer.
+    #[test]
+    fn window_checkpointing_long_keys() {
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+
+        // Keys longer than the inline capacity of rkyv strings.
+        fn key(n: u64) -> String {
+            format!("a window key that is too long to store inline {n:04}")
+        }
+
+        let mut input = vec![(0..20).map(|n| Tup2(key(n), Tup2(n, 1i64))).collect()];
+
+        // The window at clock `c` is `[key(c - 2), key(c))`.  The output is
+        // the change in the window from the previous clock.
+        let expected_outputs = [
+            vec![(key(8), 8, 1), (key(9), 9, 1)],
+            vec![(key(8), 8, -1), (key(10), 10, 1)],
+            vec![(key(9), 9, -1), (key(11), 11, 1)],
+            vec![(key(10), 10, -1), (key(12), 12, 1)],
+        ];
+
+        let mut checkpoint = None;
+        for (clock, expected) in (10..).zip(expected_outputs) {
+            let mut cconf = mkconfig(_temp.path());
+            cconf.storage.as_mut().unwrap().init_checkpoint = checkpoint;
+
+            let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
+                Runtime::init_circuit(cconf, move |circuit| {
+                    let (bounds, bounds_handle) = circuit.add_input_stream::<(String, String)>();
+                    let (index1, index1_handle) = circuit.add_input_indexed_zset::<String, Time>();
+
+                    let bounds = &bounds.apply(|(start, end)| {
+                        (TypedBox::new(start.clone()), TypedBox::new(end.clone()))
+                    });
+                    let output_handle = index1.window((true, false), bounds).accumulate_output();
+
+                    Ok((bounds_handle, index1_handle, output_handle))
+                })
+                .unwrap();
+
+            bounds_handle.set_for_all((key(clock - 2), key(clock)));
+            if let Some(mut tuples) = input.pop() {
+                index1_handle.append(&mut tuples);
+            }
+
+            circuit.transaction().unwrap();
+
+            let output = SpineSnapshot::<OrdIndexedZSet<String, Time>>::concat(
+                &output_handle.take_from_all(),
+            );
+            assert_eq!(output.iter().collect::<Vec<_>>(), expected);
 
             let cpm = circuit.checkpoint().run().unwrap();
             checkpoint = Some(cpm.uuid);
