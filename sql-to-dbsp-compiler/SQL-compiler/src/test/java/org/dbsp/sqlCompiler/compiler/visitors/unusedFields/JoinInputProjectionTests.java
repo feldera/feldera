@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -254,6 +255,24 @@ public class JoinInputProjectionTests {
             var error = Assert.assertThrows(RuntimeException.class, () -> new FindUsedFields(compiler).findUsedFields(result));
             Assert.assertTrue(error.getMessage(), error.getMessage().contains("does not exist in map"));
         }
+    }
+
+    @Test
+    public void discardedAggregateReadsItsEmptySetResult() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var text = DBSPTypeString.varchar(false);
+        var row = new DBSPTypeTuple(text, text, text).ref().var();
+        var element = text.var();
+        var accumulator = text.var();
+        var aggregate = new LinearAggregate(CalciteObject.EMPTY, element.closure(element),
+                accumulator.closure(accumulator), row.deref().field(0));
+        var body = new DBSPBlockExpression(List.of(aggregate.toStatement()), row.deepCopy().deref().field(2));
+        var map = body.closure(row);
+        var expected = new FindUsedFields(compiler).findUsedFields(map);
+        Assert.assertEquals("Ref([X, _, X])", expected.getUse().toString());
+        Assert.assertEquals(List.of(List.of(List.of(0), List.of(2))),
+                RustCircuitPass.parameterFieldDependencies(compiler, map));
     }
 
     @Test

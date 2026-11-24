@@ -166,28 +166,10 @@ impl RowProjection<'_> {
             | Expr::DirectComparator
             | Expr::FieldComparator
             | Expr::NoComparator => Op::Compute(vec![]),
-            Expr::For
-            | Expr::Return
-            | Expr::Lazy
-            | Expr::Question
-            | Expr::HandleError
-            | Expr::QualifyType
-            | Expr::CustomOrd
-            | Expr::UnwrapCustomOrd
-            | Expr::AsymmetricFieldComparator
-            | Expr::EqualityComparator
-            | Expr::EnumValue
-            | Expr::NoExpression
-            | Expr::Sort
-            | Expr::IndexedZSet
-            | Expr::ZSet => return Ok(None),
             kind if kind.wire_name().ends_with("Literal") => Op::Compute(vec![]),
-            _ => {
-                return Err(Error::new(format!(
-                    "unsupported input projection expression {}",
-                    node.class()
-                )));
-            }
+            // The field-use visitor assigns values only to the operations above.
+            // Other expressions can evaluate operands without defining a result.
+            _ => return Ok(None),
         };
         Ok(Some(op))
     }
