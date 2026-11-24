@@ -1,0 +1,53 @@
+{
+  "scope": "Chained MIN evaluates each update before its initializer and before testing the input waterline.",
+  "source_base": "dc199b559b216cfae872100de5c2e90fdcf5ac67",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "38f13c2f336ba55d40d628ff0992d0ab6593e23c5c5c16e9f7c44180ffb30117",
+    "crates/sql/sql-opt/src/lexical_scope.rs": "681ab15c4a89a8a6586e86a51518023b0a4a9cd92b450b4c126689b714800f99",
+    "crates/sql/sql-opt/src/lib.rs": "4c6c4d6c7fcd619573c47a64939a6cb994d5b442a0ddd39ec1aca54800daa28d",
+    "crates/sql/sql-opt/src/monotonicity/chain_minimum.rs": "109e9c78eba186cca89452c455a59aa093a3474b328dd6f52ae889d622aa835c",
+    "crates/sql/sql-opt/src/monotonicity/schedule.rs": "9900a281f0acfe64850473dc1e3bd6b11877f8ff0c2a172b134826c589c70775",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "501d53eb4229326ad2b2884bedeac76c0692dee6f03b80fd3887f6d977e2161f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/Monotonicity.java": "150de756ef1206717f2d12fb25090e10c80421be7689fafc67301db924881647",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "597c67a4d23f13091b34c5ed4555bd38ca4e274dcab1743d33aaf12612c80f14"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "cb5c0f803552f8df0eaa9c62405576a2915ffe18af52b1c9fe496ae83c65bec7",
+    "bin/sql-difftest": "ce892ff235e290c82f1dcfa43f71e9f9cdc52535c474384ddab94fe5568b173a",
+    "maven/tests.jar": "4bac5ee6d08a8c2cd9899d15eb07cbbe56943119bff1c66433207dc2b3905aad",
+    "maven/sql-compiler.jar": "2a2ceed523f325f431cd29b5b2470c66bfbe56446d6f77a1dd1d6029b3b8b3cf"
+  },
+  "negative_control": {
+    "library_sha256": "a4f196b6b7324bcdce15d140ea636353d3cdd4c9deab188b78128e36a2c1c649",
+    "failed_tests": [
+      "chainMinimumChecksEachUpdateBeforeTheInitializerAndInputWaterline"
+    ],
+    "java_compiler_sha256": "4ea9414dc1123ce574131ffcb444332e0418ac094bff4340edeff694cc0b3084"
+  },
+  "rust_tests": 226,
+  "junit_tests": 228,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "c66600e92757dcbe2388293f91cb3966453f0bee28195ae6916ff481ee0fffb1"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "a5e371317b0e9857b4bb9a18ca487319702cbda7cd33a930ddb46e4f7b6bdf58"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 253,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "eaa83f59386bfeeb7376f7b7bc5f3aa949b29db1"
+}

@@ -1,0 +1,50 @@
+{
+  "scope": "A missing lineage input preserves earlier findings and identifies the live output port without repeating the Java report.",
+  "source_base": "eaa83f59386bfeeb7376f7b7bc5f3aa949b29db1",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "1dfae6f08f5026da8e84ee4b329e32b6673b89d08f81f1c1f9ae1209115e2928",
+    "crates/sql/sql-opt/src/lineage.rs": "526cc79e11a851b80bfa205a4f36a172ffa6ca88ffa6b7d2fc35dd2eb2cc04f4",
+    "crates/sql/sql-opt/src/lineage/report.rs": "6f555c9f7233a16a144efcda3718bf442af868f187e632bb2419bfa4045b20d7",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "308a95b3981866a04c9dd99f47d3b551dbdc5bc96107466c68911a29c1b4dff4",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/LineageTests.java": "8d780a12b3e5a00283693888edc96950736f4a563ce3fbe06842fe11feb9b4f6"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "88a2270e41d2808a7af5cbea652fe52c54027748a0c82205cab5617afdc25271",
+    "bin/sql-difftest": "ab861a94a5d7abbdf1df7b6498884c0aba8c255228651e9155f720323cde2e6b",
+    "maven/tests.jar": "ecb9a063494aa806e96207838dd08386c271841e6786a863165100fb0885a8b8",
+    "maven/sql-compiler.jar": "076482c0c315d89e47e4c61d9a32fa5c7d6d1a525a722bb4a7900d5b09e6eaca"
+  },
+  "negative_control": {
+    "library_sha256": "cb5c0f803552f8df0eaa9c62405576a2915ffe18af52b1c9fe496ae83c65bec7",
+    "failed_tests": [
+      "lineageReportsEarlierComparisonsBeforeReadingAMissingPort"
+    ],
+    "java_compiler_sha256": "2a2ceed523f325f431cd29b5b2470c66bfbe56446d6f77a1dd1d6029b3b8b3cf"
+  },
+  "rust_tests": 226,
+  "junit_tests": 229,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "5812c7f79625e336c4b0e7fa56359db6b28c154f188e29d740adf8cefc85c440"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "2c8910c5b2eb3169519063092cad63d7c56a9fde045ce7d6b7b6b8d3bf2b66f7"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 254,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "01767a95811be3353d10a70a98ea56a084ed236c"
+}

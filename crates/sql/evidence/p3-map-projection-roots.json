@@ -1,0 +1,52 @@
+{
+  "scope": "Rust classifies map expressions and closures of any arity after resolving their bindings and checks field counts against tuple results.",
+  "source_base": "01767a95811be3353d10a70a98ea56a084ed236c",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "a886637af4609b8268d44d539b5c85377fb903e0db8825cfdfd57966b1c32e61",
+    "crates/sql/sql-opt/src/lib.rs": "9270923df4533aea04c9f23013bdcbe24dfc8e5dd48d3fdaf2500fd620886685",
+    "crates/sql/sql-opt/src/projection.rs": "7aa4e5b1d69007f0415687e19cfd49bdc29c81d90de8b3e94390b93c656595ed",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "f2ffae9bd0a479e54563ab866462c3f902008c61c3d74000821dfda8b6edb4e9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/inner/Projection.java": "ea851d8a176a12d8e8abfd1fec6a5633c96995713e47edeb9151cc3b6773ef8c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/OptimizeProjections.java": "0f4ad42fa48adbc50404b8f55797a542bac15048bd64bbd904cbbf2177b8a9f9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/ir/ProjectionCompositionTests.java": "d173c72824698313eaf2bd3d7386bbbf3094b9d3b0b397d0adabeb559b48af97"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "1d1598ad3bf414cea58cae54e678cad5f7c399c9e210da66d77fa7783f61c591",
+    "bin/sql-difftest": "753665f911db170f1bab3339b31303e3633e6f7628458bf170c32425301beaba",
+    "maven/tests.jar": "cc9d5a62aaa443839630d43161fbbb83501ebb111c5546e5ef006b910d63aa00",
+    "maven/sql-compiler.jar": "46bc29d10c304a65d1ebf5571bf91bb8f149587d5a6e7328c88137ed25c186a1"
+  },
+  "negative_control": {
+    "library_sha256": "88a2270e41d2808a7af5cbea652fe52c54027748a0c82205cab5617afdc25271",
+    "failed_tests": [
+      "classifyProjectionRootsAndResolveBindingsBeforeInspectingShape"
+    ],
+    "java_compiler_sha256": "46bc29d10c304a65d1ebf5571bf91bb8f149587d5a6e7328c88137ed25c186a1"
+  },
+  "rust_tests": 226,
+  "junit_tests": 230,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "f0fd9e6f54f84f354d9370badbde95ba12566463c831efcdfd7f00fc5d54f7fa"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "cf25cc201ad16d12603765844e7ca3b0f5c7c568d9524f659e88bc347afa74a4"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 255,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "7458021fd19df9830056ee64d0a7a3221dbedfbe"
+}

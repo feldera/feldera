@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust checks chained MIN updates before pruning an input without a waterline.
+Column lineage preserves earlier findings when a later operator reads a missing
+port. Map projection analysis resolves bindings before classifying the expression
+and checks the number of mapped fields against the result type. On the three
+builds, 253, 254 and 255 nightly optimizer tests passed, respectively. Each
+matched Java on all 11,965 ordered S4 observations and emitted artifacts for
+12 classic and 12 Gen-2 cases.
+[Chained MIN](evidence/p3-chain-minimum-diagnostics.json) · [Missing lineage input](evidence/p3-missing-lineage-input.json) · [Map projection roots](evidence/p3-map-projection-roots.json)
+
 On `02de0ae99`, the Rust scheduler checks a rolling window's upper frame
 before pruning an input without a waterline. A NULL following offset now
 reports the same numeric-literal error as Java. A preceding frame ignores
