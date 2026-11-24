@@ -535,7 +535,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(json!({"root": {"node": root}, "next_generated_name": next, "warnings": []}));
         }
     }
-    let (arena, roots) = if matches!(pass, "Monotonicity/Filter" | "Monotonicity/Minimum" | "Monotonicity/ChainMinimum") {
+    let (arena, roots) = if matches!(pass, "Monotonicity/Filter" | "Monotonicity/Minimum" | "Monotonicity/MinimumForOutput" | "Monotonicity/ChainMinimum") {
         serde_json::from_slice::<ExpressionSite>(state)?.arena(input)?
     } else {
         let header = json!({"class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]});
@@ -922,6 +922,13 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let pair = edit.type_id(*input)?;
             feldera_sql_opt::minimum_transfer(&mut edit, arena.root_id(), pair,
                 postprocess.first().copied(), &mut next, &mut warnings)?
+        }
+        ("Monotonicity/MinimumForOutput", [input, output, postprocess @ ..]) if postprocess.len() <= 1 => {
+            let pair = edit.type_id(*input)?;
+            let output = edit.type_id(*output)?;
+            let transfer = feldera_sql_opt::minimum_transfer_for_output(&mut edit, arena.root_id(),
+                pair, output, postprocess.first().copied(), &mut next, &mut warnings)?;
+            return lowered_function_reply(&arena, &edit, transfer, next, warnings);
         }
         ("Monotonicity/ChainMinimum", [input, accumulators, update]) => {
             let input = edit.type_id(*input)?;
@@ -1551,7 +1558,7 @@ fn transform(
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "EnsureExpressionTree" | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"
         | "Monotonicity/Clock" | "Monotonicity/RowClosure" | "Monotonicity/InspectBody"
-        | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ExpressionFacts" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
+        | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ExpressionFacts" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/MinimumForOutput" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "RewriteNow/ClockSites" | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"

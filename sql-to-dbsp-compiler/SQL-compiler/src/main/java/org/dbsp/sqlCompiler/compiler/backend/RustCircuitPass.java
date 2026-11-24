@@ -1003,6 +1003,18 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @Nullable
+    public static DBSPClosureExpression minimumTransferForOutput(DBSPCompiler compiler, CalciteObject origin,
+            DBSPType input, DBSPType output, @Nullable DBSPClosureExpression postprocess) {
+        try {
+            var reply = invokeLowering(compiler, "Monotonicity/MinimumForOutput",
+                    MAPPER.writeValueAsBytes(expressionSite(origin)), input, output, postprocess);
+            return optionalLoweredClosure(compiler, reply);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode aggregate source position", error);
+        }
+    }
+
+    @Nullable
     public static Boolean isMinimumChain(DBSPCompiler compiler, DBSPChainAggregateOperator chain) {
         String pass = "Monotonicity/IsMinimumChain";
         var reply = invokeLowering(compiler, pass, chain.init, chain.getClosureFunction());
@@ -1029,11 +1041,7 @@ public final class RustCircuitPass implements CircuitTransform {
             var reply = invokeLowering(compiler, "Monotonicity/ChainMinimum",
                     MAPPER.writeValueAsBytes(expressionSite(chain.getNode())), input,
                     chain.getOutputIndexedZSetType().elementType, chain.getClosureFunction());
-            if (reply.value.required("function").isNull()) {
-                finishLowering(compiler, reply.value);
-                return null;
-            }
-            return loweredClosure(compiler, reply);
+            return optionalLoweredClosure(compiler, reply);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode chain aggregate source position", error);
         }
@@ -1299,6 +1307,15 @@ public final class RustCircuitPass implements CircuitTransform {
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode waterline projection", error);
         }
+    }
+
+    @Nullable
+    private static DBSPClosureExpression optionalLoweredClosure(DBSPCompiler compiler, LoweringReply reply) {
+        if (reply.value.required("function").isNull()) {
+            finishLowering(compiler, reply.value);
+            return null;
+        }
+        return loweredClosure(compiler, reply);
     }
 
     private static DBSPClosureExpression loweredClosure(DBSPCompiler compiler, LoweringReply reply) {

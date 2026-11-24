@@ -308,6 +308,70 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void minimumWaterlineChecksOutputAfterReducingThePayload() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(1).getType();
+        var pair = new DBSPTypeRawTuple(integer, integer);
+        var wrongWidth = new DBSPTypeRawTuple(integer);
+        long next = DBSPVariablePath.nextGeneratedName();
+        Assert.assertNull(RustCircuitPass.minimumTransferForOutput(compiler, site, wrongWidth, integer, null));
+        Assert.assertEquals(next, DBSPVariablePath.nextGeneratedName());
+        Assert.assertNull(RustCircuitPass.minimumTransferForOutput(compiler, site, pair, integer.withMayBeNull(true), null));
+        Assert.assertEquals(next + 1, DBSPVariablePath.nextGeneratedName());
+        var data = integer.ref().var();
+        var postprocess = new DBSPTupleExpression(data.deref()).closure(data);
+        var tuple = postprocess.getResultType();
+        Assert.assertNotNull(RustCircuitPass.minimumTransferForOutput(compiler, site, pair, tuple, postprocess));
+        Assert.assertNull(RustCircuitPass.minimumTransferForOutput(compiler, site, pair, integer, postprocess));
+    }
+
+    @Test
+    public void chainMinimumKeepsAnEmptyComparedSlotAndSkipsItsSiblings() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(x BIGINT NOT NULL LATENESS 1);"
+                + "CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var site = CalciteEmptyRel.INSTANCE;
+        var input = source.getOutput(0).getOutputRowType().ref().var();
+        var index = new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(
+                input.deepCopy().deref().field(0), input.deref().field(0)).closure(input), source.getOutput(0));
+        var integer = index.getOutputIndexedZSetType().elementType;
+        var accumulator = new DBSPTypeTuple(DBSPTypeTuple.EMPTY, integer);
+        var state = new DBSPTypeTuple(accumulator);
+        var row = integer.ref().var();
+        var acc = state.var();
+        var weight = DBSPTypeWeight.INSTANCE.var();
+        var init = new DBSPTupleExpression(new DBSPConditionalIncrementExpression(site, DBSPOpcode.AGG_MIN,
+                accumulator, accumulator.defaultValue(), row.deref(), null)).closure(row, weight);
+        var update = new DBSPTupleExpression(new DBSPConditionalIncrementExpression(site, DBSPOpcode.AGG_MIN,
+                accumulator, acc.field(0), row.deepCopy().deref(), null)).closure(acc, row, weight);
+        var chain = new DBSPChainAggregateOperator(site, init, update,
+                new DBSPTypeIndexedZSet(site, integer, state), index.outputPort());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), true);
+        circuit.addOperator(source);
+        circuit.addOperator(index);
+        circuit.addOperator(chain);
+
+        var direct = new Monotonicity(compiler);
+        direct.apply(circuit);
+        var expected = direct.getMonotoneExpression(chain).getReducedExpression();
+        if (Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply")) {
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            Assert.assertEquals(true, RustCircuitPass.isMinimumChain(compiler, chain));
+            var hybrid = new Monotonicity(compiler);
+            hybrid.apply(circuit);
+            Assert.assertTrue(expected.equivalent(hybrid.getMonotoneExpression(chain).getReducedExpression()));
+            var transfer = RustCircuitPass.chainMinimumTransfer(compiler, chain, new DBSPTypeRawTuple(integer, integer));
+            var values = transfer.body.to(DBSPRawTupleExpression.class).get(1).to(DBSPTupleExpression.class);
+            var field = values.get(0).to(DBSPTupleExpression.class);
+            Assert.assertEquals(0, field.get(0).to(DBSPTupleExpression.class).size());
+            Assert.assertTrue(field.get(1).is(NoExpression.class));
+        }
+    }
+
+    @Test
     public void deepAggregatePayloadsRetainOnlyTheComparedLeaf() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

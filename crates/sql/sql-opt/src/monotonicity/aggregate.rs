@@ -29,8 +29,10 @@ fn accumulator_value(
                         return Err(Error::new("cycle in an aggregate waterline type"));
                     }
                     let members = edit.node(ty.into())?.edges("tupFields")?;
-                    if minimum.is_some() && members.is_empty() {
-                        return Err(Error::new("minimum waterline requires a compared field"));
+                    // Only the first field can carry the minimum. If that path
+                    // ends at an empty tuple, later siblings remain unbounded.
+                    if members.is_empty() {
+                        minimum = None;
                     }
                     work.push(Step::Tuple(ty, fields.len()));
                     for member in members.into_iter().rev() {
@@ -120,6 +122,29 @@ pub fn minimum_transfer(
     edit.closure_from_variables(body, &[row])
 }
 
+/// A primitive MIN can propagate its payload only if the reduced postprocess
+/// produces the operator's declared value type. Building a rejected transfer
+/// still consumes its generated name and may emit simplification warnings.
+pub fn minimum_transfer_for_output(
+    edit: &mut CircuitEditor,
+    origin: NodeId,
+    pair: TypeId,
+    output: TypeId,
+    postprocess: Option<NodeId>,
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<Option<ExpressionId>, Error> {
+    if edit.node(pair.into())?.edges("tupFields")?.len() != 2 {
+        return Ok(None);
+    }
+    let transfer = minimum_transfer(edit, origin, pair, postprocess, next, warnings)?;
+    let body = edit.node(transfer.into())?.edge("body")?;
+    let payload = edit.expression(edit.node(body)?.edges("fields")?[1])?;
+    Ok(edit
+        .same_type(edit.expression_type(payload)?, output)?
+        .then_some(transfer))
+}
+
 /// A chain of minimum updates retains the group key and the compared leaf of
 /// every accumulator. The caller has verified the initializer and update agree.
 pub fn chain_minimum_transfer(
@@ -131,11 +156,10 @@ pub fn chain_minimum_transfer(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<ExpressionId>, Error> {
-    let [key, value] = edit
-        .node(pair.into())?
-        .edges("tupFields")?
-        .try_into()
-        .map_err(|_| Error::new("chain minimum input requires a key and value"))?;
+    let fields = edit.node(pair.into())?.edges("tupFields")?;
+    let &[key, value] = fields.as_slice() else {
+        return Ok(None);
+    };
     let row = indexed_parameter(edit, edit.type_id(key)?, edit.type_id(value)?, next)?;
     let update = edit.node(update)?;
     let [_, parameter, _] = update

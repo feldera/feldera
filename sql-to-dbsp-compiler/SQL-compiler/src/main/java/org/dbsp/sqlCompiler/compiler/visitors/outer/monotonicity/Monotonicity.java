@@ -1009,15 +1009,20 @@ public class Monotonicity extends CircuitVisitor {
 
         IMaybeMonotoneType projection = Monotonicity.getBodyType(inputValue);
         DBSPTypeTupleBase pairType = projection.getType().to(DBSPTypeTupleBase.class);
-        if (pairType.size() != 2)
-            return false;
-        DBSPClosureExpression transfer = this.compiler().options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.minimumTransfer(this.compiler(), node.getNode(), pairType, minMax.postProcessing)
-                : this.minimumTransfer(node, pairType, minMax);
-        DBSPType valueType = transfer.getResultType().to(DBSPTypeRawTuple.class).tupFields[1];
-        // An output shape the model does not describe yields no waterline.
-        if (!valueType.sameType(node.getOutputIndexedZSetType().elementType))
-            return false;
+        DBSPClosureExpression transfer;
+        if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+            transfer = RustCircuitPass.minimumTransferForOutput(this.compiler(), node.getNode(), pairType,
+                    node.getOutputIndexedZSetType().elementType, minMax.postProcessing);
+            if (transfer == null)
+                return false;
+        } else {
+            if (pairType.size() != 2)
+                return false;
+            transfer = this.minimumTransfer(node, pairType, minMax);
+            DBSPType valueType = transfer.getResultType().to(DBSPTypeRawTuple.class).tupFields[1];
+            if (!valueType.sameType(node.getOutputIndexedZSetType().elementType))
+                return false;
+        }
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
         // Null when neither the key nor the minimized value is monotone
@@ -1173,8 +1178,6 @@ public class Monotonicity extends CircuitVisitor {
             return;
         IMaybeMonotoneType projection = Monotonicity.getBodyType(inputValue);
         DBSPTypeTupleBase pairType = projection.getType().to(DBSPTypeTupleBase.class);
-        if (pairType.size() != 2)
-            return;
         var transfer = this.compiler().options.ioOptions.rustOptimizerPasses
                 ? RustCircuitPass.chainMinimumTransfer(this.compiler(), node, pairType)
                 : this.chainMinimumTransfer(node, pairType);
@@ -1190,6 +1193,8 @@ public class Monotonicity extends CircuitVisitor {
     @Nullable
     private DBSPClosureExpression chainMinimumTransfer(DBSPChainAggregateOperator node,
             DBSPTypeTupleBase pairType) {
+        if (pairType.size() != 2)
+            return null;
         DBSPTypeRawTuple varType = new DBSPTypeRawTuple(pairType.tupFields[0].ref(), pairType.tupFields[1].ref());
         DBSPVariablePath var = varType.var();
         DBSPParameter row = node.getClosureFunction().parameters[1];

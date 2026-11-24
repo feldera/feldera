@@ -18,7 +18,7 @@ pub use lexical_scope::{BindingDiagnostic, Resolution as LexicalResolution, insp
 mod map_fusion;
 mod projection_key;
 mod monotonicity;
-pub use monotonicity::aggregate::{aggregate_transfer, chain_minimum_transfer, minimum_transfer, AggregateTransfer};
+pub use monotonicity::aggregate::{aggregate_transfer, chain_minimum_transfer, minimum_transfer, minimum_transfer_for_output, AggregateTransfer};
 pub use monotonicity::asof::asof_waterline;
 pub use monotonicity::bindings::{waterline_bindings, WaterlineBindings};
 pub use monotonicity::chain_minimum::{check_minimum_chain, is_minimum_chain, MinimumChainError};
