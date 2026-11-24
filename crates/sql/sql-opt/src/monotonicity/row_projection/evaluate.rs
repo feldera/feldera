@@ -40,6 +40,13 @@ impl Evaluation {
         Self::Failed(WaterlineError::MissingFact(id))
     }
 
+    pub(super) fn with_bound(mut self, bound: Option<ExpressionId>) -> Self {
+        if let Self::Value(value) = &mut self {
+            value.reduced = bound;
+        }
+        self
+    }
+
     pub(super) fn projected(self) -> Option<ProjectedValue> {
         match self {
             Self::Value(value) => Some(value),
@@ -88,18 +95,14 @@ impl Operation {
         if let Some(child) = children.as_slice().iter().find(|v| v.value.is_none()) {
             return Ok(Evaluation::missing_fact(child.id));
         }
-        if let Some(child) = children
-            .as_slice()
-            .iter()
-            .find(|v| v.value.as_ref().is_some_and(ProjectedValue::missing_bound))
-        {
-            let needs_bound = match self {
-                Self::Unary => scalar::reads_unary_bound(edit, id)?,
-                // The transfer itself selects the bounded fields and operands.
-                Self::Binary(_) | Self::Wrapper => false,
-                _ => true,
-            };
-            if needs_bound {
+        // A tuple consumes every field's bound. Scalar operations and wrappers
+        // check their result types and select their own operands in visitor order.
+        if matches!(self, Self::Tuple) {
+            if let Some(child) = children
+                .as_slice()
+                .iter()
+                .find(|v| v.value.as_ref().is_some_and(ProjectedValue::missing_bound))
+            {
                 return Ok(Evaluation::Failed(WaterlineError::MissingBound(child.id)));
             }
         }

@@ -65,6 +65,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTimeAddSub;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
@@ -1071,6 +1072,77 @@ public class WaterlineProjectionTests {
                 Assert.assertFalse(facts.containsKey(maximum));
                 Assert.assertFalse(facts.containsKey(later));
             }
+        }
+    }
+
+    @Test
+    public void scalarTransfersReportTheFirstInvalidTypeOperation() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(1).getType();
+        var scalar = new MonotoneType(integer);
+        var input = integer.ref().var();
+        var missing = new NoExpression(DBSPTypeRawTuple.EMPTY);
+        var tuple = new DBSPTupleExpression(new DBSPI32Literal(3));
+        var struct = new DBSPTypeStruct(site, new ProgramIdentifier("Result"), List.of(), false);
+        var function = new DBSPTypeFunction(integer);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        for (var invalid : List.of(
+                new DBSPBinaryExpression(site, integer, DBSPOpcode.MUL, tuple, new DBSPI32Literal(2)),
+                new DBSPBinaryExpression(site, integer, DBSPOpcode.COALESCE, tuple, missing),
+                new DBSPBinaryExpression(site, struct, DBSPOpcode.MAX, new DBSPI32Literal(1), missing),
+                new DBSPUnaryExpression(site, integer, DBSPOpcode.UNARY_PLUS, tuple),
+                new DBSPUnaryExpression(site, struct, DBSPOpcode.UNARY_PLUS, missing),
+                new DBSPUnaryExpression(site, function, DBSPOpcode.UNARY_PLUS, missing),
+                new DBSPTimeAddSub(site, tuple.getType(), DBSPOpcode.SUB, new NoExpression(integer), new NoExpression(integer)),
+                new DBSPApplyExpression("sign_i32", function, new DBSPI32Literal(1)))) {
+            var before = new DBSPI32Literal(7);
+            var later = new DBSPI32Literal(8);
+            var body = new DBSPBlockExpression(List.of(before.toStatement(), invalid.toStatement()), later);
+            var closure = body.closure(input);
+            var oracle = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, scalar);
+            var expected = Assert.assertThrows(RuntimeException.class, () -> oracle.apply(closure));
+            Assert.assertFalse(expected instanceof NullPointerException);
+            for (boolean resultOnly : List.of(false, true)) {
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var failure = Assert.assertThrows(expected.getClass(), () ->
+                        RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                                new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(scalar)},
+                                false, resultOnly, facts::put));
+                if (expected.getMessage() == null)
+                    Assert.assertNull(failure.getMessage());
+                else
+                    Assert.assertEquals(expected.getMessage().lines().findFirst(), failure.getMessage().lines().findFirst());
+                Assert.assertTrue(facts.get(before).mayBeMonotone());
+                Assert.assertFalse(facts.containsKey(invalid));
+                Assert.assertFalse(facts.containsKey(later));
+            }
+        }
+    }
+
+    @Test
+    public void oneSidedMaximumSkipsAnUnboundedStructuredOperand() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(1).getType();
+        var shape = new MonotoneType(integer);
+        var input = integer.ref().var();
+        var other = new NoExpression(new DBSPTypeTuple(integer));
+        var left = new DBSPBinaryExpression(site, integer, DBSPOpcode.MAX, input.deref(), other);
+        var right = new DBSPBinaryExpression(site, integer, DBSPOpcode.MAX, other.deepCopy(), input.deepCopy().deref());
+        var body = new DBSPTupleExpression(left, right);
+        var closure = body.closure(input);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var oracle = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+        var expected = oracle.applyAnalysis(closure).getReducedExpression();
+        for (boolean resultOnly : List.of(false, true)) {
+            var projected = RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                    new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                    false, resultOnly, (expression, fact) -> {});
+            Assert.assertTrue(projected instanceof RustCircuitPass.ProjectedWaterline);
+            Assert.assertTrue(expected.equivalent(((RustCircuitPass.ProjectedWaterline) projected).closure()));
         }
     }
 

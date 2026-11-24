@@ -58,6 +58,7 @@ public final class WaterlineProjection {
                                                    List<MonotoneExpression> facts) {
         return switch (projection.required("kind").textValue()) {
             case "unbounded" -> NonMonotoneType.nonMonotone(declaredType.apply(projection.required("type_id").longValue()));
+            case "unbounded_scalar" -> new NonMonotoneType(declaredType.apply(projection.required("type_id").longValue()));
             case "bounded_scalar" -> new MonotoneType(declaredType.apply(projection.required("type_id").longValue()));
             case "prior" -> facts.get(projection.required("index").intValue()).getMonotoneType();
             case "local" -> locals.get(projection.required("index").intValue());

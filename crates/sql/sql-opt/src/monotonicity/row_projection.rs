@@ -27,6 +27,9 @@ pub enum RowType {
     Unbounded {
         type_id: u64,
     },
+    UnboundedScalar {
+        type_id: u64,
+    },
     BoundedScalar {
         type_id: u64,
     },
@@ -488,6 +491,7 @@ impl WaterlineInspection {
 #[derive(Clone, Copy, serde::Serialize)]
 pub enum WaterlineTypeError {
     ExpectedScalar,
+    RequiredType,
     UnsupportedType,
 }
 
@@ -510,6 +514,8 @@ pub enum WaterlineError {
     /// Resolve this failed type operation against the original objects after
     /// publishing all the facts that precede it.
     InvalidProjection(RowType),
+    ExpectedScalarOperand(RowType),
+    InvalidBoundCast { operation: ExpressionId, bound: ExpressionId },
 }
 
 pub enum ClosureAnalysis {

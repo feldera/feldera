@@ -748,6 +748,10 @@ public final class RustCircuitPass implements CircuitTransform {
         var type = Utilities.getExists(Objects.requireNonNull(writer.liveNodes),
                 failure.required("type").longValue()).to(DBSPType.class);
         return switch (failure.required("kind").textValue()) {
+            case "RequiredType" -> {
+                type.withMayBeNull(false);
+                yield new IllegalStateException("Expected a type with no nonnullable form " + type);
+            }
             case "ExpectedScalar" -> ScalarMonotoneType.expectedScalar(type);
             case "UnsupportedType" -> NonMonotoneType.unsupportedType(type);
             default -> throw new IllegalArgumentException("Unknown waterline type error " + failure);
@@ -812,6 +816,18 @@ public final class RustCircuitPass implements CircuitTransform {
                 throw Utilities.missingKey(Utilities.getExists(nodes, failure.required("expression").longValue()));
             if (failure.has("type"))
                 throw waterlineTypeError(reply.writer, failure);
+            if ("InvalidBoundCast".equals(failure.required("kind").textValue())) {
+                var operation = Utilities.getExists(nodes, failure.required("expression").longValue()).to(DBSPExpression.class);
+                var bound = Objects.requireNonNull(decodeLiveRoot(reply.writer, failure.required("bound"), DBSPExpression.class));
+                bound.cast(operation.getNode(), operation.getType().withMayBeNull(false), DBSPCastExpression.CastType.SqlUnsafe);
+                throw new IllegalStateException("Expected an invalid waterline cast for " + operation);
+            }
+            if ("ExpectedScalarOperand".equals(failure.required("kind").textValue())) {
+                var source = WaterlineProjection.resolveFactType(failure.required("source"),
+                        id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes, facts);
+                source.to(ScalarMonotoneType.class);
+                throw new IllegalStateException("Expected a non-scalar waterline operand " + source);
+            }
             if (failure.has("projection"))
                 throw invalidWaterlineProjection(reply.writer, failure.required("projection"), argumentShapes, facts);
             var kind = WaterlineError.valueOf(failure.required("kind").textValue());

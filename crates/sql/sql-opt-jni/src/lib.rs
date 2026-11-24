@@ -1035,6 +1035,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                         WaterlineError::MissingReference(id) => json!({"kind":"MissingReference", "expression":inner_number(id.into())}),
                         WaterlineError::MissingFact(id) | WaterlineError::MissingBound(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
                         WaterlineError::TargetMaximum(id) => json!({"kind":"TargetMaximum", "expression":inner_number(id.into())}),
+                        WaterlineError::InvalidBoundCast { operation, bound } => json!({"kind":"InvalidBoundCast",
+                            "expression":inner_number(operation.into()), "bound":edit.circuit().live_expression(&arena, bound)?}),
+                        WaterlineError::ExpectedScalarOperand(source) => json!({"kind":"ExpectedScalarOperand", "source":source}),
                         WaterlineError::InvalidProjection(projection) => json!({"kind":"InvalidProjection", "projection":projection}),
                         WaterlineError::Type(kind, id) => json!({"kind":kind, "type":inner_number(id.into())}),
                     };

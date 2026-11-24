@@ -1,25 +1,62 @@
 //! Scalar literals and arithmetic inside a projected waterline closure.
-use super::{ProjectedValue, RowType, Shape, WaterlineError, evaluate::Evaluation, type_number};
+use super::{
+    ProjectedValue, RowType, Shape, WaterlineError, WaterlineTypeError, evaluate::Evaluation,
+    type_number,
+};
 use crate::monotonicity::binary::{
     BinaryOperation, BinaryWaterline, Domain, Operand, binary_waterline,
 };
 use crate::monotonicity::literal::{LiteralWaterline, literal_waterline, ordered_literal};
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, TypeKind as Ty};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, TypeId, TypeKind as Ty,
+};
 
-impl ProjectedValue {
-    pub(super) fn bounded(
-        edit: &CircuitEditor,
-        expression: ExpressionId,
-        bound: ExpressionId,
-        constant: bool,
-    ) -> Result<Self, Error> {
-        let type_id = type_number(edit.expression_type(expression)?);
-        Ok(Self {
-            shape: Shape::Scalar(true),
-            row_type: RowType::BoundedScalar { type_id },
-            reduced: Some(bound),
-            constant,
-        })
+/// Direct construction of a scalar monotonicity type accepts references. A
+/// non-monotone reference built this way differs from a reference whose base
+/// is non-monotone.
+pub(super) fn scalar_type(
+    edit: &CircuitEditor,
+    ty: TypeId,
+    monotone: bool,
+    constant: bool,
+) -> Result<Evaluation, Error> {
+    if matches!(edit.type_kind(ty)?, Ty::RawTuple | Ty::Tuple) {
+        return Ok(Evaluation::Failed(WaterlineError::Type(
+            WaterlineTypeError::ExpectedScalar,
+            ty,
+        )));
+    }
+    let type_id = type_number(ty);
+    Ok(Evaluation::Value(ProjectedValue {
+        shape: Shape::Scalar(monotone),
+        row_type: if monotone {
+            RowType::BoundedScalar { type_id }
+        } else {
+            RowType::UnboundedScalar { type_id }
+        },
+        reduced: None,
+        constant,
+    }))
+}
+
+/// These types reject withMayBeNull(false), even when already nonnullable.
+pub(super) fn required_type_error(kind: Ty, ty: TypeId) -> Option<WaterlineError> {
+    matches!(kind, Ty::Keyword | Ty::Function | Ty::Null | Ty::Stream)
+        .then_some(WaterlineError::Type(WaterlineTypeError::RequiredType, ty))
+}
+
+fn copy_scalar_type(
+    edit: &CircuitEditor,
+    ty: TypeId,
+    source: ProjectedValue,
+    constant: bool,
+) -> Result<Evaluation, Error> {
+    match source.shape {
+        Shape::Scalar(monotone) => scalar_type(edit, ty, monotone, constant),
+        Shape::Opaque(_) => Ok(Evaluation::NeedsVisitor),
+        _ => Ok(Evaluation::Failed(WaterlineError::ExpectedScalarOperand(
+            source.row_type,
+        ))),
     }
 }
 
@@ -29,7 +66,10 @@ pub(super) fn literal_bound(
 ) -> Result<Evaluation, Error> {
     match literal_waterline(edit, expression)? {
         LiteralWaterline::Bounded { bound, constant } => {
-            ProjectedValue::bounded(edit, expression, bound, constant).map(Evaluation::Value)
+            Ok(
+                scalar_type(edit, edit.expression_type(expression)?, true, constant)?
+                    .with_bound(Some(bound)),
+            )
         }
         LiteralWaterline::Unbounded => super::unbounded(edit, expression, false),
         LiteralWaterline::TargetMaximum => Ok(Evaluation::Failed(WaterlineError::TargetMaximum(
@@ -69,10 +109,7 @@ fn operand(
 
 /// Casts and unsigned wrappers read the input bound before testing their rule.
 /// Other unary operators only read it when they preserve order.
-pub(super) fn reads_unary_bound(
-    edit: &CircuitEditor,
-    expression: ExpressionId,
-) -> Result<bool, Error> {
+fn reads_unary_bound(edit: &CircuitEditor, expression: ExpressionId) -> Result<bool, Error> {
     if edit.expr_kind(expression)? != Expr::Unary {
         return Ok(true);
     }
@@ -87,25 +124,91 @@ pub(super) fn unary_bound(
     source: ProjectedValue,
 ) -> Result<Evaluation, Error> {
     let kind = edit.expr_kind(expression)?;
-    let reduced = match (kind, source.reduced) {
-        (Expr::Cast, None) => None,
-        (Expr::Cast, Some(bound)) => super::super::casts::cast_bound(edit, expression, bound)?,
-        (Expr::UnsignedUnwrap, _) if !matches!(source.shape, Shape::Scalar(_)) => {
-            return Ok(Evaluation::NeedsVisitor);
+    let ty = edit.expression_type(expression)?;
+    let constant = source.constant;
+    // The ordinary unary visitor constructs the unbounded result even when
+    // the operand later supplies a bound. A cast constructs it only on failure.
+    let default = if kind == Expr::Unary {
+        match super::unbounded_type(edit, ty, constant)? {
+            Evaluation::Value(value) => Some(value),
+            failure => return Ok(failure),
         }
+    } else {
+        None
+    };
+    if source.shape.monotone() && reads_unary_bound(edit, expression)? {
+        if kind == Expr::Unary {
+            if let Some(error) = required_type_error(edit.type_kind(ty)?, ty) {
+                return Ok(Evaluation::Failed(error));
+            }
+        }
+        if source.reduced.is_none() {
+            let input = edit.expression(edit.node(expression.into())?.edge("source")?)?;
+            return Ok(Evaluation::Failed(WaterlineError::MissingBound(input)));
+        }
+    }
+    let reduced = match (kind, source.reduced) {
+        (Expr::Cast, Some(bound)) => super::super::casts::cast_bound(edit, expression, bound)?,
         (_, Some(bound)) => super::super::unary_waterline(edit, expression, bound)?,
         (_, None) => None,
     };
-    if let Some(bound) = reduced {
-        // A successful transfer copies the input's scalar monotonicity. Keep the
-        // visitor's diagnostic if that operation is requested on a tuple or reference.
-        if !matches!(source.shape, Shape::Scalar(_)) {
-            return Ok(Evaluation::NeedsVisitor);
-        }
-        return ProjectedValue::bounded(edit, expression, bound, source.constant)
-            .map(Evaluation::Value);
+    if reduced.is_some() || kind == Expr::UnsignedUnwrap {
+        return Ok(copy_scalar_type(edit, ty, source, constant)?.with_bound(reduced));
     }
-    super::unbounded(edit, expression, source.constant)
+    match default {
+        Some(value) => Ok(Evaluation::Value(value)),
+        None if kind == Expr::UnsignedWrap => scalar_type(edit, ty, false, constant),
+        None => super::unbounded_type(edit, ty, constant),
+    }
+}
+
+/// A one-sided MAX and each side of COALESCE cast the selected bound
+/// immediately. A failing left cast precedes a missing right bound.
+fn binary_operand_error(
+    edit: &CircuitEditor,
+    expression: ExpressionId,
+    rule: BinaryWaterline,
+    operands: [ExpressionId; 2],
+    bounds: [Option<ExpressionId>; 2],
+    ty: TypeId,
+) -> Result<Option<WaterlineError>, Error> {
+    use BinaryWaterline::{Coalesce, Left, Right};
+    let target = edit.type_kind(ty)?;
+    let required = || required_type_error(target, ty);
+    if rule == Coalesce {
+        if let Some(error) = required() {
+            return Ok(Some(error));
+        }
+    }
+    for (i, (operand, bound)) in operands.into_iter().zip(bounds).enumerate() {
+        if (i == 0 && rule == Right) || (i == 1 && rule == Left) {
+            continue;
+        }
+        let Some(bound) = bound else {
+            return Ok(Some(WaterlineError::MissingBound(operand)));
+        };
+        if matches!(rule, Coalesce | Left | Right) {
+            if let Some(error) = required() {
+                return Ok(Some(error));
+            }
+            let from = edit.expression_type(bound)?;
+            let source = edit.type_kind(from)?;
+            let tuple = |kind| matches!(kind, Ty::Tuple | Ty::RawTuple);
+            let incompatible = tuple(source) != tuple(target)
+                && !matches!(source, Ty::Null | Ty::Variant | Ty::SqlResult)
+                && target != Ty::Variant;
+            // An identity cast returns its operand without constructing a cast.
+            if incompatible
+                || target == Ty::SqlResult && !edit.same_type_ignoring_nullability(from, ty)?
+            {
+                return Ok(Some(WaterlineError::InvalidBoundCast {
+                    operation: expression,
+                    bound,
+                }));
+            }
+        }
+    }
+    Ok(required())
 }
 
 pub(super) fn binary_bound(
@@ -127,6 +230,14 @@ pub(super) fn binary_bound(
         (Expr::TimeAddSub, _) => Domain::Temporal,
         _ => Domain::Scalar,
     };
+    let constant = lhs.constant && rhs.constant;
+    let default = match domain {
+        Domain::Scalar => super::unbounded_type(edit, ty, constant)?,
+        Domain::TimeOfDay | Domain::Temporal => scalar_type(edit, ty, false, constant)?,
+    };
+    let Evaluation::Value(_) = default else {
+        return Ok(default);
+    };
     let operation = BinaryOperation {
         domain,
         opcode: &opcode,
@@ -134,40 +245,21 @@ pub(super) fn binary_bound(
         right: operand(edit, right, &rhs, &opcode)?,
     };
     let rule = binary_waterline(domain, &opcode, operation.left, operation.right);
-    let scalar_operands = matches!(
-        (&lhs.shape, &rhs.shape),
-        (Shape::Scalar(_), Shape::Scalar(_))
-    );
-    let scalar_result = !matches!(
-        result_kind,
-        Ty::RawTuple | Ty::Tuple | Ty::Ref | Ty::Stream | Ty::Struct
-    );
-    if rule != BinaryWaterline::None {
-        // Java constructs the result type (or copies the inherited operand type)
-        // before demanding either bound. Preserve failures at that earlier site.
-        if !scalar_result
-            || (rule == BinaryWaterline::InheritLeft && !matches!(lhs.shape, Shape::Scalar(_)))
-            || (rule == BinaryWaterline::InheritRight && !matches!(rhs.shape, Shape::Scalar(_)))
-        {
-            return Ok(Evaluation::NeedsVisitor);
-        }
-        if rule != BinaryWaterline::Right && lhs.reduced.is_none() {
-            return Ok(Evaluation::Failed(WaterlineError::MissingBound(left)));
-        }
-        if rule != BinaryWaterline::Left && rhs.reduced.is_none() {
-            return Ok(Evaluation::Failed(WaterlineError::MissingBound(right)));
-        }
-        if !scalar_operands {
-            return Ok(Evaluation::NeedsVisitor);
-        }
+    let bounds = [lhs.reduced, rhs.reduced];
+    let result = match rule {
+        BinaryWaterline::None => return Ok(default),
+        BinaryWaterline::InheritLeft => copy_scalar_type(edit, ty, lhs, constant)?,
+        BinaryWaterline::InheritRight => copy_scalar_type(edit, ty, rhs, constant)?,
+        _ => scalar_type(edit, ty, true, constant)?,
+    };
+    let Evaluation::Value(_) = result else {
+        return Ok(result);
+    };
+    if let Some(error) = binary_operand_error(edit, expression, rule, [left, right], bounds, ty)? {
+        return Ok(Evaluation::Failed(error));
     }
-    let constant = lhs.constant && rhs.constant;
-    let (_, bound) = operation.lower(edit, expression.into(), ty, [lhs.reduced, rhs.reduced])?;
-    if let Some(bound) = bound {
-        return ProjectedValue::bounded(edit, expression, bound, constant).map(Evaluation::Value);
-    }
-    // Retain the layout of an unbounded ROW for subsequent field reads.
-    super::unbounded(edit, expression, constant)
+    let (_, bound) = operation.lower(edit, expression.into(), ty, bounds)?;
+    Ok(result.with_bound(bound))
 }
 
 #[cfg(test)]
