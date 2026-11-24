@@ -4,6 +4,20 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Temporal merge diagnostics, 2026-11-23
+
+On `654b713e7`, direct Java and the hybrid emitted matching classic artifacts
+and diagnostics in all 69 pairs. Each workload used two warmup pairs and 21
+measured pairs with alternating execution order. Fresh compiler processes ran
+on CPU 15 of the shared ARM64 VM while verification used other CPUs.
+[Timings and build identities](evidence/p3-copied-temporal-diagnostics-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.097 | 1.792 | 0.854× |
+| Nexmark suite | 4.567 | 5.376 | 1.177× |
+| Outer join | 2.008 | 1.629 | 0.812× |
+
 ## Nested flatmap waterlines, 2026-11-23
 
 On `3f11d9be3`, each workload ran two warmup pairs and 21 measured pairs
