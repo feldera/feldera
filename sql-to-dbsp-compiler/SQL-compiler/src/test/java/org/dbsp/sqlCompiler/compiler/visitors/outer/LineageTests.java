@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -166,6 +167,29 @@ public class LineageTests extends BaseSQLTests {
         Assert.assertEquals(expected, report(input, false));
         if (Boolean.getBoolean("feldera.optimizer.compareRustLineage"))
             Assert.assertEquals(expected, report(input, true));
+    }
+
+    @Test
+    public void lineageReportsEarlierComparisonsBeforeReadingAMissingPort() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLineage"));
+        var compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("CREATE TABLE t(x INT NOT NULL); CREATE VIEW v AS SELECT x FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var site = CalciteEmptyRel.INSTANCE;
+        var row = new DBSPVariablePath("row", source.getOutput(0).getOutputRowType().ref());
+        var positive = new DBSPBinaryExpression(site, DBSPTypeBool.INSTANCE, DBSPOpcode.GT,
+                row.deref().field(0), new DBSPI32Literal(0));
+        var first = new DBSPFilterOperator(site, positive.closure(row), source.getOutput(0));
+        // The lineage pass normally runs before incrementalization. It has no
+        // lineage entry for an incremental distinct when replayed on this circuit.
+        var distinct = new DBSPDistinctOperator(site, first.outputPort());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(source);
+        circuit.addOperator(first);
+        circuit.addOperator(distinct);
+        circuit.addOperator(new DBSPFilterOperator(site, first.getClosureFunction(), distinct.outputPort()));
+        String message = assertLineageFailure(compiler, circuit, RuntimeException.class, List.of("[ t.x > 0 ]"));
+        Assert.assertEquals("Key '" + distinct.outputPort() + "' does not exist in map", message);
     }
 
     @Test

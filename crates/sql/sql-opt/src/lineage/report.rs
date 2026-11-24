@@ -90,7 +90,7 @@ impl<'a> Report<'a> {
         self.outputs
             .get(&input)
             .cloned()
-            .ok_or(AnalysisError::Reference("missing lineage for input"))
+            .ok_or(AnalysisError::Diagnostic(LineageDiagnostic::MissingInput(input)))
     }
 
     fn borrow(&self, port: OutputPort) -> Result<Source, AnalysisError<'a>> {

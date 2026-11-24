@@ -188,6 +188,7 @@ pub enum LineageDiagnostic<'a> {
     Binding(crate::BindingDiagnostic<'a>),
     UnsupportedExpression(NodeId),
     Comparison(crate::ComparisonDiagnostic),
+    MissingInput(feldera_sql_ir::OutputPort),
 }
 
 #[derive(Debug)]
@@ -219,6 +220,9 @@ impl From<AnalysisError<'_>> for Error {
         match error {
             AnalysisError::InvalidIr(error) => error,
             AnalysisError::Reference(message) => Error::new(message),
+            AnalysisError::Diagnostic(LineageDiagnostic::MissingInput(port)) => {
+                Error::new(format!("missing lineage for input {port:?}"))
+            }
             AnalysisError::Diagnostic(LineageDiagnostic::Comparison(issue)) => {
                 Error::new(issue.to_string())
             }

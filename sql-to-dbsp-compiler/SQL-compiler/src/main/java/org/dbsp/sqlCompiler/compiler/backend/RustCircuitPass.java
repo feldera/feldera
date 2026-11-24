@@ -4013,8 +4013,15 @@ public final class RustCircuitPass implements CircuitTransform {
                 default -> throw new IllegalStateException("Unknown lineage finding " + finding.kind());
             }
         }
-        if (result.has("diagnostic"))
-            reportLineageFailure(writer.innerVisitor, result.required("diagnostic"));
+        if (result.has("diagnostic")) {
+            var diagnostic = result.required("diagnostic");
+            var port = diagnostic.get("missing_input");
+            if (port != null) {
+                var producer = Utilities.getExists(operatorsById(circuit), port.required(0).longValue());
+                throw Utilities.missingKey(producer.getOutput(port.required(1).intValue()));
+            }
+            reportLineageFailure(writer.innerVisitor, diagnostic);
+        }
         return circuit;
     }
 

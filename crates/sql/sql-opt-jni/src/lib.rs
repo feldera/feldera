@@ -495,6 +495,9 @@ fn lineage_diagnostic(issue: feldera_sql_opt::LineageDiagnostic<'_>) -> Value {
         LineageDiagnostic::Binding(binding) => binding_diagnostic(binding),
         LineageDiagnostic::UnsupportedExpression(node) => json!({"unsupported": inner_number(node)}),
         LineageDiagnostic::Comparison(failure) => json!({"comparison": failure}),
+        LineageDiagnostic::MissingInput(port) => {
+            json!({"missing_input": [operator_number(port.operator), port.number]})
+        }
     }
 }
 
