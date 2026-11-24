@@ -59,6 +59,7 @@ import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -77,35 +78,25 @@ import java.util.Set;
 public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
     final ResolveReferences resolver;
 
-    // These reads must survive even when a consumer selects only part of a block result.
-    private final ParameterFieldUse statementReads = new ParameterFieldUse();
-    private int statementDepth;
+    /** The block still evaluates each Rust expression statement ({@code expr;}) before its tail.
+     * Keep the fields it reads, including operands that do not contribute to a result. */
+    private final Set<DBSPExpression> statementReads = new LinkedHashSet<>();
 
-    @Override
-    public VisitDecision preorder(DBSPExpressionStatement statement) {
-        this.statementDepth++;
-        return super.preorder(statement);
-    }
-
-    @Override
-    public void postorder(DBSPExpressionStatement statement) {
-        this.statementDepth--;
-        super.postorder(statement);
-    }
-
-    /** A chain such as (*row).1.2 needs just that field, even inside a discarded statement. */
+    /** Only the last operation of an access such as (*row).1.2 determines which fields it needs.
+     * A null check can use the row's null flag without reading any of its fields. */
     private static boolean isFieldAccess(IDBSPInnerNode node) {
         return node instanceof DBSPVariablePath || node instanceof DBSPFieldExpression ||
                 node instanceof DBSPDerefExpression || node instanceof DBSPBorrowExpression ||
                 node instanceof DBSPCloneExpression || node instanceof DBSPUnwrapExpression ||
-                node instanceof DBSPCustomOrdField;
+                node instanceof DBSPCustomOrdField || node instanceof DBSPIsNullExpression;
     }
 
     @Override
-    protected void set(IDBSPInnerNode node, IUsedFields value) {
-        super.set(node, value);
-        if (this.statementDepth > 0 && isFieldAccess(node) && !isFieldAccess(this.getParent()))
-            value.markParameterUse(this.statementReads);
+    public VisitDecision preorder(DBSPExpression expression) {
+        if (isFieldAccess(expression) && !isFieldAccess(this.getParent()) &&
+                this.context.stream().anyMatch(DBSPExpressionStatement.class::isInstance))
+            this.statementReads.add(expression);
+        return super.preorder(expression);
     }
 
     public FindUsedFields(DBSPCompiler compiler) {
@@ -451,7 +442,6 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
 
     @Override
     public void startVisit(IDBSPInnerNode node) {
-        this.statementDepth = 0;
         this.statementReads.clear();
         this.resolver.apply(node);
         super.startVisit(node);
@@ -468,7 +458,8 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
             empty.set(param, fum);
         }
         ParameterFieldUse found = used.getParameterUse();
-        found.union(this.statementReads);
+        for (var read : this.statementReads)
+            this.get(read).markParameterUse(found);
         // found may not contain some parameters at all; this union ensures that they are all there
         found.union(empty);
         return found;
