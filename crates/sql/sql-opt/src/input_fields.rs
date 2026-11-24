@@ -1,7 +1,11 @@
 //! Identify the source rows that a single consumer can trim and the fields it reads.
 use crate::row_fields::RowFields;
 use crate::stream_rewrites::{body_members, reader_counts};
-use feldera_sql_ir::{BodyOrder, Circuit, Error, InnerKind, NodeId, OperatorKind as Op, TypeKind};
+use crate::{LexicalResolution, lexical_references};
+use feldera_sql_expr::{ensure_expression_tree, live_parameter_field_paths};
+use feldera_sql_ir::{
+    BodyOrder, Circuit, CircuitEditor, Error, InnerKind, NodeId, OperatorKind as Op, TypeKind,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub type ParameterPaths = Vec<BTreeSet<Vec<usize>>>;
@@ -13,13 +17,32 @@ pub fn live_field_dependencies(
     circuit: &Circuit,
     function: NodeId,
 ) -> Result<Option<ParameterPaths>, Error> {
+    match lexical_references(circuit, function)? {
+        LexicalResolution::Bound(_) => return live_parameter_field_paths(circuit, function),
+        LexicalResolution::Free { .. } => return Ok(None),
+        LexicalResolution::Conflict { .. } => {}
+    }
+
+    let mut edit = CircuitEditor::new(circuit.clone());
+    let tree = ensure_expression_tree(&mut edit, function)?;
+    // Deep-copying RETURN, for example, retains its argument. Two uses can
+    // still share a variable with different declarations after the copy.
+    original_field_dependencies(edit.circuit(), tree)
+}
+
+/// A fused rewriter edits the original reader. A path discovered in a copy
+/// cannot establish that the original variables have unique declarations.
+pub(super) fn original_field_dependencies(
+    circuit: &Circuit,
+    function: NodeId,
+) -> Result<Option<ParameterPaths>, Error> {
     if !matches!(
-        crate::lexical_references(circuit, function)?,
-        crate::LexicalResolution::Bound(_)
+        lexical_references(circuit, function)?,
+        LexicalResolution::Bound(_)
     ) {
         return Ok(None);
     }
-    feldera_sql_expr::live_parameter_field_paths(circuit, function)
+    live_parameter_field_paths(circuit, function)
 }
 
 pub fn input_projections(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
@@ -47,11 +70,8 @@ pub struct InputFieldUse {
 
 /// A discarded statement can fail even when the result uses no input fields.
 /// Keep an unanswered reader distinct from a reader that returns a constant.
-fn checked_paths(
-    circuit: &Circuit,
-    function: NodeId,
-) -> Result<Option<BTreeSet<Vec<usize>>>, Error> {
-    let Some(paths) = live_field_dependencies(circuit, function)? else {
+fn unary_paths(paths: Option<ParameterPaths>) -> Result<Option<BTreeSet<Vec<usize>>>, Error> {
+    let Some(paths) = paths else {
         return Ok(None);
     };
     let [paths] = paths
@@ -73,7 +93,7 @@ pub fn input_field_uses(circuit: &Circuit) -> Result<Vec<InputFieldUse>, Error> 
             };
             Ok(InputFieldUse {
                 reader,
-                paths: checked_paths(circuit, function)?,
+                paths: unary_paths(live_field_dependencies(circuit, function)?)?,
             })
         })
         .collect()
@@ -102,7 +122,7 @@ pub fn map_field_dependencies(circuit: &Circuit) -> Result<BTreeMap<u64, MapInpu
             let NodeId::Inner(number) = function else {
                 return Err(Error::new("expected an inner map closure"));
             };
-            let Some(paths) = checked_paths(circuit, function)? else {
+            let Some(paths) = unary_paths(original_field_dependencies(circuit, function)?)? else {
                 return Ok((number, MapInputLayout::Inspect));
             };
             let [param] = circuit

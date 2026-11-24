@@ -634,6 +634,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_opt::live_field_dependencies(&arena, *closure)?)?);
     }
+    if let ("RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader", [closure, ..]) = (pass, roots.as_slice()) {
+        if let Some(issue) = feldera_sql_opt::inspect_references(&arena, *closure, false)?.diagnostic {
+            return Ok(binding_diagnostic(issue));
+        }
+    }
     if let ("IsIdentityProjection", [closure]) = (pass, roots.as_slice()) {
         let edit = feldera_sql_ir::CircuitEditor::new(arena);
         let identity = feldera_sql_opt::identity_closure(&edit, *closure, &mut next)?;

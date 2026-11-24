@@ -1596,10 +1596,10 @@ public final class RustCircuitPass implements CircuitTransform {
         inputs.addAll(parameters);
         try {
             var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(usage), inputs.toArray(IDBSPInnerNode[]::new));
-            var result = loweredClosure(compiler, reply);
             if (compiler.stateObserver != null)
                 compiler.stateObserver.nativeDecision(pass, true);
-            return result;
+            checkBindingErrors(reply.writer, reply.value);
+            return loweredClosure(compiler, reply);
         } catch (IOException error) {
             throw new UncheckedIOException("Could not encode projected reader parameters", error);
         }

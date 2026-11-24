@@ -44,7 +44,8 @@ pub fn narrow_join_inputs(
             return Ok(JoinInputRewrite::Unsupported);
         }
     }
-    let Some(mut paths) = crate::live_field_dependencies(edit.circuit(), reader)? else {
+    let Some(mut paths) = crate::input_fields::original_field_dependencies(edit.circuit(), reader)?
+    else {
         return Ok(JoinInputRewrite::Unsupported);
     };
     let parameters = edit.node(reader)?.edges("parameters")?;

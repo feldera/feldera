@@ -113,6 +113,66 @@ public class JoinInputProjectionTests {
     }
 
     @Test
+    public void sharedReadsResolveInTheScopeOfEachCopiedOccurrence() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var text = DBSPTypeString.varchar(false);
+        var type = new DBSPTypeTuple(text, text).ref();
+        var outer = new DBSPParameter("row", type);
+        var inner = new DBSPParameter("row", type);
+        var shared = outer.asVariable();
+        var nested = shared.deref().field(0).closure(inner);
+        var body = new DBSPBlockExpression(List.of(nested.toStatement()), shared.deref().field(1));
+        var reader = body.closure(outer);
+
+        var reference = new FindUsedFields(compiler).findUsedFields(reader);
+        var paths = RustCircuitPass.parameterFieldDependencies(compiler, reader);
+        Assert.assertEquals(List.of(List.of(List.of(1))), paths);
+        Assert.assertEquals(reference.get(outer).toString(), FindUsedFields.fromPaths(reader, paths).get(outer).toString());
+
+        // Both RETURNs retain the same argument, even after copying the closure.
+        var returned = new DBSPReturnExpression(CalciteObject.EMPTY, shared.deref().field(0));
+        var conflicting = new DBSPBlockExpression(List.of(returned.closure(inner).toStatement(),
+                returned.toStatement()), outer.asVariable().deref().field(1)).closure(outer);
+        var error = Assert.assertThrows(InternalCompilerError.class,
+                () -> new FindUsedFields(compiler).findUsedFields(conflicting));
+        Assert.assertTrue(error.getMessage(), error.getMessage().contains("Changing declaration"));
+        Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, conflicting));
+    }
+
+    @Test
+    public void narrowingValidatesTheOriginalReaderAfterAnalyzingItsCopy() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var type = source.getOutput(0).getOutputRowType().ref();
+        var outer = new DBSPParameter("row", type);
+        var inner = new DBSPParameter("row", type);
+        var shared = outer.asVariable();
+        var nested = shared.deref().field(0).closure(inner);
+        var result = new DBSPTupleExpression(shared.deref().field(1));
+        var reader = new DBSPBlockExpression(List.of(nested.toStatement()), result).closure(outer);
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(source);
+        circuit.addOperator(new DBSPMapOperator(CalciteEmptyRel.INSTANCE, reader, source.getOutput(0)));
+
+        var direct = new RemoveUnusedFields(compiler, new AnalyzedSet<>());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var expected = Assert.assertThrows(InternalCompilerError.class, () -> direct.apply(circuit));
+        long allocated = DBSPVariablePath.nextGeneratedName() - start;
+        Assert.assertTrue(expected.getMessage(), expected.getMessage().contains("Changing declaration"));
+
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var hybrid = new RemoveUnusedFields(compiler, new AnalyzedSet<>());
+        start = DBSPVariablePath.nextGeneratedName();
+        var actual = Assert.assertThrows(InternalCompilerError.class, () -> hybrid.apply(circuit));
+        Assert.assertEquals(expected.getMessage(), actual.getMessage());
+        Assert.assertSame(expected.dbspNode, actual.dbspNode);
+        Assert.assertEquals(allocated, DBSPVariablePath.nextGeneratedName() - start);
+    }
+
+    @Test
     public void evaluatedLoopsRetainTheirIterationInputAndStatementReads() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
         var compiler = new DBSPCompiler(new CompilerOptions());
