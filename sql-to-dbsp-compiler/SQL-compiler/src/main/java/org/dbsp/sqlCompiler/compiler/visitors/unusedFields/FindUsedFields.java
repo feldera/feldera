@@ -83,23 +83,6 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
      * Keep the fields it reads, including operands that do not contribute to a result. */
     private final Set<DBSPExpression> statementReads = new LinkedHashSet<>();
 
-    /** Only the last operation of an access such as (*row).1.2 determines which fields it needs.
-     * A null check can use the row's null flag without reading any of its fields. */
-    private static boolean isFieldAccess(IDBSPInnerNode node) {
-        return node instanceof DBSPVariablePath || node instanceof DBSPFieldExpression ||
-                node instanceof DBSPDerefExpression || node instanceof DBSPBorrowExpression ||
-                node instanceof DBSPCloneExpression || node instanceof DBSPUnwrapExpression ||
-                node instanceof DBSPCustomOrdField || node instanceof DBSPIsNullExpression;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPExpression expression) {
-        if (isFieldAccess(expression) && !isFieldAccess(this.getParent()) &&
-                this.context.stream().anyMatch(DBSPExpressionStatement.class::isInstance))
-            this.statementReads.add(expression);
-        return super.preorder(expression);
-    }
-
     public FindUsedFields(DBSPCompiler compiler) {
         super(compiler);
         this.resolver = new ResolveReferences(compiler, false);
@@ -111,6 +94,27 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
         IUsedFields symbolicValue = this.currentValue.get(decl);
         Utilities.enforce(symbolicValue != null);
         this.set(var, symbolicValue);
+        if (this.context.stream().anyMatch(DBSPExpressionStatement.class::isInstance))
+            this.recordStatementRead(var);
+    }
+
+    /** Follow a variable through its enclosing field selections and unary access operations.
+     * For {@code (*row).1.clone()}, record the clone, whose symbolic value uses column 1.
+     * Recording the inner dereference as a separate read would retain the entire row. */
+    private void recordStatementRead(DBSPVariablePath variable) {
+        DBSPExpression read = variable;
+        for (int i = this.context.size() - 1; i >= 0; i--) {
+            var parent = this.context.get(i);
+            if (parent instanceof DBSPFieldExpression || parent instanceof DBSPCustomOrdField ||
+                    parent instanceof DBSPDerefExpression || parent instanceof DBSPBorrowExpression ||
+                    parent instanceof DBSPCloneExpression || parent instanceof DBSPUnwrapExpression ||
+                    parent instanceof DBSPIsNullExpression) {
+                read = parent.to(DBSPExpression.class);
+            } else {
+                break;
+            }
+        }
+        this.statementReads.add(read);
     }
 
     @Override

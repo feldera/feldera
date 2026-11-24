@@ -21,19 +21,25 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -218,6 +224,35 @@ public class JoinInputProjectionTests {
             var returned = expression.closure(row);
             Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, returned));
             Assert.assertThrows(RuntimeException.class, () -> new FindUsedFields(compiler).findUsedFields(returned));
+        }
+    }
+
+    @Test
+    public void discardedCollectionOperandsStillReadTheirInputFields() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteObject.EMPTY;
+        var text = DBSPTypeString.varchar(false);
+        var type = new DBSPTypeTuple(text, text);
+        var row = type.ref().var();
+        var multiset = new DBSPZSetExpression(row.deref().field(0));
+        var indexed = new DBSPIndexedZSetExpression(site, new DBSPTypeIndexedZSet(site, type, type));
+        var sort = new DBSPSortExpression(site, type, new DBSPNoComparatorExpression(site, type));
+        for (var expression : List.of(multiset, indexed, sort, new DBSPEnumValue("Ordering", "Equal"),
+                new NoExpression(text))) {
+            var block = new DBSPBlockExpression(List.of(expression.toStatement()), row.deepCopy().deref().field(1));
+            var reader = block.closure(row);
+            var paths = RustCircuitPass.parameterFieldDependencies(compiler, reader);
+            var expected = expression == multiset ? List.of(List.of(0), List.of(1)) : List.of(List.of(1));
+            Assert.assertEquals(List.of(expected), paths);
+            var reference = new FindUsedFields(compiler).findUsedFields(reader);
+            Assert.assertEquals(reference.getUse().toString(), FindUsedFields.fromPaths(reader, paths).getUse().toString());
+
+            // The same expression needs a symbolic value when returned as a tuple member.
+            var result = new DBSPTupleExpression(expression).closure(row);
+            Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, result));
+            var error = Assert.assertThrows(RuntimeException.class, () -> new FindUsedFields(compiler).findUsedFields(result));
+            Assert.assertTrue(error.getMessage(), error.getMessage().contains("does not exist in map"));
         }
     }
 

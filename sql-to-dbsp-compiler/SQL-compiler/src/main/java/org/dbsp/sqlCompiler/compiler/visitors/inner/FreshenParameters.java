@@ -30,7 +30,6 @@ public class FreshenParameters extends InnerRewriteVisitor {
         this.push(field);
         var tuple = this.transform(field.expression);
         this.pop(field);
-        // Freshening declarations must preserve evaluated operands of Tup2::new(a, b).1.
         this.map(field, tuple.field(field.getNode(), field.fieldNo));
         return VisitDecision.STOP;
     }

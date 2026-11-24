@@ -88,7 +88,9 @@ impl ProjectionOp {
 }
 
 impl RowProjection<'_> {
-    fn operation(&self, id: NodeId) -> Result<ProjectionOp, Error> {
+    /// Some expressions visit their operands without publishing a symbolic
+    /// value. A statement can discard them, but a parent cannot read them.
+    fn operation(&self, id: NodeId) -> Result<Option<ProjectionOp>, Error> {
         use ProjectionOp as Op;
         let node = self
             .circuit
@@ -106,7 +108,7 @@ impl RowProjection<'_> {
             }
             Op::Compute(children)
         };
-        Ok(match kind {
+        let op = match kind {
             Expr::VariablePath => {
                 let parameter = node
                     .data("variable")
@@ -137,8 +139,11 @@ impl RowProjection<'_> {
                 Op::Forward(node.edge("value")?)
             }
             Expr::WindowBound => Op::Forward(node.edge("representation")?),
-            Expr::Block if node.field("lastExpression").is_some() => {
-                Op::Forward(node.edge("lastExpression")?)
+            Expr::Block => {
+                return Ok(node
+                    .field("lastExpression")
+                    .and_then(Field::node_id)
+                    .map(Op::Forward));
             }
             Expr::Apply => compute(&["arguments"]),
             Expr::ApplyMethod => compute(&["self", "arguments"]),
@@ -157,11 +162,25 @@ impl RowProjection<'_> {
             | Expr::Variant
             | Expr::Tuple
             | Expr::RawTuple
-            | Expr::Block
             | Expr::Assignment
             | Expr::DirectComparator
             | Expr::FieldComparator
             | Expr::NoComparator => Op::Compute(vec![]),
+            Expr::For
+            | Expr::Return
+            | Expr::Lazy
+            | Expr::Question
+            | Expr::HandleError
+            | Expr::QualifyType
+            | Expr::CustomOrd
+            | Expr::UnwrapCustomOrd
+            | Expr::AsymmetricFieldComparator
+            | Expr::EqualityComparator
+            | Expr::EnumValue
+            | Expr::NoExpression
+            | Expr::Sort
+            | Expr::IndexedZSet
+            | Expr::ZSet => return Ok(None),
             kind if kind.wire_name().ends_with("Literal") => Op::Compute(vec![]),
             _ => {
                 return Err(Error::new(format!(
@@ -169,7 +188,8 @@ impl RowProjection<'_> {
                     node.class()
                 )));
             }
-        })
+        };
+        Ok(Some(op))
     }
 
     fn apply(&mut self, op: ProjectionOp) -> Result<Use, Error> {
@@ -285,31 +305,6 @@ impl RowProjection<'_> {
                 continue;
             };
             if finish {
-                // These nodes visit their operands but publish no symbolic value.
-                // A statement can discard them. A parent that needs their value
-                // must take the same diagnostic path as the reference interpreter.
-                if matches!(
-                    kind,
-                    Expr::For
-                        | Expr::Return
-                        | Expr::Lazy
-                        | Expr::Question
-                        | Expr::HandleError
-                        | Expr::QualifyType
-                        | Expr::CustomOrd
-                        | Expr::UnwrapCustomOrd
-                        | Expr::AsymmetricFieldComparator
-                        | Expr::EqualityComparator
-                ) || (*kind == Expr::Block
-                    && node
-                        .field("lastExpression")
-                        .and_then(Field::node_id)
-                        .is_none())
-                {
-                    without_value.insert(id);
-                    active.remove(&id);
-                    continue;
-                }
                 // Every operand has already been evaluated in this scope. A live
                 // caller handles unsupported expressions at their original SQL site.
                 if *kind == Expr::Assignment {
@@ -320,15 +315,21 @@ impl RowProjection<'_> {
                         return Ok(None);
                     }
                 }
+                active.remove(&id);
                 let op = match self.operation(id) {
-                    Ok(op) if op.operands().iter().all(|id| self.known.contains_key(id)) => op,
+                    Ok(None) => {
+                        without_value.insert(id);
+                        continue;
+                    }
+                    Ok(Some(op)) if op.operands().iter().all(|id| self.known.contains_key(id)) => {
+                        op
+                    }
                     _ => return Ok(None),
                 };
                 let Ok(value) = self.apply(op) else {
                     return Ok(None);
                 };
                 self.known.insert(id, value);
-                active.remove(&id);
                 continue;
             }
             if !active.insert(id) {
