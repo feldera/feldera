@@ -1,5 +1,7 @@
 use super::{AsAny, Comparable, DowncastTrait, OrdRepr};
 use crate::{
+    Error,
+    circuit::checkpointer::checkpoint_invalid_data_error,
     derive_comparison_traits,
     storage::{
         buffer_cache::FBuf,
@@ -75,11 +77,14 @@ pub trait DeserializableDyn {
     /// [`SerializeDyn::serialize`] wrote as the root (last) object of the
     /// buffer.  `bytes` does not need to be aligned.
     ///
+    /// Returns an error if `bytes` is too short to hold the root object.  This
+    /// does not validate the archive.
+    ///
     /// # Safety
     ///
     /// `bytes` must hold a valid serialized value of the concrete type that
     /// `self` points to, as its root object.
-    unsafe fn deserialize_root(&mut self, bytes: &[u8]);
+    unsafe fn deserialize_root(&mut self, bytes: &[u8]) -> Result<(), Error>;
 }
 
 impl<T> SerializeDyn for T
@@ -110,10 +115,19 @@ where
         }
     }
 
-    unsafe fn deserialize_root(&mut self, bytes: &[u8]) {
+    unsafe fn deserialize_root(&mut self, bytes: &[u8]) -> Result<(), Error> {
         // rkyv writes the root object last, so it is at the end of the
         // buffer.  This is the same position that `rkyv::archived_root` uses.
-        let pos = bytes.len() - size_of::<Archived<Self>>();
+        let Some(pos) = bytes.len().checked_sub(size_of::<Archived<Self>>()) else {
+            return Err(checkpoint_invalid_data_error(
+                "deserialize root object",
+                format!(
+                    "{} bytes is too short for a {}-byte root object",
+                    bytes.len(),
+                    size_of::<Archived<Self>>()
+                ),
+            ));
+        };
 
         // Copy into an aligned buffer, because rkyv requires alignment.
         let mut aligned = FBuf::new();
@@ -123,6 +137,7 @@ where
         // type when it wrote it.  The caller guarantees that the root object
         // is a valid `Archived<Self>`.
         unsafe { self.deserialize_from_bytes(&aligned, pos) };
+        Ok(())
     }
 }
 
