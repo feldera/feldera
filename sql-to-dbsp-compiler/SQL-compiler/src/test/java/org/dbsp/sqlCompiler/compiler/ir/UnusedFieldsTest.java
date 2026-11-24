@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ParameterFieldUse;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.RemoveUnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.RewriteFields;
+import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -82,6 +83,24 @@ public class UnusedFieldsTest {
         Assert.assertEquals("Ref([X, _, X])", visitor.findUsedFields(reader).getUse().toString());
         var nextReader = b.closure(type, row -> b.field(row, 1));
         Assert.assertEquals("Ref([_, X, _])", visitor.findUsedFields(nextReader).getUse().toString());
+    }
+
+    @Test
+    public void aggregateMapRetainsStatementReads() {
+        var value = b.i32n();
+        var rowType = b.tup(value, value, value);
+        var map = b.closure(rowType, row -> new DBSPBlockExpression(
+                List.of(b.field(row, 0).toStatement()), b.field(row, 2)));
+        var postProcess = b.lambda(value, accumulator -> accumulator);
+        var aggregate = new LinearAggregate(CalciteObject.EMPTY, map, postProcess, value.none());
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.compareRustFieldUses");
+        var finder = new FindUsedFields(compiler);
+        Assert.assertEquals("Ref([X, _, X])", finder.computeUsedFields(aggregate).useMap().getUse().toString());
+
+        var nextMap = b.closure(rowType, row -> b.field(row, 1));
+        var nextAggregate = new LinearAggregate(CalciteObject.EMPTY, nextMap, postProcess, value.none());
+        Assert.assertEquals("Ref([_, X, _])", finder.computeUsedFields(nextAggregate).useMap().getUse().toString());
     }
 
     @Test
