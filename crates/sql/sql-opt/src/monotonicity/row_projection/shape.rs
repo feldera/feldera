@@ -9,33 +9,46 @@ use std::rc::Rc;
 pub(super) enum Shape {
     Scalar(bool),
     /// A function field can occupy a projected slot without supporting scalar transfers.
+    Closure(bool),
     Opaque(bool),
     Reference(Rc<Self>),
     Tuple {
         fields: Rc<[Self]>,
         any_bound: bool,
+        raw: bool,
         nullable: bool,
     },
 }
 
 impl Shape {
-    pub fn tuple(fields: Vec<Self>, nullable: bool) -> Self {
+    pub fn tuple(fields: Vec<Self>, raw: bool, nullable: bool) -> Self {
         let any_bound = fields.iter().any(Self::monotone);
         Self::Tuple {
             fields: fields.into(),
             any_bound,
+            raw,
             nullable,
         }
     }
 
     pub fn from_input(shape: &Projection) -> Self {
         match shape {
-            Projection::Other { monotone } => Self::Opaque(*monotone),
+            Projection::Other {
+                monotone,
+                closure: true,
+            } => Self::Closure(*monotone),
+            Projection::Other { monotone, .. } => Self::Opaque(*monotone),
             Projection::Scalar { monotone } => Self::Scalar(*monotone),
             Projection::Reference { base } => Self::Reference(Self::from_input(base).into()),
             Projection::Tuple {
-                fields, nullable, ..
-            } => Self::tuple(fields.iter().map(Self::from_input).collect(), *nullable),
+                fields,
+                raw,
+                nullable,
+            } => Self::tuple(
+                fields.iter().map(Self::from_input).collect(),
+                *raw,
+                *nullable,
+            ),
         }
     }
 
@@ -44,11 +57,12 @@ impl Shape {
         loop {
             match value {
                 Self::Reference(inner) => value = inner,
-                Self::Scalar(bound) | Self::Opaque(bound) => return *bound,
+                Self::Scalar(bound) | Self::Closure(bound) | Self::Opaque(bound) => return *bound,
                 Self::Tuple {
                     fields,
                     any_bound,
                     nullable,
+                    ..
                 } => return *any_bound || fields.is_empty() && !nullable,
             }
         }
@@ -137,7 +151,7 @@ impl UnorderedRow {
                     .iter()
                     .map(|id| completed[id].shape.clone())
                     .collect();
-                let shape = Shape::tuple(fields, edit.nullable(ty)?);
+                let shape = Shape::tuple(fields, kind == TypeKind::RawTuple, edit.nullable(ty)?);
                 let projected = if shape.monotone() {
                     let kept = members
                         .iter()

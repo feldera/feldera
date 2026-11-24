@@ -963,6 +963,82 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void nullableUnitFieldNeedsNoBoundFromItsParent() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var unit = new PartiallyMonotoneTuple(List.of(), false, false);
+        var shape = new PartiallyMonotoneTuple(List.of(unit), false, true);
+        var row = shape.getType().var();
+        var field = new DBSPFieldExpression(site, row, 0);
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(row.type));
+        var oracle = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, shape) {
+            void seed() { this.set(row, new MonotoneExpression(row, shape, null)); }
+        };
+        oracle.seed();
+        oracle.postorder(field);
+        var projected = RustCircuitPass.projectRead(compiler, field, shape, null);
+        Assert.assertNotNull(projected);
+        Assert.assertFalse(projected.mayBeMonotone());
+        Assert.assertTrue(projected.getMonotoneType().getType().sameType(oracle.get(field).getMonotoneType().getType()));
+    }
+
+    @Test
+    public void discardedNullableRawTupleReportsItsEarlierFacts() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(1).getType();
+        var shape = new MonotoneType(integer);
+        var input = integer.ref().var();
+        var prefix = new DBSPI32Literal(7);
+        var raw = new DBSPRawTupleExpression(input.deref());
+        var invalid = raw.some();
+        var later = new DBSPI32Literal(8);
+        var body = new DBSPBlockExpression(List.of(prefix.toStatement(), invalid.toStatement()), later);
+        var closure = body.closure(input);
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var direct = new MonotoneTransferFunctions(compiler, op, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+        var expected = Assert.assertThrows(InternalCompilerError.class, () -> direct.apply(closure));
+        for (boolean resultOnly : List.of(false, true)) {
+            var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+            var error = Assert.assertThrows(InternalCompilerError.class, () ->
+                    RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                            new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                            false, resultOnly, facts::put));
+            Assert.assertEquals(expected.getMessage().lines().findFirst(), error.getMessage().lines().findFirst());
+            Assert.assertTrue(facts.get(prefix).mayBeMonotone());
+            Assert.assertTrue(facts.get(raw).mayBeMonotone());
+            Assert.assertFalse(facts.containsKey(invalid));
+            Assert.assertFalse(facts.containsKey(later));
+        }
+    }
+
+    @Test
+    public void singleReadReportsInvalidTypeProjections() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(1).getType();
+        var scalar = new MonotoneType(integer);
+        var reference = new MonotoneRefType(scalar);
+        var function = new MonotoneClosureType(scalar, new DBSPParameter[0], new DBSPParameter[0]);
+        // Supply the declared read separately, as the general visitor does.
+        // The closure's SQL type itself rejects lifting while constructing a field expression.
+        var read = new DBSPTypeTuple(site, true, List.of(integer)).var().field(0);
+        for (var component : List.of(reference, function)) {
+            var shape = new PartiallyMonotoneTuple(List.of(component), false, true);
+            var expected = Assert.assertThrows(UnsupportedException.class, () -> shape.getFieldExpressionType(0));
+            var actual = Assert.assertThrows(UnsupportedException.class,
+                    () -> RustCircuitPass.projectRead(compiler, read, shape, shape.getProjectedType().var()));
+            Assert.assertEquals(expected.getMessage(), actual.getMessage());
+            Assert.assertEquals(expected.getPositionRange(), actual.getPositionRange());
+        }
+        var expected = Assert.assertThrows(RuntimeException.class, () -> scalar.to(PartiallyMonotoneTuple.class));
+        var error = Assert.assertThrows(expected.getClass(), () -> RustCircuitPass.projectRead(compiler, read, scalar, null));
+        Assert.assertEquals(expected.getMessage(), error.getMessage());
+    }
+
+    @Test
     public void binaryWaterlineReportsTheFirstSelectedMissingBound() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

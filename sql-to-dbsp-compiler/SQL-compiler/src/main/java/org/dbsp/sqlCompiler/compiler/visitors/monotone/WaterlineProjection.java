@@ -29,6 +29,8 @@ public final class WaterlineProjection {
             node.put("monotone", type.mayBeMonotone());
         } else {
             node.put("kind", "other");
+            if (type instanceof MonotoneClosureType)
+                node.put("closure", true);
             node.put("monotone", type.mayBeMonotone());
         }
         return node;

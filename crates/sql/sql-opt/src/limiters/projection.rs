@@ -16,6 +16,8 @@ pub enum Projection {
     /// An opaque function can occupy a source slot that the destination skips.
     Other {
         monotone: bool,
+        #[serde(default)]
+        closure: bool,
     },
     Tuple {
         fields: Vec<Self>,
@@ -97,7 +99,10 @@ impl Projection {
                 Projection::Reference { base } => Projection::Reference {
                     base: Box::new(clear_fields(base)),
                 },
-                Projection::Other { .. } => Projection::Other { monotone: false },
+                Projection::Other { closure, .. } => Projection::Other {
+                    monotone: false,
+                    closure: *closure,
+                },
             }
         }
         let (Self::Tuple { fields: output, .. }, Self::Tuple { fields: input, .. }) = (self, right)
@@ -145,7 +150,7 @@ impl Projection {
 
     pub fn monotone(&self) -> bool {
         match self {
-            Self::Scalar { monotone } | Self::Other { monotone } => *monotone,
+            Self::Scalar { monotone } | Self::Other { monotone, .. } => *monotone,
             Self::Reference { base } => base.monotone(),
             Self::Tuple {
                 fields, nullable, ..

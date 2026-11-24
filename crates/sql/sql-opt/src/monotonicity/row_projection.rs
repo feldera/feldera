@@ -140,23 +140,26 @@ fn unbounded_type(
     ty: TypeId,
     constant: bool,
 ) -> Result<Evaluation, Error> {
-    let shape = match UnorderedRow::from_type(edit, ty)? {
-        UnorderedType::Row(row) => row.shape,
-        UnorderedType::Unsupported(field) => {
-            return Ok(Evaluation::Failed(WaterlineError::Type(
-                WaterlineTypeError::UnsupportedType,
-                field,
-            )));
+    Ok(match UnorderedRow::from_type(edit, ty)? {
+        UnorderedType::Row(row) => Evaluation::Value(row.unbounded_value(ty, constant)),
+        UnorderedType::Unsupported(field) => Evaluation::Failed(WaterlineError::Type(
+            WaterlineTypeError::UnsupportedType,
+            field,
+        )),
+    })
+}
+
+impl UnorderedRow {
+    fn unbounded_value(self, ty: TypeId, constant: bool) -> ProjectedValue {
+        ProjectedValue {
+            shape: self.shape,
+            constant,
+            row_type: RowType::Unbounded {
+                type_id: type_number(ty),
+            },
+            reduced: None,
         }
-    };
-    Ok(Evaluation::Value(ProjectedValue {
-        shape,
-        constant,
-        row_type: RowType::Unbounded {
-            type_id: type_number(ty),
-        },
-        reduced: None,
-    }))
+    }
 }
 
 fn type_number(ty: TypeId) -> u64 {
@@ -183,12 +186,21 @@ fn project_wrapper(
         Expr::Unwrap => RowRead::Unwrap,
         _ => unreachable!("expected an expression wrapper"),
     };
-    read.apply(
-        edit,
-        expression.into(),
-        edit.expression_type(expression)?,
-        value,
-    )
+    let result = read.apply(edit, expression.into(), edit.expression_type(expression)?, value)?;
+    Ok(match result {
+        ProjectedRead::Value(value) => Evaluation::Value(value),
+        ProjectedRead::NeedsVisitor => Evaluation::NeedsVisitor,
+        ProjectedRead::MissingBound => {
+            let operand = edit.expression(edit.node(expression.into())?.edge("expression")?)?;
+            Evaluation::Failed(WaterlineError::MissingBound(operand))
+        }
+        ProjectedRead::InvalidProjection(ty) => {
+            Evaluation::Failed(WaterlineError::InvalidProjection(ty))
+        }
+        ProjectedRead::UnsupportedType(ty) => {
+            Evaluation::Failed(WaterlineError::Type(WaterlineTypeError::UnsupportedType, ty))
+        }
+    })
 }
 
 /// Assemble the bounded fields in their original order. SQL rows retain the
@@ -228,7 +240,7 @@ fn project_tuple(
     }
     let raw = edit.expr_kind(expression)? == Expr::RawTuple;
     let nullable = edit.nullable(edit.expression_type(expression)?)?;
-    let shape = Shape::tuple(fields, nullable);
+    let shape = Shape::tuple(fields, raw, nullable);
     let reduced = shape
         .monotone()
         .then(|| tuple_waterline(edit, id, raw, &bounds))
@@ -361,7 +373,9 @@ impl Row {
         if indexed {
             // The original pair holds (&key, &value). Ordinary field projection
             // computes the compressed index when either reference lacks a bound.
-            shapes = vec![Shape::tuple(shapes, false)];
+            let pair = edit.expression_type(bounds[0])?;
+            let raw = edit.type_kind(pair)? == feldera_sql_ir::TypeKind::RawTuple;
+            shapes = vec![Shape::tuple(shapes, raw, false)];
         }
         let mut bindings = Vec::with_capacity(bounds.len());
         for (&variable, shape) in bounds.iter().zip(shapes) {
@@ -493,12 +507,9 @@ pub enum WaterlineError {
     MissingBound(ExpressionId),
     TargetMaximum(ExpressionId),
     Type(WaterlineTypeError, TypeId),
-    /// Adding nullability to a reference fails at the live reference type's
-    /// source location. A nullable tuple also lifts each field as it is read.
-    NullableReference {
-        source: RowType,
-        field: Option<usize>,
-    },
+    /// Resolve this failed type operation against the original objects after
+    /// publishing all the facts that precede it.
+    InvalidProjection(RowType),
 }
 
 pub enum ClosureAnalysis {

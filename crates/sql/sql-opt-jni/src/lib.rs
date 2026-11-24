@@ -1035,8 +1035,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                         WaterlineError::MissingReference(id) => json!({"kind":"MissingReference", "expression":inner_number(id.into())}),
                         WaterlineError::MissingFact(id) | WaterlineError::MissingBound(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
                         WaterlineError::TargetMaximum(id) => json!({"kind":"TargetMaximum", "expression":inner_number(id.into())}),
-                        WaterlineError::NullableReference { source, field } =>
-                            json!({"kind":"NullableReference", "source":source, "field":field}),
+                        WaterlineError::InvalidProjection(projection) => json!({"kind":"InvalidProjection", "projection":projection}),
                         WaterlineError::Type(kind, id) => json!({"kind":kind, "type":inner_number(id.into())}),
                     };
                     reply
@@ -1056,6 +1055,8 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 match read.project(&mut edit, *body, ty, &source, bounds.first().copied())? {
                     feldera_sql_opt::ProjectedRead::Value(value) => Some(value),
                     feldera_sql_opt::ProjectedRead::NeedsVisitor => None,
+                    feldera_sql_opt::ProjectedRead::InvalidProjection(ty) => return Ok(json!({"invalid_projection": ty})),
+                    feldera_sql_opt::ProjectedRead::UnsupportedType(ty) => return Ok(json!({"kind": "UnsupportedType", "type": inner_number(ty.into())})),
                     feldera_sql_opt::ProjectedRead::MissingBound => return Ok(json!({"missing_bound": true})),
                 }
             } else {

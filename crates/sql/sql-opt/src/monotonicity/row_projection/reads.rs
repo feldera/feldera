@@ -1,6 +1,5 @@
 //! Project a field read or value wrapper against its operand waterline.
-use super::evaluate::Evaluation;
-use super::{ProjectedValue, RowType, Shape, WaterlineError, unbounded_type};
+use super::{ProjectedValue, RowType, Shape, UnorderedRow, UnorderedType};
 use crate::limiters::Projection;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId};
 
@@ -18,6 +17,8 @@ pub enum RowRead {
 pub enum ProjectedRead {
     Value(ProjectedValue),
     MissingBound,
+    InvalidProjection(RowType),
+    UnsupportedType(TypeId),
     NeedsVisitor,
 }
 
@@ -32,39 +33,17 @@ impl RowRead {
         source: &Projection,
         bound: Option<ExpressionId>,
     ) -> Result<ProjectedRead, Error> {
-        let shape = Shape::from_input(source);
-        if shape.monotone() && bound.is_none() {
-            // A partially monotone tuple can still supply an unbounded field
-            // without reading the tuple's reduced expression.
-            let reads_bound = match (&self, &shape) {
-                (Self::Field { index }, Shape::Tuple { fields, .. }) => {
-                    let Some(field) = fields.get(*index) else {
-                        return Ok(ProjectedRead::NeedsVisitor);
-                    };
-                    field.monotone()
-                }
-                (Self::Field { .. }, _) => return Ok(ProjectedRead::NeedsVisitor),
-                _ => true,
-            };
-            if reads_bound {
-                return Ok(ProjectedRead::MissingBound);
-            }
-        }
-        let result = self.apply(
+        self.apply(
             edit,
             site,
             ty,
             ProjectedValue {
-                shape,
+                shape: Shape::from_input(source),
                 row_type: RowType::Parameter { index: 0 },
                 reduced: bound,
                 constant: false,
             },
-        )?;
-        Ok(match result {
-            Evaluation::Value(value) => ProjectedRead::Value(value),
-            Evaluation::NeedsVisitor | Evaluation::Failed(_) => ProjectedRead::NeedsVisitor,
-        })
+        )
     }
 
     pub(super) fn apply(
@@ -73,7 +52,12 @@ impl RowRead {
         site: NodeId,
         ty: TypeId,
         mut value: ProjectedValue,
-    ) -> Result<Evaluation, Error> {
+    ) -> Result<ProjectedRead, Error> {
+        // A borrow checks its declared type first. A field checks and lifts the
+        // selected field type before deciding whether it needs a bound at all.
+        if !matches!(self, Self::Borrow | Self::Field { .. }) && value.missing_bound() {
+            return Ok(ProjectedRead::MissingBound);
+        }
         let projected = match self {
             Self::Clone => {
                 if let Some(bound) = value.reduced {
@@ -88,36 +72,31 @@ impl RowRead {
             }
             Self::Some | Self::Unwrap => {
                 let nullable = matches!(self, Self::Some);
-                if nullable && matches!(value.shape, Shape::Reference(_)) {
-                    return Ok(Evaluation::Failed(WaterlineError::NullableReference {
-                        source: value.row_type,
-                        field: None,
-                    }));
-                }
-                // A closure has no withMaybeNull operation. Preserve the diagnostic
-                // at the live expression even when its result is later discarded.
-                if matches!(value.shape, Shape::Opaque(_)) {
-                    return Ok(Evaluation::NeedsVisitor);
-                }
-                value.row_type = RowType::WithNullability {
+                let projected = RowType::WithNullability {
                     value: Box::new(value.row_type),
                     nullable,
                 };
-                if let Shape::Tuple {
-                    nullable: tuple_nullable,
-                    ..
-                } = &mut value.shape
-                {
-                    *tuple_nullable = nullable;
-                }
+                value.row_type = match set_nullability(&mut value.shape, nullable, projected) {
+                    Ok(ty) => ty,
+                    Err(failure) => return Ok(failure),
+                };
                 // The general visitor exposes the operand bound even when Some(())
                 // makes the result unbounded. Consumers decide whether to use it.
                 value
             }
             Self::Borrow => {
+                let declared = match UnorderedRow::from_type(edit, ty)? {
+                    UnorderedType::Row(row) => row,
+                    UnorderedType::Unsupported(ty) => {
+                        return Ok(ProjectedRead::UnsupportedType(ty));
+                    }
+                };
                 let Some(bound) = value.reduced else {
-                    // An unbounded borrow takes its shape from its declared reference type.
-                    return unbounded_type(edit, ty, value.constant);
+                    return Ok(if value.missing_bound() {
+                        ProjectedRead::MissingBound
+                    } else {
+                        ProjectedRead::Value(declared.unbounded_value(ty, value.constant))
+                    });
                 };
                 ProjectedValue {
                     shape: Shape::Reference(value.shape.into()),
@@ -129,50 +108,45 @@ impl RowRead {
                 }
             }
             Self::Deref => {
+                let projected = RowType::Deref {
+                    value: Box::new(value.row_type),
+                };
                 let Shape::Reference(base) = value.shape else {
-                    return Ok(Evaluation::NeedsVisitor);
+                    return Ok(ProjectedRead::InvalidProjection(projected));
                 };
                 ProjectedValue {
                     shape: (*base).clone(),
-                    row_type: RowType::Deref {
-                        value: Box::new(value.row_type),
-                    },
+                    row_type: projected,
                     reduced: value.reduced.map(|v| edit.dereference(v)).transpose()?,
                     constant: value.constant,
                 }
             }
             Self::Field { index } => {
+                let projected = RowType::Field {
+                    row: Box::new(value.row_type),
+                    index,
+                };
                 let Shape::Tuple {
                     fields, nullable, ..
                 } = value.shape
                 else {
-                    return Ok(Evaluation::NeedsVisitor);
+                    return Ok(ProjectedRead::InvalidProjection(projected));
                 };
                 let Some(field) = fields.get(index) else {
-                    return Ok(Evaluation::NeedsVisitor);
+                    return Ok(ProjectedRead::InvalidProjection(projected));
                 };
-                if nullable && matches!(field, Shape::Reference(_)) {
-                    return Ok(Evaluation::Failed(WaterlineError::NullableReference {
-                        source: value.row_type,
-                        field: Some(index),
-                    }));
-                }
-                if nullable && matches!(field, Shape::Opaque(_)) {
-                    return Ok(Evaluation::NeedsVisitor);
-                }
                 let mut shape = field.clone();
-                if let Shape::Tuple {
-                    nullable: inner, ..
-                } = &mut shape
-                {
-                    *inner |= nullable;
-                }
+                let projected = if nullable {
+                    match set_nullability(&mut shape, true, projected) {
+                        Ok(ty) => ty,
+                        Err(failure) => return Ok(failure),
+                    }
+                } else {
+                    projected
+                };
                 let reduced = if shape.monotone() {
                     let Some(row) = value.reduced else {
-                        // The requested field has a bound, so Java reads the
-                        // tuple's reduced expression before compressing its index.
-                        let operand = edit.expression(edit.node(site)?.edge("expression")?)?;
-                        return Ok(Evaluation::Failed(WaterlineError::MissingBound(operand)));
+                        return Ok(ProjectedRead::MissingBound);
                     };
                     let compressed = fields[..index]
                         .iter()
@@ -185,14 +159,33 @@ impl RowRead {
                 ProjectedValue {
                     shape,
                     constant: false,
-                    row_type: RowType::Field {
-                        row: Box::new(value.row_type),
-                        index,
-                    },
+                    row_type: projected,
                     reduced,
                 }
             }
         };
-        Ok(Evaluation::Value(projected))
+        Ok(ProjectedRead::Value(projected))
+    }
+}
+
+/// The live recipe owns the field or wrapper location used by Java's diagnostic.
+fn set_nullability(
+    shape: &mut Shape,
+    nullable: bool,
+    ty: RowType,
+) -> Result<RowType, ProjectedRead> {
+    match shape {
+        Shape::Closure(_) => Err(ProjectedRead::InvalidProjection(ty)),
+        Shape::Reference(_) | Shape::Tuple { raw: true, .. } if nullable => {
+            Err(ProjectedRead::InvalidProjection(ty))
+        }
+        Shape::Opaque(_) => Err(ProjectedRead::NeedsVisitor),
+        Shape::Tuple {
+            nullable: current, ..
+        } => {
+            *current = nullable;
+            Ok(ty)
+        }
+        _ => Ok(ty),
     }
 }

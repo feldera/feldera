@@ -578,14 +578,13 @@ public final class RustCircuitPass implements CircuitTransform {
             var reply = invokeLowering(compiler, pass, state, site, input);
             if (!answered(compiler, pass, reply.value))
                 return null;
-            if (reply.value.has("missing_bound")) {
-                // Both type operations precede getReducedExpression in the direct visitor.
-                if (read instanceof DBSPFieldExpression field)
-                    source.to(PartiallyMonotoneTuple.class).getFieldExpressionType(field.fieldNo);
-                else if (read instanceof DBSPBorrowExpression)
-                    NonMonotoneType.nonMonotone(read.getType());
+            if (reply.value.has("invalid_projection"))
+                throw invalidWaterlineProjection(reply.writer, reply.value.required("invalid_projection"),
+                        new IMaybeMonotoneType[]{source}, List.of());
+            if (reply.value.has("type"))
+                throw waterlineTypeError(reply.writer, reply.value);
+            if (reply.value.has("missing_bound"))
                 throw new NullPointerException();
-            }
             if (input != bound)
                 Objects.requireNonNull(reply.writer.liveNodes).put(Objects.requireNonNull(input).id, bound);
             return projectedValue(read, reply, source);
@@ -737,6 +736,14 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    private static RuntimeException invalidWaterlineProjection(ToJsonInnerVisitor writer, JsonNode projection,
+            IMaybeMonotoneType[] inputs, List<MonotoneExpression> facts) {
+        var nodes = Objects.requireNonNull(writer.liveNodes);
+        WaterlineProjection.resolveFactType(projection,
+                id -> Utilities.getExists(nodes, id).to(DBSPType.class), inputs, facts);
+        return new IllegalStateException("Expected an invalid waterline projection " + projection);
+    }
+
     private static RuntimeException waterlineTypeError(ToJsonInnerVisitor writer, JsonNode failure) {
         var type = Utilities.getExists(Objects.requireNonNull(writer.liveNodes),
                 failure.required("type").longValue()).to(DBSPType.class);
@@ -805,13 +812,8 @@ public final class RustCircuitPass implements CircuitTransform {
                 throw Utilities.missingKey(Utilities.getExists(nodes, failure.required("expression").longValue()));
             if (failure.has("type"))
                 throw waterlineTypeError(reply.writer, failure);
-            if ("NullableReference".equals(failure.required("kind").textValue())) {
-                var source = WaterlineProjection.resolveFactType(failure.required("source"),
-                        id -> Utilities.getExists(nodes, id).to(DBSPType.class), argumentShapes, facts);
-                var field = failure.required("field");
-                var reference = field.isNull() ? source : source.to(PartiallyMonotoneTuple.class).getFieldType(field.intValue());
-                throw new UnsupportedException(reference.getType().getNode());
-            }
+            if (failure.has("projection"))
+                throw invalidWaterlineProjection(reply.writer, failure.required("projection"), argumentShapes, facts);
             var kind = WaterlineError.valueOf(failure.required("kind").textValue());
             var expression = Utilities.getExists(nodes, failure.required("expression").longValue());
             return new FailedWaterline(kind, expression.to(DBSPExpression.class));

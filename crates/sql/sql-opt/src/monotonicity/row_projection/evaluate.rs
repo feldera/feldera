@@ -96,8 +96,8 @@ impl Operation {
             let needs_bound = match self {
                 Self::Unary => scalar::reads_unary_bound(edit, id)?,
                 // The transfer itself selects the bounded fields and operands.
-                Self::Binary(_) => false,
-                _ => edit.expr_kind(id)? != Expr::Field,
+                Self::Binary(_) | Self::Wrapper => false,
+                _ => true,
             };
             if needs_bound {
                 return Ok(Evaluation::Failed(WaterlineError::MissingBound(child.id)));
