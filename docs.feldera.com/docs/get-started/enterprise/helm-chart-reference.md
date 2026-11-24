@@ -292,9 +292,11 @@ Egress is not limited. The isolation needs a network plugin that enforces Networ
 
 The runner creates the policy when the pipeline starts and deletes it when the pipeline stops. For a pipeline that was already running, it creates or replaces the policy at its next check. This also applies a changed template, because a change to `pipeline.networkPolicy` restarts the runner.
 
-Kubernetes admits a connection if any policy admits it. If a static policy in the namespace admits all pipelines on ports 8080 and 9000, the pipelines are not isolated. To remove such a rule safely:
+When a policy selects a pod, Kubernetes refuses each connection to that pod that no policy admits. So when you enable the policy, a client that connects to pipeline pods directly can no longer connect, unless `pipeline.networkPolicy.extraIngress` or another policy admits it.
 
-1. Set `pipeline.networkPolicy.enabled: true`.
+Kubernetes admits a connection if any policy admits it. If a static policy in the namespace admits all pipelines on ports 8080 and 9000, the pipelines are not isolated. To enable the policy and remove such a rule safely:
+
+1. In the same upgrade, add an `extraIngress` rule for each other client that connects to pipeline pods directly (see below), and set `pipeline.networkPolicy.enabled: true`.
 2. Make sure that every running pipeline has its policy: `kubectl get networkpolicy -l feldera.com/part-of=pipeline`.
 3. Remove the static rule. A multihost pipeline that does not have its policy cannot reach its own hosts after this step.
 
