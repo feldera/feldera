@@ -475,6 +475,26 @@ nightly optimizer tests. The focused upstream PR is assigned to Mihai Budiu.
 [Field trimming and checkpoint restores](evidence/p3-discarded-statement-reads.json) ·
 [Upstream compiler fix](https://github.com/feldera/feldera/pull/8065)
 
+The upstream follow-up covers aggregate maps through `computeUsedFields`.
+Three regressions fail on the PR base, including the aggregate's discarded
+read. All eight field-use tests pass on PR commit `6571ea188` and in both
+migration modes on `3f6a5cce9`. These are constructed IR cases. In the SQL
+pipeline, aggregate expansion, diagnostic lowering and filter-chain
+implementation create discarded statements after the field-trimming pass.
+[Aggregate regression](https://github.com/feldera/feldera/pull/8065/commits/6571ea188a28257d9f98c45a848fcdf062631ca7)
+
+On `519a01640`, Rust resolves shared reads in the copied reader's scope
+and checks the original closure before rewriting its fields. Both binding
+regressions failed on the preceding build. All 12 classic and 12 Gen-2
+compilations matched through 11,965 ordered S4 observations and emission.
+The build passed 227 Rust tests, 259 focused JUnit tests and 276 nightly
+optimizer tests. COUNT and LATENESS checkpoints restored in both directions.
+Four-worker cancellation p95 was 22.99 ms. Across 21 measured cold pairs per
+workload, hybrid/direct p95 ratios were 0.838× for the array subquery, 1.128×
+for Nexmark and 0.661× for the outer join.
+[Field analysis and restores](evidence/p3-reader-bindings.json) ·
+[Cold compilation measurements](evidence/p3-reader-bindings-cold.json)
+
 On `9fad64252`, Rust preserves field reads in discarded returns and
 error-handling expressions. The 24 selected compilations matched Java at
 all 11,965 ordered S4 observations and through artifact emission. The build
