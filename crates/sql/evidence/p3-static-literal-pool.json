@@ -1,0 +1,179 @@
+{
+  "scope": "Rust selects the first matching static literal using SQL type and value equality across string and decimal declarations.",
+  "source_base": "07c9714ea2f0b1279a3237b3ab77c240e5405ac0",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "25b2ad7b34c7e79bc5b84bc237e355cf0c145162fac36ba1d73b7f26dbd3160c",
+    "crates/sql/sql-opt/src/lib.rs": "ac3343b9debb1fc6086e4f4368c5bc1e566b2893d5d7e0f76227157ee156a918",
+    "crates/sql/sql-opt/src/static_items.rs": "8dbadf4a85fc52fdbcf470f8d07ce598b957d89baace80624ca00a389ec39aaa",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "8b24e16ff98ef78d82fe1de34dc6321bd2dfdc716cc136aab93a828091088be6",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/inner/ImplementStatics.java": "d52406e264237e41f8d00d96a95f63cb1b04a39f3fcd71e8c1793aaa6eab7e69",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/inner/StaticCandidatesTests.java": "74c189d4a63ce8c7a40d7b0bcb106bd31806312506a47fcd921b99df29bbf194"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "a5eade12ed6e0710b7d2d9425cc531cf577cb318a2ff489a3890d852f36746f4",
+    "bin/sql-difftest": "703fd030f329c8d5be4f857c9b7bd6547ff40ec1e6f3b0422ae8e6619a33fc9e",
+    "maven/tests.jar": "71bdb998327571b262cb4e9a5a2d5a6e3300a42f36f6a113930d00e02d94c5e1",
+    "maven/sql-compiler.jar": "6e5a68e4e22b849950de10af7c235a360242a710dc6a9996813f46d008f76f81",
+    "bin/sql2dbsp": "991abe9632e11de1c453f9c5f78cafa407aada6939cd6312713fd8f7aa750cab"
+  },
+  "negative_control": {
+    "library_sha256": "bb7a53e95209e20349f38d050163bb357c08ecf9f8e0ef24b4880fb48cc8731c",
+    "failed_tests": [
+      "rustFindsTheFirstMatchingStaticDeclaration"
+    ],
+    "java_compiler_sha256": "f6be15e519176aa606c18f4e8d2a1fe366767fd0e21639656d2e3596ca30b1cf"
+  },
+  "rust_tests": 226,
+  "junit_tests": 244,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "153c6bdafda20039447ea85e0b2aba3b484d9dfb360d085848348f97c94a3c41"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "b6170c1f736a3564874648fcb0cbf5c958760cd317c81e974e25d52af207989f"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 261,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "9f227a1c55ebef2145e30b98aa1719ec7eea4aab",
+  "checkpoint_interchange": {
+    "count": {
+      "receipt_sha256": "af53ab928a2c47305574e293ab5a43c5f1b5a84b062f45ef1f878da88d974597",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20de3-a3d9-7a22-9103-b01464bdaaed",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20de3-a3fa-7193-bfea-e3e812f3e942",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "00ce2f6361c7515fd2314c9207a19a4de1636d3280cc8738e03f74a23f5d002f",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20de4-9527-7b70-9f7f-be484786088e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20de4-954c-7c33-aa27-a7ff8f59dda0",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      6.573092,
+      6.327175,
+      6.732967,
+      6.599468,
+      5.594049,
+      11.726975,
+      11.564933,
+      11.7116,
+      5.736592,
+      5.419091,
+      5.791633,
+      5.476133,
+      4.964715,
+      13.498061,
+      13.57102,
+      13.467436,
+      8.257679,
+      8.211803,
+      6.018258,
+      6.096675
+    ],
+    "p95_ms": 13.498061,
+    "largest_driver_plus_front_end_rss_bytes": 70758400,
+    "compiler_sha256": "991abe9632e11de1c453f9c5f78cafa407aada6939cd6312713fd8f7aa750cab"
+  }
+}

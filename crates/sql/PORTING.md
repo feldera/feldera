@@ -462,6 +462,17 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `07c9714ea`, Rust checks discarded statements and nested variable bindings
+before trimming a map input. A discarded loop needs no symbolic value. A
+reader that Rust cannot interpret resumes the live field-use visitor at that
+reader, preserving the original diagnostic. On `9f227a1c5`, Rust selects
+the first reusable static literal by SQL type and value, including string
+nullability and decimal scale. Both builds matched Java across 12 classic
+and 12 Gen-2 compilations, all 11,965 ordered S4 observations and emission.
+The nightly suites passed 259 and 261 tests, respectively. COUNT and LATENESS
+checkpoints restored in both directions on each build.
+[Map reader checks](evidence/p3-checked-map-readers.json) · [Static literal comparisons](evidence/p3-static-literal-pool.json)
+
 On `0cd6272af`, column lineage checks the physical output width before
 publishing a join's correlations. On `654b713e7`, Rust reports a failed
 temporal merge using the expression or type it copied while rewriting the
@@ -469,7 +480,11 @@ predicate. Both builds matched Java on 24 selected compilations and 11,965
 ordered S4 observations. The nightly optimizer suites passed 256 and 257
 tests, respectively. On the latter build, COUNT and LATENESS checkpoints
 restored in both directions without bootstrap. Worker cancellation p95 was
-12.10 ms across 20 attempts.
+12.10 ms across 20 attempts. All 8,527 frozen Gen-2 cases matched at
+3,510,660 ordered S4 observations, and all 8,256 executable classic cases
+passed 11,407 input commands, including 232 expected runtime errors. The
+highest cold p95 ratio was 1.177× on Nexmark.
+[Cold measurements](evidence/p3-copied-temporal-diagnostics-cold.json)
 [Physical output width](evidence/p3-lineage-output-width.json) · [Temporal diagnostics and restores](evidence/p3-copied-temporal-diagnostics.json)
 
 Rust checks chained MIN updates before pruning an input without a waterline.

@@ -1,0 +1,184 @@
+{
+  "scope": "Rust checks discarded statements and nested lexical references before using a map reader to trim input fields.",
+  "source_base": "2ca1aab36ceb5e3260904a4e8e7056c30799a8d9",
+  "source_files_sha256": {
+    "crates/sql/sql-difftest/examples/support/input_metadata.rs": "1c48c82b2ae77ce2f1d7ba96b8191a526551c1459e421d9b61efc98d15afde4b",
+    "crates/sql/sql-expr/src/field_use.rs": "361d085eee9bf65b6b8e5a18d835be8d64ec405b2c4c058f44553f783ed6d0d2",
+    "crates/sql/sql-opt-jni/src/lib.rs": "aca6889aa7d1f74e4524c8c4232faaa839175548b24ea95b4c2d32c99ad410a9",
+    "crates/sql/sql-opt/src/input_fields.rs": "2c10984f48e33b4e6cd954e1665091b6e4e27d6ef7df8e8ccc7b2e8cfe6daffa",
+    "crates/sql/sql-opt/src/join_input.rs": "304c8a67edc940b57c52d617069904ffec62d6409eda3b210b7a436e81d8d245",
+    "crates/sql/sql-opt/src/lib.rs": "3e1dc6005b15271a3c899463256f45f4dd4405db69e3ebd60b7cd57819fe9506",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "b6816f16482753e37f6edab526cebbaf2aed197fa5b40be262c9badbe6cc7078",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/RemoveUnusedFields.java": "5dc4d336a40bad19c0d31ec53571f4c7233a0172b5766b6aadba1f308d034e46",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/UnusedFields.java": "59304209ac4e43c4c8ef6579dcc902f40fee116ab2abab5c5a926ddd7db36e30",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "149982b148bcc5c27335e1bb9b1e1f37c6bbc818a94758c75543bb039ff45b04"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "bb7a53e95209e20349f38d050163bb357c08ecf9f8e0ef24b4880fb48cc8731c",
+    "bin/sql-difftest": "4e1f7ba4aab0c60cd91e7c3a846ada461c4aae59755588b559f31369753c3555",
+    "maven/tests.jar": "b9109eb72b0aeb037242ecef44f6b2012316d87819417eb4d4de774c3a5ad431",
+    "maven/sql-compiler.jar": "f6be15e519176aa606c18f4e8d2a1fe366767fd0e21639656d2e3596ca30b1cf",
+    "bin/sql2dbsp": "8a225af64847e2e43ca7eae06de246e30cf3af17dbbab97976a784711b41be63"
+  },
+  "negative_control": {
+    "library_sha256": "3be7b4ba46085792c1526e9835d958a5889f9d6ffe44be4d4ff3c22a44a3af69",
+    "failed_tests": [
+      "batchedReadersPreserveErrorsInDiscardedExpressions",
+      "statementOnlyBlocksAndLoopsCanBeDiscardedDuringFieldAnalysis"
+    ],
+    "java_compiler_sha256": "1796490c71067d74b2eccd6de8ad1fe183a181f9d6228ee832ae6edf81971fa5"
+  },
+  "rust_tests": 226,
+  "junit_tests": 242,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "e664c990487102505726a3e93d4e3e8d0f59e692a0f46bad2ce74be4f0e11b6d"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "8b8c689420e7ef57b6f21770bf4127a2fd5c3ba4bdc2d5aeb469d02579740021"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 259,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "07c9714ea2f0b1279a3237b3ab77c240e5405ac0",
+  "checkpoint_interchange": {
+    "count": {
+      "receipt_sha256": "b56791188ad186d19a666067d12159172a1d77d2bb4e1077c68b781bda213d4c",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20ddf-523e-7161-8f31-b4e18d80dbd5",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20ddf-5253-7db2-8253-3e451708dcdd",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "a5b225fd864043f63a470464e696ada93eb639a715b63395de48eeb04fbaa8b0",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20ddf-f342-7143-a013-fedc4da70670",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20ddf-f35e-7ea2-a1a4-b393eedf41b8",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      7.879831,
+      6.334041,
+      6.270332,
+      6.958707,
+      4.689999,
+      7.876415,
+      4.88729,
+      5.952748,
+      3.927874,
+      8.688248,
+      4.736332,
+      7.041207,
+      10.648081,
+      10.63679,
+      10.544081,
+      10.879414,
+      6.639248,
+      6.576957,
+      5.95404,
+      6.697249
+    ],
+    "p95_ms": 10.648081,
+    "largest_driver_plus_front_end_rss_bytes": 70516736,
+    "compiler_sha256": "8a225af64847e2e43ca7eae06de246e30cf3af17dbbab97976a784711b41be63"
+  }
+}
