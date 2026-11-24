@@ -1,8 +1,9 @@
 //! Follow values through a projection to identify the fields of its input row.
 //! A tuple preserves the dependency of each component. Computing a scalar
 //! consumes the dependencies of every operand, even if the result is projected.
+use crate::lexical_scope::{References, Resolution, lexical_references};
 use feldera_sql_ir::{
-    Circuit, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId, TypeKind,
+    Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId, TypeKind,
 };
 use indexmap::IndexSet;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -54,7 +55,7 @@ impl ParameterShape {
 
 struct RowProjection<'a> {
     circuit: &'a Circuit,
-    parameters: HashMap<&'a str, usize>,
+    parameters: HashMap<NodeId, usize>,
     shapes: Vec<ParameterShape>,
     members: IndexSet<Use>,
     known: HashMap<NodeId, Use>,
@@ -90,7 +91,7 @@ impl ProjectionOp {
 impl RowProjection<'_> {
     /// Some expressions visit their operands without publishing a symbolic
     /// value. A statement can discard them, but a parent cannot read them.
-    fn operation(&self, id: NodeId) -> Result<Option<ProjectionOp>, Error> {
+    fn operation(&self, id: NodeId, bindings: &References) -> Result<Option<ProjectionOp>, Error> {
         use ProjectionOp as Op;
         let node = self
             .circuit
@@ -110,10 +111,9 @@ impl RowProjection<'_> {
         };
         let op = match kind {
             Expr::VariablePath => {
-                let parameter = node
-                    .data("variable")
-                    .and_then(|name| name.as_str())
-                    .and_then(|name| self.parameters.get(name))
+                let parameter = bindings
+                    .get(&id)
+                    .and_then(|declaration| self.parameters.get(declaration))
                     .ok_or_else(|| Error::new("unbound variable in an input projection"))?;
                 Op::Parameter(*parameter)
             }
@@ -249,28 +249,67 @@ pub fn parameter_field_paths(
     closure: NodeId,
 ) -> Result<Vec<BTreeSet<Vec<usize>>>, Error> {
     let (mut analysis, body) = RowProjection::for_closure(circuit, closure)?;
+    let bindings = crate::lexical_scope::resolve(circuit, closure)?;
     analysis
-        .analyze(body)?
+        .analyze(body, &bindings)?
         .ok_or_else(|| Error::new("cannot determine the fields read by the projection"))
 }
 
+/// Nested closures contribute no field paths, but the compiler resolves their
+/// variables before interpreting the outer reader. On a binding conflict the
+/// live visitor first copies shared expressions and then resolves that tree.
+pub fn live_field_dependencies(
+    circuit: &Circuit,
+    function: NodeId,
+) -> Result<Option<Vec<BTreeSet<Vec<usize>>>>, Error> {
+    match lexical_references(circuit, function)? {
+        Resolution::Bound(bindings) => {
+            return bound_parameter_field_paths(circuit, function, &bindings);
+        }
+        Resolution::Free { .. } => return Ok(None),
+        Resolution::Conflict { .. } => {}
+    }
+
+    let mut edit = CircuitEditor::new(circuit.clone());
+    let tree = crate::ensure_expression_tree(&mut edit, function)?;
+    // Deep-copying RETURN, for example, retains its argument. Two uses can
+    // still share a variable with different declarations after the copy.
+    live_parameter_field_paths(edit.circuit(), tree)
+}
+
 /// Check every evaluated operand, including discarded statement results.
-/// A nested function has its own parameter scope.
+/// A fused rewriter needs unique declarations on the original reader.
 pub fn live_parameter_field_paths(
     circuit: &Circuit,
     closure: NodeId,
+) -> Result<Option<Vec<BTreeSet<Vec<usize>>>>, Error> {
+    let Resolution::Bound(bindings) = lexical_references(circuit, closure)? else {
+        return Ok(None);
+    };
+    bound_parameter_field_paths(circuit, closure, &bindings)
+}
+
+/// Analyze a reader whose variable occurrences already have unique declarations.
+fn bound_parameter_field_paths(
+    circuit: &Circuit,
+    closure: NodeId,
+    bindings: &References,
 ) -> Result<Option<Vec<BTreeSet<Vec<usize>>>>, Error> {
     let Ok((mut analysis, body)) = RowProjection::for_closure(circuit, closure) else {
         // The caller can interpret parameters outside the supported row shapes.
         return Ok(None);
     };
-    analysis.analyze(body)
+    analysis.analyze(body, bindings)
 }
 
 impl RowProjection<'_> {
     /// Evaluate every expression once. A block's value and the fields read by its
     /// statements stay separate so a later selection can still project its value.
-    fn analyze(&mut self, body: NodeId) -> Result<Option<Vec<BTreeSet<Vec<usize>>>>, Error> {
+    fn analyze(
+        &mut self,
+        body: NodeId,
+        bindings: &References,
+    ) -> Result<Option<Vec<BTreeSet<Vec<usize>>>>, Error> {
         let circuit = self.circuit;
         let mut pending = vec![(body, false)];
         let mut statements = Vec::new();
@@ -298,7 +337,7 @@ impl RowProjection<'_> {
                     }
                 }
                 active.remove(&id);
-                let op = match self.operation(id) {
+                let op = match self.operation(id, bindings) {
                     Ok(None) => {
                         without_value.insert(id);
                         continue;
@@ -323,19 +362,14 @@ impl RowProjection<'_> {
                 Expr::Closure => {}
                 Expr::Let => return Ok(None),
                 Expr::Block => {
-                    for statement in node.edges("contents")? {
-                        let statement = circuit.node(statement).expect("validated block statement");
-                        match statement.class() {
-                            "DBSPExpressionStatement" => {
-                                let expression = statement.edge("expression")?;
-                                statements.push(expression);
-                                children.push(expression);
-                            }
-                            "DBSPComment" => {}
-                            _ => return Ok(None),
+                    if !visit_block_operands(circuit, node, |id, is_statement| {
+                        children.push(id);
+                        if is_statement {
+                            statements.push(id);
                         }
+                    })? {
+                        return Ok(None);
                     }
-                    children.extend(node.field("lastExpression").and_then(Field::node_id));
                 }
                 _ => {
                     for (_, field) in node.fields() {
@@ -349,9 +383,41 @@ impl RowProjection<'_> {
             return Ok(None);
         };
         let mut uses = vec![result];
-        self.collect_statement_reads(statements, &mut uses);
+        self.collect_statement_reads(statements, &mut uses)?;
         Ok(Some(self.paths(uses)))
     }
+}
+
+/// Visit block operands in the same order as the field-use interpreter. Only expression statements contribute
+/// independent reads when the block itself is used as a value.
+fn visit_block_operands(
+    circuit: &Circuit,
+    block: &Node,
+    mut visit: impl FnMut(NodeId, bool),
+) -> Result<bool, Error> {
+    for id in block.edges("contents")? {
+        let statement = circuit.node(id).expect("validated block statement");
+        let expression = match statement.class() {
+            "DBSPExpressionStatement" | "DBSPStaticItem" | "DBSPComparatorItem" => {
+                Some(statement.edge("expression")?)
+            }
+            "DBSPFunctionItem" => {
+                let function = circuit
+                    .node(statement.edge("function")?)
+                    .expect("validated function item");
+                function.field("body").and_then(Field::node_id)
+            }
+            "DBSPComment" | "DBSPStructItem" => None,
+            _ => return Ok(false),
+        };
+        if let Some(expression) = expression {
+            visit(expression, statement.class() == "DBSPExpressionStatement");
+        }
+    }
+    if let Some(tail) = block.field("lastExpression").and_then(Field::node_id) {
+        visit(tail, false);
+    }
+    Ok(true)
 }
 
 impl<'a> RowProjection<'a> {
@@ -362,6 +428,7 @@ impl<'a> RowProjection<'a> {
 
         let params = node.edges("parameters")?;
         let mut parameters = HashMap::with_capacity(params.len());
+        let mut names = HashSet::with_capacity(params.len());
         let mut shapes = Vec::with_capacity(params.len());
         for (i, id) in params.into_iter().enumerate() {
             let param = circuit.node(id).expect("validated parameter");
@@ -369,9 +436,10 @@ impl<'a> RowProjection<'a> {
                 .data("name")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| Error::new("missing input parameter name"))?;
-            if parameters.insert(name, i).is_some() {
+            if !names.insert(name) {
                 return Err(Error::new("duplicate map or join parameter name"));
             }
+            parameters.insert(id, i);
             let ty = circuit
                 .node(param.edge("type")?)
                 .expect("validated parameter type");
@@ -411,7 +479,11 @@ impl<'a> RowProjection<'a> {
 
     /// Record each complete access chain in an evaluated statement. A shared
     /// expression can be both the receiver of a field access and a standalone read.
-    fn collect_statement_reads<'v>(&'v self, statements: Vec<NodeId>, uses: &mut Vec<&'v Use>) {
+    fn collect_statement_reads<'v>(
+        &'v self,
+        statements: Vec<NodeId>,
+        uses: &mut Vec<&'v Use>,
+    ) -> Result<(), Error> {
         let mut visited = HashSet::new();
         let mut pending: Vec<_> = statements.into_iter().map(|id| (id, false)).collect();
         while let Some((id, receiver)) = pending.pop() {
@@ -439,14 +511,10 @@ impl<'a> RowProjection<'a> {
             if access && !receiver {
                 uses.push(&self.known[&id]);
             }
-            // All nested expression statements already have their own entry in
-            // the worklist. Only a block's tail contributes further expressions.
             if *kind == Expr::Block {
-                pending.extend(
-                    node.field("lastExpression")
-                        .and_then(Field::node_id)
-                        .map(|id| (id, false)),
-                );
+                // An enclosing expression statement also covers the expressions
+                // inside item declarations in its block.
+                visit_block_operands(self.circuit, node, |id, _| pending.push((id, false)))?;
             } else {
                 let mut children = Vec::new();
                 for (name, field) in node.fields() {
@@ -457,6 +525,7 @@ impl<'a> RowProjection<'a> {
                 pending.extend(children.into_iter().map(|child| (child, access)));
             }
         }
+        Ok(())
     }
 
     fn paths<'v>(&'v self, mut pending: Vec<&'v Use>) -> Vec<BTreeSet<Vec<usize>>> {
@@ -483,7 +552,6 @@ impl<'a> RowProjection<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use feldera_sql_ir::CircuitEditor;
     use serde_json::json;
 
     #[test]

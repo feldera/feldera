@@ -44,7 +44,7 @@ pub fn narrow_join_inputs(
             return Ok(JoinInputRewrite::Unsupported);
         }
     }
-    let Some(mut paths) = crate::input_fields::original_field_dependencies(edit.circuit(), reader)?
+    let Some(mut paths) = feldera_sql_expr::live_parameter_field_paths(edit.circuit(), reader)?
     else {
         return Ok(JoinInputRewrite::Unsupported);
     };

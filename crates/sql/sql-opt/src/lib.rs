@@ -13,7 +13,7 @@ mod pipeline;
 pub use pipeline::{optimizer_order, OptimizerStep, PipelineOptions};
 mod repeat;
 pub use repeat::{repeat, RepeatResult};
-mod lexical_scope;
+use feldera_sql_expr::lexical_scope;
 pub use lexical_scope::{BindingDiagnostic, Resolution as LexicalResolution, inspect_references, lexical_references};
 mod map_fusion;
 mod projection_key;
@@ -114,9 +114,10 @@ mod hop;
 mod identity;
 mod incrementalize;
 mod indexed_inputs;
+pub use feldera_sql_expr::live_field_dependencies;
 mod input_fields;
 pub use input_fields::{
-    input_field_uses, input_projections, live_field_dependencies, map_field_dependencies, InputFieldUse,
+    input_field_uses, input_projections, map_field_dependencies, InputFieldUse,
 };
 mod integrate;
 mod lineage;

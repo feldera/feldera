@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -30,13 +31,21 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComparatorItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -255,6 +264,44 @@ public class JoinInputProjectionTests {
             var error = Assert.assertThrows(RuntimeException.class, () -> new FindUsedFields(compiler).findUsedFields(result));
             Assert.assertTrue(error.getMessage(), error.getMessage().contains("does not exist in map"));
         }
+    }
+
+    @Test
+    public void fieldTrimmingVisitsBlockItemsInTheirEnclosingStatement() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteObject.EMPTY;
+        var literal = new DBSPI32Literal(7);
+        var integer = literal.getType();
+        var row = new DBSPVariablePath("row", new DBSPTypeTuple(integer, integer, integer).ref());
+        var struct = new DBSPTypeStruct(site, new ProgramIdentifier("S"), List.of(), false);
+        var function = new DBSPFunction(site, "seven", List.of(), integer, literal, List.of());
+        List<DBSPStatement> items = List.of(new DBSPStaticItem(new DBSPStaticExpression(site, row.deref().field(0), "saved")),
+                new DBSPComparatorItem(new DBSPNoComparatorExpression(site, integer)),
+                new DBSPStructItem(struct, null), new DBSPFunctionItem(function));
+        var block = new DBSPBlockExpression(items, row.deepCopy().deref().field(2));
+        for (boolean discarded : List.of(false, true)) {
+            var body = discarded ? new DBSPBlockExpression(List.of(block.toStatement()), literal) : block;
+            var reader = body.closure(row);
+            var paths = RustCircuitPass.parameterFieldDependencies(compiler, reader);
+            Assert.assertEquals(List.of(discarded ? List.of(List.of(0), List.of(2)) : List.of(List.of(2))), paths);
+            var direct = new FindUsedFields(compiler).findUsedFields(reader);
+            Assert.assertEquals(direct.getUse().toString(), FindUsedFields.fromPaths(reader, paths).getUse().toString());
+        }
+    }
+
+    @Test
+    public void localFunctionParameterCannotReadTheOuterRowsFields() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(0).getType();
+        var row = new DBSPVariablePath("row", new DBSPTypeTuple(integer, integer).ref());
+        var shadow = new DBSPParameter("row", row.getType());
+        var local = new DBSPFunction(CalciteObject.EMPTY, "local", List.of(shadow),
+                integer, shadow.asVariable().deref().field(0), List.of());
+        var reader = new DBSPBlockExpression(List.of(new DBSPFunctionItem(local)), new DBSPI32Literal(1)).closure(row);
+        Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, reader));
+        Assert.assertThrows(InternalCompilerError.class, () -> new FindUsedFields(compiler).findUsedFields(reader));
     }
 
     @Test

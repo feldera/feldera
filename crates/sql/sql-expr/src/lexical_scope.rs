@@ -2,7 +2,7 @@
 use feldera_sql_ir::{Circuit, Error, ExpressionKind as Expr, InnerKind, Node, NodeId};
 use std::collections::{HashMap, HashSet};
 
-pub(crate) type References = HashMap<NodeId, NodeId>;
+pub type References = HashMap<NodeId, NodeId>;
 
 fn name<'a>(node: &'a Node, field: &str) -> Result<&'a str, Error> {
     node.data(field)
@@ -84,12 +84,12 @@ pub fn lexical_references(circuit: &Circuit, root: NodeId) -> Result<Resolution<
     Ok(inspect_references(circuit, root, false)?.resolution())
 }
 
-pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, Error> {
+pub fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, Error> {
     lexical_references(circuit, closure)?.required()
 }
 
 /// A detached closure body may have separate key, left and right parameters.
-pub(crate) fn resolve_body(
+pub fn resolve_body(
     circuit: &Circuit,
     parameters: impl IntoIterator<Item = NodeId>,
     body: NodeId,
@@ -221,13 +221,13 @@ fn resolve_variables<'a>(
     Ok(result)
 }
 
-pub(crate) fn expression_children(node: &Node) -> Vec<NodeId> {
+pub fn expression_children(node: &Node) -> Vec<NodeId> {
     let mut children = Vec::new();
     push_expression_children(node, &mut children);
     children
 }
 
-pub(crate) fn push_expression_children(node: &Node, children: &mut Vec<NodeId>) {
+pub fn push_expression_children(node: &Node, children: &mut Vec<NodeId>) {
     if !matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
         for (name, field) in node.fields() {
             // The aggregate list serializes its cached empty row for replay; visitors skip that cache.
@@ -239,7 +239,7 @@ pub(crate) fn push_expression_children(node: &Node, children: &mut Vec<NodeId>) 
 }
 
 /// A movable expression may refer to its own declarations and an optional outer parameter.
-pub(crate) fn closed_over(
+pub fn closed_over(
     circuit: &Circuit,
     root: NodeId,
     parameter: Option<NodeId>,
