@@ -435,7 +435,7 @@ jobs:
             ShareIndexesTests#wideIndexLoopsCompareTheInputBeforeBinding
             ShareIndexesTests#sharedIndexDiscoveryKeepsCompletedGroupsAtAFailedKey
             StreamKindTests#validateEachPassResultIncludingChangesToTheSameCircuit
-            TemporalKeyTests WaterlineProjectionTests
+            TemporalKeyTests UnusedFieldsTest WaterlineProjectionTests
           )
           comparisons=(
             AggregateFold CanonicalForm ChainWalk ExpressionUses FieldUses Flatmap LimiterApply
@@ -446,9 +446,12 @@ jobs:
           for comparison in "${comparisons[@]}"; do
             flags+=("-Dfeldera.optimizer.compareRust${comparison}=true")
           done
+          report_suffix="optimizer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           IFS=,
           mvn test --no-transfer-progress -B -pl SQL-compiler \
-            "-Dtest=${tests[*]}" "${flags[@]}"
+            "-Dsurefire.reportNameSuffix=$report_suffix" "-Dtest=${tests[*]}" "${flags[@]}"
+          python3 ../crates/sql/scripts/verify_optimizer_junit.py SQL-compiler/target/surefire-reports \
+            --suffix "$report_suffix" "${tests[@]}"
 
       - name: Audit optimizer option and metadata activation paths
         if: ${{ vars.CI_DRY_RUN != 'true' }}
