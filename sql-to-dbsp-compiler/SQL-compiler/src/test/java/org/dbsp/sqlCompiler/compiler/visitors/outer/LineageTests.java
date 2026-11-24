@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.ZSetShape;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
@@ -167,6 +168,31 @@ public class LineageTests extends BaseSQLTests {
         Assert.assertEquals(expected, report(input, false));
         if (Boolean.getBoolean("feldera.optimizer.compareRustLineage"))
             Assert.assertEquals(expected, report(input, true));
+    }
+
+    @Test
+    public void lineageChecksThePhysicalKeyValueWidthAfterEarlierComparisons() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLineage"));
+        var compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t(x INT NOT NULL);
+                CREATE TABLE keyed(id INT NOT NULL PRIMARY KEY, a INT, b INT);
+                CREATE VIEW v AS SELECT x FROM t UNION ALL SELECT id FROM keyed;
+                """);
+        var compiled = compiler.getFinalCircuit(true);
+        var t = compiled.getInput(new ProgramIdentifier("t", false)).asOperator();
+        var keyed = compiled.getInput(new ProgramIdentifier("keyed", false)).asOperator();
+        Assert.assertEquals(2, keyed.getOutput(0).getOutputRowType().to(DBSPTypeTupleBase.class).size());
+        var row = new DBSPVariablePath("row", t.getOutput(0).getOutputRowType().ref());
+        var site = CalciteEmptyRel.INSTANCE;
+        var compared = new DBSPBinaryExpression(site, DBSPTypeBool.INSTANCE, DBSPOpcode.GT,
+                row.deref().field(0), new DBSPI32Literal(0));
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(t);
+        circuit.addOperator(new DBSPFilterOperator(site, compared.closure(row), t.getOutput(0)));
+        circuit.addOperator(keyed);
+        var message = assertLineageFailure(compiler, circuit, InternalCompilerError.class, List.of("[ t.x > 0 ]"));
+        Assert.assertEquals("Assertion failed", message);
     }
 
     @Test
@@ -322,9 +348,9 @@ public class LineageTests extends BaseSQLTests {
     }
 
     private static String lineageMessage(RuntimeException error) {
-        // Utilities.fail appends the stack of the active optimizer to a return diagnostic.
+        // Utilities.fail and Utilities.enforce append the active optimizer's stack.
         String message = error.getMessage();
-        return message.startsWith("Lineage analysis does not support return:")
+        return message.startsWith("Lineage analysis does not support return:") || message.startsWith("Assertion failed\n")
                 ? message.lines().findFirst().orElseThrow() : message;
     }
 

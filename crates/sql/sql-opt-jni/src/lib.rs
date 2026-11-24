@@ -498,6 +498,9 @@ fn lineage_diagnostic(issue: feldera_sql_opt::LineageDiagnostic<'_>) -> Value {
         LineageDiagnostic::MissingInput(port) => {
             json!({"missing_input": [operator_number(port.operator), port.number]})
         }
+        LineageDiagnostic::OutputWidth { operator, fields } => {
+            json!({"output_width": {"operator": operator_number(operator), "fields": fields}})
+        }
     }
 }
 

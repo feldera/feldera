@@ -4028,6 +4028,11 @@ public final class RustCircuitPass implements CircuitTransform {
                 var producer = Utilities.getExists(operatorsById(circuit), port.required(0).longValue());
                 throw Utilities.missingKey(producer.getOutput(port.required(1).intValue()));
             }
+            var width = diagnostic.get("output_width");
+            if (width != null) {
+                var producer = Utilities.getExists(operatorsById(circuit), width.required("operator").longValue());
+                Lineage.checkOutputWidth(producer.getOutput(0), width.required("fields").intValue());
+            }
             reportLineageFailure(writer.innerVisitor, diagnostic);
         }
         return circuit;

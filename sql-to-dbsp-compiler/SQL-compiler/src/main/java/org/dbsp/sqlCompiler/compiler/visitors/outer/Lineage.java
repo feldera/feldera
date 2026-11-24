@@ -333,12 +333,14 @@ public class Lineage extends CircuitVisitor {
     }
 
     void set(OutputPort port, ValueSource result) {
-        if (result.is(Tuple.class)) {
-            DBSPTypeTupleBase outputType = port.getOutputRowType().to(DBSPTypeTupleBase.class);
-            Utilities.enforce(outputType.size() == result.to(Tuple.class).size());
-            // System.out.println(port.node().getId() + " " + result);
-        }
+        if (result instanceof Tuple tuple)
+            checkOutputWidth(port, tuple.size());
         Utilities.putNew(this.lineage, port, result);
+    }
+
+    public static void checkOutputWidth(OutputPort port, int fields) {
+        var row = port.getOutputRowType().to(DBSPTypeTupleBase.class);
+        Utilities.enforce(row.size() == fields);
     }
 
     /** Given the ValueSource computed by an output port, create a new ValueSource suitable to feed to the

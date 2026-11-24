@@ -189,6 +189,7 @@ pub enum LineageDiagnostic<'a> {
     UnsupportedExpression(NodeId),
     Comparison(crate::ComparisonDiagnostic),
     MissingInput(feldera_sql_ir::OutputPort),
+    OutputWidth { operator: NodeId, fields: usize },
 }
 
 #[derive(Debug)]
@@ -222,6 +223,9 @@ impl From<AnalysisError<'_>> for Error {
             AnalysisError::Reference(message) => Error::new(message),
             AnalysisError::Diagnostic(LineageDiagnostic::MissingInput(port)) => {
                 Error::new(format!("missing lineage for input {port:?}"))
+            }
+            AnalysisError::Diagnostic(LineageDiagnostic::OutputWidth { operator, fields }) => {
+                Error::new(format!("{fields} lineage fields do not fit the output of {operator:?}"))
             }
             AnalysisError::Diagnostic(LineageDiagnostic::Comparison(issue)) => {
                 Error::new(issue.to_string())

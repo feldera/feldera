@@ -139,10 +139,11 @@ impl<'a> Report<'a> {
 
     fn join(
         &mut self,
+        id: NodeId,
         op: &Node,
         left: OutputPort,
         right: OutputPort,
-    ) -> Result<Source, AnalysisError<'a>> {
+    ) -> Result<(), AnalysisError<'a>> {
         fn split(source: Source) -> Result<(Option<Source>, Source), AnalysisError<'static>> {
             match source {
                 Source::Unknown => Ok((None, Source::Unknown)),
@@ -159,6 +160,7 @@ impl<'a> Report<'a> {
             (l, r) => l.or(r).unwrap_or_default(),
         };
         let result = self.closure(op.edge("function")?, &[key.clone(), left, right])?;
+        self.set(id, result)?;
         if let Source::Ref(inner) = key {
             if let Source::Tuple(fields) = inner.as_ref() {
                 for field in fields.iter() {
@@ -172,7 +174,7 @@ impl<'a> Report<'a> {
                 }
             }
         }
-        Ok(result)
+        Ok(())
     }
 
     fn flatmap(&self, function: &Node, port: OutputPort) -> Result<Source, AnalysisError<'a>> {
@@ -279,29 +281,33 @@ impl<'a> Report<'a> {
             | Op::LeftJoinFilterMap
             | Op::AsofJoin
             | Op::ConcreteAsofJoin
-            | Op::JoinFilterMap => self.join(node, input(0)?, input(1)?)?,
+            | Op::JoinFilterMap => return self.join(id, node, input(0)?, input(1)?),
             Op::Window | Op::StreamAntiJoin => self.borrow(input(0)?)?,
             Op::Constant | Op::Now => Source::Unknown,
             // The reference visitor publishes no value for these operators. A
             // subsequent read of such a port follows the original diagnostic path.
             _ => return Ok(()),
         };
+        self.set(id, result)
+    }
+
+    fn set(&mut self, id: NodeId, result: Source) -> Result<(), AnalysisError<'a>> {
         if let Source::Tuple(fields) = &result {
-            let ty = self.edit.type_id(node.edge("outputType")?)?;
-            let output = self.edit.node(ty.into())?;
-            let width = match self.edit.type_kind(ty)? {
-                TypeKind::ZSet => self
-                    .edit
-                    .node(output.edge("elementType")?)?
-                    .edges("tupFields")?
-                    .len(),
-                TypeKind::IndexedZSet => 2,
-                _ => return Err(AnalysisError::Reference("expected collection output")),
+            let output = self.edit.node(id)?.edge("outputType")?;
+            let row = match self.edit.type_kind(self.edit.type_id(output)?)? {
+                TypeKind::ZSet => self.edit.node(output)?.edge("elementType")?,
+                _ => output,
             };
-            if fields.len() != width {
-                return Err(AnalysisError::Reference(
-                    "lineage output arity differs from row",
-                ));
+            let width = match self.edit.type_kind(self.edit.type_id(row)?)? {
+                TypeKind::IndexedZSet if row == output => Some(2),
+                TypeKind::Tuple | TypeKind::RawTuple => Some(self.edit.node(row)?.edges("tupFields")?.len()),
+                _ => None,
+            };
+            if width != Some(fields.len()) {
+                return Err(AnalysisError::Diagnostic(LineageDiagnostic::OutputWidth {
+                    operator: id,
+                    fields: fields.len(),
+                }));
             }
         }
         self.outputs.insert(
