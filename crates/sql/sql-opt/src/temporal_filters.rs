@@ -75,16 +75,6 @@ pub enum TemporalMerge {
     },
 }
 
-impl TemporalDiagnostic {
-    fn can_report_from(&self, input: &Circuit) -> bool {
-        match self {
-            Self::Missing(key) => input.node(key.expression().into()).is_some(),
-            Self::Type(_, ty) => input.node((*ty).into()).is_some(),
-            Self::Comparison(_) | Self::MissingBound | Self::Predicate { .. } => true,
-        }
-    }
-}
-
 pub fn merge_temporal_filters_with(
     circuit: Circuit,
     next: &mut u64,
@@ -126,7 +116,7 @@ pub fn merge_temporal_filters_with(
                     names = trial_names;
                     Some(merge)
                 }
-                Err(ClockError::Diagnostic(diagnostic)) if diagnostic.can_report_from(&circuit) => {
+                Err(ClockError::Diagnostic(diagnostic)) => {
                     return Ok(Some(TemporalMerge::Failed {
                         graph: edit.circuit().clone(),
                         diagnostic,
@@ -135,9 +125,7 @@ pub fn merge_temporal_filters_with(
                     }));
                 }
                 Err(ClockError::InvalidIr(error)) => return Err(error),
-                // Recreated expressions lack a live Java ID. Resume from the start
-                // of this predicate pair when the diagnostic needs one.
-                Ok(None) | Err(ClockError::Diagnostic(_)) => {
+                Ok(None) => {
                     analyze(TemporalFilterPair {
                         graph: edit.circuit(),
                         operators: [input.operator, id],

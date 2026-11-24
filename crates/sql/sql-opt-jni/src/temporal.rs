@@ -99,6 +99,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             }),
             feldera_sql_opt::TemporalMerge::Failed { graph, diagnostic, next_name, warnings } => {
                 use feldera_sql_opt::TemporalDiagnostic as Diagnostic;
+                let live_root = |id| graph.live_inner_node(&input, id).map_err(|e| error(e.to_string()));
                 let failure = match diagnostic {
                     Diagnostic::Predicate { parameter, body } => {
                         let roots = graph.live_inner_roots(&input, &[parameter, body.into()])
@@ -108,10 +109,10 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
                     Diagnostic::Comparison(error) => json!({"comparison_failure": error}),
                     Diagnostic::MissingBound => json!({"missing_clock_bound": true}),
                     Diagnostic::Type(kind, ty) => json!({"type_error": {
-                        "kind": kind, "type": super::inner_number(ty.into()),
+                        "kind": kind, "type": live_root(ty.into())?,
                     }}),
                     Diagnostic::Missing(key) => json!({
-                        "missing_clock_key": super::inner_number(key.expression().into()),
+                        "missing_clock_key": live_root(key.expression().into())?,
                         "key_is_node_id": matches!(key, feldera_sql_opt::MissingClockKey::Fact(_)),
                     }),
                 };

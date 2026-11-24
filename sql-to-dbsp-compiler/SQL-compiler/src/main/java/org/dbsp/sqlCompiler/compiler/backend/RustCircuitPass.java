@@ -750,7 +750,11 @@ public final class RustCircuitPass implements CircuitTransform {
     private static RuntimeException waterlineTypeError(ToJsonInnerVisitor writer, JsonNode failure) {
         var type = Utilities.getExists(Objects.requireNonNull(writer.liveNodes),
                 failure.required("type").longValue()).to(DBSPType.class);
-        return switch (failure.required("kind").textValue()) {
+        return waterlineTypeError(type, failure.required("kind").textValue());
+    }
+
+    private static RuntimeException waterlineTypeError(DBSPType type, String kind) {
+        return switch (kind) {
             case "RequiredType" -> {
                 type.withMayBeNull(false);
                 yield new IllegalStateException("Expected a type with no nonnullable form " + type);
@@ -761,7 +765,7 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             case "ExpectedScalar" -> ScalarMonotoneType.expectedScalar(type);
             case "UnsupportedType" -> NonMonotoneType.unsupportedType(type);
-            default -> throw new IllegalArgumentException("Unknown waterline type error " + failure);
+            default -> throw new IllegalArgumentException("Unknown waterline type error " + kind);
         };
     }
 
@@ -3702,13 +3706,16 @@ public final class RustCircuitPass implements CircuitTransform {
                 throw temporalPredicateError(this.compiler, writer.innerVisitor, failure.required("predicate"));
             if (failure.has("comparison_failure"))
                 reportComparisonFailure(failure.required("comparison_failure"));
-            if (failure.has("type_error"))
-                throw waterlineTypeError(writer.innerVisitor, failure.required("type_error"));
+            var typeError = failure.get("type_error");
+            if (typeError != null) {
+                var type = decodeLiveRoot(expressionDecoder(writer.innerVisitor), typeError.required("type"), DBSPType.class);
+                throw waterlineTypeError(type, typeError.required("kind").textValue());
+            }
             if (failure.has("missing_clock_bound"))
                 // MonotoneExpression.getReducedExpression requires a non-null bound.
                 throw new NullPointerException();
-            var nodes = Objects.requireNonNull(writer.innerVisitor.liveNodes);
-            var expression = Utilities.getExists(nodes, failure.required("missing_clock_key").longValue());
+            var expression = decodeLiveRoot(expressionDecoder(writer.innerVisitor),
+                    failure.required("missing_clock_key"), DBSPExpression.class);
             throw Utilities.missingKey(failure.required("key_is_node_id").booleanValue() ? expression.getId() : expression);
         }
         return reply;

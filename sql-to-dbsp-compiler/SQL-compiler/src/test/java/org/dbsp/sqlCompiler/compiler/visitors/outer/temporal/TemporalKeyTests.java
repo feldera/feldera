@@ -323,6 +323,32 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void temporalMergeReportsACopiedClockReferenceWithoutRepeatingThePair() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var clock = new DBSPLetStatement("saved_clock", b.call(DBSPTypeTimestamp.INSTANCE, "now"));
+        var shared = b.add(b.lit(1), b.lit(2));
+        var nested = flatmap(new IdShuffle(2), 0, b.lit(1));
+        // Sharing forces a tree copy. Visiting the flatmap then replaces the
+        // reference table before the copied read of saved_clock.
+        var lastClock = new DBSPBlockExpression(List.of(clock, shared.toStatement(), shared.toStatement(),
+                nested.toStatement()), clock.getVarReference());
+        var circuit = temporalFilterChain(lastClock);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(RuntimeException.class, () -> new MergeFilters(compiler).apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        Assert.assertTrue(direct.getMessage(), direct.getMessage().contains("saved_clock"));
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        start = DBSPVariablePath.nextGeneratedName();
+        var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
+    }
+
+    @Test
     public void temporalMergePreservesTheReferenceErrorAfterANestedFlatmap() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();
