@@ -1,14 +1,9 @@
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the Bloom filter manager drives eviction")
-)]
-
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 use crate::storage::backend::{BlockLocation, FileReader};
 use crate::storage::file::reader::{Error, read_bloom_filter_module};
-use crate::storage::file::{FilterStats, LocalFilterCounts, TrackingFilterStats};
+use crate::storage::file::{FilterStats, LocalFilterCounts, TrackingFilterStats, target_modules};
 use arc_swap::ArcSwap;
 use feldera_modular_bloom::{
     LoadError, ModularBloomFilter, ModularBloomFilterBuilder, ModuleLayout,
@@ -83,6 +78,22 @@ impl BloomFilterModuleHandle {
 /// Attempts in a row to restore a module that may fail before a filter stops
 /// trying.
 pub(crate) const MAX_RESTORE_FAILURES: u8 = 3;
+
+/// Smallest filter worth enrolling, in bytes at the configured rate.
+///
+/// Filters below this hold too little memory to be worth the accuracy they
+/// would lose. The floor is low on purpose: a spine can hold much of its filter
+/// memory in many mid-size batches, for example 6 batches of 320,000 keys,
+/// each with about 750 KiB of filter at a rate of 1e-4, and less at coarser
+/// rates.
+pub(crate) const MIN_EVICTABLE_BYTES: usize = 64 << 10;
+
+/// Whether a filter that holds `full_bytes` at the configured rate is large
+/// enough to enroll. Loading a filter under pressure uses this too, because
+/// only an enrolled filter gets its modules back.
+pub(crate) fn is_evictable_size(full_bytes: usize) -> bool {
+    full_bytes >= MIN_EVICTABLE_BYTES
+}
 
 /// Why a module could not be read back.
 #[derive(Debug, ThisError)]
@@ -280,6 +291,21 @@ impl TrackingBloomFilter {
         }
     }
 
+    /// Modules this filter should hold at `configured_rate` when at most
+    /// `max_modules` are allowed.
+    ///
+    /// This is what loading the filter from storage would keep: at the
+    /// configured rate while `max_modules` allows every module that rate keeps,
+    /// otherwise at the rate `max_modules` modules give. So a filter that
+    /// measures more accurate than nominal holds fewer modules, exactly as it
+    /// would after a restart.
+    pub(crate) fn target_modules(&self, configured_rate: f64, max_modules: u32) -> u32 {
+        self.with_built(|filter| {
+            target_modules(&self.layout, filter.density(), configured_rate, max_modules)
+        })
+        .unwrap_or(self.layout.total_modules())
+    }
+
     /// Keeps at most `modules` modules.
     ///
     /// Safe while lookups run on other threads. The kept modules are shared
@@ -324,6 +350,11 @@ impl TrackingBloomFilter {
     /// them.
     pub(crate) fn set_module_handle(&mut self, handle: BloomFilterModuleHandle) {
         self.module_handle = Some(handle);
+    }
+
+    /// Whether dropped modules can be read back.
+    pub(crate) fn has_module_handle(&self) -> bool {
+        self.module_handle.is_some()
     }
 
     /// Whether [`Self::restore_one`] may still read modules back: the filter

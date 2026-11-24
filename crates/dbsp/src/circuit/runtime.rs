@@ -9,6 +9,9 @@ use crate::circuit::dbsp_handle::StepSize;
 use crate::error::Error as DbspError;
 use crate::operator::communication::{Exchange, ExchangeActivity, ExchangeTls};
 use crate::storage::backend::StorageBackend;
+use crate::storage::bloom_filter_manager::{
+    BloomFilterManager, Hold as BloomHold, Memory as BloomMemory, Tick as BloomTick,
+};
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
 use crate::trace::BatchLayout;
@@ -44,13 +47,13 @@ use serde::Serialize;
 use std::convert::identity;
 use std::iter::repeat;
 use std::marker::PhantomData;
-use std::mem::replace;
+use std::mem::{discriminant, replace};
 use std::net::TcpListener;
 use std::ops::{Index, Range};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{
     any::Any,
     backtrace::Backtrace,
@@ -344,6 +347,17 @@ fn circuit_max_rss(budget: Option<u64>, reserved_memory: u64) -> Option<u64> {
     budget.map(|budget| budget - reserved_memory.min(budget / 2))
 }
 
+/// The configured Bloom filter false positive rate: the storage option when it
+/// is set, otherwise the deprecated dev tweak.
+fn configured_bloom_false_positive_rate(
+    storage_options: Option<&StorageOptions>,
+    dev_tweaks: &DevTweaks,
+) -> f64 {
+    storage_options
+        .and_then(|options| options.bloom_false_positive_rate)
+        .unwrap_or_else(|| dev_tweaks.bloom_false_positive_rate())
+}
+
 /// Formats a size in bytes as the settings write it, such as `16G`, or
 /// `510027367B` when no unit divides it.
 fn format_size(bytes: Option<u64>) -> String {
@@ -399,6 +413,10 @@ struct RuntimeInner {
 
     /// Used to notify merger threads when memory pressure changes.
     memory_pressure_notify: Arc<Notify>,
+
+    /// Drops Bloom filter modules under memory pressure, when the
+    /// `bloom_filter_eviction` dev tweak enables it.
+    bloom_filter_manager: BloomFilterManager,
 
     storage: Option<RuntimeStorage>,
     store: LocalStore,
@@ -706,6 +724,17 @@ impl RuntimeInner {
             );
         }
 
+        let bloom_filter_manager = BloomFilterManager::new(
+            config.dev_tweaks.bloom_filter_eviction(),
+            configured_bloom_false_positive_rate(
+                storage.as_ref().map(|storage| &storage.options),
+                &config.dev_tweaks,
+            ),
+        );
+        if config.dev_tweaks.bloom_filter_eviction() {
+            info!("dev_tweaks.bloom_filter_eviction enabled (experimental)");
+        }
+
         if config.dev_tweaks.streaming_exchange() {
             info!("dev_tweaks.streaming_exchange enabled");
         } else {
@@ -738,6 +767,7 @@ impl RuntimeInner {
             memory_pressure: Atomic::new(MemoryPressure::Low),
             memory_pressure_epoch: AtomicU64::new(0),
             memory_pressure_notify: Arc::new(Notify::new()),
+            bloom_filter_manager,
             storage,
             store: TypedDashMap::new(),
             kill_signal: KillSignal::default(),
@@ -800,6 +830,42 @@ impl RuntimeInner {
 
     fn max_rss(&self) -> Option<u64> {
         self.memory_limit().limit
+    }
+
+    /// Lets the Bloom filter manager react to `pressure`, and logs a change
+    /// of the module limit. Logs a hold only when its reason differs from
+    /// `last_hold`, not on every tick.
+    fn tick_bloom_filters(
+        &self,
+        pressure: MemoryPressure,
+        process_rss: u64,
+        last_hold: &mut Option<BloomHold>,
+    ) {
+        let memory = self.max_rss().map(|max_rss| BloomMemory {
+            rss: process_rss as usize,
+            max_rss: max_rss as usize,
+        });
+        let tick = self
+            .bloom_filter_manager
+            .tick(pressure, memory, Instant::now());
+        *last_hold = match tick {
+            BloomTick::Idle => None,
+            BloomTick::Step { from, to } => {
+                info!(
+                    "Resizing Bloom filters from {from} to {to} modules at {pressure} memory pressure"
+                );
+                None
+            }
+            BloomTick::Held(hold) => {
+                if last_hold.map(|last| discriminant(&last)) != Some(discriminant(&hold)) {
+                    debug!(
+                        "Bloom filters keep at most {} modules at {pressure} memory pressure: {hold:?}",
+                        self.bloom_filter_manager.max_modules().unwrap_or(0)
+                    );
+                }
+                Some(hold)
+            }
+        };
     }
 
     /// Drops page cache of the files under `dir` if a resize waits for a lower
@@ -1028,6 +1094,7 @@ impl Runtime {
             let runtime = Runtime::runtime().unwrap();
 
             let mut pressure_span = None;
+            let mut bloom_hold = None;
             while !Runtime::kill_in_progress() {
                 runtime.inner().update_max_rss(available_memory_bytes());
                 let process_rss = process_rss_bytes().unwrap_or_default();
@@ -1086,6 +1153,11 @@ impl Runtime {
                         .fetch_add(1, Ordering::Relaxed);
                     runtime.inner().memory_pressure_notify.notify_waiters();
                 }
+                runtime.inner().tick_bloom_filters(
+                    new_memory_pressure,
+                    process_rss,
+                    &mut bloom_hold,
+                );
                 if let Some((dir, cgroup)) = &storage_cgroup {
                     runtime.inner().check_page_cache(cgroup, dir);
                 }
@@ -1416,16 +1488,16 @@ impl Runtime {
     /// Prefers `storage.bloom_false_positive_rate` when set; falls back to
     /// the deprecated `dev_tweaks.bloom_false_positive_rate`.
     pub fn bloom_false_positive_rate() -> f64 {
-        let from_storage: Option<f64> = RUNTIME.with(|rt| {
-            rt.borrow()
-                .as_ref()?
-                .inner()
-                .storage
-                .as_ref()?
-                .options
-                .bloom_false_positive_rate
-        });
-        from_storage.unwrap_or_else(|| Self::with_dev_tweaks(|dt| dt.bloom_false_positive_rate()))
+        RUNTIME
+            .with(|rt| {
+                let rt = rt.borrow();
+                let inner = rt.as_ref()?.inner();
+                Some(configured_bloom_false_positive_rate(
+                    inner.storage.as_ref().map(|storage| &storage.options),
+                    &inner.dev_tweaks,
+                ))
+            })
+            .unwrap_or_else(|| Self::with_dev_tweaks(|dt| dt.bloom_false_positive_rate()))
     }
 
     pub fn get_mode(&self) -> Mode {
@@ -1504,6 +1576,16 @@ impl Runtime {
 
     pub fn memory_pressure_epoch(&self) -> u64 {
         self.inner().memory_pressure_epoch.load(Ordering::Relaxed)
+    }
+
+    /// Max number of Bloom filter modules a large filter may keep now, or
+    /// `None` when the `bloom_filter_eviction` dev tweak is off.
+    pub fn bloom_filter_max_modules(&self) -> Option<u32> {
+        self.inner().bloom_filter_manager.max_modules()
+    }
+
+    pub(crate) fn bloom_filter_manager(&self) -> &BloomFilterManager {
+        &self.inner().bloom_filter_manager
     }
 
     pub(crate) fn memory_pressure_notify(&self) -> Arc<Notify> {
@@ -2298,7 +2380,9 @@ pub(crate) mod tests {
     // Serialize all tests that use MOCK_PROCESS_RSS_BYTES so they don't race with each other.
     static MOCK_RSS_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-    fn set_mock_process_rss_bytes(bytes: u64) {
+    /// Changes the pinned process size. Call it only inside
+    /// [`with_mock_process_rss`], which holds the lock and clears it after.
+    pub(crate) fn set_mock_process_rss_bytes(bytes: u64) {
         // Safety: We assume that only DBSP code accesses the environment variables.
         unsafe {
             std::env::set_var("MOCK_PROCESS_RSS_BYTES", bytes.to_string());

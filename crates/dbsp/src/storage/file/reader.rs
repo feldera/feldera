@@ -2,7 +2,10 @@
 //!
 //! [`Reader`] is the top-level interface for reading layer files.
 
-use super::filter::{bloom_false_positive_rate, rate_can_evict, resident_modules};
+use super::filter::{
+    bloom_false_positive_rate, bloom_filter_max_modules, modules_for_rate, modules_to_load,
+    rate_can_evict,
+};
 use super::format::MODULAR_BLOOM_FILTER_BLOCK_MAGIC;
 use super::format::{
     BloomFilterBlock, Compression, FileTrailer, ModularBloomFilterHeader, RoaringBitmapFilterBlock,
@@ -1914,7 +1917,10 @@ fn read_filter_block(
     // spent learning there is nothing to skip, and every byte gets read
     // anyway, so take the block in one call instead.
     let rate = bloom_false_positive_rate();
-    let head_bytes = if rate_can_evict(rate) {
+    let max_modules = bloom_filter_max_modules();
+    let head_bytes = if rate_can_evict(rate)
+        || max_modules.is_some_and(|max_modules| max_modules < modules_for_rate(rate))
+    {
         512
     } else {
         location.size
@@ -1975,10 +1981,11 @@ fn read_filter_block(
             .map_err(|e| bad(e.to_string()))?;
             let density = ModuleDensity::new(front.set_bits);
 
-            let resident = resident_modules(&layout, &density, rate);
-            if resident == 0 {
+            // Under memory pressure, the manager would trim the filter as
+            // soon as it enrolls, so read only what it keeps.
+            let Some(resident) = modules_to_load(&layout, &density, rate, max_modules) else {
                 return Ok(None);
-            }
+            };
 
             // Read the header plus the modules residency asks for, and stop.
             let front_len = ModularBloomFilterHeader::len_for(front.total_modules);

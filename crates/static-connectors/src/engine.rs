@@ -484,6 +484,7 @@ impl EngineRuntime for StaticRuntime {
                     max_rss_bytes: runtime.max_rss_bytes(),
                     memory_pressure: runtime.current_memory_pressure(),
                     memory_pressure_epoch: runtime.memory_pressure_epoch(),
+                    bloom_filter_max_modules: runtime.bloom_filter_max_modules(),
                 }
             }),
         }

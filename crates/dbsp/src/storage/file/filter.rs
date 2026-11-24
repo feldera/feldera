@@ -19,7 +19,15 @@ pub use roaring::TrackingRoaringBitmap;
 pub(crate) use stats::LocalFilterCounts;
 pub use stats::{FilterKind, FilterStats, TrackingFilterStats};
 
-pub(crate) use bloom::{rate_can_evict, resident_modules};
+#[cfg(test)]
+pub(crate) use bloom::resident_modules;
+pub(crate) use bloom::{modules_for_rate, modules_to_load, rate_can_evict, target_modules};
+
+/// The Bloom filter module limit under memory pressure, or `None` when eviction
+/// is off or there is no runtime.
+pub(crate) fn bloom_filter_max_modules() -> Option<u32> {
+    Runtime::runtime().and_then(|runtime| runtime.bloom_filter_manager().max_modules())
+}
 
 /// The configured false positive rate, which decides both how new filters are
 /// written and how many modules an existing filter keeps resident.

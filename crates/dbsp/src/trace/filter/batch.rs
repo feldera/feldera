@@ -4,6 +4,7 @@
 //! present", so callers can reject cheap cases before doing the exact lookup.
 
 use crate::{
+    Runtime,
     dynamic::{DataTrait, DynVec},
     storage::{
         file::{
@@ -135,8 +136,23 @@ where
         key_range: Option<KeyRange<K>>,
         membership_filter: Option<BatchKeyFilter>,
     ) -> Self {
-        let membership_filter = membership_filter.map(Arc::<dyn BatchFilter<K>>::from);
-        Self::new(key_range, membership_filter)
+        Self::new(key_range, membership_filter.map(Self::share_file_filter))
+    }
+
+    /// Shares a filter read from or written to a file with the batch.
+    ///
+    /// The writer and the reader both hand over the filter here, after the
+    /// file holds every module, so this is where eviction may start. The
+    /// manager keeps a weak handle to the same allocation the batch shares, so
+    /// it can trim the filter the batch actually probes.
+    fn share_file_filter(filter: BatchKeyFilter) -> Arc<dyn BatchFilter<K>> {
+        match filter {
+            BatchKeyFilter::Bloom(bloom) => match Runtime::runtime() {
+                Some(runtime) => runtime.bloom_filter_manager().enroll(bloom),
+                None => Arc::new(bloom),
+            },
+            filter => Arc::from(filter),
+        }
     }
 
     /// Returns cumulative statistics for the range and membership filters.
