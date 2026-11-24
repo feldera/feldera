@@ -1019,7 +1019,7 @@ impl KafkaFtInputReaderInner {
                 {
                     let mut queued = Vec::new();
                     for receiver in receivers.values() {
-                        receiver.queued_timestamps(&mut queued);
+                        receiver.queued_staging_ranks(&mut queued);
                     }
                     queued
                 } else {
@@ -1386,8 +1386,9 @@ fn update_backpressure(_topic: &str, _partition: i32, _has_backpressure: bool) {
 /// - `latest` holds the latest timestamp that each partition has received,
 ///   or `None` for a partition that has received nothing.
 ///
-/// - `queued` holds the timestamps of the messages received but not yet
-///   staged.  It may be empty if there are no more than `room` of them.
+/// - `queued` holds the staging rank of each message received but not yet
+///   staged (see [push_staging_ranks]).  It may be empty if there are no
+///   more than `room` of them.
 ///
 /// - `room` is the number of messages that the next step can still take.
 ///
@@ -1429,6 +1430,27 @@ pub(super) fn synchronized_bound(
         }
     };
     promise.min(cap)
+}
+
+/// Appends to `ranks` the staging rank of each of a partition's queued
+/// messages, given their `timestamps` in offset order.
+///
+/// The timestamps in a partition should not go backward, but they can, for
+/// example when the clocks of producers or brokers differ.  The reader stages
+/// a prefix of each partition, so a message can be staged only when the bound
+/// admits it and every message before it in the partition.  Its rank is
+/// therefore the running maximum of the timestamps up to and including it.
+/// This is its own timestamp if the timestamps do not go backward.
+///
+/// If the cap ranked a message by its own timestamp, then the messages after
+/// a backward step would count toward `room` but could not be staged.  With
+/// enough of them, the cap would be below every partition's next message, so
+/// the bound would stop.
+pub(super) fn push_staging_ranks(timestamps: impl IntoIterator<Item = i64>, ranks: &mut Vec<i64>) {
+    ranks.extend(timestamps.into_iter().scan(i64::MIN, |max, timestamp| {
+        *max = (*max).max(timestamp);
+        Some(*max)
+    }));
 }
 
 /// Returns true if a partition queue that holds `n_bytes` should pause for
@@ -1584,15 +1606,16 @@ impl PartitionReceiver {
         self.messages.lock().unwrap().is_empty()
     }
 
-    /// Appends the timestamps of the messages received but not yet read to
-    /// `timestamps`.
-    pub fn queued_timestamps(&self, timestamps: &mut Vec<i64>) {
-        timestamps.extend(
+    /// Appends the staging ranks of the messages received but not yet read to
+    /// `ranks` (see [push_staging_ranks]).
+    pub fn queued_staging_ranks(&self, ranks: &mut Vec<i64>) {
+        push_staging_ranks(
             self.messages
                 .lock()
                 .unwrap()
                 .values()
                 .map(|(_, timestamp)| *timestamp),
+            ranks,
         );
     }
 

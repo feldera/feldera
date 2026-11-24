@@ -3565,7 +3565,9 @@ mod distributed {
 
     use super::*;
     use crate::transport::kafka::KafkaFtInputEndpoint;
-    use crate::transport::kafka::ft::input::{select_partitions, synchronized_bound};
+    use crate::transport::kafka::ft::input::{
+        push_staging_ranks, select_partitions, synchronized_bound,
+    };
     use feldera_types::coordination::{InputBound, InputDistribution, InputShard, OrderKey};
     use rdkafka::producer::Producer;
 
@@ -3729,6 +3731,30 @@ mod distributed {
         assert_eq!(
             synchronized_bound(&[Some(100)], vec![5, 5, 5, 5, 9], 2, false),
             key(6)
+        );
+    }
+
+    /// When the timestamps in a partition go backward, the messages after the
+    /// backward step cannot be staged before the higher timestamp before them.
+    /// The cap must not count them, or it can be below every partition's next
+    /// message, so that the bound stops.
+    #[test]
+    fn bound_moves_when_timestamps_go_backward() {
+        // The timestamps in partition 0 go backward from 50 to 1.  Partition 1
+        // received messages stamped 10 to 12.
+        let partitions = [vec![50, 1, 2, 3, 4], vec![10, 11, 12]];
+        let mut queued = Vec::new();
+        for timestamps in &partitions {
+            push_staging_ranks(timestamps.iter().copied(), &mut queued);
+        }
+        assert_eq!(queued, [50, 50, 50, 50, 50, 10, 11, 12]);
+
+        // With room for 3, partition 1's three messages are staged.  Ranking
+        // by the messages' own timestamps would give a bound of 4, which
+        // admits neither partition's next message.
+        assert_eq!(
+            synchronized_bound(&[Some(50), Some(12)], queued, 3, false),
+            key(13)
         );
     }
 
