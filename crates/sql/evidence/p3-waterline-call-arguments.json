@@ -1,0 +1,182 @@
+{
+  "scope": "Required arguments and unbounded operands in registered waterline calls",
+  "source_base": "a11850b57da05cc1f2fc6c24b0fee61498239ef3",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "e466013f0e19f7495b839691e54a1f40066281d26eacba1bdcc884fff9f18d1a",
+    "crates/sql/sql-opt/src/monotonicity/functions.rs": "585fe2fe7572851121b9912b3bd6dd5fc4d7fb1bd6525bf07a2df7e998ed4fa0",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "c6d063e77c462646af157d3f82ddd2ab5429519a0487df29f04dca8b7e18ce31",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/function.rs": "1dfa6a33af6733bcd9409596f4e1b773e33ab495261bc176fae082db8e9e634f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "40ea009664d05977bc2736404b47280771804a8c18bf9b9069a62219c1eacda9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneFunction.java": "bdbcbcc4986cdceb52620cb68cece93c1835522359aec8d2993d2ced4084cbd0",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneTransferFunctions.java": "d44f4a0b72092c90c0ae5925b2aaedfd725dc6f39dd79765d537ce387e837fb1",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "071a7c184d7c06fee2dd0a58768f93684ded84b370ba7f7aaa5dd6305816725c"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "3daa3db33c0b326ec68109181499785be11a6cfadef204874408ba3fb4a4d57c",
+    "bin/sql-difftest": "102e148bb303625777b65a32535f5cc6ed6c3a9bb703225972ce147c116b6606",
+    "maven/tests.jar": "842fc785bc375640e02cf893cafe94867101322283fc6bb732347192057314c0",
+    "maven/sql-compiler.jar": "c27bd842ff574ae8e96d6087bece5f228c7a9551a1b17fdb4913a350dd5cd4ff",
+    "bin/sql2dbsp": "b97d3d177d393b0da97eedf14e1c26b8cb6b9946e545b41e792f3f6e425abe5d"
+  },
+  "negative_control": {
+    "library_sha256": "4a3d96d0e42409199a05938e11384a971c84c2dd8798ea0cfb5e87ed8f58a13e",
+    "failed_tests": [
+      "registeredWaterlineCallsDiagnoseTheFirstInvalidArgument"
+    ],
+    "java_compiler_sha256": "2ae2eac5c93f1725bc3364b8f9e426161a252196f3c46d8ddb56bc5db74daf01"
+  },
+  "rust_tests": 226,
+  "junit_tests": 248,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "6cb8c348955e5747bcb52f2656fa706b7a1c6ab6952d0414691d581a9d706f0a"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "52e90b921dda3e4412c2f949847ba079a5eb143829117356a75dd70a03e50273"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 265,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "suites": 18
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "receipt_sha256": "1f7b444b74c7b00a33c3a157e3c0f1ae746b89383a7889a6d96b343890ab942e",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e05-64f7-7282-a00a-c33d7b1c2639",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e05-6512-72f0-ac95-887d8505a3af",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "880ff005934aab32d038b196b0daa31103f082fd49a74178be5dd0dbee9ad3aa",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e06-218c-74c1-827b-9ebeaa28d83e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e06-21ac-7512-a045-6f1710f22fb0",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      5.241254,
+      5.204421,
+      5.224045,
+      5.206921,
+      6.864588,
+      9.136424,
+      6.238546,
+      7.800298,
+      6.117671,
+      6.040088,
+      6.006629,
+      6.015462,
+      8.759173,
+      5.841046,
+      8.020172,
+      5.886129,
+      12.288259,
+      7.31938,
+      12.386551,
+      6.011296
+    ],
+    "p95_ms": 12.288259,
+    "largest_driver_plus_front_end_rss_bytes": 70406144,
+    "compiler_sha256": "b97d3d177d393b0da97eedf14e1c26b8cb6b9946e545b41e792f3f6e425abe5d"
+  },
+  "source_commit": "6aea8eccb2e398242e09f720d81dfbb52e3f2631"
+}

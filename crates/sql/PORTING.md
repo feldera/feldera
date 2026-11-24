@@ -462,6 +462,25 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+A map can read one column in an expression statement and return a different
+column. The optimizer must keep both when narrowing the input. In the
+constructed three-column regression, it drops the unused middle column and
+rewrites the two surviving reads to positions zero and one. The migration
+branch carries the correction in Java and Rust. On upstream main, both IR
+regressions failed before the correction and all seven field-use tests passed
+after it. The focused upstream PR is assigned to Mihai Budiu.
+[Upstream compiler fix](https://github.com/feldera/feldera/pull/8065)
+
+On `6aea8eccb`, Rust reports a missing required argument or an unbounded
+nonconstant argument when deriving a function's waterline. On `499d7fb7d`,
+temporal predicates report the failing argument or target-sized literal in
+the same visit, preserving generated variable names. Each build matched
+Java on 12 classic and 12 Gen-2 compilations through 11,965 ordered S4
+observations and emission. COUNT and LATENESS checkpoints restored in both
+directions. The nightly runs produced complete reports for 265 and 266 tests.
+[Function argument diagnostics](evidence/p3-waterline-call-arguments.json) ·
+[Temporal predicate diagnostics](evidence/p3-temporal-call-diagnostics.json)
+
 On `95d673248`, Rust rebinds each projected reader field using its original
 tuple path, including when two fields of the same tuple type retain different
 columns. The regression checks closure parameter identity and matches Java at

@@ -1,0 +1,179 @@
+{
+  "scope": "Preserve the first argument or target-maximum diagnostic and generated names in a temporal predicate",
+  "source_base": "6aea8eccb2e398242e09f720d81dfbb52e3f2631",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/temporal.rs": "e51a6c153db8ed541e7aa763b0bcd5150e0005c02611642ba3522f82ac5f71d6",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "3fb6310d15db4c3acb3f4375009ef9a72e47bcfa57e6b2e49a0c4be82d7fb5e4",
+    "crates/sql/sql-opt/src/temporal_comparisons.rs": "29fcd852aadf4d7ac691f63b268608a6602fc752b711a84c3a1b6b784f16b7ff",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "7d8ff484519bad9d5d72096eadaa32891ad3031cc1c95e0b3e74e962e42e8469",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "a7ee9defe3c3a1fc8d16545defba45080fa240c2037f6829b080512be2f715ed"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "d9c7ad3351fa08f5585baa5bf879d10036a03127bf580d5e82519dc9fcbc4c7e",
+    "bin/sql-difftest": "de55843b92280dd671be5930238c7ab322c337413c2d08fc93fdc7d7d1c055e9",
+    "maven/tests.jar": "4288d8730d809f318c73b5bff6c39e2a27e0d35efc7c508d92016c14827a73fa",
+    "maven/sql-compiler.jar": "83870c7a3adf13436aa8592bf67291dfc098887b378c8abd2a23a6f8f9149fa7",
+    "bin/sql2dbsp": "e3984b622f25038f79250267d2789e7fd30c03143aae040f30f44f53835f0f09"
+  },
+  "negative_control": {
+    "library_sha256": "3daa3db33c0b326ec68109181499785be11a6cfadef204874408ba3fb4a4d57c",
+    "failed_tests": [
+      "temporalMergeReportsInvalidCallArgumentsAndLiteralMaximaInOneVisit"
+    ],
+    "java_compiler_sha256": "c27bd842ff574ae8e96d6087bece5f228c7a9551a1b17fdb4913a350dd5cd4ff"
+  },
+  "rust_tests": 226,
+  "junit_tests": 249,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "03a0bd599f3770a0e9b6729727b68774e775a87c8e3289639b8962eb12fa981c"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "3a46be8c0d8a32c12175d527cec199d13e0d1be937a742d94a5929797ff62ac2"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 266,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "suites": 18
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "receipt_sha256": "e2b8e564c16c2c06d661667f496556afe3a38cee581e19dde0f6f86791fdefcf",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e08-9058-7972-8e0f-c4b4d6c4b55e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e08-9072-7d20-a7cc-e57a8be8a7a4",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "e1bcd26a60bd451980c554393988caf96a20816e7e32365e8ee5185bb60bdc0a",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e09-5534-7322-9b1e-5571ec89d5a3",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e09-5552-7893-a76b-8b5e34875211",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      3.906878,
+      4.931962,
+      5.880254,
+      7.601548,
+      10.769841,
+      10.723008,
+      10.652175,
+      10.861674,
+      6.073671,
+      6.273297,
+      11.338966,
+      10.366841,
+      12.968468,
+      6.475672,
+      12.865968,
+      13.680093,
+      13.285385,
+      9.414841,
+      13.42426,
+      9.516174
+    ],
+    "p95_ms": 13.42426,
+    "largest_driver_plus_front_end_rss_bytes": 70594560,
+    "compiler_sha256": "e3984b622f25038f79250267d2789e7fd30c03143aae040f30f44f53835f0f09"
+  },
+  "source_commit": "499d7fb7da20e93a217c32c135c496eb834b1a4f"
+}
