@@ -569,6 +569,14 @@ Pitfalls of this solution include:
   (This can be avoided by keeping clocks on Kafka producers and brokers
   synchronized.)
 
+- The connector orders records by their Kafka timestamps, but the table
+  drops late records by its `LATENESS` column.  Differences between the
+  clocks of producers (or of brokers, with `LogAppendTime`) therefore add
+  to the disorder of the `LATENESS` column.  To drop no records, make the
+  `LATENESS` larger than the largest clock difference, plus the largest
+  delay between the time in the `LATENESS` column and the time that the
+  record is produced.
+
 - If an event with a timestamp far in the future is added to a
   partition, that event, and all those that follow it, will never be
   processed.
