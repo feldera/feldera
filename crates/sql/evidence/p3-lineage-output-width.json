@@ -1,0 +1,51 @@
+{
+  "scope": "Rust validates the computed lineage width against the physical output row before publishing join correlations.",
+  "source_base": "3ae0643fca3aed317fcddedb030577419048cb0c",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "286f8d9213097f87280b8a2749a88bccceb7a7f85c90743ade01db171666a1bf",
+    "crates/sql/sql-opt/src/lineage.rs": "329f2e491783ae65e0a85a105113bc534087f89a0d6486b2c17d616d8421cf03",
+    "crates/sql/sql-opt/src/lineage/report.rs": "fc40a0d78b4f96e14e8774296c9613dfb1a4cd117b44e43708c83900ee42037f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "01f07b74027a70d43ae7d00eac39e8e1ea142d723afa8b6658b4cc64bdd9171d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Lineage.java": "4e998fd9c12e14ef300ed960b078422b679dd5b676f4096c3176fa04526c1a38",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/LineageTests.java": "aef0b96faa3c0ad6bf6affd7d37bb28f77113b0014baf0a5aa30e07b60219366"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "b6d9e4c92c62d1affdf6184c7552e1159df3e79d989985ce7ca67bda027e32b5",
+    "bin/sql-difftest": "9d3c769f139e50c33365b916f73c8cd393fc1b24a2da0adb2b825a456e2f4cf6",
+    "maven/tests.jar": "013b21d954f1734868cb85830d992a4810d59ba332b4a688ecf70d9b476de934",
+    "maven/sql-compiler.jar": "ce3aa2c6f353f05a3899eb3eae133faf0029d53b8b2751261f59cc0b47aa80f4"
+  },
+  "negative_control": {
+    "library_sha256": "1d1598ad3bf414cea58cae54e678cad5f7c399c9e210da66d77fa7783f61c591",
+    "failed_tests": [
+      "lineageChecksThePhysicalKeyValueWidthAfterEarlierComparisons"
+    ],
+    "java_compiler_sha256": "46bc29d10c304a65d1ebf5571bf91bb8f149587d5a6e7328c88137ed25c186a1"
+  },
+  "rust_tests": 226,
+  "junit_tests": 231,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "55bc846b38896734f3a616522abdc8e7e59712951a8bcbc9fff37ae87a669acf"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "88c4d30411ddf5bc362d5a8a26734259899e038a0795b51ed08298131f851bce"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 256,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "0cd6272afedfd75d30d335514f94e9a86c94eaef"
+}

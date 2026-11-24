@@ -462,6 +462,16 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `0cd6272af`, column lineage checks the physical output width before
+publishing a join's correlations. On `654b713e7`, Rust reports a failed
+temporal merge using the expression or type it copied while rewriting the
+predicate. Both builds matched Java on 24 selected compilations and 11,965
+ordered S4 observations. The nightly optimizer suites passed 256 and 257
+tests, respectively. On the latter build, COUNT and LATENESS checkpoints
+restored in both directions without bootstrap. Worker cancellation p95 was
+12.10 ms across 20 attempts.
+[Physical output width](evidence/p3-lineage-output-width.json) · [Temporal diagnostics and restores](evidence/p3-copied-temporal-diagnostics.json)
+
 Rust checks chained MIN updates before pruning an input without a waterline.
 Column lineage preserves earlier findings when a later operator reads a missing
 port. Map projection analysis resolves bindings before classifying the expression
