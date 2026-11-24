@@ -38,6 +38,15 @@ LOGGER = logging.getLogger(__name__)
 # rejecting them; loopback never leaves the pod and is refused immediately
 # everywhere, which the retry loop then rides out just the same.
 UNREACHABLE_ENDPOINT = "http://127.0.0.1:1"
+
+# Extra time, beyond the time to pull the extra checkpoints
+# (pull_interval * extra_ckpts), that a standby gets to reach RUNNING after
+# activate().  Activation waits for three pulls in a row: the standby
+# pull in flight on the slowest host, a final pull before activation, and a
+# non-standby pull.  On a slow node a single pull can take 30-40s, so allow
+# several pull round-trips.
+ACTIVATE_PULL_BUDGET_S = 180
+
 _CHECKPOINT_SYNC_BUCKET_ARCH = platform.machine().lower()
 
 
@@ -1179,7 +1188,9 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.stop(force=True)
 
         assert standby.status() == PipelineStatus.STANDBY
-        standby.activate(timeout_s=(pull_interval * extra_ckpts) + 60)
+        standby.activate(
+            timeout_s=(pull_interval * extra_ckpts) + ACTIVATE_PULL_BUDGET_S
+        )
 
         got_after = list(standby.query("SELECT * FROM v0"))
 
@@ -1540,7 +1551,9 @@ class TestCheckpointSync(SharedTestPipeline):
             # activate() blocks until the manager reports RUNNING. Do not wait
             # on the "pipeline activated" log line instead: it is logged once,
             # and the manager's bounded log buffer evicts it under trace noise.
-            standby.activate(timeout_s=(pull_interval * extra_ckpts) + 60)
+            standby.activate(
+                timeout_s=(pull_interval * extra_ckpts) + ACTIVATE_PULL_BUDGET_S
+            )
             assert standby.status() == PipelineStatus.RUNNING
 
             got = list(standby.query("SELECT * FROM v0"))
