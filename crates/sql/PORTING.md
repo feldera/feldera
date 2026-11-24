@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `fccd64201`, Rust checks the declared output type after reducing a MIN
+accumulator and preserves an empty tuple in the first compared slot of a
+chained MIN. Both regressions failed against the preceding build. The new
+build passed 246 focused and 263 nightly optimizer tests. All 24 selected
+compilations matched Java through 11,965 ordered S4 observations and
+emission. COUNT and LATENESS checkpoints restored in both directions.
+[MIN output shapes](evidence/p3-minimum-output-shapes.json)
+
 On `07c9714ea`, Rust checks discarded statements and nested variable bindings
 before trimming a map input. A discarded loop needs no symbolic value. A
 reader that Rust cannot interpret resumes the live field-use visitor at that

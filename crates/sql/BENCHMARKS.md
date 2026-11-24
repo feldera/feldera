@@ -4,6 +4,34 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## MIN accumulator output shapes, 2026-11-24
+
+Build `fccd64201` matched diagnostics and classic source artifacts on all 69
+cold compile pairs. Each workload ran two warmup pairs and 21 measured pairs
+in alternating order on CPU 15 of the shared ARM64 VM. Corpus and runtime
+verification ran on other CPUs during the measurement.
+[Timings and build identities](evidence/p3-minimum-output-shapes-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.801 | 2.269 | 0.810× |
+| Nexmark suite | 6.161 | 6.506 | 1.056× |
+| Outer join | 2.386 | 2.013 | 0.844× |
+
+## Static literal reuse, 2026-11-24
+
+On `9f227a1c5`, diagnostics and classic source artifacts matched in all 69
+pairs. Each workload ran two warmup pairs and 21 measured pairs in alternating
+order, with a fresh compiler process on CPU 15 of the shared ARM64 VM.
+Corpus and runtime verification ran concurrently on other CPUs.
+[Timings and build identities](evidence/p3-static-literal-pool-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.889 | 2.150 | 0.744× |
+| Nexmark suite | 6.619 | 6.874 | 1.038× |
+| Outer join | 2.587 | 2.251 | 0.870× |
+
 ## Temporal merge diagnostics, 2026-11-23
 
 On `654b713e7`, direct Java and the hybrid emitted matching classic artifacts
