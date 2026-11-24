@@ -6638,6 +6638,114 @@ mod test_coordination_access {
             }
         }
     }
+
+    /// Through the real middleware and a TLS connection with client certificates, only the
+    /// pipeline itself may use the `/coordination` routes, also when the path is
+    /// percent-encoded, and the control plane still reaches the other routes.
+    #[actix_web::test]
+    async fn middleware_admits_only_the_pipeline_to_coordination_routes() {
+        use super::authorize_pipeline_caller;
+        use actix_web::{HttpServer, middleware::from_fn};
+        use feldera_mtls::CONTROL_PLANE_CERTIFICATE_URI;
+        use rcgen::{ExtendedKeyUsagePurpose, KeyUsagePurpose};
+        use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+        use std::sync::Arc;
+
+        crate::ensure_default_crypto_provider();
+        const OWN: Uuid = Uuid::from_u128(0xa);
+        let mut ca_params = CertificateParams::default();
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
+        let ca_key = KeyPair::generate().unwrap();
+        let ca = ca_params.clone().self_signed(&ca_key).unwrap();
+        let issuer = Issuer::new(ca_params, ca_key);
+        let issue = |san: SanType, usage: ExtendedKeyUsagePurpose| {
+            let mut params = CertificateParams::default();
+            params.subject_alt_names = vec![san];
+            params.extended_key_usages = vec![usage];
+            let key = KeyPair::generate().unwrap();
+            let cert = params.signed_by(&key, &issuer).unwrap();
+            (
+                cert.der().clone(),
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
+            )
+        };
+        let uri = |uri: &str| SanType::URI(uri.try_into().unwrap());
+
+        // The server presents a certificate for `localhost` and verifies clients against the
+        // CA, as a pipeline server does with its own certificate chain.
+        let (own_cert, _) = issue(
+            uri(&pipeline_certificate_uri(OWN)),
+            ExtendedKeyUsagePurpose::ClientAuth,
+        );
+        let client_auth =
+            Arc::new(PipelineClientAuth::from_chain(&[own_cert, ca.der().clone()], &[]).unwrap());
+        let (server_cert, server_key) = issue(
+            SanType::DnsName("localhost".try_into().unwrap()),
+            ExtendedKeyUsagePurpose::ServerAuth,
+        );
+        let server_config = rustls::ServerConfig::builder()
+            .with_client_cert_verifier(client_auth.verifier.clone())
+            .with_single_cert(vec![server_cert, ca.der().clone()], server_key)
+            .unwrap();
+
+        let state = WebData::new(state(RuntimeDesiredStatus::Coordination));
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = HttpServer::new(move || {
+            let client_auth = Some(client_auth.clone());
+            build_app(
+                App::new().wrap(from_fn(move |req, next| {
+                    authorize_pipeline_caller(client_auth.clone(), req, next)
+                })),
+                state.clone(),
+            )
+        })
+        .on_connect(Caller::record)
+        .workers(1)
+        .listen_rustls_0_23(listener, server_config)
+        .unwrap()
+        .run();
+        let server_handle = server.handle();
+        actix_web::rt::spawn(server);
+
+        let client = |san: SanType| {
+            let (cert, key) = issue(san, ExtendedKeyUsagePurpose::ClientAuth);
+            let mut roots = rustls::RootCertStore::empty();
+            roots.add(ca.der().clone()).unwrap();
+            let config = rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_client_auth_cert(vec![cert], key)
+                .unwrap();
+            reqwest::Client::builder()
+                .use_preconfigured_tls(config)
+                .build()
+                .unwrap()
+        };
+        let own = client(uri(&pipeline_certificate_uri(OWN)));
+        let control_plane = client(uri(CONTROL_PLANE_CERTIFICATE_URI));
+        let other = client(uri(&pipeline_certificate_uri(Uuid::from_u128(0xb))));
+
+        let pull_status = "/coordination/checkpoint/pull_status";
+        let encoded = "/%63oordination/checkpoint/pull_status";
+        for (client, path, expected) in [
+            (&own, pull_status, 200),
+            (&own, encoded, 200),
+            (&control_plane, pull_status, 403),
+            (&control_plane, encoded, 403),
+            (&control_plane, "/", 200),
+            (&other, pull_status, 403),
+            (&other, "/", 403),
+        ] {
+            let response = client
+                .get(format!("https://localhost:{port}{path}"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status().as_u16(), expected, "{path}");
+        }
+        server_handle.stop(false).await;
+    }
 }
 
 /// The server's side of `POST /testing/load`: program generations, the flag, and the
