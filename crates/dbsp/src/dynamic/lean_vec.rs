@@ -959,7 +959,7 @@ impl FusedIterator for RawIter<'_> {}
 
 // FIXME: properly implement rkyv traits for LeanVec
 pub struct LeanVec<T> {
-    pub vec: RawVec,
+    pub(crate) vec: RawVec,
     phantom: PhantomData<T>,
 }
 
