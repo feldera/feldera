@@ -25,7 +25,7 @@ use crate::{
             },
             reader::{
                 BulkRows, CorruptionError, Error as ReaderError, FilteredKeys, Reader,
-                read_metadata,
+                read_bloom_filter_module, read_metadata,
             },
         },
     },
@@ -3307,4 +3307,54 @@ fn worst_case_trailer_fits() {
     let len = bytes.into_inner().len();
     println!("worst-case trailer: {len} of {FILE_TRAILER_SIZE} bytes");
     assert!(len <= FILE_TRAILER_SIZE);
+}
+
+/// Reading one Bloom filter module reads only the sectors that hold it, and
+/// returns exactly its words, whether it starts or ends mid-sector, fills
+/// the whole block, or starts at a block that is not first in the file.
+#[test]
+fn a_module_read_returns_its_words_across_sector_boundaries() {
+    const BLOCK: usize = 2048;
+    let dir = tempdir().unwrap();
+    let backend = backend_at(dir.path().to_str().unwrap());
+    let mut writer = backend.create().unwrap();
+    let mut junk = FBuf::with_capacity(BLOCK);
+    junk.resize(BLOCK, 0xff);
+    writer.write_block(junk).unwrap();
+    let bytes: Vec<u8> = (0..BLOCK).map(|i| (i * 7 + i / 256) as u8).collect();
+    let mut block = FBuf::with_capacity(BLOCK);
+    block.extend_from_slice(&bytes);
+    writer.write_block(block).unwrap();
+    let file = writer.complete().unwrap();
+    let location = BlockLocation::new(BLOCK as u64, BLOCK).unwrap();
+
+    let words = |start: usize, len: usize| -> Vec<u64> {
+        bytes[start..start + len]
+            .chunks(8)
+            .map(|word| u64::from_le_bytes(word.try_into().unwrap()))
+            .collect()
+    };
+
+    // 48-word modules after a 200-byte header: module 0 spans the boundary at
+    // byte 512, and every module starts mid-sector.
+    let (offset, module_words) = (200, 48);
+    for index in 0..4 {
+        let read =
+            read_bloom_filter_module(file.as_ref(), location, offset, module_words, index).unwrap();
+        assert_eq!(
+            *read,
+            *words(offset + index as usize * 384, 384),
+            "module {index}"
+        );
+    }
+
+    // A module that fills the block reads the whole block.
+    let read = read_bloom_filter_module(file.as_ref(), location, 0, 256, 0).unwrap();
+    assert_eq!(*read, *words(0, BLOCK));
+
+    // A module that would end past the block is corrupt.
+    assert!(matches!(
+        read_bloom_filter_module(file.as_ref(), location, offset, module_words, 4),
+        Err(ReaderError::Corruption(_))
+    ));
 }

@@ -19,7 +19,7 @@ use crate::storage::{
             INCOMPATIBLE_FEATURE_ROARING_FILTERS, INDEX_BLOCK_MAGIC, IndexBlockHeader,
             MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ModularBloomFilterBlockRef, NodeType,
             ROARING_BITMAP_FILTER_BLOCK_MAGIC, RoaringBitmapFilterBlockRef, RuntimeVersion,
-            VERSION_NUMBER, Varint,
+            VERSION_NUMBER, Varint, bloom_filter_block_is_legacy,
         },
         reader::TreeNode,
     },
@@ -1350,17 +1350,15 @@ impl Writer {
             match key_filter {
                 BatchKeyFilter::Bloom(filter) => {
                     let layout = *filter.layout();
-                    let data: Vec<u64> = filter.module_words().concat();
-                    if layout.total_modules() == 1 {
-                        // A one-module filter is a plain fastbloom filter, so
-                        // writing it in the original encoding keeps the file
-                        // readable by binaries that predate modular filters.
+                    let built = filter.built();
+                    let modules = built.modules();
+                    if bloom_filter_block_is_legacy(layout.total_modules()) {
                         let filter_block = BloomFilterBlockRef {
                             header: BlockHeader::new(
                                 &crate::storage::file::format::BLOOM_FILTER_BLOCK_MAGIC,
                             ),
                             num_hashes: layout.hashes_per_module(),
-                            data: &data,
+                            data: modules[0],
                         };
                         let estimated_block_size = (std::mem::size_of::<BloomFilterBlockRef>()
                             + std::mem::size_of_val(filter_block.data))
@@ -1370,18 +1368,18 @@ impl Writer {
                             .1
                     } else {
                         incompatible_features |= INCOMPATIBLE_FEATURE_MODULAR_FILTERS;
-                        let set_bits = filter.density().set_bits().to_vec();
+                        let set_bits = built.density().set_bits().to_vec();
                         let filter_block = ModularBloomFilterBlockRef {
                             header: BlockHeader::new(&MODULAR_BLOOM_FILTER_BLOCK_MAGIC),
                             total_modules: layout.total_modules(),
                             hashes_per_module: layout.hashes_per_module(),
                             words_per_module: u64::from(layout.words_per_module()),
                             set_bits: &set_bits,
-                            data: &data,
+                            modules: &modules,
                         };
                         let estimated_block_size =
                             (std::mem::size_of::<ModularBloomFilterBlockRef>()
-                                + std::mem::size_of_val(filter_block.data))
+                                + built.resident_bytes())
                             .next_multiple_of(512);
                         self.writer
                             .write_block(filter_block.into_block(estimated_block_size), None)?

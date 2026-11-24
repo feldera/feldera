@@ -25,7 +25,7 @@ use crate::{
         Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
         Builder, Cursor, FileValBatch, VecIndexedWSetFactories, WeightedItem,
         cursor::{CursorFactory, CursorFactoryWrapper, Pending, Position, PushCursor},
-        filter::BatchFilters,
+        filter::{BatchFilters, LazyCursorFilters},
         merge_batches_by_reference,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
     },
@@ -748,6 +748,9 @@ where
 {
     wset: &'s FileIndexedWSet<K, V, R>,
 
+    #[size_of(skip)]
+    filters: LazyCursorFilters<'s, K>,
+
     key_cursor: KeyCursor<'s, K, V, R>,
 
     /// The value cursor for the current key, positioned only once something
@@ -779,6 +782,7 @@ where
     fn clone(&self) -> Self {
         Self {
             wset: self.wset,
+            filters: self.filters.clone(),
             key_cursor: self.key_cursor.clone(),
             val_cursor: self.val_cursor.clone(),
             val_hint: self.val_hint.clone(),
@@ -807,6 +811,7 @@ where
     pub fn with_hint(wset: &'s FileIndexedWSet<K, V, R>, hint: AccessHint) -> Self {
         Self {
             wset,
+            filters: wset.filters.for_cursor_lazily(),
             key_cursor: unsafe { wset.file.rows().with_hint(hint).first().unwrap_storage() },
             val_cursor: OnceCell::new(),
             val_hint: None,
@@ -965,7 +970,7 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
-        if !self.wset.filters.maybe_contains_key(key, hash) {
+        if !self.filters.maybe_contains_key(key, hash) {
             return false;
         }
         self.seek_key(key);

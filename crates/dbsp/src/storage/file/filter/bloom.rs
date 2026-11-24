@@ -12,6 +12,7 @@
 
 use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
 use feldera_modular_bloom::{ModularBloomFilter, ModuleDensity, ModuleLayout};
+use std::sync::Arc;
 
 /// Maximum number of modules in a Bloom filter.
 pub(crate) const MAX_MODULES: u32 = 4;
@@ -179,18 +180,24 @@ pub(super) fn deserialize_bloom_filter(
 /// - Otherwise the filter, holding the modules in `words`.
 pub(super) fn load_modular_bloom_filter(
     layout: ModuleLayout,
-    words: &[u64],
+    modules: impl IntoIterator<Item = Arc<[u64]>>,
     density: ModuleDensity,
 ) -> Option<TrackingBloomFilter> {
-    ModularBloomFilter::from_modules_with_density(layout, words, density)
-        .ok()
-        .map(TrackingBloomFilter::loaded)
+    let mut filter = ModularBloomFilter::from_modules_with_density(layout, &[], density).ok()?;
+    for module in modules {
+        filter.push_module(module).ok()?;
+    }
+    Some(TrackingBloomFilter::loaded(filter))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_MODULES, modules_for_rate, rate_for_modules, resident_modules};
+    use super::{
+        MAX_MODULES, load_modular_bloom_filter, modules_for_rate, rate_for_modules,
+        resident_modules,
+    };
     use feldera_modular_bloom::{ModuleDensity, ModuleLayout};
+    use std::sync::Arc;
 
     #[test]
     fn rates_map_to_modules_in_log_space() {
@@ -282,5 +289,18 @@ mod tests {
         // nominal is not given modules the ladder would not have kept.
         let dense = density_delivering(&layout, 0.5);
         assert_eq!(resident_modules(&layout, &dense, 1e-2), 2);
+    }
+
+    /// A loaded module must have the bits set that the file records for it,
+    /// so a corrupt module gives no filter instead of false negatives.
+    #[test]
+    fn a_module_with_other_bits_set_loads_no_filter() {
+        let layout = ModuleLayout::new(2, 4, 3).unwrap();
+        let density = ModuleDensity::new(vec![1, 1]);
+        let module = |word: u64| -> Arc<[u64]> { Arc::from([word, 0, 0, 0]) };
+
+        let loaded = load_modular_bloom_filter(layout, [module(1), module(2)], density.clone());
+        assert_eq!(loaded.unwrap().resident_modules(), 2);
+        assert!(load_modular_bloom_filter(layout, [module(1), module(3)], density).is_none());
     }
 }

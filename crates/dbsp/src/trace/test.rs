@@ -629,6 +629,8 @@ where
     let mut cursor = batch.cursor();
     assert!(!cursor.seek_key_exact(low.as_ref(), None));
     assert!(!cursor.seek_key_exact(high.as_ref(), None));
+    // A cursor adds its filter counts to the batch when it drops.
+    drop(cursor);
 
     let range_after = batch.range_filter_stats();
     let membership_after = batch.membership_filter_stats();

@@ -24,7 +24,7 @@ use crate::{
         Builder, Cursor, DbspSerializer, Deserializer, FileKeyBatch, VecWSetFactories,
         WeightedItem,
         cursor::{CursorFactoryWrapper, Pending, Position, PushCursor},
-        filter::BatchFilters,
+        filter::{BatchFilters, LazyCursorFilters},
         merge_batches_by_reference,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
     },
@@ -641,6 +641,8 @@ where
     R: WeightTrait + ?Sized,
 {
     wset: &'s FileWSet<K, R>,
+    #[size_of(skip)]
+    filters: LazyCursorFilters<'s, K>,
     cursor: RawCursor<'s, K, R>,
     pub(crate) diff: Box<R>,
     val_valid: bool,
@@ -654,6 +656,7 @@ where
     fn clone(&self) -> Self {
         Self {
             wset: self.wset,
+            filters: self.filters.clone(),
             cursor: self.cursor.clone(),
             diff: clone_box(&self.diff),
             val_valid: self.val_valid,
@@ -683,6 +686,7 @@ where
 
         Self {
             wset,
+            filters: wset.filters.for_cursor_lazily(),
             cursor,
             diff,
             val_valid: valid,
@@ -760,7 +764,7 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
-        if !self.wset.filters.maybe_contains_key(key, hash) {
+        if !self.filters.maybe_contains_key(key, hash) {
             return false;
         }
         self.seek_key(key);
