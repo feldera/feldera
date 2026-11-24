@@ -4,7 +4,7 @@ use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind,
 };
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
 /// The clock is its own lower bound. Keep the live callee and result type,
@@ -96,23 +96,23 @@ enum Arguments {
 }
 
 impl Arguments {
-    fn admits(self, args: &[Argument]) -> bool {
-        match self {
-            Self::Unary => args.first().is_some_and(|a| a.monotone),
+    fn admits(self, args: &[Argument]) -> Result<bool, FunctionArgumentError> {
+        let argument = |i: usize| args.get(i).ok_or(FunctionArgumentError::Missing(i));
+        Ok(match self {
+            Self::Unary => argument(0)?.monotone,
             Self::ConstantOthers(value) => {
-                args.get(value).is_some_and(|a| a.monotone)
+                argument(value)?.monotone
                     && args
                         .iter()
                         .enumerate()
                         .all(|(i, a)| i == value || a.constant)
             }
             Self::ConstantBase { value, base } => {
-                args.get(value).is_some_and(|a| a.monotone)
-                    && args
-                        .get(base)
-                        .is_some_and(|a| a.constant && a.double_literal_above_one)
+                let value = argument(value)?;
+                let base = argument(base)?;
+                value.monotone && base.constant && base.double_literal_above_one
             }
-        }
+        })
     }
 }
 
@@ -187,13 +187,21 @@ pub enum FunctionRule {
     Unknown,
     Unbounded,
     Bounded(String),
+    Invalid(FunctionArgumentError),
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(tag = "kind", content = "index")]
+pub enum FunctionArgumentError {
+    Missing(usize),
+    NonConstant(usize),
 }
 
 impl FunctionRule {
     pub fn target(self) -> Option<String> {
         match self {
             Self::Bounded(target) => Some(target),
-            Self::Unknown | Self::Unbounded => None,
+            Self::Unknown | Self::Unbounded | Self::Invalid(_) => None,
         }
     }
 }
@@ -204,8 +212,15 @@ pub fn function_rule(name: &str, args: &[Argument]) -> FunctionRule {
         let Some(matched) = function.names.captures(name) else {
             continue;
         };
-        if !function.arguments.admits(args) {
-            return FunctionRule::Unbounded;
+        match function.arguments.admits(args) {
+            Ok(true) => {}
+            Ok(false) => return FunctionRule::Unbounded,
+            Err(error) => return FunctionRule::Invalid(error),
+        }
+        // A selected call copies each argument that has no waterline.
+        // Only constants can be copied into a closure over the projected row.
+        if let Some(index) = args.iter().position(|arg| !arg.monotone && !arg.constant) {
+            return FunctionRule::Invalid(FunctionArgumentError::NonConstant(index));
         }
         let mut callee = name.to_owned();
         if let Some(suffix) = matched.name("nullable") {

@@ -119,6 +119,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneFunction;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
@@ -826,6 +827,11 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             if ("MissingReference".equals(failure.required("kind").textValue()))
                 throw Utilities.missingKey(Utilities.getExists(nodes, failure.required("expression").longValue()));
+            if ("FunctionArgument".equals(failure.required("kind").textValue())) {
+                var call = Utilities.getExists(nodes, failure.required("expression").longValue()).to(DBSPApplyExpression.class);
+                var argument = MAPPER.convertValue(failure.required("argument"), FunctionArgumentError.class);
+                throw argument.exception(call);
+            }
             if (failure.has("type"))
                 throw waterlineTypeError(reply.writer, failure);
             if ("InvalidBoundCast".equals(failure.required("kind").textValue())) {
@@ -1344,7 +1350,23 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public record FunctionArgument(boolean monotone, boolean constant, boolean doubleLiteralAboveOne) {}
 
-    public record FunctionRule(boolean registered, @Nullable String target) {}
+    public record FunctionArgumentError(Kind kind, int index) {
+        public enum Kind { Missing, NonConstant }
+
+        public RuntimeException exception(DBSPApplyExpression call) {
+            if (this.kind == Kind.Missing) {
+                Objects.checkIndex(this.index, call.arguments.length);
+                return new IllegalStateException("Expected a missing argument at index " + this.index);
+            }
+            return MonotoneFunction.nonConstantArgument(call.arguments[this.index]);
+        }
+    }
+
+    public record FunctionRule(boolean registered, @Nullable String target, @Nullable FunctionArgumentError argumentError) {
+        public FunctionRule(boolean registered, @Nullable String target) {
+            this(registered, target, null);
+        }
+    }
 
     public static FunctionRule functionRule(String function, List<FunctionArgument> arguments) {
         try {

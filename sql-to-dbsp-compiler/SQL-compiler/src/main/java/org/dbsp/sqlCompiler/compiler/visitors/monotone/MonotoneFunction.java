@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.monotone;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -61,15 +62,17 @@ public abstract class MonotoneFunction {
             return Objects.requireNonNull(this.waterline);
         }
 
-        void requireConstant() {
-            Utilities.enforce(this.constant, () -> "Argument " + this.expression + " is not constant");
-        }
-
         /** A copy of a constant argument. */
         DBSPExpression copy() {
-            this.requireConstant();
+            if (!this.constant)
+                throw nonConstantArgument(this.expression);
             return this.expression.deepCopy();
         }
+    }
+
+    public static InternalCompilerError nonConstantArgument(DBSPExpression expression) {
+        return new InternalCompilerError("Argument " + expression + " is not constant"
+                + System.lineSeparator() + Utilities.getCurrentStackTrace());
     }
 
     /** @return An expression computing the waterline of {@code call} from the waterlines of

@@ -1066,6 +1066,8 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                         WaterlineError::VariableTypeMismatch(id) => json!({"kind":"VariableTypeMismatch", "expression":inner_number(id.into())}),
                         WaterlineError::MissingReference(id) => json!({"kind":"MissingReference", "expression":inner_number(id.into())}),
                         WaterlineError::MissingFact(id) | WaterlineError::MissingBound(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
+                        WaterlineError::FunctionArgument(id, error) => json!({"kind":"FunctionArgument",
+                            "expression":inner_number(id.into()), "argument":error}),
                         WaterlineError::TargetMaximum(id) => json!({"kind":"TargetMaximum", "expression":inner_number(id.into())}),
                         WaterlineError::InvalidBoundCast { operation, bound } => json!({"kind":"InvalidBoundCast",
                             "expression":inner_number(operation.into()), "bound":edit.circuit().live_expression(&arena, bound)?}),
@@ -1533,8 +1535,14 @@ fn transform(
             let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;
             let rule = feldera_sql_opt::function_rule(&name, &arguments);
             let registered = !matches!(rule, feldera_sql_opt::FunctionRule::Unknown);
+            let argument_error = match rule {
+                feldera_sql_opt::FunctionRule::Invalid(error) => Some(error),
+                _ => None,
+            };
             let target = rule.target();
-            return Ok(if pass == "Monotonicity/Function" { json!(target) } else { json!({ "registered": registered, "target": target }) });
+            return Ok(if pass == "Monotonicity/Function" { json!(target) } else { json!({
+                "registered": registered, "target": target, "argumentError": argument_error
+            }) });
         }
         "Monotonicity/BinaryBound" => return binary_bound(input, state),
         "Monotonicity/TupleBound" => return tuple_bound(input, state, next),

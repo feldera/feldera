@@ -1004,9 +1004,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             var argument = this.argument(expression, i);
             if (argument.monotone())
                 bounds[i] = argument.waterline();
-            else if (rule.target() != null)
-                argument.requireConstant();
         }
+        if (rule.argumentError() != null)
+            throw rule.argumentError().exception(expression);
         return rule.target() == null ? null :
                 RustCircuitPass.buildFunctionWaterline(this.compiler, expression, rule.target(), bounds);
     }

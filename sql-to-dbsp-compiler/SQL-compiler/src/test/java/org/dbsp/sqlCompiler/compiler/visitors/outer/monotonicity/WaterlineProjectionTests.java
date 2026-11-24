@@ -1406,6 +1406,51 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void registeredWaterlineCallsDiagnoseTheFirstInvalidArgument() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var literal = new DBSPI32Literal(7);
+        var integer = literal.getType();
+        var parameter = integer.ref().var();
+        var shape = new MonotoneType(integer);
+        var op = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(integer));
+        var kind = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        var unbounded = new NoExpression(integer);
+        for (var call : List.of(
+                new DBSPApplyExpression("sign_i32", integer),
+                new DBSPApplyExpression("round_d_i32", integer),
+                new DBSPApplyExpression("datediff_day_Date_Date", integer, literal),
+                new DBSPApplyExpression("power_d_i32", integer),
+                new DBSPApplyExpression("log_d_d", integer, unbounded),
+                new DBSPApplyExpression("sign_i32", integer, literal, unbounded))) {
+            var tail = parameter.deref();
+            var body = new DBSPBlockExpression(List.of(call.toStatement()), tail);
+            var closure = body.closure(parameter);
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            var direct = new MonotoneTransferFunctions(compiler, op, kind, shape);
+            var expected = Assert.assertThrows(RuntimeException.class, () -> direct.apply(closure));
+            var expectedMessage = expected.getMessage().lines().findFirst();
+            for (boolean resultOnly : List.of(false, true)) {
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var actual = Assert.assertThrows(expected.getClass(), () ->
+                        RustCircuitPass.projectWaterlineClosure(compiler, body, closure.parameters,
+                                new DBSPType[]{integer}, new IMaybeMonotoneType[]{new MonotoneRefType(shape)},
+                                false, resultOnly, facts::put));
+                Assert.assertEquals(expectedMessage, actual.getMessage().lines().findFirst());
+                for (var arg : call.arguments)
+                    Assert.assertTrue(facts.containsKey(arg));
+                Assert.assertFalse(facts.containsKey(call));
+                Assert.assertFalse(facts.containsKey(tail));
+            }
+            // Standalone expressions enter the general visitor at the call itself.
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var general = new MonotoneTransferFunctions(compiler, op, kind, shape);
+            var actual = Assert.assertThrows(expected.getClass(), () -> general.apply(call));
+            Assert.assertEquals(expectedMessage, actual.getMessage().lines().findFirst());
+        }
+    }
+
+    @Test
     public void onlyRegisteredFunctionsRequireArgumentWaterlines() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

@@ -59,6 +59,9 @@ pub(super) fn call_bound(
             return Ok(Evaluation::Failed(error));
         }
     }
+    if let FunctionRule::Invalid(error) = rule {
+        return Ok(Evaluation::Failed(WaterlineError::FunctionArgument(expression, error)));
+    }
     let Some(target) = rule.target() else {
         result.constant = constant;
         return Ok(Evaluation::Value(result));

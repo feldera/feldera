@@ -521,6 +521,7 @@ pub enum WaterlineError {
     MissingReference(ExpressionId),
     MissingFact(ExpressionId),
     MissingBound(ExpressionId),
+    FunctionArgument(ExpressionId, super::functions::FunctionArgumentError),
     TargetMaximum(ExpressionId),
     Type(WaterlineTypeError, TypeId),
     /// Resolve this failed type operation against the original objects after
