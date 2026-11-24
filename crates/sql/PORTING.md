@@ -475,6 +475,22 @@ nightly optimizer tests. The focused upstream PR is assigned to Mihai Budiu.
 [Field trimming and checkpoint restores](evidence/p3-discarded-statement-reads.json) ·
 [Upstream compiler fix](https://github.com/feldera/feldera/pull/8065)
 
+On `9fad64252`, Rust preserves field reads in discarded returns and
+error-handling expressions. The 24 selected compilations matched Java at
+all 11,965 ordered S4 observations and through artifact emission. The build
+passed 227 Rust tests, 257 focused JUnit tests and 274 nightly optimizer
+tests. COUNT and LATENESS checkpoints restored in both directions.
+Four-worker cancellation p95 was 13.19 ms.
+[Field-use checks and restores](evidence/p3-statement-field-values.json)
+
+Cold compile p95 on the same build was 2.142 s hybrid and 2.732 s Java for
+the array subquery (0.784×), 6.696 s and 6.191 s for Nexmark (1.081×),
+and 1.948 s and 2.449 s for the outer join (0.795×). Each workload had
+21 measured pairs and met the 1.2× ceiling. All 69 pairs, including warmups,
+matched emitted artifacts and diagnostics. The compiler processes ran on CPU
+15 while verification used other CPUs on the same ARM64 VM.
+[Cold compilation measurements](evidence/p3-statement-field-values-cold.json)
+
 On `6aea8eccb`, Rust reports a missing required argument or an unbounded
 nonconstant argument when deriving a function's waterline. On `499d7fb7d`,
 temporal predicates report the failing argument or target-sized literal in

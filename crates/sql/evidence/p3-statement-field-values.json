@@ -1,0 +1,176 @@
+{
+  "scope": "Retain reads in discarded expressions that supply no symbolic result to a parent",
+  "source_base": "a85ddfcd12cd983f774cc1fcc7b0569550d85f52",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/field_use.rs": "45c6d4821d86a7681e307fd7816ac39ea911b5e547acfbbb4cd2b277e9eebc17",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "190a271a52210d37006aea85902606583c5c0b472b8ac8a31444cb927875d193"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "bdbefcb20513429214a3a69287aa8163c35e35ee991045719c76aa6c35e2525a",
+    "bin/sql-difftest": "588419eb08d97d202a0c59819eca5a2b8864c0990d5961e0b2115391eee4b96e",
+    "maven/tests.jar": "19993e02b1212be08acfe1b097a68221cb5b2ab88df5bc71e8d322234423dd7a",
+    "maven/sql-compiler.jar": "238d8d69b993f7b09f8b2180e947858d6e504258db91cc1b665a6f397641c2ba",
+    "bin/sql2dbsp": "e249f7537a0d726bb0ac02ac8e256d84302df9bd022c3bcf60312b727bb0facd"
+  },
+  "negative_control": {
+    "library_sha256": "4836038fc17d2d095b08711cd87971e5947d106c6b529d49e4a613a71be84b7e",
+    "failed_tests": [
+      "discardedExpressionsCanReadFieldsWithoutProducingAFieldUseValue"
+    ],
+    "java_compiler_sha256": "e03e37faf6042b8e1028c47e2321d7f9f2c14079cb22e6e009fbfb078fa9eb24"
+  },
+  "rust_tests": 227,
+  "junit_tests": 257,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "5437a4d4e4654eceb991160cc8773681746be39984abe7ab0a0a1665e9f66c0b"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "296e5def4ac052b8baac5272c17dbbacbbb6f22992f08bd8c04c3e0426f15804"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 274,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "suites": 19
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "receipt_sha256": "2c2be924b5ad1e29d308ffdb3dc8c017619bbb2775bfbe3e777161cb05b83224",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e14-38b5-7a80-b0c0-99beca7f90f2",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e14-38cf-7273-88ac-0e71b28ac192",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "697581ef54262a69b348fb5508543cf69aa1d5d14517aae9ca97a9aadbe276bb",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e14-f36c-79f3-b860-950226e94266",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20e14-f38b-76b0-95f7-3bc922776344",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      10.5928,
+      10.881841,
+      14.548761,
+      5.156629,
+      12.290926,
+      12.384468,
+      13.194968,
+      5.082795,
+      5.155754,
+      5.287462,
+      6.416713,
+      5.301546,
+      5.233504,
+      10.064507,
+      10.198049,
+      10.7238,
+      12.433634,
+      6.164546,
+      12.343759,
+      12.550509
+    ],
+    "p95_ms": 13.194968,
+    "largest_driver_plus_front_end_rss_bytes": 70647808,
+    "compiler_sha256": "e249f7537a0d726bb0ac02ac8e256d84302df9bd022c3bcf60312b727bb0facd"
+  },
+  "source_commit": "9fad64252e4735d11dcc3384860a2843c078c412"
+}
