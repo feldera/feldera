@@ -41,7 +41,7 @@ pub use monotonicity::row_projection::{expression_waterlines, project_closure, p
 pub use monotonicity::{filter_lower_bounds, filter_transfer, unary_preserves_order, unary_waterline, FilterBound};
 mod static_candidates;
 mod static_items;
-pub use static_items::{renumber_static_errors, static_initializer, static_item};
+pub use static_items::{find_static_literal, renumber_static_errors, static_initializer, static_item};
 pub use static_candidates::{static_candidates, StaticCandidates};
 pub use map_fusion::{
     fuse_expensive_maps, fuse_expensive_maps_with, FusionComparison, has_duplicate_expensive_field, map_fusion_candidate, map_fusion_fragments,

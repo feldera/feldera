@@ -7,6 +7,32 @@ use feldera_sql_ir::{
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
+/// Return the first declared literal with the same SQL type and value. The
+/// caller supplies declarations in encounter order from a value-hash bucket.
+pub fn find_static_literal(
+    edit: &CircuitEditor,
+    literal: NodeId,
+    candidates: &[NodeId],
+) -> Result<Option<usize>, Error> {
+    let literal = edit.expression(literal)?;
+    if !matches!(
+        edit.expr_kind(literal)?,
+        ExpressionKind::StringLiteral | ExpressionKind::DecimalLiteral
+    ) {
+        return Err(Error::new("only string and decimal literals are pooled"));
+    }
+    let ty = edit.expression_type(literal)?;
+    for (index, &candidate) in candidates.iter().enumerate() {
+        let candidate = edit.expression(candidate)?;
+        if edit.same_type(ty, edit.expression_type(candidate)?)?
+            && feldera_sql_expr::same_literal_value(edit, literal, candidate)? == Some(true)
+        {
+            return Ok(Some(index));
+        }
+    }
+    Ok(None)
+}
+
 /// The classic printer renders the initializer and its type in the operator's context.
 pub fn static_initializer(
     edit: &mut CircuitEditor,

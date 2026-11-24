@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -9,15 +10,24 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.util.Utf8String;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public class StaticCandidatesTests {
@@ -27,6 +37,54 @@ public class StaticCandidatesTests {
         var compiler = new DBSPCompiler(new CompilerOptions());
         compiler.options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.compareRustStatics");
         return new ImplementStatics(compiler, true);
+    }
+
+    private static DBSPExpression replacement(ImplementStatics pass, DBSPLiteral literal) {
+        return pass.apply(literal).to(DBSPCloneExpression.class).expression;
+    }
+
+    @Test
+    public void poolStaticLiteralsAcrossRootsByValueAndSqlType() {
+        var pass = pass();
+        var first = replacement(pass, new DBSPStringLiteral("Aa"));
+        var collision = replacement(pass, new DBSPStringLiteral("BB"));
+        Assert.assertEquals(Utf8String.fromJava("Aa").hashCode(), Utf8String.fromJava("BB").hashCode());
+        Assert.assertNotSame(first, collision);
+        Assert.assertSame(collision, replacement(pass, new DBSPStringLiteral("BB")));
+        Assert.assertSame(first, replacement(pass, new DBSPStringLiteral("Aa")));
+        Assert.assertNotSame(first, replacement(pass, new DBSPStringLiteral("Aa", true)));
+
+        var fixed = DBSPTypeString.create(CalciteObject.EMPTY, 2, true, false);
+        var varying = DBSPTypeString.create(CalciteObject.EMPTY, 2, false, false);
+        Assert.assertNotSame(replacement(pass, new DBSPStringLiteral(CalciteObject.EMPTY, fixed, Utf8String.fromJava("Aa"))),
+                replacement(pass, new DBSPStringLiteral(CalciteObject.EMPTY, varying, Utf8String.fromJava("Aa"))));
+
+        var ty = new DBSPTypeDecimal(CalciteObject.EMPTY, 12, 2, true);
+        var n = replacement(pass, new DBSPDecimalLiteral(ty, new BigDecimal("1.0")));
+        Assert.assertSame(n, replacement(pass, new DBSPDecimalLiteral(ty, new BigDecimal("1.0"))));
+        Assert.assertNotSame(n, replacement(pass, new DBSPDecimalLiteral(ty, new BigDecimal("1.00"))));
+        var nil = replacement(pass, new DBSPDecimalLiteral(ty, null));
+        Assert.assertSame(nil, replacement(pass, new DBSPDecimalLiteral(ty, null)));
+        Assert.assertNotSame(nil, replacement(pass, new DBSPStringLiteral(null, true)));
+        Assert.assertEquals(9, pass.newDeclarations.size());
+
+        var inline = new ImplementStatics(pass.compiler(), false);
+        Assert.assertNotSame(replacement(inline, new DBSPStringLiteral("Aa")),
+                replacement(inline, new DBSPStringLiteral("Aa")));
+        Assert.assertTrue(inline.newDeclarations.isEmpty());
+    }
+
+    @Test
+    public void rustFindsTheFirstMatchingStaticDeclaration() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustStatics"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var decimal = DBSPTypeDecimal.getDefault();
+        var value = new DBSPDecimalLiteral(decimal, new BigDecimal("1.0"));
+        var equal = new DBSPDecimalLiteral(decimal, new BigDecimal("1.0"));
+        var scaled = new DBSPDecimalLiteral(decimal, new BigDecimal("1.00"));
+        var wide = new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, 30, 4, true), value.value);
+        Assert.assertEquals(2, RustCircuitPass.findStaticLiteral(compiler, value, List.of(scaled, wide, equal, value)));
+        Assert.assertEquals(-1, RustCircuitPass.findStaticLiteral(compiler, value, List.of(scaled, wide)));
     }
 
     @Test

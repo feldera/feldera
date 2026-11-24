@@ -2184,6 +2184,23 @@ public final class RustCircuitPass implements CircuitTransform {
                 decoder.decodeInner(reply.value.required(1), DBSPPathExpression.class));
     }
 
+    /** Index of the matching declaration, or -1 when this literal needs a new static. */
+    public static int findStaticLiteral(DBSPCompiler compiler, DBSPLiteral literal, List<DBSPLiteral> candidates) {
+        var inputs = new IDBSPInnerNode[candidates.size() + 1];
+        inputs[0] = literal;
+        for (int i = 0; i < candidates.size(); i++)
+            inputs[i + 1] = candidates.get(i);
+        String pass = "Statics/FindLiteral";
+        var result = invokeLowering(compiler, pass, inputs).value;
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision(pass, true);
+        if (result.isNull())
+            return -1;
+        if (!result.isInt() || result.intValue() < 0 || result.intValue() >= candidates.size())
+            throw new IllegalStateException("Invalid static literal index " + result);
+        return result.intValue();
+    }
+
     public static StaticItem declareStatic(DBSPCompiler compiler, DBSPStaticExpression existing) {
         return decodeStaticItem(invokeLowering(compiler, "Statics/Declare", existing));
     }

@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** Use static values when possible.  If 'declare' is true, creates declarations for static values
  * and replaces their uses with PathExpressions that refer to the declarations.
@@ -43,8 +44,8 @@ public class ImplementStatics extends ExpressionTranslator {
     // This is counterintuitive, but we want the default translator behavior,
     // except when we find a constant expression, and then we replace it immediately in preorder.
 
-    /** A reference to the declaration for each literal */
-    final List<Pair<DBSPLiteral, DBSPPathExpression>> canonical;
+    /** Value hashes narrow the search. Different SQL types and hash collisions share a bucket. */
+    final Map<Integer, List<Pair<DBSPLiteral, DBSPPathExpression>>> canonical = new HashMap<>();
     public final List<DBSPStaticItem> newDeclarations;
     /** If true, create declarations, otherwise create just static expressions */
     final boolean declare;
@@ -97,7 +98,6 @@ public class ImplementStatics extends ExpressionTranslator {
 
     public ImplementStatics(DBSPCompiler compiler, boolean declare) {
         super(compiler);
-        this.canonical = new ArrayList<>();
         this.newDeclarations = new ArrayList<>();
         this.declare = declare;
         this.renumber = new RenumberErrorHandlers(compiler);
@@ -299,33 +299,46 @@ public class ImplementStatics extends ExpressionTranslator {
         super.postorder(var);
     }
 
-    VisitDecision replaceLiteral(DBSPLiteral expression) {
-        DBSPExpression canonical = null;
-        for (var e: this.canonical) {
-            if (expression.getType().sameType(e.getKey().getType()) &&
-                    expression.sameValue(e.getKey())) {
-                canonical = e.getValue();
-                break;
-            }
+    @Nullable
+    private DBSPPathExpression findDeclaration(DBSPLiteral literal, List<Pair<DBSPLiteral, DBSPPathExpression>> bucket) {
+        if (bucket.isEmpty())
+            return null;
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            int index = RustCircuitPass.findStaticLiteral(this.compiler, literal, Linq.map(bucket, Pair::getKey));
+            return index < 0 ? null : bucket.get(index).getValue();
         }
+        for (var entry : bucket) {
+            if (literal.getType().sameType(entry.getKey().getType()) && literal.sameValue(entry.getKey()))
+                return entry.getValue();
+        }
+        return null;
+    }
 
-        if (canonical == null) {
-            canonical = this.defineStatic(expression, expression);
-            if (this.declare)
-                this.canonical.add(new Pair<>(expression, canonical.to(DBSPPathExpression.class)));
+    private VisitDecision replaceLiteral(DBSPLiteral literal, @Nullable Object value) {
+        DBSPExpression replacement;
+        if (this.declare) {
+            var bucket = this.canonical.computeIfAbsent(Objects.hashCode(value), ignored -> new ArrayList<>());
+            var reference = this.findDeclaration(literal, bucket);
+            if (reference == null) {
+                reference = this.defineStatic(literal, literal).to(DBSPPathExpression.class);
+                bucket.add(new Pair<>(literal, reference));
+            }
+            replacement = reference;
+        } else {
+            replacement = this.defineStatic(literal, literal);
         }
-        this.map(expression, canonical.applyClone());
+        this.map(literal, replacement.applyClone());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPStringLiteral expression) {
-        return this.replaceLiteral(expression);
+        return this.replaceLiteral(expression, expression.value);
     }
 
     @Override
     public VisitDecision preorder(DBSPDecimalLiteral expression) {
-        return this.replaceLiteral(expression);
+        return this.replaceLiteral(expression, expression.value);
     }
 
     @Override

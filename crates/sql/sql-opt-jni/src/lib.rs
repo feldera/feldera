@@ -865,6 +865,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let types = inputs.iter().map(|&id| edit.type_id(id)).collect::<Result<Vec<_>, _>>()?;
             feldera_sql_opt::limiters::apply_waterlines(&mut edit, *function, &types, &mut next, &mut warnings)?
         }
+        ("Statics/FindLiteral", [literal, candidates @ ..]) => {
+            return Ok(json!(feldera_sql_opt::find_static_literal(&edit, *literal, candidates)?));
+        }
         ("Statics/RenumberErrors", [initializer]) => {
             let first = serde_json::from_slice(state)?;
             let initializer = edit.expression(*initializer)?;
@@ -1544,7 +1547,7 @@ fn transform(
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp" | "WindowGroups/Conjuncts"
-        | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/FindLiteral" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "EnsureExpressionTree" | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"
         | "Monotonicity/Clock" | "Monotonicity/RowClosure" | "Monotonicity/InspectBody"
