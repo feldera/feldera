@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | On `fbe698516`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. On `3f11d9be3`, Rust answered all 418,474 instrumented requests. COUNT and LATENESS restored in both directions, worker cancellation p95 was 8.33 ms, and the highest cold compile p95 ratio was 1.147×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay and runtime](evidence/p3-waterline-failures.json) · [Coverage and restores](evidence/p3-nested-flatmap-closure-facts.json) · [Latency](evidence/p3-nested-flatmap-closure-facts-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port the remaining Java optimizer logic, including general waterline analysis and individual live expression comparisons. Repeat the exit checks on the finished build, obtain independent maintainer acceptance and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
+| P3 | On `fbe698516`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. On `3f11d9be3`, Rust answered all 418,474 instrumented requests. COUNT and LATENESS restored in both directions, worker cancellation p95 was 8.33 ms, and the highest cold compile p95 ratio was 1.147×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay and runtime](evidence/p3-waterline-failures.json) · [Coverage and restores](evidence/p3-nested-flatmap-closure-facts.json) · [Latency](evidence/p3-nested-flatmap-closure-facts-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port the remaining Java optimizer logic, including general waterline analysis. Repeat the exit checks on the finished build, obtain independent maintainer acceptance and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -462,6 +462,19 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `af439243c`, shared-index planning and map fusion reload both operands
+together when a comparison needs shuffle identity or JDK timestamp metadata.
+Rust decides their equality and preserves the diagnostic and allocator state
+on failure. Replacing the requested operands with two unrelated flatmaps broke
+both directed tests. The unchanged build passed 226 Rust tests, 214 focused
+JUnit tests and 239 nightly optimizer tests. All 24 selected compilations matched
+through 11,965 ordered S4 observations and emission. COUNT and LATENESS
+checkpoints restored in both directions without bootstrap. Worker cancellation
+p95 was 12.71 ms across 20 attempts. Cold hybrid/direct compile p95 ratios
+were 0.831 for the array subquery, 1.047 for Nexmark and 0.823 for the outer
+join across 21 measured pairs per workload.
+[Live operand comparisons and checkpoint restores](evidence/p3-live-operand-snapshots.json) · [Cold compilation](evidence/p3-live-operand-snapshots-cold.json)
+
 An `UNNEST` input rewrite or deep copy retains its original shuffle. Output
 projection creates a distinct shuffle even when the indexes match. Map fusion
 publishes completed clusters before reporting a singleton comparison error.
@@ -497,7 +510,8 @@ and emission on 24 classic and Gen-2 compilations.
 [Column lookup diagnostics](evidence/p3-column-lookup-diagnostics.json)
 
 Rust selects shared indexes, tries their column layouts, and rewrites their
-readers. It delegates unresolved field comparisons individually. A failing
+readers. When a comparison needs additional operand metadata, the JVM supplies
+the expressions and Rust decides their equality. A failing
 comparison retains the warnings and generated names preceding it. Waterline
 analysis rejects nullable references at the original read and reports an
 unbound variable, a conflicting declaration, or a repeated expression before
