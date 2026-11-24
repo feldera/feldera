@@ -242,7 +242,7 @@ pub fn monotonicity_transfers(
                     value: FieldWaterline::AllColumns,
                 },
             }),
-            Some(Op::ChainAggregate) => first.then_some(ChainMinimumOrKey),
+            Some(Op::ChainAggregate) => Some(ChainMinimumOrKey),
             Some(Op::DelayedIntegral) => (first && clock()).then_some(Identity { input: 0 }),
             Some(
                 Op::Sink
@@ -315,8 +315,12 @@ pub fn monotonicity_transfers(
             _ => None,
         };
         if let Some(transfer) = transfer {
+            // Chain classification checks both closures even without an input
+            // bound. Only a chain with a bounded input can propagate a bound.
+            if transfer != ChainMinimumOrKey || first {
+                bounded.insert(id);
+            }
             transfers.push((id, transfer));
-            bounded.insert(id);
         }
     }
     Ok(transfers)

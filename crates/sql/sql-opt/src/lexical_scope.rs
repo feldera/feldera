@@ -88,13 +88,6 @@ pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, 
     lexical_references(circuit, closure)?.required()
 }
 
-pub(crate) fn has_free_variables(circuit: &Circuit, closure: NodeId) -> Result<bool, Error> {
-    let inspection = inspect_references(circuit, closure, true)?;
-    let found = inspection.has_free_variables;
-    inspection.resolution().required()?;
-    Ok(found)
-}
-
 /// A detached closure body may have separate key, left and right parameters.
 pub(crate) fn resolve_body(
     circuit: &Circuit,

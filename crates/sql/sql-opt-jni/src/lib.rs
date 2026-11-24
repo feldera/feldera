@@ -741,7 +741,17 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             bindings.closure(&mut edit, body)?
         }
         ("Monotonicity/IsMinimumChain", [init, update]) => {
-            return Ok(json!(feldera_sql_opt::is_minimum_chain(&mut edit, *init, *update)?));
+            use feldera_sql_opt::{KeyComparisonError, MinimumChainError};
+            return match feldera_sql_opt::check_minimum_chain(&mut edit, *init, *update) {
+                Ok(result) => Ok(json!(result)),
+                Err(MinimumChainError::BindingConflict { variable, previous, current }) =>
+                    Ok(binding_conflict(variable, previous, current)),
+                Err(MinimumChainError::FirstField { value, error }) =>
+                    Ok(json!({"first_field": inner_number(value.into()), "error": error.to_string()})),
+                Err(MinimumChainError::Comparison(KeyComparisonError::Diagnostic(error))) =>
+                    Ok(json!({"comparison_failure": error})),
+                Err(error) => Err(error.into()),
+            };
         }
         ("SharedIndexes/Reader", [reader, bindings @ ..]) => {
             let columns: Vec<Vec<usize>> = serde_json::from_slice(state)?;

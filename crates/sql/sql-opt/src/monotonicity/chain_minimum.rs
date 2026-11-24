@@ -1,7 +1,24 @@
 //! Recognize chains whose initializer and updates all minimize the same row expression.
 use super::aggregate::first_leaf;
 use crate::{index_key_equivalence, lexical_scope};
+use crate::{BindingDiagnostic, KeyComparisonError};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId};
+
+#[derive(Debug, thiserror::Error)]
+pub enum MinimumChainError {
+    #[error(transparent)]
+    InvalidIr(#[from] Error),
+    #[error(transparent)]
+    Comparison(#[from] KeyComparisonError),
+    #[error("{error}")]
+    FirstField { value: ExpressionId, error: Error },
+    #[error("shared variable {variable:?} refers to two declarations")]
+    BindingConflict {
+        variable: NodeId,
+        previous: NodeId,
+        current: NodeId,
+    },
+}
 
 fn tuple_updates(edit: &CircuitEditor, function: NodeId) -> Result<Option<Vec<NodeId>>, Error> {
     let body = edit.node(function)?.edge("body")?;
@@ -18,7 +35,7 @@ fn compared_column(
     edit: &mut CircuitEditor,
     update: NodeId,
     row: NodeId,
-) -> Result<Option<ExpressionId>, Error> {
+) -> Result<Option<ExpressionId>, MinimumChainError> {
     let node = edit.node(update)?;
     if edit.expr_kind(edit.expression(update)?)? != ExpressionKind::ConditionalIncrement
         || node.field("condition").is_some()
@@ -30,8 +47,11 @@ fn compared_column(
         return Ok(None);
     }
     let right = edit.expression(node.edge("right")?)?;
-    let field = first_leaf(edit, right)?;
-    edit.closure_with_parameters(field, &[row]).map(Some)
+    let field = first_leaf(edit, right).map_err(|error| MinimumChainError::FirstField {
+        value: right,
+        error,
+    })?;
+    Ok(Some(edit.closure_with_parameters(field, &[row])?))
 }
 
 /// A missing decision means that a compared expression needs an equivalence
@@ -41,6 +61,23 @@ pub fn is_minimum_chain(
     init: NodeId,
     update: NodeId,
 ) -> Result<Option<bool>, Error> {
+    match check_minimum_chain(edit, init, update) {
+        Ok(answer) => Ok(answer),
+        Err(MinimumChainError::Comparison(error)) => index_key_equivalence::speculative(Err(error)),
+        Err(MinimumChainError::InvalidIr(error) | MinimumChainError::FirstField { error, .. }) => {
+            Err(error)
+        }
+        Err(error) => Err(Error::new(error.to_string())),
+    }
+}
+
+/// Inspect each update before its corresponding initializer. A later
+/// initializer can disqualify a chain only after earlier comparisons succeed.
+pub fn check_minimum_chain(
+    edit: &mut CircuitEditor,
+    init: NodeId,
+    update: NodeId,
+) -> Result<Option<bool>, MinimumChainError> {
     let init_params = edit.node(init)?.edges("parameters")?;
     let update_params = edit.node(update)?.edges("parameters")?;
     let (&[init_row, _], &[_, update_row, _]) = (init_params.as_slice(), update_params.as_slice())
@@ -56,26 +93,39 @@ pub fn is_minimum_chain(
     }
     let mut first = None;
     for (initial, update) in initial.into_iter().zip(updates) {
-        if edit.node(initial)?.data("opcode") != edit.node(update)?.data("opcode") {
-            return Ok(Some(false));
-        }
         let Some(column) = compared_column(edit, update, update_row)? else {
             return Ok(Some(false));
         };
-        if lexical_scope::has_free_variables(edit.circuit(), column.into())? {
+        let refs = lexical_scope::inspect_references(edit.circuit(), column.into(), true)?;
+        if let Some(BindingDiagnostic::Conflict {
+            variable,
+            previous,
+            current,
+        }) = refs.diagnostic
+        {
+            return Err(MinimumChainError::BindingConflict {
+                variable,
+                previous,
+                current,
+            });
+        }
+        if refs.has_free_variables {
             return Ok(Some(false));
         }
         if let Some(bound) = first {
-            let same = index_key_equivalence::equivalent(edit, bound, column)?;
+            let same = index_key_equivalence::check_closures(edit, bound, column)?;
             if same != Some(true) {
                 return Ok(same);
             }
         }
         let bound = *first.get_or_insert(column);
+        if edit.node(initial)?.data("opcode") != edit.node(update)?.data("opcode") {
+            return Ok(Some(false));
+        }
         let Some(initial_column) = compared_column(edit, initial, init_row)? else {
             return Ok(Some(false));
         };
-        let same = index_key_equivalence::equivalent(edit, bound, initial_column)?;
+        let same = index_key_equivalence::check_closures(edit, bound, initial_column)?;
         if same != Some(true) {
             return Ok(same);
         }

@@ -1,9 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
@@ -57,6 +59,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
@@ -76,6 +79,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
@@ -97,6 +101,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
@@ -241,6 +246,62 @@ public class WaterlineProjectionTests {
                 } else {
                     var error = Assert.assertThrows(InternalCompilerError.class, () -> analysis.apply(circuit));
                     Assert.assertTrue(error.getMessage(), error.getMessage().contains("DBSPI32Literal.gt0"));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void chainMinimumChecksEachUpdateBeforeTheInitializerAndInputWaterline() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var ts = DBSPTypeTimestampTz.INSTANCE;
+        var good = new DBSPTimestampTzLiteral(site, ts, new TimestampWithTimeZoneString("2020-01-01 00:00:00 UTC"));
+        var bad = new DBSPTimestampTzLiteral(site, ts, new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
+        var integer = new DBSPI32Literal(0).getType();
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var row = integer.ref().var();
+        var index = new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(row.deref(), row.deref()).closure(row),
+                input.outputPort());
+        var state = new DBSPTypeTuple(ts, ts);
+        var output = new DBSPTypeIndexedZSet(site, integer, state);
+        var weight = DBSPTypeWeight.INSTANCE.var();
+        var acc = state.var();
+        var initRow = integer.ref().var();
+        var shared = new DBSPVariablePath(row.variable, row.getType());
+        var conflict = new DBSPLetExpression(shared, shared, shared.deepCopy());
+        for (DBSPExpression compared : List.of(bad, new DBSPTupleExpression(), conflict)) {
+            for (var firstInit : List.of(DBSPOpcode.AGG_MIN, DBSPOpcode.AGG_MAX)) {
+                var init = new DBSPTupleExpression(
+                        new DBSPConditionalIncrementExpression(site, firstInit, ts, good, good.deepCopy(), null),
+                        new DBSPConditionalIncrementExpression(site, DBSPOpcode.AGG_MAX, ts, good, good.deepCopy(), null)
+                ).closure(initRow, weight);
+                var updates = new DBSPTupleExpression(
+                        new DBSPConditionalIncrementExpression(site, DBSPOpcode.AGG_MIN, ts, acc.field(0), good, null),
+                        new DBSPConditionalIncrementExpression(site, DBSPOpcode.AGG_MIN, ts, acc.field(1), compared, null)
+                ).closure(acc, row, weight);
+                var chain = new DBSPChainAggregateOperator(site, init, updates, output, index.outputPort());
+                var circuit = new DBSPCircuit(new ProgramMetadata(), true);
+                circuit.addOperator(input);
+                circuit.addOperator(index);
+                circuit.addOperator(chain);
+                var compiler = new DBSPCompiler(new CompilerOptions());
+                var direct = new Monotonicity(compiler);
+                if (firstInit == DBSPOpcode.AGG_MAX) {
+                    direct.apply(circuit);
+                    Assert.assertNull(direct.getMonotoneExpression(chain));
+                    compiler.options.ioOptions.rustOptimizerPasses = true;
+                    Assert.assertEquals(false, RustCircuitPass.isMinimumChain(compiler, chain));
+                    var hybrid = new Monotonicity(compiler);
+                    hybrid.apply(circuit);
+                    Assert.assertNull(hybrid.getMonotoneExpression(chain));
+                } else {
+                    var expected = Assert.assertThrows(RuntimeException.class, () -> direct.apply(circuit));
+                    compiler.options.ioOptions.rustOptimizerPasses = true;
+                    var checked = Assert.assertThrows(expected.getClass(), () -> RustCircuitPass.isMinimumChain(compiler, chain));
+                    var scheduled = Assert.assertThrows(expected.getClass(), () -> new Monotonicity(compiler).apply(circuit));
+                    Assert.assertEquals(expected.getMessage().lines().findFirst(), checked.getMessage().lines().findFirst());
+                    Assert.assertEquals(expected.getMessage().lines().findFirst(), scheduled.getMessage().lines().findFirst());
                 }
             }
         }

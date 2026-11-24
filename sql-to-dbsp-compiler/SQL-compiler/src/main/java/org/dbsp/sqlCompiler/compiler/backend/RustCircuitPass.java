@@ -128,6 +128,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.OrderErrorConsumers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.Monotonicity;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjectionVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
@@ -997,8 +998,22 @@ public final class RustCircuitPass implements CircuitTransform {
 
     @Nullable
     public static Boolean isMinimumChain(DBSPCompiler compiler, DBSPChainAggregateOperator chain) {
-        var result = invokeLowering(compiler, "Monotonicity/IsMinimumChain", chain.init, chain.getClosureFunction()).value;
-        return answered(compiler, "Monotonicity/IsMinimumChain", result) ? result.booleanValue() : null;
+        String pass = "Monotonicity/IsMinimumChain";
+        var reply = invokeLowering(compiler, pass, chain.init, chain.getClosureFunction());
+        var result = reply.value;
+        if (!answered(compiler, pass, result))
+            return null;
+        if (result.has("comparison_failure"))
+            reportComparisonFailure(result.required("comparison_failure"));
+        if (result.has("conflict"))
+            throw Objects.requireNonNull(bindingError(reply.writer, result));
+        if (result.has("first_field")) {
+            var value = Utilities.getExists(Objects.requireNonNull(reply.writer.liveNodes),
+                    result.required("first_field").longValue()).to(DBSPExpression.class);
+            Monotonicity.firstField(value);
+            throw new IllegalStateException(result.required("error").textValue());
+        }
+        return result.booleanValue();
     }
 
     @Nullable

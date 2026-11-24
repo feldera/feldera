@@ -1142,7 +1142,7 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     /** The first "field" of {@code value}. */
-    private static DBSPExpression firstField(DBSPExpression value) {
+    public static DBSPExpression firstField(DBSPExpression value) {
         if (value.getType().is(DBSPTypeTupleBase.class))
             return firstField(value.field(0));
         return value;

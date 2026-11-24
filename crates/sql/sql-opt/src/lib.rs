@@ -21,7 +21,7 @@ mod monotonicity;
 pub use monotonicity::aggregate::{aggregate_transfer, chain_minimum_transfer, minimum_transfer, AggregateTransfer};
 pub use monotonicity::asof::asof_waterline;
 pub use monotonicity::bindings::{waterline_bindings, WaterlineBindings};
-pub use monotonicity::chain_minimum::is_minimum_chain;
+pub use monotonicity::chain_minimum::{check_minimum_chain, is_minimum_chain, MinimumChainError};
 pub use monotonicity::combine::{
     antijoin_waterline, combine_bounds, join_arguments, BoundCombination, BoundError, BoundSelection, BoundType,
 };
