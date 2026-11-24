@@ -1,0 +1,54 @@
+{
+  "scope": "Rust scalar transfers validate result and inherited operand types in visitor order, select only the required bounds, and preserve the first cast diagnostic.",
+  "source_base": "3f0cd4b206a0ed822e254d413f378c25d6db65a0",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "cf6d99df0e2c8dca3a879896a994660115cbdc581c5a2ad4f85e448fd310fdb2",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "a2abc44ea403df0ab6d065c4c488f7df0b1bdf9a6ddbfabb68e2927364cf9ec8",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "c73b20ab751853f956012290ddfe947fc8ae51f314a3f3889b42b5251f0d5152",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/function.rs": "2d30ed9263f7c004619497e5a57a12eb1eb1327ee5d8da2e801c0d44e74ea8be",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/scalar.rs": "a13ac1a0824fb0fd7e01598b669a55620d277a82fab419dd6b8106788aeeaf8d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "1a982b3ea8229df6ddba8ddec7340b9126688205d6ce92b13d20df0c4ecb6ff5",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/WaterlineProjection.java": "afc4667d8d07afc2f22b89cb2338ed09ec077b323844bc991d55b1b708f83670",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "a86b479622d40850ee7083b8c05382edb34e18cac32af119b6a4ebee993c3ecc"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "6a94051871e002fb3b8dae207226b65d1b869b28351802a45f18ba3d2656dcf5",
+    "bin/sql-difftest": "7eab6aa4e1f621ec9dd3b3eb4d3f5bcdd8a7b567b599d2d2d33a549e352537b4",
+    "maven/tests.jar": "8b6ee94eed3c0429b58b1afb0a9d8aa446034ff1133c55df10245fee6b5dbadd",
+    "maven/sql-compiler.jar": "e29923616ec6a4187a5a76e3161ae54cd310c6750ad8ae1b8372f37a229152a8"
+  },
+  "negative_control": {
+    "library_sha256": "f94d94983d96370e7ef1383d45263a36c1c9df1b7e0b13927030376fbc7cc0b0",
+    "failed_tests": [
+      "scalarTransfersReportTheFirstInvalidTypeOperation",
+      "oneSidedMaximumSkipsAnUnboundedStructuredOperand"
+    ],
+    "java_compiler_sha256": "ad4870259a4fae5febf36995f9bd4ff24ae15e014070b0b05647297d96539912"
+  },
+  "rust_tests": 226,
+  "junit_tests": 222,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "8d731d0845647dafb49fb48c0c6c264f7dcd24e6dbce764ba5d396774a640644"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "8b55afe02b513cda2bf861877e13f6ad80f8420a6717fef6060039cc54e2baec"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 247,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "f6b1a1b0ce03fe539078e32ba2744a9e2d258a28"
+}

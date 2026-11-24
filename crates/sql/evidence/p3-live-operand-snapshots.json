@@ -183,5 +183,29 @@
     "p95_ms": 12.709243,
     "largest_driver_plus_front_end_rss_bytes": 70651904,
     "compiler_sha256": "315775805e93701a3bb2d2783fa80832d472a3814e7fcb002c479c393d4ebad6"
+  },
+  "shared_index_population": {
+    "classic": {
+      "cases": 202,
+      "ordered_s4_observations": 95511,
+      "mismatches": 0,
+      "population_sha256": "4c1e9fc0b99df6ea2ae187a9f48f1410200dcb7a6afb8d3543ca5861da827dc2",
+      "receipt_sha256": "81e98d7862fa1b4da152ebb5f0826a3a7468a917efe424765c26b63ba096dea3",
+      "shards_sha256": {
+        "shard-000": "9868cbd7d50531e3cc391f37807cb09ef909250e62a88196b49ccb723ca5ec6a",
+        "shard-001": "077bda6dc43bd81bce626c598e7c0b4e66fa0182aa660d3a0d1c165569bf8481"
+      }
+    },
+    "gen2": {
+      "cases": 243,
+      "ordered_s4_observations": 116195,
+      "mismatches": 0,
+      "population_sha256": "70c71fad46e1124d2ee0441387579a9b178adf508d7c9a0b1fa6d963434106d3",
+      "receipt_sha256": "362c200f632b7cf91f3e15af93556e60b592044c09b68a79cb7ef59b2d9beb72",
+      "shards_sha256": {
+        "shard-000": "f5abea854536f8c579ef6eb5777b2f5d869140afc1bd79af4ca00f348fe4bd74",
+        "shard-001": "6d3c3d3031b2c9b5d08ba2734560905f686169a1651e1cdea4c460556c17bd96"
+      }
+    }
   }
 }

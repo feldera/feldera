@@ -1,0 +1,57 @@
+{
+  "scope": "Reference-returning calls produce scalar bounds. Tuple-returning calls preserve the first diagnostic and preceding facts, including an invalid clock after an earlier temporal filter merge.",
+  "source_base": "af439243cd16ff7b640ef72c2a036b7ee78714a1",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "16f530522febf80054a7d9eea02193bb0ca83cdcab59e9c7ef5e7c19c0d42c2f",
+    "crates/sql/sql-opt-jni/src/temporal.rs": "3d64bb0571f5cec3f01fcbc7c4748fe99a3c73c4aa88eefc821647825924a4c8",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "8a8ba3f66c4cb3db662fc112379ce6340bd694a363f1815c56e51df82a18783b",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/function.rs": "365001efc8a03c499d498234f2045c1b12cb6760735e53e9f36f610f314ea587",
+    "crates/sql/sql-opt/src/temporal_comparisons.rs": "ea280aa44c32e251464f43a69d85916ceb522c36fba890a74f40d0fc17da64a5",
+    "crates/sql/sql-opt/src/temporal_filters.rs": "e3f885c99d7115ab13470e45b466be4a9b38b72cf699f5d73fa09c39c7a9fbdf",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "f187618969d226b982ba3053f3b87ad6b2198c180a96a588bd74b69a064e5e67",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/ScalarMonotoneType.java": "8b9c8f727321bcf343c85f604a890cf31255d436b264fcf48892bbbf3f711e09",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "17fc3fe6f6b8f52147b8646de720a7cd8a279b6bf10e295e70dd981b0b747ce4",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "72fb988aa4c3fc9f93274b88ceb7b03568fff8228290244f9f2a93d5992980a6"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "695f6016b6f0c3679a52cc446ec8dcef056bde7a283597e5de820fd598f71706",
+    "bin/sql-difftest": "c2d37685eabcc5be6fb3501c76030c1841fd9517da242a7acb992ff49184b84d",
+    "maven/tests.jar": "bddfb845852d0b643691c2271eb869befdb40ec063d9855e7ed3bca41ea42e58",
+    "maven/sql-compiler.jar": "64b3b499c9a338edd03b9018f6454857886882e0942ac19c98c61cff8b5f723f"
+  },
+  "negative_control": {
+    "library_sha256": "fb8753e7fe03d53b22ff52539d73a5c43773f998d04a6d5eea004b8cfb73039e",
+    "failed_tests": [
+      "referenceReturningCallsKeepTheirScalarWaterline",
+      "tupleReturningCallsFailBeforePublishingTheirWaterline",
+      "temporalMergeReportsATupleClockAfterAnEarlierMerge"
+    ],
+    "java_compiler_sha256": "1468a27a2db8767b68fdd7fe09ab9beb945bfc9130d34b3c86ee2435f3f31e30"
+  },
+  "rust_tests": 226,
+  "junit_tests": 217,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "ee4299415a311d0218513a80894be0fe982927652afd00269aa29938dbfab929"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "f248a1d203095ddbefc62413799a7b58ee2ce034176a08c0bad247b5a85d7569"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 242,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "d52a86fc347cad245aba5f097cc5c58a5d8b867a"
+}

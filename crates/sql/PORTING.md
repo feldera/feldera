@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The Rust waterline visitor now checks registered call result types, reads a
+nullable unit field without requiring its parent bound, and checks scalar
+operands in visitor order. The changes passed 242, 245 and 247 nightly optimizer
+tests on `d52a86fc3`, `3f0cd4b20` and `f6b1a1b0c`, respectively. Each build
+matched emission and all 11,965 ordered S4 observations for the same 12 classic
+and 12 Gen-2 programs. The directed regressions failed on their predecessors.
+[Call result types](evidence/p3-call-waterline-types.json) · [Nullable fields](evidence/p3-nullable-read-projection.json) · [Scalar transfers](evidence/p3-scalar-waterline-transfers.json)
+
 On `af439243c`, shared-index planning and map fusion reload both operands
 together when a comparison needs shuffle identity or JDK timestamp metadata.
 Rust decides their equality and preserves the diagnostic and allocator state
@@ -472,7 +480,9 @@ through 11,965 ordered S4 observations and emission. COUNT and LATENESS
 checkpoints restored in both directions without bootstrap. Worker cancellation
 p95 was 12.71 ms across 20 attempts. Cold hybrid/direct compile p95 ratios
 were 0.831 for the array subquery, 1.047 for Nexmark and 0.823 for the outer
-join across 21 measured pairs per workload.
+join across 21 measured pairs per workload. All 445 frozen programs that
+exercised shared-index replacement (202 classic and 243 Gen-2) matched
+emission and all 211,706 ordered S4 observations.
 [Live operand comparisons and checkpoint restores](evidence/p3-live-operand-snapshots.json) · [Cold compilation](evidence/p3-live-operand-snapshots-cold.json)
 
 An `UNNEST` input rewrite or deep copy retains its original shuffle. Output

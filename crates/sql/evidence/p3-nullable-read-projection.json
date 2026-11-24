@@ -1,0 +1,56 @@
+{
+  "scope": "Single reads and whole closures lift nullable fields before demanding their bounds. Raw tuples, closure fields, references and invalid field projections report their live type diagnostics.",
+  "source_base": "d52a86fc347cad245aba5f097cc5c58a5d8b867a",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "77d3a3f01d711d9843b987d2519528bb1694434beaf650b4348db244a10b8a27",
+    "crates/sql/sql-opt/src/limiters/projection.rs": "5189b7ae70a3635e10f52e19f986ff029f952ee8187319e10daf9a6bcbb1af66",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "b51a440dffc1531ce1f05feeaa078ef68008cac32c0960ec62cec1a010d7e3c0",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "a3e55b2ae2d33928372992564cf4a544d17100b2f6878dc5ef15cd11cb0bf323",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/reads.rs": "104393355076b518c2d6255cc3cea728a609a3d0f80d382e535046e93d3ec526",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/shape.rs": "75147e52395c8fb19230ebdc99b0f84a92efea5f3e95268561e34552de5131ab",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "4af2d2830cd3413d6d962498d1d851a256547ee7a7d99b96913be79025353e7c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/WaterlineProjection.java": "a40c944d76f9751ff86b5260679f1d4e60a939618f091558f4cd7c1877c9868e",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "e60d6ca22cd995bece1377a840c0b16be155bcc48b9acd88cbbd0d2aa52b591b"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "f94d94983d96370e7ef1383d45263a36c1c9df1b7e0b13927030376fbc7cc0b0",
+    "bin/sql-difftest": "90a0631eea3732301cc06f6481f14615ea1341bbb5bbe544ce6005a8b4cdbf7f",
+    "maven/tests.jar": "02a896e4ad8ba67f845c561768ca058267818234b4af21e60deeae585e11c95c",
+    "maven/sql-compiler.jar": "ad4870259a4fae5febf36995f9bd4ff24ae15e014070b0b05647297d96539912"
+  },
+  "negative_control": {
+    "library_sha256": "695f6016b6f0c3679a52cc446ec8dcef056bde7a283597e5de820fd598f71706",
+    "failed_tests": [
+      "discardedNullableRawTupleReportsItsEarlierFacts",
+      "singleReadReportsInvalidTypeProjections",
+      "nullableUnitFieldNeedsNoBoundFromItsParent"
+    ],
+    "java_compiler_sha256": "64b3b499c9a338edd03b9018f6454857886882e0942ac19c98c61cff8b5f723f"
+  },
+  "rust_tests": 226,
+  "junit_tests": 220,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "529ed49dbea2e8c26d1812fe4678f8274a95a613801c07650d311e45383fed2f"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "00fa0bf52a687439b77bdccdc566e666497987665870a4ffd1a150325005dfdc"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 245,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "3f0cd4b206a0ed822e254d413f378c25d6db65a0"
+}
