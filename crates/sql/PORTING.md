@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `02de0ae99`, the Rust scheduler checks a rolling window's upper frame
+before pruning an input without a waterline. A NULL following offset now
+reports the same numeric-literal error as Java. A preceding frame ignores
+the offset. All 252 nightly optimizer tests passed, and all 24 selected
+compilations matched emission and 11,965 ordered S4 observations.
+[Rolling frame replay](evidence/p3-rolling-offset-diagnostic.json)
+
 Rust preserves completed temporal-filter merges when a later predicate fails.
 It checks nullable raw tuple field types before using their bounds and uses
 the failing predicate's live types to report the diagnostic. The three builds
@@ -469,8 +476,10 @@ passed 248, 250 and 251 nightly optimizer tests, respectively. On `b533aad10`
 all 67 frozen programs that exercised temporal-filter merging matched Java's
 emission and all 41,148 ordered S4 observations. COUNT and LATENESS
 checkpoints restored in both directions, and worker cancellation p95 was
-15.35 ms over 20 attempts.
-[Temporal merge diagnostics](evidence/p3-temporal-merge-diagnostics.json) · [Raw tuple bounds](evidence/p3-raw-tuple-waterlines.json) · [Failed predicate replay and restores](evidence/p3-failed-predicate-projection.json)
+15.35 ms over 20 attempts. Cold hybrid/direct compile p95 ratios were 0.886
+for the array subquery, 1.029 for Nexmark and 0.865 for the outer join over
+21 measured pairs per workload.
+[Temporal merge diagnostics](evidence/p3-temporal-merge-diagnostics.json) · [Raw tuple bounds](evidence/p3-raw-tuple-waterlines.json) · [Failed predicate replay and restores](evidence/p3-failed-predicate-projection.json) · [Cold compilation](evidence/p3-failed-predicate-projection-cold.json)
 
 The Rust waterline visitor now checks registered call result types, reads a
 nullable unit field without requiring its parent bound, and checks scalar

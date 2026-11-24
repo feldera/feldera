@@ -1,0 +1,49 @@
+{
+  "scope": "Rust checks the rolling upper frame before pruning an unbounded input and reports a NULL numeric offset at the original literal.",
+  "source_base": "1c732264b6111de520e828675f29290bdd70f673",
+  "source_files_sha256": {
+    "crates/sql/sql-opt/src/monotonicity/schedule.rs": "34b37193fc5ad97b44aaf7c2a419715cc99927a1ba571c8ac75f216cad58816e",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "7ccd241e8c123ec5e35a55bbbdbc65887d25bf69b88b6a69045acd1bf8fdb0f5",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/Monotonicity.java": "861716f3381de252e96e754a4fe6a6fee3458173969eaab40d73a11d251ffd57",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "0242228c22f49a5efc961efe37119852afdc02e82b6f978b0b178ec61547d68a"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "a4f196b6b7324bcdce15d140ea636353d3cdd4c9deab188b78128e36a2c1c649",
+    "bin/sql-difftest": "1e651bb25247382ce5c82d6431937e05c6348d2151e46dde697ce7cbc39bd565",
+    "maven/tests.jar": "7e58850470ac5a32a962b224fd85cfd5c17ef97fde10334d0e9f3c1fb62a92d5",
+    "maven/sql-compiler.jar": "4ea9414dc1123ce574131ffcb444332e0418ac094bff4340edeff694cc0b3084"
+  },
+  "negative_control": {
+    "library_sha256": "ed8af6b0f113c3aac623e68398f03b260b820c593073ceb97670e1f4d9663d55",
+    "failed_tests": [
+      "rollingFrameChecksNullOffsetWithoutAnInputWaterline"
+    ],
+    "java_compiler_sha256": "02731bec6ce7fec237247b42b768a5f6b1a059550c65de0ce93f57d57a9f5453"
+  },
+  "rust_tests": 226,
+  "junit_tests": 227,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "e7fa8f8074d0b5a2ad42086062244904ffd44b2acc247c9630d8ef99b667d492"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "137d2b0a1cd96bbd3d8422259c8a08f504bc9a0b8d8fb0774b483cc6cc07d3bf"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 252,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "02de0ae99aac8f0a02ba31c5b064d8a5338ec022"
+}
