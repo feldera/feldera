@@ -98,6 +98,12 @@ impl Operation {
         // A tuple consumes every field's bound. Scalar operations and wrappers
         // check their result types and select their own operands in visitor order.
         if matches!(self, Self::Tuple) {
+            let ty = edit.expression_type(id)?;
+            if edit.expr_kind(id)? == Expr::RawTuple && edit.nullable(ty)? {
+                return Ok(Evaluation::Failed(WaterlineError::Type(
+                    super::WaterlineTypeError::NullableRawTuple, ty,
+                )));
+            }
             if let Some(child) = children
                 .as_slice()
                 .iter()

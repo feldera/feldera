@@ -752,6 +752,10 @@ public final class RustCircuitPass implements CircuitTransform {
                 type.withMayBeNull(false);
                 yield new IllegalStateException("Expected a type with no nonnullable form " + type);
             }
+            case "NullableRawTuple" -> {
+                Utilities.enforce(!type.mayBeNull);
+                yield new IllegalStateException("Expected a nullable raw tuple " + type);
+            }
             case "ExpectedScalar" -> ScalarMonotoneType.expectedScalar(type);
             case "UnsupportedType" -> NonMonotoneType.unsupportedType(type);
             default -> throw new IllegalArgumentException("Unknown waterline type error " + failure);

@@ -1059,7 +1059,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                     feldera_sql_opt::ProjectedRead::Value(value) => Some(value),
                     feldera_sql_opt::ProjectedRead::NeedsVisitor => None,
                     feldera_sql_opt::ProjectedRead::InvalidProjection(ty) => return Ok(json!({"invalid_projection": ty})),
-                    feldera_sql_opt::ProjectedRead::UnsupportedType(ty) => return Ok(json!({"kind": "UnsupportedType", "type": inner_number(ty.into())})),
+                    feldera_sql_opt::ProjectedRead::TypeError(kind, ty) => return Ok(json!({"kind": kind, "type": inner_number(ty.into())})),
                     feldera_sql_opt::ProjectedRead::MissingBound => return Ok(json!({"missing_bound": true})),
                 }
             } else {

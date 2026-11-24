@@ -145,10 +145,7 @@ fn unbounded_type(
 ) -> Result<Evaluation, Error> {
     Ok(match UnorderedRow::from_type(edit, ty)? {
         UnorderedType::Row(row) => Evaluation::Value(row.unbounded_value(ty, constant)),
-        UnorderedType::Unsupported(field) => Evaluation::Failed(WaterlineError::Type(
-            WaterlineTypeError::UnsupportedType,
-            field,
-        )),
+        UnorderedType::Invalid(kind, field) => Evaluation::Failed(WaterlineError::Type(kind, field)),
     })
 }
 
@@ -200,9 +197,7 @@ fn project_wrapper(
         ProjectedRead::InvalidProjection(ty) => {
             Evaluation::Failed(WaterlineError::InvalidProjection(ty))
         }
-        ProjectedRead::UnsupportedType(ty) => {
-            Evaluation::Failed(WaterlineError::Type(WaterlineTypeError::UnsupportedType, ty))
-        }
+        ProjectedRead::TypeError(kind, ty) => Evaluation::Failed(WaterlineError::Type(kind, ty)),
     })
 }
 
@@ -278,9 +273,9 @@ pub(crate) fn clock_facts(
     else {
         return Ok(None);
     };
-    let UnorderedType::Row(UnorderedRow { shape, projected }) = UnorderedRow::from_type(edit, ty)?
-    else {
-        return Ok(None);
+    let UnorderedRow { shape, projected } = match UnorderedRow::from_type(edit, ty)? {
+        UnorderedType::Row(row) => row,
+        UnorderedType::Invalid(kind, field) => return Err(TemporalDiagnostic::Type(kind, field).into()),
     };
     if crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?.is_none() {
         return Ok(None);
@@ -491,6 +486,7 @@ impl WaterlineInspection {
 #[derive(Clone, Copy, serde::Serialize)]
 pub enum WaterlineTypeError {
     ExpectedScalar,
+    NullableRawTuple,
     RequiredType,
     UnsupportedType,
 }

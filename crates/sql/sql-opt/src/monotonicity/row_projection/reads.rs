@@ -1,5 +1,5 @@
 //! Project a field read or value wrapper against its operand waterline.
-use super::{ProjectedValue, RowType, Shape, UnorderedRow, UnorderedType};
+use super::{ProjectedValue, RowType, Shape, UnorderedRow, UnorderedType, WaterlineTypeError};
 use crate::limiters::Projection;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId};
 
@@ -18,7 +18,7 @@ pub enum ProjectedRead {
     Value(ProjectedValue),
     MissingBound,
     InvalidProjection(RowType),
-    UnsupportedType(TypeId),
+    TypeError(WaterlineTypeError, TypeId),
     NeedsVisitor,
 }
 
@@ -87,8 +87,8 @@ impl RowRead {
             Self::Borrow => {
                 let declared = match UnorderedRow::from_type(edit, ty)? {
                     UnorderedType::Row(row) => row,
-                    UnorderedType::Unsupported(ty) => {
-                        return Ok(ProjectedRead::UnsupportedType(ty));
+                    UnorderedType::Invalid(kind, ty) => {
+                        return Ok(ProjectedRead::TypeError(kind, ty));
                     }
                 };
                 let Some(bound) = value.reduced else {

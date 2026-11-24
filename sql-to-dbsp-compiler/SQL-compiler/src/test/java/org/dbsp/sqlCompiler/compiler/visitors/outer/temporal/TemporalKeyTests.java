@@ -166,6 +166,38 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void temporalMergeValidatesTheInputRowBeforeExaminingItsClock() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var invalid = new DBSPTypeRawTuple(site, true, List.of(b.i32()));
+        var rowType = b.tup(b.i32(), invalid);
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+        circuit.addOperator(input);
+        var rows = input.outputPort();
+        for (int i = 0; i < 2; i++) {
+            var row = b.refVar(rowType);
+            var key = b.call(DBSPTypeTimestamp.INSTANCE, "timestamp_key", b.field(row, 0));
+            var clock = b.call(DBSPTypeTimestamp.INSTANCE, "now");
+            var filter = new DBSPFilterOperator(site, b.binary(DBSPOpcode.GTE, key, clock).closure(row), rows);
+            circuit.addOperator(filter);
+            rows = filter.outputPort();
+        }
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(InternalCompilerError.class, () -> new MergeFilters(compiler).apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        start = DBSPVariablePath.nextGeneratedName();
+        var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
+        Assert.assertEquals(direct.getMessage().lines().findFirst(), hybrid.getMessage().lines().findFirst());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
+    }
+
+    @Test
     public void temporalMergeReportsATupleClockAfterAnEarlierMerge() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();

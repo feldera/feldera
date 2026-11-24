@@ -1,3 +1,4 @@
+use super::WaterlineTypeError;
 use crate::limiters::Projection;
 use feldera_sql_ir::{CircuitEditor, Error, NodeId, TypeId, TypeKind};
 use std::collections::{HashMap, HashSet};
@@ -78,7 +79,7 @@ pub(super) struct UnorderedRow {
 
 pub(super) enum UnorderedType {
     Row(UnorderedRow),
-    Unsupported(TypeId),
+    Invalid(WaterlineTypeError, TypeId),
 }
 
 impl UnorderedRow {
@@ -98,7 +99,7 @@ impl UnorderedRow {
         if !structured(root_kind) {
             return Ok(match scalar(root_kind) {
                 Some(row) => UnorderedType::Row(row),
-                None => UnorderedType::Unsupported(root),
+                None => UnorderedType::Invalid(WaterlineTypeError::UnsupportedType, root),
             });
         }
         let root = NodeId::from(root);
@@ -114,7 +115,7 @@ impl UnorderedRow {
             let node = edit.node(id)?;
             if !structured(kind) {
                 let Some(shape) = scalar(kind) else {
-                    return Ok(UnorderedType::Unsupported(ty));
+                    return Ok(UnorderedType::Invalid(WaterlineTypeError::UnsupportedType, ty));
                 };
                 completed.insert(id, shape);
                 continue;
@@ -151,7 +152,13 @@ impl UnorderedRow {
                     .iter()
                     .map(|id| completed[id].shape.clone())
                     .collect();
-                let shape = Shape::tuple(fields, kind == TypeKind::RawTuple, edit.nullable(ty)?);
+                // Java constructs the field shapes before it checks the raw tuple itself.
+                let raw = kind == TypeKind::RawTuple;
+                let nullable = edit.nullable(ty)?;
+                if raw && nullable {
+                    return Ok(UnorderedType::Invalid(WaterlineTypeError::NullableRawTuple, ty));
+                }
+                let shape = Shape::tuple(fields, raw, nullable);
                 let projected = if shape.monotone() {
                     let kept = members
                         .iter()

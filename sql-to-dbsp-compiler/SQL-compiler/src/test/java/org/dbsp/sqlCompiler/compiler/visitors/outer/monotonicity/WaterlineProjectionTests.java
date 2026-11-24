@@ -1076,6 +1076,41 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void nullableRawTupleFailsBeforeConsumingItsFieldsBounds() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(1).getType();
+        var input = integer.ref().var();
+        var shape = new MonotoneType(integer);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var unit = DBSPTypeRawTuple.EMPTY;
+        var nullable = new DBSPTypeRawTuple(site, true, List.of(unit));
+        var unsupported = new DBSPTypeStruct(site, new ProgramIdentifier("Unsupported"), List.of(), false);
+        for (var invalid : List.of(new DBSPRawTupleExpression(site, nullable, new NoExpression(unit)),
+                new NoExpression(new DBSPTypeTuple(nullable)),
+                new NoExpression(new DBSPTypeRawTuple(site, true, List.of(unsupported))))) {
+            var before = new DBSPI32Literal(7);
+            var later = new DBSPI32Literal(8);
+            var body = new DBSPBlockExpression(List.of(before.toStatement(), invalid.toStatement()), later);
+            var closure = body.closure(input);
+            var oracle = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, shape);
+            var expected = Assert.assertThrows(RuntimeException.class, () -> oracle.apply(closure));
+            Assert.assertFalse(expected instanceof NullPointerException);
+            for (boolean resultOnly : List.of(false, true)) {
+                var facts = new HashMap<DBSPExpression, MonotoneExpression>();
+                var failure = Assert.assertThrows(expected.getClass(), () -> RustCircuitPass.projectWaterlineClosure(
+                        compiler, body, closure.parameters, new DBSPType[]{integer},
+                        new IMaybeMonotoneType[]{new MonotoneRefType(shape)}, false, resultOnly, facts::put));
+                Assert.assertEquals(expected.getMessage().lines().findFirst(), failure.getMessage().lines().findFirst());
+                Assert.assertTrue(facts.containsKey(before));
+                Assert.assertFalse(facts.containsKey(invalid));
+                Assert.assertFalse(facts.containsKey(later));
+            }
+        }
+    }
+
+    @Test
     public void scalarTransfersReportTheFirstInvalidTypeOperation() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var site = CalciteEmptyRel.INSTANCE;
