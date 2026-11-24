@@ -68,6 +68,7 @@ pub struct TemporalFilterPair<'a> {
 pub enum TemporalMerge {
     Rewritten(Circuit),
     Failed {
+        graph: Circuit,
         diagnostic: TemporalDiagnostic,
         next_name: u64,
         warnings: Vec<SimplifyWarning>,
@@ -79,7 +80,7 @@ impl TemporalDiagnostic {
         match self {
             Self::Missing(key) => input.node(key.expression().into()).is_some(),
             Self::Type(_, ty) => input.node((*ty).into()).is_some(),
-            Self::Comparison(_) | Self::MissingBound => true,
+            Self::Comparison(_) | Self::MissingBound | Self::Predicate { .. } => true,
         }
     }
 }
@@ -127,6 +128,7 @@ pub fn merge_temporal_filters_with(
                 }
                 Err(ClockError::Diagnostic(diagnostic)) if diagnostic.can_report_from(&circuit) => {
                     return Ok(Some(TemporalMerge::Failed {
+                        graph: edit.circuit().clone(),
                         diagnostic,
                         next_name: trial_names,
                         warnings: diagnostics,
@@ -201,7 +203,7 @@ fn checked_closure(
     let [parameter] = node.edges("parameters")?[..] else {
         return Err(Error::new("a temporal filter requires one row parameter").into());
     };
-    let body = crate::filters::strip_wrap_bool(edit, edit.expression(node.edge("body")?)?)?;
+    let body = edit.expression(node.edge("body")?)?;
     Ok(checked_temporal_predicates(edit, parameter, body, next)?
         .map(|predicates| (parameter, predicates)))
 }

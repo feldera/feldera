@@ -97,9 +97,14 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
                 "next_generated_name": next, "unused_sources": [],
                 "circuit": circuit.changed_live_graph(&input),
             }),
-            feldera_sql_opt::TemporalMerge::Failed { diagnostic, next_name, warnings } => {
+            feldera_sql_opt::TemporalMerge::Failed { graph, diagnostic, next_name, warnings } => {
                 use feldera_sql_opt::TemporalDiagnostic as Diagnostic;
                 let failure = match diagnostic {
+                    Diagnostic::Predicate { parameter, body } => {
+                        let roots = graph.live_inner_roots(&input, &[parameter, body.into()])
+                            .map_err(|e| error(e.to_string()))?;
+                        json!({"predicate": roots})
+                    }
                     Diagnostic::Comparison(error) => json!({"comparison_failure": error}),
                     Diagnostic::MissingBound => json!({"missing_clock_bound": true}),
                     Diagnostic::Type(kind, ty) => json!({"type_error": {

@@ -77,13 +77,6 @@ impl Resolution<'_> {
             ))),
         }
     }
-
-    fn optional(self) -> Result<Option<References>, Error> {
-        match self {
-            Self::Free { .. } => Ok(None),
-            other => other.required().map(Some),
-        }
-    }
 }
 
 /// Keep the identities of failed bindings so the caller can report their live source locations.
@@ -100,15 +93,6 @@ pub(crate) fn has_free_variables(circuit: &Circuit, closure: NodeId) -> Result<b
     let found = inspection.has_free_variables;
     inspection.resolution().required()?;
     Ok(found)
-}
-
-/// Resolve a predicate detached from its closure, keeping its row parameter in scope.
-pub(crate) fn predicate_references(
-    circuit: &Circuit,
-    parameter: NodeId,
-    body: NodeId,
-) -> Result<Option<References>, Error> {
-    resolve_body(circuit, [parameter], body)?.optional()
 }
 
 /// A detached closure body may have separate key, left and right parameters.

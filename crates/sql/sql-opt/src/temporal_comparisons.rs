@@ -109,6 +109,8 @@ pub enum TemporalDiagnostic {
     MissingBound,
     Type(WaterlineTypeError, TypeId),
     Comparison(crate::ComparisonDiagnostic),
+    /// The diagnostic needs the live types of earlier expressions in this predicate.
+    Predicate { parameter: NodeId, body: ExpressionId },
 }
 
 pub(crate) enum ClockError {
@@ -176,7 +178,8 @@ pub(super) fn checked_temporal_predicates(
     else {
         return Ok(None);
     };
-    Ok(Some(classify_temporal_predicates(edit, body, &operands)?))
+    let predicate = crate::filters::strip_wrap_bool(edit, body)?;
+    Ok(Some(classify_temporal_predicates(edit, predicate, &operands)?))
 }
 
 fn comparison(opcode: &str, clock_on_left: bool) -> Option<WindowComparison> {

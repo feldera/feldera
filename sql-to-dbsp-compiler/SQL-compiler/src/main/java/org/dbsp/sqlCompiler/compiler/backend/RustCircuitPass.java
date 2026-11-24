@@ -3675,6 +3675,8 @@ public final class RustCircuitPass implements CircuitTransform {
             finishLowering(this.compiler, reply);
             if (!this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
                 this.compiler.stateObserver.nativeDecision("MergeFilters", true);
+            if (failure.has("predicate"))
+                throw temporalPredicateError(this.compiler, writer.innerVisitor, failure.required("predicate"));
             if (failure.has("comparison_failure"))
                 reportComparisonFailure(failure.required("comparison_failure"));
             if (failure.has("type_error"))
@@ -3687,6 +3689,20 @@ public final class RustCircuitPass implements CircuitTransform {
             throw Utilities.missingKey(failure.required("key_is_node_id").booleanValue() ? expression.getId() : expression);
         }
         return reply;
+    }
+
+    /** Materialize the Rust waterline diagnostic against the failing predicate's
+     * live types, including facts produced by earlier statements in that predicate. */
+    private static RuntimeException temporalPredicateError(DBSPCompiler compiler, ToJsonInnerVisitor writer, JsonNode roots) {
+        var decoder = expressionDecoder(writer);
+        var parameter = decodeLiveRoot(decoder, roots.required(0), DBSPParameter.class);
+        var body = decodeLiveRoot(decoder, roots.required(1), DBSPExpression.class);
+        var row = NonMonotoneType.nonMonotone(parameter.getType().deref());
+        var analysis = projectWaterlineClosure(compiler, body, new DBSPParameter[]{parameter},
+                new DBSPType[]{row.getProjectedType()}, new IMaybeMonotoneType[]{new MonotoneRefType(row)}, false);
+        if (analysis instanceof FailedWaterline failed && failed.error() == WaterlineError.TargetMaximum)
+            return new UnsupportedException(failed.expression().getType().withMayBeNull(false).getNode());
+        return new IllegalStateException("Expected a waterline diagnostic for temporal predicate " + body);
     }
 
     private static void reportComparisonFailure(JsonNode failure) {

@@ -277,8 +277,17 @@ pub(crate) fn clock_facts(
         UnorderedType::Row(row) => row,
         UnorderedType::Invalid(kind, field) => return Err(TemporalDiagnostic::Type(kind, field).into()),
     };
-    if crate::lexical_scope::predicate_references(edit.circuit(), parameter, body.into())?.is_none() {
-        return Ok(None);
+    // Rebuild a diagnostic that needs prior facts from this predicate alone.
+    // The live projector accepts a projected row type for this ZSet parameter.
+    let predicate_failure = || TemporalDiagnostic::Predicate { parameter, body }.into();
+    let live_row = edit.type_kind(ty)? == feldera_sql_ir::TypeKind::Ref
+        && matches!(
+            edit.type_kind(edit.type_id(edit.node(ty.into())?.edge("type")?)?)?,
+            feldera_sql_ir::TypeKind::Tuple | feldera_sql_ir::TypeKind::RawTuple
+        );
+    let references = crate::lexical_scope::resolve_body(edit.circuit(), [parameter], body.into())?;
+    if !matches!(references, crate::LexicalResolution::Bound(_)) {
+        return if live_row { Err(predicate_failure()) } else { Ok(None) };
     }
     let variable = edit.named_variable(projected.unwrap_or(ty), &name)?;
     let mut row = Row {
@@ -291,6 +300,7 @@ pub(crate) fn clock_facts(
         locals: Vec::new(),
         observations: Observations::Clocks(HashSet::new()),
     };
+    let entry_name = *next;
     match row.visit(edit, body, FlatmapInput::ZSet(next))? {
         Evaluation::Value(_) => {}
         Evaluation::Failed(WaterlineError::MissingReference(id)) => {
@@ -302,6 +312,12 @@ pub(crate) fn clock_facts(
         Evaluation::Failed(WaterlineError::MissingBound(_)) => return Err(TemporalDiagnostic::MissingBound.into()),
         Evaluation::Failed(WaterlineError::Type(kind, ty)) => {
             return Err(TemporalDiagnostic::Type(kind, ty).into());
+        }
+        Evaluation::Failed(_) if live_row => {
+            // The live projection repeats any name allocations made in the failing
+            // predicate. Earlier predicates and merges have already committed theirs.
+            *next = entry_name;
+            return Err(predicate_failure());
         }
         _ => return Ok(None),
     }
