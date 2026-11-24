@@ -899,7 +899,6 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 
 
 @enterprise_only
-@single_host_only
 @gen_pipeline_name
 def test_bootstrap_input_flow_control_changes(pipeline_name):
     """

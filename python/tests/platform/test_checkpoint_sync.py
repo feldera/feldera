@@ -448,7 +448,10 @@ class TestCheckpointSync(SharedTestPipeline):
         inserts *uuid* into `running` before answering the sync request, and
         moves it from `running` to `success`/`failure` under a single lock, so
         a caller that polls after a sync request can never see the UUID
-        disappear.
+        disappear.  With more than one host, the coordinator provides this
+        guarantee: it answers the sync request and `/checkpoint/sync_status`
+        from its own status, keyed by host 0's UUID, instead of merging the
+        hosts' statuses.
 
         `running` alone decides when the sync is over.  `success` and `failure`
         are sticky records of the last sync to reach each outcome, so re-syncing
@@ -962,7 +965,6 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.clear_storage()
 
     @enterprise_only
-    @single_host_only
     def test_sync_status_running(self):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
@@ -993,7 +995,6 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.clear_storage()
 
     @enterprise_only
-    @single_host_only
     def test_sync_status_in_flight(self):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
@@ -1054,7 +1055,6 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.clear_storage()
 
     @enterprise_only
-    @single_host_only
     def test_sync_status_running_after_failure(self):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
