@@ -102,6 +102,7 @@ if __name__ == "__main__":
             rss_samples.extend(rss_values)
     p95 = sorted(timings)[math.ceil(len(timings) * .95) - 1]
     print(json.dumps({"profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+                      "cpu_affinity": sorted(os.sched_getaffinity(0)),
                       "rust_optimizer_passes": args.rust_optimizer_passes, "rounds": 5, "slots_per_round": 4, "signal_to_reap_ms": timings,
                       "p95_ms": p95, "largest_driver_plus_front_end_rss_bytes": max(rss_samples),
                       "compiler_sha256": hashlib.sha256(compiler.read_bytes()).hexdigest()}, indent=2))

@@ -176,5 +176,73 @@
     "largest_driver_plus_front_end_rss_bytes": 70574080,
     "compiler_sha256": "0fc41612b0f0602cc74f5b838075070913954889001d36bdbaa7e93c37d96ab1"
   },
-  "source_commit": "519a0164078ce6e0e6c04af13a3d409c46be93d7"
+  "source_commit": "519a0164078ce6e0e6c04af13a3d409c46be93d7",
+  "full_frozen_replay": {
+    "classic": {
+      "cases": 8571,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "ordered_s4_observations": 3486078,
+      "mismatches": 0,
+      "temporal_merge_fallbacks": 0,
+      "require_native_decisions": true,
+      "full_optimizer_trace": true,
+      "receipt_sha256": "4d111fc8cb2ab998b30057da71fc63231b5300c294d7492fa037701f60370c01",
+      "shard_receipts_sha256": [
+        "3ff50699b0dabbdd8761e1119be3521fd626f75ed51fc56d99fdbc1d96072fb1",
+        "2a466330800e8dae17dad01c1fa027c9f2fa3c85b39dd4f34c2441cc920bd9fb",
+        "55ca51ae13b1e00d8d415ac2955b375417396b26d6c096730e2a9e1ef53b647a",
+        "a99515fae908c360dd0494709879579012ef8541ea26452b4b87a966ab641ec9"
+      ],
+      "native_request_calls": 208100
+    },
+    "gen2": {
+      "cases": 8527,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "ordered_s4_observations": 3510660,
+      "mismatches": 0,
+      "temporal_merge_fallbacks": 0,
+      "require_native_decisions": true,
+      "full_optimizer_trace": true,
+      "receipt_sha256": "0c7e797a3a47a04b439b474e79e99c8198d0a8edf540fcd98e2d7048f1e9be03",
+      "shard_receipts_sha256": [
+        "1435f911c95bbd475d30ec57ed1bd7368c2e623ec70c2ba73dadf30ea970d3de",
+        "73dfd5c6dff81045187cefcb1c9fce12a01a72cc03cbd4fc8e9667f03a66ff84",
+        "911d7164c5d2ab43903d91a101e2b1da21fd35cc3f3a098e6c12c351b01d8da7",
+        "c5d1e9e42d2d82b36867c4c8014f55d0731f88af7145f9cb5a8f37ff14e65bd3"
+      ],
+      "native_request_calls": 210673
+    }
+  },
+  "classic_runtime": {
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "worker_sha256": "0fc41612b0f0602cc74f5b838075070913954889001d36bdbaa7e93c37d96ab1",
+    "batch_size": 64,
+    "rust_min_stack": 8388608,
+    "case_named_tests": true,
+    "optimizer_library_sha256": "02b60f5e1f3dd0caae54a8e684333a228c92649cead4886919f1c355581f3470",
+    "executed": 8256,
+    "compile_only": 315,
+    "batches": 143,
+    "total_frozen_cases": 8571,
+    "input_commands": 11407,
+    "expected_runtime_errors": 232,
+    "catalog_cases": 0,
+    "handle_cases": 8256,
+    "batch_receipts_sha256": "9088a30893d8148b0cf4b0c0b7198dcbfc32f41ab4f3f385a83c7c058af35ca0",
+    "environment": {
+      "classpath_sha256": [
+        "b557954b845e092f67472c469a1255f0b471aaf8dbd82bc9880b47c203019704",
+        "89f297324b687fd4fa0c160c3ff57b3899be7632bc7af97e6025faa8dd71455c",
+        "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3",
+        "66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9",
+        "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
+      ],
+      "test_manifest_sha256": "86962638f99fc1555ef5f4384f39c4059902e4d3f4dbf4c59b72c3a7943bceac",
+      "test_lock_sha256": "25cac7fffc13522659eb4d06adbc58c05703743735d7421f015d9f5273b76523",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cargo": "/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)\ncargo 1.99.0 (5f94df478 2026-08-27)",
+      "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)"
+    },
+    "receipt_sha256": "74bff78e03305d6762f214327cd8b2496b33f4e360bae5b38426c25dd2af5f2d"
+  }
 }

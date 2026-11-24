@@ -207,5 +207,41 @@
       "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)"
     },
     "receipt_sha256": "bb719a9670fcd8c6e20eae53a6900e23fd08accfacccefb4149ced099b12550e"
+  },
+  "full_frozen_replay": {
+    "classic": {
+      "cases": 8571,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "ordered_s4_observations": 3486078,
+      "mismatches": 0,
+      "temporal_merge_fallbacks": 0,
+      "require_native_decisions": true,
+      "full_optimizer_trace": true,
+      "receipt_sha256": "4610149cf4ee3a22718cf02eb20d62b6102e91963793ef075fabcc169231ae34",
+      "shard_receipts_sha256": [
+        "56adda8188256fc422f6ed16d19a44d10d578b7af8901272e380777e4fe21f27",
+        "4e1abf9f88ec7c6aea8edc689894bf969080f48c2645bca40b31b66de166a2e2",
+        "c1835a4f534facab894767540e8a10d91f2c1f23d9c5a7436aafe2c656f13445",
+        "6ae988ad2fd9d772db00acb4278527dbbb11afa1dce80577bc9163fd57fc8d65"
+      ],
+      "native_request_calls": 208100
+    },
+    "gen2": {
+      "cases": 8527,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "ordered_s4_observations": 3510660,
+      "mismatches": 0,
+      "temporal_merge_fallbacks": 0,
+      "require_native_decisions": true,
+      "full_optimizer_trace": true,
+      "receipt_sha256": "9f98974ab45f8bdebcf6be4e99823256222421e53312e027efc3950c85668f22",
+      "shard_receipts_sha256": [
+        "05e069013c91a3d9331dca1b1609ed553f7245ea3eb061e61aee6d1952b7bf3e",
+        "1c27a4178f79ed60e829696aaaf29fc3f9eade69f847563d3837517f183de338",
+        "3dc854f91d4f79c2b9d2a6d0c2d8825563f549ec7bdc839913caee5dabfe79e2",
+        "e4e40c666cb9ebeb5305cc0c550f6080cf69655fe8b6daed7057248b42d94966"
+      ],
+      "native_request_calls": 210673
+    }
   }
 }

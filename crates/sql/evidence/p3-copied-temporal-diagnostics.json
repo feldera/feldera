@@ -175,6 +175,23 @@
     "compiler_sha256": "354fecdb5c064dc97f40690b8d05b47f9a401e643f1f901449db178df047d633"
   },
   "full_frozen_replay": {
+    "classic": {
+      "cases": 8571,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "ordered_s4_observations": 3486078,
+      "mismatches": 0,
+      "temporal_merge_fallbacks": 0,
+      "require_native_decisions": true,
+      "full_optimizer_trace": true,
+      "receipt_sha256": "637933520044d3bbf188592dcfba3f319610f4132f43abedb7b872b131b2a42c",
+      "shard_receipts_sha256": [
+        "2f4b85d8efdce3b1043679bcb097ba74b94bc0ed4807bed5b5156829600d7206",
+        "c981d7356a2f60e29906c93928b9f779e30f154ddde97849b2b00ae71694e031",
+        "0e8155fc3746f9a33dcb7b1b71a0e1d21e7f4c4fa44c6c615b2a8e287b4fd0a0",
+        "581794ecd51999010add8dd6cd8686c36d4a21e782c9a65ef9c6207c95cf9ab2"
+      ],
+      "native_request_calls": 208014
+    },
     "gen2": {
       "cases": 8527,
       "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
