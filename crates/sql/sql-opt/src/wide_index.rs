@@ -37,7 +37,7 @@ pub fn wide_index_fields(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<WideIndexFields, Error> {
-    project_fields(edit, functions, next, warnings, |_, field, _, _| {
+    project_fields(edit, functions, next, warnings, |_, field| {
         Ok::<_, Error>(Some(field))
     })?
     .ok_or_else(|| Error::new("missing projected shared-index field"))
@@ -50,12 +50,7 @@ fn project_fields<T, E: From<Error>>(
     functions: &[NodeId],
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
-    mut project: impl FnMut(
-        &CircuitEditor,
-        ExpressionId,
-        u64,
-        &[SimplifyWarning],
-    ) -> Result<Option<T>, E>,
+    mut project: impl FnMut(&CircuitEditor, ExpressionId) -> Result<Option<T>, E>,
 ) -> Result<Option<WideIndexFields<T>>, E> {
     let &[first, _, ..] = functions else {
         return Err(Error::new("a wide index needs at least two input indexes").into());
@@ -102,7 +97,7 @@ fn project_fields<T, E: From<Error>>(
                 )?;
             }
             let field = reduce(edit, field, warnings)?;
-            let Some(value) = project(edit, field, *next, warnings)? else {
+            let Some(value) = project(edit, field)? else {
                 return Ok(None);
             };
             fields.push(value);
@@ -124,23 +119,20 @@ pub struct WideIndexLayout {
     pub positions: Vec<Vec<usize>>,
 }
 
-/// Two projected fields whose equality needs the live compiler. Java compares
-/// these roots in an empty declaration scope, with the new field on the left.
+/// Projected fields that need their live operand metadata, with the new field on the left.
 pub struct IndexComparison<'a> {
     pub graph: &'a Circuit,
     pub fields: [ExpressionId; 2],
-    pub next_name: u64,
-    pub warnings: &'a [SimplifyWarning],
 }
 
 pub type CompareColumn<'a> =
-    dyn FnMut(IndexComparison<'_>) -> Result<Option<bool>, Error> + 'a;
+    dyn FnMut(IndexComparison<'_>) -> Result<Option<bool>, KeyComparisonError> + 'a;
 
 fn column_position(
     edit: &CircuitEditor,
     columns: &mut Vec<ExpressionId>,
     field: ExpressionId,
-    mut unresolved: impl FnMut([ExpressionId; 2]) -> Result<Option<bool>, Error>,
+    mut unresolved: impl FnMut([ExpressionId; 2]) -> Result<Option<bool>, KeyComparisonError>,
 ) -> Result<Option<usize>, KeyComparisonError> {
     for (i, &column) in columns.iter().enumerate() {
         let equal = match check_bodies(edit, field.into(), column.into(), None)? {
@@ -198,13 +190,11 @@ pub fn project_index(
         functions,
         next,
         warnings,
-        |edit, field, next_name, warnings| {
+        |edit, field| {
             column_position(edit, &mut columns, field, |fields| {
                 compare(IndexComparison {
                     graph: edit.circuit(),
                     fields,
-                    next_name,
-                    warnings,
                 })
             })
         },

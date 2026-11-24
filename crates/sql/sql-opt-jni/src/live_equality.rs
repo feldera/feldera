@@ -1,8 +1,8 @@
-//! Delegate a single unresolved expression comparison to the live compiler.
+//! Recover original operand metadata for a comparison of rewritten expressions.
 use crate::{BridgeError, MAX_BYTES, decode_live_circuit, pass_warnings};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{Circuit, Error, NodeId};
-use feldera_sql_opt::ColumnRewriteError;
+use feldera_sql_opt::{ColumnRewriteError, KeyComparisonError};
 use jni::{
     Env, EnvUnowned, JValue,
     errors::ThrowRuntimeExAndDefault,
@@ -11,51 +11,55 @@ use jni::{
 };
 use serde_json::{Value, json};
 
-pub(super) fn compare(env: &mut Env, equality: &JObject, payload: &Value) -> Result<bool, Error> {
-    let bytes = serde_json::to_vec(payload).map_err(|e| Error::new(e.to_string()))?;
-    if bytes.len() > MAX_BYTES {
-        return Err(Error::new("expression comparison exceeds 64 MiB"));
-    }
-    env.with_local_frame(4, |env| -> jni::errors::Result<bool> {
-        let args = env.byte_array_from_slice(&bytes)?;
-        env.call_method(
-            equality,
-            jni_str!("equivalent"),
-            jni_sig!("([B)Z"),
-            &[JValue::Object(&args)],
-        )?
-        .z()
-    })
-    .map_err(|e| Error::new(e.to_string()))
-}
-
-/// Encode all operands with one ID namespace. On failure the Java callback
-/// publishes the warnings and allocator position preceding this comparison.
-pub(super) fn column_request(
+pub(super) fn compare(
+    env: &mut Env,
+    operands: &JObject,
     graph: &Circuit,
     input: &Circuit,
     fields: &[NodeId],
-    warnings: &[SimplifyWarning],
-    next_name: u64,
-) -> Result<Value, Error> {
+) -> Result<bool, KeyComparisonError> {
     let roots = graph.live_inner_roots(input, fields)?;
-    Ok(
-        json!({"roots":roots, "warnings":pass_warnings(warnings.to_vec()), "next_generated_name":next_name}),
-    )
+    let bytes = serde_json::to_vec(&roots).map_err(|e| Error::new(e.to_string()))?;
+    if bytes.len() > MAX_BYTES {
+        return Err(Error::new("comparison operands exceed 64 MiB").into());
+    }
+    let bytes = env
+        .with_local_frame(4, |env| -> jni::errors::Result<Option<Vec<u8>>> {
+            let request = env.byte_array_from_slice(&bytes)?;
+            let result = env
+                .call_method(
+                    operands,
+                    jni_str!("capture"),
+                    jni_sig!("([B)[B"),
+                    &[JValue::Object(&request)],
+                )?
+                .l()?;
+            let result = JByteArray::cast_local(env, result)?;
+            if result.len(env)? > MAX_BYTES {
+                return Ok(None);
+            }
+            env.convert_byte_array(&result).map(Some)
+        })
+        .map_err(|e| Error::new(e.to_string()))?
+        .ok_or_else(|| Error::new("captured comparison operands exceed 64 MiB"))?;
+    let base = Circuit::from_json(
+        json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}),
+    )?;
+    let (arena, roots) =
+        crate::lowering_arguments(base, &bytes).map_err(|e| Error::new(e.to_string()))?;
+    feldera_sql_opt::compare_live_operands(&feldera_sql_ir::CircuitEditor::new(arena), &roots)
 }
 
 /// A failed lookup carries exactly the state accumulated at that column.
 pub(super) fn column_reply(
     output: Result<Option<Circuit>, ColumnRewriteError>,
     input: &Circuit,
-    native_columns: bool,
     next_name: u64,
     warnings: Vec<SimplifyWarning>,
 ) -> Result<Value, Error> {
     match output {
         Ok(Some(circuit)) => Ok(json!({
             "circuit": circuit.changed_live_graph(input),
-            "native_columns": native_columns,
             "diagnostics": pass_warnings(warnings),
             "next_generated_name": next_name,
             "unused_sources": [],
@@ -67,7 +71,6 @@ pub(super) fn column_reply(
             warnings,
         }) => Ok(json!({
             "comparison_failure": diagnostic,
-            "native_columns": native_columns,
             "warnings": pass_warnings(warnings),
             "next_generated_name": next_name,
         })),
@@ -90,7 +93,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     snapshot: JByteArray<'local>,
     next: i64,
     clusters: JByteArray<'local>,
-    equality: JObject<'local>,
+    operands: JObject<'local>,
 ) -> JByteArray<'local> {
     env.with_env(|env| -> Result<_, BridgeError> {
         if snapshot.len(env)?.saturating_add(clusters.len(env)?) > MAX_BYTES {
@@ -102,27 +105,24 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             serde_json::from_slice(&env.convert_byte_array(&clusters)?).map_err(fusion_error)?;
         let mut next = u64::try_from(next).map_err(fusion_error)?;
         let mut warnings = Vec::new();
-        let mut native_columns = true;
         let output = feldera_sql_opt::fuse_expensive_maps_with(
             circuit.clone(),
             clusters,
             &mut next,
             &mut warnings,
             |site| {
-                native_columns = false;
                 let [left, right] = site.fields;
-                let request = column_request(
+                compare(
+                    env,
+                    &operands,
                     site.graph,
                     site.input,
                     &[site.row.into(), left.into(), right.into()],
-                    site.warnings,
-                    site.next_name,
-                )?;
-                compare(env, &equality, &request).map(Some)
+                )
+                .map(Some)
             },
         );
-        let result =
-            column_reply(output, &circuit, native_columns, next, warnings).map_err(fusion_error)?;
+        let result = column_reply(output, &circuit, next, warnings).map_err(fusion_error)?;
         let bytes = serde_json::to_vec(&result).map_err(fusion_error)?;
         if bytes.len() > MAX_BYTES {
             return Err(fusion_error("output exceeds 64 MiB"));

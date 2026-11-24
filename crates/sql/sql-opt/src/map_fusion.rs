@@ -8,7 +8,7 @@ pub use groups::{
 };
 
 use crate::{
-    index_key_equivalence::{ColumnRewriteError, compare_keys},
+    index_key_equivalence::{ColumnRewriteError, KeyComparisonError, compare_keys},
     rebuild::ProjectionNames,
     stream_rewrites::body_members,
 };
@@ -57,19 +57,16 @@ fn append_map(
     })
 }
 
-/// Operands of a column comparison that requires the live compiler's equality
-/// implementation. The two fields share a row variable. Warnings and names
-/// describe the prefix to publish if the live comparison raises a diagnostic.
+/// A pair of fields whose comparison needs original operand metadata.
+/// The shared row supplies the surrounding declaration scope.
 pub struct FusionComparison<'a> {
     pub input: &'a Circuit,
     pub graph: &'a Circuit,
     pub row: ExpressionId,
     pub fields: [ExpressionId; 2],
-    pub warnings: &'a [SimplifyWarning],
-    pub next_name: u64,
 }
 
-type Compare<'a> = dyn FnMut(FusionComparison<'_>) -> Result<Option<bool>, Error> + 'a;
+type Compare<'a> = dyn FnMut(FusionComparison<'_>) -> Result<Option<bool>, KeyComparisonError> + 'a;
 
 struct FusionContext<'a> {
     input: Circuit,
@@ -99,21 +96,20 @@ impl FusionColumns {
                 previous.into(),
                 field.into(),
                 Some([(row_name, row_name)]),
-            )
-            .map_err(|error| {
-                ColumnRewriteError::at_comparison(error, context.next, &mut context.warnings)
-            })?;
-            let matched = match native {
-                Some(answer) => Some(answer),
-                None => (context.compare)(FusionComparison {
-                    input: &context.input,
-                    graph: edit.circuit(),
-                    row,
-                    fields: [previous, field],
-                    warnings: &context.warnings,
-                    next_name: context.next,
-                })?,
-            };
+            );
+            let matched = native
+                .and_then(|answer| match answer {
+                    Some(answer) => Ok(Some(answer)),
+                    None => (context.compare)(FusionComparison {
+                        input: &context.input,
+                        graph: edit.circuit(),
+                        row,
+                        fields: [previous, field],
+                    }),
+                })
+                .map_err(|error| {
+                    ColumnRewriteError::at_comparison(error, context.next, &mut context.warnings)
+                })?;
             match matched {
                 Some(true) => return Ok(Some(index)),
                 Some(false) => {}
@@ -246,7 +242,7 @@ pub fn fuse_expensive_maps_with(
     clusters: Vec<Vec<FusionMember>>,
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
-    mut compare: impl FnMut(FusionComparison<'_>) -> Result<Option<bool>, Error>,
+    mut compare: impl FnMut(FusionComparison<'_>) -> Result<Option<bool>, KeyComparisonError>,
 ) -> Result<Option<Circuit>, ColumnRewriteError> {
     if clusters.is_empty() {
         return Ok(Some(circuit));

@@ -426,7 +426,7 @@ jobs:
           export LD_LIBRARY_PATH="$target_dir/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           tests=(
             AggregateFoldTests CollectExpensiveExpressionsTests EquivalenceTests FlatmapLoweringTests
-            InliningTests JoinInputProjectionTests LeftJoinChainsTests LineageTests OptimizerOrderTests
+            InliningTests JoinInputProjectionTests LeftJoinChainsTests LineageTests LiveIndexOperandsTests OptimizerOrderTests
             ProjectionCompositionTests RepeatTests ResolveReferencesTests StaticCandidatesTests
             ShareIndexesTests#sharedIndexesCompareShuffleIdentity
             ShareIndexesTests#aDeepSharedIndexReaderUsesTheRemappedColumn

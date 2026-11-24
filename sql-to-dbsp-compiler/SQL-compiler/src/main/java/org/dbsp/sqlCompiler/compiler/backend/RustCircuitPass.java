@@ -67,7 +67,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ReplaceSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
@@ -3509,7 +3508,7 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @Nullable
-    private static native byte[] planIndexFields(byte[] functions, long next, byte[] fixed, KeyEquality equality);
+    static native byte[] planIndexFields(byte[] functions, long next, byte[] fixed, LiveOperands operands);
 
     private static LoweringReply sharedIndexPlan(DBSPCompiler compiler, List<DBSPClosureExpression> functions,
                                                  @Nullable List<Boolean> fixed) {
@@ -3518,10 +3517,10 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             var inputs = writer.encode(functions.toArray(DBSPClosureExpression[]::new));
             var bytes = planIndexFields(inputs, DBSPVariablePath.nextGeneratedName(), MAPPER.writeValueAsBytes(fixed),
-                    request -> compareIndexField(compiler, operation, writer, request));
+                    liveOperands(compiler, writer));
             var state = MAPPER.readTree(bytes);
             if (compiler.stateObserver != null)
-                compiler.stateObserver.nativeDecision(operation, state.required("native_columns").booleanValue());
+                compiler.stateObserver.nativeDecision(operation, true);
             finishLowering(compiler, state);
             if (state.has("comparison_failure"))
                 reportComparisonFailure(state.required("comparison_failure"));
@@ -3586,15 +3585,28 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @FunctionalInterface
-    private interface KeyEquality {
-        boolean equivalent(byte[] closures) throws IOException;
+    interface LiveOperands {
+        byte[] capture(byte[] roots) throws IOException;
     }
 
-    private static native byte[] discoverIndexes(byte[] snapshot, long next, byte[] visited, KeyEquality equality);
+    /** Re-encode both operands together so shared references, shuffle owners and
+     * JDK timestamp conversions are available in a single expression snapshot. */
+    static LiveOperands liveOperands(DBSPCompiler compiler, ToJsonInnerVisitor writer) {
+        return bytes -> {
+            var roots = MAPPER.readTree(bytes);
+            var decoder = expressionDecoder(writer);
+            var operands = new DBSPExpression[roots.size()];
+            for (int i = 0; i < operands.length; i++)
+                operands[i] = decodeLiveRoot(decoder, roots.required(i), DBSPExpression.class);
+            return new OptimizerExpressionWriter(compiler, false).encode(operands);
+        };
+    }
 
-    private static native byte[] replaceIndexes(byte[] snapshot, long next, byte[] groups, KeyEquality equality);
+    private static native byte[] discoverIndexes(byte[] snapshot, long next, byte[] visited, LiveOperands operands);
 
-    private static native byte[] fuseMaps(byte[] snapshot, long next, byte[] clusters, KeyEquality equality);
+    private static native byte[] replaceIndexes(byte[] snapshot, long next, byte[] groups, LiveOperands operands);
+
+    private static native byte[] fuseMaps(byte[] snapshot, long next, byte[] clusters, LiveOperands operands);
 
     @FunctionalInterface
     private interface TemporalAnalysis {
@@ -3656,7 +3668,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private JsonNode columnRewriteReply(String operation, byte[] result) throws IOException {
         var reply = MAPPER.readTree(result);
         if (this.compiler.stateObserver != null)
-            this.compiler.stateObserver.nativeDecision(operation, reply.required("native_columns").booleanValue());
+            this.compiler.stateObserver.nativeDecision(operation, true);
         var failure = reply.get("comparison_failure");
         if (failure != null) {
             finishLowering(this.compiler, reply);
@@ -3667,46 +3679,13 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private JsonNode fuseMapClusters(ToJsonOuterVisitor writer, byte[] snapshot, long next) throws IOException {
         byte[] clusters = MapFusionState.encode(writer, Objects.requireNonNull(this.mapFusion));
-        byte[] result = fuseMaps(snapshot, next, clusters, bytes -> {
-            var request = MAPPER.readTree(bytes);
-            var roots = request.required("roots");
-            var decoder = expressionDecoder(writer.innerVisitor);
-            var row = decodeLiveRoot(decoder, roots.required(0), DBSPVariablePath.class);
-            var left = decodeLiveRoot(decoder, roots.required(1), DBSPExpression.class);
-            var right = decodeLiveRoot(decoder, roots.required(2), DBSPExpression.class);
-            try {
-                return left.closure(row).equivalent(right.closure(row));
-            } catch (RuntimeException failure) {
-                // The pass will not return its final diagnostics after a failed comparison.
-                finishLowering(this.compiler, request);
-                if (this.compiler.stateObserver != null)
-                    this.compiler.stateObserver.nativeDecision("FuseExpensiveMaps/Columns", false);
-                throw failure;
-            }
-        });
+        byte[] result = fuseMaps(snapshot, next, clusters, liveOperands(this.compiler, writer.innerVisitor));
         return this.columnRewriteReply("FuseExpensiveMaps/Columns", result);
-    }
-
-    private static boolean compareIndexField(DBSPCompiler compiler, String operation, ToJsonInnerVisitor writer,
-                                             byte[] bytes) throws IOException {
-        var request = MAPPER.readTree(bytes);
-        var roots = request.required("roots");
-        var decoder = expressionDecoder(writer);
-        var field = decodeLiveRoot(decoder, roots.required(0), DBSPExpression.class);
-        var prior = decodeLiveRoot(decoder, roots.required(1), DBSPExpression.class);
-        try {
-            return EquivalenceContext.equiv(field, prior);
-        } catch (RuntimeException failure) {
-            finishLowering(compiler, request);
-            if (compiler.stateObserver != null)
-                compiler.stateObserver.nativeDecision(operation, false);
-            throw failure;
-        }
     }
 
     private JsonNode replaceIndexGroups(ToJsonOuterVisitor writer, byte[] snapshot, long next, byte[] groups) throws IOException {
         byte[] result = replaceIndexes(snapshot, next, groups,
-                request -> compareIndexField(this.compiler, "ReplaceSharedIndexes", writer.innerVisitor, request));
+                liveOperands(this.compiler, writer.innerVisitor));
         return this.columnRewriteReply("ReplaceSharedIndexes", result);
     }
 
@@ -3767,18 +3746,9 @@ public final class RustCircuitPass implements CircuitTransform {
             return;
         var writer = OptimizerTopology.selectedForRewrite(this.compiler, circuit, selected, details);
         byte[] result = discoverIndexes(writer.getJsonString().getBytes(StandardCharsets.UTF_8), next,
-                MAPPER.writeValueAsBytes(find.visitedIds()), bytes -> {
-                    var prefix = MAPPER.readTree(bytes);
-                    var keys = decodeClosurePair(new LoweringReply(writer.innerVisitor, prefix.required("keys")));
-                    try {
-                        return keys.left.equivalent(keys.right);
-                    } catch (RuntimeException failure) {
-                        this.finishIndexDiscovery(circuit, find, prefix, false);
-                        throw failure;
-                    }
-                });
+                MAPPER.writeValueAsBytes(find.visitedIds()), liveOperands(this.compiler, writer.innerVisitor));
         var state = MAPPER.readTree(result);
-        this.finishIndexDiscovery(circuit, find, state, state.required("compared_all_keys").booleanValue());
+        this.finishIndexDiscovery(circuit, find, state);
         if (state.has("binding_error"))
             checkBindingErrors(writer.innerVisitor, state.required("binding_error"));
         var failure = state.get("comparison_failure");
@@ -3786,10 +3756,9 @@ public final class RustCircuitPass implements CircuitTransform {
             reportComparisonFailure(failure);
     }
 
-    private void finishIndexDiscovery(DBSPCircuit circuit, FindSharedIndexes find, JsonNode state,
-                                      boolean nativeKeys) throws IOException {
+    private void finishIndexDiscovery(DBSPCircuit circuit, FindSharedIndexes find, JsonNode state) throws IOException {
         if (this.compiler.stateObserver != null)
-            this.compiler.stateObserver.nativeDecision("SharedIndexes/Discover", nativeKeys);
+            this.compiler.stateObserver.nativeDecision("SharedIndexes/Discover", true);
         find.record(MAPPER.treeToValue(state.required("groups"), FindSharedIndexes.IndexReader[][].class),
                 MAPPER.treeToValue(state.required("visited"), long[].class), operatorsById(circuit));
         finishLowering(this.compiler, state);

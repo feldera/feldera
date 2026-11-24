@@ -1,5 +1,4 @@
-//! Return index groups and their visitor state. Java compares residual key
-//! expressions in the same object namespace as the original circuit.
+//! Compare shared-index expressions and return the completed visitor state.
 use crate::{BridgeError, MAX_BYTES, decode_live_circuit, live_equality, pass_warnings};
 use feldera_sql_ir::{Circuit, CircuitEditor};
 use feldera_sql_opt::{IndexComparison, IndexDiscoveryError, KeyComparisonError, SharedIndexes};
@@ -35,7 +34,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     snapshot: JByteArray<'local>,
     next: i64,
     visited: JByteArray<'local>,
-    equality: JObject<'local>,
+    operands: JObject<'local>,
 ) -> JByteArray<'local> {
     env.with_env(|env| -> Result<_, BridgeError> {
         if snapshot.len(env)?.saturating_add(visited.len(env)?) > MAX_BYTES {
@@ -47,19 +46,17 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             serde_json::from_slice(&env.convert_byte_array(&visited)?).map_err(optimizer_error)?;
         let mut next = u64::try_from(next).map_err(optimizer_error)?;
         let mut edit = CircuitEditor::new(input.clone());
-        let mut compared_all_keys = true;
         let mut state = SharedIndexes::new(BTreeSet::clone(&visited));
-        let discovery = state.discover(&mut edit, &mut next, |edit, keys, prefix, names| {
-            compared_all_keys = false;
-            let mut request = discovery_state(prefix, &visited, names);
-            request["keys"] = Value::Array(
-                edit.circuit()
-                    .live_inner_roots(&input, &keys.map(Into::into))?,
-            );
-            live_equality::compare(env, &equality, &request)
+        let discovery = state.discover(&mut edit, &mut next, |edit, keys| {
+            live_equality::compare(
+                env,
+                &operands,
+                edit.circuit(),
+                &input,
+                &keys.map(Into::into),
+            )
         });
         let mut reply = discovery_state(&state, &visited, next);
-        reply["compared_all_keys"] = compared_all_keys.into();
         match discovery {
             Ok(()) => {}
             Err(IndexDiscoveryError::Comparison(KeyComparisonError::Diagnostic(diagnostic))) => {
@@ -131,7 +128,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     functions: JByteArray<'local>,
     next: i64,
     fixed: JByteArray<'local>,
-    equality: JObject<'local>,
+    operands: JObject<'local>,
 ) -> JByteArray<'local> {
     env.with_env(|env| -> Result<_, BridgeError> {
         let error =
@@ -149,7 +146,6 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             .map_err(|e| error(e.to_string()))?;
         let mut next = u64::try_from(next).map_err(|e| error(e.to_string()))?;
         let mut warnings = Vec::new();
-        let mut native = true;
         let result = plan_fields(
             &arena,
             &roots,
@@ -157,15 +153,14 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             &mut next,
             &mut warnings,
             &mut |site: IndexComparison| {
-                native = false;
-                let request = live_equality::column_request(
+                live_equality::compare(
+                    env,
+                    &operands,
                     site.graph,
                     &arena,
                     &site.fields.map(Into::into),
-                    site.warnings,
-                    site.next_name,
-                )?;
-                live_equality::compare(env, &equality, &request).map(Some)
+                )
+                .map(Some)
             },
         );
         let mut reply = match result {
@@ -175,7 +170,6 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             }
             Err(KeyComparisonError::InvalidIr(e)) => return Err(error(e.to_string())),
         };
-        reply["native_columns"] = native.into();
         reply["warnings"] = json!(pass_warnings(warnings));
         reply["next_generated_name"] = next.into();
         let bytes = serde_json::to_vec(&reply).map_err(|e| error(e.to_string()))?;
@@ -202,7 +196,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     snapshot: JByteArray<'local>,
     next: i64,
     candidates: JByteArray<'local>,
-    equality: JObject<'local>,
+    operands: JObject<'local>,
 ) -> JByteArray<'local> {
     env.with_env(|env| -> Result<_, BridgeError> {
         if snapshot.len(env)?.saturating_add(candidates.len(env)?) > MAX_BYTES {
@@ -214,25 +208,23 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             .map_err(replacement_error)?;
         let mut next = u64::try_from(next).map_err(replacement_error)?;
         let mut warnings = Vec::new();
-        let mut native_columns = true;
         let output = feldera_sql_opt::replace_shared_indexes_with(
             input.clone(),
             &groups,
             &mut next,
             &mut warnings,
             |site| {
-                native_columns = false;
-                let request = live_equality::column_request(
+                live_equality::compare(
+                    env,
+                    &operands,
                     site.graph,
                     &input,
                     &site.fields.map(Into::into),
-                    site.warnings,
-                    site.next_name,
-                )?;
-                live_equality::compare(env, &equality, &request).map(Some)
+                )
+                .map(Some)
             },
         );
-        let reply = live_equality::column_reply(output, &input, native_columns, next, warnings)
+        let reply = live_equality::column_reply(output, &input, next, warnings)
             .map_err(replacement_error)?;
         let bytes = serde_json::to_vec(&reply).map_err(replacement_error)?;
         if bytes.len() > MAX_BYTES {

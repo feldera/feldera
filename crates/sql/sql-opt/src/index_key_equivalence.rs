@@ -212,6 +212,26 @@ pub(super) fn check_closures(
     )
 }
 
+/// Compare a freshly serialized pair of live expressions. Map fusion supplies the
+/// shared variable whose declaration encloses both fields. Index keys can instead
+/// be complete closures, which introduce their own parameter scopes.
+pub fn compare_live_operands(
+    edit: &CircuitEditor,
+    roots: &[NodeId],
+) -> Result<bool, KeyComparisonError> {
+    let answer = match *roots {
+        [left, right] => check_bodies(edit, left, right, None)?,
+        [row, left, right] => {
+            let row = bindings::name(edit.node(row)?, "variable")?;
+            compare_keys(edit, left, right, Some([(row, row)]))?
+        }
+        _ => return Err(Error::new("expected two comparison operands and an optional row").into()),
+    };
+    // The live writer supplies every loop name, shuffle owner and JDK timestamp
+    // conversion, including failed conversions. Detached snapshots can omit them.
+    answer.ok_or_else(|| Error::new("comparison operands lack live optimizer metadata").into())
+}
+
 pub(super) fn check_bodies(
     edit: &CircuitEditor,
     left: NodeId,

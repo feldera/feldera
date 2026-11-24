@@ -233,7 +233,7 @@ pub fn find_shared_indexes(
 ) -> Result<SharedIndexes, Error> {
     let mut state = SharedIndexes::new(previously_visited.clone());
     state
-        .scan(edit, next, |edit, [left, right], _, _| {
+        .scan(edit, next, |edit, [left, right]| {
             match equivalent(edit, left, right)? {
                 Some(equal) => Ok(equal),
                 None => Ok(compare_complex(edit, [left, right])?),
@@ -258,13 +258,13 @@ impl SharedIndexes {
         &mut self,
         edit: &mut CircuitEditor,
         next: &mut u64,
-        mut unresolved: impl FnMut(&CircuitEditor, [ExpressionId; 2], &Self, u64) -> Result<bool, Error>,
+        mut unresolved: impl FnMut(&CircuitEditor, [ExpressionId; 2]) -> Result<bool, KeyComparisonError>,
     ) -> Result<(), IndexDiscoveryError> {
-        self.scan(edit, next, |edit, keys, state, names| match check_closures(
+        self.scan(edit, next, |edit, keys| match check_closures(
             edit, keys[0], keys[1],
         )? {
             Some(equal) => Ok(equal),
-            None => Ok(unresolved(edit, keys, state, names)?),
+            None => Ok(unresolved(edit, keys)?),
         })
     }
 
@@ -272,12 +272,7 @@ impl SharedIndexes {
         &mut self,
         edit: &mut CircuitEditor,
         next: &mut u64,
-        mut compare: impl FnMut(
-            &CircuitEditor,
-            [ExpressionId; 2],
-            &Self,
-            u64,
-        ) -> Result<bool, IndexDiscoveryError>,
+        mut compare: impl FnMut(&CircuitEditor, [ExpressionId; 2]) -> Result<bool, IndexDiscoveryError>,
     ) -> Result<(), IndexDiscoveryError> {
         let candidates = shared_index_candidates(edit)?;
         let mut partitions = HashMap::<OutputPort, Vec<IndexCandidate>>::new();
@@ -304,7 +299,7 @@ impl SharedIndexes {
                 }
                 let left = keys.project(edit, seed.reader.index, next, &mut self.warnings)?;
                 let right = keys.project(edit, sibling.reader.index, next, &mut self.warnings)?;
-                if compare(edit, [left, right], self, *next)? {
+                if compare(edit, [left, right])? {
                     self.visited.insert(sibling.reader.index);
                     group.push(sibling.reader);
                 }

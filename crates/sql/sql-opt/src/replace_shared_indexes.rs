@@ -282,13 +282,13 @@ pub fn replace_shared_indexes(
 }
 
 /// Keep candidate selection, column layout and reader rewrites in Rust when
-/// the live compiler supplies equality for an individual projected field.
+/// an individual projected field needs its original operand metadata.
 pub fn replace_shared_indexes_with(
     circuit: Circuit,
     candidates: &[Vec<IndexReader>],
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
-    mut compare: impl FnMut(IndexComparison<'_>) -> Result<Option<bool>, Error>,
+    mut compare: impl FnMut(IndexComparison<'_>) -> Result<Option<bool>, KeyComparisonError>,
 ) -> Result<Option<Circuit>, ColumnRewriteError> {
     if candidates.is_empty() {
         return Ok(Some(circuit));
