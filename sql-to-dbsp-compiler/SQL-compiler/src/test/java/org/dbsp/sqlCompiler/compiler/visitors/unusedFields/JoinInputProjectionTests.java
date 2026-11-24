@@ -19,12 +19,15 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -200,7 +203,10 @@ public class JoinInputProjectionTests {
         var first = row.deref().field(0);
         var site = CalciteObject.EMPTY;
         var comparator = new DBSPEqualityComparatorExpression(site, new DBSPNoComparatorExpression(site, type));
-        for (var expression : List.of(first.question(), new DBSPReturnExpression(site, first), comparator)) {
+        var singleton = new DBSPTupleExpression(first);
+        var ordered = new DBSPCustomOrdExpression(site, singleton, new DBSPNoComparatorExpression(site, singleton.getType()));
+        for (var expression : List.of(first.question(), new DBSPReturnExpression(site, first), comparator,
+                ordered, new DBSPUnwrapCustomOrdExpression(ordered), new DBSPQualifyTypeExpression(first, text))) {
             var body = new DBSPBlockExpression(List.of(expression.toStatement()), row.deepCopy().deref().field(1));
             var reader = body.closure(row);
             var paths = RustCircuitPass.parameterFieldDependencies(compiler, reader);

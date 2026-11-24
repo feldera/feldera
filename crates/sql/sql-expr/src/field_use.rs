@@ -295,6 +295,9 @@ impl RowProjection<'_> {
                         | Expr::Lazy
                         | Expr::Question
                         | Expr::HandleError
+                        | Expr::QualifyType
+                        | Expr::CustomOrd
+                        | Expr::UnwrapCustomOrd
                         | Expr::AsymmetricFieldComparator
                         | Expr::EqualityComparator
                 ) || (*kind == Expr::Block
@@ -448,6 +451,7 @@ impl<'a> RowProjection<'a> {
                     | Expr::Clone
                     | Expr::Unwrap
                     | Expr::CustomOrdField
+                    | Expr::IsNull
             );
             if access && !receiver {
                 uses.push(&self.known[&id]);
