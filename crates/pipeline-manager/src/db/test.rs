@@ -2201,6 +2201,47 @@ async fn pipeline_creation() {
     assert_eq!(actual.deployment_location, None);
 }
 
+/// Creation of a multihost pipeline with exactly-once fault tolerance fails.
+#[cfg(feature = "feldera-enterprise")]
+#[tokio::test]
+async fn pipeline_creation_rejects_multihost_exactly_once() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let descriptor = PipelineDescr {
+        name: "test1".to_string(),
+        description: "".to_string(),
+        tags: vec![],
+        runtime_config: json!({ "hosts": 2, "fault_tolerance": {} }),
+        program_code: "".to_string(),
+        udf_rust: "".to_string(),
+        udf_toml: "".to_string(),
+        program_config: json!({}),
+    };
+    let error = handle
+        .db
+        .new_pipeline(tenant_id, Uuid::now_v7(), "v0", descriptor)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DBError::InvalidRuntimeConfig {
+                error: crate::db::types::utils::ValidationError::UnsupportedFaultTolerance(_),
+                ..
+            }
+        ),
+        "unexpected error: {error}"
+    );
+    assert!(
+        handle
+            .db
+            .list_pipelines(tenant_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
 /// Retrieval of pipelines.
 #[tokio::test]
 async fn pipeline_retrieval() {

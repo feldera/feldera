@@ -215,7 +215,10 @@ pub(crate) fn validate_runtime_config(
                 }
                 return Err(e);
             }
-            // Exactly-once replay does not work across hosts.
+            // Exactly-once replay does not work across hosts.  No log here:
+            // a stored config can have this combination from before the
+            // check, and every read of its row would log it again.  The
+            // runner reports it when the pipeline starts.
             if runtime_config.hosts > 1
                 && runtime_config.fault_tolerance.model == Some(FtModel::ExactlyOnce)
             {
@@ -224,11 +227,6 @@ pub(crate) fn validate_runtime_config(
                      set 'fault_tolerance.model' to 'at_least_once' or 'none', or set 'hosts' to 1",
                     runtime_config.hosts
                 ));
-                if log_if_invalid {
-                    error!(
-                        "Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid runtime configuration due to: {e}"
-                    );
-                }
                 return Err(e);
             }
             if let Err(e) = validate_pipeline_env(&runtime_config.env) {
@@ -648,7 +646,13 @@ mod tests {
         // the default model, but accept at-least-once.
         #[cfg(feature = "feldera-enterprise")]
         {
-            for ft in [json!({ "model": "exactly_once" }), json!({})] {
+            // The legacy strings both select the default model.
+            for ft in [
+                json!({ "model": "exactly_once" }),
+                json!({}),
+                json!("latest_checkpoint"),
+                json!("initial_state"),
+            ] {
                 assert!(matches!(
                     validate_runtime_config(&json!({ "hosts": 2, "fault_tolerance": ft }), true),
                     Err(ValidationError::UnsupportedFaultTolerance(s))
@@ -658,6 +662,9 @@ mod tests {
             for config in [
                 json!({ "hosts": 2, "fault_tolerance": { "model": "at_least_once" } }),
                 json!({ "hosts": 1, "fault_tolerance": { "model": "exactly_once" } }),
+                json!({ "hosts": 2, "fault_tolerance": { "model": "none" } }),
+                json!({ "hosts": 2, "fault_tolerance": null }),
+                json!({ "hosts": 2 }),
             ] {
                 validate_runtime_config(&config, true).unwrap();
             }
