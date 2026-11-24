@@ -200,8 +200,10 @@ impl CommitLeader {
         step: Step,
         payload: Result<JsonValue, String>,
     ) -> Result<(), String> {
-        // [Self::gather] counts reports, so a report from a host that is not a follower would
-        // stand in for a follower's report.
+        // [Self::gather] counts the reports of a step and does not check which hosts sent them.
+        // Without this check, a report from a host that is not a follower would count as the
+        // report of a follower that has not reported yet, and the leader could commit the step
+        // without that follower's output.
         if host >= self.n_hosts || host == self.leader_host {
             return Err(format!(
                 "host {host} has no part that reports to the leader on host {} of {} hosts",
@@ -409,7 +411,7 @@ mod tests {
     }
 
     /// A report that names the leader's host or a host outside the pipeline fails at once and
-    /// does not stand in for a follower's report.
+    /// does not count as the report of a follower.
     #[test]
     fn leader_refuses_reports_from_non_followers() {
         let leader = Arc::new(CommitLeader::new(2, 0));
