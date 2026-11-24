@@ -2,7 +2,7 @@
 mod evaluate;
 mod function;
 mod reads;
-pub use reads::RowRead;
+pub use reads::{ProjectedRead, RowRead};
 mod scalar;
 mod scope;
 mod shape;

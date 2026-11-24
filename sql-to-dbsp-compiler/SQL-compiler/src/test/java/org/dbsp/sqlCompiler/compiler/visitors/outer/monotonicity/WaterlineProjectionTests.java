@@ -930,6 +930,39 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void projectedReadsDemandOnlyTheSelectedWaterlineBound() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPI32Literal(1).getType();
+        var bounded = new MonotoneType(integer);
+        var unbounded = new NonMonotoneType(integer);
+        var shape = new PartiallyMonotoneTuple(List.of(bounded, unbounded), false, false);
+        var row = shape.getType().var();
+        var operator = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(row.type));
+        var oracle = new MonotoneTransferFunctions(compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, shape) {
+            void seed(DBSPExpression value, IMaybeMonotoneType type) {
+                this.set(value, new MonotoneExpression(value, type, null));
+            }
+        };
+        oracle.seed(row, shape);
+        var selected = new DBSPFieldExpression(site, row, 0);
+        Assert.assertThrows(NullPointerException.class, () -> oracle.postorder(selected));
+        Assert.assertThrows(NullPointerException.class, () -> RustCircuitPass.projectRead(compiler, selected, shape, null));
+
+        var skipped = new DBSPFieldExpression(site, row, 1);
+        oracle.postorder(skipped);
+        var result = RustCircuitPass.projectRead(compiler, skipped, shape, null);
+        Assert.assertNotNull(result);
+        Assert.assertSame(oracle.get(skipped).getMonotoneType(), result.getMonotoneType());
+        Assert.assertFalse(result.mayBeMonotone());
+
+        var copy = new DBSPCloneExpression(site, row);
+        Assert.assertThrows(NullPointerException.class, () -> oracle.postorder(copy));
+        Assert.assertThrows(NullPointerException.class, () -> RustCircuitPass.projectRead(compiler, copy, shape, null));
+    }
+
+    @Test
     public void binaryWaterlineReportsTheFirstSelectedMissingBound() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

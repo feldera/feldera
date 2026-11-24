@@ -15,6 +15,12 @@ pub enum RowRead {
     Field { index: usize },
 }
 
+pub enum ProjectedRead {
+    Value(ProjectedValue),
+    MissingBound,
+    NeedsVisitor,
+}
+
 impl RowRead {
     /// The general visitor supplies the live operand shape and its optional bound.
     /// Its type recipe refers back to that shape, preserving field identity.
@@ -25,25 +31,40 @@ impl RowRead {
         ty: TypeId,
         source: &Projection,
         bound: Option<ExpressionId>,
-    ) -> Result<Option<ProjectedValue>, Error> {
+    ) -> Result<ProjectedRead, Error> {
         let shape = Shape::from_input(source);
         if shape.monotone() && bound.is_none() {
-            // Let the general visitor report the missing bound at the original read.
-            return Ok(None);
+            // A partially monotone tuple can still supply an unbounded field
+            // without reading the tuple's reduced expression.
+            let reads_bound = match (&self, &shape) {
+                (Self::Field { index }, Shape::Tuple { fields, .. }) => {
+                    let Some(field) = fields.get(*index) else {
+                        return Ok(ProjectedRead::NeedsVisitor);
+                    };
+                    field.monotone()
+                }
+                (Self::Field { .. }, _) => return Ok(ProjectedRead::NeedsVisitor),
+                _ => true,
+            };
+            if reads_bound {
+                return Ok(ProjectedRead::MissingBound);
+            }
         }
-        Ok(self
-            .apply(
-                edit,
-                site,
-                ty,
-                ProjectedValue {
-                    shape,
-                    row_type: RowType::Parameter { index: 0 },
-                    reduced: bound,
-                    constant: false,
-                },
-            )?
-            .projected())
+        let result = self.apply(
+            edit,
+            site,
+            ty,
+            ProjectedValue {
+                shape,
+                row_type: RowType::Parameter { index: 0 },
+                reduced: bound,
+                constant: false,
+            },
+        )?;
+        Ok(match result {
+            Evaluation::Value(value) => ProjectedRead::Value(value),
+            Evaluation::NeedsVisitor | Evaluation::Failed(_) => ProjectedRead::NeedsVisitor,
+        })
     }
 
     pub(super) fn apply(

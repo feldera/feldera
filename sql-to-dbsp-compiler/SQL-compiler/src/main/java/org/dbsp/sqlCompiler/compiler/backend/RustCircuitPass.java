@@ -578,6 +578,14 @@ public final class RustCircuitPass implements CircuitTransform {
             var reply = invokeLowering(compiler, pass, state, site, input);
             if (!answered(compiler, pass, reply.value))
                 return null;
+            if (reply.value.has("missing_bound")) {
+                // Both type operations precede getReducedExpression in the direct visitor.
+                if (read instanceof DBSPFieldExpression field)
+                    source.to(PartiallyMonotoneTuple.class).getFieldExpressionType(field.fieldNo);
+                else if (read instanceof DBSPBorrowExpression)
+                    NonMonotoneType.nonMonotone(read.getType());
+                throw new NullPointerException();
+            }
             if (input != bound)
                 Objects.requireNonNull(reply.writer.liveNodes).put(Objects.requireNonNull(input).id, bound);
             return projectedValue(read, reply, source);

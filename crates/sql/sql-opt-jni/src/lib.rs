@@ -1053,7 +1053,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 }
                 let (read, source): (feldera_sql_opt::RowRead, feldera_sql_opt::limiters::Projection) = waterline_input(state)?;
                 let ty = if pass == "Monotonicity/ProjectWrapper" { edit.expression_type(edit.expression(*body)?)? } else { edit.type_id(*body)? };
-                read.project(&mut edit, *body, ty, &source, bounds.first().copied())?
+                match read.project(&mut edit, *body, ty, &source, bounds.first().copied())? {
+                    feldera_sql_opt::ProjectedRead::Value(value) => Some(value),
+                    feldera_sql_opt::ProjectedRead::NeedsVisitor => None,
+                    feldera_sql_opt::ProjectedRead::MissingBound => return Ok(json!({"missing_bound": true})),
+                }
             } else {
                 let indexed = pass == "Monotonicity/ProjectIndexedRow";
                 let shapes = if pass == "Monotonicity/ProjectRow" {
