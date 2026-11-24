@@ -159,9 +159,7 @@ impl RowProjection<'_> {
             | Expr::RawTuple
             | Expr::Block
             | Expr::Assignment
-            | Expr::AsymmetricFieldComparator
             | Expr::DirectComparator
-            | Expr::EqualityComparator
             | Expr::FieldComparator
             | Expr::NoComparator => Op::Compute(vec![]),
             kind if kind.wire_name().ends_with("Literal") => Op::Compute(vec![]),
@@ -287,14 +285,23 @@ impl RowProjection<'_> {
                 continue;
             };
             if finish {
-                // The interpreter evaluates a loop or a statement-only block but
-                // records no value for it. A discarded statement needs no value.
-                if *kind == Expr::For
-                    || (*kind == Expr::Block
-                        && node
-                            .field("lastExpression")
-                            .and_then(Field::node_id)
-                            .is_none())
+                // These nodes visit their operands but publish no symbolic value.
+                // A statement can discard them. A parent that needs their value
+                // must take the same diagnostic path as the reference interpreter.
+                if matches!(
+                    kind,
+                    Expr::For
+                        | Expr::Return
+                        | Expr::Lazy
+                        | Expr::Question
+                        | Expr::HandleError
+                        | Expr::AsymmetricFieldComparator
+                        | Expr::EqualityComparator
+                ) || (*kind == Expr::Block
+                    && node
+                        .field("lastExpression")
+                        .and_then(Field::node_id)
+                        .is_none())
                 {
                     without_value.insert(id);
                     active.remove(&id);

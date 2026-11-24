@@ -20,7 +20,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -126,6 +128,31 @@ public class JoinInputProjectionTests {
         Assert.assertEquals(reference.getUse().toString(), FindUsedFields.fromPaths(reader, paths).getUse().toString());
         Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, loop.closure(row)));
         Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, block.closure(row)));
+    }
+
+    @Test
+    public void discardedExpressionsCanReadFieldsWithoutProducingAFieldUseValue() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var text = DBSPTypeString.varchar(true);
+        var type = new DBSPTypeTuple(text, text);
+        var row = type.ref().var();
+        var first = row.deref().field(0);
+        var site = CalciteObject.EMPTY;
+        var comparator = new DBSPEqualityComparatorExpression(site, new DBSPNoComparatorExpression(site, type));
+        for (var expression : List.of(first.question(), new DBSPReturnExpression(site, first), comparator)) {
+            var body = new DBSPBlockExpression(List.of(expression.toStatement()), row.deepCopy().deref().field(1));
+            var reader = body.closure(row);
+            var paths = RustCircuitPass.parameterFieldDependencies(compiler, reader);
+            var expected = expression == comparator ? List.of(List.of(1)) : List.of(List.of(0), List.of(1));
+            Assert.assertEquals(List.of(expected), paths);
+            var reference = new FindUsedFields(compiler).findUsedFields(reader);
+            Assert.assertEquals(reference.getUse().toString(), FindUsedFields.fromPaths(reader, paths).getUse().toString());
+
+            var returned = expression.closure(row);
+            Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, returned));
+            Assert.assertThrows(RuntimeException.class, () -> new FindUsedFields(compiler).findUsedFields(returned));
+        }
     }
 
     @Test
