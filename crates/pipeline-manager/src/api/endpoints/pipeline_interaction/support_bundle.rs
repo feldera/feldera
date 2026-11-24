@@ -596,7 +596,10 @@ mod tests {
         }
     }
 
+    /// Opens a bundle. Every test that reads a bundle checks its compression
+    /// and data descriptors too.
     fn read_zip(buffer: &[u8]) -> ZipArchive<std::io::Cursor<&[u8]>> {
+        check_compression_and_data_descriptors(buffer).unwrap();
         ZipArchive::new(std::io::Cursor::new(buffer)).unwrap()
     }
 
@@ -714,6 +717,199 @@ mod tests {
         // Reading to the end checks the CRC-32.
         config.read_to_end(&mut read).unwrap();
         assert_eq!(read, json);
+    }
+
+    /// A bundle with one collection of test data.
+    async fn test_bundle() -> Vec<u8> {
+        SupportBundleZip::create(
+            &fake_pipeline("p"),
+            vec![SupportBundleData::test_data()],
+            &SupportBundleParameters::default(),
+        )
+        .await
+        .unwrap()
+    }
+
+    /// Checks that every entry is stored or deflated, and that an entry with
+    /// the data descriptor flag has a data descriptor with the CRC-32 of the
+    /// central directory. Go's `archive/zip` fails otherwise, with
+    /// `zip: unsupported compression algorithm` or `zip: checksum error`.
+    ///
+    /// With `zip` 9.1.2, `raw_copy_file` to a stream wrote no data descriptor,
+    /// which `pipeline_config.json` hit. `zip` 9.5.1 fixed it:
+    /// <https://github.com/zip-rs/zip2/pull/1288>.
+    fn check_compression_and_data_descriptors(bundle: &[u8]) -> Result<(), String> {
+        let mut archive =
+            ZipArchive::new(std::io::Cursor::new(bundle)).map_err(|e| e.to_string())?;
+        for i in 0..archive.len() {
+            let (name, crc32, data_end, method) = {
+                let entry = archive.by_index_raw(i).unwrap();
+                let data_end = entry.data_start().unwrap() + entry.compressed_size();
+                let name = entry.name().unwrap().to_string();
+                (name, entry.crc32(), data_end, entry.compression())
+            };
+            // Go reads no other compression method.
+            if !matches!(
+                method,
+                CompressionMethod::Stored | CompressionMethod::Deflated
+            ) {
+                return Err(format!(
+                    "{name}: unsupported compression algorithm {method}"
+                ));
+            }
+            // With the flag, fails unless a data descriptor with its signature
+            // follows the data.
+            let entry = archive
+                .by_index_with_data_descriptor(i)
+                .map_err(|e| format!("{name}: {e}"))?;
+            if entry.data_descriptor().is_some() {
+                // The CRC-32 follows the 4-byte signature.
+                let offset = data_end as usize + 4;
+                let descriptor_crc32 =
+                    u32::from_le_bytes(bundle[offset..offset + 4].try_into().unwrap());
+                if descriptor_crc32 != crc32 {
+                    return Err(format!(
+                        "{name}: checksum error: data descriptor CRC-32 {descriptor_crc32:08x}, \
+                         central directory CRC-32 {crc32:08x}"
+                    ));
+                }
+            }
+            // Reading to the end checks the data against the CRC-32.
+            archive
+                .by_index(i)
+                .unwrap()
+                .read_to_end(&mut Vec::new())
+                .map_err(|e| format!("{name}: {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// Bundles of version 0 collections and bundles without the source code
+    /// have their data descriptors too.
+    #[tokio::test]
+    async fn other_bundle_shapes_have_their_data_descriptors() {
+        let current = SupportBundleData::test_data().version;
+        for (version, source_code) in [(0, true), (0, false), (current, false)] {
+            let mut data = SupportBundleData::test_data();
+            data.version = version;
+            let params = SupportBundleParameters {
+                source_code,
+                ..SupportBundleParameters::default()
+            };
+            let bundle = SupportBundleZip::create(&fake_pipeline("p"), vec![data], &params)
+                .await
+                .unwrap();
+            check_compression_and_data_descriptors(&bundle)
+                .unwrap_or_else(|e| panic!("version {version}, source code {source_code}: {e}"));
+        }
+    }
+
+    /// Removes the data descriptor after the entry whose name ends with
+    /// `suffix`, and moves the offsets that follow it. The entry keeps its
+    /// data descriptor flag, as with `zip` 9.1.2.
+    fn remove_data_descriptor(bundle: &[u8], suffix: &str) -> Vec<u8> {
+        const DESCRIPTOR: usize = 16;
+        fn read_u16(bytes: &[u8], at: usize) -> usize {
+            u16::from_le_bytes(bytes[at..at + 2].try_into().unwrap()) as usize
+        }
+        fn read_u32(bytes: &[u8], at: usize) -> usize {
+            u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize
+        }
+        fn write_u32(bytes: &mut [u8], at: usize, value: usize) {
+            bytes[at..at + 4].copy_from_slice(&(value as u32).to_le_bytes());
+        }
+
+        let mut archive = read_zip(bundle);
+        let start = (0..archive.len())
+            .find_map(|i| {
+                let entry = archive.by_index_raw(i).unwrap();
+                entry
+                    .name()
+                    .unwrap()
+                    .ends_with(suffix)
+                    .then(|| (entry.data_start().unwrap() + entry.compressed_size()) as usize)
+            })
+            .unwrap();
+        assert_eq!(bundle[start..start + 4], 0x0807_4b50u32.to_le_bytes());
+        let mut bundle = [&bundle[..start], &bundle[start + DESCRIPTOR..]].concat();
+
+        // The end of central directory record holds the directory offset at 16.
+        let end = bundle
+            .windows(4)
+            .rposition(|window| window == 0x0605_4b50u32.to_le_bytes())
+            .unwrap();
+        let mut header = read_u32(&bundle, end + 16) - DESCRIPTOR;
+        write_u32(&mut bundle, end + 16, header);
+        // Each central directory header holds its local header offset at 42.
+        while bundle[header..header + 4] == 0x0201_4b50u32.to_le_bytes() {
+            let local = read_u32(&bundle, header + 42);
+            if local > start {
+                write_u32(&mut bundle, header + 42, local - DESCRIPTOR);
+            }
+            // Fixed part, then the name, extra field, and comment.
+            header += 46
+                + read_u16(&bundle, header + 28)
+                + read_u16(&bundle, header + 30)
+                + read_u16(&bundle, header + 32);
+        }
+        bundle
+    }
+
+    /// The check rejects the bundle that Okta's Go job could not read:
+    /// `pipeline_config.json` has the data descriptor flag, but the next
+    /// local header follows its data. Go reads that header as the CRC-32 and
+    /// fails with `zip: checksum error`.
+    #[tokio::test]
+    async fn check_compression_and_data_descriptors_rejects_a_missing_descriptor() {
+        let bundle = remove_data_descriptor(&test_bundle().await, "/pipeline_config.json");
+        // The bundle is still a valid ZIP file for readers that skip the
+        // data descriptors.
+        let mut archive = ZipArchive::new(std::io::Cursor::new(&bundle)).unwrap();
+        for i in 0..archive.len() {
+            archive
+                .by_index(i)
+                .unwrap()
+                .read_to_end(&mut Vec::new())
+                .unwrap();
+        }
+
+        let error = check_compression_and_data_descriptors(&bundle).unwrap_err();
+        assert!(
+            error.ends_with(
+                "/pipeline_config.json: invalid Zip archive: Invalid data descriptor header"
+            ),
+            "{error}"
+        );
+    }
+
+    /// The check rejects a data descriptor with a wrong CRC-32, the
+    /// `zip: checksum error` of Go.
+    #[tokio::test]
+    async fn check_compression_and_data_descriptors_rejects_a_wrong_crc() {
+        let mut bundle = test_bundle().await;
+        let signature = 0x0807_4b50u32.to_le_bytes();
+        let descriptor = bundle.windows(4).position(|w| w == signature).unwrap();
+        // The CRC-32 follows the 4-byte signature.
+        bundle[descriptor + 4] ^= 0xff;
+
+        let error = check_compression_and_data_descriptors(&bundle).unwrap_err();
+        assert!(error.contains("checksum error"), "{error}");
+    }
+
+    /// The check rejects a compression method that Go cannot read.
+    #[test]
+    fn check_compression_and_data_descriptors_rejects_zstd() {
+        let mut zip = ZipWriter::new_stream(Vec::new());
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Zstd);
+        zip.start_file("file.txt", options).unwrap();
+        zip.write_all(b"data").unwrap();
+        let bundle = zip.finish().unwrap().into_inner();
+
+        let error = check_compression_and_data_descriptors(&bundle).unwrap_err();
+        assert!(
+            error.contains("unsupported compression algorithm"),
+            "{error}"
+        );
     }
 
     #[tokio::test]
