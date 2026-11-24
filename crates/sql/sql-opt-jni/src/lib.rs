@@ -1210,6 +1210,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(Value::Array(edit.circuit().additional_expressions(&arena, &[aggregate])?));
         }
         ("RemoveUnusedFields/Reader", [closure, parameters @ ..]) => {
+            let used: Vec<Vec<bool>> = serde_json::from_slice(state)?;
+            feldera_sql_opt::rebind_projected_reader(&mut edit, *closure, parameters, &used)?
+        }
+        ("RemoveUnusedFields/NestedReader", [closure, parameters @ ..]) => {
             let used: Vec<Vec<feldera_sql_opt::TupleUsage>> = serde_json::from_slice(state)?;
             feldera_sql_opt::rebind_reader_with_layout(&mut edit, *closure, parameters, &used)?
         }
@@ -1565,7 +1569,7 @@ fn transform(
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
-        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
+        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
         | "FuseExpensiveMaps/Scan" | "FuseExpensiveMaps/DuplicateField" | "FuseExpensiveMaps/Siblings" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
             return lower_function(pass, input, state, next);

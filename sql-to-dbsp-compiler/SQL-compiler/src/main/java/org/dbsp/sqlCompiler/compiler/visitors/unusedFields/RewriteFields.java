@@ -180,8 +180,11 @@ public class RewriteFields extends InnerRewriteVisitor {
     public DBSPClosureExpression rewriteClosure(DBSPClosureExpression closure) {
         if (this.depth > 0 && this.compiler().options.ioOptions.rustOptimizerPasses) {
             var parameters = List.of(closure.parameters);
-            return RustCircuitPass.rebindProjectedReader(this.compiler(), closure,
-                    parameters.stream().map(this.newParam::get).toList(),
+            var replacements = parameters.stream().map(this.newParam::get).toList();
+            if (this.depth == 1)
+                return RustCircuitPass.rebindProjectedReader(this.compiler(), closure, replacements,
+                        parameters.stream().map(p -> this.fieldRemap.get(p).usageAtDepth(1)).toList());
+            return RustCircuitPass.rebindNestedReader(this.compiler(), closure, replacements,
                     parameters.stream().map(p -> this.fieldRemap.get(p).tupleUsage(this.depth)).toList());
         }
         IDBSPInnerNode result = this.apply(closure);

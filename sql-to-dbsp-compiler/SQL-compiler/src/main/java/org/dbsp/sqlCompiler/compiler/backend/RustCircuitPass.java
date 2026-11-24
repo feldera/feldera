@@ -1557,8 +1557,17 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public static DBSPClosureExpression rebindProjectedReader(DBSPCompiler compiler,
+            DBSPClosureExpression closure, List<DBSPParameter> parameters, List<List<Boolean>> usage) {
+        return rebindReader(compiler, "RemoveUnusedFields/Reader", closure, parameters, usage);
+    }
+
+    public static DBSPClosureExpression rebindNestedReader(DBSPCompiler compiler,
             DBSPClosureExpression closure, List<DBSPParameter> parameters, List<List<FieldUseMap.TupleUsage>> usage) {
-        String pass = "RemoveUnusedFields/Reader";
+        return rebindReader(compiler, "RemoveUnusedFields/NestedReader", closure, parameters, usage);
+    }
+
+    private static DBSPClosureExpression rebindReader(DBSPCompiler compiler, String pass,
+            DBSPClosureExpression closure, List<DBSPParameter> parameters, List<?> usage) {
         var inputs = new ArrayList<IDBSPInnerNode>(1 + parameters.size());
         inputs.add(closure);
         inputs.addAll(parameters);

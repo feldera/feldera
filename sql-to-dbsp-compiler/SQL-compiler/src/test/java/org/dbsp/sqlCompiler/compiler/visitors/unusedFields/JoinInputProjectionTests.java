@@ -49,13 +49,13 @@ public class JoinInputProjectionTests {
                 pair.field(0).deref().field(1), pair.deepCopy().field(1).deref().field(2));
         var closure = body.closure(row, pair);
         var fields = new FindUsedFields(compiler).findUsedFields(closure);
-        int[] replies = {0};
+        var replies = new java.util.ArrayList<String>();
         compiler.stateObserver = new DBSPCompiler.StateObserver() {
             @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
             @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) {}
             @Override public void nativeDecision(String operation, boolean success) {
-                if (success && operation.equals("RemoveUnusedFields/Reader"))
-                    replies[0]++;
+                if (success)
+                    replies.add(operation);
             }
         };
         for (int depth : List.of(1, 2, 3)) {
@@ -66,7 +66,8 @@ public class JoinInputProjectionTests {
             var actual = rewriter.rewriteClosure(closure);
             Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
             Assert.assertArrayEquals(expected.parameters, actual.parameters);
-            Assert.assertEquals(depth, replies[0]);
+            Assert.assertEquals(List.of(depth == 1 ? "RemoveUnusedFields/Reader" : "RemoveUnusedFields/NestedReader"), replies);
+            replies.clear();
         }
     }
 
