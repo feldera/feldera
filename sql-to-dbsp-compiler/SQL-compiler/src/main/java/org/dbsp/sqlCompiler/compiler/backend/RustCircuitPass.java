@@ -99,6 +99,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.StrayGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor;
@@ -1556,7 +1557,7 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public static DBSPClosureExpression rebindProjectedReader(DBSPCompiler compiler,
-            DBSPClosureExpression closure, List<DBSPParameter> parameters, List<List<Boolean>> usage) {
+            DBSPClosureExpression closure, List<DBSPParameter> parameters, List<List<FieldUseMap.TupleUsage>> usage) {
         String pass = "RemoveUnusedFields/Reader";
         var inputs = new ArrayList<IDBSPInnerNode>(1 + parameters.size());
         inputs.add(closure);

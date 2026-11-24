@@ -488,6 +488,30 @@ public class FieldUseMap {
         }
     }
 
+    /** Fields read from a tuple at its original path within a closure parameter. */
+    public record TupleUsage(List<Integer> path, List<Boolean> used) {}
+
+    List<TupleUsage> tupleUsage(int depth) {
+        List<TupleUsage> result = new ArrayList<>();
+        collectTuples(this.fieldInfo, depth, new ArrayList<>(), result);
+        return result;
+    }
+
+    private static void collectTuples(FieldInfo info, int depth, List<Integer> path, List<TupleUsage> result) {
+        while (info instanceof Ref ref)
+            info = ref.field;
+        if (depth <= 0 || !(info instanceof BitList tuple))
+            return;
+        result.add(new TupleUsage(List.copyOf(path), Linq.map(tuple.fields, FieldInfo::anyUsed)));
+        if (depth > 1) {
+            for (int i = 0; i < tuple.size(); i++) {
+                path.add(i);
+                collectTuples(tuple.field(i), depth - 1, path, result);
+                path.remove(path.size() - 1);
+            }
+        }
+    }
+
     public FieldUseMap borrow() {
         return new FieldUseMap(new Ref(this.getType().ref(), this.fieldInfo));
     }

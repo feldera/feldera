@@ -1210,8 +1210,8 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(Value::Array(edit.circuit().additional_expressions(&arena, &[aggregate])?));
         }
         ("RemoveUnusedFields/Reader", [closure, parameters @ ..]) => {
-            let used: Vec<Vec<bool>> = serde_json::from_slice(state)?;
-            feldera_sql_opt::rebind_projected_reader(&mut edit, *closure, parameters, &used)?
+            let used: Vec<Vec<feldera_sql_opt::TupleUsage>> = serde_json::from_slice(state)?;
+            feldera_sql_opt::rebind_reader_with_layout(&mut edit, *closure, parameters, &used)?
         }
         ("RemoveUnusedFields/Row", [row]) => {
             let used = serde_json::from_slice(state)?;

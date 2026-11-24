@@ -38,6 +38,39 @@ import java.util.List;
 
 public class JoinInputProjectionTests {
     @Test
+    public void nestedReaderUsesOriginalOffsetsAtEachProjectionDepth() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var text = DBSPTypeString.varchar(false);
+        var values = new DBSPTypeTuple(text, text, text);
+        var row = new DBSPTypeTuple(text, values, values).ref().var();
+        var pair = new DBSPTypeRawTuple(values.ref(), values.ref()).var();
+        var body = new DBSPTupleExpression(row.deref().field(1).field(2), row.deepCopy().deref().field(2).field(0),
+                pair.field(0).deref().field(1), pair.deepCopy().field(1).deref().field(2));
+        var closure = body.closure(row, pair);
+        var fields = new FindUsedFields(compiler).findUsedFields(closure);
+        int[] replies = {0};
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) {}
+            @Override public void nativeDecision(String operation, boolean success) {
+                if (success && operation.equals("RemoveUnusedFields/Reader"))
+                    replies[0]++;
+            }
+        };
+        for (int depth : List.of(1, 2, 3)) {
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            var rewriter = fields.getFieldRewriter(compiler, depth);
+            var expected = rewriter.rewriteClosure(closure);
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var actual = rewriter.rewriteClosure(closure);
+            Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
+            Assert.assertArrayEquals(expected.parameters, actual.parameters);
+            Assert.assertEquals(depth, replies[0]);
+        }
+    }
+
+    @Test
     public void batchedReadersPreserveErrorsInDiscardedExpressions() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
         var compiler = new DBSPCompiler(new CompilerOptions());

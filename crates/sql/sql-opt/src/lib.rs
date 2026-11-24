@@ -66,7 +66,7 @@ mod row_fields;
 mod row_projection;
 pub use row_projection::project_used_fields;
 mod projected_reader;
-pub use projected_reader::{rebind_projected_aggregate, rebind_projected_reader};
+pub use projected_reader::{TupleUsage, rebind_projected_aggregate, rebind_projected_reader, rebind_reader_with_layout};
 mod compressed_fields;
 pub use compressed_fields::compressed_field_type;
 mod map_input;
