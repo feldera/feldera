@@ -890,7 +890,10 @@ impl Checkpoint for dyn dynamic::data::Data + 'static {
     }
 
     fn restore(&mut self, data: &[u8]) -> Result<(), Error> {
-        unsafe { self.deserialize_from_bytes(data, 0) };
+        // SAFETY: `data` came from `checkpoint` of the same concrete type,
+        // through storage or an exchange that DBSP trusts to give back the
+        // bytes that it wrote.
+        unsafe { self.deserialize_root(data) };
         Ok(())
     }
 }
@@ -1638,5 +1641,52 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         let min_checkpoints = one_extra.gc();
         // Verify that this is a valid minimum checkpoint state.
         min_checkpoints.precondition();
+    }
+
+    /// Checkpoints `value` as a `dyn Data` and restores it into a fresh
+    /// value, then does the same from a misaligned copy of the checkpoint.
+    fn dyn_data_round_trip<T>(value: T)
+    where
+        T: crate::DBData,
+    {
+        use super::Checkpoint;
+        use crate::dynamic::{DowncastTrait, DynData};
+
+        let src: Box<DynData> = Box::new(value.clone());
+        let bytes = src.checkpoint().unwrap();
+
+        let mut dst: Box<DynData> = Box::<T>::default();
+        dst.restore(&bytes).unwrap();
+        assert_eq!((*dst).downcast_checked::<T>(), &value);
+
+        let mut misaligned = vec![0u8];
+        misaligned.extend_from_slice(&bytes);
+        let mut dst: Box<DynData> = Box::<T>::default();
+        dst.restore(&misaligned[1..]).unwrap();
+        assert_eq!((*dst).downcast_checked::<T>(), &value);
+    }
+
+    /// `restore` for `dyn Data` reads the root object from the end of the
+    /// checkpoint, so values with out-of-line data come back correctly.
+    #[test]
+    fn dyn_data_checkpoint_round_trip() {
+        use crate::utils::Tup2;
+
+        dyn_data_round_trip(String::from("short"));
+        dyn_data_round_trip(String::from(
+            "a string that is longer than the inline capacity of rkyv strings",
+        ));
+        dyn_data_round_trip(12345u64);
+        dyn_data_round_trip(-7i32);
+        dyn_data_round_trip(Some(-1i64));
+        dyn_data_round_trip(Tup2(
+            1u64,
+            String::from("another string that does not fit inline"),
+        ));
+        dyn_data_round_trip(vec![
+            String::from("one string"),
+            String::from("two strings, the second longer"),
+        ]);
+        dyn_data_round_trip(());
     }
 }
