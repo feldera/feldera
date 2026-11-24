@@ -1,5 +1,6 @@
 //! Find connected components of sibling maps sharing expensive expressions.
 use super::{has_duplicate_expensive_field, map_fusion_candidate};
+use crate::index_key_equivalence::{ComparisonDiagnostic, KeyComparisonError};
 use crate::projection_key::{row_parameter, ProjectionKey};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{CircuitEditor, Error, NodeId};
@@ -103,8 +104,15 @@ pub struct FusionCandidate {
 
 pub struct FusionScan {
     pub candidates: Vec<FusionCandidate>,
-    /// Indices in the candidate list. An undecided comparison needs the live printer or visitor.
-    pub clusters: Option<Vec<Vec<usize>>>,
+    /// An unresolved fingerprint requires the live printer to group the siblings.
+    pub clusters: Option<FusionClusters>,
+}
+
+#[derive(Default)]
+pub struct FusionClusters {
+    /// Indices in the candidate list, up to the first failing comparison.
+    pub members: Vec<Vec<usize>>,
+    pub comparison_failure: Option<ComparisonDiagnostic>,
 }
 
 /// Simplify maps in traversal order so diagnostics retain their positions.
@@ -131,18 +139,15 @@ pub fn scan_map_fusion(
         }
     }
     let clusters = select_clusters(edit, &candidates, siblings.into_values())?;
-    Ok(FusionScan {
-        candidates,
-        clusters,
-    })
+    Ok(FusionScan { candidates, clusters })
 }
 
 fn select_clusters(
     edit: &CircuitEditor,
     candidates: &[FusionCandidate],
     siblings: impl Iterator<Item = Vec<usize>>,
-) -> Result<Option<Vec<Vec<usize>>>, Error> {
-    let mut clusters = Vec::new();
+) -> Result<Option<FusionClusters>, Error> {
+    let mut clusters = FusionClusters::default();
     for members in siblings {
         let components = if members.len() == 1 {
             vec![members]
@@ -167,13 +172,18 @@ fn select_clusters(
         };
         for component in components {
             if let [member] = component[..] {
-                match has_duplicate_expensive_field(edit, candidates[member].function)? {
-                    Some(false) => continue,
-                    None => return Ok(None),
-                    Some(true) => {}
+                match has_duplicate_expensive_field(edit, candidates[member].function) {
+                    Ok(Some(false)) => continue,
+                    Ok(Some(true)) => {}
+                    Ok(None) => return Ok(None),
+                    Err(KeyComparisonError::Diagnostic(failure)) => {
+                        clusters.comparison_failure = Some(failure);
+                        return Ok(Some(clusters));
+                    }
+                    Err(KeyComparisonError::InvalidIr(error)) => return Err(error),
                 }
             }
-            clusters.push(component);
+            clusters.members.push(component);
         }
     }
     Ok(Some(clusters))

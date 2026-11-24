@@ -323,6 +323,7 @@ public class FuseExpensiveMaps extends Passes {
                             members.add(scan.candidates().get(index));
                         this.addCluster(members);
                     }
+                    scan.finish();
                     super.endVisit();
                     return;
                 }

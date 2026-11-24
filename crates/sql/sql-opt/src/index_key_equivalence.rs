@@ -212,17 +212,6 @@ pub(super) fn check_closures(
     )
 }
 
-/// With no enclosing parameter mapping, free variable paths match by identity.
-/// Fields of a wide index are reduced against a single shared variable.
-pub(super) fn equivalent_bodies(
-    edit: &CircuitEditor,
-    left: NodeId,
-    right: NodeId,
-    parameters: Option<(&Node, &Node)>,
-) -> Result<Option<bool>, Error> {
-    speculative(check_bodies(edit, left, right, parameters))
-}
-
 pub(super) fn check_bodies(
     edit: &CircuitEditor,
     left: NodeId,
@@ -692,7 +681,7 @@ mod tests {
         let c = key(false.into())?;
         for (i, ((a, b), c)) in a.into_iter().zip(b).zip(c).enumerate() {
             let empty_context = |l: ExpressionId, r: ExpressionId| {
-                equivalent_bodies(&edit, l.into(), r.into(), None)
+                speculative(check_bodies(&edit, l.into(), r.into(), None))
             };
             assert_eq!(empty_context(a, b)?, (i != 0).then_some(true));
             assert_eq!(empty_context(a, c)?, Some(false));

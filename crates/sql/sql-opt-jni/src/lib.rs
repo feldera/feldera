@@ -685,14 +685,21 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 roots.extend(candidate.fragments.into_iter().map(NodeId::Inner));
             }
             let roots = edit.circuit().live_inner_roots(&arena, &roots)?;
-            return Ok(json!({"members": members, "roots": roots, "clusters": scan.clusters,
+            return Ok(json!({"members": members, "roots": roots,
+                "clusters": scan.clusters.as_ref().map(|clusters| &clusters.members),
+                "comparison_failure": scan.clusters.as_ref().and_then(|clusters| clusters.comparison_failure.as_ref()),
                 "warnings": pass_warnings(warnings)}));
         }
         ("FuseExpensiveMaps/Fragments", [closure]) => {
             return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_fragments(&arena, *closure)?)?);
         }
         ("FuseExpensiveMaps/DuplicateField", [closure]) => {
-            return Ok(json!(feldera_sql_opt::has_duplicate_expensive_field(&edit, *closure)?));
+            return match feldera_sql_opt::has_duplicate_expensive_field(&edit, *closure) {
+                Ok(result) => Ok(json!(result)),
+                Err(feldera_sql_opt::KeyComparisonError::Diagnostic(failure)) =>
+                    Ok(json!({"comparison_failure": failure})),
+                Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => Err(error.into()),
+            };
         }
         ("FuseExpensiveMaps/Siblings", roots) => {
             let counts: Vec<usize> = serde_json::from_slice(state)?;

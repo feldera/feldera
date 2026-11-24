@@ -1,7 +1,7 @@
 //! Select the smallest expensive expressions that can move between sibling map closures.
 use crate::fanout::expensive;
 use crate::function_calls::contains_now;
-use crate::index_key_equivalence::equivalent_bodies;
+use crate::index_key_equivalence::{KeyComparisonError, check_bodies};
 use crate::lexical_scope::{closed_over, expression_children, resolve};
 use feldera_sql_expr::{SimplifyWarning, simplify_closure_with_warnings};
 use feldera_sql_ir::{
@@ -33,10 +33,10 @@ pub fn map_fusion_candidate(
 pub fn has_duplicate_expensive_field(
     edit: &CircuitEditor,
     closure: NodeId,
-) -> Result<Option<bool>, Error> {
+) -> Result<Option<bool>, KeyComparisonError> {
     let function = edit.node(closure)?;
     let [parameter] = function.edges("parameters")?[..] else {
-        return Err(Error::new("map fusion expects one closure parameter"));
+        return Err(Error::new("map fusion expects one closure parameter").into());
     };
     let parameter = edit.node(parameter)?;
     let fields = edit.node(function.edge("body")?)?.edges("fields")?;
@@ -45,7 +45,7 @@ pub fn has_duplicate_expensive_field(
             continue;
         }
         for &previous in &fields[..index] {
-            match equivalent_bodies(edit, previous, field, Some((parameter, parameter)))? {
+            match check_bodies(edit, previous, field, Some((parameter, parameter)))? {
                 Some(false) => {}
                 answer => return Ok(answer),
             }

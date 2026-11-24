@@ -2030,7 +2030,14 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public record MapFusionScan(List<FuseExpensiveMaps.MapInfo> candidates, @Nullable int[][] clusters) {}
+    public record MapFusionScan(List<FuseExpensiveMaps.MapInfo> candidates, @Nullable int[][] clusters,
+                                @Nullable JsonNode comparisonFailure) {
+        /** Cluster membership is observable when a later field comparison fails. */
+        public void finish() {
+            if (this.comparisonFailure != null && !this.comparisonFailure.isNull())
+                reportComparisonFailure(this.comparisonFailure);
+        }
+    }
 
     public static MapFusionScan scanMapFusion(DBSPCompiler compiler, List<DBSPMapOperator> maps) {
         String pass = "FuseExpensiveMaps/Scan";
@@ -2059,7 +2066,7 @@ public final class RustCircuitPass implements CircuitTransform {
             Utilities.enforce(!roots.hasNext());
             var clusters = reply.value.required("clusters");
             return new MapFusionScan(candidates, answered(compiler, pass, clusters)
-                    ? MAPPER.treeToValue(clusters, int[][].class) : null);
+                    ? MAPPER.treeToValue(clusters, int[][].class) : null, reply.value.get("comparison_failure"));
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid map fusion scan from Rust", error);
         }
@@ -2069,7 +2076,11 @@ public final class RustCircuitPass implements CircuitTransform {
     public static Boolean hasDuplicateExpensiveField(DBSPCompiler compiler, DBSPClosureExpression function) {
         String pass = "FuseExpensiveMaps/DuplicateField";
         var result = invokeLowering(compiler, pass, function).value;
-        return answered(compiler, pass, result) ? result.booleanValue() : null;
+        if (!answered(compiler, pass, result))
+            return null;
+        if (result.has("comparison_failure"))
+            reportComparisonFailure(result.required("comparison_failure"));
+        return result.booleanValue();
     }
 
     public static List<DBSPExpression> mapFusionFragments(DBSPCompiler compiler, DBSPClosureExpression function) {

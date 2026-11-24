@@ -257,6 +257,51 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
     }
 
     @Test
+    public void singletonFusionRetainsEarlierClustersOnComparisonFailure() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var firstInput = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
+        var secondInput = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(this.pair));
+        var row = b.refVar(this.pair);
+        var field = b.call("costly", b.field(row, 0));
+        var good = new DBSPMapOperator(site, b.tuple(field, field.deepCopy()).closure(row), firstInput.outputPort());
+        var invalid = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
+        var other = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT-20:00"));
+        var function = b.tuple(b.call("costly", b.field(row, 0), invalid),
+                b.call("costly", b.field(row, 0), other)).closure(row);
+        var bad = new DBSPMapOperator(site, function, secondInput.outputPort());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        circuit.addOperator(firstInput);
+        circuit.addOperator(secondInput);
+        circuit.addOperator(good);
+        circuit.addOperator(bad);
+
+        var compiler = this.testCompiler();
+        var direct = new FuseExpensiveMaps.FindFusableMaps(compiler);
+        var expected = Assert.assertThrows(java.time.DateTimeException.class, () -> direct.apply(circuit));
+        var isolated = Assert.assertThrows(expected.getClass(),
+                () -> RustCircuitPass.hasDuplicateExpensiveField(compiler, function));
+        Assert.assertEquals(expected.getMessage(), isolated.getMessage());
+
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var hybrid = new FuseExpensiveMaps.FindFusableMaps(compiler) {
+            @Override
+            boolean hasDuplicatedExpensiveField(MapInfo info) {
+                throw new AssertionError("The Rust scan retried singleton selection");
+            }
+        };
+        var failure = Assert.assertThrows(expected.getClass(), () -> hybrid.apply(circuit));
+        Assert.assertEquals(expected.getMessage(), failure.getMessage());
+        Assert.assertEquals(direct.groups.keySet(), hybrid.groups.keySet());
+        for (var finder : List.of(direct, hybrid)) {
+            Assert.assertEquals(List.of(good), finder.clusters.get(good).stream().map(MapInfo::operator).toList());
+            Assert.assertFalse(finder.clusters.containsKey(bad));
+        }
+    }
+
+    @Test
     public void siblingFusionConnectsMapsThroughRenamedFragments() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups"));
         var compiler = this.testCompiler();
