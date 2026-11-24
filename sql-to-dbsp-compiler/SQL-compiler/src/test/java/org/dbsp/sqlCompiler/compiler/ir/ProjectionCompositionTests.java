@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -36,14 +37,14 @@ public class ProjectionCompositionTests {
     private final ExpressionBuilder b = new ExpressionBuilder();
     private final DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
 
-    private void checkProjection(DBSPClosureExpression closure, boolean strict, boolean nested) {
+    private void checkProjection(DBSPExpression function, boolean strict, boolean nested) {
         for (boolean allowNestedAndCasts : new boolean[]{false, true}) {
             var oracle = new Projection(this.compiler, allowNestedAndCasts, allowNestedAndCasts);
-            oracle.apply(closure);
+            oracle.apply(function);
             Assert.assertEquals(allowNestedAndCasts ? nested : strict, oracle.isProjection);
             if (Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"))
                 Assert.assertEquals(oracle.isProjection,
-                        RustCircuitPass.isMapProjection(this.compiler, closure, allowNestedAndCasts));
+                        RustCircuitPass.isMapProjection(this.compiler, function, allowNestedAndCasts));
         }
     }
 
@@ -56,6 +57,33 @@ public class ProjectionCompositionTests {
         this.checkProjection(b.closure(rowType, row -> b.tuple(b.add(b.field(row, 0), b.lit(1)))), false, false);
         var indexed = new DBSPTypeRawTuple(rowType.ref(), rowType.ref());
         this.checkProjection(b.lambda(indexed, pair -> b.tuple(pair.field(1).deref().field(0))), true, true);
+    }
+
+    @Test public void classifyProjectionRootsAndResolveBindingsBeforeInspectingShape() {
+        var input = b.tup(b.i32()).ref();
+        var left = new DBSPVariablePath("left", input);
+        var right = new DBSPVariablePath("right", input);
+        this.checkProjection(b.lit(1), true, true);
+        this.checkProjection(b.add(b.lit(1), b.lit(2)), false, false);
+        this.checkProjection(new DBSPClosureExpression(b.tuple(b.lit(1))), false, false);
+        this.checkProjection(b.tuple(left.deref().field(0), right.deref().field(0)).closure(left, right), true, true);
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        // The addition already disqualifies the projection, but resolution
+        // must first report the unbound read, even in a zero-parameter closure.
+        var free = b.add(b.lit(1), right.deref().field(0));
+        var shared = new DBSPVariablePath(left.variable, left.getType());
+        var conflict = new DBSPLetExpression(shared, shared, shared.deepCopy()).closure(left);
+        // A whole row returned by dereference has no individual mapped fields.
+        var whole = left.deref().closure(left);
+        for (var function : List.of(free, new DBSPClosureExpression(free), conflict, whole)) {
+            for (boolean nested : List.of(false, true)) {
+                var oracle = new Projection(this.compiler, nested, nested);
+                var expected = Assert.assertThrows(RuntimeException.class, () -> oracle.apply(function));
+                var actual = Assert.assertThrows(expected.getClass(),
+                        () -> RustCircuitPass.isMapProjection(this.compiler, function, nested));
+                Assert.assertEquals(expected.getMessage().lines().findFirst(), actual.getMessage().lines().findFirst());
+            }
+        }
     }
 
     @Test public void trimMiddleTopKColumnAndRebindTheReader() {

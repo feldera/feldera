@@ -137,7 +137,7 @@ mod optimize_distinct;
 mod output_integrators;
 mod project_outputs;
 mod projection;
-pub use projection::is_map_projection;
+pub use projection::{MapProjection, is_map_projection, map_projection};
 mod projection_rules;
 pub use projection_rules::ProjectionRules;
 mod projection_composition;

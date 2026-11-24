@@ -637,13 +637,19 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         return Ok(json!({"identity": identity, "next_generated_name": next}));
     }
     if matches!(pass, "IsStrictProjection" | "IsNestedProjection") {
-        let [closure] = roots.as_slice() else {
-            return Err("expected one map closure".into());
+        let [function] = roots.as_slice() else {
+            return Err("expected one map function".into());
         };
+        if let Some(error) = feldera_sql_opt::inspect_references(&arena, *function, false)?.diagnostic {
+            return Ok(binding_diagnostic(error));
+        }
         let edit = feldera_sql_ir::CircuitEditor::new(arena);
-        return Ok(Value::Bool(feldera_sql_opt::is_map_projection(
-            &edit, *closure, pass == "IsNestedProjection",
-        )?));
+        use feldera_sql_opt::MapProjection;
+        return Ok(match feldera_sql_opt::map_projection(&edit, *function, pass == "IsNestedProjection")? {
+            MapProjection::Accepted => Value::Bool(true),
+            MapProjection::Rejected => Value::Bool(false),
+            MapProjection::InvalidFieldMap { fields } => json!({"invalid_field_count": fields}),
+        });
     }
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();

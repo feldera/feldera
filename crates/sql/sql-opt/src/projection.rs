@@ -53,9 +53,7 @@ pub(super) fn join_projection(
     let node = edit.node(closure)?;
     let params = node.edges("parameters")?;
     let Projection::Fields(fields) = classify(edit, node.edge("body")?, &params, true)? else {
-        return Err(Error::new(
-            "join requires a projection of its input fields",
-        ));
+        return Err(Error::new("join requires a projection of its input fields"));
     };
     Ok(fields)
 }
@@ -76,27 +74,94 @@ pub(super) fn strict_projection(
     ))
 }
 
-/// Decide whether a map may move across its producer. Sum and aggregate
-/// rewrites accept nested tuples and casts that only adjust nullability.
+/// Classification of a live map function after resolving its declarations.
+pub enum MapProjection {
+    Accepted,
+    Rejected,
+    /// Render the failed arity or type check against the original result type.
+    InvalidFieldMap {
+        fields: usize,
+    },
+}
+
+fn classify_function(
+    edit: &CircuitEditor,
+    function: NodeId,
+    allow_nested_and_casts: bool,
+) -> Result<Projection, Error> {
+    if edit.expr_kind(edit.expression(function)?)? != Expr::Closure {
+        return classify(edit, function, &[], allow_nested_and_casts);
+    }
+    let node = edit.node(function)?;
+    let parameters = node.edges("parameters")?;
+    let body = node.edge("body")?;
+    let ty = edit.expression_type(edit.expression(body)?)?;
+    if parameters.is_empty() || (!allow_nested_and_casts && !simple_tuple(edit, ty.into())?) {
+        return Ok(Projection::Other);
+    }
+    classify(edit, body, &parameters, allow_nested_and_casts)
+}
+
+/// Projection.endVisit checks a row's width or the combined widths of an indexed
+/// key and value. Scalar results have no field-count constraint.
+fn valid_field_count(edit: &CircuitEditor, body: NodeId, count: usize) -> Result<bool, Error> {
+    let ty = edit.expression_type(edit.expression(body)?)?;
+    match edit.type_kind(ty)? {
+        Ty::Tuple => Ok(edit.node(ty.into())?.edges("tupFields")?.len() == count),
+        Ty::RawTuple => {
+            let members = edit.node(ty.into())?.edges("tupFields")?;
+            if members.len() != 2 {
+                return Ok(false);
+            }
+            let mut total = 0;
+            for member in members {
+                if !matches!(
+                    edit.type_kind(edit.type_id(member)?)?,
+                    Ty::RawTuple | Ty::Tuple
+                ) {
+                    return Ok(false);
+                }
+                total += edit.node(member)?.edges("tupFields")?.len();
+            }
+            Ok(total == count)
+        }
+        _ => Ok(true),
+    }
+}
+
+pub fn map_projection(
+    edit: &CircuitEditor,
+    function: NodeId,
+    allow_nested_and_casts: bool,
+) -> Result<MapProjection, Error> {
+    match classify_function(edit, function, allow_nested_and_casts)? {
+        Projection::Other => Ok(MapProjection::Rejected),
+        Projection::Fields(fields)
+            if edit.expr_kind(edit.expression(function)?)? == Expr::Closure =>
+        {
+            let count = fields.len();
+            Ok(
+                if valid_field_count(edit, edit.node(function)?.edge("body")?, count)? {
+                    MapProjection::Accepted
+                } else {
+                    MapProjection::InvalidFieldMap { fields: count }
+                },
+            )
+        }
+        _ => Ok(MapProjection::Accepted),
+    }
+}
+
+/// Test the shape alone when looking for potentially shareable indexes.
 pub fn is_map_projection(
     edit: &CircuitEditor,
-    closure: NodeId,
+    function: NodeId,
     allow_nested_and_casts: bool,
 ) -> Result<bool, Error> {
-    let node = edit.node(closure)?;
-    let [parameter] = node
-        .edges("parameters")?
-        .try_into()
-        .map_err(|_| Error::new("map projection requires one parameter"))?;
-    let body = node.edge("body")?;
-    if allow_nested_and_casts {
-        Ok(!matches!(
-            projection(edit, body, parameter)?,
-            Projection::Other
-        ))
-    } else {
-        strict_projection(edit, body, parameter)
-    }
+    Ok(!matches!(
+        classify_function(edit, function, allow_nested_and_casts)?,
+        Projection::Other
+    ))
 }
 
 fn classify(

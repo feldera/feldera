@@ -132,6 +132,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.Monotonicity;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjectionVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -172,6 +173,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -1609,12 +1611,18 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static boolean isMapProjection(DBSPCompiler compiler, DBSPClosureExpression closure, boolean allowNestedAndCasts) {
+    public static boolean isMapProjection(DBSPCompiler compiler, DBSPExpression function, boolean allowNestedAndCasts) {
         String pass = allowNestedAndCasts ? "IsNestedProjection" : "IsStrictProjection";
-        var result = invokeLowering(compiler, pass, closure, null).value;
-        if (!result.isBoolean())
-            throw new IllegalStateException("Expected a boolean projection decision from Rust");
-        return result.booleanValue();
+        var reply = invokeLowering(compiler, pass, function);
+        var result = reply.value;
+        if (result.isBoolean())
+            return result.booleanValue();
+        checkBindingErrors(reply.writer, result);
+        if (result.has("invalid_field_count")) {
+            var type = function.to(DBSPClosureExpression.class).body.getType().to(DBSPTypeTupleBase.class);
+            Projection.checkFieldCount(type, result.required("invalid_field_count").intValue());
+        }
+        throw new IllegalStateException("Invalid projection decision from Rust: " + result);
     }
 
     public static boolean isIdentityProjection(DBSPCompiler compiler, DBSPClosureExpression closure) {

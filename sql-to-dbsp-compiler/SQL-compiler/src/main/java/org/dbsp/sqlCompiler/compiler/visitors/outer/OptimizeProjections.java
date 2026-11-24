@@ -130,8 +130,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
 
     private boolean isProjection(DBSPSimpleOperator map, boolean allowNestedAndCasts) {
         var function = map.getFunction();
-        if (this.compiler.options.ioOptions.rustOptimizerPasses && function instanceof DBSPClosureExpression closure)
-            return RustCircuitPass.isMapProjection(this.compiler, closure, allowNestedAndCasts);
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.isMapProjection(this.compiler, function, allowNestedAndCasts);
         var projection = new Projection(this.compiler, allowNestedAndCasts, allowNestedAndCasts);
         projection.apply(function);
         return projection.isProjection;

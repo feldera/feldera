@@ -357,20 +357,21 @@ public class Projection extends InnerVisitor {
     public void endVisit() {
         if (this.ioMap != null && this.expression != null) {
             DBSPTypeTupleBase bodyType = this.expression.body.getType().as(DBSPTypeTupleBase.class);
-            if (bodyType != null) {
-                int iomapSize = this.ioMap.fields().size();
-                if (bodyType.is(DBSPTypeRawTuple.class)) {
-                    Utilities.enforce(bodyType.tupFields.length == 2);
-                    int totalSize = bodyType.tupFields[0].to(DBSPTypeTupleBase.class).size() +
-                            bodyType.tupFields[1].to(DBSPTypeTupleBase.class).size();
-                    Utilities.enforce(iomapSize == totalSize,
-                            () -> "IOMap has " + iomapSize + " fields, but expected " + totalSize);
-                } else {
-                    Utilities.enforce(iomapSize == bodyType.size(),
-                            () -> "IOMap has " + iomapSize + " fields, but expected " + bodyType.size());
-                }
-            }
+            if (bodyType != null)
+                checkFieldCount(bodyType, this.ioMap.fields().size());
         }
+    }
+
+    public static void checkFieldCount(DBSPTypeTupleBase type, int count) {
+        final int expected;
+        if (type.is(DBSPTypeRawTuple.class)) {
+            Utilities.enforce(type.size() == 2);
+            expected = type.tupFields[0].to(DBSPTypeTupleBase.class).size() +
+                    type.tupFields[1].to(DBSPTypeTupleBase.class).size();
+        } else {
+            expected = type.size();
+        }
+        Utilities.enforce(count == expected, () -> "IOMap has " + count + " fields, but expected " + expected);
     }
 
     public boolean isOnlyFieldAccesses() {
