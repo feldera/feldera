@@ -462,6 +462,23 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `72fdf97df`, lineage retains the comparisons it completes before a
+diagnostic. On `7f6b247ff`, candidate-key analysis preserves the declaration
+scope of a parameterless closure and the order of errors in computed columns.
+On `757d64cec`, binary waterline analysis distinguishes a missing input fact
+from a known input whose bound is absent. Each build passed 226 Rust tests
+and matched all 11,965 ordered S4 observations and emission across 12 classic
+and 12 Gen-2 programs. The nightly suites passed 230, 232 and 234 tests,
+respectively.
+[Lineage diagnostics](evidence/p3-lineage-diagnostics.json) · [Key comparison scope](evidence/p3-key-comparison-scope.json) · [Missing waterline bounds](evidence/p3-missing-binary-waterlines.json)
+
+On `757d64cec`, COUNT and LATENESS checkpoints restored in both directions
+without bootstrap. Worker cancellation p95 was 7.16 ms across 20 attempts.
+The cold hybrid/direct compile p95 ratios were 0.859 for the array subquery,
+1.084 for Nexmark and 0.787 for the outer join, with 21 measured pairs per
+workload on one pinned CPU in the shared VM.
+[Cold compilation measurements](evidence/p3-missing-binary-waterlines-cold.json)
+
 Rust reports missing declarations during column comparison, retaining the
 preceding warnings and generated names. A shared index checks the incoming
 column first. Map fusion checks the existing column first. Directed cases

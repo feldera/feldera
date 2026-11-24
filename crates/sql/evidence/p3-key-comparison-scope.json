@@ -1,0 +1,53 @@
+{
+  "scope": "Parameterless candidate-key closures and error order in computed fields.",
+  "source_base": "72fdf97df33e67af94cf0a5b3f57a4f174e4f271",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "97d089f77205dcf6ddbd8b9f3675b35f6afe3d2abf056ffa861d25af9cebe719",
+    "crates/sql/sql-opt/src/index_key_equivalence.rs": "285ce6767cfa74458d9aab77d74639f4aec5dcfc8e0c28e40126f3ba90b30d52",
+    "crates/sql/sql-opt/src/lib.rs": "58004b8a93199bdbd1ac3f6c65e82b5224c3e8cadac4c8b6d5918cd959b32583",
+    "crates/sql/sql-opt/src/lineage.rs": "fa79694af8dda16e4851d2d324bc6ee7702a85133caf0a76d115984deab2a9bd",
+    "crates/sql/sql-opt/src/lineage/equivalence.rs": "deda249f56c93bdb918ae71b5b639191c9fe7e0692aa804dc60edd80eb29a451",
+    "crates/sql/sql-opt/src/map_fusion.rs": "b9417c02da380a1f063cd97ddb1cba473860ce77cdf9fc764f017a1bc1165e20",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "2f7af38b5cc97f314ad6aed2003c7b43369af17b77671361a1d0873d773ee072"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "3045659b6aafef679d6cbf064e025133d4307497cdf1ec9ec31943385b105e6b",
+    "bin/sql-difftest": "9754b63cfad556ecea33a6c7205a28195381d6ae8a653fd8ba80bcb7c4c92648",
+    "maven/tests.jar": "d5af68e7dbd3ddd399a3dc9b996e6c2321308be3d30231b23cf3b2fdc65f48c3",
+    "maven/sql-compiler.jar": "09257878b6d5c161c199db317bca3e273e3d15cfa6f7e0b05c6daf1d7110fb8f"
+  },
+  "negative_control": {
+    "library_sha256": "16794f55dcf6dbafaaa860848e6eead02a44e71837beb9e9081e421f3109eff4",
+    "failed_tests": [
+      "candidateKeysReportTheFirstInvalidComputedColumn",
+      "candidateKeysOpenAnEmptyScopeForParameterlessProjections"
+    ],
+    "java_compiler_sha256": "8f2f65f209843bd19638e5f4e4cbaea63ae4bcb5616a35be0380bcaca1e7b586"
+  },
+  "rust_tests": 226,
+  "junit_tests": 192,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "7a0223f9b33fb22a87b93d7fb8bfaac6095db6b86cf65c75cb9af49575f13221"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "d6b05870ca6e7cfc04d9304f264f7b5b85ff18f57196875079ea9ca807ee8d89"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 232,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "7f6b247ffedb1fdbac88a32275947a58f2018403"
+}

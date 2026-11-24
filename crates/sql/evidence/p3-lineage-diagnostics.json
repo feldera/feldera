@@ -1,0 +1,55 @@
+{
+  "scope": "Lineage and candidate-key expression diagnostics, operand visitation and constant intersection in Java order.",
+  "source_base": "14f656d665c061d0e631523edb6dac9f566816fd",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "4b7c131ec6196189838593f455617cedb3482e6ce2b38a9f1a1ea0a81a702f89",
+    "crates/sql/sql-opt/src/lib.rs": "888b78e01919ef0a140ae2b01e938c71d0c178ef9799f7787bd795ce3f850828",
+    "crates/sql/sql-opt/src/lineage.rs": "9c8c61aa39488547aa60e36fd03479a9d0b9ccbd7ecb3cfbe79c53a14d1f7fac",
+    "crates/sql/sql-opt/src/lineage/columns.rs": "a24c193da763fd3bac6ea6a0cb4c887d7e5a83ea86087e80c4f020dbb5b872ed",
+    "crates/sql/sql-opt/src/lineage/evaluate.rs": "77f3c6b73c4e35a6ae7b928b5c0d20d21e539052758200601f280bad6375f916",
+    "crates/sql/sql-opt/src/lineage/report.rs": "e4da399b5f93542bdc3103153adbddce982c6d7b8c898c41c5661fb3cdc61682",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "6c092ebf840bb63a960fc46555369aa6118be1e212d79916eae01576bf8ca7d9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Lineage.java": "a8f7f30294fcbf8df321c3ea6d8f19e41e3f0db9e68e13457668b3d8f051f88b",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/LineageTests.java": "4c72d352a537744d03850f43a9114e32b014504d714f22c186cc75b26eff0502"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "16794f55dcf6dbafaaa860848e6eead02a44e71837beb9e9081e421f3109eff4",
+    "bin/sql-difftest": "b9499de3ce19355ce715d07c8a435b1980839aa5b24b74facb6b5ec0eec337bf",
+    "maven/tests.jar": "a9b5d36d0a32e2bec4d2bfcdcbe453c8e8c5eef969697944ff79672861a7e0a0",
+    "maven/sql-compiler.jar": "8f2f65f209843bd19638e5f4e4cbaea63ae4bcb5616a35be0380bcaca1e7b586"
+  },
+  "negative_control": {
+    "library_sha256": "bb849f165fda514c2dfb8e63fd0fbfb7a43df7eb98ee5f4a7f67a127ce9c152c",
+    "failed_tests": [
+      "lineageIntersectsZonedConstantsInJavaOperandOrder",
+      "lineageVisitsOperandsBeforeRejectingAssignmentOrReturn"
+    ],
+    "java_compiler_sha256": "8ec8188047018305c5c234573ee70d217b6a12f05e6539a17218c603061bc8cb"
+  },
+  "rust_tests": 226,
+  "junit_tests": 190,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "7788bd032440eb722527e7395818abd3376f4711da68a17a8ec8a4546e443a64"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "9d585105f856f7c31d37535226afec68c11a79544c64cd2d4c1d8bd028fee65f"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 230,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "72fdf97df33e67af94cf0a5b3f57a4f174e4f271"
+}
