@@ -1,0 +1,195 @@
+{
+  "scope": "Evaluate operands of discarded expressions, including the empty-set result of a linear aggregate.",
+  "source_base": "fa8869126f6f62698a40c34db624c34b6810d954",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/field_use.rs": "1ac625694aae8079c8bcd0701c3ad3352c4cbfee1be28a0424f3a999b25596f3",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "6107d69ee61cf443767193e0b74168ca2bab49b665affcc975267f7b1c3f7049"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "42911573e74a181ec281d25b27c19793f138cbc04d6272b7080ee66bd509ed2b",
+    "bin/sql-difftest": "b22e7d24a5ae0ca131a163eb24c70fa92a12ef7bfcf6b7168b7e673998b22b15",
+    "maven/tests.jar": "89e4c1a2411813ede64c597d55045a4d0592c5d2973f7d60f86cd0aa646b0ea9",
+    "maven/sql-compiler.jar": "2eeeea69aa40fae05c5f9a587c989ae764fe77cecee0e747cd8fcd42b03dc3f7",
+    "bin/sql2dbsp": "c816009e1dcee70cd5fefcabf6852ce48dc9f535b0b1ae0aeaebf9abc3d380e2"
+  },
+  "negative_control": {
+    "library_sha256": "1d814d9b94cd898cdd30b79b50f3e1db01f85c75ab6e830b061cdc1d5725be09",
+    "failed_tests": [
+      "discardedAggregateReadsItsEmptySetResult"
+    ],
+    "java_compiler_sha256": "f4511dbcdade5e6e7f759eb4101c3360fbafd68d36eb1006c32ade3a7dc829ec"
+  },
+  "rust_tests": 227,
+  "junit_tests": 265,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "dab2d2716658df356c2fce6fdea8c0343eed7906ded1d909ac5c4826a33819b3"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "4b6a58808bf7676019b4a174901f57a79141008d5b9f08875a643728f55381b3"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 282,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "receipt_sha256": "7bb13b1b4e868606fe9f77bb02006389e9069b2afe53b4341be1a1c132ccc69d",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20f9d-2c42-7863-85e6-40d55e19e024",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20f9d-2c5f-7d50-99f6-0511a8eac81d",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "ed4d88d308a1048ac3bd95c06c7ea1a4b31f0623aa3b32b4ab435a82f2222510",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20f9e-092b-7202-b760-785e1ec42ca9",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20f9e-0952-7fb0-94e2-9e3fa99bf8b4",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "cpu_affinity": [
+      14
+    ],
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      6.947006,
+      6.979881,
+      14.794054,
+      14.213388,
+      17.536682,
+      11.588926,
+      11.52051,
+      16.898682,
+      18.526141,
+      14.056346,
+      20.002184,
+      19.562684,
+      14.950013,
+      13.809304,
+      15.429722,
+      21.863394,
+      6.764673,
+      6.029422,
+      11.77951,
+      12.592636
+    ],
+    "p95_ms": 20.002184,
+    "largest_driver_plus_front_end_rss_bytes": 70594560,
+    "compiler_sha256": "c816009e1dcee70cd5fefcabf6852ce48dc9f535b0b1ae0aeaebf9abc3d380e2"
+  },
+  "source_commit": "f2a1f0f1df6e8d41bf509d1e676592df3aada40d",
+  "weighted_statement_rewrite": {
+    "compiler_modes": [
+      "java",
+      "hybrid"
+    ],
+    "original_statement_columns": [
+      0,
+      2
+    ],
+    "projected_columns": [
+      0,
+      2
+    ],
+    "hybrid_map_input_action": "Project",
+    "preserved_weight": -3,
+    "passing_cases": 4
+  }
+}

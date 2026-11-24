@@ -1,0 +1,205 @@
+{
+  "scope": "Preserve field reads in discarded collection expressions and trace Java statement reads from their variables.",
+  "source_base": "d7ac86d8f779f2034bc79a431531929f48fac428",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/field_use.rs": "9199ab44e2ade473c93ccac7fbf46521032dbd75026ef6037e3d646ff9302f18",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/inner/FreshenParameters.java": "f7f666bf59f49e2a4d67128b06b5c23567721c24e568945b6777e9919bbee0c8",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/FindUsedFields.java": "e08f09b8d9f2056fd1ae5e9266050264b9d0081d7cd0fb372fbdf9abf109e1da",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "02233a68497d3007c52ec0e336e785f6cab2b025ca095a3aa1d1009f9475ec80"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "1d814d9b94cd898cdd30b79b50f3e1db01f85c75ab6e830b061cdc1d5725be09",
+    "bin/sql-difftest": "2b6bee1ac0b73d510578d45650d3a78e3b102ed0c324e239e458cee73b5240cb",
+    "maven/tests.jar": "537fde908ef2405b132b764ef35ae6d1f74ab0a2e267e20446934c0f86f6d03a",
+    "maven/sql-compiler.jar": "f4511dbcdade5e6e7f759eb4101c3360fbafd68d36eb1006c32ade3a7dc829ec",
+    "bin/sql2dbsp": "d35edd2104c179099d1a9d092c68a238731ec0c27fb953d781062382ecd46a11"
+  },
+  "negative_control": {
+    "library_sha256": "04e9344aacd9907a3eb80a87b491eac18804e7e672a6f1374d769116c5dc1af8",
+    "failed_tests": [
+      "discardedCollectionOperandsStillReadTheirInputFields"
+    ],
+    "java_compiler_sha256": "efa554b1d481537e6989d0b9c2dfe1b24c696658c120992be55350db42f3e3b7"
+  },
+  "rust_tests": 227,
+  "junit_tests": 264,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "1f3daf43b9b18e8fecacc35402d206fcd399bbe4a8946b79a331390a5e4f52fa"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "969b09453f8e311c6493f609d1671864489844e01490841728a190e126b212e1"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 281,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "receipt_sha256": "6e27d04d4f83abaf16fe94e6db880795d6c0d5a7c88cb015d9cba61c0e9c29cd",
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20f98-5530-7e51-bd36-3d1b3f1ebd58",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20f98-5554-78c0-ac1b-935b2541d5b7",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "c2c3e2635c594403cbca406c98d80118ed3445983482fa0e06135d2bc52ea52f",
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a20f99-7654-7f22-8d1c-ac72c5f173c7",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a20f99-7685-7ad1-bbe5-d2d118d1c445",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "worker_cancellation": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "cpu_affinity": [
+      14
+    ],
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      11.042316,
+      6.086578,
+      6.101953,
+      11.104108,
+      11.85678,
+      7.034542,
+      6.049912,
+      11.845696,
+      11.731112,
+      10.79669,
+      10.247353,
+      11.1214,
+      8.4233,
+      8.226174,
+      8.409259,
+      11.117192,
+      7.072918,
+      6.660957,
+      8.186174,
+      14.246711
+    ],
+    "p95_ms": 11.85678,
+    "largest_driver_plus_front_end_rss_bytes": 70295552,
+    "compiler_sha256": "d35edd2104c179099d1a9d092c68a238731ec0c27fb953d781062382ecd46a11"
+  },
+  "source_commit": "fa8869126f6f62698a40c34db624c34b6810d954",
+  "upstream_pr": {
+    "url": "https://github.com/feldera/feldera/pull/8065",
+    "commit": "e482aca35d385211856aa9ed766d0233f80968ad",
+    "failing_field_use_tests_on_base": 5,
+    "passing_field_use_tests": 11,
+    "junit_tests": 117,
+    "generated_rust_tests": 51,
+    "checked_rust_tests": 51
+  },
+  "weighted_statement_rewrite": {
+    "compiler_modes": [
+      "java",
+      "hybrid"
+    ],
+    "original_statement_columns": [
+      0,
+      2
+    ],
+    "projected_columns": [
+      0,
+      2
+    ],
+    "preserved_weight": -3,
+    "passing_cases": 4
+  }
+}

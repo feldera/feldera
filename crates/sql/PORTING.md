@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | On `519a01640`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. On `bf8cd8423`, both engines matched all 24 selected compilations, COUNT and LATENESS restored in both directions, and the highest cold compile p95 ratio was 1.082×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay and runtime](evidence/p3-reader-bindings.json) · [Field trimming and restores](evidence/p3-evaluated-statement-fields.json) · [Latency](evidence/p3-evaluated-statement-fields-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port remaining Java optimizer logic in waterline analysis, field trimming, and optional column lineage. Repeat exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
+| P3 | On `519a01640`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. On `f2a1f0f1d`, all 24 selected compilations matched across 11,965 ordered observations and emission on the two engines. COUNT and LATENESS restored in both directions. The highest cold compile p95 ratio was 1.047×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay and runtime](evidence/p3-reader-bindings.json) · [Field trimming and restores](evidence/p3-statement-expression-results.json) · [Latency](evidence/p3-statement-expression-results-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port remaining Java optimizer logic in waterline analysis, field trimming, and optional column lineage. Repeat exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -474,6 +474,26 @@ observations and emission. The build also passed 227 Rust tests and 273
 nightly optimizer tests. The focused upstream PR is assigned to Mihai Budiu.
 [Field trimming and checkpoint restores](evidence/p3-discarded-statement-reads.json) ·
 [Upstream compiler fix](https://github.com/feldera/feldera/pull/8065)
+
+On upstream PR commit `e482aca35`, Java traces each variable in a discarded
+statement through its enclosing field selections, clones, and null tests.
+Five of eleven field-use tests failed on the PR base. All eleven passed on the
+PR head, along with 106 incremental and redundant-state tests and 51 generated
+Rust tests. On migration commit `f2a1f0f1d`, a discarded multiset and a linear
+aggregate's empty-set result both retain the columns they read. The constructed
+multiset map kept its weight of −3 and the correct fields in both column orders.
+The build passed 227 Rust tests, Clippy, 265 focused JUnit tests, and 282
+nightly optimizer tests.
+[Java and Rust regression results](evidence/p3-variable-statement-reads.json) ·
+[Field use, replay, and restores](evidence/p3-statement-expression-results.json)
+
+Each of the three cold compilation workloads had 21 measured pairs. Hybrid
+and Java p95 were 1.634 s and 2.076 s for the array subquery (0.787×), 5.110 s
+and 4.882 s for Nexmark (1.047×), and 1.532 s and 1.851 s for the outer join
+(0.827×). All 69 pairs including warmups matched artifacts and diagnostics.
+Each invocation started a fresh compiler process pinned to CPU 15 while other
+verification jobs used the same ARM64 VM.
+[Paired cold compilation](evidence/p3-statement-expression-results-cold.json)
 
 The upstream follow-up covers aggregate maps through `computeUsedFields`.
 Three regressions fail on the PR base, including the aggregate's discarded
