@@ -143,6 +143,8 @@ pub(crate) struct CommittedSpine {
 
 /// Deserializes `bytes` as type `T` using `rkyv`, tolerating `bytes` being
 /// misaligned.
+///
+/// Like [`aligned_deserialize`], this does not validate `bytes`.
 pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
     let mut aligned_bytes = FBuf::new();
     aligned_bytes.extend_from_slice(bytes);
@@ -151,6 +153,11 @@ pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
 
 /// Deserializes `bytes` as type `T` using `rkyv`.  `bytes` must be properly
 /// aligned.
+///
+/// This does not validate `bytes`, for speed and because not every archived
+/// type implements `CheckBytes`.  DBSP trusts that its storage and its
+/// exchanges between workers and hosts give back the bytes that it wrote.  If
+/// `bytes` is not an archive of `T`, this can read outside `bytes`.
 pub fn aligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
     unsafe { archived_root::<T>(bytes) }
         .deserialize(&mut Deserializer::default())

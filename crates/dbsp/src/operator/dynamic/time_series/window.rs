@@ -221,18 +221,20 @@ where
                 )
             })?;
 
-        *self.window.borrow_mut() = committed.window.map(|(a, b)| {
-            // Deserialize the window bounds back into keys.
-            let mut boxed_a = self.factories.key_factory().default_box();
-            let mut boxed_b = self.factories.key_factory().default_box();
-            // SAFETY: `checkpoint` wrote `a` and `b` from keys of this type,
-            // and DBSP trusts its storage to give back the bytes that it
-            // wrote.
-            unsafe { boxed_a.deserialize_root(&a) };
-            unsafe { boxed_b.deserialize_root(&b) };
-
-            (boxed_a, boxed_b)
-        });
+        *self.window.borrow_mut() = committed
+            .window
+            .map(|(a, b)| {
+                // Deserialize the window bounds back into keys.
+                let mut boxed_a = self.factories.key_factory().default_box();
+                let mut boxed_b = self.factories.key_factory().default_box();
+                // SAFETY: `checkpoint` wrote `a` and `b` from keys of this
+                // type, and DBSP trusts its storage to give back the bytes
+                // that it wrote (see `aligned_deserialize`).
+                unsafe { boxed_a.deserialize_root(&a) }?;
+                unsafe { boxed_b.deserialize_root(&b) }?;
+                Ok::<_, Error>((boxed_a, boxed_b))
+            })
+            .transpose()?;
 
         Ok(())
     }

@@ -892,9 +892,8 @@ impl Checkpoint for dyn dynamic::data::Data + 'static {
     fn restore(&mut self, data: &[u8]) -> Result<(), Error> {
         // SAFETY: `data` came from `checkpoint` of the same concrete type,
         // through storage or an exchange that DBSP trusts to give back the
-        // bytes that it wrote.
-        unsafe { self.deserialize_root(data) };
-        Ok(())
+        // bytes that it wrote (see `aligned_deserialize`).
+        unsafe { self.deserialize_root(data) }
     }
 }
 
@@ -1688,5 +1687,17 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
             String::from("two strings, the second longer"),
         ]);
         dyn_data_round_trip(());
+    }
+
+    /// `restore` for `dyn Data` rejects a buffer that is too short to hold the
+    /// root object.
+    #[test]
+    fn dyn_data_restore_short_buffer() {
+        use super::Checkpoint;
+        use crate::dynamic::DynData;
+
+        let mut dst: Box<DynData> = Box::new(String::from("x"));
+        assert!(dst.restore(&[]).is_err());
+        assert!(dst.restore(&[0xaa]).is_err());
     }
 }
