@@ -22,7 +22,7 @@ use feldera_adapterlib::transport::Step;
 use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
 use feldera_storage::error::StorageError;
 use feldera_storage::fbuf::FBuf;
-use feldera_storage::{StorageBackend, StoragePath};
+use feldera_storage::{DirEntry, StorageBackend, StoragePath};
 use feldera_types::checkpoint::{
     CheckpointMetadata, CheckpointSyncMetrics, HostInfo, RemoteCheckpoint,
 };
@@ -323,26 +323,45 @@ impl Journal {
                 .map_err(|error| self.storage_error(error))
         } else {
             let mut result = Ok(());
-            self.backend
-                .list(&self.path, &mut |entry| {
-                    let Some(file_name) = entry.name.filename() else {
-                        return;
-                    };
-                    let Some(number) = file_name.strip_suffix(".bin") else {
-                        return;
-                    };
-                    let Ok(step) = number.parse::<Step>() else {
-                        return;
-                    };
-                    if !steps.contains(&step) {
-                        return;
-                    }
-                    if let Err(error) = self.backend.delete(&entry.name) {
-                        result = Err(StepError::storage_error(&entry.name, error));
-                    }
-                })
-                .map_err(|error| self.storage_error(error))?;
+            self.list(&mut |entry| {
+                let Some(file_name) = entry.name.filename() else {
+                    return;
+                };
+                let Some(number) = file_name.strip_suffix(".bin") else {
+                    return;
+                };
+                let Ok(step) = number.parse::<Step>() else {
+                    return;
+                };
+                if !steps.contains(&step) {
+                    return;
+                }
+                if let Err(error) = self.backend.delete(&entry.name) {
+                    result = Err(StepError::storage_error(&entry.name, error));
+                }
+            })?;
             result
+        }
+    }
+
+    /// Calls `cb` for each entry in the journal's directory.
+    ///
+    /// The directory appears with the first step that the journal records, so
+    /// a journal without it has no steps.  That is the journal of a pipeline
+    /// that restores a checkpoint from object storage, which holds no journal,
+    /// and of one that enables exactly-once fault tolerance when it resumes.
+    ///
+    /// # Arguments
+    ///
+    /// - `cb`: the function to call with each entry.
+    ///
+    /// # Returns
+    ///
+    /// An error if the directory exists but cannot be listed.
+    fn list(&self, cb: &mut dyn FnMut(DirEntry)) -> Result<(), StepError> {
+        match self.backend.list(&self.path, cb) {
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            result => result.map_err(|error| self.storage_error(error)),
         }
     }
 
@@ -403,22 +422,20 @@ impl StepJournal for Journal {
     /// transaction commit).
     fn list_steps(&self, start: Step) -> Result<Vec<Step>, StepError> {
         let mut steps = Vec::new();
-        self.backend
-            .list(&self.path, &mut |entry| {
-                let Some(file_name) = entry.name.filename() else {
-                    return;
-                };
-                let Some(number) = file_name.strip_suffix(".bin") else {
-                    return;
-                };
-                let Ok(step) = number.parse::<Step>() else {
-                    return;
-                };
-                if step >= start {
-                    steps.push(step);
-                }
-            })
-            .map_err(|error| self.storage_error(error))?;
+        self.list(&mut |entry| {
+            let Some(file_name) = entry.name.filename() else {
+                return;
+            };
+            let Some(number) = file_name.strip_suffix(".bin") else {
+                return;
+            };
+            let Ok(step) = number.parse::<Step>() else {
+                return;
+            };
+            if step >= start {
+                steps.push(step);
+            }
+        })?;
         steps.sort_unstable();
         Ok(steps)
     }
@@ -832,5 +849,36 @@ mod tests {
         assert!(journal.read(3).unwrap().is_none());
         assert!(!dir.path().join(STEPS_FILE).exists());
         assert_eq!(root_step(dir.path()), 0);
+    }
+
+    /// A journal without its directory, as after a restore from object
+    /// storage, has no steps and deletes none, and the first step it records
+    /// creates the directory.
+    #[test]
+    fn a_journal_without_its_directory_has_no_steps() {
+        let dir = TempDir::new().unwrap();
+        let storage = storage_in(dir.path());
+        assert!(!dir.path().join(STEPS_FILE).exists());
+
+        let journal = storage.open_journal(JournalMode::Open(5)).unwrap();
+        assert_eq!(journal.list_steps(5).unwrap(), Vec::<u64>::new());
+        assert!(journal.read(5).unwrap().is_none());
+        journal.delete(0..5).unwrap();
+
+        journal.write(&record(5)).unwrap();
+        assert_eq!(journal.list_steps(5).unwrap(), vec![5]);
+    }
+
+    /// A journal whose directory is a file cannot list its steps: only a
+    /// missing directory reads as an empty journal.
+    #[test]
+    fn a_journal_whose_directory_is_a_file_fails() {
+        let dir = TempDir::new().unwrap();
+        let storage = storage_in(dir.path());
+        std::fs::write(dir.path().join(STEPS_FILE), b"").unwrap();
+
+        let journal = storage.open_journal(JournalMode::Open(0)).unwrap();
+        assert!(journal.list_steps(0).is_err());
+        assert!(journal.delete(0..1).is_err());
     }
 }
