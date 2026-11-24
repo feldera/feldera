@@ -111,7 +111,7 @@ public class JoinInputProjectionTests {
     }
 
     @Test
-    public void statementOnlyBlocksAndLoopsCanBeDiscardedDuringFieldAnalysis() {
+    public void evaluatedLoopsRetainTheirIterationInputAndStatementReads() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
         var compiler = new DBSPCompiler(new CompilerOptions());
         var text = DBSPTypeString.varchar(false);
@@ -121,7 +121,7 @@ public class JoinInputProjectionTests {
         var body = new DBSPBlockExpression(List.of(loop.toStatement()), row.deepCopy().deref().field(1));
         var reader = body.closure(row);
         var paths = RustCircuitPass.parameterFieldDependencies(compiler, reader);
-        Assert.assertEquals(List.of(List.of(List.of(1))), paths);
+        Assert.assertEquals(List.of(List.of(List.of(), List.of(0), List.of(1))), paths);
         var reference = new FindUsedFields(compiler).findUsedFields(reader);
         Assert.assertEquals(reference.getUse().toString(), FindUsedFields.fromPaths(reader, paths).getUse().toString());
         Assert.assertNull(RustCircuitPass.parameterFieldDependencies(compiler, loop.closure(row)));
@@ -147,7 +147,7 @@ public class JoinInputProjectionTests {
             var visitor = new FindUsedFields(compiler);
             compiler.options.ioOptions.rustOptimizerPasses = false;
             if (rhs == sameField) {
-                Assert.assertEquals(List.of(List.of(List.of(1))), actual);
+                Assert.assertEquals(List.of(List.of(List.of(0), List.of(1))), actual);
                 var reference = visitor.findUsedFields(reader);
                 var param = reader.parameters[0];
                 Assert.assertEquals(reference.get(param).toString(),

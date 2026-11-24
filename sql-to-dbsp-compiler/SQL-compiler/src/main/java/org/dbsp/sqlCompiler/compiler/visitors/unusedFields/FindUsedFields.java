@@ -50,6 +50,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -76,6 +77,37 @@ import java.util.Set;
  * object, which can be created from the used fields. */
 public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
     final ResolveReferences resolver;
+
+    // These reads must survive even when a consumer selects only part of a block result.
+    private final ParameterFieldUse statementReads = new ParameterFieldUse();
+    private int statementDepth;
+
+    @Override
+    public VisitDecision preorder(DBSPExpressionStatement statement) {
+        this.statementDepth++;
+        return super.preorder(statement);
+    }
+
+    @Override
+    public void postorder(DBSPExpressionStatement statement) {
+        this.statementDepth--;
+        super.postorder(statement);
+    }
+
+    /** A chain such as (*row).1.2 needs just that field, even inside a discarded statement. */
+    private static boolean isFieldAccess(IDBSPInnerNode node) {
+        return node instanceof DBSPVariablePath || node instanceof DBSPFieldExpression ||
+                node instanceof DBSPDerefExpression || node instanceof DBSPBorrowExpression ||
+                node instanceof DBSPCloneExpression || node instanceof DBSPUnwrapExpression ||
+                node instanceof DBSPCustomOrdField;
+    }
+
+    @Override
+    protected void set(IDBSPInnerNode node, IUsedFields value) {
+        super.set(node, value);
+        if (this.statementDepth > 0 && isFieldAccess(node) && !isFieldAccess(this.getParent()))
+            value.markParameterUse(this.statementReads);
+    }
 
     public FindUsedFields(DBSPCompiler compiler) {
         super(compiler);
@@ -414,6 +446,8 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
 
     @Override
     public void startVisit(IDBSPInnerNode node) {
+        this.statementDepth = 0;
+        this.statementReads.clear();
         this.resolver.apply(node);
         super.startVisit(node);
     }
@@ -461,6 +495,7 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
             empty.set(param, fum);
         }
         ParameterFieldUse found = used.getParameterUse();
+        found.union(this.statementReads);
         // found may not contain some parameters at all; this union ensures that they are all there
         found.union(empty);
         return found;

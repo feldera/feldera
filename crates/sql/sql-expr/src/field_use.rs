@@ -174,33 +174,6 @@ impl RowProjection<'_> {
         })
     }
 
-    /// Evaluate shared operands once in dependency order, including expressions
-    /// that span several batches of IR definitions.
-    fn value(&mut self, root: NodeId) -> Result<Use, Error> {
-        if let Some(value) = self.known.get(&root) {
-            return Ok(value.clone());
-        }
-        let mut pending = vec![(root, self.operation(root)?, 0)];
-        let mut active = HashSet::from([root]);
-        while let Some((_, op, next)) = pending.last_mut() {
-            if let Some(&child) = op.operands().get(*next) {
-                *next += 1;
-                if !self.known.contains_key(&child) {
-                    if !active.insert(child) {
-                        return Err(Error::new("cycle in field-use expression"));
-                    }
-                    pending.push((child, self.operation(child)?, 0));
-                }
-            } else {
-                let (id, op, _) = pending.pop().expect("current operation");
-                let value = self.apply(op)?;
-                self.known.insert(id, value);
-                active.remove(&id);
-            }
-        }
-        Ok(self.known[&root].clone())
-    }
-
     fn apply(&mut self, op: ProjectionOp) -> Result<Use, Error> {
         use ProjectionOp as Op;
         Ok(match op {
@@ -276,8 +249,9 @@ pub fn parameter_field_paths(
     closure: NodeId,
 ) -> Result<Vec<BTreeSet<Vec<usize>>>, Error> {
     let (mut analysis, body) = RowProjection::for_closure(circuit, closure)?;
-    let value = analysis.value(body)?;
-    Ok(analysis.paths(value))
+    analysis
+        .analyze(body)?
+        .ok_or_else(|| Error::new("cannot determine the fields read by the projection"))
 }
 
 /// Check every evaluated operand, including discarded statement results.
@@ -290,92 +264,101 @@ pub fn live_parameter_field_paths(
         // The caller can interpret parameters outside the supported row shapes.
         return Ok(None);
     };
-    let mut pending = vec![(body, false)];
-    let mut active = HashSet::new();
-    let mut without_value = HashSet::new();
-    while let Some((id, finish)) = pending.pop() {
-        if analysis.known.contains_key(&id) || without_value.contains(&id) {
-            continue;
-        }
-        let node = circuit
-            .node(id)
-            .ok_or_else(|| Error::new("missing field-use operand"))?;
-        let Some(InnerKind::Expression(kind)) = node.inner_kind() else {
-            continue;
-        };
-        if finish {
-            // The interpreter evaluates a loop or a statement-only block but
-            // records no value for it. A discarded statement needs no value.
-            if *kind == Expr::For
-                || (*kind == Expr::Block
-                    && node
-                        .field("lastExpression")
-                        .and_then(Field::node_id)
-                        .is_none())
-            {
-                without_value.insert(id);
+    analysis.analyze(body)
+}
+
+impl RowProjection<'_> {
+    /// Evaluate every expression once. A block's value and the fields read by its
+    /// statements stay separate so a later selection can still project its value.
+    fn analyze(&mut self, body: NodeId) -> Result<Option<Vec<BTreeSet<Vec<usize>>>>, Error> {
+        let circuit = self.circuit;
+        let mut pending = vec![(body, false)];
+        let mut statements = Vec::new();
+        let mut active = HashSet::new();
+        let mut without_value = HashSet::new();
+        while let Some((id, finish)) = pending.pop() {
+            if self.known.contains_key(&id) || without_value.contains(&id) {
+                continue;
+            }
+            let node = circuit
+                .node(id)
+                .ok_or_else(|| Error::new("missing field-use operand"))?;
+            let Some(InnerKind::Expression(kind)) = node.inner_kind() else {
+                continue;
+            };
+            if finish {
+                // The interpreter evaluates a loop or a statement-only block but
+                // records no value for it. A discarded statement needs no value.
+                if *kind == Expr::For
+                    || (*kind == Expr::Block
+                        && node
+                            .field("lastExpression")
+                            .and_then(Field::node_id)
+                            .is_none())
+                {
+                    without_value.insert(id);
+                    active.remove(&id);
+                    continue;
+                }
+                // Every operand has already been evaluated in this scope. A live
+                // caller handles unsupported expressions at their original SQL site.
+                if *kind == Expr::Assignment {
+                    let left = self.known.get(&node.edge("left")?);
+                    let right = self.known.get(&node.edge("right")?);
+                    if left.is_none() || left != right {
+                        // Java diagnoses an assignment that changes the symbolic value of its target.
+                        return Ok(None);
+                    }
+                }
+                let op = match self.operation(id) {
+                    Ok(op) if op.operands().iter().all(|id| self.known.contains_key(id)) => op,
+                    _ => return Ok(None),
+                };
+                let Ok(value) = self.apply(op) else {
+                    return Ok(None);
+                };
+                self.known.insert(id, value);
                 active.remove(&id);
                 continue;
             }
-            // Every operand has already been evaluated in this scope. A live
-            // caller handles unsupported expressions at their original SQL site.
-            if *kind == Expr::Assignment {
-                let left = analysis.known.get(&node.edge("left")?);
-                let right = analysis.known.get(&node.edge("right")?);
-                if left.is_none() || left != right {
-                    // Java diagnoses an assignment that changes the symbolic value of its target.
-                    return Ok(None);
-                }
+            if !active.insert(id) {
+                return Err(Error::new("cycle in field-use expression"));
             }
-            let op = match analysis.operation(id) {
-                Ok(op)
-                    if op
-                        .operands()
-                        .iter()
-                        .all(|id| analysis.known.contains_key(id)) =>
-                {
-                    op
+            pending.push((id, true));
+            let mut children = Vec::new();
+            match kind {
+                Expr::Closure => {}
+                Expr::Let => return Ok(None),
+                Expr::Block => {
+                    for statement in node.edges("contents")? {
+                        let statement = circuit.node(statement).expect("validated block statement");
+                        match statement.class() {
+                            "DBSPExpressionStatement" => {
+                                let expression = statement.edge("expression")?;
+                                statements.push(expression);
+                                children.push(expression);
+                            }
+                            "DBSPComment" => {}
+                            _ => return Ok(None),
+                        }
+                    }
+                    children.extend(node.field("lastExpression").and_then(Field::node_id));
                 }
-                _ => return Ok(None),
-            };
-            let Ok(value) = analysis.apply(op) else {
-                return Ok(None);
-            };
-            analysis.known.insert(id, value);
-            active.remove(&id);
-            continue;
-        }
-        if !active.insert(id) {
-            return Err(Error::new("cycle in field-use expression"));
-        }
-        pending.push((id, true));
-        let mut children = Vec::new();
-        match kind {
-            Expr::Closure => {}
-            Expr::Let => return Ok(None),
-            Expr::Block => {
-                for statement in node.edges("contents")? {
-                    let statement = circuit.node(statement).expect("validated block statement");
-                    match statement.class() {
-                        "DBSPExpressionStatement" => children.push(statement.edge("expression")?),
-                        "DBSPComment" => {}
-                        _ => return Ok(None),
+                _ => {
+                    for (_, field) in node.fields() {
+                        field.collect_inner_edges(&mut children);
                     }
                 }
-                children.extend(node.field("lastExpression").and_then(Field::node_id));
             }
-            _ => {
-                for (_, field) in node.fields() {
-                    field.collect_inner_edges(&mut children);
-                }
-            }
+            pending.extend(children.into_iter().rev().map(|child| (child, false)));
         }
-        pending.extend(children.into_iter().rev().map(|child| (child, false)));
+        let Some(result) = self.known.get(&body) else {
+            return Ok(None);
+        };
+        let mut uses = vec![result];
+        self.collect_statement_reads(statements, &mut uses);
+        Ok(Some(self.paths(uses)))
     }
-    Ok(analysis
-        .known
-        .remove(&body)
-        .map(|value| analysis.paths(value)))
 }
 
 impl<'a> RowProjection<'a> {
@@ -433,9 +416,57 @@ impl<'a> RowProjection<'a> {
         ))
     }
 
-    fn paths(&self, value: Use) -> Vec<BTreeSet<Vec<usize>>> {
+    /// Record each complete access chain in an evaluated statement. A shared
+    /// expression can be both the receiver of a field access and a standalone read.
+    fn collect_statement_reads<'v>(&'v self, statements: Vec<NodeId>, uses: &mut Vec<&'v Use>) {
+        let mut visited = HashSet::new();
+        let mut pending: Vec<_> = statements.into_iter().map(|id| (id, false)).collect();
+        while let Some((id, receiver)) = pending.pop() {
+            if !visited.insert((id, receiver)) {
+                continue;
+            }
+            let node = self.circuit.node(id).expect("validated statement operand");
+            let Some(InnerKind::Expression(kind)) = node.inner_kind() else {
+                continue;
+            };
+            if *kind == Expr::Closure {
+                continue;
+            }
+            let access = matches!(
+                kind,
+                Expr::VariablePath
+                    | Expr::Field
+                    | Expr::Deref
+                    | Expr::Borrow
+                    | Expr::Clone
+                    | Expr::Unwrap
+                    | Expr::CustomOrdField
+            );
+            if access && !receiver {
+                uses.push(&self.known[&id]);
+            }
+            // All nested expression statements already have their own entry in
+            // the worklist. Only a block's tail contributes further expressions.
+            if *kind == Expr::Block {
+                pending.extend(
+                    node.field("lastExpression")
+                        .and_then(Field::node_id)
+                        .map(|id| (id, false)),
+                );
+            } else {
+                let mut children = Vec::new();
+                for (name, field) in node.fields() {
+                    if name != "type" {
+                        field.collect_inner_edges(&mut children);
+                    }
+                }
+                pending.extend(children.into_iter().map(|child| (child, access)));
+            }
+        }
+    }
+
+    fn paths<'v>(&'v self, mut pending: Vec<&'v Use>) -> Vec<BTreeSet<Vec<usize>>> {
         let mut paths = vec![BTreeSet::new(); self.shapes.len()];
-        let mut pending = vec![&value];
         let mut visited = HashSet::new();
         while let Some(next) = pending.pop() {
             let mut enqueue = |&id: &usize| {
@@ -536,6 +567,48 @@ mod tests {
         assert_eq!(
             live_parameter_field_paths(edit.circuit(), closure.into())?,
             Some(vec![BTreeSet::from([vec![1]])])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn shared_statement_reads_survive_projection_of_the_block_result() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let flag = edit.bool_type(site, false)?;
+        let pair = edit.tuple_type(site, false, [flag.into(), flag.into()])?;
+        let row = edit.tuple_type(site, false, [pair.into(), flag.into(), flag.into()])?;
+        let reference = edit.reference_type(row)?;
+        let input = edit.named_variable(reference, "input")?;
+        let value = edit.dereference(input)?;
+        let shared = edit.tuple_field(value, 0)?;
+        let leaf = edit.tuple_field(shared, 1)?;
+        // The same node occurs on its own and as the receiver of a narrower access.
+        let reads = edit.tuple_expr(site, false, &[shared, leaf])?;
+        let statement = edit.inner_at(
+            site,
+            InnerKind::Other("DBSPExpressionStatement".into()),
+            [("expression", Field::Reference(reads.into()))],
+        )?;
+        let block = edit.make_expr(
+            site,
+            Expr::Block,
+            row,
+            [
+                ("contents", Field::Array(vec![Field::Reference(statement)])),
+                ("lastExpression", Field::Reference(value.into())),
+            ],
+        )?;
+        let tail = edit.tuple_field(block, 2)?;
+        let closure = edit.closure_from_variables(tail, &[input])?;
+        let paths = BTreeSet::from([vec![0], vec![0, 1], vec![2]]);
+        assert_eq!(input_field_paths(edit.circuit(), closure.into())?, paths);
+        assert_eq!(
+            live_parameter_field_paths(edit.circuit(), closure.into())?,
+            Some(vec![paths])
         );
         Ok(())
     }
