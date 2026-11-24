@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.ProvenanceCodec;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindSourcePositions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsVisitor;
@@ -439,8 +440,31 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] transformWithContext(String pass, byte[] circuit, long next, String errorView, byte[] state);
 
+    /** Resolve a copied flatmap's shuffle against the input of this optimizer call.
+     * Copies of a newly composed shuffle can also share an owner within the reply. */
+    private static class LiveDecoder extends JsonDecoder {
+        private final ToJsonInnerVisitor writer;
+        private final Map<Long, Shuffle> newShuffles = new HashMap<>();
+
+        LiveDecoder(ToJsonInnerVisitor writer, ProvenanceCodec.Decoder provenance) {
+            super(null, provenance);
+            this.writer = writer;
+        }
+
+        @Override
+        public Shuffle decodeShuffle(JsonNode flatmap) {
+            long owner = flatmap.path("shuffleIdentity").asLong(flatmap.required("id").longValue());
+            var shape = flatmap.required("shuffle");
+            if (this.writer.liveNodes != null && this.writer.liveNodes.get(owner) instanceof DBSPFlatmap source)
+                return Shuffle.fromJson(shape, source.shuffle);
+            if (this.writer.liveShuffles != null && this.writer.liveShuffles.containsKey(owner))
+                return Shuffle.fromJson(shape, this.writer.liveShuffles.get(owner));
+            return this.newShuffles.computeIfAbsent(owner, ignored -> Shuffle.fromJson(shape));
+        }
+    }
+
     private static JsonDecoder expressionDecoder(ToJsonInnerVisitor writer) {
-        var decoder = new JsonDecoder();
+        var decoder = new LiveDecoder(writer, new ProvenanceCodec.Decoder());
         Objects.requireNonNull(writer.liveNodes).forEach(decoder.inner::cache);
         return decoder;
     }
@@ -1664,9 +1688,6 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass, byte[] state, IDBSPInnerNode... inputs) {
         var inner = new OptimizerExpressionWriter(compiler, !pass.equals("RewriteNow/ClockSites"));
-        if (pass.equals("MergeTemporalBounds") || pass.equals("TemporalGroups")
-                || pass.equals("FuseExpensiveMaps/DuplicateField") || pass.equals("FuseExpensiveMaps/Scan"))
-            inner.includeShuffleIdentities();
         try {
             byte[] reply = transformWithContext(pass, inner.encode(inputs), DBSPVariablePath.nextGeneratedName(), "", state);
             return new LoweringReply(inner, MAPPER.readTree(reply));
@@ -2511,13 +2532,12 @@ public final class RustCircuitPass implements CircuitTransform {
         JsonNode graph = result.required("circuit");
         if (graph.isNull())
             return input;
-        var shuffles = Objects.requireNonNull(writer.innerVisitor.liveShuffles);
         // The clone passes preserve unchanged operators. Later projection passes
         // use their object identity to recognize maps they have already analyzed.
         // A keyed source can keep its wire ID when it becomes a waterline operator.
         var originalOperators = this.reusesOperators()
                 ? operatorsById(input) : Map.<Long, DBSPOperator>of();
-        var decoder = new JsonDecoder(null, writer.liveProvenanceDecoder()) {
+        var decoder = new LiveDecoder(writer.innerVisitor, writer.liveProvenanceDecoder()) {
             @Override
             DBSPOperator decodedOperator(long id, DBSPOperator decoded) {
                 var original = originalOperators.get(id);
@@ -2529,13 +2549,6 @@ public final class RustCircuitPass implements CircuitTransform {
                                 || !nested.internalOutputs.equals(decoded.to(DBSPNestedOperator.class).internalOutputs)))
                     return decoded;
                 return original;
-            }
-
-            @Override
-            public Shuffle decodeShuffle(JsonNode flatmap) {
-                // A copied flatmap has a new node ID and retains its input shuffle.
-                long owner = flatmap.path("shuffleIdentity").asLong(flatmap.required("id").longValue());
-                return Shuffle.fromJson(flatmap.required("shuffle"), shuffles.get(owner));
             }
 
             @Override
@@ -3336,8 +3349,6 @@ public final class RustCircuitPass implements CircuitTransform {
                                             Object request, TypeReference<T> type) {
         try {
             var writer = new OptimizerExpressionWriter(compiler, false);
-            if (pass.equals("KeyAnalysis/OutputColumns") || pass.equals("KeyAnalysis/JoinColumns"))
-                writer.includeShuffleIdentities();
             var graph = writer.encode(closure);
             var reply = transformWithContext(pass, graph, 0, "", MAPPER.writeValueAsBytes(request));
             var value = MAPPER.readTree(reply);
@@ -3485,7 +3496,6 @@ public final class RustCircuitPass implements CircuitTransform {
                                                  @Nullable List<Boolean> fixed) {
         String operation = fixed == null ? "SharedIndexes/WideFields" : "SharedIndexes/Split";
         var writer = new OptimizerExpressionWriter(compiler);
-        writer.includeShuffleIdentities();
         try {
             var inputs = writer.encode(functions.toArray(DBSPClosureExpression[]::new));
             var bytes = planIndexFields(inputs, DBSPVariablePath.nextGeneratedName(), MAPPER.writeValueAsBytes(fixed),
@@ -4229,7 +4239,6 @@ public final class RustCircuitPass implements CircuitTransform {
                     var chosen = new LinkedHashMap<Long, Integer>();
                     reorder.chosenConjunct.forEach((filter, index) -> chosen.put(filter.id, index));
                     writer = this.snapshots.writer(this.reusesOperators());
-                    writer.innerVisitor.includeShuffleIdentities();
                     writer.innerVisitor.liveNodes = new HashMap<>();
                     writer.apply(circuit);
                     byte[] input = writer.getJsonString().getBytes(StandardCharsets.UTF_8);
@@ -4399,8 +4408,6 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             if (result == null) {
                 writer = this.snapshots.writer(this.reusesOperators());
-                if (this.replaceSharedIndexes != null || this.mapFusion != null)
-                    writer.innerVisitor.includeShuffleIdentities();
                 writer.innerVisitor.liveNodes = new HashMap<>();
                 writer.apply(circuit);
                 byte[] snapshot = writer.getJsonString().getBytes(StandardCharsets.UTF_8);

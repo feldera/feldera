@@ -105,12 +105,39 @@ public class ProjectionCompositionTests {
         Assert.assertTrue(EquivalenceContext.equiv(parameter.deref().field(0).closure(parameter),
                 reduced.right.collectionExpression));
         Assert.assertEquals(List.of(3, 0, 2, 1), reduced.right.shuffle.shuffle(List.of(0, 1, 2, 3)));
+        Assert.assertSame(flatmap.shuffle, reduced.right.shuffle);
         Assert.assertSame(flatmap.ordinalityIndexType, reduced.right.ordinalityIndexType);
         Assert.assertTrue(flatmap.getType().to(DBSPTypeFunction.class).resultType
                 .sameType(reduced.right.getType().to(DBSPTypeFunction.class).resultType));
         long nextName = DBSPVariablePath.nextGeneratedName();
         Assert.assertNull(RustCircuitPass.trimFlatmapInput(this.compiler, flatmap, List.of(true, true, true, false)));
         Assert.assertEquals(nextName, DBSPVariablePath.nextGeneratedName());
+    }
+
+    @Test public void copyingUnnestKeepsItsShuffleWhileProjectingCreatesOne() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var input = b.tup(new DBSPTypeArray(b.i32(), false));
+        var row = input.ref().var();
+        var shuffle = new ExplicitShuffle(1, List.of(0));
+        var flatmap = new DBSPFlatmap(CalciteObject.EMPTY, input, row.deref().field(0).closure(row),
+                List.of(), null, null, shuffle);
+        var pair = new DBSPRawTupleExpression(flatmap, flatmap);
+        var oracle = pair.ensureTree(this.compiler).to(DBSPRawTupleExpression.class);
+        var actual = RustCircuitPass.ensureExpressionTree(this.compiler, pair).to(DBSPRawTupleExpression.class);
+        for (var tree : List.of(oracle, actual)) {
+            Assert.assertNotSame(tree.fields[0], tree.fields[1]);
+            Assert.assertSame(shuffle, tree.fields[0].to(DBSPFlatmap.class).shuffle);
+            Assert.assertSame(shuffle, tree.fields[1].to(DBSPFlatmap.class).shuffle);
+        }
+
+        var identity = b.closure(b.tup(b.i32()), r -> b.tuple(b.field(r, 0)));
+        var expected = flatmap.withShuffle(DetectShuffle.analyze(this.compiler, identity).after(shuffle));
+        var projected = RustCircuitPass.projectUnnest(this.compiler, flatmap, identity);
+        Assert.assertNotNull(projected);
+        for (var result : List.of(expected, projected)) {
+            Assert.assertEquals(List.of(0), result.shuffle.shuffle(List.of(0)));
+            Assert.assertNotSame(shuffle, result.shuffle);
+        }
     }
 
     @Test public void composeUnnestShufflesAndRejectComputedOutputs() {

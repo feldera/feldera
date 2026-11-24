@@ -254,7 +254,16 @@ pub fn project_flatmap(
         ),
     ));
     let copy = edit.derive_inner(id, changes)?;
-    rebuild_from_row(edit, copy, input)
+    let projected = rebuild_from_row(edit, copy, input)?;
+    // withShuffle composes and compresses into a new ExplicitShuffle even when
+    // the indexes stay the same. Later deep copies must share that new owner.
+    if edit.node(id)?.field("shuffleIdentity").is_none() {
+        return Ok(projected);
+    }
+    let NodeId::Inner(owner) = copy else {
+        unreachable!("derived flatmap is an inner node")
+    };
+    edit.derive_inner(projected, [("shuffleIdentity", Field::Data(owner.into()))])
 }
 
 fn index(field: &Field) -> Option<usize> {

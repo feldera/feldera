@@ -559,8 +559,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     public ToJsonInnerVisitor additionalInnerNodes() {
         var inner = new ToJsonInnerVisitor(this.compiler, JsonStream.compactCircuit(),
                 this.verbosity, this.innerVisitor.replayMetadata);
-        inner.serialized.addAll(this.innerVisitor.serialized);
-        inner.liveShuffles = this.innerVisitor.liveShuffles;
+        inner.continueSnapshot(this.innerVisitor);
         return inner;
     }
 

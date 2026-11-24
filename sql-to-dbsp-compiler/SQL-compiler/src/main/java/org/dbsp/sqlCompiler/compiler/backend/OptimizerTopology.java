@@ -154,8 +154,6 @@ final class OptimizerTopology {
         json.endArray();
         json.label("allOperators");
         var types = typeContext == null ? null : new OptimizerExpressionWriter(typeContext, json, details == Details.CANDIDATE_KEYS ? 0 : 1, false);
-        if (details == Details.CANDIDATE_KEYS)
-            java.util.Objects.requireNonNull(types).includeShuffleIdentities();
         writeBody(json, circuit.getAllOperators(), details, types, null);
         if (types != null)
             types.writeDeferredDefinitions();
@@ -196,8 +194,6 @@ final class OptimizerTopology {
     static ToJsonOuterVisitor selectedForRewrite(DBSPCompiler compiler, DBSPCircuit circuit,
                                                  Set<Long> selected, Details details) {
         var inner = new OptimizerExpressionWriter(compiler, JsonStream.compactCircuit(), 1, true);
-        if (details == Details.SHARED_INDEXES)
-            inner.includeShuffleIdentities();
         inner.liveNodes = new HashMap<>();
         return selectedExpressions(compiler, circuit, selected, details, inner);
     }

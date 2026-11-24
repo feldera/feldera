@@ -30,6 +30,7 @@ class OptimizerExpressionWriter extends ToJsonInnerVisitor {
 
     OptimizerExpressionWriter(DBSPCompiler compiler, JsonStream stream, int verbosity, boolean replayMetadata) {
         super(compiler, stream, verbosity, replayMetadata);
+        this.includeShuffleIdentities();
     }
 
     @Override
