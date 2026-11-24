@@ -1,0 +1,52 @@
+{
+  "scope": "Rust reports the first temporal key comparison error in operand order after earlier merges without restarting the predicate pair.",
+  "source_base": "f51c368a808186e3fff27c9201f15004e4e9add6",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/temporal.rs": "fdf55f8a4e48814c0588d3bd1b971a19e420def421622e3755c8115b7e20bc9c",
+    "crates/sql/sql-opt/src/lib.rs": "fb17f41cace8d7221d9291f2223e9aed0bbf44e24aeab426fb4557ab538ff448",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "f78eecbdd1cf6bf13be127e5512628311f49874e5406ae6695473227313b2e19",
+    "crates/sql/sql-opt/src/temporal_comparisons.rs": "843004d88a5bdc028345878c3477a8c8832588bef8cfa4e53377beb68a14a8ad",
+    "crates/sql/sql-opt/src/temporal_filters.rs": "3b311896676fd3a31bf9d3a7a0909e945a283d458426324aa20c647e2249571f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "1a808fd1f933eb3ae851681ceec384abf4908fb324323826d4cbca160b73e453",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "20bd3255c9a8b0a98dd170b293dc7f02aba3ed3599ed3b9b057b3098d016cad2"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "6a70096c0e70223af104922b97024b859800956311bcee4848ee0508af7a12c9",
+    "bin/sql-difftest": "c83f5a4604a5e39d554da949da29c5744e2e81758ef693cf7ce676e021afe300",
+    "maven/tests.jar": "5e3533c5178dc564c11385660ef7737dcbf36464edeb16ebce7a205bbdf66a9b",
+    "maven/sql-compiler.jar": "19e059618519a771cad6f313b149235e05eb6c84fa3b63a72ac90e6cfd02898f"
+  },
+  "negative_control": {
+    "library_sha256": "6a94051871e002fb3b8dae207226b65d1b869b28351802a45f18ba3d2656dcf5",
+    "failed_tests": [
+      "temporalMergeReportsTheFirstInvalidKeyWithoutReanalyzingThePair"
+    ],
+    "java_compiler_sha256": "e29923616ec6a4187a5a76e3161ae54cd310c6750ad8ae1b8372f37a229152a8"
+  },
+  "rust_tests": 226,
+  "junit_tests": 223,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "13d550de82bc412916ee80445770fc846d4877e7acbe1ab87379f958161d7cfc"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "18c0cb68fc28b63ce148b53af3a355f7b6a47190a4e5998753784597bac23e1d"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 248,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "0efc8f498bac2e6ac0f0b8f7077c86f8c00be8e6"
+}

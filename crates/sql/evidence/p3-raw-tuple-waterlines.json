@@ -1,0 +1,54 @@
+{
+  "scope": "Rust validates the field shapes and nullability of raw tuples before consuming their bounds, including the declared input row of a temporal filter.",
+  "source_base": "0efc8f498bac2e6ac0f0b8f7077c86f8c00be8e6",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "a2d495cecdccab1ed73b3f06a0922d3b3cb4654459d657a50e00f6537a2cc725",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "b74c6354f5727a1dcfcf6974e0da20b525876712052babaef9172a4c53f45acd",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/evaluate.rs": "cc9845823f79fdd7b06fb214a507cc3f2a294cc2dd685fe7a871be8483324db3",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/reads.rs": "f425486e1729b9042e089dbdf3f7d005c8bd2c31b461c75fd3ddea4457542f28",
+    "crates/sql/sql-opt/src/monotonicity/row_projection/shape.rs": "dd5039be4fbf6f58a44ab78a9df37bb87adc531f25ed29944b7a029d454ea3c3",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "56dc379018450ad2100063b0d6896ea9cbbb84bf8774ba872b874f076409bc43",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "5c33b3bd2b38b8bb23971c47a119c47511f9310c1c5f6066ca571676aa295987",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "b8c18b6fe7427d3dd713fb7fdf06998176a396049475c3f689016031ddf7d98f"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "54eb09ed9ae484af03f1ced261a794e8cba4d107e3ba18d0a69195e20865f780",
+    "bin/sql-difftest": "bfe9550756bb7b93734f849338fa5a3f2919e1aff03d2694b26aaf8fdace3b09",
+    "maven/tests.jar": "cba84f23e780c7a5aed25b73fea2d445ea9bf3b8b4a8dad5ac3a651f9a01117d",
+    "maven/sql-compiler.jar": "2081d8456a35a48604bab9fd2bf5ccb91b90e2c5c9598eac0c1e734b8f5178ab"
+  },
+  "negative_control": {
+    "library_sha256": "6a70096c0e70223af104922b97024b859800956311bcee4848ee0508af7a12c9",
+    "failed_tests": [
+      "nullableRawTupleFailsBeforeConsumingItsFieldsBounds",
+      "temporalMergeValidatesTheInputRowBeforeExaminingItsClock"
+    ],
+    "java_compiler_sha256": "19e059618519a771cad6f313b149235e05eb6c84fa3b63a72ac90e6cfd02898f"
+  },
+  "rust_tests": 226,
+  "junit_tests": 225,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "c72d80f78f27edf2037ed8d8794215a30795ff0ebf48c857f0e3e637a2a45c3e"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "d41975a5173c2b78f5ca068ec43bb94fa520104a671b1872c7068cc39183dd23"
+    }
+  },
+  "nightly_optimizer_junit": {
+    "tests": 250,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "source_commit": "5fa7576eb76f55440e95b23185287d00462eb783"
+}
