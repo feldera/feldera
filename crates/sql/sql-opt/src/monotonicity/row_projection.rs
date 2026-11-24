@@ -268,7 +268,7 @@ pub(crate) fn clock_facts(
     body: ExpressionId,
     next: &mut u64,
 ) -> Result<Option<HashSet<ExpressionId>>, crate::temporal_comparisons::ClockError> {
-    use crate::temporal_comparisons::{ClockError, MissingClockKey};
+    use crate::temporal_comparisons::{MissingClockKey, TemporalDiagnostic};
     let node = edit.node(parameter)?;
     let ty = edit.type_id(node.edge("type")?)?;
     let Some(name) = node
@@ -299,14 +299,14 @@ pub(crate) fn clock_facts(
     match row.visit(edit, body, FlatmapInput::ZSet(next))? {
         Evaluation::Value(_) => {}
         Evaluation::Failed(WaterlineError::MissingReference(id)) => {
-            return Err(ClockError::Missing(MissingClockKey::Reference(id)));
+            return Err(TemporalDiagnostic::Missing(MissingClockKey::Reference(id)).into());
         }
         Evaluation::Failed(WaterlineError::MissingFact(id)) => {
-            return Err(ClockError::Missing(MissingClockKey::Fact(id)));
+            return Err(TemporalDiagnostic::Missing(MissingClockKey::Fact(id)).into());
         }
-        Evaluation::Failed(WaterlineError::MissingBound(_)) => return Err(ClockError::MissingBound),
+        Evaluation::Failed(WaterlineError::MissingBound(_)) => return Err(TemporalDiagnostic::MissingBound.into()),
         Evaluation::Failed(WaterlineError::Type(kind, ty)) => {
-            return Err(ClockError::Type(kind, ty));
+            return Err(TemporalDiagnostic::Type(kind, ty).into());
         }
         _ => return Ok(None),
     }

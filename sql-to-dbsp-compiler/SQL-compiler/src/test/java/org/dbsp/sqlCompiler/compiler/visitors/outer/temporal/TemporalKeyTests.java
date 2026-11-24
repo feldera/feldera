@@ -1148,6 +1148,44 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void temporalMergeReportsTheFirstInvalidKeyWithoutReanalyzingThePair() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var east = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT+19:00"));
+        var west = new DBSPTimestampTzLiteral(CalciteObject.EMPTY, DBSPTypeTimestampTz.INSTANCE,
+                new TimestampWithTimeZoneString("2020-01-01 00:00:00 GMT-20:00"));
+        for (var pair : List.of(List.of(east, west), List.of(west, east))) {
+            // An earlier, independent chain has already merged and allocated names.
+            var circuit = temporalFilterChain(b.call(time, "now"));
+            var rows = circuit.allOperators.getFirst().to(DBSPConstantOperator.class).outputPort();
+            for (var offset : pair) {
+                var row = b.refVar(rows.getOutputZSetElementType());
+                var key = b.call(time, "shift_timestamp", b.field(row, 0), offset);
+                var predicate = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+                var filter = new DBSPFilterOperator(CalciteEmptyRel.INSTANCE, predicate.closure(row), rows);
+                circuit.addOperator(filter);
+                rows = filter.outputPort();
+            }
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            var invalid = Assert.assertThrows(java.time.DateTimeException.class, pair.getFirst()::getMicros);
+            long start = DBSPVariablePath.nextGeneratedName();
+            var direct = Assert.assertThrows(invalid.getClass(), () -> new MergeFilters(compiler).apply(circuit));
+            long names = DBSPVariablePath.nextGeneratedName() - start;
+            Assert.assertTrue(names > 0);
+            Assert.assertEquals(invalid.getMessage(), direct.getMessage());
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+            start = DBSPVariablePath.nextGeneratedName();
+            var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
+            Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+            Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+            Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
+        }
+    }
+
+    @Test
     public void temporalKeysReportInvalidOffsetsInOperandOrder() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var compiler = new DBSPCompiler(new CompilerOptions());

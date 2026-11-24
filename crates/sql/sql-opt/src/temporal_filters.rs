@@ -1,17 +1,16 @@
 //! Split temporal predicates and merge bounds that share a NOW window.
-use crate::monotonicity::row_projection::WaterlineTypeError;
 use crate::{
-    TemporalPredicate, WindowTerm, accepts_temporal_bound,
+    TemporalPredicate, WindowTerm, check_temporal_bound,
     filters::rewrite_filters,
     function_calls::contains_now,
     temporal_comparisons::{
-        ClockError, MissingClockKey, checked_temporal_predicates, speculative_clock,
+        ClockError, TemporalDiagnostic, checked_temporal_predicates, speculative_clock,
     },
 };
 use feldera_sql_expr::{SimplifyWarning, ensure_expression_tree, simplify_closure_with_warnings};
 use feldera_sql_ir::{
     BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
-    OperatorKind as Op, OutputPort, TypeId,
+    OperatorKind as Op, OutputPort,
 };
 
 /// Decide if adjacent filters can use a single window. An unknown result asks
@@ -35,7 +34,7 @@ fn can_merge_temporal_filters(
         return Ok(None);
     };
     let decision = match downstream.as_slice() {
-        [term] => accepts_temporal_bound(edit, &upstream, *term)?,
+        [term] => check_temporal_bound(edit, &upstream, *term)?,
         _ => Some(false),
     };
     Ok(decision)
@@ -65,25 +64,24 @@ pub struct TemporalFilterPair<'a> {
     pub warnings: &'a mut Vec<SimplifyWarning>,
 }
 
-/// The live caller publishes earlier diagnostics and names before reporting
-/// a missing key. A detached caller can discard this state and replay the pass.
+/// A live caller publishes the name and warning prefix even when analysis fails.
 pub enum TemporalMerge {
     Rewritten(Circuit),
-    MissingBound {
+    Failed {
+        diagnostic: TemporalDiagnostic,
         next_name: u64,
         warnings: Vec<SimplifyWarning>,
     },
-    TypeError {
-        kind: WaterlineTypeError,
-        ty: TypeId,
-        next_name: u64,
-        warnings: Vec<SimplifyWarning>,
-    },
-    MissingKey {
-        key: MissingClockKey,
-        next_name: u64,
-        warnings: Vec<SimplifyWarning>,
-    },
+}
+
+impl TemporalDiagnostic {
+    fn can_report_from(&self, input: &Circuit) -> bool {
+        match self {
+            Self::Missing(key) => input.node(key.expression().into()).is_some(),
+            Self::Type(_, ty) => input.node((*ty).into()).is_some(),
+            Self::Comparison(_) | Self::MissingBound => true,
+        }
+    }
 }
 
 pub fn merge_temporal_filters_with(
@@ -127,25 +125,9 @@ pub fn merge_temporal_filters_with(
                     names = trial_names;
                     Some(merge)
                 }
-                Err(ClockError::Missing(key))
-                    if circuit.node(key.expression().into()).is_some() =>
-                {
-                    return Ok(Some(TemporalMerge::MissingKey {
-                        key,
-                        next_name: trial_names,
-                        warnings: diagnostics,
-                    }));
-                }
-                Err(ClockError::MissingBound) => {
-                    return Ok(Some(TemporalMerge::MissingBound {
-                        next_name: trial_names,
-                        warnings: diagnostics,
-                    }));
-                }
-                Err(ClockError::Type(kind, ty)) if circuit.node(ty.into()).is_some() => {
-                    return Ok(Some(TemporalMerge::TypeError {
-                        kind,
-                        ty,
+                Err(ClockError::Diagnostic(diagnostic)) if diagnostic.can_report_from(&circuit) => {
+                    return Ok(Some(TemporalMerge::Failed {
+                        diagnostic,
                         next_name: trial_names,
                         warnings: diagnostics,
                     }));
@@ -153,7 +135,7 @@ pub fn merge_temporal_filters_with(
                 Err(ClockError::InvalidIr(error)) => return Err(error),
                 // Recreated expressions lack a live Java ID. Resume from the start
                 // of this predicate pair when the diagnostic needs one.
-                Ok(None) | Err(ClockError::Missing(_) | ClockError::Type(..)) => {
+                Ok(None) | Err(ClockError::Diagnostic(_)) => {
                     analyze(TemporalFilterPair {
                         graph: edit.circuit(),
                         operators: [input.operator, id],

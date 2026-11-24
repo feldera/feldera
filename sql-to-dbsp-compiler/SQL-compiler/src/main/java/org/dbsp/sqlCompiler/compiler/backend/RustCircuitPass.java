@@ -3666,19 +3666,21 @@ public final class RustCircuitPass implements CircuitTransform {
             return MAPPER.writeValueAsBytes(reply);
         });
         var reply = MAPPER.readTree(result);
-        var missing = reply.get("missing_clock_key");
-        var typeError = reply.get("type_error");
-        if (missing != null || reply.has("missing_clock_bound") || typeError != null) {
+        var failure = reply.get("failure");
+        if (failure != null) {
             finishLowering(this.compiler, reply);
             if (!this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
                 this.compiler.stateObserver.nativeDecision("MergeFilters", true);
-            if (typeError != null)
-                throw waterlineTypeError(writer.innerVisitor, typeError);
-            if (missing == null)
+            if (failure.has("comparison_failure"))
+                reportComparisonFailure(failure.required("comparison_failure"));
+            if (failure.has("type_error"))
+                throw waterlineTypeError(writer.innerVisitor, failure.required("type_error"));
+            if (failure.has("missing_clock_bound"))
                 // MonotoneExpression.getReducedExpression requires a non-null bound.
                 throw new NullPointerException();
-            var expression = Utilities.getExists(Objects.requireNonNull(writer.innerVisitor.liveNodes), missing.longValue());
-            throw Utilities.missingKey(reply.required("key_is_node_id").booleanValue() ? expression.getId() : expression);
+            var nodes = Objects.requireNonNull(writer.innerVisitor.liveNodes);
+            var expression = Utilities.getExists(nodes, failure.required("missing_clock_key").longValue());
+            throw Utilities.missingKey(failure.required("key_is_node_id").booleanValue() ? expression.getId() : expression);
         }
         return reply;
     }

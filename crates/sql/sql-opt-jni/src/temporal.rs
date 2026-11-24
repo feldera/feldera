@@ -97,34 +97,25 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
                 "next_generated_name": next, "unused_sources": [],
                 "circuit": circuit.changed_live_graph(&input),
             }),
-            feldera_sql_opt::TemporalMerge::TypeError {
-                kind,
-                ty,
-                next_name,
-                warnings,
-            } => json!({
-                "type_error": {"kind": kind, "type": super::inner_number(ty.into())},
-                "next_generated_name": next_name,
-                "warnings": super::pass_warnings(warnings),
-            }),
-            feldera_sql_opt::TemporalMerge::MissingBound {
-                next_name,
-                warnings,
-            } => json!({
-                "missing_clock_bound": true,
-                "next_generated_name": next_name,
-                "warnings": super::pass_warnings(warnings),
-            }),
-            feldera_sql_opt::TemporalMerge::MissingKey {
-                key,
-                next_name,
-                warnings,
-            } => json!({
-                "missing_clock_key": super::inner_number(key.expression().into()),
-                "key_is_node_id": matches!(key, feldera_sql_opt::MissingClockKey::Fact(_)),
-                "next_generated_name": next_name,
-                "warnings": super::pass_warnings(warnings),
-            }),
+            feldera_sql_opt::TemporalMerge::Failed { diagnostic, next_name, warnings } => {
+                use feldera_sql_opt::TemporalDiagnostic as Diagnostic;
+                let failure = match diagnostic {
+                    Diagnostic::Comparison(error) => json!({"comparison_failure": error}),
+                    Diagnostic::MissingBound => json!({"missing_clock_bound": true}),
+                    Diagnostic::Type(kind, ty) => json!({"type_error": {
+                        "kind": kind, "type": super::inner_number(ty.into()),
+                    }}),
+                    Diagnostic::Missing(key) => json!({
+                        "missing_clock_key": super::inner_number(key.expression().into()),
+                        "key_is_node_id": matches!(key, feldera_sql_opt::MissingClockKey::Fact(_)),
+                    }),
+                };
+                json!({
+                    "failure": failure,
+                    "next_generated_name": next_name,
+                    "warnings": super::pass_warnings(warnings),
+                })
+            }
         };
         let bytes = serde_json::to_vec(&result).map_err(|e| error(e.to_string()))?;
         if bytes.len() > super::MAX_BYTES {

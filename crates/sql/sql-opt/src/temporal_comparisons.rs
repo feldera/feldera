@@ -104,11 +104,31 @@ impl MissingClockKey {
     }
 }
 
-pub(crate) enum ClockError {
+pub enum TemporalDiagnostic {
     Missing(MissingClockKey),
     MissingBound,
     Type(WaterlineTypeError, TypeId),
+    Comparison(crate::ComparisonDiagnostic),
+}
+
+pub(crate) enum ClockError {
+    Diagnostic(TemporalDiagnostic),
     InvalidIr(Error),
+}
+
+impl From<TemporalDiagnostic> for ClockError {
+    fn from(diagnostic: TemporalDiagnostic) -> Self {
+        Self::Diagnostic(diagnostic)
+    }
+}
+
+impl From<crate::KeyComparisonError> for ClockError {
+    fn from(error: crate::KeyComparisonError) -> Self {
+        match error {
+            crate::KeyComparisonError::InvalidIr(error) => Self::InvalidIr(error),
+            crate::KeyComparisonError::Diagnostic(error) => TemporalDiagnostic::Comparison(error).into(),
+        }
+    }
 }
 
 impl From<Error> for ClockError {
@@ -128,8 +148,7 @@ pub(super) fn speculative_clock<T>(
             *next = names;
             Ok(Some(result))
         }
-        Ok(None)
-        | Err(ClockError::Missing(_) | ClockError::MissingBound | ClockError::Type(..)) => Ok(None),
+        Ok(None) | Err(ClockError::Diagnostic(_)) => Ok(None),
         Err(ClockError::InvalidIr(error)) => Err(error),
     }
 }
