@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.util.Linq;
 
 /** Rewrites closures to use fresh parameter objects with the same names and types. */
@@ -21,6 +22,16 @@ public class FreshenParameters extends InnerRewriteVisitor {
         DBSPParameter[] parameters = Linq.map(
                 closure.parameters, DBSPParameter::deepCopy, DBSPParameter.class);
         this.map(closure, new DBSPClosureExpression(closure.getNode(), body, parameters));
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPFieldExpression field) {
+        this.push(field);
+        var tuple = this.transform(field.expression);
+        this.pop(field);
+        // Freshening declarations must preserve evaluated operands of Tup2::new(a, b).1.
+        this.map(field, tuple.field(field.getNode(), field.fieldNo));
         return VisitDecision.STOP;
     }
 
