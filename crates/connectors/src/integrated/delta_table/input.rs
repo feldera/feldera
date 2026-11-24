@@ -2583,7 +2583,7 @@ impl DeltaTableInputEndpointInner {
                 self.config.max_retries(),
             );
             let range_record_count = if self.queue.input_bound().is_some() {
-                let upper = timestamp_order_key(&timestamp_field.columntype, &end_raw)?;
+                let upper = timestamp_order_key(timestamp_field, &end_raw)?;
                 self.queue
                     .read_synchronized_range(upper, &mut uppers, read)
                     .await

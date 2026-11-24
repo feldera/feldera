@@ -1929,7 +1929,7 @@ impl IcebergInputEndpointInner {
             // range's end (see `InputQueue::read_synchronized_range`).
             let read = self.execute_snapshot_query(&range_query, "range", input_stream, receiver);
             if self.queue.input_bound().is_some() {
-                let upper = timestamp_order_key(&timestamp_field.columntype, &end_raw)?;
+                let upper = timestamp_order_key(timestamp_field, &end_raw)?;
                 self.queue
                     .read_synchronized_range(upper, &mut uppers, read)
                     .await;
