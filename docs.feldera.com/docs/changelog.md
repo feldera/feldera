@@ -10,6 +10,13 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Enterprise (Kubernetes): with the Helm value `pipeline.networkPolicy.enabled`,
+  the Kubernetes runner creates a NetworkPolicy for each pipeline.  The policy
+  admits only the API server and the runner on port 80, and only the pods of
+  the same pipeline on the multihost ports 8080 and 9000, so that pipelines
+  cannot reach each other.  It is off by default.  See [network
+  policy](/get-started/enterprise/helm-chart-reference#network-policy).
+
 ## v0.385.0
 
 - Security: pipeline diagnostics replace registered Secret values with their
