@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | On `519a01640`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. On `f2a1f0f1d`, all 24 selected compilations matched across 11,965 ordered observations and emission on the two engines. COUNT and LATENESS restored in both directions. The highest cold compile p95 ratio was 1.047×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay and runtime](evidence/p3-reader-bindings.json) · [Field trimming and restores](evidence/p3-statement-expression-results.json) · [Latency](evidence/p3-statement-expression-results-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port remaining Java optimizer logic in waterline analysis, field trimming, and optional column lineage. Repeat exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
+| P3 | On `519a01640`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission. On `bf8cd8423`, all 8,256 executable classic cases passed. On `0b500c23f`, 72 selected compilations matched across 42,449 ordered observations and emission. COUNT and LATENESS restored in both directions. The highest cold compile p95 ratio was 1.102×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay](evidence/p3-reader-bindings.json) · [Classic runtime](evidence/p3-evaluated-statement-fields.json) · [Field trimming and restores](evidence/p3-block-item-bindings.json) · [Latency](evidence/p3-block-item-bindings-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port remaining Java optimizer logic in waterline analysis, field trimming, and optional column lineage. Repeat exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -462,6 +462,27 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+A projection block can declare a static value, a comparator, a struct, or a
+function. On `0b500c23f`, Rust visits those declarations when determining
+which input columns to keep. If the whole block is an expression statement,
+it retains the reads inside it. It resolves each variable to its declaration,
+including when a function parameter shadows the input row. The preceding Rust
+build delegated the block-item regression to Java.
+
+On this build, 48 frozen field-trimming compilations matched Java through
+30,484 ordered S4 observations. Another 24 selected compilations matched
+through 11,965 observations. The two sets overlap on one Gen-2 case. COUNT and
+LATENESS checkpoints restored in both directions. The build passed 227 Rust
+tests, Clippy, 267 focused JUnit tests, and 284 nightly optimizer tests.
+[Block field reads, replay, and restores](evidence/p3-block-item-bindings.json)
+
+Cold compilation through classic artifact emission matched on all 69 pairs,
+including warmups. Across 21 measured pairs per workload, hybrid and Java
+p95 were 1.937 s and 2.384 s on the array subquery (0.813×), 5.895 s and
+5.348 s on Nexmark (1.102×), and 1.767 s and 2.169 s on the outer join
+(0.815×). The two compilers used CPU 15 of the shared ARM64 VM.
+[Cold compilation pairs](evidence/p3-block-item-bindings-cold.json)
+
 A map can read one column in an expression statement and return a different
 column. The optimizer must keep both when narrowing the input. In the
 constructed three-column regression, it drops the unused middle column and
@@ -513,7 +534,9 @@ tests. Both engines matched Java through 11,965 observations on the 24 selected
 compilations. COUNT and LATENESS restored in both directions. On the three cold
 workloads, hybrid/direct p95 was 2.362/2.690 s for the array subquery,
 6.807/6.293 s for Nexmark, and 2.121/2.802 s for the outer join. Cancellation
-p95 was 15.31 ms with all four workers sharing CPU 14.
+p95 was 15.31 ms with all four workers sharing CPU 14. The full classic runtime replay
+passed all 8,256 executable cases across 11,407 input commands, including
+232 expected runtime errors.
 [Field reads and restores](evidence/p3-evaluated-statement-fields.json) ·
 [Paired cold compilation](evidence/p3-evaluated-statement-fields-cold.json)
 
