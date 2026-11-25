@@ -417,3 +417,42 @@ describe('a double click on a nested region', () => {
     cleanup()
   })
 })
+
+describe('a click on an operator next to a collapsed region', () => {
+  it('colors the one drawn edge that stands for several edges of the circuit', async () => {
+    // Both operators in the collapsed region feed n1, so the diagram draws one edge for the two edges
+    // of the circuit. The trace back from n1 follows both, and both lead to that drawn edge.
+    const { cy, click, cleanup } = await mountDiagram('light', {
+      metrics: [],
+      worker_profiles: [{ metadata: {} }],
+      graph: {
+        nodes: {
+          id: 'n',
+          label: 'circuit',
+          nodes: [
+            { Simple: { id: 'n1', label: 'sink' } },
+            {
+              Cluster: {
+                id: 'region',
+                label: 'region',
+                nodes: [
+                  { Simple: { id: 'n2', label: 'map' } },
+                  { Simple: { id: 'n3', label: 'filter' } }
+                ]
+              }
+            }
+          ]
+        },
+        edges: [
+          { from_node: 'n2', to_node: 'n1' },
+          { from_node: 'n3', to_node: 'n1' }
+        ]
+      }
+    })
+    expect(cy.edges().map((e: { id(): string }) => e.id())).toEqual(['region->n1'])
+    const node = cy.$id('n1')
+    await click(node.renderedPosition().x, node.renderedPosition().y)
+    expect(highlighted(cy)).toEqual(['region->n1'])
+    cleanup()
+  })
+})

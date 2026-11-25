@@ -2,7 +2,7 @@
 // Each measurement times the real code path, from the user action until the result is painted.
 // The tests only check that each action completed. They do not check a time budget.
 
-import { clearLayoutCache, type ProfilerCallbacks } from 'profiler-lib'
+import { afterNextPaint, clearLayoutCache, type ProfilerCallbacks } from 'profiler-lib'
 import { afterAll, describe, expect, inject, it } from 'vitest'
 import { commands } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
@@ -12,14 +12,7 @@ import {
   getSuitableProfiles,
   processProfileFiles
 } from './functions/processZipBundle'
-import {
-  afterNextPaint,
-  measure,
-  measureFrames,
-  type PerfResult,
-  summarize,
-  timeAction
-} from './test-support/perf'
+import { measure, measureFrames, type PerfResult, summarize, timeAction } from './test-support/perf'
 import { syntheticBundle } from './test-support/syntheticBundle'
 import { type SyntheticCircuit, syntheticCircuit } from './test-support/syntheticCircuit'
 
@@ -227,7 +220,7 @@ async function measureWorkerToggle(mounted: ReturnType<typeof mountProfiler>, na
 
 describe('profiler performance', () => {
   it('measures the parsing of a support bundle', async () => {
-    const bundle = await syntheticBundle(LARGE_CIRCUIT)
+    const bundle = syntheticBundle(LARGE_CIRCUIT)
     let workers = 0
     results.push(
       await measure('parse bundle (unzip + processProfileFiles)', {

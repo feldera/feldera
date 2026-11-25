@@ -117,5 +117,35 @@ describe('drawn edges', () => {
             ['n2->n1', 'region->n1'],
             ['n3->n1', 'region->n1']
         ])
+        // The two edges come from two operators, so they carry two streams.
+        expect(graph.edges[0]!.getDefinition().data.label).toBe('2 streams')
+    })
+
+    it('shows no count for one stream that feeds several operators of a collapsed region', () => {
+        // n1 writes one stream, and both operators in the region read it.
+        const p = CircuitProfile.fromJson({
+            metrics: [],
+            worker_profiles: [{ metadata: {} }],
+            graph: {
+                nodes: {
+                    id: 'n',
+                    label: 'circuit',
+                    nodes: [
+                        simple('n1', 'source'),
+                        cluster('region', 'region', [simple('n2', 'map'), simple('n3', 'filter')])
+                    ]
+                },
+                edges: [
+                    { from_node: 'n1', to_node: 'n2' },
+                    { from_node: 'n1', to_node: 'n3' }
+                ]
+            }
+        } as never).profile
+        const selection = new CircuitSelection(
+            new ExplicitSubSet(new Set(p.complexNodes.keys()), new Set())
+        )
+        const graph = Cytograph.fromProfile(p, selection)
+        expect(graph.edges.map((e) => e.getId())).toEqual(['n1->region'])
+        expect(graph.edges[0]!.getDefinition().data.label).toBeUndefined()
     })
 })

@@ -189,6 +189,12 @@ A collapsed region is shown as a node:
 | Child count chip | The number of nodes in the region. The nodes in nested regions count, and the nested regions do not. |
 | Code chip | The region has a SQL source position. See [Nodes and SQL](#nodes-and-sql). |
 
+The diagram draws one edge between two nodes. If more than one node in a
+collapsed region writes a stream to the same node, the edge shows the
+number of streams, for example "3 streams":
+
+![An edge that shows the number of streams](edge-streams.png)
+
 When you move the pointer over a top-level region, the region glows, and
 the child count chip changes to a square (expand) or a dash (collapse):
 

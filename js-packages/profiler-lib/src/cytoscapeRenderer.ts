@@ -93,18 +93,34 @@ export function paintNodeLayer(
     };
 }
 
-/** Stop the renderer from drawing until you call the returned function. Requests for a frame are kept,
- *  and the first frame after the resume draws them. If `cy` has no canvas renderer, this does nothing.
+/** Stops cytoscape from drawing the diagram until the returned function is called. Does nothing if
+ *  `cy` has no canvas renderer.
  *
- *  This depends on the render loop of cytoscape 3.33. On each animation frame the loop draws only if
- *  `requestedFrame` is true. If it is false, the loop also skips the style update of changed
- *  elements, which is the most expensive part of a frame of a changed graph. */
+ *  What this prevents: when a region is expanded or collapsed, the graph changes at once, but ELK
+ *  gives the new positions only some animation frames later. Without the pause, cytoscape draws the
+ *  changed graph at the old positions in those frames: a style update of all changed elements and a
+ *  full draw. The user does not see these frames, because `FrozenLayout` shows a picture of the old
+ *  diagram over them. On a large bundle they cost about 0.8 s. With the pause, cytoscape draws only
+ *  the finished layout.
+ *
+ *  How: `requestedFrame` is a private field of the cytoscape renderer, not a public API. Cytoscape
+ *  sets it to true when the diagram must be drawn again. In each animation frame, the render loop of
+ *  cytoscape 3.35 draws only if the field is true, and sets it to false. The pause makes the field
+ *  always read false, and keeps what cytoscape writes to it. The returned function puts back the last
+ *  written value, so the next frame draws all the changes. `diagramFrames.test.ts` in
+ *  profiler-layout fails if a cytoscape update changes this loop.
+ *
+ *  The public `cy.startBatch()` also stops the frames, but not only the frames: after two overlapping
+ *  layouts in a batch, the nodes do not get the positions that ELK gives without the batch. */
 export function pauseFrames(cy: Core): () => void {
     const renderer = canvasRenderer(cy);
     if (typeof renderer.redraw !== 'function') {
         return () => { };
     }
     let isFrameRequested = renderer.requestedFrame === true;
+    // Regression tests: "draws no frame until the layout is finished, then draws the new layout" and
+    // "draws no frame until the last of two overlapping layouts is finished" in
+    // `profiler-layout/src/lib/components/diagramFrames.test.ts`.
     Object.defineProperty(renderer, 'requestedFrame', {
         configurable: true,
         get: () => false,

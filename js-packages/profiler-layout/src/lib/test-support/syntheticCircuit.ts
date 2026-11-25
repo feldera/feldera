@@ -69,49 +69,41 @@ const METRICS: JsonProfiles['metrics'] = [
   {
     name: 'invocations_count',
     category: 'Time',
-    advanced: true,
     description: 'Number of times the operator has been invoked.'
   },
   {
     name: 'runtime_seconds',
     category: 'Time',
-    advanced: false,
     description: 'Total time spent evaluating the operator.'
   },
   {
     name: 'runtime_percent',
     category: 'Time',
-    advanced: false,
     description: 'Percentage of time spent evaluating the operator.'
   },
   {
     name: 'nonblocking_percent',
     category: 'Time',
-    advanced: true,
     description: 'Fraction of operator runtime spent running.'
   },
   {
     name: 'used_memory_bytes',
     category: 'State',
-    advanced: true,
     description: 'Bytes used by the in-memory state of the operator.'
   },
   {
     name: 'allocated_memory_bytes',
     category: 'State',
-    advanced: false,
     description: 'Total bytes reserved by the operator state.'
   },
   {
     name: 'state_records_count',
     category: 'State',
-    advanced: false,
     description: 'Number of records stored in operator state.'
   },
   {
     name: 'output_batches_stats',
     category: 'Outputs',
-    advanced: false,
     description: 'Distribution of output batch sizes.'
   }
 ] as unknown as JsonProfiles['metrics']
