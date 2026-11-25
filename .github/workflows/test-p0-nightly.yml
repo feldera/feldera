@@ -407,9 +407,13 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         shell: bash
         run: |
-          cargo build --release --locked -p feldera-sql-difftest -p feldera-sql-opt-jni
+          cargo build --release --locked -p sql2dbsp -p feldera-sql-difftest -p feldera-sql-opt-jni
           target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
           java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          python3 crates/sql/scripts/validate_p2_hybrid.py "$RUNNER_TEMP/sql-packaged-optimizer" \
+            --rust-optimizer-passes --compiler "$target_dir/release/sql2dbsp" \
+            --comparator "$target_dir/release/sql-difftest" \
+            --classpath "$java_target/sql2dbsp-jar-with-dependencies.jar"
           python3 crates/sql/scripts/run_s2_corpus.py \
             "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-mixed-optimizer" \
             --full-optimizer-trace --rust-optimizer --require-native-decisions --workers 4 \
