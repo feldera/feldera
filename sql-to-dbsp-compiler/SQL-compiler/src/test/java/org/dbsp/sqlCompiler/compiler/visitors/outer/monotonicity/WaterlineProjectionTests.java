@@ -274,6 +274,48 @@ public class WaterlineProjectionTests {
     }
 
     @Test
+    public void nonMinimumChainUsesOnlyTheGroupKeyWaterline() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var source = sourceWithOneBound(compiler);
+        var port = source.getOutput(0);
+        var site = CalciteEmptyRel.INSTANCE;
+        for (int keyField : List.of(0, 1)) {
+            var row = port.getOutputRowType().ref().var();
+            var index = new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(
+                    row.deepCopy().deref().field(keyField), row.deref().field(1 - keyField)).closure(row), port);
+            var type = index.getOutputIndexedZSetType();
+            var value = type.elementType.ref().var();
+            var weight = DBSPTypeWeight.INSTANCE.var();
+            var init = new DBSPTupleExpression(value.deref()).closure(value, weight);
+            var state = init.getResultType().var();
+            var update = state.closure(state, value, weight);
+            var chain = new DBSPChainAggregateOperator(site, init, update,
+                    new DBSPTypeIndexedZSet(site, type.keyType, init.getResultType()), index.outputPort());
+            var circuit = new DBSPCircuit(new ProgramMetadata(), true);
+            for (var op : List.of(source, index, chain))
+                circuit.addOperator(op);
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            var direct = new Monotonicity(compiler);
+            direct.apply(circuit);
+            var visited = observeWaterlineTransfers(compiler);
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var hybrid = new Monotonicity(compiler);
+            hybrid.apply(circuit);
+            var expected = direct.getMonotoneExpression(chain);
+            var actual = hybrid.getMonotoneExpression(chain);
+            if (keyField == 0) {
+                Assert.assertTrue(expected.getReducedExpression().equivalent(actual.getReducedExpression()));
+                Assert.assertEquals(List.of("DeclaredColumns", "ApplyClosure", "ChainMinimumOrKey", "AggregateKey"), visited);
+            } else {
+                Assert.assertNull(expected);
+                Assert.assertNull(actual);
+                Assert.assertEquals(List.of("DeclaredColumns", "ApplyClosure", "ChainMinimumOrKey"), visited);
+            }
+        }
+    }
+
+    @Test
     public void deindexUsesOnlyTheValueWaterline() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());

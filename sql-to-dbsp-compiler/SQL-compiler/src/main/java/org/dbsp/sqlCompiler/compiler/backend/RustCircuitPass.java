@@ -3810,16 +3810,16 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    /** A plain row or an indexed row whose key and value bounds are known separately. */
-    public enum OutputWaterline {
-        Absent(0), Row(1), Key(2), Value(3), KeyAndValue(4);
+    /** The live result of a transfer, including a declined MIN value projection. */
+    public enum WaterlineResult {
+        Absent(0), Row(1), Key(2), Value(3), KeyAndValue(4), TryGroupKey(5);
 
         final int wireValue;
-        OutputWaterline(int wireValue) {
+        WaterlineResult(int wireValue) {
             this.wireValue = wireValue;
         }
 
-        public static OutputWaterline indexed(boolean key, boolean value) {
+        public static WaterlineResult indexed(boolean key, boolean value) {
             if (key)
                 return value ? KeyAndValue : Key;
             return value ? Value : Absent;
@@ -3835,7 +3835,7 @@ public final class RustCircuitPass implements CircuitTransform {
 
     /** Report whether each live transfer produced a bound before Rust visits its consumers. */
     public static void visitWaterlines(DBSPCompiler compiler, DBSPCircuit circuit,
-                                       Function<MonotonicityTransfer, OutputWaterline> visit) {
+                                       Function<MonotonicityTransfer, WaterlineResult> visit) {
         record Step(TransferRule rule, int input, @Nullable List<ColumnWaterline> columns,
                     @Nullable IndexedWaterline projection, @Nullable ClosureBody function) {}
         propagateWaterlines(OptimizerTopology.monotonicity(compiler, circuit), new WaterlineStep() {
@@ -3861,7 +3861,7 @@ public final class RustCircuitPass implements CircuitTransform {
         var transfers = new ArrayList<MonotonicityTransfer>();
         visitWaterlines(compiler, circuit, transfer -> {
             transfers.add(transfer);
-            return OutputWaterline.Row;
+            return WaterlineResult.Row;
         });
         return transfers;
     }

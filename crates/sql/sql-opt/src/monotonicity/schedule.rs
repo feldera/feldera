@@ -209,6 +209,19 @@ pub enum OutputWaterline {
     KeyAndValue,
 }
 
+/// A MIN transfer can decline its value projection after inspecting the live
+/// closure. The scheduler then decides whether its input key can still propagate.
+pub enum TransferOutcome {
+    Produced(OutputWaterline),
+    TryGroupKey,
+}
+
+impl From<OutputWaterline> for TransferOutcome {
+    fn from(bound: OutputWaterline) -> Self {
+        Self::Produced(bound)
+    }
+}
+
 impl OutputWaterline {
     fn has_key(self) -> bool {
         matches!(self, Self::Row | Self::Key | Self::KeyAndValue)
@@ -234,9 +247,9 @@ pub fn monotonicity_transfers(
 /// Apply transfers in operator order. Only a bound produced by the transfer
 /// can reach its consumers. Operators with their own declarations or
 /// unconditional diagnostics must still be visited on an unbounded branch.
-pub fn propagate_waterlines<E: From<Error>>(
+pub fn propagate_waterlines<E: From<Error>, R: Into<TransferOutcome>>(
     circuit: &Circuit,
-    mut apply: impl FnMut(NodeId, MonotonicityTransfer) -> Result<OutputWaterline, E>,
+    mut apply: impl FnMut(NodeId, MonotonicityTransfer) -> Result<R, E>,
 ) -> Result<(), E> {
     use MonotonicityTransfer::*;
     let mut bounded = HashMap::new();
@@ -357,7 +370,23 @@ pub fn propagate_waterlines<E: From<Error>>(
             // Chain classification checks both closures even without an input
             // bound. Only a chain with a bounded input can propagate a bound.
             let can_propagate = transfer != ChainMinimumOrKey || first;
-            let output = apply(id, transfer)?;
+            let can_try_key = matches!(transfer, PrimitiveMinimumOrKey | ChainMinimumOrKey);
+            let output = match apply(id, transfer)?.into() {
+                TransferOutcome::Produced(bound) => bound,
+                TransferOutcome::TryGroupKey if !can_try_key => {
+                    return Err(Error::new(
+                        "only a MIN transfer can request group-key propagation",
+                    )
+                    .into());
+                }
+                TransferOutcome::TryGroupKey if first_bound.has_key() => {
+                    let TransferOutcome::Produced(bound) = apply(id, AggregateKey)?.into() else {
+                        return Err(Error::new("group-key transfer requested itself").into());
+                    };
+                    bound
+                }
+                TransferOutcome::TryGroupKey => OutputWaterline::Absent,
+            };
             if output != OutputWaterline::Absent && can_propagate {
                 bounded.insert(id, output);
             }
@@ -370,6 +399,44 @@ pub fn propagate_waterlines<E: From<Error>>(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn rejected_minimum_propagates_only_a_bounded_group_key() -> Result<(), Error> {
+        use MonotonicityTransfer::{AggregateKey, ChainMinimumOrKey, PrimitiveMinimumOrKey};
+        let port = |id| json!({"operator": {"node": id}, "outputNumber": 0});
+        let graph = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": [
+                {"class": "DBSPSourceMultisetOperator", "id": 1, "inputs": [],
+                 "metadata": {"columnMetadata": [{"lateness": true}]}},
+                {"class": "DBSPMapIndexOperator", "id": 2, "inputs": [port(1)]},
+                {"class": "DBSPChainAggregateOperator", "id": 3, "inputs": [port(2)]},
+                {"class": "DBSPPrimitiveAggregateOperator", "id": 4, "inputs": [port(2)], "aggregateKind": "Min"}
+            ]
+        }))?;
+        for bound in [
+            OutputWaterline::Key,
+            OutputWaterline::Value,
+            OutputWaterline::KeyAndValue,
+        ] {
+            let mut key_reads = Vec::new();
+            propagate_waterlines(&graph, |id, transfer| {
+                Ok::<_, Error>(match transfer {
+                    ChainMinimumOrKey | PrimitiveMinimumOrKey => TransferOutcome::TryGroupKey,
+                    AggregateKey => {
+                        key_reads.push(id);
+                        OutputWaterline::Key.into()
+                    }
+                    _ => bound.into(),
+                })
+            })?;
+            if bound == OutputWaterline::Value {
+                assert!(key_reads.is_empty());
+            } else {
+                assert_eq!(key_reads, [NodeId::Outer(3), NodeId::Outer(4)]);
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn indexed_consumers_select_the_key_or_value_they_propagate() -> Result<(), Error> {

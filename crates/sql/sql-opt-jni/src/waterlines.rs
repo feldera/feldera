@@ -1,7 +1,7 @@
 //! Propagate the results of live closure analysis through the expanded graph.
 use crate::{BridgeError, MAX_BYTES, operator_number};
 use feldera_sql_ir::Circuit;
-use feldera_sql_opt::{OutputWaterline, propagate_waterlines};
+use feldera_sql_opt::{OutputWaterline, TransferOutcome, propagate_waterlines};
 use jni::{
     EnvUnowned, JValue,
     errors::ThrowRuntimeExAndDefault,
@@ -44,13 +44,14 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
                 )?
                 .i()
             })?;
-            // Wire values are explicit in RustCircuitPass.OutputWaterline.
+            // Wire values are explicit in RustCircuitPass.WaterlineResult.
             match bounded {
-                0 => Ok(OutputWaterline::Absent),
-                1 => Ok(OutputWaterline::Row),
-                2 => Ok(OutputWaterline::Key),
-                3 => Ok(OutputWaterline::Value),
-                4 => Ok(OutputWaterline::KeyAndValue),
+                0 => Ok(OutputWaterline::Absent.into()),
+                1 => Ok(OutputWaterline::Row.into()),
+                2 => Ok(OutputWaterline::Key.into()),
+                3 => Ok(OutputWaterline::Value.into()),
+                4 => Ok(OutputWaterline::KeyAndValue.into()),
+                5 => Ok(TransferOutcome::TryGroupKey),
                 _ => Err(BridgeError::Optimizer(format!(
                     "invalid output waterline {bounded}"
                 ))),
