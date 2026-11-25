@@ -121,13 +121,19 @@ impl From<Error> for ReorderError {
     }
 }
 
-type Bound = TemporalBound<Rc<ProjectionKey>>;
+#[derive(Clone, Copy)]
+struct WindowKey {
+    row: NodeId,
+    expression: ExpressionId,
+    lower: bool,
+}
 
 /// A pass can classify the same term several times. Reuse its result and
 /// advance the name counter on each visit, including visits before a failure.
 struct WindowBounds {
     parameter: NodeId,
-    cache: HashMap<ExpressionId, (Option<Bound>, u64)>,
+    cache: HashMap<ExpressionId, (Option<WindowKey>, u64)>,
+    fingerprints: HashMap<ExpressionId, Rc<ProjectionKey>>,
 }
 
 impl WindowBounds {
@@ -136,12 +142,12 @@ impl WindowBounds {
         edit: &mut CircuitEditor,
         term: ExpressionId,
         next: &mut u64,
-    ) -> Result<Option<Bound>, ReorderError> {
+    ) -> Result<Option<WindowKey>, ReorderError> {
         if let Some((bound, cost)) = self.cache.get(&term) {
             *next = next
                 .checked_add(*cost)
                 .ok_or_else(|| Error::new("generated names exhausted"))?;
-            return Ok(bound.clone());
+            return Ok(*bound);
         }
         let start = *next;
         let (row, predicates) = match super::checked_conjunct(edit, self.parameter, term, next) {
@@ -156,20 +162,37 @@ impl WindowBounds {
                 });
             }
         };
-        let bound = match ConjunctWindow::from_predicates(&predicates) {
-            Some(window) => {
-                let row = row_parameter(edit, row)?;
-                let key =
-                    ProjectionKey::read(edit, window.key, row)?.ok_or(ReorderError::Unsupported)?;
-                Some(TemporalBound {
-                    fingerprint: Rc::new(key),
-                    lower: window.lower,
-                })
-            }
-            None => None,
-        };
-        self.cache.insert(term, (bound.clone(), *next - start));
+        let bound = ConjunctWindow::from_predicates(&predicates).map(|window| WindowKey {
+            row,
+            expression: window.key,
+            lower: window.lower,
+        });
+        self.cache.insert(term, (bound, *next - start));
         Ok(bound)
+    }
+
+    fn bound(
+        &mut self,
+        edit: &mut CircuitEditor,
+        term: ExpressionId,
+        next: &mut u64,
+    ) -> Result<Option<TemporalBound<Rc<ProjectionKey>>>, ReorderError> {
+        let Some(window) = self.classify(edit, term, next)? else {
+            return Ok(None);
+        };
+        let fingerprint = match self.fingerprints.entry(term) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let row = row_parameter(edit, window.row)?;
+                let key = ProjectionKey::read(edit, window.expression, row)?
+                    .ok_or(ReorderError::Unsupported)?;
+                entry.insert(Rc::new(key))
+            }
+        };
+        Ok(Some(TemporalBound {
+            fingerprint: Rc::clone(fingerprint),
+            lower: window.lower,
+        }))
     }
 
     fn reorder(
@@ -180,36 +203,37 @@ impl WindowBounds {
         next: &mut u64,
     ) -> Result<ExpressionId, ReorderError> {
         let terms = conjuncts(edit, body)?;
-        let mut ordered = body;
-        let mut shared = None;
-        if let Some(i) = chosen {
+        let (mut ordered, shared) = if let Some(i) = chosen {
             let term = *terms
                 .get(i)
                 .ok_or_else(|| Error::new("shared conjunct is out of range"))?;
-            shared = self
-                .classify(edit, term, next)?
-                .map(|bound| bound.fingerprint);
-            // Both the caller and the shared-window partition inspect this term.
-            self.classify(edit, term, next)?;
-        }
-        ordered = partition(edit, ordered, false, |edit, term| {
-            Ok::<_, ReorderError>(
-                self.classify(edit, term, next)?
-                    .is_some_and(|bound| Some(&bound.fingerprint) != shared.as_ref()),
-            )
-        })?;
-        if chosen.is_some() {
-            ordered = partition(edit, ordered, true, |edit, term| {
+            let shared = self.bound(edit, term, next)?.map(|bound| bound.fingerprint);
+            self.bound(edit, term, next)?;
+            let trailing = partition(edit, body, false, |edit, term| {
                 Ok::<_, ReorderError>(
-                    self.classify(edit, term, next)?
+                    self.bound(edit, term, next)?
+                        .is_some_and(|bound| Some(&bound.fingerprint) != shared.as_ref()),
+                )
+            })?;
+            let ordered = partition(edit, trailing, true, |edit, term| {
+                Ok::<_, ReorderError>(
+                    self.bound(edit, term, next)?
                         .is_some_and(|bound| Some(&bound.fingerprint) == shared.as_ref()),
                 )
             })?;
-        }
+            (ordered, shared)
+        } else {
+            // The first partition tests only whether the term defines a window.
+            // A later term can fail before a timestamp is ever printed.
+            let ordered = partition(edit, body, false, |edit, term| {
+                Ok::<_, ReorderError>(self.classify(edit, term, next)?.is_some())
+            })?;
+            (ordered, None)
+        };
         let mut upper_only = HashSet::new();
         let mut lower = HashSet::new();
         for term in terms {
-            if let Some(bound) = self.classify(edit, term, next)? {
+            if let Some(bound) = self.bound(edit, term, next)? {
                 // The reference visitor reads the fingerprint and the direction separately.
                 self.classify(edit, term, next)?;
                 if bound.lower {
@@ -223,7 +247,7 @@ impl WindowBounds {
         if !upper_only.is_empty() {
             ordered = partition(edit, ordered, false, |edit, term| {
                 Ok::<_, ReorderError>(
-                    self.classify(edit, term, next)?
+                    self.bound(edit, term, next)?
                         .is_some_and(|bound| upper_only.contains(&bound.fingerprint)),
                 )
             })?;
@@ -237,34 +261,38 @@ pub fn reorder_shared_windows(
     chosen: &HashMap<u64, usize>,
     next: &mut u64,
 ) -> Result<Circuit, ReorderError> {
-    let (result, _) = rewrite_filters::<ReorderError>(circuit, next, |edit, parent, id, next, _| {
-        let Some(function) = edit.node(id)?.field("function").and_then(Field::node_id) else {
-            return Ok(None);
-        };
-        let closure = edit.node(function)?;
-        if !matches!(closure.inner_kind(), Some(InnerKind::Expression(Expr::Closure)))
-            || closure.edges("parameters")?.len() != 1
-            || !contains_now(edit.circuit(), &[function])?
-        {
-            return Ok(None);
-        }
-        let NodeId::Outer(number) = id else {
-            return Err(Error::new("expected a filter operator").into());
-        };
-        let tree = ensure_expression_tree(edit, function)?;
-        let condition = edit.node(tree)?;
-        let parameter = condition.edges("parameters")?[0];
-        let body = edit.expression(condition.edge("body")?)?;
-        let mut bounds = WindowBounds {
-            parameter,
-            cache: HashMap::new(),
-        };
-        let ordered = bounds.reorder(edit, body, chosen.get(&number).copied(), next)?;
-        if ordered == body {
-            return Ok(None);
-        }
-        Ok(Some(replace_filter(edit, parent, id, parameter, ordered)?))
-    })?;
+    let (result, _) =
+        rewrite_filters::<ReorderError>(circuit, next, |edit, parent, id, next, _| {
+            let Some(function) = edit.node(id)?.field("function").and_then(Field::node_id) else {
+                return Ok(None);
+            };
+            let closure = edit.node(function)?;
+            if !matches!(
+                closure.inner_kind(),
+                Some(InnerKind::Expression(Expr::Closure))
+            ) || closure.edges("parameters")?.len() != 1
+                || !contains_now(edit.circuit(), &[function])?
+            {
+                return Ok(None);
+            }
+            let NodeId::Outer(number) = id else {
+                return Err(Error::new("expected a filter operator").into());
+            };
+            let tree = ensure_expression_tree(edit, function)?;
+            let condition = edit.node(tree)?;
+            let parameter = condition.edges("parameters")?[0];
+            let body = edit.expression(condition.edge("body")?)?;
+            let mut bounds = WindowBounds {
+                parameter,
+                cache: HashMap::new(),
+                fingerprints: HashMap::new(),
+            };
+            let ordered = bounds.reorder(edit, body, chosen.get(&number).copied(), next)?;
+            if ordered == body {
+                return Ok(None);
+            }
+            Ok(Some(replace_filter(edit, parent, id, parameter, ordered)?))
+        })?;
     Ok(result)
 }
 

@@ -287,6 +287,40 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void unsharedReorderReportsALaterClockBeforePrintingWindowKeys() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var rowType = b.tup(time);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+        circuit.addOperator(input);
+        var row = b.refVar(rowType);
+        var key = b.call(time, "read_timestamp", b.field(row, 0).borrow(false));
+        var first = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+        var invalid = new DBSPBlockExpression(List.of(b.call(b.i32(), "sign_i32").toStatement()), b.call(time, "now"));
+        var second = b.binary(DBSPOpcode.LT, b.field(row, 0), invalid);
+        circuit.addOperator(new DBSPFilterOperator(site, b.binary(DBSPOpcode.AND, first, second).closure(row), input.outputPort()));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var pass = new ReorderTemporalFilters.Reorder(compiler, Map.of()) {
+            @Override public String getName() { return "Reorder"; }
+            @Override public TemporalOrder classify(DBSPFilterOperator filter) {
+                throw new AssertionError("delegated an unshared partition before it needed a fingerprint");
+            }
+        };
+        long start = DBSPVariablePath.nextGeneratedName();
+        var expected = Assert.assertThrows(IndexOutOfBoundsException.class, () -> pass.apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var hybrid = new RustCircuitPass(compiler, pass, new OptimizerSnapshots(compiler));
+        start = DBSPVariablePath.nextGeneratedName();
+        var actual = Assert.assertThrows(expected.getClass(), () -> hybrid.apply(circuit));
+        Assert.assertEquals(expected.getMessage(), actual.getMessage());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+    }
+
+    @Test
     public void liveFilterClassificationRequiresAProjectedRow() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();
