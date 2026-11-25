@@ -9,6 +9,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -45,6 +48,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjections;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimWindows;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -535,6 +541,71 @@ public class ProjectionCompositionTests {
         graph.apply(circuit);
         var pass = new TrimFilters(compiler, graph.getGraphs(), new AnalyzedSet<>());
         return (hybrid ? new RustCircuitPass(compiler, pass, new OptimizerSnapshots(compiler)) : pass).apply(circuit);
+    }
+
+    private DBSPSimpleOperator trimWindow(DBSPWindowOperator window, DBSPMapIndexOperator reader, boolean hybrid,
+                                          boolean sharedWindow) {
+        compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+        var circuit = new DBSPCircuit(compiler.metadata, true);
+        circuit.addOperator(window.left().node());
+        circuit.addOperator(window.right().node());
+        circuit.addOperator(window);
+        if (sharedWindow)
+            circuit.addOperator(new DBSPNoopOperator(window.getRelNode(), window.outputPort()));
+        circuit.addOperator(reader);
+        var graph = new Graph(compiler);
+        graph.apply(circuit);
+        var pass = new TrimWindows(compiler, graph.getGraphs());
+        var result = (hybrid ? new RustCircuitPass(compiler, pass, new OptimizerSnapshots(compiler)) : pass).apply(circuit);
+        return result.allOperators.getLast().to(DBSPSimpleOperator.class);
+    }
+
+    @Test public void windowTrimmingChecksTheOriginalReaderOnlyWhenRebinding() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var key = b.i32();
+        var value = b.tup(key, key, key);
+        var data = new DBSPIncrementalConstantOperator(site, new DBSPIndexedZSetExpression(CalciteObject.EMPTY,
+                new DBSPTypeIndexedZSet(CalciteObject.EMPTY, key, value)));
+        var bounds = new DBSPTypeRawTuple(key, key);
+        var init = bounds.defaultValue();
+        var control = new DBSPWaterlineOperator(site, init.closure(), init.closure(key.ref().var(), value.ref().var()),
+                init.closure(bounds.ref().var(), bounds.ref().var()), data.outputPort());
+        var window = new DBSPWindowOperator(site, false, true, true, data.outputPort(), control.outputPort());
+        var type = window.getOutputIndexedZSetType().getKVRefType();
+        var outer = new DBSPParameter("pair", type);
+        var inner = new DBSPParameter("pair", type);
+        var shared = outer.asVariable();
+        var nested = shared.field(1).deref().closure(inner).toStatement();
+        var read = shared.field(1).deref();
+        var project = new DBSPRawTupleExpression(outer.asVariable().field(0).deref(), b.tuple(read.field(1)));
+        var conflict = new DBSPMapIndexOperator(site, new DBSPBlockExpression(List.of(nested), project).closure(outer),
+                window.outputPort());
+        var keepAll = new DBSPMapIndexOperator(site, new DBSPBlockExpression(List.of(nested),
+                new DBSPRawTupleExpression(outer.asVariable().field(0).deref(), read)).closure(outer), window.outputPort());
+        var valid = new DBSPMapIndexOperator(site, project.closure(outer), window.outputPort());
+        InternalCompilerError expected = null;
+        for (boolean hybrid : List.of(false, true)) {
+            Assert.assertSame(conflict, trimWindow(window, conflict, hybrid, true));
+            Assert.assertSame(keepAll, trimWindow(window, keepAll, hybrid, false));
+            var post = trimWindow(window, valid, hybrid, false).to(DBSPMapIndexOperator.class);
+            var narrowed = post.input().node().to(DBSPWindowOperator.class);
+            Assert.assertEquals(control.outputPort(), narrowed.right());
+            Assert.assertFalse(narrowed.lowerInclusive);
+            Assert.assertTrue(narrowed.upperInclusive);
+            Assert.assertTrue(narrowed.lowerUnbounded);
+            Assert.assertEquals(1, narrowed.getOutputIndexedZSetType().elementType.to(DBSPTypeTupleBase.class).size());
+            long before = DBSPVariablePath.nextGeneratedName();
+            var error = Assert.assertThrows(InternalCompilerError.class, () -> trimWindow(window, conflict, hybrid, false));
+            Assert.assertEquals(1, DBSPVariablePath.nextGeneratedName() - before);
+            if (hybrid) {
+                Assert.assertEquals(expected.getMessage(), error.getMessage());
+                Assert.assertSame(expected.dbspNode, error.dbspNode);
+            } else {
+                Assert.assertTrue(error.getMessage(), error.getMessage().contains("Changing declaration"));
+                expected = error;
+            }
+        }
     }
 
     @Test public void trimFilterChecksOnlyEvaluatedReadersAndKeepsBothSites() {

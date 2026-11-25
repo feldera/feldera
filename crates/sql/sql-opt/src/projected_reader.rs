@@ -7,6 +7,7 @@ use feldera_sql_ir::{
 use serde::Deserialize;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub enum FieldRewriteError<'a> {
     InvalidIr(Error),
     Binding(crate::BindingDiagnostic<'a>),

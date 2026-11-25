@@ -9,6 +9,7 @@ mod output_projection;
 mod narrowed_join;
 mod topk_input;
 mod trim_filter;
+mod trim_window;
 mod trim_output;
 mod repeat;
 mod waterlines;
@@ -1487,6 +1488,7 @@ fn transform(
         }
         "LinearPostprocessRetainKeys/Operator" => return retained_linear_aggregate(input, state, next),
         "SharedProjections/Operator" => return shared_projection::operator(input, state, next),
+        "TrimWindows/Operators" => return trim_window::operators(input, state, next),
         "TrimFilters/Operators" => return trim_filter::operators(input, state, next),
         "RemoveUnusedFields/NarrowJoinOperators" => return narrowed_join::operators(input, state, next),
         "RemoveUnusedFields/JoinInput" => return project_join_input(input, state, next),
@@ -1967,6 +1969,9 @@ fn transform(
         return Ok(json!(operator_numbers(candidates)));
     }
     if let Some(name) = pass.strip_prefix("Topology/") {
+        if name == "WindowTrimReaders" {
+            return Ok(json!(operator_numbers(feldera_sql_opt::window_trim_readers(&circuit)?)));
+        }
         if name == "OrderedIndexes" {
             return Ok(json!(operator_numbers(feldera_sql_opt::ordered_indexes(&circuit)?)));
         }

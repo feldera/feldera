@@ -3073,7 +3073,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private record AsofRetention(long retainer, long join, boolean rebuilt) {}
 
     private boolean reusesOperators() {
-        return this.nativeName.equals("TrimWindows") || this.insertLimiters != null || this.mergeFilters != null;
+        return this.insertLimiters != null || this.mergeFilters != null;
     }
 
     private DBSPCircuit readGraph(DBSPCircuit input, JsonNode result, ToJsonOuterVisitor writer) throws IOException {
@@ -3470,6 +3470,35 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    private static List<DBSPSimpleOperator> trimWindowOperators(DBSPCompiler compiler, DBSPWindowOperator window,
+            DBSPMapIndexOperator reader, OutputPort data, OutputPort control) {
+        var closure = reader.getClosureFunction();
+        var request = expressionSite(window.getRelNode());
+        request.putArray("ports").add(data.outputNumber).add(control.outputNumber);
+        request.put("lowerInclusive", window.lowerInclusive);
+        request.put("upperInclusive", window.upperInclusive);
+        request.put("lowerUnbounded", window.lowerUnbounded);
+        request.set("paths", MAPPER.valueToTree(requiredParameterFieldDependencies(compiler, closure).getFirst()));
+        String pass = "TrimWindows/Operators";
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request), closure);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.isNull())
+                return List.of();
+            if (reply.value.has("binding_error")) {
+                DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+                checkBindingErrors(reply.writer, reply.value.required("binding_error"));
+            }
+            var operators = decodeOperatorFragment(reply, op -> window.getRelNode(), data.node(), control.node());
+            Utilities.enforce(operators.size() == 3);
+            operators.getLast().restoreProvenance(reader.getRelNode());
+            return operators;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode window inputs", error);
+        }
+    }
+
     private DBSPCircuit trimFilterInputs(DBSPCircuit circuit, TrimFilters analysis, long next) throws IOException {
         var candidates = analysis.candidateReaders(circuit, true);
         if (candidates.isEmpty())
@@ -3477,6 +3506,10 @@ public final class RustCircuitPass implements CircuitTransform {
         var reply = this.invoke("Topology/TrimFilters", OptimizerTopology.encode(circuit), next,
                 MAPPER.writeValueAsBytes(candidates));
         Set<Long> selected = MAPPER.convertValue(reply, new TypeReference<>() {});
+        return this.trimSelectedReaders(circuit, selected);
+    }
+
+    private DBSPCircuit trimSelectedReaders(DBSPCircuit circuit, Set<Long> selected) {
         if (selected.isEmpty())
             return circuit;
         return new CircuitCloneVisitor(this.compiler, false) {
@@ -3488,8 +3521,15 @@ public final class RustCircuitPass implements CircuitTransform {
                 }
                 if (this.visited.contains(reader))
                     return;
-                var filter = reader.inputs.get(0).operator.to(DBSPFilterOperator.class);
-                var operators = trimFilterOperators(RustCircuitPass.this.compiler, filter, reader, this.mapped(filter.input()));
+                var producer = reader.inputs.getFirst().node();
+                List<DBSPSimpleOperator> operators;
+                if (producer instanceof DBSPWindowOperator window) {
+                    operators = trimWindowOperators(this.compiler, window, reader.to(DBSPMapIndexOperator.class),
+                            this.mapped(window.left()), this.mapped(window.right()));
+                } else {
+                    var filter = producer.to(DBSPFilterOperator.class);
+                    operators = trimFilterOperators(this.compiler, filter, reader, this.mapped(filter.input()));
+                }
                 if (operators.isEmpty()) {
                     super.replace(reader);
                     return;
@@ -5148,7 +5188,11 @@ public final class RustCircuitPass implements CircuitTransform {
                         OptimizerTopology.encode(circuit, OptimizerTopology.Details.VIEW_NAMES), initial, state);
                 case "CheckRetain", "ValidateRecursiveOperators", "NoIntegralVisitor", "CheckHints", "CompactNames", "TagRegions" ->
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
-                case "LowerCircuitVisitor", "TrimWindows", "IndexedInputs", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "MergeFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
+                case "TrimWindows" -> {
+                    var readers = this.invoke("Topology/WindowTrimReaders", OptimizerTopology.encode(circuit), initial, state);
+                    return this.trimSelectedReaders(circuit, MAPPER.convertValue(readers, new TypeReference<Set<Long>>() {}));
+                }
+                case "LowerCircuitVisitor", "IndexedInputs", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "MergeFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero",

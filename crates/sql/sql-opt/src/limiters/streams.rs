@@ -66,7 +66,8 @@ fn adapt(
     Ok(stream(id, value.ty, to))
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WindowBounds {
     pub lower_inclusive: bool,
     pub upper_inclusive: bool,

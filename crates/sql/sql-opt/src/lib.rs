@@ -196,7 +196,7 @@ pub use defer_carried::{carried_columns, chain_steps, choose_chain_key, ChainKey
 mod trim_filters;
 pub use trim_filters::{FilterTrim, trim_filter_fields, trim_filter_readers, trim_filters};
 mod trim_windows;
-pub use trim_windows::trim_windows;
+pub use trim_windows::{trim_window_fields, trim_windows, window_trim_readers};
 mod trim_inputs;
 pub use trim_inputs::{checked_trim_inputs, trim_inputs, InputLayout};
 mod udf;
