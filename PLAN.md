@@ -41,6 +41,14 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-25. Rust builds antijoin projections and fuses unary output maps.
+  On `de6b20ee5`, all 72 selected compilations matched Java through 34,416
+  optimizer observations and emission. Cold hybrid p95 was 0.790× direct
+  Java for the array subquery, 1.148× for Nexmark and 0.802× for the outer join.
+  The last full replay was on `46cbf6890`, which matched all 17,098 frozen
+  compilations and passed all 8,256 executable classic cases.
+  [Unary projections](crates/sql/evidence/p3-unary-output-operators.json) · [Cold compilation](crates/sql/BENCHMARKS.md#unary-output-projections-2026-11-25) · [Full replay](crates/sql/evidence/p3-indexed-waterline-propagation.json)
+
 - 2026-11-25. Rust now narrows window inputs and constructs retained linear
   aggregates. Build `20e177426` matched Java on 24 selected compilations and
   six additional window compilations across both engines. COUNT and LATENESS

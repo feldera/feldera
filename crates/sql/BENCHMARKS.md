@@ -4,6 +4,24 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Unary output projections, 2026-11-25
+
+Each pair compiled the same SQL with direct Java and the packaged hybrid
+compiler through classic artifact emission. For each build, artifacts and
+diagnostics matched in all 69 pairs. Each workload used two warmup pairs and
+21 measured pairs with alternating execution order on CPU 15 of the ARM64
+devcontainer VM. Optimizer verification ran on other CPUs.
+[Antijoin timings and build identities](evidence/p3-antijoin-readers-cold.json) · [Unary output timings and build identities](evidence/p3-unary-output-operators-cold.json)
+
+| Build | Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---|---:|---:|---:|
+| `a72edad02` | Correlated array subquery | 2.240 | 1.806 | 0.806× |
+| `a72edad02` | Nexmark suite | 5.223 | 5.620 | 1.076× |
+| `a72edad02` | Outer join | 2.133 | 1.642 | 0.770× |
+| `de6b20ee5` | Correlated array subquery | 2.393 | 1.891 | 0.790× |
+| `de6b20ee5` | Nexmark suite | 4.978 | 5.714 | 1.148× |
+| `de6b20ee5` | Outer join | 2.101 | 1.685 | 0.802× |
+
 ## Indexed waterline propagation, 2026-11-25
 
 On `46cbf6890`, the hybrid and direct compilers produced identical classic
