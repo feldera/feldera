@@ -179,8 +179,6 @@ export interface JsonHostProfile {
     // Global worker numbers `start` to `end - 1`.
     readonly workers: { readonly start: number; readonly end: number };
     readonly pod_name?: string;
-    readonly pod_namespace?: string;
-    readonly pod_ip?: string;
     readonly node_name?: string;
     readonly cpu_limit_cores?: number;
     readonly memory_limit_bytes?: number;

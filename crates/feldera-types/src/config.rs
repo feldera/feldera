@@ -4259,15 +4259,11 @@ pub const REFUSE_LOCAL_FILE_URIS_ENV: &str = "FELDERA_REFUSE_LOCAL_FILE_URIS";
 /// The Kubernetes runner sets them from the pod's fields through the downward
 /// API. Elsewhere they are not set.
 pub const POD_NAME_ENV: &str = "FELDERA_POD_NAME";
-pub const POD_NAMESPACE_ENV: &str = "FELDERA_POD_NAMESPACE";
-pub const POD_IP_ENV: &str = "FELDERA_POD_IP";
 pub const NODE_NAME_ENV: &str = "FELDERA_NODE_NAME";
 
 /// Each environment variable above, with the pod field that sets it.
-pub const POD_FIELD_ENVS: [(&str, &str); 4] = [
+pub const POD_FIELD_ENVS: [(&str, &str); 2] = [
     (POD_NAME_ENV, "metadata.name"),
-    (POD_NAMESPACE_ENV, "metadata.namespace"),
-    (POD_IP_ENV, "status.podIP"),
     (NODE_NAME_ENV, "spec.nodeName"),
 ];
 
