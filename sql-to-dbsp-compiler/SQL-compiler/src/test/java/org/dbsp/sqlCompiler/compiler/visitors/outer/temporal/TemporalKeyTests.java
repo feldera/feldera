@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
@@ -955,6 +956,20 @@ public class TemporalKeyTests {
             var map = new DBSPMapExpression(new DBSPTypeMap(string.getType(), array.getType(), false),
                     List.of(string), List.of(array));
             offsets.add(b.tuple(map, b.lit(0)));
+        }
+        assertStaticWindowGroups(offsets, Set.of(0, 1));
+    }
+
+    @Test
+    public void windowSharingComparesBorrowedValuesInStaticInitializers() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var offsets = new ArrayList<DBSPExpression>();
+        var nullable = b.lit("offset").getType().withMayBeNull(true);
+        for (int i = 0; i < 4; i++) {
+            var value = b.call(nullable, i == 3 ? "other_offset" : "get_offset").question();
+            var borrowed = value.borrow(i == 2);
+            offsets.add(new DBSPCloneExpression(CalciteObject.EMPTY, borrowed.deref()));
         }
         assertStaticWindowGroups(offsets, Set.of(0, 1));
     }
