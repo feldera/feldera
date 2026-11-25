@@ -49,6 +49,8 @@ enum Term {
     Question,
     Return,
     Lazy,
+    Assignment,
+    For(String),
     Unwrap(String),
     If,
     Call(String),
@@ -400,6 +402,7 @@ fn preserves_static_children(kind: Expr) -> bool {
                 | Expr::WindowBound | Expr::ConditionalIncrement | Expr::Lazy | Expr::Return
                 | Expr::NoComparator | Expr::FieldComparator | Expr::DirectComparator
                 | Expr::AsymmetricFieldComparator | Expr::UnsignedWrap | Expr::UnsignedUnwrap
+                | Expr::For | Expr::Assignment
         )
 }
 
@@ -482,6 +485,21 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
     };
     let kind = edit.expr_kind(id)?;
     Ok(Some(match kind {
+        Expr::For => {
+            // CanonicalForm renames closure and LET declarations, but the
+            // iterator's written name appears verbatim in the printed loop.
+            let variable = string(node, "variable").ok_or_else(|| Error::new("missing loop variable"))?;
+            (Term::For(variable.to_owned()), vec![child("iterated")?, child("block")?])
+        }
+        Expr::Assignment => {
+            let left = edit.expression(node.edge("left")?)?;
+            // The printer inserts no parentheses around an assignment. Keep the
+            // left-hand side an lvalue so the printed boundary is unambiguous.
+            if !matches!(edit.expr_kind(left)?, Expr::VariablePath | Expr::Field | Expr::Deref) {
+                return Ok(None);
+            }
+            (Term::Assignment, vec![left.into(), child("right")?])
+        }
         Expr::NoComparator | Expr::DirectComparator | Expr::FieldComparator
         | Expr::AsymmetricFieldComparator => comparators::printed(node, kind)?,
         Expr::Field => {

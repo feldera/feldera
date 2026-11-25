@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAsymmetricFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -1163,6 +1164,21 @@ public class TemporalKeyTests {
         assertStaticWindowGroups(List.of(sum, b.call(value.getType(), "agg_plus", value, weight, enabled),
                 max, b.call(value.getType(), "agg_plus", value, weight),
                 b.call(value.getType(), "agg_plus", weight, value, enabled)), Set.of(0, 1));
+    }
+
+    @Test
+    public void windowKeysCompareLoopInputsAndAssignedValues() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(5, (row, i) -> {
+            var latest = new DBSPLetStatement("latest" + i, b.field(row, 0), true);
+            var assign = new DBSPAssignmentExpression(latest.getVarReference(), b.field(row, i == 2 ? 1 : 0));
+            var batch = b.call(new DBSPTypeArray(time, false), "batch", b.field(row, i == 3 ? 1 : 0));
+            var body = new DBSPBlockExpression(List.of(assign.toStatement()), null);
+            var loop = new DBSPForExpression(i == 4 ? "other" : "event", batch, body);
+            return new DBSPBlockExpression(List.of(latest, loop.toStatement()), latest.getVarReference());
+        }, List.of(0, 1));
     }
 
     @Test
