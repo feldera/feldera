@@ -305,15 +305,12 @@ impl ProjectionKey {
                 let simplified = feldera_sql_expr::canonicalize_names(&mut scratch, root)?;
                 return Self::number_terms(&scratch, simplified, parameter, KeyForm::Canonical);
             }
-            // Renaming a shared expression at every occurrence can expand a DAG.
-            // The live filter normally supplies a tree. Leave shared scoped inputs
-            // to the original visitor when a constructor also needs folding.
-            if feldera_sql_expr::first_repeated_expression(edit, root)?.is_some() {
-                return Ok(None);
-            }
             let body = scratch.expression(root)?;
             let row = scratch.named_variable(parameter.ty, parameter.name)?;
             let closure = scratch.closure_from_variables(body, &[row])?;
+            if !can_rename_scoped_key(&scratch, closure.into())? {
+                return Ok(None);
+            }
             let closure = feldera_sql_expr::canonicalize_names(&mut scratch, closure.into())?;
             let node = scratch.node(closure)?;
             let row = row_parameter(&scratch, node.edges("parameters")?[0])?;
@@ -329,6 +326,36 @@ impl ProjectionKey {
         }
         Ok(Some(Self(terms.into_iter().collect())))
     }
+}
+
+/// Rewriting each occurrence of a shared leaf costs one visit per input edge.
+/// A shared variable must resolve to the same Java declaration at every use.
+/// Compound expressions can expand during renaming, and declarations allocate
+/// a fresh name on each visit.
+fn can_rename_scoped_key(edit: &CircuitEditor, closure: NodeId) -> Result<bool, Error> {
+    use feldera_sql_expr::lexical_scope::{lexical_references, push_expression_children, Resolution};
+
+    let mut seen = HashSet::new();
+    let mut pending = vec![closure];
+    let mut shared_variable = false;
+    while let Some(id) = pending.pop() {
+        let node = edit.node(id)?;
+        if matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
+            continue;
+        }
+        if seen.insert(id) {
+            push_expression_children(node, &mut pending);
+            continue;
+        }
+        match node.inner_kind() {
+            Some(InnerKind::Expression(Expr::VariablePath)) => shared_variable = true,
+            Some(InnerKind::Expression(kind)) if kind.wire_name().ends_with("Literal") => {}
+            // Function paths contain identifiers and type arguments.
+            _ if matches!(node.class(), "DBSPPath" | "DBSPSimplePathSegment") => {}
+            _ => return Ok(false),
+        }
+    }
+    Ok(!shared_variable || matches!(lexical_references(edit.circuit(), closure)?, Resolution::Bound(_)))
 }
 
 fn scoped_term<'a>(
@@ -1146,6 +1173,38 @@ mod tests {
         let free = edit.named_variable(ty, "p1")?;
         let lambda = edit.closure_from_variables(free, &[outer])?;
         assert!(ProjectionKey::read(&edit, lambda, row)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn folding_a_scoped_key_preserves_shared_literals_and_captures() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"allOperators":[],"declarations":[]
+        }))?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let ty = edit.bool_type(site, false)?;
+        let row = RowParameter { name: "row", ty };
+        let outer = edit.named_variable(ty, row.name)?;
+        let inner = edit.named_variable(ty, "item")?;
+        let literal = edit.make_expr(site, Expr::BoolLiteral, ty, [("value", Field::Data(true.into()))])?;
+        let cast = edit.make_expr(site, Expr::Cast, ty, [
+            ("source", Field::Reference(outer.into())),
+            ("safe", Field::Data("SqlUnsafe".into())),
+        ])?;
+        let mut projection = |value| -> Result<ExpressionId, Error> {
+            let body = edit.tuple_expr(site, false, &[value, outer, literal, literal])?;
+            edit.closure_from_variables(body, &[inner])
+        };
+        let folded = projection(cast)?;
+        let plain = projection(outer)?;
+        let key = ProjectionKey::read(&edit, folded, row)?.expect("shared leaves in a scoped key");
+        assert!(Some(key) == ProjectionKey::read(&edit, plain, row)?);
+
+        // The same variable object now names two different declarations.
+        let shadow = edit.closure_from_variables(outer, &[outer])?;
+        let conflict = edit.tuple_expr(site, false, &[cast, shadow])?;
+        assert!(ProjectionKey::read(&edit, conflict, row)?.is_none());
         Ok(())
     }
 
