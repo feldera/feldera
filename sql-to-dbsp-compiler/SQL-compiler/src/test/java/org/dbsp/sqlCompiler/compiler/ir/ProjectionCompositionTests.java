@@ -16,6 +16,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
@@ -405,6 +407,63 @@ public class ProjectionCompositionTests {
         var hybrid = Assert.assertThrows(InternalCompilerError.class,
                 () -> RustCircuitPass.composeProjection(compiler, before, after));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+    }
+
+    @Test public void projectedJoinPreservesPortsAndReportsCrossClosureBindings() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var row = input.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var index = new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(b.tuple(), row.deref()).closure(row), input);
+        var key = index.getOutputIndexedZSetType().keyType.ref().var();
+        var shared = row.deref().field(0);
+        var join = new DBSPStreamJoinOperator(site, input.getOutputZSetType(),
+                b.tuple(shared).closure(key, row, row.getType().var()), index.outputPort(), index.outputPort(), false);
+        join.addAnnotation(AlwaysMonotone.INSTANCE, DBSPSimpleOperator.class);
+        var bad = new DBSPMapOperator(site, b.tuple(shared).closure(row), join.outputPort());
+        var read = join.outputPort().getOutputRowType().ref().var();
+        var projected = new DBSPMapOperator(site, b.tuple(read.deref().field(0)).closure(read), join.outputPort());
+        var indexed = new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(
+                b.tuple(read.deref().field(0)), b.tuple(read.deepCopy().deref().field(0))).closure(read), join.outputPort());
+
+        for (var reader : List.<DBSPSimpleOperator>of(bad, projected, indexed)) {
+            var circuit = new DBSPCircuit(compiler.metadata, false);
+            circuit.addOperator(source);
+            circuit.addOperator(index);
+            circuit.addOperator(join);
+            circuit.addOperator(reader);
+            var graph = new Graph(compiler);
+            graph.apply(circuit);
+            var pass = new OptimizeProjectionVisitor(compiler, graph.getGraphs());
+            if (reader == bad) {
+                var direct = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+                Assert.assertTrue(direct.getMessage().contains("Changing declaration"));
+                var hybrid = Assert.assertThrows(InternalCompilerError.class, () -> pass.applyNative(circuit));
+                Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+            } else if (reader == projected) {
+                var direct = pass.apply(circuit).allOperators.getLast().to(DBSPStreamJoinOperator.class);
+                var hybrid = pass.applyNative(circuit).allOperators.getLast().to(DBSPStreamJoinOperator.class);
+                Assert.assertSame(projected.outputType, hybrid.outputType);
+                Assert.assertEquals(join.inputs, hybrid.inputs);
+                Assert.assertEquals(direct.balanced, hybrid.balanced);
+                Assert.assertSame(AlwaysMonotone.INSTANCE, hybrid.annotations.first(AlwaysMonotone.class));
+                Assert.assertTrue(EquivalenceContext.equiv(direct.getFunction(), hybrid.getFunction()));
+            } else {
+                // The indexed reader constructs nested tuples. Only the general pass fuses it.
+                Assert.assertTrue(pass.apply(circuit).allOperators.getLast() instanceof DBSPMapIndexOperator);
+                Assert.assertTrue(pass.applyNative(circuit).allOperators.getLast() instanceof DBSPMapIndexOperator);
+                var direct = new OptimizeProjections(compiler, false, graph.getGraphs(), new AnalyzedSet<>())
+                        .apply(circuit).allOperators.getLast().to(DBSPStreamJoinIndexOperator.class);
+                compiler.options.ioOptions.rustOptimizerPasses = true;
+                var hybrid = new OptimizeProjections(compiler, false, graph.getGraphs(), new AnalyzedSet<>())
+                        .apply(circuit).allOperators.getLast().to(DBSPStreamJoinIndexOperator.class);
+                Assert.assertSame(indexed.outputType, hybrid.outputType);
+                Assert.assertEquals(direct.inputs, hybrid.inputs);
+                Assert.assertTrue(EquivalenceContext.equiv(direct.getFunction(), hybrid.getFunction()));
+            }
+        }
     }
 
     @Test public void filteredJoinsPreservePredicatesAndComposeOutputMaps() {

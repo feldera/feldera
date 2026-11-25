@@ -5,6 +5,7 @@ mod split_map;
 mod narrowed_unary;
 mod push_projection;
 mod filtered_join_projection;
+mod output_projection;
 mod narrowed_join;
 mod topk_input;
 mod trim_output;
@@ -1054,19 +1055,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let functions = edit.circuit().additional_expressions(&arena, &pair)?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
-        ("ProjectOutputs/Function", [before, reader, output]) => {
-            let (kind, indexed, single_reader): (&str, bool, bool) = serde_json::from_slice(state)?;
-            let projection = feldera_sql_opt::OutputProjection {
-                producer: feldera_sql_ir::OperatorKind::from_wire(kind)
-                    .ok_or_else(|| format!("unknown projection producer {kind}"))?,
-                indexed, single_reader, output_type: edit.type_id(*output)?,
-            };
-            let before = edit.expression(*before)?;
-            let Some((_, function)) = projection.apply(&mut edit, before, *reader, &mut warnings)? else {
-                return Ok(Value::Null);
-            };
-            return lowered_function_reply(&arena, &edit, Some(function), next, warnings);
-        }
         ("Monotonicity/ProjectClosure" | "Monotonicity/ExpressionFacts", [body, inputs @ ..]) => {
             #[derive(serde::Deserialize)]
             struct InputShapes {
@@ -1241,10 +1229,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 Ok(None) => return Ok(Value::Null),
                 Err(error) => return composition_error(error),
             }
-        }
-        ("ComposeIndexedJoinOutput", [before, after]) => {
-            let before = edit.expression(*before)?;
-            feldera_sql_expr::compose_closures(&mut edit, before, true, *after, Some(&mut warnings))?
         }
         ("ComposeIndexedProjection" | "TryIndexedProjection", [before, after]) => {
             let Some(closure) = feldera_sql_opt::compose_indexed_projection(
@@ -1453,6 +1437,9 @@ fn transform(
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
     match pass {
+        "ProjectOutputs/Fold" | "OptimizeProjections/JoinOutput" => {
+            return output_projection::operators(input, state, next, pass == "OptimizeProjections/JoinOutput");
+        }
         "OptimizeProjections/FilteredJoin" => return filtered_join_projection::operators(input, state, next),
         "OptimizeProjections/Producer" => {
             let classes = serde_json::from_slice::<Vec<&str>>(input)?;
@@ -1658,11 +1645,11 @@ fn transform(
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "EnsureExpressionTree" | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"
         | "Monotonicity/Clock" | "Monotonicity/RowClosure" | "Monotonicity/InspectBody"
-        | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ExpressionFacts" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/MinimumForOutput" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
+        | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ExpressionFacts" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/MinimumForOutput" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "RewriteNow/ClockSites" | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "CheckedParameterFieldDependencies" | "SplitInspectedMapInput" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
-        | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
+        | "ComposeIndexedProjection" | "TryIndexedProjection" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsFlatProjectionWithCasts" | "IsStrictProjection" | "TrimTopKProjection"
         | "FindUnusedInputFields/CheckedColumns" | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/TopKInput"

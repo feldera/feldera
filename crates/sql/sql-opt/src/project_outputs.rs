@@ -1,6 +1,7 @@
 //! Fuse output projections into constants, UNNEST and single-reader joins.
 use crate::{
     projection::{Projection, projection, simple_tuple},
+    projection_composition::{CompositionError, inline_projection},
     rebuild::ProjectionNames,
     stream_rewrites::{body_members, reader_counts},
 };
@@ -164,6 +165,36 @@ pub struct OutputProjection {
     pub output_type: TypeId,
 }
 
+/// The fused operator keeps the reader's output schema and the producer's inputs.
+pub struct ProjectedOutput {
+    kind: Op,
+    function: ExpressionId,
+    output: TypeId,
+}
+
+impl ProjectedOutput {
+    pub fn append(
+        &self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        site: NodeId,
+        inputs: &[OutputPort],
+        properties: impl IntoIterator<Item = (&'static str, Field)>,
+    ) -> Result<NodeId, Error> {
+        let fields = [
+            ("outputType", Field::Reference(self.output.into())),
+            ("function", Field::Reference(self.function.into())),
+        ];
+        edit.append_operator(
+            body,
+            site,
+            self.kind,
+            inputs,
+            fields.into_iter().chain(properties),
+        )
+    }
+}
+
 impl OutputProjection {
     fn accepts_producer(&self) -> bool {
         match self.producer {
@@ -173,13 +204,35 @@ impl OutputProjection {
         }
     }
 
+    /// The optimizer has already accepted the reader and checked the producer's fanout.
+    pub fn compose_join(
+        &self,
+        edit: &mut CircuitEditor,
+        before: ExpressionId,
+        reader: NodeId,
+        warnings: &mut Vec<SimplifyWarning>,
+    ) -> Result<ProjectedOutput, CompositionError> {
+        let (kind, was_indexed) = projected_join(self.producer, self.indexed)
+            .ok_or_else(|| Error::new("unsupported join output projection"))?;
+        let function = if was_indexed {
+            compose_closures(edit, before, true, reader, Some(warnings))?
+        } else {
+            inline_projection(edit, before.into(), reader, warnings)?
+        };
+        Ok(ProjectedOutput {
+            kind,
+            function,
+            output: self.output_type,
+        })
+    }
+
     pub fn apply(
         &self,
         edit: &mut CircuitEditor,
         before: ExpressionId,
         reader: NodeId,
         warnings: &mut Vec<SimplifyWarning>,
-    ) -> Result<Option<(Op, ExpressionId)>, Error> {
+    ) -> Result<Option<ProjectedOutput>, CompositionError> {
         if !self.accepts_producer() {
             return Ok(None);
         }
@@ -214,22 +267,29 @@ impl OutputProjection {
             Op::FlatMap if edit.expr_kind(before)? == Expr::Flatmap => {
                 project_unnest(edit, before.into(), reader)?
             }
-            _ => {
-                let Some((kind, was_indexed)) = join else {
-                    return Ok(None);
-                };
-                let function = compose_closures(edit, before, was_indexed, reader, Some(warnings))?;
-                return Ok(Some((kind, function)));
+            _ if join.is_some() => {
+                return self.compose_join(edit, before, reader, warnings).map(Some);
             }
+            _ => return Ok(None),
         };
-        Ok(new.map(|function| (self.producer, function)))
+        let Some(function) = new else { return Ok(None) };
+        let output = if self.producer == Op::Constant {
+            edit.expression_type(function)?
+        } else {
+            self.output_type
+        };
+        Ok(Some(ProjectedOutput {
+            kind: self.producer,
+            function,
+            output,
+        }))
     }
 }
 
 pub fn project_outputs(
     circuit: Circuit,
     next: &mut u64,
-) -> Result<(Circuit, Vec<SimplifyWarning>), Error> {
+) -> Result<(Circuit, Vec<SimplifyWarning>), CompositionError> {
     let members = body_members(&circuit)?;
     let readers = reader_counts(&circuit, &members);
     let bodies: HashMap<_, _> = members.into_iter().map(|(body, id)| (id, body)).collect();
@@ -274,42 +334,30 @@ pub fn project_outputs(
             continue;
         }
         let before = edit.expression(producer.edge("function")?)?;
-        let Some((kind, new_function)) =
-            projection.apply(&mut edit, before, function, &mut warnings)?
-        else {
+        let Some(projected) = projection.apply(&mut edit, before, function, &mut warnings)? else {
             continue;
-        };
-        let output_type = if kind == Op::Constant {
-            edit.expression_type(new_function)?.into()
-        } else {
-            output_type
         };
         let producer = edit.node(source)?;
         let inputs = producer
             .inputs()
             .map(|p| replacements.get(&p.operator).copied().unwrap_or(p))
             .collect::<Vec<_>>();
-        let mut fields = vec![
-            ("outputType", Field::Reference(output_type)),
-            ("function", Field::Reference(new_function.into())),
-        ];
-        for key in [
+        let properties: Vec<_> = [
             "balanced",
             "isLeft",
             "leftTimestampIndex",
             "rightTimestampIndex",
             "comparator",
-        ] {
-            if let Some(field) = producer.field(key) {
-                fields.push((key, field.clone()));
-            }
-        }
-        let site = if indexed && kind == Op::Constant {
+        ]
+        .into_iter()
+        .filter_map(|key| Some((key, producer.field(key)?.clone())))
+        .collect();
+        let site = if indexed && projected.kind == Op::Constant {
             id
         } else {
             source
         };
-        let new = edit.append_operator(bodies[&id], site, kind, &inputs, fields)?;
+        let new = projected.append(&mut edit, bodies[&id], site, &inputs, properties)?;
         if site == source {
             edit.copy_annotations(source, new)?;
         }
@@ -317,7 +365,7 @@ pub fn project_outputs(
             Some(origins) => origins,
             None => provenance.insert(original.provenance()?),
         };
-        if indexed && projected_join(kind, indexed).is_some() {
+        if indexed && projected_join(projected.kind, indexed).is_some() {
             let origin = origins.fuse_origins(new, source, id)?;
             edit.set_intermediate_origin(new, origin)?;
         } else {

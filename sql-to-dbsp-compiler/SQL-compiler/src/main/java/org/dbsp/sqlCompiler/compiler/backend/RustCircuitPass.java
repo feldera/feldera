@@ -1559,11 +1559,6 @@ public final class RustCircuitPass implements CircuitTransform {
         return tryLowerFunction(compiler, "TryComposeProjection", before, after, DBSPClosureExpression.class);
     }
 
-    public static DBSPClosureExpression composeIndexedJoinOutput(DBSPCompiler compiler,
-            DBSPClosureExpression before, DBSPClosureExpression after) {
-        return lowerFunction(compiler, "ComposeIndexedJoinOutput", before, after, DBSPClosureExpression.class);
-    }
-
     public static DBSPClosureExpression antijoinProjection(DBSPCompiler compiler,
             DBSPTypeIndexedZSet input, @Nullable DBSPClosureExpression projection) {
         return lowerFunction(compiler, "AntijoinProjection", input, projection, DBSPClosureExpression.class);
@@ -1962,14 +1957,55 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @Nullable
-    public static DBSPExpression projectOutputFunction(DBSPCompiler compiler, DBSPSimpleOperator producer,
+    public static DBSPSimpleOperator foldOutputProjection(DBSPCompiler compiler, DBSPSimpleOperator producer,
             DBSPSimpleOperator reader, boolean singleReader) {
+        return projectedOutput(compiler, "ProjectOutputs/Fold", producer, reader, singleReader);
+    }
+
+    public static DBSPSimpleOperator projectJoinOutput(DBSPCompiler compiler, DBSPSimpleOperator producer,
+            DBSPSimpleOperator reader) {
+        if (reader.getClosureFunction().parameters.length != 1) {
+            throw new InternalCompilerError("Expected closure with 1 parameter",
+                    producer.outputType instanceof DBSPTypeIndexedZSet ? reader : reader.getFunction());
+        }
+        return Objects.requireNonNull(projectedOutput(compiler, "OptimizeProjections/JoinOutput", producer, reader, true));
+    }
+
+    @Nullable
+    private static DBSPSimpleOperator projectedOutput(DBSPCompiler compiler, String pass,
+            DBSPSimpleOperator producer, DBSPSimpleOperator reader, boolean singleReader) {
+        boolean indexed = reader instanceof DBSPMapIndexOperator;
+        var site = expressionSite(producer.getRelNode());
+        site.put("producer", producer.getClass().getSimpleName());
+        site.put("indexed", indexed);
+        site.put("single_reader", singleReader);
+        site.set("ports", MAPPER.valueToTree(producer.inputs.stream().map(p -> p.outputNumber).toList()));
+        DBSPExpression comparator = null;
+        if (producer instanceof DBSPAsofJoinOperator asof) {
+            site.putArray("timestamps").add(asof.leftTimestampIndex).add(asof.rightTimestampIndex);
+            site.put("is_left", asof.isLeft);
+            comparator = asof.comparator;
+        } else if (producer instanceof DBSPJoinBaseOperator join) {
+            site.put("balanced", join.balanced);
+        }
         try {
-            byte[] site = MAPPER.writeValueAsBytes(List.of(producer.getClass().getSimpleName(),
-                    reader instanceof DBSPMapIndexOperator, singleReader));
-            var reply = invokeLowering(compiler, "ProjectOutputs/Function", site, producer.getFunction(),
-                    reader.getFunction(), reader.outputType);
-            return reply.value.isNull() ? null : loweredFunction(compiler, reply.writer, reply.value, DBSPExpression.class);
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site),
+                    producer.getFunction(), reader.getFunction(), reader.outputType, comparator);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.isNull())
+                return null;
+            if (reply.value.has("binding_error"))
+                checkBindingErrors(reply.writer, reply.value.required("binding_error"));
+            boolean indexedConstant = indexed && producer instanceof DBSPConstantOperator;
+            CalciteRelNode origin = indexedConstant ? reader.getRelNode()
+                    : indexed ? reader.getRelNode().after(producer.getRelNode()) : producer.getRelNode();
+            var operators = decodeOperatorFragment(reply, op -> origin,
+                    producer.inputs.stream().map(OutputPort::node).toArray(DBSPOperator[]::new));
+            Utilities.enforce(operators.size() == 1);
+            reportWarnings(compiler, reply.value.required("warnings"));
+            var result = operators.getFirst();
+            return indexedConstant ? result : result.copyAnnotations(producer);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode output projection", error);
         }

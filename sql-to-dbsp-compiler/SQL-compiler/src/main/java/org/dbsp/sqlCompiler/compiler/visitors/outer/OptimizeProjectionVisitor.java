@@ -67,9 +67,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                             mapped instanceof DBSPSimpleOperator source && source.function != null &&
                             (source instanceof DBSPConstantOperator || source instanceof DBSPFlatMapOperator || source instanceof IJoin)) {
                         boolean single = this.getGraph().getFanout(input.node()) == 1;
-                        var function = RustCircuitPass.projectOutputFunction(this.compiler, source, reader, single);
-                        if (function != null) {
-                            this.map(reader, materializeProjection(source, reader, function));
+                        var result = RustCircuitPass.foldOutputProjection(this.compiler, source, reader, single);
+                        if (result != null) {
+                            this.map(reader, result);
                             return;
                         }
                     }
@@ -77,20 +77,6 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                 super.replace(reader);
             }
         }.apply(circuit);
-    }
-
-    private static DBSPSimpleOperator materializeProjection(DBSPSimpleOperator source, DBSPSimpleOperator reader,
-                                                            DBSPExpression function) {
-        if (reader instanceof DBSPMapIndexOperator index) {
-            if (source instanceof DBSPConstantOperator)
-                return new DBSPConstantOperator(reader.getRelNode(), function);
-            if (source.outputType instanceof DBSPTypeIndexedZSet)
-                return mapIndexAfterJoinIndex(source, index, function.to(DBSPClosureExpression.class));
-            return mapIndexAfterJoin(source, index, function.to(DBSPClosureExpression.class));
-        }
-        if (source instanceof IJoin && source.outputType instanceof DBSPTypeIndexedZSet)
-            return mapAfterJoinIndex(source, reader.to(DBSPMapOperator.class), function.to(DBSPClosureExpression.class));
-        return source.withFunction(function, reader.outputType).to(DBSPSimpleOperator.class);
     }
 
     @Override
@@ -215,21 +201,18 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             DBSPCompiler compiler, DBSPSimpleOperator source, DBSPSimpleOperator projection) {
         var before = source.getClosureFunction();
         var after = projection.getClosureFunction();
-        if (!source.outputType.is(DBSPTypeIndexedZSet.class)) {
-            if (compiler.options.ioOptions.rustOptimizerPasses)
-                return RustCircuitPass.composeProjection(compiler, before, after);
+        if (!source.outputType.is(DBSPTypeIndexedZSet.class))
             return after.applyAfter(compiler, before, Maybe.YES);
-        }
         if (after.parameters.length != 1)
             throw new InternalCompilerError("Expected closure with 1 parameter", projection);
-        if (compiler.options.ioOptions.rustOptimizerPasses)
-            return RustCircuitPass.composeIndexedJoinOutput(compiler, before, after);
         var borrowed = new DBSPRawTupleExpression(before.body.field(0).borrow(), before.body.field(1).borrow());
         return after.call(borrowed).reduce(compiler).closure(before.parameters);
     }
 
     static DBSPSimpleOperator mapAfterJoin(
             DBSPCompiler compiler, DBSPSimpleOperator source, DBSPMapOperator operator) {
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.projectJoinOutput(compiler, source, operator);
         var newFunction = composeJoinOutput(compiler, source, operator);
         return source.withFunction(newFunction, operator.outputType)
                 .copyAnnotations(source)
@@ -238,11 +221,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
 
     static DBSPSimpleOperator mapAfterJoinIndex(
             DBSPCompiler compiler, DBSPSimpleOperator source, DBSPMapOperator operator) {
-        return mapAfterJoinIndex(source, operator, composeJoinOutput(compiler, source, operator));
-    }
-
-    private static DBSPSimpleOperator mapAfterJoinIndex(
-            DBSPSimpleOperator source, DBSPMapOperator operator, DBSPClosureExpression newFunction) {
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.projectJoinOutput(compiler, source, operator);
+        var newFunction = composeJoinOutput(compiler, source, operator);
         final DBSPJoinBaseOperator join = source.as(DBSPJoinBaseOperator.class);
         if (source.is(DBSPJoinIndexOperator.class)) {
             Utilities.enforce(join != null);
@@ -269,11 +250,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
 
     static DBSPSimpleOperator mapIndexAfterJoin(
             DBSPCompiler compiler, DBSPSimpleOperator source, DBSPMapIndexOperator operator) {
-        return mapIndexAfterJoin(source, operator, composeJoinOutput(compiler, source, operator));
-    }
-
-    private static DBSPSimpleOperator mapIndexAfterJoin(
-            DBSPSimpleOperator source, DBSPMapIndexOperator operator, DBSPClosureExpression newFunction) {
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.projectJoinOutput(compiler, source, operator);
+        var newFunction = composeJoinOutput(compiler, source, operator);
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
         DBSPJoinBaseOperator join = source.as(DBSPJoinBaseOperator.class);
         
@@ -303,11 +282,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
 
     static DBSPSimpleOperator mapIndexAfterJoinIndex(
             DBSPCompiler compiler, DBSPSimpleOperator source, DBSPMapIndexOperator operator) {
-        return mapIndexAfterJoinIndex(source, operator, composeJoinOutput(compiler, source, operator));
-    }
-
-    private static DBSPSimpleOperator mapIndexAfterJoinIndex(
-            DBSPSimpleOperator source, DBSPMapIndexOperator operator, DBSPClosureExpression newFunction) {
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.projectJoinOutput(compiler, source, operator);
+        var newFunction = composeJoinOutput(compiler, source, operator);
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
 
         DBSPJoinBaseOperator join = source.as(DBSPJoinBaseOperator.class);
