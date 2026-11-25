@@ -501,7 +501,11 @@ A distributed connector works as follows:
   unpartitioned table divides as well as a partitioned one.  With a
   `filter` or `snapshot_filter`, the hosts divide only the files that
   the filter can match, according to the per-file statistics and
-  partition values in the table's transaction log.
+  partition values in the table's transaction log.  They skip the same
+  files as a connector that is not distributed, except with a filter
+  that calls a function whose result can change, such as `now()`.  Such
+  a filter skips no files, because the hosts could evaluate it
+  differently.
 - In `follow` and `snapshot_and_follow` modes, only one host follows the
   table's transaction log after the snapshot, because the log is a
   single sequence of commits.  The other hosts end their input after

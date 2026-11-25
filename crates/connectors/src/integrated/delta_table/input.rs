@@ -17,13 +17,11 @@ use arrow::compute::kernels::cmp::eq;
 use arrow::compute::{filter_record_batch, is_null, not, prep_null_mask_filter};
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,
-    TimeUnit,
 };
 use atomic::Atomic;
 use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
 use datafusion::catalog::TableProvider;
-use datafusion::common::Column as PruningColumn;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::common::tree_node::{TransformedResult, TreeNode};
 use datafusion::common::{DFSchema, DataFusionError, ScalarValue};
@@ -34,17 +32,20 @@ use datafusion::datasource::listing::{
 };
 use datafusion::execution::memory_pool::MemoryLimit;
 use datafusion::logical_expr::physical_planning_context::PhysicalPlanningContext;
+use datafusion::logical_expr::simplify::SimplifyContext;
+use datafusion::logical_expr::utils::split_conjunction_owned;
 use datafusion::logical_expr::{
     ColumnarValue, ReturnFieldArgs, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature,
     Volatility,
 };
 use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
-use datafusion::physical_optimizer::pruning::{PruningPredicateBuilder, PruningStatistics};
+use datafusion::optimizer::simplify_expressions::ExprSimplifier;
 use datafusion::physical_plan::{
     ExecutionPlan, ExecutionPlanProperties, PhysicalExpr, SendableRecordBatchStream,
     StatisticsArgs, StatisticsContext, displayable, execute_stream,
 };
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
+use delta_kernel::PredicateRef;
 use delta_kernel::schema::{ColumnMetadataKey, MetadataValue};
 use delta_kernel::table_features::ColumnMappingMode;
 use deltalake::datafusion::dataframe::DataFrame;
@@ -55,6 +56,7 @@ use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
 use deltalake::datafusion::sql::sqlparser::parser::Parser;
 use deltalake::datafusion::sql::sqlparser::tokenizer::Token;
 use deltalake::delta_datafusion::DataFusionMixins;
+use deltalake::delta_datafusion::file_skipping_predicate;
 use deltalake::kernel::{
     Action, Add as AddAction, AddCDCFile as AddCdcAction, DeletionVectorDescriptor,
     Remove as RemoveAction,
@@ -86,12 +88,12 @@ use feldera_types::program_schema::{Field, Relation};
 use feldera_types::transport::delta_table::{
     DeltaTableIngestMode, DeltaTableReaderConfig, DeltaTableTransactionMode,
 };
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use roaring::RoaringTreemap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp::min;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Display, Write as _};
 use std::future::Future;
 use std::hash::{Hash, Hasher};
@@ -1220,147 +1222,28 @@ fn raw_resume_timestamp(stored: &str) -> &str {
     stored
 }
 
-/// The per-file statistics of a Delta table's snapshot, from its log, for
-/// [`PruningPredicate`](datafusion::physical_optimizer::pruning::PruningPredicate).
-///
-/// delta-rs implements [`PruningStatistics`] for
-/// [`LogDataHandler`](deltalake::kernel::LogDataHandler), but it
-/// looks up a column's statistics by its logical name.  With column mapping,
-/// the log keys them by the physical name, so it finds none.
-#[derive(Clone)]
-struct LogStatistics {
-    /// The table's columns, by logical name, without dictionary encoding.
-    schema: SchemaRef,
+/// The data files that the hosts of a distributed connector divide for the
+/// snapshot (see [`DeltaTableInputEndpointInner::snapshot_share`]).
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+struct SnapshotFiles {
+    /// The number of files.
+    count: usize,
 
-    /// Some of the add actions, flattened: one row per file.
-    files: RecordBatch,
-
-    /// For each logical column name, the name of its column of statistics in
-    /// `files`, without the `min.`, `max.` or `null_count.` prefix, or `None`
-    /// for a partition column.
-    columns: HashMap<String, Option<String>>,
+    /// A hash of the files' paths, in order.
+    hash: u64,
 }
 
-impl LogStatistics {
-    /// Returns the statistics of each batch of the add actions of `snapshot`.
-    /// delta-rs divides them into batches so that no batch reaches the 2 GiB
-    /// limit of an Arrow string column, so this does not concatenate them.
-    fn batches(snapshot: &DeltaTableState) -> AnyResult<Vec<Self>> {
-        let schema = snapshot.log_data().input_schema();
-        let partition_columns = snapshot.metadata().partition_columns();
-        let columns: HashMap<String, Option<String>> = snapshot
-            .schema()
-            .fields()
-            .map(|field| {
-                let stats = (!partition_columns.contains(field.name())).then(|| {
-                    match field.get_config_value(&ColumnMetadataKey::ColumnMappingPhysicalName) {
-                        Some(MetadataValue::String(physical)) => physical.clone(),
-                        _ => field.name().to_string(),
-                    }
-                });
-                (field.name().to_string(), stats)
-            })
-            .collect();
-        Ok(snapshot
-            .add_actions_batches(true)?
-            .into_iter()
-            .map(|files| Self {
-                schema: schema.clone(),
-                files,
-                columns: columns.clone(),
-            })
-            .collect())
-    }
-
-    /// The URL-decoded paths of the files for which `mask` is true.
-    fn paths(&self, mask: &[bool]) -> AnyResult<HashSet<String>> {
-        if mask.is_empty() {
-            return Ok(HashSet::new());
+impl SnapshotFiles {
+    fn new(adds: &[AddAction]) -> Self {
+        let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+        for add in adds {
+            hasher.update(add.path.as_bytes());
+            hasher.update(&[0]);
         }
-        let paths = self
-            .files
-            .column_by_name("path")
-            .ok_or_else(|| anyhow!("the Delta add actions have no 'path' column"))?;
-        let paths = arrow::compute::cast(paths, &ArrowDataType::Utf8)?;
-        let paths = paths.as_string::<i32>();
-        Ok(mask
-            .iter()
-            .enumerate()
-            .filter(|(_index, keep)| **keep)
-            .map(|(index, _keep)| {
-                String::from_utf8_lossy(&urlencoding::decode_binary(paths.value(index).as_bytes()))
-                    .into_owned()
-            })
-            .collect())
-    }
-
-    /// The column `name` of `files`, as the type of the logical `column`, or
-    /// `None` if the log has no such statistics.
-    fn column(&self, column: &PruningColumn, name: &str) -> Option<ArrayRef> {
-        let array = self.files.column_by_name(name)?;
-        let field = self.schema.field_with_name(&column.name).ok()?;
-        arrow::compute::cast(array, field.data_type()).ok()
-    }
-
-    /// The statistic `kind` (`min` or `max`) of `column`.
-    fn bound(&self, column: &PruningColumn, kind: &str) -> Option<ArrayRef> {
-        match self.columns.get(&column.name)? {
-            Some(stats) if kind == "max" => {
-                round_up_timestamp_max(self.column(column, &format!("{kind}.{stats}"))?)
-            }
-            Some(stats) => self.column(column, &format!("{kind}.{stats}")),
-            None => self.column(column, &format!("partition.{}", column.name)),
+        Self {
+            count: adds.len(),
+            hash: hasher.digest(),
         }
-    }
-}
-
-/// The log truncates a timestamp's max down to milliseconds, so the true max
-/// can be up to a millisecond less one unit above it.  Returns `max` raised by
-/// that much, as Delta Kernel's file skipping allows, or `None` on overflow.
-fn round_up_timestamp_max(max: ArrayRef) -> Option<ArrayRef> {
-    let gap = match max.data_type() {
-        ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => 999,
-        ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => 999_999,
-        _ => return Some(max),
-    };
-    let raised = arrow::compute::kernels::numeric::add(
-        &arrow::compute::cast(&max, &ArrowDataType::Int64).ok()?,
-        &arrow::array::Int64Array::new_scalar(gap),
-    )
-    .ok()?;
-    arrow::compute::cast(&raised, max.data_type()).ok()
-}
-
-impl PruningStatistics for LogStatistics {
-    fn min_values(&self, column: &PruningColumn) -> Option<ArrayRef> {
-        self.bound(column, "min")
-    }
-
-    fn max_values(&self, column: &PruningColumn) -> Option<ArrayRef> {
-        self.bound(column, "max")
-    }
-
-    fn num_containers(&self) -> usize {
-        self.files.num_rows()
-    }
-
-    fn null_counts(&self, column: &PruningColumn) -> Option<ArrayRef> {
-        let stats = self.columns.get(&column.name)?.as_ref()?;
-        let array = self.files.column_by_name(&format!("null_count.{stats}"))?;
-        arrow::compute::cast(array, &ArrowDataType::UInt64).ok()
-    }
-
-    fn row_counts(&self) -> Option<ArrayRef> {
-        let array = self.files.column_by_name("num_records")?;
-        arrow::compute::cast(array, &ArrowDataType::UInt64).ok()
-    }
-
-    fn contained(
-        &self,
-        _column: &PruningColumn,
-        _values: &HashSet<ScalarValue>,
-    ) -> Option<BooleanArray> {
-        None
     }
 }
 
@@ -1417,6 +1300,17 @@ struct DeltaResumeInfo {
     /// same way, this version writes the field in both states.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     snapshot_skips_files: bool,
+
+    /// For a distributed connector with `snapshot_pending`, the files that
+    /// this host listed for the hosts to divide, once it listed them.
+    ///
+    /// The list depends on the file skipping in Delta Kernel and delta-rs.  A
+    /// host that resumes with a version whose file skipping differs would list
+    /// different files, while the other hosts may have read their shares of
+    /// the recorded list already.  Then some rows would be read twice and
+    /// others not at all, so the host fails instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    snapshot_files: Option<SnapshotFiles>,
 }
 
 impl DeltaResumeInfo {
@@ -1429,6 +1323,7 @@ impl DeltaResumeInfo {
             snapshot_pending: false,
             snapshot_started: false,
             snapshot_skips_files: true,
+            snapshot_files: None,
         }
     }
 
@@ -1441,6 +1336,7 @@ impl DeltaResumeInfo {
             snapshot_pending: false,
             snapshot_started: false,
             snapshot_skips_files: false,
+            snapshot_files: None,
         }
     }
 
@@ -1459,6 +1355,7 @@ impl DeltaResumeInfo {
             snapshot_pending: false,
             snapshot_started: false,
             snapshot_skips_files: false,
+            snapshot_files: None,
         }
     }
 
@@ -1474,6 +1371,7 @@ impl DeltaResumeInfo {
             snapshot_pending: false,
             snapshot_started: false,
             snapshot_skips_files: false,
+            snapshot_files: None,
         }
     }
 
@@ -1487,6 +1385,7 @@ impl DeltaResumeInfo {
             snapshot_pending: true,
             snapshot_started: false,
             snapshot_skips_files: true,
+            snapshot_files: None,
         }
     }
 
@@ -3487,9 +3386,9 @@ impl DeltaTableInputEndpointInner {
     /// host.
     ///
     /// Before the division, the hosts drop the files that the snapshot filter
-    /// cannot match (see [`Self::files_matching_snapshot_filter`]), as the single-host
-    /// reader does.  Every host has the same filter, so every host drops the
-    /// same files.
+    /// cannot match, with the file skipping of Delta Kernel that the
+    /// single-host reader uses (see [`Self::snapshot_skipping_predicate`]).
+    /// Every host has the same filter, so every host drops the same files.
     async fn snapshot_share(
         &self,
         table: &DeltaTable,
@@ -3499,21 +3398,18 @@ impl DeltaTableInputEndpointInner {
         let snapshot = table
             .snapshot()
             .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?;
+        let n_table_files = snapshot.log_data().num_files();
         // `Add` supplies each file's partition values as the log's strings,
         // which `add_partition_columns` needs.
         #[allow(deprecated)]
-        let mut adds = snapshot
-            .log_data()
-            .iter()
-            .map(|file| file.add_action())
-            .collect::<Vec<_>>();
-        let n_table_files = adds.len();
-        if self.snapshot_skips_files()
-            && let Some(kept) = self.files_matching_snapshot_filter(snapshot)
-        {
-            adds.retain(|add| kept.contains(&add.path));
-        }
+        let mut adds = table
+            .get_active_add_actions_by_predicate(self.snapshot_skipping_predicate(snapshot))
+            .map_ok(|file| file.add_action())
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(|e| anyhow!("error listing the files of the Delta table snapshot: {e}"))?;
         adds.sort_by(|a, b| a.path.cmp(&b.path));
+        self.record_snapshot_files(SnapshotFiles::new(&adds))?;
         let n_files = adds.len();
         let files = adds
             .iter()
@@ -3570,53 +3466,93 @@ impl DeltaTableInputEndpointInner {
             .is_none_or(|status| status.snapshot_skips_files)
     }
 
-    /// Returns the paths, URL-decoded as in [`AddAction::path`], of the files
-    /// of `snapshot` that the snapshot filter does not exclude.
+    /// Returns the Delta Kernel predicate with which [`Self::snapshot_share`]
+    /// skips the files that the snapshot filter cannot match, or `None` to
+    /// read every file.
     ///
-    /// The filter excludes a file only if the Delta log statistics show that
-    /// no row of the file matches.  If the log has no statistics for a column
-    /// that the filter uses, the filter cannot exclude a file by that column.
-    ///
-    /// Returns `None` if there is no filter, or if the statistics cannot
-    /// evaluate it.  Then every file can match.
-    fn files_matching_snapshot_filter(
-        &self,
-        snapshot: &DeltaTableState,
-    ) -> Option<HashSet<String>> {
+    /// The single-host reader skips files with the same Delta Kernel code, so
+    /// both read the same files.  There is no predicate if there is no filter,
+    /// if the checkpoint came from a version that read every file (see
+    /// [`Self::snapshot_skips_files`]), if Delta Kernel cannot use the filter,
+    /// or if the filter calls a function such as `now()` whose result can
+    /// differ between hosts, because then the hosts could list different
+    /// files.
+    fn snapshot_skipping_predicate(&self, snapshot: &DeltaTableState) -> Option<PredicateRef> {
         let filter = self.effective_snapshot_filter()?;
-        let kept = || -> AnyResult<HashSet<String>> {
-            let schema = snapshot.log_data().input_schema();
-            let df_schema = DFSchema::try_from(schema.as_ref().clone())?;
+        if !self.snapshot_skips_files() {
+            return None;
+        }
+        let predicate = || -> AnyResult<Option<PredicateRef>> {
+            let df_schema =
+                DFSchema::try_from(snapshot.log_data().input_schema().as_ref().clone())?;
             let expr = self.datafusion.parse_sql_expr(&filter, &df_schema)?;
-            // See `compile_delete_filter` for why this coerces types.
+            let varies = expr.exists(|expr| {
+                Ok(matches!(expr, Expr::ScalarFunction(function)
+                    if function.func.signature().volatility != Volatility::Immutable))
+            })?;
+            if varies {
+                info!(
+                    "delta_table {}: the snapshot reads every file, because the snapshot filter '{filter}' calls a function whose result can differ between hosts",
+                    &self.endpoint_name,
+                );
+                return Ok(None);
+            }
+            // DataFusion's optimizer coerces types and simplifies a filter
+            // before it gives the filter to the single-host reader's table
+            // provider, in conjuncts.  Do the same, so that delta-rs gets the
+            // same expressions.  For example, this casts the literal in
+            // `ts > timestamp '...'` to the type of `ts`.
             let expr = expr
                 .rewrite(&mut TypeCoercionRewriter::new(&df_schema))
                 .data()?;
-            let expr = DefaultPhysicalPlanner::default().create_physical_expr(
-                &expr,
-                &df_schema,
-                &self.datafusion.state(),
-                &PhysicalPlanningContext::default(),
-            )?;
-            let predicate = PruningPredicateBuilder::new()
-                .with_file_schema(schema)
-                .try_build(expr)?;
-            let mut kept = HashSet::new();
-            for statistics in LogStatistics::batches(snapshot)? {
-                kept.extend(statistics.paths(&predicate.prune(&statistics)?)?);
-            }
-            Ok(kept)
+            let expr = ExprSimplifier::new(
+                SimplifyContext::builder()
+                    .with_schema(Arc::new(df_schema))
+                    .build(),
+            )
+            .simplify(expr)?;
+            Ok(file_skipping_predicate(
+                &split_conjunction_owned(expr),
+                snapshot.snapshot().table_configuration(),
+            ))
         };
-        match kept() {
-            Ok(kept) => Some(kept),
-            Err(e) => {
-                warn!(
-                    "delta_table {}: the snapshot reads every file, because the Delta log statistics cannot evaluate the snapshot filter '{filter}': {e}",
-                    &self.endpoint_name,
-                );
-                None
+        predicate().unwrap_or_else(|e| {
+            info!(
+                "delta_table {}: the snapshot reads every file, because the snapshot filter '{filter}' cannot be prepared for file skipping: {e}",
+                &self.endpoint_name,
+            );
+            None
+        })
+    }
+
+    /// Records `files`, the files that the hosts divide, in the resume info of
+    /// a distributed connector whose snapshot is pending, or checks them
+    /// against the files that its checkpoint recorded (see
+    /// [`DeltaResumeInfo::snapshot_files`]).
+    fn record_snapshot_files(&self, files: SnapshotFiles) -> AnyResult<()> {
+        let mut last_resume_status = self.last_resume_status.lock().unwrap();
+        let Some(status) = last_resume_status
+            .as_mut()
+            .filter(|status| status.snapshot_pending)
+        else {
+            return Ok(());
+        };
+        match &status.snapshot_files {
+            Some(recorded) if *recorded != files => bail!(
+                "this host lists {} data files for the snapshot, but its checkpoint lists {} files with other paths or file skipping.  The other hosts may have read their parts of the checkpoint's list already, so this host cannot read its part of a different list.  Resume the pipeline with the version of Feldera that took the checkpoint.",
+                files.count,
+                recorded.count
+            ),
+            Some(_) => (),
+            None => {
+                status.snapshot_files = Some(files.clone());
+                let mut checkpointable = self.last_checkpointable_status.lock().unwrap();
+                if checkpointable.snapshot_pending {
+                    checkpointable.snapshot_files = Some(files);
+                }
             }
         }
+        Ok(())
     }
 
     /// Validate the filter expression specified in the 'snapshot_filter' parameter.
@@ -7514,9 +7450,9 @@ mod object_store_routing_tests {
 
 #[cfg(any(test, feature = "testing"))]
 pub mod distributed_snapshot_tests {
-    #[cfg(test)]
-    use super::validate_distributed;
     use super::{DeltaResumeInfo, DeltaTableInputEndpointInner, Polarity, QueueEntry};
+    #[cfg(test)]
+    use super::{SnapshotFiles, validate_distributed};
     use crate::{
         PipelineState,
         integrated::DistributedInput,
@@ -8156,6 +8092,144 @@ pub mod distributed_snapshot_tests {
         }
     }
 
+    /// Returns the IDs of the rows that `endpoint` reads from its part of
+    /// `table`'s snapshot with `filter`, sorted.
+    #[cfg(test)]
+    async fn read_filtered(
+        endpoint: &DeltaTableInputEndpointInner,
+        table: &Arc<DeltaTable>,
+        filter: &str,
+    ) -> Vec<i64> {
+        *endpoint.schema_table.lock().unwrap() = Some(table.clone());
+        endpoint.register_snapshot_table(table).await.unwrap();
+        let batches = endpoint
+            .datafusion
+            .sql(&format!("select id from snapshot where {filter}"))
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+        let mut ids = batches
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .values()
+                    .to_vec()
+            })
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    }
+
+    /// For each filter, the hosts together read the same rows as one host,
+    /// whether the filter skips files by statistics, by partition values, or
+    /// not at all.
+    #[tokio::test]
+    async fn hosts_read_what_one_host_reads() {
+        let ranges = tempfile::tempdir().unwrap();
+        let (ranges, ranges_uri) = write_ranges(ranges.path(), 4).await;
+        let partitioned = tempfile::tempdir().unwrap();
+        let (partitioned, partitioned_uri) = write_table(partitioned.path(), 60, 4).await;
+        let filters = [
+            "id >= 20 and id < 25",
+            "id < 5 or id >= 35",
+            "id in (3, 33)",
+            "id between 9 and 10",
+            "id is null",
+            "not (id < 30)",
+            "part = 'p1'",
+            "part = 'p1' and id >= 30",
+            "part is null",
+            "cast(id as boolean) = false",
+            "id >= 20 and part like 'p%'",
+            "id > 10 and now() > timestamp '2000-01-01 00:00:00'",
+        ];
+        for (table, uri) in [(ranges, ranges_uri), (partitioned, partitioned_uri)] {
+            let table = Arc::new(table);
+            for filter in filters {
+                let config = json!({"uri": uri, "mode": "snapshot", "filter": filter});
+                let one_host = read_filtered(
+                    &endpoint_with_consumer(config.clone(), None, None, MockInputConsumer::new()),
+                    &table,
+                    filter,
+                )
+                .await;
+                for n_hosts in [2, 3] {
+                    let mut hosts = Vec::new();
+                    for host in 0..n_hosts {
+                        let shard =
+                            InputShard::new(host, n_hosts, InputDistribution { home: 1 }).unwrap();
+                        let endpoint = endpoint_with_consumer(
+                            config.clone(),
+                            Some(shard),
+                            None,
+                            MockInputConsumer::new(),
+                        );
+                        hosts.extend(read_filtered(&endpoint, &table, filter).await);
+                    }
+                    hosts.sort();
+                    assert_eq!(hosts, one_host, "{uri}: {filter}: {n_hosts} hosts");
+                }
+            }
+        }
+    }
+
+    /// A host records the files that the hosts divide in its checkpoint while
+    /// its snapshot is pending.  It resumes from a checkpoint with the same
+    /// files, and fails if it lists other files, as it could after an upgrade
+    /// that changes file skipping.
+    #[tokio::test]
+    async fn resumed_host_fails_if_it_lists_other_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let (table, uri) = write_ranges(dir.path(), 4).await;
+        let version = table.version().unwrap() as i64;
+        let config = json!({"uri": uri, "mode": "snapshot", "filter": "id >= 20 and id < 25"});
+        let open = |resume_info: Option<DeltaResumeInfo>| {
+            resumed_endpoint(
+                config.clone(),
+                Some(shard(2)),
+                Some(json!(version)),
+                MockInputConsumer::new(),
+                resume_info,
+            )
+        };
+
+        let endpoint = open(None);
+        let opened = Arc::new(endpoint.open_table().await.unwrap());
+        endpoint.record_snapshot_version(&opened);
+        read_share_of(&endpoint, &opened).await;
+        let checkpoint = endpoint.last_checkpointable_status.lock().unwrap().clone();
+        let files = checkpoint.snapshot_files.clone().unwrap();
+        assert_eq!(files.count, 1);
+        let checkpoint: DeltaResumeInfo =
+            serde_json::from_value(serde_json::to_value(&checkpoint).unwrap()).unwrap();
+
+        for (recorded, ok) in [
+            (files.clone(), true),
+            (
+                SnapshotFiles {
+                    hash: files.hash ^ 1,
+                    ..files
+                },
+                false,
+            ),
+        ] {
+            let endpoint = open(Some(DeltaResumeInfo {
+                snapshot_files: Some(recorded),
+                ..checkpoint.clone()
+            }));
+            let opened = Arc::new(endpoint.open_table().await.unwrap());
+            *endpoint.schema_table.lock().unwrap() = Some(opened.clone());
+            let result = endpoint.register_snapshot_table(&opened).await;
+            assert_eq!(result.is_ok(), ok, "{result:?}");
+        }
+    }
+
     /// A host that opened the table for its snapshot share but read nothing
     /// yet checkpoints the version, and on resume reads its share at that
     /// version, even if the table changed and host 0 made no choice.
@@ -8435,12 +8509,13 @@ mod timestamp_bounds_tests {
 }
 
 #[cfg(test)]
-mod snapshot_file_mask_tests {
+mod snapshot_skipping_tests {
     use super::DeltaTableInputEndpointInner;
     use super::timestamp_bounds_tests::{field, log_only_table};
     use crate::test::MockInputConsumer;
     use deltalake::datafusion::prelude::SessionContext;
     use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
+    use futures_util::TryStreamExt;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -8473,12 +8548,12 @@ mod snapshot_file_mask_tests {
             files,
         )
         .await;
-        kept_of(&table, filter)
+        kept_of(&table, filter).await
     }
 
     /// The files of `table` that `filter` can match, in order by path, or
     /// `None` if the connector keeps every file.
-    fn kept_of(table: &deltalake::DeltaTable, filter: Option<&str>) -> Option<Vec<String>> {
+    async fn kept_of(table: &deltalake::DeltaTable, filter: Option<&str>) -> Option<Vec<String>> {
         let mut config = json!({"uri": "/tmp/unused", "mode": "snapshot"});
         if let Some(filter) = filter {
             config["filter"] = json!(filter);
@@ -8500,10 +8575,13 @@ mod snapshot_file_mask_tests {
             None,
             None,
         );
-        let mut kept = endpoint
-            .files_matching_snapshot_filter(table.snapshot().unwrap())?
-            .into_iter()
-            .collect::<Vec<_>>();
+        let predicate = endpoint.snapshot_skipping_predicate(table.snapshot().unwrap())?;
+        let mut kept = table
+            .get_active_add_actions_by_predicate(Some(predicate))
+            .map_ok(|file| file.path().to_string())
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
         kept.sort();
         Some(kept)
     }
@@ -8511,7 +8589,7 @@ mod snapshot_file_mask_tests {
     /// The filter drops a file by the range of a column, under column mapping,
     /// and by a partition value.  It keeps a file without statistics.
     #[tokio::test]
-    async fn mask_drops_files_that_cannot_match() {
+    async fn skipping_drops_files_that_cannot_match() {
         let files = [
             ("a", Some((0, 5))),
             ("a", Some((10, 20))),
@@ -8528,7 +8606,7 @@ mod snapshot_file_mask_tests {
     /// The log truncates a timestamp's max to milliseconds, so a file whose
     /// logged max is `10:00:00.000` can hold `10:00:00.0005`.
     #[tokio::test]
-    async fn mask_allows_for_a_truncated_timestamp_max() {
+    async fn skipping_allows_for_a_truncated_timestamp_max() {
         let ts = "2024-01-05T10:00:00.000Z";
         let (_dir, table) = log_only_table(
             vec![field("ts", "timestamp", json!({}))],
@@ -8542,13 +8620,57 @@ mod snapshot_file_mask_tests {
         )
         .await;
         assert_eq!(
-            kept_of(&table, Some("ts > timestamp '2024-01-05 10:00:00.0005'")),
+            kept_of(&table, Some("ts > timestamp '2024-01-05 10:00:00.0005'")).await,
             Some(vec!["0.parquet".to_string()])
         );
         assert_eq!(
-            kept_of(&table, Some("ts >= timestamp '2024-01-05 10:00:00.001'")),
+            kept_of(&table, Some("ts >= timestamp '2024-01-05 10:00:00.001'")).await,
             Some(vec![])
         );
+    }
+
+    /// A filter whose result can differ between hosts, such as one that
+    /// calls `now()`, skips no file, because the hosts could list different
+    /// files.  So does a filter that Delta Kernel cannot use, such as a cast
+    /// to BOOLEAN, which DataFusion's own pruning gets wrong.
+    #[tokio::test]
+    async fn skipping_reads_every_file_for_some_filters() {
+        let files = [("a", Some((0, 5))), ("a", Some((10, 20)))];
+        for filter in [
+            "n >= 10 and now() > timestamp '2000-01-01 00:00:00'",
+            "cast(n as boolean) = false",
+        ] {
+            assert_eq!(kept(&files, Some(filter)).await, None, "{filter}");
+        }
+    }
+
+    /// A filter on a field of a struct skips files by the field's statistics,
+    /// in each form of field access.
+    #[tokio::test]
+    async fn skipping_reads_struct_field_statistics() {
+        let st = json!({"name": "st", "nullable": true, "metadata": {}, "type": {"type": "struct",
+            "fields": [{"name": "a", "type": "long", "nullable": true, "metadata": {}}]}});
+        let file = |min: i64, max: i64| {
+            (
+                json!({}),
+                Some(json!({"numRecords": 2, "nullCount": {"st": {"a": 0}},
+                    "minValues": {"st": {"a": min}}, "maxValues": {"st": {"a": max}}})),
+            )
+        };
+        let (_dir, table) = log_only_table(
+            vec![st],
+            json!([]),
+            json!({}),
+            vec![file(0, 5), file(10, 20)],
+        )
+        .await;
+        for filter in ["st.a >= 10", "st['a'] >= 10", "get_field(st, 'a') >= 10"] {
+            assert_eq!(
+                kept_of(&table, Some(filter)).await,
+                Some(vec!["1.parquet".to_string()]),
+                "{filter}"
+            );
+        }
     }
 }
 
