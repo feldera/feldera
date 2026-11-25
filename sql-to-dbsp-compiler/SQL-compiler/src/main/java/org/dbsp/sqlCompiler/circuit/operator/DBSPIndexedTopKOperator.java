@@ -23,7 +23,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
-import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -99,20 +98,30 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
                 () -> "Expected the input to be an IndexedZSet type" + source.outputType());
     }
 
-    /** True if the output producer emits the rank parameter as one of its fields. */
-    public static boolean emitsRank(DBSPClosureExpression outputProducer) {
+    /** The index of the first field of the output producer's tuple that is the rank parameter;
+     * -1 if no field is the rank parameter. */
+    public static int rankField(DBSPClosureExpression outputProducer) {
         DBSPTupleExpression produced = outputProducer.body.as(DBSPTupleExpression.class);
         if (produced == null || produced.fields == null)
-            return false;
+            return -1;
         String rank = outputProducer.parameters[0].name;
-        return Linq.any(List.of(produced.fields), field ->
-                field.is(DBSPVariablePath.class) && field.to(DBSPVariablePath.class).variable.equals(rank));
+        for (int i = 0; i < produced.fields.length; i++) {
+            DBSPExpression field = produced.fields[i];
+            if (field.is(DBSPVariablePath.class) && field.to(DBSPVariablePath.class).variable.equals(rank))
+                return i;
+        }
+        return -1;
+    }
+
+    /** True if the output producer emits the rank parameter as one of its fields. */
+    public static boolean emitsRank(DBSPClosureExpression outputProducer) {
+        return rankField(outputProducer) >= 0;
     }
 
     /** True if the limit is the constant 1.  ORDER BY ... LIMIT wraps the literal,
      * whatever numeric type Calcite gave it, in a cast to USIZE; a limit computed
      * from an OFFSET is no literal. */
-    static boolean isLimitOne(DBSPExpression limit) {
+    public static boolean isLimitOne(DBSPExpression limit) {
         while (limit.is(DBSPCastExpression.class))
             limit = limit.to(DBSPCastExpression.class).source;
         if (limit.is(DBSPUSizeLiteral.class))

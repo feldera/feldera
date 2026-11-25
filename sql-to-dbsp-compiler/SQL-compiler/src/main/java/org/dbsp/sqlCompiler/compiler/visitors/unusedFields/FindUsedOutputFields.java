@@ -19,6 +19,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
@@ -30,8 +32,10 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAsymmetricFieldComparatorExpression.Collation;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -82,6 +86,11 @@ public class FindUsedOutputFields extends CircuitVisitor {
         /** Deindex: the output rows are the values of the input.  The input needs no key fields
          * and the used output fields. */
         DEINDEX,
+        /** RowNumber or Rank: the output key is the input key.  The output producer computes the
+         * output value from the rank and the input value.  The input needs all key fields, the
+         * value fields that the comparators read, and the value fields that the output producer
+         * reads to compute the used output fields. */
+        NUMBERING,
         /** Integrate, Differentiate, Negate, Noop, Sum, Subtract, Delay: each input needs the
          * used output fields */
         IDENTITY,
@@ -141,6 +150,8 @@ public class FindUsedOutputFields extends CircuitVisitor {
             return Kind.ANTIJOIN;
         if (operator.is(DBSPDeindexOperator.class))
             return Kind.DEINDEX;
+        if (operator.is(DBSPRowNumberOperator.class) || operator.is(DBSPRankOperator.class))
+            return Kind.NUMBERING;
         if (operator.is(DBSPDeltaOperator.class))
             return Kind.DELTA;
         if (operator.is(DBSPIntegrateOperator.class)
@@ -223,6 +234,70 @@ public class FindUsedOutputFields extends CircuitVisitor {
         ParameterFieldUse reads = this.find.findUsedFields(predicate);
         FieldUseMap use = outputUse.reduce(reads.get(predicate.parameters[0]))
                 .project(FieldUseMap.depth(filter.inputs.get(0)));
+        return use.hasUnusedFields() ? use : null;
+    }
+
+    /** The output producer of a RowNumber or Rank operator */
+    private DBSPClosureExpression outputProducer(DBSPSimpleOperator operator) {
+        DBSPRowNumberOperator rowNumber = operator.as(DBSPRowNumberOperator.class);
+        if (rowNumber != null)
+            return rowNumber.outputProducer;
+        return operator.to(DBSPRankOperator.class).outputProducer;
+    }
+
+    /** The fields of the output of a RowNumber or Rank operator that the replacement computes:
+     * all key fields, and the value fields that the readers use; null if it computes all fields.
+     * The replacement computes all fields if the output producer does not build a tuple. */
+    @Nullable
+    public FieldUseMap numberingOutputUse(DBSPSimpleOperator operator) {
+        FieldUseMap outputUse = this.used.get(operator.outputPort());
+        if (outputUse == null)
+            return null;
+        FieldUseMap valueUse = outputUse.field(1);
+        DBSPExpression produced = this.outputProducer(operator).body;
+        if (!valueUse.hasUnusedFields() || !this.isTupleConstructor(produced))
+            return null;
+        DBSPTypeRawTuple rowType = operator.outputPort().getOutputIndexedZSetType().getKVRefType();
+        // The key of the output is the key of the input
+        FieldUseMap key = new FieldUseMap(rowType.tupFields[0], true);
+        return FieldUseMap.list(rowType, Linq.list(key, valueUse));
+    }
+
+    /** The output producer of a RowNumber or Rank operator, restricted to the output fields that
+     * the replacement computes */
+    public DBSPClosureExpression usedProducer(DBSPSimpleOperator operator) {
+        DBSPClosureExpression producer = this.outputProducer(operator);
+        FieldUseMap outputUse = this.numberingOutputUse(operator);
+        if (outputUse == null)
+            return producer;
+        return this.restrictToUsed(producer, outputUse.field(1));
+    }
+
+    /** The fields that a RowNumber or Rank operator needs from its input: all key fields, the
+     * value fields that its comparators read, and the value fields that its output producer
+     * reads to compute the used output fields; null if it needs all fields. */
+    @Nullable
+    public FieldUseMap numberingInputUse(DBSPSimpleOperator operator) {
+        DBSPClosureExpression producer = this.usedProducer(operator);
+        FieldUseMap valueUse = this.find.findUsedFields(producer).get(producer.parameters[1]);
+        DBSPRankOperator rank = operator.as(DBSPRankOperator.class);
+        if (rank != null) {
+            DBSPClosureExpression projection = rank.projectionFunc;
+            FieldUseMap projected = this.find.findUsedFields(projection).get(projection.parameters[0]);
+            valueUse = valueUse.reduce(projected);
+            FieldUseMap valueFields = valueUse.deref();
+            for (Collation collation: rank.rankCmpFunc.comparisons)
+                valueFields.setUsed(collation.leftField());
+        }
+        DBSPComparatorExpression comparator = operator.getFunction().to(DBSPComparatorExpression.class);
+        if (!RemoveUnusedFields.setComparedFieldsToUsed(comparator, valueUse.deref()))
+            return null;
+        OutputPort input = operator.inputs.get(0);
+        DBSPTypeRawTuple rowType = input.getOutputIndexedZSetType().getKVRefType();
+        // The operator groups the rows by the key
+        FieldUseMap key = new FieldUseMap(rowType.tupFields[0], true);
+        FieldUseMap use = FieldUseMap.list(rowType, Linq.list(key, valueUse))
+                .project(FieldUseMap.depth(input));
         return use.hasUnusedFields() ? use : null;
     }
 
@@ -328,6 +403,16 @@ public class FindUsedOutputFields extends CircuitVisitor {
                 FieldUseMap key = new FieldUseMap(rowType.tupFields[0], false);
                 FieldUseMap value = outputUse != null ? outputUse : new FieldUseMap(rowType.tupFields[1], true);
                 this.addUse(input, FieldUseMap.list(rowType, Linq.list(key, value)));
+                break;
+            }
+            case NUMBERING: {
+                DBSPSimpleOperator numbering = operator.to(DBSPSimpleOperator.class);
+                OutputPort input = numbering.inputs.get(0);
+                FieldUseMap inputUse = this.numberingInputUse(numbering);
+                if (inputUse == null)
+                    this.setAllUsed(input);
+                else
+                    this.addUse(input, inputUse);
                 break;
             }
             case IDENTITY, DELTA: {

@@ -18,6 +18,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
@@ -31,7 +33,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedOutputFields.Kind;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAsymmetricFieldComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAsymmetricFieldComparatorExpression.Collation;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -58,6 +63,8 @@ import java.util.Objects;
  *     drops the unused fields.  If the source still emits one of these fields, a projection
  *     between the source and the operator drops the field.</li>
  * <li>A Deindex emits the value fields that its readers use.</li>
+ * <li>A RowNumber or Rank stops computing the unused fields of its output value.  Its input
+ *     carries only the fields that its functions read.</li>
  * <li>A delta0 of a recursive circuit emits the fields that its source emits after the
  *     visit.</li>
  * <li>The closure of each operator with a narrowed input port is rewritten to read
@@ -304,6 +311,60 @@ public class RemoveUnusedOutputFields extends CircuitCloneVisitor {
         return true;
     }
 
+    /** 'comparator' for left tuples that have only the fields that 'leftFields' keeps.
+     * @param newLeftType  Type of the left tuples with only the kept fields. */
+    private DBSPAsymmetricFieldComparatorExpression withNarrowedLeft(
+            DBSPAsymmetricFieldComparatorExpression comparator, FieldUseMap leftFields, DBSPType newLeftType) {
+        List<Collation> collations = new ArrayList<>();
+        for (Collation collation: comparator.comparisons) {
+            int leftField = leftFields.getNewIndex(collation.leftField());
+            collations.add(new Collation(
+                    leftField, collation.rightField(), collation.ascending(), collation.nullsFirst()));
+        }
+        return new DBSPAsymmetricFieldComparatorExpression(
+                comparator.getNode(), newLeftType, comparator.rightType, collations);
+    }
+
+    /** Replace a RowNumber or Rank: its input gets exactly the fields that the operator reads,
+     * and its output producer computes only the output fields that the readers use */
+    private boolean narrowNumbering(DBSPSimpleOperator operator) {
+        if (!this.hasKind(operator, Kind.NUMBERING))
+            return false;
+        OutputPort input = operator.inputs.get(0);
+        FieldUseMap target = this.used.numberingInputUse(operator);
+        FieldUseMap keptOutput = this.used.numberingOutputUse(operator);
+        if (target == null && keptOutput == null && !this.kept.containsKey(input))
+            return false;
+        OutputPort source = this.keepTargetFields(operator, input, target);
+        DBSPType valueType = source.getOutputIndexedZSetType().elementType;
+        DBSPClosureExpression producer = this.used.usedProducer(operator);
+        DBSPComparatorExpression comparator = operator.getFunction().to(DBSPComparatorExpression.class);
+        // Fields of the input values that the new source carries; null if it carries all fields
+        FieldUseMap keptValue = target == null ? null : target.field(1);
+        if (keptValue != null) {
+            producer = this.withNarrowedParameters(producer, Arrays.asList(null, keptValue), 1);
+            comparator = RemoveUnusedFields.remapComparedFields(comparator, keptValue.deref(), valueType);
+        }
+
+        DBSPSimpleOperator result;
+        DBSPRankOperator rank = operator.as(DBSPRankOperator.class);
+        if (rank == null) {
+            result = new DBSPRowNumberOperator(operator.getRelNode(), comparator, producer, source);
+        } else {
+            DBSPClosureExpression projection = rank.projectionFunc;
+            DBSPAsymmetricFieldComparatorExpression rankComparator = rank.rankCmpFunc;
+            if (keptValue != null) {
+                projection = this.withNarrowedParameters(projection, Linq.list(keptValue), 1);
+                rankComparator = this.withNarrowedLeft(rankComparator, keptValue.deref(), valueType);
+            }
+            result = new DBSPRankOperator(operator.getRelNode(), rank.numbering, comparator,
+                    rankComparator, projection, producer, source);
+        }
+        result.copyAnnotations(operator);
+        this.setReplacement(operator, result, keptOutput);
+        return true;
+    }
+
     /** Replace a Deindex: the output rows are the values of the input */
     private boolean narrowDeindex(DBSPSimpleOperator operator) {
         if (!this.hasKind(operator, Kind.DEINDEX))
@@ -439,6 +500,18 @@ public class RemoveUnusedOutputFields extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPDeindexOperator operator) {
         if (!this.narrowDeindex(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPRowNumberOperator operator) {
+        if (!this.narrowNumbering(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPRankOperator operator) {
+        if (!this.narrowNumbering(operator))
             super.postorder(operator);
     }
 

@@ -199,6 +199,37 @@ public class KeyAnalysisTests extends SqlIoTest {
                 QUALIFY row_number() OVER (PARTITION BY a ORDER BY b) <= 2;""");
     }
 
+    /** The rows of a partition have different row numbers. */
+    @Test
+    public void top2RowNumberWithPartitionIsKey() {
+        this.assertKeys("""
+                CREATE VIEW v AS SELECT a, b, c, rn FROM (
+                    SELECT *, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM m)
+                WHERE rn <= 2;""", "[[0, 3]]");
+    }
+
+    @Test
+    public void rowNumberWithPartitionIsKey() {
+        this.assertKeys("""
+                CREATE VIEW v AS SELECT *, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM m;""",
+                "[[0, 3]]");
+    }
+
+    @Test
+    public void rowNumberKeepsKey() {
+        this.assertKeys("""
+                CREATE VIEW v AS SELECT *, row_number() OVER (PARTITION BY c ORDER BY a) AS rn FROM t;""",
+                "[[0, 1], [2, 3]]");
+    }
+
+    /** Tied rows have the same rank, so only the key of the input survives. */
+    @Test
+    public void rankKeepsKey() {
+        this.assertKeys("""
+                CREATE VIEW v AS SELECT *, rank() OVER (PARTITION BY c ORDER BY a) AS r FROM t;""",
+                "[[0, 1]]");
+    }
+
     /** A column selected twice is a key on each of its copies. */
     @Test
     public void top1WithDuplicatedPartitionColumn() {
@@ -294,6 +325,12 @@ public class KeyAnalysisTests extends SqlIoTest {
     @Test
     public void orderByLimitIsAnalyzed() {
         this.assertKeys("CREATE VIEW v AS SELECT a, b, c FROM t ORDER BY c LIMIT 2;", "[[0, 1]]");
+    }
+
+    /** The compiler casts the limit to USIZE. */
+    @Test
+    public void orderByLimitOneHasOneRow() {
+        this.assertKeys("CREATE VIEW v AS SELECT a, b, c FROM m ORDER BY c LIMIT 1;", "[[]]");
     }
 
     /** A LEFT JOIN without an equality is expanded into a join and an antijoin whose outputs
