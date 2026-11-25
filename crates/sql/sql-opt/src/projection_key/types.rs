@@ -87,6 +87,16 @@ pub(super) fn scalar_spelling(edit: &CircuitEditor, ty: TypeId) -> Result<Option
     let node = edit.node(ty.into())?;
     let mut text = match edit.type_kind(ty)? {
         Ty::Any => return Ok(Some("_".to_owned())),
+        Ty::Str => "str".to_owned(),
+        Ty::Void => "void".to_owned(),
+        Ty::Struct => {
+            let Some(hash_name) = string(node, "hashName") else {
+                return Ok(None);
+            };
+            let name = node.sql_identifier_name()?;
+            let marker = if edit.nullable(ty)? { "?" } else { "" };
+            return Ok(Some(format!("struct {marker} {name} {hash_name}")));
+        }
         Ty::Null => "null".to_owned(),
         Ty::GeoPoint => "geopoint".to_owned(),
         kind @ (Ty::LongInterval | Ty::ShortInterval) => {

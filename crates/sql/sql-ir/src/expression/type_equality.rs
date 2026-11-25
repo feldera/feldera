@@ -1,5 +1,4 @@
 //! Structural equality of the types used in optimizer expressions.
-use super::types::sql_name;
 use super::{CircuitEditor, Error, NodeId, Ty, TypeId};
 use crate::Node;
 use std::collections::{BTreeMap, HashMap};
@@ -164,7 +163,7 @@ impl CircuitEditor {
         b: &Node,
         pending: &mut Vec<Visit>,
     ) -> Result<bool, Error> {
-        if sql_name(a)? != sql_name(b)? {
+        if a.sql_identifier_name()? != b.sql_identifier_name()? {
             return Ok(false);
         }
         let left = a.edges("fields")?;
@@ -175,11 +174,11 @@ impl CircuitEditor {
         let mut by_name = BTreeMap::new();
         for id in right {
             let field = self.node(id)?;
-            by_name.insert(sql_name(field)?, field);
+            by_name.insert(field.sql_identifier_name()?, field);
         }
         for id in left.into_iter().rev() {
             let field = self.node(id)?;
-            let Some(other) = by_name.get(sql_name(field)?) else {
+            let Some(other) = by_name.get(field.sql_identifier_name()?) else {
                 return Ok(false);
             };
             if field.data("index") != other.data("index") {

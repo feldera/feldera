@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
@@ -63,6 +64,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
+import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
@@ -71,9 +73,12 @@ import org.dbsp.sqlCompiler.ir.type.ZSetShape;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -1150,6 +1155,28 @@ public class TemporalKeyTests {
         assertStaticWindowGroups(List.of(sum, b.call(value.getType(), "agg_plus", value, weight, enabled),
                 max, b.call(value.getType(), "agg_plus", value, weight),
                 b.call(value.getType(), "agg_plus", weight, value, enabled)), Set.of(0, 1));
+    }
+
+    @Test
+    public void windowSharingUsesThePrintedGenericSignature() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteObject.EMPTY;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(7, (row, i) -> {
+            var field = new DBSPTypeStruct.Field(site, new ProgramIdentifier("event time"), 0,
+                    i == 2 ? b.bool() : time);
+            var rowType = new DBSPTypeStruct(site, new ProgramIdentifier("Event row", i == 1),
+                    List.of(field), i == 3);
+            DBSPType argument = switch (i) {
+                case 4 -> DBSPTypeStr.INSTANCE;
+                case 5 -> new DBSPTypeUser(site, DBSPTypeCode.USER, "str", false);
+                case 6 -> DBSPTypeVoid.INSTANCE;
+                default -> rowType;
+            };
+            var function = new DBSPPathExpression(time, new DBSPPath(new DBSPSimplePathSegment("stamp", argument)));
+            return new DBSPApplyExpression(function, time, b.field(row, 0));
+        }, List.of(0, 1, 4, 5));
     }
 
     @Test

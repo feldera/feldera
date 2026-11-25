@@ -107,7 +107,7 @@ impl CircuitEditor {
         self.node(record)?
             .edges("fields")?
             .into_iter()
-            .map(|field| Ok(sql_name(self.node(field)?)?.to_owned()))
+            .map(|field| Ok(self.node(field)?.sql_identifier_name()?.to_owned()))
             .collect::<Result<Vec<_>, _>>()
             .map(Some)
     }
@@ -365,13 +365,16 @@ impl CircuitEditor {
     }
 }
 
-pub(super) fn sql_name(node: &crate::Node) -> Result<&str, Error> {
-    let Some(Field::Object(name)) = node.field("name") else {
-        return Err(Error::new("missing SQL identifier"));
-    };
-    let Some(Field::Data(name)) = name.get("name") else {
-        return Err(Error::new("missing SQL identifier spelling"));
-    };
-    name.as_str()
-        .ok_or_else(|| Error::new("SQL identifier must be a string"))
+impl crate::Node {
+    /// Spelling of the SQL identifier carried by a struct or one of its fields.
+    pub fn sql_identifier_name(&self) -> Result<&str, Error> {
+        let Some(Field::Object(name)) = self.field("name") else {
+            return Err(Error::new("missing SQL identifier"));
+        };
+        let Some(Field::Data(name)) = name.get("name") else {
+            return Err(Error::new("missing SQL identifier spelling"));
+        };
+        name.as_str()
+            .ok_or_else(|| Error::new("SQL identifier must be a string"))
+    }
 }
