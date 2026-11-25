@@ -84,22 +84,34 @@ pub enum MapProjection {
     },
 }
 
+/// The output-projection pass permits nullability casts for both kinds of map,
+/// but only a row map can return deeply nested tuples.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ProjectionMode {
+    Strict,
+    FlatWithCasts,
+    NestedWithCasts,
+}
+
 fn classify_function(
     edit: &CircuitEditor,
     function: NodeId,
-    allow_nested_and_casts: bool,
+    mode: ProjectionMode,
 ) -> Result<Projection, Error> {
+    let allow_casts = mode != ProjectionMode::Strict;
     if edit.expr_kind(edit.expression(function)?)? != Expr::Closure {
-        return classify(edit, function, &[], allow_nested_and_casts);
+        return classify(edit, function, &[], allow_casts);
     }
     let node = edit.node(function)?;
     let parameters = node.edges("parameters")?;
     let body = node.edge("body")?;
     let ty = edit.expression_type(edit.expression(body)?)?;
-    if parameters.is_empty() || (!allow_nested_and_casts && !simple_tuple(edit, ty.into())?) {
+    if parameters.is_empty()
+        || (mode != ProjectionMode::NestedWithCasts && !simple_tuple(edit, ty.into())?)
+    {
         return Ok(Projection::Other);
     }
-    classify(edit, body, &parameters, allow_nested_and_casts)
+    classify(edit, body, &parameters, allow_casts)
 }
 
 /// Projection.endVisit checks a row's width or the combined widths of an indexed
@@ -132,9 +144,9 @@ fn valid_field_count(edit: &CircuitEditor, body: NodeId, count: usize) -> Result
 pub fn map_projection(
     edit: &CircuitEditor,
     function: NodeId,
-    allow_nested_and_casts: bool,
+    mode: ProjectionMode,
 ) -> Result<MapProjection, Error> {
-    match classify_function(edit, function, allow_nested_and_casts)? {
+    match classify_function(edit, function, mode)? {
         Projection::Other => Ok(MapProjection::Rejected),
         Projection::Fields(fields)
             if edit.expr_kind(edit.expression(function)?)? == Expr::Closure =>
@@ -156,10 +168,10 @@ pub fn map_projection(
 pub fn is_map_projection(
     edit: &CircuitEditor,
     function: NodeId,
-    allow_nested_and_casts: bool,
+    mode: ProjectionMode,
 ) -> Result<bool, Error> {
     Ok(!matches!(
-        classify_function(edit, function, allow_nested_and_casts)?,
+        classify_function(edit, function, mode)?,
         Projection::Other
     ))
 }

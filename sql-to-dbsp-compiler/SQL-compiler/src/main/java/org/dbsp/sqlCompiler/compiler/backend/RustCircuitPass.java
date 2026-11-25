@@ -1892,7 +1892,15 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public static boolean isMapProjection(DBSPCompiler compiler, DBSPExpression function, boolean allowNestedAndCasts) {
-        String pass = allowNestedAndCasts ? "IsNestedProjection" : "IsStrictProjection";
+        return isMapProjection(compiler, function, allowNestedAndCasts ? "IsNestedProjection" : "IsStrictProjection");
+    }
+
+    public static boolean isOutputProjection(DBSPCompiler compiler, DBSPSimpleOperator reader) {
+        String pass = reader instanceof DBSPMapIndexOperator ? "IsFlatProjectionWithCasts" : "IsNestedProjection";
+        return isMapProjection(compiler, reader.getFunction(), pass);
+    }
+
+    private static boolean isMapProjection(DBSPCompiler compiler, DBSPExpression function, String pass) {
         var reply = invokeLowering(compiler, pass, function);
         var result = reply.value;
         if (result.isBoolean())

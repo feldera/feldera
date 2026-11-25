@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.DetectShuffle;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjectionVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjections;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
@@ -202,6 +203,33 @@ public class ProjectionCompositionTests {
             if (hybrid)
                 Assert.assertEquals(expected, error.getMessage());
             expected = error.getMessage();
+        }
+    }
+
+    @Test public void outputProjectionValidatesReadersOfAnUnchangedProducer() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var row = input.getOutputRowType().ref().var();
+        var unbound = new DBSPVariablePath("missing", row.getType());
+        var site = CalciteEmptyRel.INSTANCE;
+        var rowReader = new DBSPMapOperator(site, unbound.deref().closure(row), input);
+        var indexReader = new DBSPMapIndexOperator(site,
+                new DBSPRawTupleExpression(unbound.deref(), row.deref()).closure(row), input);
+        var wholeRow = new DBSPMapOperator(site, row.deref().closure(row), input);
+        for (var reader : List.<DBSPSimpleOperator>of(rowReader, indexReader, wholeRow)) {
+            var circuit = new DBSPCircuit(compiler.metadata, false);
+            circuit.addOperator(source);
+            circuit.addOperator(reader);
+            var graph = new Graph(compiler);
+            graph.apply(circuit);
+            var pass = new OptimizeProjectionVisitor(compiler, graph.getGraphs());
+            var expected = Assert.assertThrows(RuntimeException.class, () -> pass.apply(circuit));
+            String message = expected.getMessage().lines().findFirst().orElseThrow();
+            Assert.assertTrue(message, message.contains(reader == wholeRow ? "IOMap has 0 fields" : "Could not resolve"));
+            var actual = Assert.assertThrows(expected.getClass(), () -> pass.applyNative(circuit));
+            Assert.assertEquals(message, actual.getMessage().lines().findFirst().orElseThrow());
         }
     }
 

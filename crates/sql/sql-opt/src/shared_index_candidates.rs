@@ -2,7 +2,7 @@
 use crate::consumer_graph::consumer_graphs;
 use crate::index_key_equivalence::{KeyComparisonError, check_closures, equivalent};
 use crate::lexical_scope::{Resolution, lexical_references};
-use crate::projection::{is_map_projection, simple_tuple};
+use crate::projection::{ProjectionMode, is_map_projection, simple_tuple};
 use crate::shared_indexes::shares_input_integral;
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{
@@ -115,7 +115,7 @@ fn decomposable(edit: &CircuitEditor, function: NodeId) -> Result<bool, IndexDis
         }
     }
     Ok(simple_tuple(edit, edit.expression_type(body)?.into())?
-        && is_map_projection(edit, function, true)?)
+        && is_map_projection(edit, function, ProjectionMode::NestedWithCasts)?)
 }
 
 /// Keep siblings in visitor order. A bad closure must first be inspected at

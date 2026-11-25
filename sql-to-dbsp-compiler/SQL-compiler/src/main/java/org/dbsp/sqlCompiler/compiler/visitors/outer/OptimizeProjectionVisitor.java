@@ -62,7 +62,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                 if (reader instanceof DBSPMapOperator || reader instanceof DBSPMapIndexOperator) {
                     var input = reader.inputs.get(0);
                     var mapped = this.mapped(input).node();
-                    if (mapped instanceof DBSPSimpleOperator source && source.function != null &&
+                    // Resolving the reader can report a diagnostic even when its input cannot absorb it.
+                    if (RustCircuitPass.isOutputProjection(this.compiler, reader) &&
+                            mapped instanceof DBSPSimpleOperator source && source.function != null &&
                             (source instanceof DBSPConstantOperator || source instanceof DBSPFlatMapOperator || source instanceof IJoin)) {
                         boolean single = this.getGraph().getFanout(input.node()) == 1;
                         var function = RustCircuitPass.projectOutputFunction(this.compiler, source, reader, single);

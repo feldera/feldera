@@ -655,7 +655,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let identity = feldera_sql_opt::identity_closure(&edit, *closure, &mut next)?;
         return Ok(json!({"identity": identity, "next_generated_name": next}));
     }
-    if matches!(pass, "IsStrictProjection" | "IsNestedProjection") {
+    use feldera_sql_opt::ProjectionMode;
+    let projection_mode = match pass {
+        "IsStrictProjection" => Some(ProjectionMode::Strict),
+        "IsFlatProjectionWithCasts" => Some(ProjectionMode::FlatWithCasts),
+        "IsNestedProjection" => Some(ProjectionMode::NestedWithCasts),
+        _ => None,
+    };
+    if let Some(mode) = projection_mode {
         let [function] = roots.as_slice() else {
             return Err("expected one map function".into());
         };
@@ -664,7 +671,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         }
         let edit = feldera_sql_ir::CircuitEditor::new(arena);
         use feldera_sql_opt::MapProjection;
-        return Ok(match feldera_sql_opt::map_projection(&edit, *function, pass == "IsNestedProjection")? {
+        return Ok(match feldera_sql_opt::map_projection(&edit, *function, mode)? {
             MapProjection::Accepted => Value::Bool(true),
             MapProjection::Rejected => Value::Bool(false),
             MapProjection::InvalidFieldMap { fields } => json!({"invalid_field_count": fields}),
@@ -1627,7 +1634,7 @@ fn transform(
         | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "CheckedParameterFieldDependencies" | "SplitInspectedMapInput" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
-        | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
+        | "SplitAntijoinProjection" | "IsNestedProjection" | "IsFlatProjectionWithCasts" | "IsStrictProjection" | "TrimTopKProjection"
         | "FindUnusedInputFields/CheckedColumns" | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/TopKInput"
         | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
