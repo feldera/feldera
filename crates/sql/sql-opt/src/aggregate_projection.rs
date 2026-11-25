@@ -32,47 +32,83 @@ pub fn project_indexed_value(
     edit.closure_from_variables(edit.expression(body)?, &[pair])
 }
 
-/// Narrow the value read by a linear aggregate, retaining the key of its indexed input.
-/// The reader must change before the optimizer allocates a projection for it.
-pub fn trim_linear_aggregate_input<'a>(
+/// The value of an indexed input may be read by an aggregate or by a TopK
+/// producer and its two comparators. The grouping key always passes through.
+pub enum IndexedValueUse {
+    LinearAggregate {
+        paths: BTreeSet<Vec<usize>>,
+    },
+    TopK {
+        paths: BTreeSet<Vec<usize>>,
+        compared_columns: Vec<usize>,
+    },
+}
+
+pub struct IndexedReaderProjection {
+    pub projection: ExpressionId,
+    pub reader: ExpressionId,
+    pub used: Vec<bool>,
+}
+
+/// Derive the input projection and rebind the closure to its output. TopK
+/// also needs the column mask to rebuild its comparators over the new row.
+pub fn trim_indexed_reader<'a>(
     original: &'a Circuit,
     edit: &mut CircuitEditor,
     reader: NodeId,
     input: TypeId,
-    paths: &BTreeSet<Vec<usize>>,
+    consumer: IndexedValueUse,
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
-) -> Result<Option<[ExpressionId; 2]>, FieldRewriteError<'a>> {
-    let [parameter] = edit.node(reader)?.edges("parameters")?[..] else {
-        return Err(Error::new("a linear aggregate requires one input parameter").into());
+) -> Result<Option<IndexedReaderProjection>, FieldRewriteError<'a>> {
+    let parameters = edit.node(reader)?.edges("parameters")?;
+    let (slot, parameter, paths) = match (&consumer, parameters.as_slice()) {
+        (IndexedValueUse::LinearAggregate { paths }, &[row]) => (0, row, paths),
+        (IndexedValueUse::TopK { paths, .. }, &[_, row]) => (1, row, paths),
+        _ => return Err(Error::new("unexpected parameter count in indexed input reader").into()),
     };
     let declared = edit.type_id(edit.node(parameter)?.edge("type")?)?;
     let mut fields = RowFields::new(original);
     if !fields.unused(declared.into(), &[], paths, 1)? {
         return Ok(None);
     }
-    if let Some(issue) = inspect_references(original, reader, false)?.diagnostic {
-        return Err(FieldRewriteError::Binding(issue));
-    }
 
     let mut row = declared;
     while edit.type_kind(row)? == TypeKind::Ref {
         row = edit.type_id(edit.node(row.into())?.edge("type")?)?;
     }
-    let used = if matches!(edit.type_kind(row)?, TypeKind::Tuple | TypeKind::RawTuple) {
+    let mut used = if matches!(edit.type_kind(row)?, TypeKind::Tuple | TypeKind::RawTuple) {
         fields.column_mask(&edit.node(row.into())?.edges("tupFields")?, &[], paths)?
     } else {
         vec![!paths.is_empty()]
     };
+    if let IndexedValueUse::TopK {
+        compared_columns, ..
+    } = &consumer
+    {
+        for &column in compared_columns {
+            *used
+                .get_mut(column)
+                .ok_or_else(|| Error::new("TopK comparator exceeds input arity"))? = true;
+        }
+        if !used.contains(&false) {
+            return Ok(None);
+        }
+    }
+    if let Some(issue) = inspect_references(original, reader, false)?.diagnostic {
+        return Err(FieldRewriteError::Binding(issue));
+    }
     let narrowed = compressed_field_type(edit, declared, 1, &used)?;
     let replacement =
         edit.derive_inner(parameter, [("type", Field::Reference(narrowed.into()))])?;
-    let rebound = rebind_parameters(edit, reader, [(0, replacement, used.as_slice())])?;
-    let mut terms = Terms::default();
-    if terms.field(edit.circuit(), &Field::Reference(reader), &[])
-        == terms.field(edit.circuit(), &Field::Reference(rebound.into()), &[])
-    {
-        return Ok(None);
+    let rebound = rebind_parameters(edit, reader, [(slot, replacement, used.as_slice())])?;
+    if matches!(consumer, IndexedValueUse::LinearAggregate { .. }) {
+        let mut terms = Terms::default();
+        if terms.field(edit.circuit(), &Field::Reference(reader), &[])
+            == terms.field(edit.circuit(), &Field::Reference(rebound.into()), &[])
+        {
+            return Ok(None);
+        }
     }
 
     // Recording a use borrows the original value again. A constant reader
@@ -82,9 +118,13 @@ pub fn trim_linear_aggregate_input<'a>(
     } else {
         declared
     };
-    let value = project_used_fields(edit, projection_type, used, next)?;
+    let value = project_used_fields(edit, projection_type, used.clone(), next)?;
     let projection = project_indexed_value(edit, input, value, next, warnings)?;
-    Ok(Some([projection, rebound]))
+    Ok(Some(IndexedReaderProjection {
+        projection,
+        reader: rebound,
+        used,
+    }))
 }
 
 pub struct AggregateProjection {

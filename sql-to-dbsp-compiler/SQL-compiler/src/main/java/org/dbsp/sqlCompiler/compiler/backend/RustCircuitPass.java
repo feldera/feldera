@@ -1623,23 +1623,46 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public record IndexedReaderProjection(DBSPClosureExpression projection, DBSPClosureExpression reader,
+                                          List<Boolean> used) {}
+
     @Nullable
     public static Pair<DBSPClosureExpression, DBSPClosureExpression> trimLinearAggregateInput(DBSPCompiler compiler,
             DBSPClosureExpression reader, DBSPType input) {
-        String pass = "RemoveUnusedFields/LinearAggregateInput";
         var paths = requiredParameterFieldDependencies(compiler, reader).getFirst();
+        var plan = trimIndexedReader(compiler, "RemoveUnusedFields/LinearAggregateInput", reader, input, paths);
+        return plan == null ? null : Pair.of(plan.projection, plan.reader);
+    }
+
+    @Nullable
+    public static IndexedReaderProjection trimTopKInput(DBSPCompiler compiler, DBSPClosureExpression producer,
+            DBSPType input, DBSPComparatorExpression rank, DBSPComparatorExpression ties) {
+        var paths = requiredParameterFieldDependencies(compiler, producer).get(1);
+        var columns = topKComparedFields(compiler, rank, ties);
+        if (columns == null)
+            return null;
+        int width = producer.parameters[1].getType().deref().getToplevelFieldCount();
+        columns.forEach(column -> Objects.checkIndex(column, width));
+        return trimIndexedReader(compiler, "RemoveUnusedFields/TopKInput", producer, input, List.of(columns, paths));
+    }
+
+    @Nullable
+    private static IndexedReaderProjection trimIndexedReader(DBSPCompiler compiler, String pass,
+            DBSPClosureExpression reader, DBSPType input, List<?> usage) {
         try {
-            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(paths), reader, input);
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(usage), reader, input);
             if (compiler.stateObserver != null)
                 compiler.stateObserver.nativeDecision(pass, true);
             if (reply.value.isNull())
                 return null;
             if (reply.value.has("diagnostic"))
                 checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
+            var functions = decodeClosurePair(new LoweringReply(reply.writer, reply.value.required("functions")));
             finishLowering(compiler, reply.value);
-            return decodeClosurePair(new LoweringReply(reply.writer, reply.value.required("functions")));
+            return new IndexedReaderProjection(functions.left, functions.right,
+                    MAPPER.convertValue(reply.value.required("used"), new TypeReference<>() {}));
         } catch (IOException error) {
-            throw new UncheckedIOException("Could not encode linear aggregate field paths", error);
+            throw new UncheckedIOException("Could not encode field paths for " + pass, error);
         }
     }
 

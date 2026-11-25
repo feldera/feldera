@@ -391,17 +391,6 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 byField.getNode(), source, newFieldNo, byField.ascending, byField.nullsFirst);
     }
 
-    private boolean markComparedFields(DBSPComparatorExpression rank, DBSPComparatorExpression ties,
-                                       FieldUseMap fields) {
-        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
-            return setComparedFieldsToUsed(rank, fields) && setComparedFieldsToUsed(ties, fields);
-        var columns = RustCircuitPass.topKComparedFields(this.compiler, rank, ties);
-        if (columns == null)
-            return false;
-        columns.forEach(fields::setUsed);
-        return true;
-    }
-
     @Override
     public void postorder(DBSPIndexedTopKOperator operator) {
         // The rank comparator, tie comparator and output producer all read the input row.
@@ -415,25 +404,36 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression producer = operator.outputProducer
                 .ensureTree(this.compiler).to(DBSPClosureExpression.class);
         Utilities.enforce(producer.parameters.length == 2);
-        ParameterFieldUse useMap = this.find.findUsedFields(producer);
-        // The rank (parameter 0) is a scalar; mark it used
-        useMap.get(producer.parameters[0]).setUsed();
-        FieldUseMap rowUse = useMap.get(producer.parameters[1]);
-        FieldUseMap rowFields = rowUse.deref();
-        if (!this.markComparedFields(comparator, equality, rowFields) || !rowUse.hasUnusedFields(1)) {
-            super.postorder(operator);
-            return;
+        DBSPMapIndexOperator adjust;
+        DBSPClosureExpression newProducer;
+        Pair<DBSPComparatorExpression, DBSPComparatorExpression> orders;
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var plan = RustCircuitPass.trimTopKInput(this.compiler, producer,
+                    operator.input().getOutputIndexedZSetType().getKVRefType(), comparator, equality);
+            if (plan == null) {
+                super.postorder(operator);
+                return;
+            }
+            newProducer = plan.reader();
+            adjust = this.projectValue(operator, plan.projection());
+            orders = RustCircuitPass.projectTopKComparators(this.compiler, comparator, equality,
+                    adjust.getOutputIndexedZSetType().elementType, plan.used());
+        } else {
+            ParameterFieldUse useMap = this.find.findUsedFields(producer);
+            useMap.get(producer.parameters[0]).setUsed();
+            var rowUse = useMap.get(producer.parameters[1]);
+            var rowFields = rowUse.deref();
+            if (!setComparedFieldsToUsed(comparator, rowFields)
+                    || !setComparedFieldsToUsed(equality, rowFields) || !rowUse.hasUnusedFields(1)) {
+                super.postorder(operator);
+                return;
+            }
+            newProducer = useMap.getFieldRewriter(this.compiler, 1).rewriteClosure(producer);
+            adjust = this.projectValue(operator, rowUse);
+            var rowType = adjust.getOutputIndexedZSetType().elementType;
+            orders = Pair.of(remapComparedFields(comparator, rowFields, rowType),
+                    remapComparedFields(equality, rowFields, rowType));
         }
-
-        RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
-        DBSPClosureExpression newProducer = rw.rewriteClosure(producer);
-        DBSPMapIndexOperator adjust = this.projectValue(operator, rowUse);
-        DBSPType newRowType = adjust.getOutputIndexedZSetType().elementType;
-        var orders = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.projectTopKComparators(this.compiler, comparator, equality,
-                        newRowType, rowFields.usageAtDepth(1))
-                : Pair.of(remapComparedFields(comparator, rowFields, newRowType),
-                        remapComparedFields(equality, rowFields, newRowType));
         DBSPEqualityComparatorExpression newEquality = new DBSPEqualityComparatorExpression(
                 operator.equalityComparator.getNode(), orders.right);
         DBSPSimpleOperator result = new DBSPIndexedTopKOperator(
