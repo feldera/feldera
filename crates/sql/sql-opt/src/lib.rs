@@ -70,7 +70,7 @@ pub use projected_reader::{TupleUsage, rebind_projected_aggregate, rebind_projec
 mod compressed_fields;
 pub use compressed_fields::compressed_field_type;
 mod map_input;
-pub use map_input::{split_map_input, MapOutput};
+pub use map_input::{MapOutput, MapSplitError, checked_split_map_input, split_map_input};
 mod join_input;
 pub use join_input::{narrow_join_inputs, project_join_input, JoinInputRewrite};
 mod common_projections;

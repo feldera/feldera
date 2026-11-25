@@ -357,6 +357,62 @@ public class JoinInputProjectionTests {
     }
 
     @Test
+    public void mapSplitChecksOriginalBindingsOnlyWhenRewritingTheReader() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var type = source.getOutput(0).getOutputRowType().ref();
+        var outer = new DBSPParameter("row", type);
+        var inner = new DBSPParameter("row", type);
+        var shared = outer.asVariable();
+        var nested = shared.deref().field(0).closure(inner);
+        var answers = new ArrayList<Boolean>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void nativeDecision(String pass, boolean answered) {
+                if (pass.equals("SplitInspectedMapInput"))
+                    answers.add(answered);
+            }
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass,
+                                        DBSPCircuit output, boolean completed) {}
+        };
+        for (boolean narrow : List.of(false, true)) {
+            var tail = narrow ? new DBSPTupleExpression(shared.deref().field(1)) : shared.deref();
+            var reader = new DBSPBlockExpression(List.of(nested.toStatement()), tail).closure(outer);
+            var map = new DBSPMapOperator(CalciteEmptyRel.INSTANCE, reader, source.getOutput(0));
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            circuit.addOperator(source);
+            circuit.addOperator(map);
+            String expected = null;
+            long expectedNames = 0;
+            for (boolean hybrid : List.of(false, true)) {
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                var pass = new RemoveUnusedFields(compiler, new AnalyzedSet<>());
+                answers.clear();
+                long before = DBSPVariablePath.nextGeneratedName();
+                if (narrow) {
+                    var failure = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+                    Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("Changing declaration"));
+                    if (hybrid)
+                        Assert.assertEquals(expected, failure.getMessage());
+                    else
+                        expected = failure.getMessage();
+                } else {
+                    Assert.assertSame(map, pass.apply(circuit).allOperators.get(1));
+                }
+                long allocated = DBSPVariablePath.nextGeneratedName() - before;
+                if (hybrid) {
+                    Assert.assertEquals(expectedNames, allocated);
+                    Assert.assertEquals(List.of(true), answers);
+                } else {
+                    expectedNames = allocated;
+                }
+            }
+        }
+    }
+
+    @Test
     public void fieldUseFailuresComeFromRustInEvaluationOrder() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
         var compiler = new DBSPCompiler(new CompilerOptions());

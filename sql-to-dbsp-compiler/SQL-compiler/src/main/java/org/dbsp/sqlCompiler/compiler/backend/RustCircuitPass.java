@@ -1782,11 +1782,26 @@ public final class RustCircuitPass implements CircuitTransform {
 
     @Nullable
     public static Pair<DBSPClosureExpression, DBSPClosureExpression> splitMapInput(DBSPCompiler compiler,
-            DBSPUnaryOperator map, List<List<Integer>> paths) {
+            DBSPUnaryOperator map, @Nullable List<List<Integer>> paths) {
         try {
-            String pass = map instanceof DBSPMapIndexOperator ? "SplitIndexedMapInput" : "SplitRowMapInput";
-            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(paths), map.getClosureFunction());
+            boolean indexed = map instanceof DBSPMapIndexOperator;
+            var closure = map.getClosureFunction();
+            String pass;
+            byte[] state;
+            if (paths == null) {
+                pass = "SplitInspectedMapInput";
+                var inputs = requiredParameterFieldDependencies(compiler, closure);
+                state = MAPPER.writeValueAsBytes(List.of(indexed, inputs.getFirst()));
+            } else {
+                pass = indexed ? "SplitIndexedMapInput" : "SplitRowMapInput";
+                state = MAPPER.writeValueAsBytes(paths);
+            }
+            var reply = invokeLowering(compiler, pass, state, closure);
             DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            if (compiler.stateObserver != null && paths == null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.has("diagnostic"))
+                checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
             var functions = reply.value.required("functions");
             return functions.isNull() ? null : decodeClosurePair(new LoweringReply(reply.writer, functions));
         } catch (IOException error) {

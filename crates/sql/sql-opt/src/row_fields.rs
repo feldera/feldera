@@ -16,6 +16,30 @@ impl<'a> RowFields<'a> {
         }
     }
 
+    pub(super) fn map_has_unused_fields(
+        &mut self,
+        reader: NodeId,
+        paths: &BTreeSet<Vec<usize>>,
+    ) -> Result<bool, Error> {
+        let [parameter] = self
+            .circuit
+            .node(reader)
+            .expect("validated map closure")
+            .edges("parameters")?
+            .try_into()
+            .map_err(|_| Error::new("expected a unary map"))?;
+        let ty = self
+            .circuit
+            .node(parameter)
+            .expect("validated parameter")
+            .edge("type")?;
+        let borrowed = matches!(
+            self.circuit.node(ty).and_then(|node| node.inner_kind()),
+            Some(InnerKind::Type(Ty::Ref))
+        );
+        self.unused(ty, &[], paths, if borrowed { 1 } else { 2 })
+    }
+
     /// Minimum projection depth at which a row with no reads has an unused field.
     /// An empty tuple is always kept. A row containing both an empty tuple and
     /// a scalar must be opened at least once before the scalar can be discarded.

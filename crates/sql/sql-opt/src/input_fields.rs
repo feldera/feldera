@@ -2,7 +2,7 @@
 use crate::row_fields::RowFields;
 use crate::stream_rewrites::{body_members, reader_counts};
 use feldera_sql_expr::{live_field_dependencies, live_parameter_field_paths};
-use feldera_sql_ir::{BodyOrder, Circuit, Error, InnerKind, NodeId, OperatorKind as Op, TypeKind};
+use feldera_sql_ir::{BodyOrder, Circuit, Error, NodeId, OperatorKind as Op};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub type ParameterPaths = Vec<BTreeSet<Vec<usize>>>;
@@ -87,22 +87,7 @@ pub fn map_field_dependencies(circuit: &Circuit) -> Result<BTreeMap<u64, MapInpu
             let Some(paths) = unary_paths(live_parameter_field_paths(circuit, function)?)? else {
                 return Ok((number, MapInputLayout::Inspect));
             };
-            let [param] = circuit
-                .node(function)
-                .expect("validated closure")
-                .edges("parameters")?
-                .try_into()
-                .map_err(|_| Error::new("expected a unary map"))?;
-            let ty = circuit
-                .node(param)
-                .expect("validated parameter")
-                .edge("type")?;
-            let borrowed = matches!(
-                circuit.node(ty).and_then(|n| n.inner_kind()),
-                Some(InnerKind::Type(TypeKind::Ref))
-            );
-            let depth = if borrowed { 1 } else { 2 };
-            let unused = fields.unused(ty, &[], &paths, depth)?;
+            let unused = fields.map_has_unused_fields(function, &paths)?;
             Ok((
                 number,
                 if unused {

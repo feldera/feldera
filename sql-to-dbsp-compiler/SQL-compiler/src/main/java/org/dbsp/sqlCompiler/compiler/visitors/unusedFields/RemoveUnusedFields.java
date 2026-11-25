@@ -568,7 +568,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             split = switch (layout.kind()) {
                 case Keep -> null;
                 case Project -> RustCircuitPass.splitMapInput(this.compiler, map, Objects.requireNonNull(layout.paths()));
-                case Inspect -> this.splitMapClosure(closure, indexedInput, indexedOutput);
+                case Inspect -> RustCircuitPass.splitMapInput(this.compiler, map, null);
             };
         } else {
             split = this.splitMapClosure(closure, indexedInput, indexedOutput);

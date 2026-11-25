@@ -1164,14 +1164,23 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let statements = feldera_sql_opt::lazy_statements(&mut edit, pairs)?;
             return Ok(serde_json::to_value(edit.circuit().additional_inner_nodes(&arena, statements)?)?);
         }
-        ("SplitRowMapInput" | "SplitIndexedMapInput", [reader]) => {
-            let output = if pass == "SplitIndexedMapInput" {
-                feldera_sql_opt::MapOutput::Indexed
+        ("SplitRowMapInput" | "SplitIndexedMapInput" | "SplitInspectedMapInput", [reader]) => {
+            use feldera_sql_opt::{MapOutput, MapSplitError};
+            let pair = if pass == "SplitInspectedMapInput" {
+                let (indexed, paths) = serde_json::from_slice(state)?;
+                let output = if indexed { MapOutput::Indexed } else { MapOutput::Row };
+                match feldera_sql_opt::checked_split_map_input(&arena, &mut edit, *reader, &paths, output, &mut next) {
+                    Ok(pair) => pair,
+                    Err(MapSplitError::InvalidIr(error)) => return Err(error.into()),
+                    Err(MapSplitError::Binding(issue)) => {
+                        return Ok(json!({"diagnostic":binding_diagnostic(issue), "next_generated_name":next}));
+                    }
+                }
             } else {
-                feldera_sql_opt::MapOutput::Row
+                let output = if pass == "SplitIndexedMapInput" { MapOutput::Indexed } else { MapOutput::Row };
+                let paths = serde_json::from_slice(state)?;
+                feldera_sql_opt::split_map_input(&mut edit, *reader, &paths, output, &mut next)?
             };
-            let paths = serde_json::from_slice(state)?;
-            let pair = feldera_sql_opt::split_map_input(&mut edit, *reader, &paths, output, &mut next)?;
             let functions = pair.map(|roots| edit.circuit().additional_expressions(&arena, &roots)).transpose()?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
@@ -1600,7 +1609,7 @@ fn transform(
         | "Monotonicity/Clock" | "Monotonicity/RowClosure" | "Monotonicity/InspectBody"
         | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ExpressionFacts" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/MinimumForOutput" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "RewriteNow/ClockSites" | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
-        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "CheckedParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "CheckedParameterFieldDependencies" | "SplitInspectedMapInput" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
