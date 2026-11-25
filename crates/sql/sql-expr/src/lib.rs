@@ -2,7 +2,7 @@
 
 pub mod constant_rows;
 mod canonical;
-pub use canonical::{canonical_constructor_simplifies, canonicalize_names};
+pub use canonical::{canonical_constructor_simplifies, canonicalize_names, canonicalize_projection};
 mod tree;
 pub use tree::{copy_expression, ensure_expression_tree, first_repeated_expression, flatten_tuple_fields, is_expression_tree};
 mod beta;

@@ -72,12 +72,20 @@ pub trait Transformation {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RewriteMode {
+    PerOccurrence,
+    ExpressionTranslator,
+    /// Every variable read has a unique declaration and each declaration occurs once.
+    BoundProjection,
+}
+
 /// Rebuild changed expressions at each use, as the compiler visitor does.
 /// An unchanged subtree can retain its original identity at every use.
 pub struct Rewrite<T> {
     pub rule: T,
     translations: HashMap<NodeId, NodeId>,
-    expression_translation: bool,
+    mode: RewriteMode,
 }
 
 impl<T: Transformation> Rewrite<T> {
@@ -85,14 +93,21 @@ impl<T: Transformation> Rewrite<T> {
         Self {
             rule,
             translations: HashMap::new(),
-            expression_translation: false,
+            mode: RewriteMode::PerOccurrence,
         }
     }
 
     /// ExpressionTranslator shares replacements and retains each raw tuple's declared type.
     pub fn translating_expressions(rule: T) -> Self {
         Self {
-            expression_translation: true,
+            mode: RewriteMode::ExpressionTranslator,
+            ..Self::new(rule)
+        }
+    }
+
+    pub(super) fn bound_projection(rule: T) -> Self {
+        Self {
+            mode: RewriteMode::BoundProjection,
             ..Self::new(rule)
         }
     }
@@ -121,6 +136,8 @@ impl<T: Transformation> Rewrite<T> {
                         self.rule.independent_child(arena, parent, field, child)?
                     {
                         results.push(result);
+                    } else if self.mode == RewriteMode::BoundProjection {
+                        pending.push(Step::Visit(child));
                     } else {
                         enclosing.push(std::mem::take(&mut self.translations));
                         pending.extend([Step::RestoreTranslations, Step::Visit(child)]);
@@ -151,8 +168,8 @@ impl<T: Transformation> Rewrite<T> {
                             continue;
                         }
                         Visit::Children => {
-                            let children =
-                                Children::new(arena.node(id)?, self.expression_translation);
+                            let translating = self.mode == RewriteMode::ExpressionTranslator;
+                            let children = Children::new(arena.node(id)?, translating);
                             for (_, field) in children.fields() {
                                 field.collect_inner_edges(&mut edges);
                             }
@@ -204,7 +221,7 @@ impl<T: Transformation> Rewrite<T> {
                 }
             };
             active.remove(&id);
-            if result == id || self.expression_translation {
+            if result == id || self.mode != RewriteMode::PerOccurrence {
                 self.translations.insert(id, result);
             }
             results.push(result);
@@ -224,7 +241,8 @@ impl<T: Transformation> Rewrite<T> {
             return Ok(id);
         }
         let expr = children.expression;
-        let transformed = if self.expression_translation
+        let translating = self.mode == RewriteMode::ExpressionTranslator;
+        let transformed = if translating
             && matches!(
                 expr,
                 Some(ExpressionKind::Apply | ExpressionKind::ApplyMethod | ExpressionKind::Block)
@@ -248,11 +266,11 @@ impl<T: Transformation> Rewrite<T> {
             )
         } else if expr == Some(ExpressionKind::Field) {
             self.rule
-                .rebuild_field(arena, id, transformed, self.expression_translation)
+                .rebuild_field(arena, id, transformed, translating)
         } else if expr == Some(ExpressionKind::IsNull) {
             self.rule.rebuild_null_test(arena, transformed)
         } else {
-            rebuild_result_type(arena, transformed, expr, self.expression_translation)
+            rebuild_result_type(arena, transformed, expr, translating)
         }
     }
 }

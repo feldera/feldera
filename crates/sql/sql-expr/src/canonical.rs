@@ -4,7 +4,7 @@ use super::{
     Transformation, Visit,
 };
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, NodeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 enum Binding {
     Parameter(NodeId),
@@ -314,6 +314,48 @@ pub fn canonicalize_names(edit: &mut CircuitEditor, root: NodeId) -> Result<Node
     let mut names = Names::default();
     names.scopes.push(HashMap::new());
     Rewrite::new(&mut names).apply(edit, root)
+}
+
+/// Canonicalize a closed projection for comparison by its printed value. Reuse
+/// rewritten operands even across call arguments when every read has one binding.
+/// A declaration reached twice would allocate a fresh name on its second visit.
+pub fn canonicalize_projection(
+    edit: &mut CircuitEditor,
+    closure: NodeId,
+) -> Result<Option<NodeId>, Error> {
+    use crate::lexical_scope::{lexical_references, push_expression_children, Resolution};
+
+    let mut seen = HashSet::new();
+    let mut repeated = HashSet::new();
+    let mut pending = vec![closure];
+    while let Some(id) = pending.pop() {
+        let node = edit.node(id)?;
+        if matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
+            continue;
+        }
+        if !seen.insert(id) {
+            if !repeated.insert(id) {
+                continue;
+            }
+            if matches!(
+                node.inner_kind(),
+                Some(InnerKind::Parameter | InnerKind::Expression(Expr::Let) | InnerKind::AggregateList)
+            ) || node.class() == "DBSPLetStatement" {
+                return Ok(None);
+            }
+        }
+        // Propagate a second visit to descendants, including declarations inside
+        // a shared compound expression. Each input edge is examined at most twice.
+        push_expression_children(node, &mut pending);
+    }
+    if !matches!(lexical_references(edit.circuit(), closure)?, Resolution::Bound(_)) {
+        return Ok(None);
+    }
+    let mut names = Names::default();
+    names.scopes.push(HashMap::new());
+    Rewrite::bound_projection(&mut names)
+        .apply(edit, closure)
+        .map(Some)
 }
 
 #[cfg(test)]

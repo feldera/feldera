@@ -1080,6 +1080,23 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void windowSharingFoldsSharedCalculationsInsideClosures() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(3, (row, i) -> {
+            var parameter = b.refVar(b.tup(time));
+            DBSPExpression field = b.field(row, i == 2 ? 1 : 0);
+            if (i == 0)
+                field = new DBSPCastExpression(site, field, time, DBSPCastExpression.CastType.SqlUnsafe);
+            var shared = b.call(time, "read_timestamp", field);
+            var body = b.call(time, "combine", shared, shared, b.field(parameter, 0));
+            return b.call(time, "choose", body.closure(parameter));
+        }, List.of(0, 1));
+    }
+
+    @Test
     public void windowKeysKeepNamesAllocatedInDiscardedTupleFields() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();
