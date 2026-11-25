@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.ProvenanceCodec;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -1630,12 +1631,52 @@ public final class RustCircuitPass implements CircuitTransform {
     public record IndexedReaderProjection(DBSPClosureExpression projection, DBSPClosureExpression reader,
                                           List<Boolean> used) {}
 
-    @Nullable
-    public static Pair<DBSPClosureExpression, DBSPClosureExpression> trimLinearAggregateInput(DBSPCompiler compiler,
-            DBSPClosureExpression reader, DBSPType input) {
-        var paths = requiredParameterFieldDependencies(compiler, reader).getFirst();
-        var plan = trimIndexedReader(compiler, "RemoveUnusedFields/LinearAggregateInput", reader, input, paths);
-        return plan == null ? null : Pair.of(plan.projection, plan.reader);
+    public static List<DBSPSimpleOperator> trimLinearAggregateInput(DBSPCompiler compiler,
+            DBSPAggregateLinearPostprocessOperator operator, OutputPort input) {
+        var reader = operator.getClosureFunction();
+        var reads = requiredParameterFieldDependencies(compiler, reader).getFirst();
+        return narrowedUnary(compiler, operator, input, "LinearAggregate", reads, operator.outputType,
+                reader, operator.input().getOutputIndexedZSetType().getKVRefType(), operator.postProcess);
+    }
+
+    public static List<DBSPSimpleOperator> trimFlatmapInput(DBSPCompiler compiler,
+            DBSPFlatMapOperator operator, OutputPort input, DBSPFlatmap flatmap) {
+        var reads = requiredParameterFieldDependencies(compiler, flatmap.collectionExpression).getFirst();
+        return narrowedUnary(compiler, operator, input, "Flatmap", reads, operator.outputType, flatmap);
+    }
+
+    private static List<DBSPSimpleOperator> narrowedUnary(DBSPCompiler compiler, DBSPUnaryOperator operator,
+            OutputPort input, String kind, List<?> reads, IDBSPInnerNode... operands) {
+        String pass = "RemoveUnusedFields/UnaryOperators";
+        var request = expressionSite(operator.getRelNode());
+        request.put("kind", kind);
+        request.put("port", input.outputNumber);
+        request.set("reads", MAPPER.valueToTree(reads));
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request), operands);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.isNull())
+                return List.of();
+            if (reply.value.has("diagnostic")) {
+                // UNNEST allocates its projection before checking the original reader.
+                if (operator instanceof DBSPFlatMapOperator)
+                    DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+                checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
+            }
+            var operators = decodeOperatorFragment(reply, op -> operator.getRelNode(), input.node());
+            Utilities.enforce(operators.size() == 2);
+            int width = operator instanceof DBSPFlatMapOperator
+                    ? operator.input().getOutputZSetElementType().to(DBSPTypeTuple.class).getToplevelFieldCount()
+                    : operator.getType().getToplevelFieldCount();
+            operators.getFirst().addAnnotation(new IsProjection(width), DBSPSimpleOperator.class);
+            if (operator instanceof DBSPStreamAggregateOperator)
+                operators.getLast().copyAnnotations(operator);
+            reportWarnings(compiler, reply.value.required("warnings"));
+            return operators;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode fields for " + kind, error);
+        }
     }
 
     @Nullable
@@ -1693,12 +1734,13 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    @Nullable
-    public static Pair<DBSPClosureExpression, DBSPAggregateList> trimStreamAggregateInput(
-            DBSPCompiler compiler, DBSPAggregateList list, DBSPType input) {
+    public static List<DBSPSimpleOperator> trimStreamAggregateInput(
+            DBSPCompiler compiler, DBSPStreamAggregateOperator operator, OutputPort input, DBSPAggregateList list) {
         var parts = new ArrayList<IDBSPInnerNode>();
-        parts.add(input);
-        parts.add(list.rowVar.getType());
+        parts.add(operator.outputType);
+        parts.add(operator.input().getOutputIndexedZSetType().getKVRefType());
+        parts.add(list.rowVar);
+        parts.add(list.getEmptySetResult());
         var reads = new ArrayList<List<List<Integer>>>();
         for (var part : list.aggregates) {
             if (part instanceof MinMaxAggregate minMax) {
@@ -1714,29 +1756,7 @@ public final class RustCircuitPass implements CircuitTransform {
             }
         }
 
-        String pass = "RemoveUnusedFields/StreamAggregateInput";
-        try {
-            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(reads), parts.toArray(IDBSPInnerNode[]::new));
-            if (compiler.stateObserver != null)
-                compiler.stateObserver.nativeDecision(pass, true);
-            if (reply.value.isNull())
-                return null;
-            if (reply.value.has("diagnostic"))
-                checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
-            var roots = reply.value.required("roots");
-            Utilities.enforce(roots.size() == parts.size());
-            var decoder = expressionDecoder(reply.writer);
-            var project = Objects.requireNonNull(decodeLiveRoot(decoder, roots.required(0), DBSPClosureExpression.class));
-            var type = Objects.requireNonNull(decodeLiveRoot(decoder, roots.required(1), DBSPType.class));
-            var row = new DBSPVariablePath(list.rowVar.variable, type);
-            var components = new ArrayList<IAggregate>();
-            for (int i = 2; i < roots.size(); i++)
-                components.add(Objects.requireNonNull(decodeLiveRoot(decoder, roots.required(i), IAggregate.class)));
-            finishLowering(compiler, reply.value);
-            return Pair.of(project, new DBSPAggregateList(list.getNode(), row, components));
-        } catch (IOException error) {
-            throw new UncheckedIOException("Could not encode stream aggregate field reads", error);
-        }
+        return narrowedUnary(compiler, operator, input, "StreamAggregate", reads, parts.toArray(IDBSPInnerNode[]::new));
     }
 
     public static IAggregate rebindProjectedAggregate(DBSPCompiler compiler, IAggregate aggregate,

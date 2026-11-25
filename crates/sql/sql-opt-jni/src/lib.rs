@@ -2,6 +2,7 @@
 //! objects when an invocation changes only the generated-name counter.
 mod fragment;
 mod split_map;
+mod narrowed_unary;
 mod repeat;
 mod waterlines;
 mod delta_expansion;
@@ -1246,14 +1247,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             closure
         }
-        ("RemoveUnusedFields/LinearAggregateInput" | "RemoveUnusedFields/TopKInput", [reader, input]) => {
+        ("RemoveUnusedFields/TopKInput", [reader, input]) => {
             use feldera_sql_opt::{FieldRewriteError, IndexedValueUse};
-            let consumer = if pass == "RemoveUnusedFields/TopKInput" {
-                let (compared_columns, paths) = serde_json::from_slice(state)?;
-                IndexedValueUse::TopK { compared_columns, paths }
-            } else {
-                IndexedValueUse::LinearAggregate { paths: serde_json::from_slice(state)? }
-            };
+            let (compared_columns, paths) = serde_json::from_slice(state)?;
+            let consumer = IndexedValueUse::TopK { compared_columns, paths };
             let input = edit.type_id(*input)?;
             let result = feldera_sql_opt::trim_indexed_reader(
                 &arena, &mut edit, *reader, input, consumer, &mut next, &mut warnings,
@@ -1280,22 +1277,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             return Ok(json!({"functions": edit.circuit().additional_expressions(&arena, &functions)?,
                 "next_generated_name": next}));
-        }
-        ("RemoveUnusedFields/StreamAggregateInput", [pair, row, components @ ..]) => {
-            let input = feldera_sql_opt::AggregateInput {
-                pair: edit.type_id(*pair)?, row: edit.type_id(*row)?, components,
-            };
-            let reads = serde_json::from_slice(state)?;
-            let plan = match feldera_sql_opt::trim_aggregate_input(&arena, &mut edit, input, reads, &mut next, &mut warnings) {
-                Ok(Some(plan)) => plan,
-                Ok(None) => return Ok(Value::Null),
-                Err(feldera_sql_opt::FieldRewriteError::Binding(issue)) => return Ok(json!({"diagnostic": binding_diagnostic(issue)})),
-                Err(feldera_sql_opt::FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
-            };
-            let mut roots = vec![plan.projection.into(), plan.row.into()];
-            roots.extend(plan.components.into_iter().map(NodeId::from));
-            return Ok(json!({"roots": edit.circuit().live_inner_roots(&arena, &roots)?,
-                "warnings": pass_warnings(warnings), "next_generated_name": next}));
         }
         ("RemoveUnusedFields/AggregateReader", [aggregate, rows @ ..]) => {
             let used: Vec<bool> = serde_json::from_slice(state)?;
@@ -1653,6 +1634,7 @@ fn transform(
         "Monotonicity/Asof" => return asof_waterline(input, state, next),
         "Monotonicity/Hop" => return hop_waterline(input, state, next),
         "ExpandHop/Window" => return expand_hop(input, state, next),
+        "RemoveUnusedFields/UnaryOperators" => return narrowed_unary::operators(input, state, next),
         "RemoveUnusedFields/SplitMap" => return split_map::operators(input, state, next),
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
@@ -1669,7 +1651,7 @@ fn transform(
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
-        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/LinearAggregateInput" | "RemoveUnusedFields/TopKInput" | "RemoveUnusedFields/StreamAggregateInput"
+        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/TopKInput"
         | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
         | "FuseExpensiveMaps/Scan" | "FuseExpensiveMaps/DuplicateField" | "FuseExpensiveMaps/Siblings" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {

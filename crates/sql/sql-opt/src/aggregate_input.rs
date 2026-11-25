@@ -4,7 +4,9 @@ use crate::{
     project_indexed_value, project_used_fields, rebind_projected_aggregate, row_fields::RowFields,
 };
 use feldera_sql_expr::SimplifyWarning;
-use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, TypeId};
+use feldera_sql_ir::{
+    Circuit, CircuitEditor, Error, ExpressionId, Field, InnerKind, NodeId, TypeId,
+};
 use std::collections::{BTreeSet, HashMap};
 
 pub struct AggregateInput<'a> {
@@ -76,4 +78,46 @@ pub fn trim_aggregate_input<'a>(
         row,
         components,
     }))
+}
+
+impl ProjectedAggregateInput {
+    /// The list constructor caches a fresh tuple of the new components' empty results.
+    /// Later circuit expansion can observe both the tuple and its type by identity.
+    pub fn aggregate_list(
+        &self,
+        edit: &mut CircuitEditor,
+        row_variable: NodeId,
+        original_empty_tuple: NodeId,
+    ) -> Result<NodeId, Error> {
+        let row = edit
+            .derive_unlocated_inner(row_variable, [("type", Field::Reference(self.row.into()))])?;
+        let empty_fields = self
+            .components
+            .iter()
+            .map(|&part| edit.expression(edit.node(part.into())?.edge("emptySetResult")?))
+            .collect::<Result<Vec<_>, _>>()?;
+        let field_types = empty_fields
+            .iter()
+            .map(|&expr| edit.expression_type(expr).map(NodeId::from))
+            .collect::<Result<Vec<_>, _>>()?;
+        let ty = edit.tuple_type(original_empty_tuple, false, field_types)?;
+        let empty = edit.tuple_with_type_at(original_empty_tuple, ty, &empty_fields)?;
+        edit.inner_at(
+            original_empty_tuple,
+            InnerKind::AggregateList,
+            [
+                ("rowVar", Field::Reference(row)),
+                (
+                    "aggregates",
+                    Field::Array(
+                        self.components
+                            .iter()
+                            .map(|&part| Field::Reference(part.into()))
+                            .collect(),
+                    ),
+                ),
+                ("cachedEmptySetResult", Field::Reference(empty.into())),
+            ],
+        )
+    }
 }

@@ -324,6 +324,14 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 .closure(var);
     }
 
+    private boolean applyInputProjection(DBSPUnaryOperator operator, List<DBSPSimpleOperator> operators) {
+        if (operators.isEmpty())
+            return false;
+        this.addOperator(operators.getFirst());
+        this.map(operator, operators.getLast());
+        return true;
+    }
+
     @Override
     public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
         DBSPClosureExpression closure = operator.getClosureFunction();
@@ -332,10 +340,15 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
         Utilities.enforce(closure.parameters.length == 1);
-        var split = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.trimLinearAggregateInput(this.compiler, closure,
-                        operator.input().getOutputIndexedZSetType().getKVRefType())
-                : this.trimLinearAggregateInput(closure, operator.input());
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var operators = RustCircuitPass.trimLinearAggregateInput(this.compiler, operator, this.mapped(operator.input()));
+            if (!this.applyInputProjection(operator, operators)) {
+                this.noUnusedFields(closure);
+                super.postorder(operator);
+            }
+            return;
+        }
+        var split = this.trimLinearAggregateInput(closure, operator.input());
         if (split == null) {
             this.noUnusedFields(closure);
             super.postorder(operator);
@@ -452,9 +465,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
 
-        var narrowed = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.trimFlatmapInput(this.compiler, flatmap)
-                : this.trimFlatmapInput(flatmap);
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var operators = RustCircuitPass.trimFlatmapInput(this.compiler, operator, this.mapped(operator.input()), flatmap);
+            if (!this.applyInputProjection(operator, operators))
+                super.postorder(operator);
+            return;
+        }
+        var narrowed = this.trimFlatmapInput(flatmap);
         if (narrowed == null) {
             super.postorder(operator);
             return;
@@ -496,9 +513,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
 
-        var split = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.trimStreamAggregateInput(this.compiler, list, operator.input().getOutputIndexedZSetType().getKVRefType())
-                : this.trimStreamAggregateInput(operator, list);
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var operators = RustCircuitPass.trimStreamAggregateInput(this.compiler, operator, this.mapped(operator.input()), list);
+            if (!this.applyInputProjection(operator, operators))
+                super.postorder(operator);
+            return;
+        }
+        var split = this.trimStreamAggregateInput(operator, list);
         if (split == null) {
             super.postorder(operator);
             return;
@@ -568,13 +589,10 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                         Objects.requireNonNull(layout.paths()));
                 case Inspect -> RustCircuitPass.splitMapOperators(this.compiler, map, this.mapped(map.input()), null);
             };
-            if (operators.isEmpty()) {
-                this.noUnusedFields(closure);
-                return false;
-            }
-            this.addOperator(operators.getFirst());
-            this.map(map, operators.getLast());
-            return true;
+            if (this.applyInputProjection(map, operators))
+                return true;
+            this.noUnusedFields(closure);
+            return false;
         }
         boolean indexedInput = !map.input().outputType().is(DBSPTypeZSet.class);
         boolean indexedOutput = map instanceof DBSPMapIndexOperator;

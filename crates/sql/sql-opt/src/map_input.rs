@@ -14,6 +14,32 @@ pub enum MapOutput {
     Indexed,
 }
 
+/// Insert a map that projects the input and infer its collection type from the closure.
+pub fn append_input_projection(
+    edit: &mut CircuitEditor,
+    body: NodeId,
+    origin: NodeId,
+    input: OutputPort,
+    kind: OperatorKind,
+    projection: ExpressionId,
+) -> Result<OutputPort, Error> {
+    let narrowed = crate::replace_projections::projected_type(edit, projection.into(), kind)?;
+    let operator = edit.append_operator(
+        body,
+        origin,
+        kind,
+        &[input],
+        [
+            ("outputType", Field::Reference(narrowed.into())),
+            ("function", Field::Reference(projection.into())),
+        ],
+    )?;
+    Ok(OutputPort {
+        operator,
+        number: 0,
+    })
+}
+
 /// Insert the projection before the rebound reader. The reader keeps the
 /// original output type object, even when its new closure has a fresh tuple.
 /// Return whether the projection inherits the reader's live annotations.
@@ -33,31 +59,16 @@ pub fn append_split_map(
     };
     let project_kind = kind(input_type)?;
     let read_kind = kind(output_type)?;
-    let narrowed =
-        crate::replace_projections::projected_type(edit, projection.into(), project_kind)?;
-    let fields = |ty: TypeId, closure: ExpressionId| {
-        [
-            ("outputType", Field::Reference(ty.into())),
-            ("function", Field::Reference(closure.into())),
-        ]
-    };
-    let project = edit.append_operator(
-        body,
-        origin,
-        project_kind,
-        &[input],
-        fields(narrowed, projection),
-    )?;
-    let projected = OutputPort {
-        operator: project,
-        number: 0,
-    };
+    let projected = append_input_projection(edit, body, origin, input, project_kind, projection)?;
     edit.append_operator(
         body,
         origin,
         read_kind,
         &[projected],
-        fields(output_type, reader),
+        [
+            ("outputType", Field::Reference(output_type.into())),
+            ("function", Field::Reference(reader.into())),
+        ],
     )?;
     // An indexed-to-indexed map preserves the original annotations on its projection.
     Ok(project_kind == OperatorKind::MapIndex && read_kind == OperatorKind::MapIndex)

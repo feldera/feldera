@@ -510,7 +510,7 @@ public class JoinInputProjectionTests {
             @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
             @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) {}
             @Override public void nativeDecision(String pass, boolean answered) {
-                if (pass.equals("RemoveUnusedFields/LinearAggregateInput") && answered)
+                if (pass.equals("RemoveUnusedFields/UnaryOperators") && answered)
                     calls.add(pass);
             }
         };
@@ -535,9 +535,15 @@ public class JoinInputProjectionTests {
             var hybrid = new RemoveUnusedFields(compiler, new AnalyzedSet<>()).apply(circuit)
                     .allOperators.getLast().to(DBSPAggregateLinearPostprocessOperator.class);
             Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - before);
-            Assert.assertEquals(List.of("RemoveUnusedFields/LinearAggregateInput"), calls);
+            Assert.assertEquals(List.of("RemoveUnusedFields/UnaryOperators"), calls);
             Assert.assertEquals(direct == aggregate, hybrid == aggregate);
+            Assert.assertSame(output, hybrid.outputType);
             Assert.assertSame(aggregate.postProcess, hybrid.postProcess);
+            if (hybrid != aggregate) {
+                Assert.assertSame(index, hybrid.input().node().to(DBSPMapIndexOperator.class).input().node());
+                Assert.assertEquals(aggregate.getType().getToplevelFieldCount(),
+                        hybrid.input().node().annotations.first(IsProjection.class).outputSize);
+            }
             Assert.assertTrue(EquivalenceContext.equiv(direct.getClosureFunction(), hybrid.getClosureFunction()));
             var expected = direct.input().node().to(DBSPMapIndexOperator.class);
             var actual = hybrid.input().node().to(DBSPMapIndexOperator.class);
@@ -570,6 +576,7 @@ public class JoinInputProjectionTests {
             var list = new DBSPAggregateList(site, row, List.of(left, right));
             var output = new DBSPTypeIndexedZSet(site, index.getOutputIndexedZSetType().keyType, list.getEmptySetResultType());
             var operator = new DBSPStreamAggregateOperator(site, output, null, list, index.outputPort());
+            operator.addAnnotation(AlwaysMonotone.INSTANCE, DBSPStreamAggregateOperator.class);
             var circuit = new DBSPCircuit(new ProgramMetadata(), false);
             circuit.addOperator(source);
             circuit.addOperator(index);
@@ -587,6 +594,10 @@ public class JoinInputProjectionTests {
                     diagnostic = error.getMessage();
                 } else {
                     var result = pass.apply(circuit).allOperators.getLast().to(DBSPStreamAggregateOperator.class);
+                    Assert.assertSame(output, result.outputType);
+                    Assert.assertTrue(result.annotations.annotations.contains(AlwaysMonotone.INSTANCE));
+                    Assert.assertEquals(output.getToplevelFieldCount(),
+                            result.input().node().annotations.first(IsProjection.class).outputSize);
                     Assert.assertEquals(2, result.input().getOutputIndexedZSetType().elementType.to(DBSPTypeTuple.class).size());
                     Assert.assertSame(empty, result.aggregateList.aggregates.get(1).getEmptySetResult());
                     if (hybrid)
