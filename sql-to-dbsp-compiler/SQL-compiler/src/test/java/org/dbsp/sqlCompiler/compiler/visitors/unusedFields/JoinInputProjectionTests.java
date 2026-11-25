@@ -54,6 +54,7 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
@@ -353,6 +354,76 @@ public class JoinInputProjectionTests {
                 Assert.assertThrows(InternalCompilerError.class, () -> new FindUsedFields(compiler).findUsedFields(reader));
             }
         }
+    }
+
+    @Test
+    public void fieldUseFailuresComeFromRustInEvaluationOrder() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(1).getType();
+        var row = new DBSPVariablePath("row", new DBSPTypeTuple(integer, integer).ref());
+        var missing = new NoExpression(integer);
+        var assign = new DBSPAssignmentExpression(row.deref().field(0), row.deepCopy().deref().field(1));
+        var free = new DBSPVariablePath("unbound", integer);
+        var assignFirst = new DBSPBlockExpression(List.of(assign.toStatement()), missing);
+        var missingFirst = new DBSPTupleExpression(missing, assign);
+        var decisions = new ArrayList<Boolean>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void nativeDecision(String pass, boolean answered) {
+                if (pass.equals("ParameterFieldDependencies"))
+                    decisions.add(answered);
+            }
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass,
+                                        DBSPCircuit output, boolean completed) {}
+        };
+        for (var body : List.of(assignFirst, missingFirst, new DBSPTupleExpression(missing),
+                new DBSPBlockExpression(List.of(assign.toStatement()), free))) {
+            var reader = body.closure(row);
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            var direct = Assert.assertThrows(RuntimeException.class, () -> new FindUsedFields(compiler).findUsedFields(reader));
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            decisions.clear();
+            var hybrid = Assert.assertThrows(direct.getClass(), () -> new FindUsedFields(compiler).findUsedFields(reader));
+            Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+            Assert.assertEquals(List.of(true), decisions);
+        }
+    }
+
+    @Test
+    public void fieldUseAssignmentOnlyInitializesItsOwnOccurrence() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(1).getType();
+        var row = new DBSPTypeTuple(integer, integer).ref().var();
+        var target = new NoExpression(integer);
+        var assignment = new DBSPAssignmentExpression(target, row.deref().field(0));
+        var valid = new DBSPBlockExpression(List.of(assignment.toStatement()), row.deepCopy().deref().field(1)).closure(row);
+        var shared = new DBSPBlockExpression(List.of(assignment.toStatement()), target).closure(row);
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var finder = new FindUsedFields(compiler);
+            Assert.assertEquals("Ref([X, X])", finder.findUsedFields(valid).getUse().toString());
+            // ensureTree copies the second occurrence. It has no assigned value.
+            var error = Assert.assertThrows(RuntimeException.class, () -> finder.findUsedFields(shared));
+            Assert.assertTrue(error.getMessage(), error.getMessage().contains("does not exist in map"));
+        }
+    }
+
+    @Test
+    public void fieldUseReportsTheIndexedParameterWidth() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var integer = new DBSPI32Literal(0).getType();
+        var raw = new DBSPTypeRawTuple(integer, integer, integer).var();
+        // Indexed parameters expose a key and a value to the field-use interpreter.
+        var reader = raw.field(2).closure(raw);
+        var direct = Assert.assertThrows(IndexOutOfBoundsException.class,
+                () -> new FindUsedFields(compiler).findUsedFields(reader));
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var hybrid = Assert.assertThrows(IndexOutOfBoundsException.class,
+                () -> new FindUsedFields(compiler).findUsedFields(reader));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
     }
 
     @Test

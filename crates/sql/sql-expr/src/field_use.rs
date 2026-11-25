@@ -6,11 +6,12 @@ use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId, TypeKind,
 };
 use indexmap::IndexSet;
+use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// A field belongs to the parameter that introduced it, including after
 /// tuple construction, field selection and scalar computations.
-#[derive(Clone, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 struct ParameterField {
     parameter: usize,
     indices: Vec<usize>,
@@ -18,12 +19,48 @@ struct ParameterField {
 
 /// Tuple elements and members of a union refer to distinct symbolic values in
 /// the projection. Reusing a tuple therefore costs one index per occurrence.
-#[derive(Clone, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 enum Use {
     Field(ParameterField),
     Borrowed(ParameterField),
     Tuple(Vec<usize>),
+    ParameterPair([usize; 2]),
     Computed(BTreeSet<usize>),
+}
+
+/// The expression tree was evaluated with the same live node identities as the caller.
+#[derive(Debug)]
+pub enum FieldUseError {
+    InvalidIr(Error),
+    MissingValue(NodeId),
+    NoParameterValue,
+    LetStatement,
+    ParameterPairIndex(usize),
+    RequiresTree,
+    FieldIndex {
+        index: usize,
+        width: usize,
+    },
+    ChangedValue {
+        target: NodeId,
+        conflict: FieldUseConflict,
+    },
+}
+
+/// Symbolic values contain child offsets into this table. The Java renderer uses
+/// the original parameters when it prints the two sides of the assignment.
+#[derive(Debug, Serialize)]
+pub struct FieldUseConflict {
+    members: Vec<Use>,
+    previous: Use,
+    assigned: Use,
+}
+
+impl From<Error> for FieldUseError {
+    fn from(error: Error) -> Self {
+        Self::InvalidIr(error)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -36,11 +73,9 @@ impl ParameterShape {
     fn binding(self, parameter: usize, values: &mut IndexSet<Use>) -> Use {
         let borrowed = |indices| Use::Borrowed(ParameterField { parameter, indices });
         match self {
-            Self::Pair => Use::Tuple(
-                (0..2)
-                    .map(|i| values.insert_full(borrowed(vec![i])).0)
-                    .collect(),
-            ),
+            Self::Pair => {
+                Use::ParameterPair([0, 1].map(|i| values.insert_full(borrowed(vec![i])).0))
+            }
             Self::Borrowed { .. } => borrowed(vec![]),
         }
     }
@@ -91,14 +126,18 @@ impl ProjectionOp {
 impl RowProjection<'_> {
     /// Some expressions visit their operands without publishing a symbolic
     /// value. A statement can discard them, but a parent cannot read them.
-    fn operation(&self, id: NodeId, bindings: &References) -> Result<Option<ProjectionOp>, Error> {
+    fn operation(
+        &self,
+        id: NodeId,
+        bindings: &References,
+    ) -> Result<Option<ProjectionOp>, FieldUseError> {
         use ProjectionOp as Op;
         let node = self
             .circuit
             .node(id)
             .ok_or_else(|| Error::new("missing projection expression"))?;
         let Some(InnerKind::Expression(kind)) = node.inner_kind() else {
-            return Err(Error::new("expected a projection expression"));
+            return Err(Error::new("expected a projection expression").into());
         };
         let compute = |names: &[&str]| {
             let mut children = Vec::new();
@@ -114,7 +153,7 @@ impl RowProjection<'_> {
                 let parameter = bindings
                     .get(&id)
                     .and_then(|declaration| self.parameters.get(declaration))
-                    .ok_or_else(|| Error::new("unbound variable in an input projection"))?;
+                    .ok_or(FieldUseError::NoParameterValue)?;
                 Op::Parameter(*parameter)
             }
             Expr::Borrow => Op::Borrow(node.edge("expression")?),
@@ -174,7 +213,32 @@ impl RowProjection<'_> {
         Ok(Some(op))
     }
 
-    fn apply(&mut self, op: ProjectionOp) -> Result<Use, Error> {
+    /// Parameter pairs and constructed tuples have the same structural equality,
+    /// including inside sets, but the JDK reports their bounds errors differently.
+    fn equal_uses(&self, left: &Use, right: &Use) -> bool {
+        if left == right {
+            return true;
+        }
+        fn canonical(value: &Use, indices: &[usize]) -> Use {
+            match value {
+                Use::ParameterPair(pair) => Use::Tuple(pair.iter().map(|&i| indices[i]).collect()),
+                Use::Tuple(fields) => Use::Tuple(fields.iter().map(|&i| indices[i]).collect()),
+                Use::Computed(fields) => {
+                    Use::Computed(fields.iter().map(|&i| indices[i]).collect())
+                }
+                other => other.clone(),
+            }
+        }
+        let mut values = IndexSet::new();
+        let mut indices = Vec::with_capacity(self.members.len());
+        for value in &self.members {
+            let key = canonical(value, &indices);
+            indices.push(values.insert_full(key).0);
+        }
+        canonical(left, &indices) == canonical(right, &indices)
+    }
+
+    fn apply(&mut self, op: ProjectionOp) -> Result<Use, FieldUseError> {
         use ProjectionOp as Op;
         Ok(match op {
             Op::Parameter(parameter) => {
@@ -193,10 +257,17 @@ impl RowProjection<'_> {
                     path.indices.push(index);
                     Use::Field(path)
                 }
+                Use::ParameterPair(fields) => fields
+                    .get(index)
+                    .map(|&id| self.members[id].clone())
+                    .ok_or(FieldUseError::ParameterPairIndex(index))?,
                 Use::Tuple(fields) => fields
                     .get(index)
                     .map(|&id| self.members[id].clone())
-                    .ok_or_else(|| Error::new("projection exceeds tuple width"))?,
+                    .ok_or(FieldUseError::FieldIndex {
+                        index,
+                        width: fields.len(),
+                    })?,
                 other => other,
             },
             Op::IsNull(id) => match self.known[&id].clone() {
@@ -248,10 +319,8 @@ pub fn parameter_field_paths(
     circuit: &Circuit,
     closure: NodeId,
 ) -> Result<Vec<BTreeSet<Vec<usize>>>, Error> {
-    let (mut analysis, body) = RowProjection::for_closure(circuit, closure)?;
     let bindings = crate::lexical_scope::resolve(circuit, closure)?;
-    analysis
-        .analyze(body, &bindings)?
+    bound_parameter_field_paths(circuit, closure, &bindings)?
         .ok_or_else(|| Error::new("cannot determine the fields read by the projection"))
 }
 
@@ -295,11 +364,29 @@ fn bound_parameter_field_paths(
     closure: NodeId,
     bindings: &References,
 ) -> Result<Option<Vec<BTreeSet<Vec<usize>>>>, Error> {
-    let Ok((mut analysis, body)) = RowProjection::for_closure(circuit, closure) else {
-        // The caller can interpret parameters outside the supported row shapes.
-        return Ok(None);
-    };
-    analysis.analyze(body, bindings)
+    let (mut projection, body) = RowProjection::for_closure(circuit, closure)?;
+    match projection.analyze(body, bindings, InputForm::Graph) {
+        Ok(paths) => Ok(Some(paths)),
+        Err(FieldUseError::InvalidIr(error)) => Err(error),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Evaluate a tree after resolving its declarations. Diagnostic node IDs can be
+/// used directly against the live expression tree, including freshly copied nodes.
+pub fn checked_parameter_field_paths(
+    circuit: &Circuit,
+    closure: NodeId,
+    bindings: &References,
+) -> Result<Vec<BTreeSet<Vec<usize>>>, FieldUseError> {
+    let (mut analysis, body) = RowProjection::for_closure(circuit, closure)?;
+    analysis.analyze(body, bindings, InputForm::Tree)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputForm {
+    Graph,
+    Tree,
 }
 
 impl RowProjection<'_> {
@@ -309,7 +396,8 @@ impl RowProjection<'_> {
         &mut self,
         body: NodeId,
         bindings: &References,
-    ) -> Result<Option<Vec<BTreeSet<Vec<usize>>>>, Error> {
+        input: InputForm,
+    ) -> Result<Vec<BTreeSet<Vec<usize>>>, FieldUseError> {
         let circuit = self.circuit;
         let mut pending = vec![(body, false)];
         let mut statements = Vec::new();
@@ -322,54 +410,73 @@ impl RowProjection<'_> {
             let node = circuit
                 .node(id)
                 .ok_or_else(|| Error::new("missing field-use operand"))?;
+            if node.class() == "DBSPLetStatement" {
+                if finish {
+                    return Err(FieldUseError::LetStatement);
+                }
+                pending.push((id, true));
+                if let Some(init) = node.field("initializer").and_then(Field::node_id) {
+                    pending.push((init, false));
+                }
+                continue;
+            }
             let Some(InnerKind::Expression(kind)) = node.inner_kind() else {
                 continue;
             };
             if finish {
-                // Every operand has already been evaluated in this scope. A live
-                // caller handles unsupported expressions at their original SQL site.
                 if *kind == Expr::Assignment {
-                    let left = self.known.get(&node.edge("left")?);
-                    let right = self.known.get(&node.edge("right")?);
-                    if left.is_none() || left != right {
-                        // Java diagnoses an assignment that changes the symbolic value of its target.
-                        return Ok(None);
+                    let target = node.edge("left")?;
+                    let rhs = node.edge("right")?;
+                    let assigned = self
+                        .known
+                        .get(&rhs)
+                        .ok_or(FieldUseError::MissingValue(rhs))?;
+                    if let Some(previous) = self.known.get(&target) {
+                        if !self.equal_uses(previous, assigned) {
+                            let conflict = FieldUseConflict {
+                                members: self.members.iter().cloned().collect(),
+                                previous: previous.clone(),
+                                assigned: assigned.clone(),
+                            };
+                            return Err(FieldUseError::ChangedValue { target, conflict });
+                        }
+                    } else {
+                        // A write can give an otherwise valueless node a value. A later
+                        // occurrence only sees it if the two still share an ID after copying.
+                        if input == InputForm::Graph {
+                            return Err(FieldUseError::RequiresTree);
+                        }
+                        self.known.insert(target, assigned.clone());
                     }
                 }
                 active.remove(&id);
-                let op = match self.operation(id, bindings) {
-                    Ok(None) => {
-                        without_value.insert(id);
-                        continue;
-                    }
-                    Ok(Some(op)) if op.operands().iter().all(|id| self.known.contains_key(id)) => {
-                        op
-                    }
-                    _ => return Ok(None),
+                let Some(op) = self.operation(id, bindings)? else {
+                    without_value.insert(id);
+                    continue;
                 };
-                let Ok(value) = self.apply(op) else {
-                    return Ok(None);
-                };
+                for &operand in op.operands() {
+                    if !self.known.contains_key(&operand) {
+                        return Err(FieldUseError::MissingValue(operand));
+                    }
+                }
+                let value = self.apply(op)?;
                 self.known.insert(id, value);
                 continue;
             }
             if !active.insert(id) {
-                return Err(Error::new("cycle in field-use expression"));
+                return Err(Error::new("cycle in field-use expression").into());
             }
             pending.push((id, true));
             let mut children = Vec::new();
             match kind {
                 Expr::Closure => {}
-                Expr::Let => return Ok(None),
                 Expr::Block => {
-                    if !visit_block_operands(circuit, node, |id, is_statement| {
+                    visit_block_operands(circuit, node, |id, is_statement| {
                         children.push(id);
                         if is_statement {
                             statements.push(id);
                         }
-                    })? {
-                        return Ok(None);
-                    }
+                    })?;
                 }
                 _ => {
                     for (_, field) in node.fields() {
@@ -379,12 +486,13 @@ impl RowProjection<'_> {
             }
             pending.extend(children.into_iter().rev().map(|child| (child, false)));
         }
-        let Some(result) = self.known.get(&body) else {
-            return Ok(None);
-        };
+        let result = self
+            .known
+            .get(&body)
+            .ok_or(FieldUseError::MissingValue(body))?;
         let mut uses = vec![result];
         self.collect_statement_reads(statements, &mut uses)?;
-        Ok(Some(self.paths(uses)))
+        Ok(self.paths(uses))
     }
 }
 
@@ -394,7 +502,7 @@ fn visit_block_operands(
     circuit: &Circuit,
     block: &Node,
     mut visit: impl FnMut(NodeId, bool),
-) -> Result<bool, Error> {
+) -> Result<(), Error> {
     for id in block.edges("contents")? {
         let statement = circuit.node(id).expect("validated block statement");
         let expression = match statement.class() {
@@ -408,7 +516,13 @@ fn visit_block_operands(
                 function.field("body").and_then(Field::node_id)
             }
             "DBSPComment" | "DBSPStructItem" => None,
-            _ => return Ok(false),
+            "DBSPLetStatement" => Some(id),
+            _ => {
+                return Err(Error::new(format!(
+                    "unknown field-use statement {}",
+                    statement.class()
+                )));
+            }
         };
         if let Some(expression) = expression {
             visit(expression, statement.class() == "DBSPExpressionStatement");
@@ -417,7 +531,7 @@ fn visit_block_operands(
     if let Some(tail) = block.field("lastExpression").and_then(Field::node_id) {
         visit(tail, false);
     }
-    Ok(true)
+    Ok(())
 }
 
 impl<'a> RowProjection<'a> {
@@ -428,30 +542,16 @@ impl<'a> RowProjection<'a> {
 
         let params = node.edges("parameters")?;
         let mut parameters = HashMap::with_capacity(params.len());
-        let mut names = HashSet::with_capacity(params.len());
         let mut shapes = Vec::with_capacity(params.len());
         for (i, id) in params.into_iter().enumerate() {
             let param = circuit.node(id).expect("validated parameter");
-            let name = param
-                .data("name")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::new("missing input parameter name"))?;
-            if !names.insert(name) {
-                return Err(Error::new("duplicate map or join parameter name"));
-            }
             parameters.insert(id, i);
             let ty = circuit
                 .node(param.edge("type")?)
                 .expect("validated parameter type");
             let shape = match ty.inner_kind() {
-                Some(InnerKind::Type(TypeKind::RawTuple)) => {
-                    // Indexed closures receive (&key, &value). Aggregate updates can
-                    // receive the accumulator pair by value. Both expose two fields.
-                    if ty.edges("tupFields")?.len() != 2 {
-                        return Err(Error::new("expected a two-field parameter"));
-                    }
-                    ParameterShape::Pair
-                }
+                // The field interpreter gives every raw tuple a key/value binding.
+                Some(InnerKind::Type(TypeKind::RawTuple)) => ParameterShape::Pair,
                 Some(InnerKind::Type(TypeKind::Ref)) => ParameterShape::Borrowed {
                     tuple: matches!(
                         circuit.node(ty.edge("type")?).and_then(Node::inner_kind),
@@ -541,6 +641,7 @@ impl<'a> RowProjection<'a> {
                 Use::Field(path) | Use::Borrowed(path) => {
                     paths[path.parameter].insert(path.indices.clone());
                 }
+                Use::ParameterPair(fields) => fields.iter().for_each(&mut enqueue),
                 Use::Tuple(fields) => fields.iter().for_each(&mut enqueue),
                 Use::Computed(fields) => fields.iter().for_each(&mut enqueue),
             }

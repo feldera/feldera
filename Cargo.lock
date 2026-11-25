@@ -5892,6 +5892,7 @@ dependencies = [
  "indexmap 2.14.2",
  "num-bigint 0.4.8",
  "num-traits",
+ "serde",
  "serde_json",
  "uuid",
 ]

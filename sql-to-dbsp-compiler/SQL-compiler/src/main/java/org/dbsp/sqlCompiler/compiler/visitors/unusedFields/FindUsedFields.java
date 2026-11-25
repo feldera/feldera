@@ -447,21 +447,18 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
     }
 
     public ParameterFieldUse findUsedFields(DBSPClosureExpression expression) {
-        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-            var paths = RustCircuitPass.parameterFieldDependencies(this.compiler, expression);
-            if (paths != null) {
-                var uses = fromPaths(expression, paths);
-                if (Boolean.getBoolean("feldera.optimizer.compareRustFieldUses")) {
-                    var reference = this.interpret(expression);
-                    for (var parameter : expression.parameters)
-                        Utilities.enforce(uses.get(parameter).toString().equals(reference.get(parameter).toString()),
-                                () -> "Field uses differ for " + parameter + " in " + expression
-                                        + ": " + uses.get(parameter) + " versus " + reference.get(parameter));
-                }
-                return uses;
-            }
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
+            return this.interpret(expression);
+        var paths = RustCircuitPass.requiredParameterFieldDependencies(this.compiler, expression);
+        var uses = fromPaths(expression, paths);
+        if (Boolean.getBoolean("feldera.optimizer.compareRustFieldUses")) {
+            var reference = this.interpret(expression);
+            for (var parameter : expression.parameters)
+                Utilities.enforce(uses.get(parameter).toString().equals(reference.get(parameter).toString()),
+                        () -> "Field uses differ for " + parameter + " in " + expression
+                                + ": " + uses.get(parameter) + " versus " + reference.get(parameter));
         }
-        return this.interpret(expression);
+        return uses;
     }
 
     static ParameterFieldUse fromPaths(DBSPClosureExpression expression, List<List<List<Integer>>> paths) {

@@ -635,6 +635,25 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 binding_conflict(variable, previous, current),
         });
     }
+    if let ("CheckedParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
+        use feldera_sql_expr::FieldUseError;
+        let inspection = feldera_sql_opt::inspect_references(&arena, *closure, false)?;
+        if let Some(diagnostic) = inspection.diagnostic {
+            return Ok(binding_diagnostic(diagnostic));
+        }
+        return Ok(match feldera_sql_expr::checked_parameter_field_paths(&arena, *closure, &inspection.bindings) {
+            Ok(paths) => serde_json::to_value(paths)?,
+            Err(FieldUseError::InvalidIr(error)) => return Err(error.into()),
+            Err(FieldUseError::RequiresTree) => return Err("field-use analysis expected a materialized tree".into()),
+            Err(FieldUseError::MissingValue(id)) => json!({"missing_value": inner_number(id)}),
+            Err(FieldUseError::NoParameterValue) => json!({"no_parameter_value": true}),
+            Err(FieldUseError::ParameterPairIndex(index)) => json!({"pair_index": index}),
+            Err(FieldUseError::LetStatement) => json!({"let_statement": true}),
+            Err(FieldUseError::FieldIndex { index, width }) => json!({"index": index, "width": width}),
+            Err(FieldUseError::ChangedValue { target, conflict }) =>
+                json!({"target": inner_number(target), "changed_value": conflict}),
+        });
+    }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_opt::live_field_dependencies(&arena, *closure)?)?);
     }
@@ -1581,7 +1600,7 @@ fn transform(
         | "Monotonicity/Clock" | "Monotonicity/RowClosure" | "Monotonicity/InspectBody"
         | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ExpressionFacts" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/MinimumForOutput" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "ProjectOutputs/Function" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "RewriteNow/ClockSites" | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
-        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "CheckedParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"

@@ -100,6 +100,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.BorrowedField;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldSet;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.IUsedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ParameterField;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TupleOfFields;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor;
@@ -3984,6 +3989,66 @@ public final class RustCircuitPass implements CircuitTransform {
         var result = invokeLowering(compiler, "ParameterFieldDependencies", closure).value;
         return answered(compiler, "ParameterFieldDependencies", result)
                 ? MAPPER.convertValue(result, new TypeReference<>() {}) : null;
+    }
+
+    /** A failing field-use lookup must name the node in the tree the compiler actually evaluates. */
+    public static List<List<List<Integer>>> requiredParameterFieldDependencies(DBSPCompiler compiler,
+                                                                                DBSPClosureExpression closure) {
+        String pass = "ParameterFieldDependencies";
+        var result = invokeLowering(compiler, pass, closure).value;
+        if (result.isNull()) {
+            var tree = closure.ensureTree(compiler).to(DBSPClosureExpression.class);
+            var reply = invokeLowering(compiler, "CheckedParameterFieldDependencies", tree);
+            result = reply.value;
+            if (!result.isArray()) {
+                if (compiler.stateObserver != null)
+                    compiler.stateObserver.nativeDecision(pass, true);
+                checkBindingErrors(reply.writer, result);
+                if (result.has("no_parameter_value"))
+                    Utilities.enforce(false);
+                if (result.has("let_statement"))
+                    throw new UnimplementedException();
+                if (result.has("missing_value"))
+                    throw Utilities.missingKey(result.required("missing_value").longValue());
+                if (result.has("pair_index"))
+                    List.of(0, 1).get(result.required("pair_index").intValue());
+                if (result.has("index"))
+                    Objects.checkIndex(result.required("index").intValue(), result.required("width").intValue());
+                if (result.has("changed_value")) {
+                    var nodes = Objects.requireNonNull(reply.writer.liveNodes);
+                    var target = Utilities.getExists(nodes, result.required("target").longValue());
+                    var conflict = result.required("changed_value");
+                    var members = new ArrayList<IUsedFields>();
+                    for (var member : conflict.required("members"))
+                        members.add(fieldUseValue(member, tree, members));
+                    throw new InternalCompilerError("Changing value of " + target + " from\n" +
+                            fieldUseValue(conflict.required("previous"), tree, members) + " to\n" +
+                            fieldUseValue(conflict.required("assigned"), tree, members), target.getNode());
+                }
+                throw new IllegalStateException("Unknown field-use diagnostic " + result);
+            }
+        }
+        if (compiler.stateObserver != null)
+            compiler.stateObserver.nativeDecision(pass, true);
+        return MAPPER.convertValue(result, new TypeReference<>() {});
+    }
+
+    private static IUsedFields fieldUseValue(JsonNode value, DBSPClosureExpression closure, List<IUsedFields> members) {
+        boolean borrowed = value.has("borrowed");
+        if (borrowed || value.has("field")) {
+            var path = value.required(borrowed ? "borrowed" : "field");
+            var field = new ParameterField(closure.parameters[path.required("parameter").intValue()],
+                    MAPPER.convertValue(path.required("indices"), new TypeReference<List<Integer>>() {}));
+            return borrowed ? new BorrowedField(field) : field;
+        }
+        if (value.has("tuple") || value.has("parameter_pair")) {
+            var fields = new ArrayList<IUsedFields>();
+            value.required(value.has("tuple") ? "tuple" : "parameter_pair").forEach(offset -> fields.add(members.get(offset.intValue())));
+            return new TupleOfFields(fields);
+        }
+        var fields = new HashSet<IUsedFields>();
+        value.required("computed").forEach(offset -> fields.add(members.get(offset.intValue())));
+        return new FieldSet(fields);
     }
 
     public enum MapInputAction { Keep, Project, Inspect }
