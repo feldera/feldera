@@ -4349,7 +4349,9 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    private record InputFieldUse(long reader, @Nullable List<List<Integer>> paths) {}
+    private enum SourceColumnAction { Keep, Trim, Inspect }
+    private record SourceColumns(SourceColumnAction kind, @Nullable List<Boolean> used) {}
+    private record SourceReaderColumns(long reader, SourceColumnAction kind, @Nullable List<Boolean> used) {}
 
     private void findInputFields(DBSPCircuit circuit, long next, FindUnusedInputFields analysis) throws IOException {
         var readers = this.invoke("Topology/FindUnusedInputFields", OptimizerTopology.encode(circuit), next, EMPTY_CONTEXT);
@@ -4357,13 +4359,27 @@ public final class RustCircuitPass implements CircuitTransform {
             return;
         var selected = MAPPER.convertValue(readers, new TypeReference<Set<Long>>() {});
         var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, selected, OptimizerTopology.Details.NONE);
-        var uses = this.invoke(this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8),
-                next, EMPTY_CONTEXT);
+        String pass = "FindUnusedInputFields/Columns";
+        var uses = this.invoke(pass, writer.getJsonString().getBytes(StandardCharsets.UTF_8), next, EMPTY_CONTEXT);
         var operators = operatorsById(circuit);
-        for (var use : MAPPER.treeToValue(uses, InputFieldUse[].class)) {
+        for (var use : MAPPER.treeToValue(uses, SourceReaderColumns[].class)) {
             if (!selected.remove(use.reader))
                 throw new IllegalStateException("Unexpected input projection " + use.reader);
-            analysis.record(operators.get(use.reader).to(DBSPUnaryOperator.class), use.paths);
+            var reader = operators.get(use.reader).to(DBSPUnaryOperator.class);
+            var columns = new SourceColumns(use.kind(), use.used());
+            if (columns.kind() == SourceColumnAction.Inspect) {
+                var function = reader.getClosureFunction();
+                var paths = requiredParameterFieldDependencies(this.compiler, function).getFirst();
+                var checked = invokeLowering(this.compiler, "FindUnusedInputFields/CheckedColumns",
+                        MAPPER.writeValueAsBytes(paths), function.parameters[0].getType());
+                columns = MAPPER.treeToValue(checked.value, SourceColumns.class);
+            }
+            if (columns.kind() == SourceColumnAction.Trim)
+                analysis.recordColumns(reader, Objects.requireNonNull(columns.used()));
+            else
+                Utilities.enforce(columns.kind() == SourceColumnAction.Keep);
+            if (this.compiler.stateObserver != null)
+                this.compiler.stateObserver.nativeDecision(pass, true);
         }
         if (!selected.isEmpty())
             throw new IllegalStateException("Missing input projections " + selected);

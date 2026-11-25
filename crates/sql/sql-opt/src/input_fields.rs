@@ -30,6 +30,71 @@ pub struct InputFieldUse {
     pub paths: Option<BTreeSet<Vec<usize>>>,
 }
 
+/// The live compiler applies the mask to its source metadata. An undecided
+/// reader is inspected at its turn, after earlier warnings have been emitted.
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", content = "used")]
+pub enum SourceColumns {
+    Keep,
+    Trim(Vec<bool>),
+    Inspect,
+}
+
+#[derive(serde::Serialize)]
+pub struct SourceColumnDecision {
+    reader: u64,
+    #[serde(flatten)]
+    columns: SourceColumns,
+}
+
+impl InputFieldUse {
+    /// A read of a nested field keeps the entire source column. Empty tuples
+    /// count as used even in a reader that does not reference its parameter.
+    pub fn column_mask(&self, circuit: &Circuit) -> Result<SourceColumns, Error> {
+        let Some(paths) = &self.paths else {
+            return Ok(SourceColumns::Inspect);
+        };
+        let reader = circuit
+            .node(NodeId::Outer(self.reader))
+            .ok_or_else(|| Error::new("missing source reader"))?;
+        let function = circuit
+            .node(reader.edge("function")?)
+            .expect("validated reader function");
+        let [parameter] = function
+            .edges("parameters")?
+            .try_into()
+            .map_err(|_| Error::new("expected one source reader parameter"))?;
+        let ty = circuit
+            .node(parameter)
+            .expect("validated parameter")
+            .edge("type")?;
+        source_columns(circuit, ty, paths)
+    }
+}
+
+pub fn source_columns(
+    circuit: &Circuit,
+    ty: NodeId,
+    paths: &BTreeSet<Vec<usize>>,
+) -> Result<SourceColumns, Error> {
+    Ok(match RowFields::new(circuit).projection_mask(ty, paths)? {
+        None => SourceColumns::Keep,
+        Some(used) => SourceColumns::Trim(used),
+    })
+}
+
+pub fn source_column_decisions(circuit: &Circuit) -> Result<Vec<SourceColumnDecision>, Error> {
+    input_field_uses(circuit)?
+        .into_iter()
+        .map(|usage| {
+            Ok(SourceColumnDecision {
+                reader: usage.reader,
+                columns: usage.column_mask(circuit)?,
+            })
+        })
+        .collect()
+}
+
 /// A discarded statement can fail even when the result uses no input fields.
 /// Keep an unanswered reader distinct from a reader that returns a constant.
 fn unary_paths(paths: Option<ParameterPaths>) -> Result<Option<BTreeSet<Vec<usize>>>, Error> {

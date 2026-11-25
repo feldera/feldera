@@ -1,6 +1,6 @@
 //! Replay the JVM's schema side effects from the Rust input-field analysis.
 use feldera_sql_ir::{Circuit, Field, NodeId};
-use feldera_sql_opt::InputFieldUse;
+use feldera_sql_opt::{InputFieldUse, SourceColumns};
 use serde_json::Value;
 use std::{collections::BTreeMap, error::Error};
 
@@ -8,10 +8,13 @@ pub fn mark_unused(input: &Circuit, uses: &[InputFieldUse]) -> Result<Circuit, B
     let mut graph = input.to_json();
     let mut edits = BTreeMap::new();
     for usage in uses {
-        let paths = usage
-            .paths
-            .as_ref()
-            .ok_or("input reader requires live field-use analysis")?;
+        let used = match usage.column_mask(input)? {
+            SourceColumns::Keep => continue,
+            SourceColumns::Trim(used) => used,
+            SourceColumns::Inspect => {
+                return Err("input reader requires live field-use analysis".into());
+            }
+        };
         let reader = input
             .node(NodeId::Outer(usage.reader))
             .ok_or("missing input projection")?;
@@ -27,19 +30,18 @@ pub fn mark_unused(input: &Circuit, uses: &[InputFieldUse]) -> Result<Circuit, B
         let Some(Field::Array(columns)) = metadata.get("columnMetadata") else {
             return Err("missing source columns".into());
         };
+        if columns.len() != used.len() {
+            return Err("source schema and reader differ in width".into());
+        }
         let mut unused = Vec::new();
-        for (index, column) in columns.iter().enumerate() {
+        for (index, (column, used)) in columns.iter().zip(used).enumerate() {
             let Some(Field::Data(Value::Bool(key))) = (match column {
                 Field::Object(properties) => properties.get("isPrimaryKey"),
                 _ => None,
             }) else {
                 return Err("missing primary key flag".into());
             };
-            if !key
-                && !paths
-                    .iter()
-                    .any(|path| path.is_empty() || path.first() == Some(&index))
-            {
+            if !key && !used {
                 unused.push(index);
             }
         }

@@ -11,7 +11,6 @@ import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.ProgramSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
@@ -25,9 +24,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjections;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -36,7 +33,6 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
@@ -83,15 +79,17 @@ public class UnusedFields extends Passes {
     }
 
     public static class FindUnusedInputFields extends CircuitWithGraphsVisitor {
-        final Map<DBSPSourceMultisetOperator, ParameterFieldUse> finders;
-        final Map<DBSPSourceMultisetOperator, FieldUseMap> fieldsUsed;
-        final Map<DBSPSourceMultisetOperator, DBSPUnaryOperator> successor;
+        record NarrowedSource(DBSPUnaryOperator reader, List<Integer> columns, @Nullable ParameterFieldUse uses) {
+            ParameterFieldUse readerUses(DBSPCompiler compiler) {
+                return this.uses != null ? this.uses :
+                        new FindUsedFields(compiler).findUsedFields(this.reader.getClosureFunction());
+            }
+        }
+
+        final Map<DBSPSourceMultisetOperator, NarrowedSource> narrowed = new HashMap<>();
 
         public FindUnusedInputFields(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
-            this.fieldsUsed = new HashMap<>();
-            this.finders = new HashMap<>();
-            this.successor = new HashMap<>();
         }
 
         @Override
@@ -116,51 +114,36 @@ public class UnusedFields extends Passes {
                 Utilities.enforce(function.parameters.length == 1);
                 var useMap = unused.findUsedFields(function);
 
-                this.record(operator, src, function.parameters[0], useMap);
-            }
-        }
-
-        public void record(DBSPUnaryOperator operator, @Nullable List<List<Integer>> paths) {
-            var source = operator.input().to(DBSPSourceMultisetOperator.class);
-            var closure = operator.getClosureFunction();
-            var parameter = closure.parameters[0];
-            if (paths == null) {
-                this.record(operator, source, parameter, new FindUsedFields(this.compiler).findUsedFields(closure));
-                return;
-            }
-            var uses = new ParameterFieldUse();
-            uses.set(parameter, new FieldUseMap(parameter.getType(), false));
-            for (var path : paths)
-                new ParameterField(parameter, path).markParameterUse(uses);
-            this.record(operator, source, parameter, uses);
-        }
-
-        /** Apply a projection's dependencies to the live schema and the subsequent TrimInputs pass. */
-        private void record(DBSPUnaryOperator operator, DBSPSourceMultisetOperator src,
-                            DBSPParameter parameter, ParameterFieldUse useMap) {
-            if (useMap.hasUnusedFields(1)) {
-                FieldUseMap map = useMap.get(parameter).deref();
-                Utilities.putNew(this.finders, src, useMap);
-                Utilities.putNew(this.fieldsUsed, src, map);
-
-                if (map.hasUnusedFields(1)) {
-                    for (int i = 0; i < map.size(); i++) {
-                        InputColumnMetadata meta = src.metadata.getColumnMetadata(i);
-                        if (!map.isUsed(i) && !meta.isPrimaryKey) {
-                            this.compiler.reportWarning(
-                                    meta.getPositionRange(), "Unused column",
-                                    "Column " + meta.name.singleQuote() + " of table " +
-                                            src.tableName.singleQuote() + " is unused");
-                            ProgramSchema schema = this.compiler.metadata.getTableDescription(src.tableName);
-                            schema.markColumnUnused(i);
-                            src.getMetadata().getColumnMetadata(i).setUnused();
-                        }
-                    }
+                if (useMap.hasUnusedFields(1)) {
+                    var fields = useMap.get(function.parameters[0]).deref();
+                    this.record(operator, src, fields.usageAtDepth(1), useMap);
                 }
             }
-            if (!src.metadata.materialized)
-                // If the table is materialized do not replace the operator
-                Utilities.putNew(this.successor, src, operator);
+        }
+
+        public void recordColumns(DBSPUnaryOperator reader, List<Boolean> used) {
+            this.record(reader, reader.input().to(DBSPSourceMultisetOperator.class), used, null);
+        }
+
+        private void record(DBSPUnaryOperator reader, DBSPSourceMultisetOperator source,
+                            List<Boolean> used, @Nullable ParameterFieldUse uses) {
+            var kept = new ArrayList<Integer>();
+            for (int i = 0; i < used.size(); i++) {
+                if (used.get(i)) {
+                    kept.add(i);
+                    continue;
+                }
+                InputColumnMetadata meta = source.metadata.getColumnMetadata(i);
+                if (!meta.isPrimaryKey) {
+                    this.compiler.reportWarning(meta.getPositionRange(), "Unused column",
+                            "Column " + meta.name.singleQuote() + " of table " + source.tableName.singleQuote() + " is unused");
+                    ProgramSchema schema = this.compiler.metadata.getTableDescription(source.tableName);
+                    schema.markColumnUnused(i);
+                    meta.setUnused();
+                }
+            }
+            if (!source.metadata.materialized)
+                Utilities.putNew(this.narrowed, source, new NarrowedSource(reader, List.copyOf(kept), uses));
         }
     }
 
@@ -179,47 +162,27 @@ public class UnusedFields extends Passes {
         /** State from the preceding analysis. The struct name uses the Java type printer. */
         public Map<Long, Layout> layouts() {
             Map<Long, Layout> layouts = new HashMap<>();
-            this.data.fieldsUsed.forEach((source, fields) -> {
-                var reader = this.data.successor.get(source);
-                if (reader == null)
-                    return;
-                var columns = fields.getUsedFields();
+            this.data.narrowed.forEach((source, narrowed) -> {
+                var columns = narrowed.columns();
                 var declared = List.copyOf(source.originalRowType.fields.values());
                 var kept = columns.stream().map(declared::get).toList();
-                layouts.put(source.id, new Layout(reader.id, columns,
+                layouts.put(source.id, new Layout(narrowed.reader().id, columns,
                         DBSPTypeStruct.generateStructHashName(source.originalRowType.name, kept)));
             });
             return layouts;
         }
 
         public void postorder(DBSPSourceMultisetOperator source) {
-            if (!this.data.successor.containsKey(source)) {
+            var narrowed = this.data.narrowed.get(source);
+            if (narrowed == null) {
                 super.postorder(source);
                 return;
             }
-
-            FieldUseMap used = this.data.fieldsUsed.get(source);
-            if (used == null) {
-                super.postorder(source);
-                return;
-            }
-            Utilities.enforce(used.hasUnusedFields(1));
-
             DBSPTypeTuple row = source.getOutputZSetElementType().to(DBSPTypeTuple.class);
-            List<DBSPType> columnTypes = new ArrayList<>();
-            List<InputColumnMetadata> remainingColumns = new ArrayList<>();
-            List<DBSPTypeStruct.Field> fields = new ArrayList<>();
-            Iterator<ProgramIdentifier> fieldNames = source.originalRowType.getFieldNames();
-            for (int i = 0; i < used.size(); i++) {
-                ProgramIdentifier fieldName = fieldNames.next();
-                if (used.isUsed(i)) {
-                    InputColumnMetadata meta = source.metadata.getColumnMetadata(i);
-                    remainingColumns.add(meta);
-                    columnTypes.add(row.getFieldType(i));
-                    DBSPTypeStruct.Field field = source.originalRowType.getField(fieldName);
-                    fields.add(field);
-                }
-            }
+            var declared = List.copyOf(source.originalRowType.fields.values());
+            var columnTypes = narrowed.columns().stream().map(row::getFieldType).toList();
+            var remainingColumns = narrowed.columns().stream().map(source.metadata::getColumnMetadata).toList();
+            var fields = narrowed.columns().stream().map(declared::get).toList();
             DBSPTypeStruct newType = new DBSPTypeStruct(
                     source.originalRowType.getNode(), source.originalRowType.name,
                     fields, source.originalRowType.mayBeNull);
@@ -253,7 +216,7 @@ public class UnusedFields extends Passes {
                 return;
             }
 
-            var finder = this.data.finders.get(src);
+            var finder = this.data.narrowed.get(src).readerUses(this.compiler);
             RewriteFields rw = finder.getFieldRewriter(this.compiler, 1);
             DBSPClosureExpression newMap = rw.rewriteClosure(map.getClosureFunction());
             DBSPSimpleOperator result = new DBSPMapOperator(map.getRelNode(), newMap, newSource.outputPort());
@@ -275,7 +238,7 @@ public class UnusedFields extends Passes {
                 return;
             }
 
-            var finder = this.data.finders.get(src);
+            var finder = this.data.narrowed.get(src).readerUses(this.compiler);
             RewriteFields rw = finder.getFieldRewriter(this.compiler, 1);
             DBSPClosureExpression newMap = rw.rewriteClosure(map.getClosureFunction());
             DBSPSimpleOperator result = new DBSPMapIndexOperator(map.getRelNode(), newMap, newSource.outputPort());

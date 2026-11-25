@@ -637,6 +637,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 json!({"target": inner_number(target), "changed_value": conflict}),
         });
     }
+    if let ("FindUnusedInputFields/CheckedColumns", [ty]) = (pass, roots.as_slice()) {
+        let paths = serde_json::from_slice(state)?;
+        return Ok(serde_json::to_value(feldera_sql_opt::source_columns(&arena, *ty, &paths)?)?);
+    }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_opt::live_field_dependencies(&arena, *closure)?)?);
     }
@@ -1622,7 +1626,7 @@ fn transform(
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
-        | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
+        | "FindUnusedInputFields/CheckedColumns" | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
         | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/TopKInput"
         | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
@@ -1782,6 +1786,9 @@ fn transform(
     }
     if pass == "MapFieldDependencies" {
         return Ok(serde_json::to_value(feldera_sql_opt::map_field_dependencies(&circuit)?)?);
+    }
+    if pass == "FindUnusedInputFields/Columns" {
+        return Ok(serde_json::to_value(feldera_sql_opt::source_column_decisions(&circuit)?)?);
     }
     if pass == "FindUnusedInputFields" {
         return Ok(json!(feldera_sql_opt::input_field_uses(

@@ -18,10 +18,31 @@ impl From<Error> for FieldRewriteError<'_> {
     }
 }
 
+enum ColumnOffsets {
+    /// RewriteFields uses a prefix count for every original position.
+    Prefix(Vec<usize>),
+    /// A source layout names only the columns available to its reader.
+    Retained(Vec<usize>),
+}
+
+impl ColumnOffsets {
+    fn remap(&self, column: usize) -> Result<usize, Error> {
+        match self {
+            Self::Prefix(offsets) => offsets
+                .get(column)
+                .copied()
+                .ok_or_else(|| Error::new("reader field exceeds the input arity")),
+            Self::Retained(columns) => columns
+                .binary_search(&column)
+                .map_err(|_| Error::new("reader references a discarded column")),
+        }
+    }
+}
+
 struct Parameter {
     name: String,
     ty: TypeId,
-    offsets: HashMap<Vec<usize>, Vec<usize>>,
+    offsets: HashMap<Vec<usize>, ColumnOffsets>,
 }
 
 struct Reader {
@@ -87,9 +108,7 @@ impl Transformation for Reader {
             {
                 path.reverse();
                 if let Some(offsets) = param.offsets.get(&path) {
-                    index = *offsets
-                        .get(index)
-                        .ok_or_else(|| Error::new("reader field exceeds the input arity"))?;
+                    index = offsets.remap(index)?;
                 }
             }
         }
@@ -106,15 +125,17 @@ pub struct TupleUsage {
     used: Vec<bool>,
 }
 
-fn offsets(used: &[bool]) -> Vec<usize> {
+fn offsets(used: &[bool]) -> ColumnOffsets {
     let mut next = 0;
-    used.iter()
+    let offsets = used
+        .iter()
         .map(|&keep| {
             let index = next;
             next += usize::from(keep);
             index
         })
-        .collect()
+        .collect();
+    ColumnOffsets::Prefix(offsets)
 }
 
 /// Parameter declarations with equivalent types retain their identities. Variable
@@ -182,10 +203,20 @@ pub(super) fn rebind_parameters<'a>(
     )
 }
 
+pub(super) fn rebind_source_reader(
+    edit: &mut CircuitEditor,
+    closure: NodeId,
+    replacement: NodeId,
+    columns: &[usize],
+) -> Result<ExpressionId, Error> {
+    let fields = HashMap::from([(Vec::new(), ColumnOffsets::Retained(columns.to_vec()))]);
+    rewrite_reader(edit, closure, [(0, replacement, fields)])
+}
+
 fn rewrite_reader(
     edit: &mut CircuitEditor,
     closure: NodeId,
-    projected: impl IntoIterator<Item = (usize, NodeId, HashMap<Vec<usize>, Vec<usize>>)>,
+    projected: impl IntoIterator<Item = (usize, NodeId, HashMap<Vec<usize>, ColumnOffsets>)>,
 ) -> Result<ExpressionId, Error> {
     let function = edit.node(closure)?;
     let original = function.edges("parameters")?;

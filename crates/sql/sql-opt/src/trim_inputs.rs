@@ -2,13 +2,11 @@
 //! The preceding field-use analysis supplies the ordered columns. The struct's
 //! generated name comes from the compiler that owns the SQL type printer.
 use crate::rebuild::rebuild_input_closures;
-use feldera_sql_expr::{Rewrite, Transformation, Visit, parameter_paths};
 use feldera_sql_ir::{
-    Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, NodeId,
-    OperatorKind as Op, TypeId, TypeKind,
+    Circuit, CircuitEditor, Error, Field, InnerKind, NodeId, OperatorKind as Op, TypeKind,
 };
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -68,52 +66,6 @@ fn trim_table(edit: &mut CircuitEditor, table: NodeId, layout: &InputLayout) -> 
     edit.trim_source_columns(table, row, output, &layout.columns)
 }
 
-struct RebindFields<'a> {
-    bindings: HashSet<NodeId>,
-    columns: &'a [usize],
-    name: String,
-    reference: TypeId,
-}
-
-impl Transformation for RebindFields<'_> {
-    fn preorder(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<Visit, Error> {
-        let node = edit.node(id)?;
-        if matches!(
-            node.inner_kind(),
-            Some(InnerKind::Type(_) | InnerKind::Expression(Expr::Closure))
-        ) {
-            return Ok(Visit::Keep);
-        }
-        if self.bindings.contains(&id) {
-            return Ok(Visit::Replace(
-                edit.named_variable(self.reference, &self.name)?.into(),
-            ));
-        }
-        if matches!(node.inner_kind(), Some(InnerKind::Expression(Expr::Field))) {
-            let operand = edit.node(node.edge("expression")?)?;
-            if matches!(
-                operand.inner_kind(),
-                Some(InnerKind::Expression(Expr::Deref))
-            ) && self.bindings.contains(&operand.edge("expression")?)
-            {
-                let old = node
-                    .data("fieldNo")
-                    .and_then(|v| v.as_u64())
-                    .and_then(|i| usize::try_from(i).ok())
-                    .ok_or_else(|| Error::new("invalid projected field number"))?;
-                let index = self
-                    .columns
-                    .binary_search(&old)
-                    .map_err(|_| Error::new("reader references a discarded column"))?;
-                let variable = edit.named_variable(self.reference, &self.name)?;
-                let row = edit.dereference(variable)?;
-                return Ok(Visit::Replace(edit.tuple_field(row, index)?.into()));
-            }
-        }
-        Ok(Visit::Children)
-    }
-}
-
 fn trim_reader(edit: &mut CircuitEditor, reader: NodeId, columns: &[usize]) -> Result<(), Error> {
     let node = edit.node(reader)?;
     let kind = node.operator_kind();
@@ -123,14 +75,7 @@ fn trim_reader(edit: &mut CircuitEditor, reader: NodeId, columns: &[usize]) -> R
         .edges("parameters")?
         .try_into()
         .map_err(|_| Error::new("expected unary input projection"))?;
-    let body = closure.edge("body")?;
-    let param = edit.node(parameter)?;
-    let name = param
-        .data("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::new("missing input parameter name"))?
-        .to_owned();
-    let reference = param.edge("type")?;
+    let reference = edit.node(parameter)?.edge("type")?;
     let row = edit.node(reference)?.edge("type")?;
     let fields = select(&edit.node(row)?.edges("tupFields")?, columns)?;
     let compressed = edit.tuple_type(row, false, fields)?;
@@ -139,31 +84,16 @@ fn trim_reader(edit: &mut CircuitEditor, reader: NodeId, columns: &[usize]) -> R
     let reference = edit.reference_type(compressed)?;
     let declaration =
         edit.derive_inner(parameter, [("type", Field::Reference(reference.into()))])?;
-    let bindings = parameter_paths(edit, body, parameter)?;
-    let body = Rewrite::new(RebindFields {
-        bindings,
-        columns,
-        name,
-        reference,
-    })
-    .apply(edit, body)?;
-    let body = edit.expression(body)?;
-    let signature = edit.closure_type(body, &[reference.into()])?;
-    let function = edit.derive_inner(
-        original,
-        [
-            ("parameters", links(&[declaration])),
-            ("type", Field::Reference(signature)),
-            ("body", Field::Reference(body.into())),
-        ],
-    )?;
-    let ty = edit.expression_type(body)?;
+    let function =
+        crate::projected_reader::rebind_source_reader(edit, original, declaration, columns)?;
+    let signature = edit.expression_type(function)?;
+    let ty = edit.type_id(edit.node(signature.into())?.edge("resultType")?)?;
     let output = match kind {
         Some(Op::Map) => edit.zset_type(ty)?,
         Some(Op::MapIndex) => edit.indexed_zset_from_pair(ty)?,
         _ => return Err(Error::new("invalid input projection reader")),
     };
-    edit.set_operator_field(reader, "function", Field::Reference(function))?;
+    edit.set_operator_field(reader, "function", Field::Reference(function.into()))?;
     edit.set_operator_field(reader, "outputType", Field::Reference(output.into()))?;
     edit.clear_annotations(reader)
 }

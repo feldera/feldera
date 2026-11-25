@@ -34,6 +34,8 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
@@ -146,6 +148,52 @@ public class JoinInputProjectionTests {
                     else
                         expected = failure.getMessage();
                 }
+            }
+        }
+    }
+
+    @Test
+    public void sourceTrimmingRebindsFieldReadsThroughAClone() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b VARCHAR, c INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var row = input.getOutputRowType().ref().var();
+        var copy = new DBSPCloneExpression(CalciteEmptyRel.INSTANCE, row.deref());
+        var function = new DBSPTupleExpression(copy.field(2)).closure(row);
+        var map = new DBSPMapOperator(CalciteEmptyRel.INSTANCE, function, input);
+        var circuit = new DBSPCircuit(compiler.metadata, false);
+        circuit.addOperator(source);
+        circuit.addOperator(map);
+        var graph = new Graph(compiler);
+        graph.apply(circuit);
+        var decisions = new HashSet<String>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) {}
+            @Override public void nativeDecision(String operation, boolean success) {
+                if (success)
+                    decisions.add(operation);
+            }
+        };
+        DBSPClosureExpression expected = null;
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var snapshots = new OptimizerSnapshots(compiler);
+            var analysis = new UnusedFields.FindUnusedInputFields(compiler, graph.getGraphs());
+            CircuitTransform find = hybrid ? new RustCircuitPass(compiler, analysis, snapshots) : analysis;
+            find.apply(circuit);
+            var trim = new UnusedFields.TrimInputs(compiler, analysis);
+            Assert.assertEquals(List.of(2), trim.layouts().get(source.id).columns());
+            CircuitTransform rewrite = hybrid ? new RustCircuitPass(compiler, trim, snapshots) : trim;
+            var reader = rewrite.apply(circuit).allOperators.getLast().to(DBSPMapOperator.class);
+            Assert.assertEquals(1, reader.input().getOutputRowType().to(DBSPTypeTuple.class).size());
+            if (hybrid) {
+                Assert.assertTrue(EquivalenceContext.equiv(expected, reader.getClosureFunction()));
+                Assert.assertTrue(decisions.contains("FindUnusedInputFields/Columns"));
+            } else {
+                expected = reader.getClosureFunction();
             }
         }
     }

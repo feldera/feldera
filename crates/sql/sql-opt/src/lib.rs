@@ -121,7 +121,8 @@ mod indexed_inputs;
 pub use feldera_sql_expr::live_field_dependencies;
 mod input_fields;
 pub use input_fields::{
-    input_field_uses, input_projections, map_field_dependencies, InputFieldUse,
+    input_field_uses, input_projections, map_field_dependencies, source_column_decisions,
+    source_columns, InputFieldUse, SourceColumns,
 };
 mod integrate;
 mod lineage;
