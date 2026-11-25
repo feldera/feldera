@@ -41,6 +41,15 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-25. The packaged classic and Gen-2 compilers agree on all six
+  DATE year-boundary cases on `1222fd75f`. In a generated classic circuit,
+  the February 30 timestamp default yields March 1. Each invalid DATE
+  default reports its range error only when the input omits that column.
+  The most recent full optimizer replay, on `d325a41b8`, matched all 17,098
+  frozen compilations. Build `10a4d9029` passed all 8,256 executable classic
+  cases and met the 1.2× cold compile p95 limit in all three output modes.
+  [DATE defaults](crates/sql/evidence/p3-date-default-year-range.json) · [Full replay](crates/sql/evidence/p3-asof-window-keys.json) · [Cold compilation](crates/sql/BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25)
+
 - 2026-11-25. The Rust window scan reports the first failing clock operand and
   preserves earlier cast warnings. Build `767495855` matched 36 selected
   compilations through 18,775 optimizer observations, restored COUNT and
@@ -52,7 +61,7 @@ Path prefixes used in this document:
   On `de6b20ee5`, all 72 selected compilations matched Java through 34,416
   optimizer observations and emission. Cold hybrid p95 was 0.790× direct
   Java for the array subquery, 1.148× for Nexmark and 0.802× for the outer join.
-  The last full replay was on `46cbf6890`, which matched all 17,098 frozen
+  Build `46cbf6890` matched all 17,098 frozen
   compilations and passed all 8,256 executable classic cases.
   [Unary projections](crates/sql/evidence/p3-unary-output-operators.json) · [Cold compilation](crates/sql/BENCHMARKS.md#unary-output-projections-2026-11-25) · [Full replay](crates/sql/evidence/p3-indexed-waterline-propagation.json)
 

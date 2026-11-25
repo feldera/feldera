@@ -1,0 +1,151 @@
+{
+  "source_commit": "084caac1d5526812255a0a87c9222ae51a04ed7c",
+  "control_commit": "1222fd75f28cd156b505f87ec73055c4dedd26e9",
+  "checked_test": "TemporalKeyTests#windowSharingComparesNullableVariantAndPointInitializers",
+  "window_inputs": [
+    "Some and its printed call",
+    "VARIANT payloads and nulls",
+    "geographic point coordinates and nulls"
+  ],
+  "control_native_groups": [
+    false,
+    false,
+    false
+  ],
+  "fixed_native_groups": [
+    true,
+    true,
+    true
+  ],
+  "nightly_optimizer_tests": 352,
+  "rust_optimizer_unit_tests": 170,
+  "clippy": "passed",
+  "remaining_java_case": "TemporalKeyTests#windowScanPreservesTheErrorWhenRenamingChangesAStaticBlock",
+  "build_sha256": {
+    "libfeldera_sql_opt_jni.so": "1bbfdf38a00c52a766e31b2ae740f72c9a0bda435c400201d048d064b9253521",
+    "sql-difftest": "51e78fc1a800657b2fa5f70960fa31e273acef89f00f2c33e01a31df643875a2",
+    "sql2dbsp": "302e4eea6930a74939e8064538f0911bdcbb193b9e012513878d0653d6a8ee8a"
+  },
+  "java_classpath_sha256": {
+    "tests.jar": "d00cbbdd193b5888300c5b724f6a59068329c611ba4ba3780ca6a6b8f643faf4",
+    "sql-compiler.jar": "592824c134f047f21054b9c54655d6b89f33ac2ebf4fb92536335429f80a57d2"
+  },
+  "replay": {
+    "classic": {
+      "cases": 108,
+      "mismatches": 0,
+      "ordered_s4_observations": 43560,
+      "population_sha256": "41a42b47c7439c734b558449f1cb09ea81ea6b487a7ea2775ba413f1aeac32fa",
+      "full_optimizer_trace": true,
+      "require_native_decisions": true,
+      "receipt_sha256": "c96583b7689e1194168fdacbadb8ec252213270609e523c54c674dde1dfeb42a"
+    },
+    "gen2": {
+      "cases": 108,
+      "mismatches": 0,
+      "ordered_s4_observations": 44220,
+      "population_sha256": "0732aa07600726e194671ca1bb47312e7a0fc94758509fda614fa19b32d6c554",
+      "full_optimizer_trace": true,
+      "require_native_decisions": true,
+      "receipt_sha256": "5a681d293b64c6a006878751e657001a4d492d5b1f4a9322a47ea062e75949b1"
+    }
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21458-87d5-7d30-b856-8c3527f51262",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21458-87e5-7701-9b37-d101da42e94a",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "driver_receipt_sha256": "e214196bdac70f5e44060824a004b265bdf848b54fb351d94280ae377c92cbb0",
+      "restore_receipt_sha256": "8ceba6ffc02a364ce3c606ca4338a34ea1621a70cc1afae1dff2b701dc73ea93"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21458-f61b-78c1-807e-7629a1d9889f",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21458-f62c-7d32-a7de-7fc9696c43e0",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "driver_receipt_sha256": "e214196bdac70f5e44060824a004b265bdf848b54fb351d94280ae377c92cbb0",
+      "restore_receipt_sha256": "da8830efc6306acac7cb7c11439945de1c60c3556be319f34d1833d61f7061be"
+    }
+  }
+}

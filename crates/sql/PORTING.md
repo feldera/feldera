@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | Build `d325a41b8` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `10a4d9029` passed all 8,256 executable classic cases. Build `4303dd6e3` restored COUNT and LATENESS in both directions. Build `1222fd75f` matched 216 selected compilations and passed 351 nightly optimizer tests. [Full replay](evidence/p3-asof-window-keys.json) · [Runtime](evidence/p3-constant-views-and-static-windows.json) · [Restores](evidence/p3-checked-static-initializers.json) · [DATE defaults](evidence/p3-date-default-year-range.json) | Finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build, including the three latency modes. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
+| P3 | Build `d325a41b8` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `10a4d9029` passed all 8,256 executable classic cases. Build `084caac1d` matched 216 selected compilations, passed 352 nightly optimizer tests, and restored COUNT and LATENESS in both directions. [Full replay](evidence/p3-asof-window-keys.json) · [Runtime](evidence/p3-constant-views-and-static-windows.json) · [Selected replay and restores](evidence/p3-static-value-constructors.json) · [DATE defaults](evidence/p3-date-default-year-range.json) | Finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build, including the three latency modes. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -461,6 +461,14 @@ The result in `/campaign/results/decoder.json` records whether the worker
 reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
+
+On `084caac1d`, Rust groups windows whose static keys contain nullable
+values, VARIANTs, or geographic points. Java and Rust grouped constructors
+with their equivalent printed calls and distinguished points with reversed
+coordinates. All three cases used Java on `1222fd75f`. The scan still uses
+Java to report the error when canonicalization renames a declaration
+inside a static initializer.
+[Window decisions, selected replay, and checkpoint restores](evidence/p3-static-value-constructors.json)
 
 On `4303dd6e3`, Rust compares checked expressions in static window keys.
 Two handlers that differ only in their site index share a window. Changing
