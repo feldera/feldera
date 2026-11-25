@@ -3431,6 +3431,44 @@ public final class RustCircuitPass implements CircuitTransform {
         }.apply(circuit);
     }
 
+    private static List<DBSPSimpleOperator> trimFilterOperators(DBSPCompiler compiler, DBSPFilterOperator filter,
+                                                                DBSPSimpleOperator reader, OutputPort input) {
+        String pass = "TrimFilters/Operators";
+        var request = expressionSite(filter.getRelNode());
+        request.put("port", input.outputNumber);
+        request.put("indexed", reader instanceof DBSPMapIndexOperator);
+        var consume = reader.getClosureFunction();
+        var predicate = filter.getClosureFunction();
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request), consume, predicate);
+            while (reply.value.has("inspect")) {
+                String fields = reply.value.required("inspect").textValue();
+                var closure = switch (fields) {
+                    case "reader_fields" -> consume;
+                    case "predicate_fields" -> predicate;
+                    default -> throw new IllegalStateException("Unknown filter dependency request " + fields);
+                };
+                Utilities.enforce(!request.has(fields));
+                request.set(fields, MAPPER.valueToTree(requiredParameterFieldDependencies(compiler, closure).getFirst()));
+                reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request), consume, predicate);
+            }
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.isNull())
+                return List.of();
+            if (reply.value.has("binding_error")) {
+                DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+                checkBindingErrors(reply.writer, reply.value.required("binding_error"));
+            }
+            var operators = decodeOperatorFragment(reply, op -> filter.getRelNode(), input.node());
+            Utilities.enforce(operators.size() == 3);
+            operators.getLast().restoreProvenance(reader.getRelNode());
+            return operators;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode filter inputs", error);
+        }
+    }
+
     private DBSPCircuit trimFilterInputs(DBSPCircuit circuit, TrimFilters analysis, long next) throws IOException {
         var candidates = analysis.candidateReaders(circuit, true);
         if (candidates.isEmpty())
@@ -3450,26 +3488,15 @@ public final class RustCircuitPass implements CircuitTransform {
                 if (this.visited.contains(reader))
                     return;
                 var filter = reader.inputs.get(0).operator.to(DBSPFilterOperator.class);
-                var lowered = invokeLowering(RustCircuitPass.this.compiler, "TrimFilters/Closures",
-                        reader.getClosureFunction(), filter.getClosureFunction());
-                DBSPVariablePath.restoreGeneratedNames(lowered.value.required("next_generated_name").longValue());
-                var functions = lowered.value.required("functions");
-                if (functions.isNull()) {
+                var operators = trimFilterOperators(RustCircuitPass.this.compiler, filter, reader, this.mapped(filter.input()));
+                if (operators.isEmpty()) {
                     super.replace(reader);
                     return;
                 }
                 this.visited.add(reader);
-                var decoder = expressionDecoder(lowered.writer);
-                var project = decodeLiveRoot(decoder, functions.required(0), DBSPClosureExpression.class);
-                var predicate = decodeLiveRoot(decoder, functions.required(1), DBSPClosureExpression.class);
-                var consume = decodeLiveRoot(decoder, functions.required(2), DBSPClosureExpression.class);
-                var pre = new DBSPMapOperator(filter.getRelNode(), project, this.mapped(filter.input()));
-                this.addOperator(pre);
-                var narrowed = new DBSPFilterOperator(filter.getRelNode(), predicate, pre.outputPort());
-                this.addOperator(narrowed);
-                this.map(reader, reader instanceof DBSPMapIndexOperator
-                        ? new DBSPMapIndexOperator(reader.getRelNode(), consume, narrowed.outputPort())
-                        : new DBSPMapOperator(reader.getRelNode(), consume, narrowed.outputPort()));
+                this.addOperator(operators.get(0));
+                this.addOperator(operators.get(1));
+                this.map(reader, operators.getLast());
             }
         }.apply(circuit);
     }

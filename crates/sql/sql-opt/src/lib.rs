@@ -194,7 +194,7 @@ mod trace_retention;
 mod defer_carried;
 pub use defer_carried::{carried_columns, chain_steps, choose_chain_key, ChainKeyChoice, ChainKeys, defer_carried_columns, ChainLayout};
 mod trim_filters;
-pub use trim_filters::{trim_filter_closures, trim_filter_readers, trim_filters};
+pub use trim_filters::{FilterTrim, trim_filter_fields, trim_filter_readers, trim_filters};
 mod trim_windows;
 pub use trim_windows::trim_windows;
 mod trim_inputs;

@@ -3,7 +3,10 @@
 use crate::rebuild::ProjectionNames;
 use crate::row_projection::RowProjection;
 use crate::stream_rewrites::{append_map, body_members, reader_counts};
-use feldera_sql_expr::input_field_paths;
+use feldera_sql_expr::{
+    input_field_paths,
+    lexical_scope::{BindingDiagnostic, inspect_references},
+};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
     OutputPort,
@@ -29,7 +32,7 @@ pub fn trim_filters(
     let candidates = single_reader_filters(&circuit, &members, candidates)?;
     let parents: HashMap<_, _> = members.into_iter().map(|(body, id)| (id, body)).collect();
     let order = circuit.operator_order(BodyOrder::Postorder)?;
-    let mut edit = CircuitEditor::new(circuit);
+    let mut edit = CircuitEditor::new(circuit.clone());
     let mut replacements = BTreeMap::new();
     let mut names = *next;
     let mut projections = ProjectionNames::default();
@@ -54,24 +57,26 @@ pub fn trim_filters(
             .next()
             .ok_or_else(|| Error::new("missing predicate input"))?;
         let predicate = source.edge("function")?;
-        let Some([pre, predicate, post]) =
-            trim_filter_closures(&mut edit, function, predicate, &mut names)?
-        else {
-            continue;
+        let trimmed = trim_filter_fields(
+            &circuit,
+            &mut edit,
+            function,
+            predicate,
+            &mut names,
+            |closure| input_field_paths(&circuit, closure).map(Some),
+        )?;
+        let trimmed = match trimmed {
+            FilterTrim::Narrowed(trimmed) => trimmed,
+            FilterTrim::Unchanged => continue,
+            FilterTrim::Binding(issue) => {
+                return Err(Error::new(format!("invalid filter binding: {issue:?}")));
+            }
+            FilterTrim::InspectFields(_) => {
+                return Err(Error::new("missing detached filter dependencies"));
+            }
         };
         let body = parents[&id];
-        let (pre, stream) = append_map(&mut edit, body, filter, Op::Map, input, pre)?;
-        let narrowed = edit.append_operator(
-            body,
-            filter,
-            Op::Filter,
-            &[output(pre)],
-            [
-                ("outputType", Field::Reference(stream.into())),
-                ("function", Field::Reference(predicate.into())),
-            ],
-        )?;
-        let (post, _) = append_map(&mut edit, body, id, kind, output(narrowed), post)?;
+        let [pre, _, post] = trimmed.append(&mut edit, body, [filter, id], kind, input)?;
         edit.place_before(body, pre, id)?;
         replacements.insert(id, output(post));
         projections.replaced(id);
@@ -112,25 +117,82 @@ fn single_reader_filters(
     Ok(selected)
 }
 
-/// Return the pre-projection, narrower predicate and reader closure in operator order.
-pub fn trim_filter_closures(
+pub struct TrimmedFilter {
+    pre: ExpressionId,
+    predicate: ExpressionId,
+    post: ExpressionId,
+}
+
+impl TrimmedFilter {
+    /// The projection and filter inherit the filter site. The final reader keeps its own.
+    pub fn append(
+        self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        [filter, reader]: [NodeId; 2],
+        reader_kind: Op,
+        input: OutputPort,
+    ) -> Result<[NodeId; 3], Error> {
+        let (pre, stream) = append_map(edit, body, filter, Op::Map, input, self.pre)?;
+        let narrowed = edit.append_operator(
+            body,
+            filter,
+            Op::Filter,
+            &[output(pre)],
+            [
+                ("outputType", Field::Reference(stream.into())),
+                ("function", Field::Reference(self.predicate.into())),
+            ],
+        )?;
+        let (post, _) = append_map(edit, body, reader, reader_kind, output(narrowed), self.post)?;
+        Ok([pre, narrowed, post])
+    }
+}
+
+pub enum FilterTrim<'a> {
+    Unchanged,
+    InspectFields(NodeId),
+    Binding(BindingDiagnostic<'a>),
+    Narrowed(TrimmedFilter),
+}
+
+/// A reader using every column never inspects its predicate. When both can be
+/// narrowed, resolve each original closure at the point where it is rewritten.
+pub fn trim_filter_fields<'a>(
+    original: &'a Circuit,
     edit: &mut CircuitEditor,
     reader: NodeId,
     predicate: NodeId,
     next: &mut u64,
-) -> Result<Option<[ExpressionId; 3]>, Error> {
-    let mut used = input_field_paths(edit.circuit(), reader)?;
+    mut fields: impl FnMut(NodeId) -> Result<Option<BTreeSet<Vec<usize>>>, Error>,
+) -> Result<FilterTrim<'a>, Error> {
+    let Some(mut used) = fields(reader)? else {
+        return Ok(FilterTrim::InspectFields(reader));
+    };
     if !RowProjection::new(edit, reader, &used)?.has_unused_fields() {
-        return Ok(None);
+        return Ok(FilterTrim::Unchanged);
     }
+    let Some(predicate_fields) = fields(predicate)? else {
+        return Ok(FilterTrim::InspectFields(predicate));
+    };
     let reader_uses_input = !used.is_empty();
-    used.extend(input_field_paths(edit.circuit(), predicate)?);
+    used.extend(predicate_fields);
     let layout = RowProjection::new(edit, reader, &used)?;
     if !layout.has_unused_fields() {
-        return Ok(None);
+        return Ok(FilterTrim::Unchanged);
+    }
+    if let Some(issue) = inspect_references(original, predicate, false)?.diagnostic {
+        return Ok(FilterTrim::Binding(issue));
     }
     let predicate = layout.rebind(edit, predicate)?;
     let pre = layout.project(edit, next, reader_uses_input)?;
+    if let Some(issue) = inspect_references(original, reader, false)?.diagnostic {
+        return Ok(FilterTrim::Binding(issue));
+    }
     let post = layout.rebind(edit, reader)?;
-    Ok(Some([pre, predicate, post]))
+    Ok(FilterTrim::Narrowed(TrimmedFilter {
+        pre,
+        predicate,
+        post,
+    }))
 }

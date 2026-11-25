@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
@@ -24,6 +25,7 @@ import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -37,6 +39,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjectionVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjections;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -407,6 +410,66 @@ public class ProjectionCompositionTests {
         var hybrid = Assert.assertThrows(InternalCompilerError.class,
                 () -> RustCircuitPass.composeProjection(compiler, before, after));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+    }
+
+    private DBSPCircuit trimFilter(DBSPSimpleOperator source, DBSPFilterOperator filter,
+                                   DBSPSimpleOperator reader, boolean hybrid) {
+        var circuit = new DBSPCircuit(compiler.metadata, false);
+        circuit.addOperator(source);
+        circuit.addOperator(filter);
+        circuit.addOperator(reader);
+        compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+        var graph = new Graph(compiler);
+        graph.apply(circuit);
+        var pass = new TrimFilters(compiler, graph.getGraphs(), new AnalyzedSet<>());
+        return (hybrid ? new RustCircuitPass(compiler, pass, new OptimizerSnapshots(compiler)) : pass).apply(circuit);
+    }
+
+    @Test public void trimFilterChecksOnlyEvaluatedReadersAndKeepsBothSites() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a BOOLEAN NOT NULL, b INT NOT NULL, c VARCHAR);" +
+                "CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator()
+                .to(DBSPSimpleOperator.class);
+        var input = source.outputPort();
+        var row = input.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var filter = new DBSPFilterOperator(site, row.deref().field(0).closure(row), input);
+        var missing = new DBSPVariablePath("missing", row.type);
+        var badFilter = new DBSPFilterOperator(site, missing.deref().field(0).closure(row), input);
+        var keepAll = new DBSPMapOperator(source.getRelNode(), row.deref().closure(row), badFilter.outputPort());
+        var narrow = new DBSPMapOperator(source.getRelNode(), b.tuple(row.deref().field(1)).closure(row),
+                badFilter.outputPort());
+        var directError = Assert.assertThrows(InternalCompilerError.class,
+                () -> trimFilter(source, badFilter, narrow, false));
+        Assert.assertTrue(directError.getMessage().contains("Could not resolve " + missing));
+        var hybridError = Assert.assertThrows(InternalCompilerError.class,
+                () -> trimFilter(source, badFilter, narrow, true));
+        Assert.assertEquals(directError.getMessage(), hybridError.getMessage());
+        for (boolean hybrid : List.of(false, true))
+            Assert.assertSame(keepAll, trimFilter(source, badFilter, keepAll, hybrid).allOperators.getLast());
+
+        for (boolean indexed : List.of(false, true)) {
+            var value = b.tuple(row.deref().field(1));
+            DBSPUnaryOperator reader = indexed ? new DBSPMapIndexOperator(source.getRelNode(),
+                    new DBSPRawTupleExpression(b.tuple(), value).closure(row), filter.outputPort())
+                    : new DBSPMapOperator(source.getRelNode(), value.closure(row), filter.outputPort());
+            var direct = trimFilter(source, filter, reader, false).allOperators;
+            var hybrid = trimFilter(source, filter, reader, true).allOperators;
+            var post = hybrid.getLast().to(DBSPUnaryOperator.class);
+            var narrowed = post.input().node().to(DBSPFilterOperator.class);
+            var pre = narrowed.input().node().to(DBSPMapOperator.class);
+            Assert.assertEquals(reader.getClass(), post.getClass());
+            Assert.assertEquals(input, pre.input());
+            Assert.assertEquals(2, pre.outputPort().getOutputRowType().to(DBSPTypeTupleBase.class).size());
+            Assert.assertSame(filter.getRelNode(), pre.getRelNode());
+            Assert.assertSame(filter.getRelNode(), narrowed.getRelNode());
+            Assert.assertSame(reader.getRelNode(), post.getRelNode());
+            Assert.assertEquals(direct.size(), hybrid.size());
+            for (int i = hybrid.size() - 3; i < hybrid.size(); i++)
+                Assert.assertTrue(EquivalenceContext.equiv(direct.get(i).to(DBSPSimpleOperator.class).getFunction(),
+                        hybrid.get(i).to(DBSPSimpleOperator.class).getFunction()));
+        }
     }
 
     @Test public void timestampCompositionReportsTheConflictingLiveDeclarations() {

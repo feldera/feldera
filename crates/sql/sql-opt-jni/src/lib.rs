@@ -8,6 +8,7 @@ mod filtered_join_projection;
 mod output_projection;
 mod narrowed_join;
 mod topk_input;
+mod trim_filter;
 mod trim_output;
 mod repeat;
 mod waterlines;
@@ -1045,11 +1046,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             reduced
         }
-        ("TrimFilters/Closures", [reader, filter]) => {
-            let functions = feldera_sql_opt::trim_filter_closures(&mut edit, *reader, *filter, &mut next)?;
-            let encoded = functions.map(|fs| edit.circuit().live_inner_roots(&arena, &fs.map(NodeId::from))).transpose()?;
-            return Ok(json!({"functions": encoded, "next_generated_name": next}));
-        }
         ("Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds", [row, projected]) => {
             let row = edit.type_id(*row)?;
             let projected = edit.type_id(*projected)?;
@@ -1450,6 +1446,7 @@ fn transform(
                 .map(feldera_sql_opt::ProjectionRules::for_producer).unwrap_or_default();
             return Ok(serde_json::to_value(rules)?);
         }
+        "TrimFilters/Operators" => return trim_filter::operators(input, state, next),
         "RemoveUnusedFields/NarrowJoinOperators" => return narrowed_join::operators(input, state, next),
         "RemoveUnusedFields/JoinInput" => return project_join_input(input, state, next),
         "OptimizerOrder" => {
@@ -1650,7 +1647,7 @@ fn transform(
         | "Monotonicity/Clock" | "Monotonicity/RowClosure" | "Monotonicity/InspectBody"
         | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ExpressionFacts" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/MinimumForOutput" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
         | "RewriteNow/ClockSites" | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
-        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "TrimFilters/Closures" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "CheckedParameterFieldDependencies" | "SplitInspectedMapInput" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "CheckedParameterFieldDependencies" | "SplitInspectedMapInput" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsFlatProjectionWithCasts" | "IsStrictProjection" | "TrimTopKProjection"
