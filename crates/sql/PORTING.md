@@ -462,6 +462,28 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust constructs both operators when field trimming splits a map. The rebound
+reader keeps its declared output type. Only an indexed-to-indexed split carries
+the original annotations onto the input projection. On `9f87de979`, the
+48 field-trimming compilations matched Java across 30,484 ordered S4
+observations, and COUNT and LATENESS checkpoints restored in both directions.
+[Split-map replay and restores](evidence/p3-split-map-operators.json)
+
+The unary and join rewrites build a projection for each narrowed input. Each
+build matched Java on 24 field-trimming programs per engine. TopK also
+rebinds its tie comparator to the narrowed row. [Unary operators](evidence/p3-narrowed-unary-operators.json) ·
+[Joins and ASOF joins](evidence/p3-narrowed-join-graphs.json) · [TopK](evidence/p3-narrowed-topk-operators.json)
+
+Source trimming retains the columns read by the original closure. If a
+shared variable resolves to conflicting declarations, Rust reports the same
+diagnostic and preserves the generated-name counter. On `8fd0d9882`, the
+24 source-trimming compilations matched through 10,032 ordered observations.
+[Source layouts](evidence/p3-source-column-layout.json) · [Source-reader diagnostics](evidence/p3-source-reader-bindings.json)
+
+When a MIN transfer cannot establish a bound on the value, the Rust scheduler
+tries the group key. Both engines matched Java on the 12 selected programs.
+[MIN transfer replay](evidence/p3-minimum-key-fallback.json)
+
 Rust drives the live waterline schedule. A closure that drops its last bound
 stops propagation along that branch. An indexed stream tracks bounds on keys
 and values separately, so deindex discards a key-only bound. On `46cbf6890`,

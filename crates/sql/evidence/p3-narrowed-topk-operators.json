@@ -1,0 +1,48 @@
+{
+  "scope": "Rebuild projected TopK inputs and tie comparators in Rust",
+  "source_base": "61eb6836c3bf53959a9613086d73c568fe6ec54d",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "20c68d7c23854c538b2e23c7c14334a826bb4df49278305a617d6d4f71133c1d",
+    "crates/sql/sql-opt/src/lib.rs": "62b1203a63e992a5f0bdfec6fa4526c31e09619bd4decfbe7c7c4032eb0a6a47",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "4b6cef0aa812a055d0d1f098ce4e282508bdfe5dcd2cf33d4ec17f4fe1a39020",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/RemoveUnusedFields.java": "fed213bb5734eec0d05b2c740183fe7c88f1922e395aa2c0b62aff13e5f637c0",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "a662b4012cbada0caf9c0b8446f7004e76b74fbd956a98944c0143c3669af31c",
+    "crates/sql/sql-opt-jni/src/topk_input.rs": "974b64ed0ceb87c8805d4331ac5f74ae5ca78091cd8563f1f27b1ffa0ad758fa",
+    "crates/sql/sql-opt/src/topk_input.rs": "1b95972d6c93f61e64839135503d0fbb7086e6ef2382c0bd98f4182c0e6457c0"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "0ed02afb7bc16537a5cb3eb0c8773348abf18d94ee42a069dc214270099db32e",
+    "bin/sql-difftest": "f3cb509807740da9304f9f0c2e26813dc8feb73967e09037206d30c6dc4b90d0",
+    "maven/tests.jar": "f0912fc82bfcdf2875c1922cf9dac5da6d5948dde68871abfa09093444e5295d",
+    "maven/sql-compiler.jar": "3e302860941f09af9137636cd7366b061c116da594658ab688f442159f91d253",
+    "bin/sql2dbsp": "77079e9b4dc0d4045a174e5cc4a2c154b3e1c515132c2dd3b6ba80ad3cea5c4e"
+  },
+  "negative_control": {
+    "library_sha256": "26efe25d42a5294122d4817c94fdbb1bbdaac86a5e83735702c5f2837540c3bc",
+    "failed_tests": [
+      "sqlTopKUsesRustToDiscoverAndRemapComparedFields"
+    ],
+    "java_compiler_sha256": "0c16d7805c449d5371b790651b37bd6c23e89b582ea82471c987cc47504cdd20"
+  },
+  "rust_tests": 228,
+  "junit_tests": 281,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "a9fa1442b0265be5c2254caedc34b5b50006609f020348256e08edadda1f9473"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "c89f21943ec3c51994457f138c51ad4c72f0fc12bf75826e55d5bc697dc78c5e"
+    }
+  },
+  "source_commit": "6f1d66ac8df3c61a1cd1b65354244fd87bffe1b2",
+  "nightly_optimizer_junit": 298
+}

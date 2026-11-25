@@ -1,0 +1,52 @@
+{
+  "scope": "Propagate group keys in Rust after a declined MIN transfer",
+  "source_base": "61eb6836c3bf53959a9613086d73c568fe6ec54d",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "20c68d7c23854c538b2e23c7c14334a826bb4df49278305a617d6d4f71133c1d",
+    "crates/sql/sql-opt-jni/src/topk_input.rs": "974b64ed0ceb87c8805d4331ac5f74ae5ca78091cd8563f1f27b1ffa0ad758fa",
+    "crates/sql/sql-opt-jni/src/waterlines.rs": "ce5ba2558aa5c87d80e3122c81cc68af52a08cfee4fd5ea199d6c730efb19076",
+    "crates/sql/sql-opt/src/lib.rs": "f3bd0f271f7df07d75d2109ca4a3ebabfd56fd797e6017216dd38299d678dfa8",
+    "crates/sql/sql-opt/src/monotonicity/schedule.rs": "d41581dba9de6fb145c73da897ac950196d366ce575e0ed1d5f522b826a8e5ab",
+    "crates/sql/sql-opt/src/topk_input.rs": "1b95972d6c93f61e64839135503d0fbb7086e6ef2382c0bd98f4182c0e6457c0",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "6a14c674e024d45ad1ba272884f4e397fb126c05fabd3f6cf3f2d4043bfecf4a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/Monotonicity.java": "001663d119a079683770ecd123f88b1806db8502f4aa350651defb087639b555",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/RemoveUnusedFields.java": "fed213bb5734eec0d05b2c740183fe7c88f1922e395aa2c0b62aff13e5f637c0",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "69186bd524ca69944b554222d2dac6ede8570a3e85b3b8dde8237159c7c49958",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "a662b4012cbada0caf9c0b8446f7004e76b74fbd956a98944c0143c3669af31c"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "36ba0b6cea7644ffd3b72f9830675d0d5d351271d93838792fa16d760bfd9516",
+    "bin/sql-difftest": "0f027fd15e3b34e5107b9bb7a5bb32bff4c2513d90549363c45063492e822df8",
+    "maven/tests.jar": "d1affd86966b23d0d70b1c58cc2d274536f1bfd283e652ab5ee4bc6bf7aaed7a",
+    "maven/sql-compiler.jar": "33472f98d4c57f6710b0d19a61248ddf54db8a69c8b47102b074f898b80ce073",
+    "bin/sql2dbsp": "77079e9b4dc0d4045a174e5cc4a2c154b3e1c515132c2dd3b6ba80ad3cea5c4e"
+  },
+  "negative_control": {
+    "library_sha256": "0ed02afb7bc16537a5cb3eb0c8773348abf18d94ee42a069dc214270099db32e",
+    "failed_tests": [
+      "nonMinimumChainUsesOnlyTheGroupKeyWaterline"
+    ],
+    "java_compiler_sha256": "3e302860941f09af9137636cd7366b061c116da594658ab688f442159f91d253"
+  },
+  "rust_tests": 229,
+  "junit_tests": 282,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "a752224e80b1163ba3107bf5b9379eb0898b74d75f6656b9840af587089f6d46"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "735a7992724ac1beb5ef8825e8868104afb84af37a78b02adf7fea73e226d776"
+    }
+  },
+  "source_commit": "7e9907afa8e01d1455c5b8bd4a9450ddd1ad6197",
+  "nightly_optimizer_junit": 299
+}

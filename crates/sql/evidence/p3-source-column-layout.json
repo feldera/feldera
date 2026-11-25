@@ -1,0 +1,50 @@
+{
+  "scope": "Select source columns and rebind trimmed readers in Rust",
+  "source_base": "7e9907afa8e01d1455c5b8bd4a9450ddd1ad6197",
+  "source_files_sha256": {
+    "crates/sql/sql-difftest/examples/support/input_metadata.rs": "3a0e4720b657c9b760ab4b39bbe1b2502b2e562a2bae8ff48252139c189ae836",
+    "crates/sql/sql-opt-jni/src/lib.rs": "744bcdf54e77502dee8686f372f19487374a9b22012a7f9a42920bd3180cb522",
+    "crates/sql/sql-opt/src/input_fields.rs": "3312a1b0644a4e82ff4d25e3bbe0df6b994114ee1e8f38e85292ba7c12ab4129",
+    "crates/sql/sql-opt/src/lib.rs": "e69a5fc1451c5b99fd4031714bdc5e9aa1f5e55eebef4c96727b1da425fc9fc3",
+    "crates/sql/sql-opt/src/projected_reader.rs": "2da690ccb339101207954687b5c1ed367376fae034c17d0faa44f27a392dafe0",
+    "crates/sql/sql-opt/src/trim_inputs.rs": "4da56beaca02dd5a99208bbf001551979dfa1820e1e891d098f70e393d21453d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "21b6208d0005e5d736d7f69d603d894866fda6e4431fcd8d91fd3c702bed17f6",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/UnusedFields.java": "df186159d0dee83ca7732543a764ede6eb991e3407795b58f3c142631f845974",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "b0a01599f39ac4255b3ece10497c28984439ca0c93e8b252a7031689c17f97dd"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "7aca426c7f358699863b352aee4850576d3de6761fe56b69d091ba7d9d989346",
+    "bin/sql-difftest": "166d144225526eb492ee5da4a54e0da830c946da0706ee3f5abf0e57c286c572",
+    "maven/tests.jar": "9a1ff0e37fb7821fc08f453fca13737fb83517d8ad26f3bdc6382100cb9601b8",
+    "maven/sql-compiler.jar": "af2b720623083a730546946029551a6f17782bc4d93a2b818f74820a94ce2b45",
+    "bin/sql2dbsp": "50dce0ab30bd845ee9a45e39bfa2f97665d38b946582314833f1b80051ac9c86"
+  },
+  "negative_control": {
+    "library_sha256": "36ba0b6cea7644ffd3b72f9830675d0d5d351271d93838792fa16d760bfd9516",
+    "failed_tests": [
+      "sourceTrimmingRebindsFieldReadsThroughAClone"
+    ],
+    "java_compiler_sha256": "33472f98d4c57f6710b0d19a61248ddf54db8a69c8b47102b074f898b80ce073"
+  },
+  "rust_tests": 229,
+  "junit_tests": 283,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "0457b1bd118f3ec3a01a8cee7b3d23a20dc656cdece9ff9172dc78afe739c330"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "cfbcc176e79fc2542d06739743be87d1283056fc0321865278f3473dbf18b3f9"
+    }
+  },
+  "source_commit": "fbe3e751c7c341bbc1e145b98fdc66063a144bee",
+  "nightly_optimizer_junit": 300
+}

@@ -1,0 +1,161 @@
+{
+  "scope": "Rust constructs the projection and the rebound UNNEST, linear aggregate, or grouped aggregate in one graph fragment.",
+  "source_base": "9f87de97942c9ebc5d43576cf7e43c16f2f162c5",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "2979f48b6e686e9d44e94dbcbb59807e46bfa46ea2cd09fe28f4bf7348e369f6",
+    "crates/sql/sql-opt/src/aggregate_input.rs": "aec0a078adeb35481d9b4092189d65fb8d228a773a7f56ae90c6cc18b60c6886",
+    "crates/sql/sql-opt/src/lib.rs": "89e4f41060b3e16104a038f225c907e960a481aa0f573356516037cadad66d8b",
+    "crates/sql/sql-opt/src/map_input.rs": "fd9d6442354156194dbf4c8732c053fbbb8acbc5c01eb309f064b0aa8b2b3fa2",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "9e6771f52243524148c0bce5392a0f8cccc5124b4a596d8edaded6f1b756fa5c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/RemoveUnusedFields.java": "38476e1097cda5d62cac8b5362475159970f18a3aa66c0d88b075b850c4594ce",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "a94c7b4194779e3baba3a5bd8566d3526eb7a446f153ba3638b753db992c1ff5",
+    "crates/sql/sql-opt-jni/src/narrowed_unary.rs": "21e1779e3e2707a6b2ec9c9c379d9453dbdcbb5560dc87b8e5d6cfda845a67a8"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "baa2216c51f6238bb49e36ceb81f886a6ce67d2747b82d9209a0003dffee735b",
+    "bin/sql-difftest": "a591fc4e70d96636e4b5bc7fce49108aac937201cc25e4558fa11963d46a2224",
+    "maven/tests.jar": "6d8ebd2eef15617a49c298448d39481e63f4ec9cd2dbb7071fc454b503a56c28",
+    "maven/sql-compiler.jar": "2fcc832188760ba2aa3a99f04e79c68e8b62b49c890d83e3a21f7cda0a34390b",
+    "bin/sql2dbsp": "952e13c25abafd47ae3e668cbc2863b78cc31899ffe71836483e67e1a11c111b"
+  },
+  "negative_control": {
+    "library_sha256": "46be5ad8a8ce1e4da8bc4984b6d3cd324492f7eb29114d08a4be48829f11aa09",
+    "failed_tests": [
+      "linearAggregateNarrowsOnlyTheIndexedValue"
+    ],
+    "java_compiler_sha256": "e8c94104f86e52c5be974c6f94dd583083d7183cdfc61f3aff9da57e2bc1c575"
+  },
+  "rust_tests": 228,
+  "junit_tests": 280,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "c51994a54c5277f1d769c778522514285b789c82cedb91f398a388d74ef187ac"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "6842f035ae9ea35d6574d383724f8e27ea1bdc485a83df0975cdbbc4b8802077"
+    }
+  },
+  "source_commit": "2656ae42605956ece9177c7a2a6faedcbfb9a9f3",
+  "nightly_optimizer_junit": 297,
+  "field_trimming_cases": {
+    "classic": {
+      "cases": 24,
+      "ordered_s4_observations": 15255,
+      "population_sha256": "985b87c501ffbb58bd04ff30a582660517899031801b8e45132441518620325c",
+      "mismatches": 0,
+      "receipt_sha256": "ba57ace4dbb81df4e60efb4437fe428e6b50e4ac1e4cde0adb2f15a94e2996bf"
+    },
+    "gen2": {
+      "cases": 24,
+      "ordered_s4_observations": 15229,
+      "population_sha256": "b67e5386b7d9a86d3ed408d89db0f3cba6211cd05dda39b8cc64b5fad9b102d4",
+      "mismatches": 0,
+      "receipt_sha256": "c0b535c0a527131dae454565b26f18bbd31872a04b5850d6402b56e3a2a16b85"
+    }
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a212e6-575d-77f2-a8b7-106476dd33a1",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a212e6-5777-75a0-ab22-de4201fc338d",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "01400dcd160aa241f29ddfc69f8c2ba16a76b57ea038e1bcaab02678a2cf1356"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a212e7-1c07-7833-a1db-a64706bf004a",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a212e7-1c23-7891-9025-f79d74062765",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "01ee39b77905feb532531d769201f3833934a09ae7081c316c3a52e2450fabdf"
+    }
+  }
+}

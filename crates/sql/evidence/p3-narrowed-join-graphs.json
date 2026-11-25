@@ -1,0 +1,158 @@
+{
+  "scope": "Build narrowed join and ASOF input graphs in Rust",
+  "source_base": "2656ae42605956ece9177c7a2a6faedcbfb9a9f3",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "1bbccf2d1465ed4a5e9c0a72db40eeb1c30374f507822052f45566d276c30ea1",
+    "crates/sql/sql-opt-jni/src/narrowed_join.rs": "eae7a5ce1346bba2e5b9e592eab61ad6d35395bda16a0cb467cbd193cec1f661",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "f0199a831f90ef8bbb61de10d51ecd52cfd786f781fed5d8b1adccf79fc8d4ed",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/RemoveUnusedFields.java": "5e963c62dd39afce6502e69b79c3396e86193a955616aae532e865ca69180ba1",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "c48a4a9b43ffe9140375485a2ef352895424d557a7e71374d9e2b6c41e3fcd25"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "26efe25d42a5294122d4817c94fdbb1bbdaac86a5e83735702c5f2837540c3bc",
+    "bin/sql-difftest": "653832dc27dee4e95a5524c1fc5c2dd135e280fa36fe9822279d8051c7ac2f88",
+    "maven/tests.jar": "0aa28989cd9b2b3be50bd9b6ff72b90dec44c4c41f2f15f9fe824934fd93a59e",
+    "maven/sql-compiler.jar": "0c16d7805c449d5371b790651b37bd6c23e89b582ea82471c987cc47504cdd20",
+    "bin/sql2dbsp": "624bd63ae3ac426b5f894c009c5071f319c80eb1e5c0793cffa2d225bc84bb9e"
+  },
+  "negative_control": {
+    "library_sha256": "baa2216c51f6238bb49e36ceb81f886a6ce67d2747b82d9209a0003dffee735b",
+    "failed_tests": [
+      "joinTrimmingChecksSharedReadersAfterProjectingInputs"
+    ],
+    "java_compiler_sha256": "2fcc832188760ba2aa3a99f04e79c68e8b62b49c890d83e3a21f7cda0a34390b"
+  },
+  "rust_tests": 228,
+  "junit_tests": 281,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "8a6db29d1613d515a3bf8b0b044369945c50be79a1915de8eeca8151702072a8"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "b617a1f3377d90b3069cb07179c6d4e394ba47e15ff625b58900e5438868e3d4"
+    }
+  },
+  "source_commit": "61eb6836c3bf53959a9613086d73c568fe6ec54d",
+  "nightly_optimizer_junit": 298,
+  "field_trimming_cases": {
+    "classic": {
+      "cases": 24,
+      "ordered_s4_observations": 15255,
+      "population_sha256": "985b87c501ffbb58bd04ff30a582660517899031801b8e45132441518620325c",
+      "mismatches": 0,
+      "receipt_sha256": "71773140fd5d3a02036614604c9248e51874f3e3fc0069f3c848cc07e89d55bc"
+    },
+    "gen2": {
+      "cases": 24,
+      "ordered_s4_observations": 15229,
+      "population_sha256": "b67e5386b7d9a86d3ed408d89db0f3cba6211cd05dda39b8cc64b5fad9b102d4",
+      "mismatches": 0,
+      "receipt_sha256": "922eeb71f5f8f4a94a9dce42a0cec44690f457b4f4082b513aad7790bcb8d004"
+    }
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a212ec-af45-75d3-9c63-67e9a81401bf",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a212ec-af67-7ab2-9232-9826904a3542",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "b7e2ac3fab3be791d5274186041414b6e1b068e1f19a1d25443e595065a12e48"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a212ed-7e3d-7510-ba02-f4789fa8303a",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a212ed-7e58-7d22-820c-08bfe72b2e93",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "701a67fb456ceac12a7fbcce303fe225d635723871fc817c109a6b8f78f3e9a0"
+    }
+  }
+}
