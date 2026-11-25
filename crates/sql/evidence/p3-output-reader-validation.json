@@ -1,0 +1,48 @@
+{
+  "scope": "Validate bindings and the field map of every output projection before considering producer eligibility.",
+  "source_base": "408be618515a797e3b5efb7216b55bd442899d1f",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "3b0885febaf3bd05818d7627f1d3c5ae7a02426ade41e88ba8539cc244f36c9b",
+    "crates/sql/sql-opt/src/lib.rs": "755508445a6e8a5dfab59613708e4dc4fbb7c75b45b2f22c07e421197d55d482",
+    "crates/sql/sql-opt/src/projection.rs": "799141242357437bde6a1ccad968e8107b45a70ea9eed824ec3f095ded2fed19",
+    "crates/sql/sql-opt/src/shared_index_candidates.rs": "f33305ed5f5c0266ed45bb0cffd66268f8580fbbd6d64feab15a09c0aefd7cea",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "21fd7463ba0ebaa2751447992351cc516257f1bf4214ba99cd45b4095c75b90a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/OptimizeProjectionVisitor.java": "7908b3ec7eab9cdc17292590409db8e0ffcf06386d024dfd9036430758b82039",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/ir/ProjectionCompositionTests.java": "d47085eb0dfb17459eee1bfa6f6c6366b05d6c93871972a677db83c75d3ac02f"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "60752fba079961d7da97d927dd397b35277f41190b850078939cee39f323030c",
+    "bin/sql-difftest": "78af7ec21b9443c2e612db2bb5e73d864520d1fb8addd2b0df1fa30963f82275",
+    "maven/tests.jar": "6e22faabd3ed2b77a2d98718757fc6b70c4accc688a500e4746ebe31fd1a8553",
+    "maven/sql-compiler.jar": "3dc11ded4b9d6d3258d90248aaa6f94c171bc93e5ea7fe16f440f94a981209a9",
+    "bin/sql2dbsp": "64288af83ff2261064b6180ca774731fa41cd88835ecb514d2161cf5c0bca7d0"
+  },
+  "negative_control": {
+    "library_sha256": "1cc3fc5e01b0c4a07c33db2582826ffb173ffa77defba1555aaeefb3b4f026ce",
+    "failed_tests": [
+      "outputProjectionValidatesReadersOfAnUnchangedProducer"
+    ],
+    "java_compiler_sha256": "d34050d6b6b88708ec7a2ea89c2f100c9746ae62c229da16f19af57b77319d63"
+  },
+  "rust_tests": 229,
+  "junit_tests": 290,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "6f7da539b9d3dcd2434f1a16eba726f1092e110b9ab4668af863816e2a2e9bdb"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "88c0911d42900a516a8dd7bba4d3cc8088b0494b801b5f00a455528535997c47"
+    }
+  },
+  "source_commit": "fd8fc8156e5786169d7da82b7a8706e5c3660e4e",
+  "nightly_optimizer_junit": 307
+}

@@ -1,0 +1,145 @@
+{
+  "scope": "Push a row projection through a global aggregate and preserve the empty result, live diagnostics and reader annotations.",
+  "source_base": "9bf94e6a8789da0b4959e50373fdc29f017a167b",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "e75e40c156c60a01dd57bc9d672a5835834008a78502402867d2ad9c6df9971e",
+    "crates/sql/sql-opt-jni/src/push_projection.rs": "8fc67e6322482a32d9a51eeabd02c8ab7090b73b68c265c7d891e419aa9579c0",
+    "crates/sql/sql-opt/src/lib.rs": "6470d6198a6b634c16704cfefb3e36815f88fd9fd484309ea15f396cd5109b83",
+    "crates/sql/sql-opt/src/projection_rules.rs": "38c28feabdec962aad4c082ff544de8cb35935abd6b4e881526e66efb371b51b",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "8c7389d92108abee7d1694f54befea5b928b471d005b7798d743c19ff44de3b2",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/OptimizeProjections.java": "5f24bfc0c6b49ecff24b90c1d9b74cdcc4c3a92c84a4788e6825daccbf3a8c7f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/ir/ProjectionCompositionTests.java": "cd70049f24f3f33f5aba4dff277f513f97af2e9d20174c0c673b5251525ea5dd"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "1cc3fc5e01b0c4a07c33db2582826ffb173ffa77defba1555aaeefb3b4f026ce",
+    "bin/sql-difftest": "5dddc941dc0afae112575dd10ec00ef072a9384894362f8d0785ccc066d752c8",
+    "maven/tests.jar": "0384a5675c6fc48786a9730a1ad83dbf6c078325f5fd6609261bbbaf290f3bc3",
+    "maven/sql-compiler.jar": "d34050d6b6b88708ec7a2ea89c2f100c9746ae62c229da16f19af57b77319d63",
+    "bin/sql2dbsp": "8fbc29df73f50822721a808bf835146fd559faca0305af7ecfc2dea71a7349cc"
+  },
+  "negative_control": {
+    "library_sha256": "d6b2855348fdf5152a760e6a9253a8ee7e805e31a93b97469a4f90b637578fd6",
+    "failed_tests": [
+      "validateIndexedReaderOfAnUnchangedProducer",
+      "pushProjectionThroughAggregateMapsTheEmptyResult"
+    ],
+    "java_compiler_sha256": "80405556d83d7282aa31c49951cf2b6224b691834ce1bd84216fc90c184097b5"
+  },
+  "rust_tests": 229,
+  "junit_tests": 289,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "e86f691ce9f2aa1a552a51286973065afeb8f7459e0eda22b4ce8315df27ae33"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "a8b2698daf7ccdc9a51b463ea01b5a525db8c16e8a2c575e1ddbc650df79c72f"
+    }
+  },
+  "source_commit": "408be618515a797e3b5efb7216b55bd442899d1f",
+  "nightly_optimizer_junit": 306,
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2130e-ef79-79b2-b6a2-9af867878fc0",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2130e-efd9-7403-9385-8f58ed95f372",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "689afe4076ff757510547994e544362c8d91ca585c90abc3ae91627ab63c618a"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21310-0004-7b31-9541-b0eece31173b",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21310-0041-78f2-9fc2-c79877c89899",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "7b4b3598c7e458b65f7cdef5e3e549e2bb15a4c1103a23b01770a054e5c3c5c7"
+    }
+  }
+}
