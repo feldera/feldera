@@ -549,7 +549,16 @@ multiple partitions:
 
 Set `synchronize_partitions` to `true` to address the issue by
 synchronizing ingestion across partitions, ingesting records in order
-of their Kafka event timestamps.
+of their Kafka event timestamps.  The connector keeps track of the
+latest timestamp that it has received in each partition.  It ingests
+only the records whose timestamps are no later than the earliest of
+these, because a partition can still receive records with timestamps
+from its latest one onward.  It also limits each step to about one batch of records.
+A [distributed connector](#distributed-connectors) does the same
+across all of its hosts.
+
+Synchronized input can be slower than input that is not synchronized,
+because the slowest partition sets the pace for all of them.
 
 Pitfalls of this solution include:
 
@@ -559,6 +568,14 @@ Pitfalls of this solution include:
 
   (This can be avoided by keeping clocks on Kafka producers and brokers
   synchronized.)
+
+- The connector orders records by their Kafka timestamps, but the table
+  drops late records by its `LATENESS` column.  Differences between the
+  clocks of producers (or of brokers, with `LogAppendTime`) therefore add
+  to the disorder of the `LATENESS` column.  To drop no records, make the
+  `LATENESS` larger than the largest clock difference, plus the largest
+  delay between the time in the `LATENESS` column and the time that the
+  record is produced.
 
 - If an event with a timestamp far in the future is added to a
   partition, that event, and all those that follow it, will never be
@@ -572,11 +589,8 @@ Pitfalls of this solution include:
   processed at all, because there is no way to know the timestamp for
   the first event that will be added to that partition.
 
-- In a topic with `N` nonempty partitions, at least `N - 1` events
-  will always be left unprocessed (one in each of `N - 1` partitions),
-  because there is no way to know the timestamp for the next event to
-  be added to the partition whose events have been completely
-  processed.
+- A partition that stops receiving events holds back the events of the
+  other partitions that are later than its latest event.
 
 ## Distributed connectors
 
@@ -632,11 +646,13 @@ The hosts divide the partitions as follows:
 
 Limits:
 
-- A distributed connector does not support
-  [`synchronize_partitions`](#synchronize_partitions), because the
-  hosts do not synchronize their partitions with each other.  Thus,
-  [tables with LATENESS] that need synchronized partitions cannot use
-  a distributed connector.
+- A distributed connector that feeds a [table with LATENESS] must set
+  [`synchronize_partitions`](#synchronize_partitions).  Otherwise, a
+  host that reads ahead of the others could make their records late,
+  so the pipeline refuses to start.  With `synchronize_partitions`, the
+  hosts ingest their partitions in timestamp order together, through
+  the multihost coordinator, which can make ingestion slower (see
+  [Synchronizing partitions](#synchronizing-partitions)).
 - To change `distributed` changes the connector's configuration.  A
   pipeline that resumes from a checkpoint treats the connector like
   any other connector whose configuration changed.
@@ -644,7 +660,7 @@ Limits:
   distributed connectors.  If a host runs a version that does not, the
   pipeline fails to start, instead of reading each record once per host.
 
-[tables with LATENESS]: /sql/streaming/#lateness-expressions
+[table with LATENESS]: /sql/streaming/#lateness-expressions
 
 ## Additional resources
 

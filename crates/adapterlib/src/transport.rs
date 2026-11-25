@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
-use feldera_types::coordination::{Completion, InputShard};
+use feldera_types::coordination::{Completion, InputBound, InputShard, OrderKey};
 use feldera_types::program_schema::Relation;
 use feldera_types::transaction::TransactionId;
 use rmpv::{Value as RmpValue, ext::Error as RmpDecodeError};
@@ -317,6 +317,17 @@ pub struct InputQueueEntry<A, B> {
 
     /// Auxiliary data associated with the buffer.
     aux: A,
+
+    /// For a synchronized queue (see [InputQueue::synchronized]), every
+    /// record in the buffer has a key below this one.  `None` for an entry
+    /// that has no records to order, such as one with only auxiliary data.
+    upper: Option<OrderKey>,
+
+    /// Whether the queue has reported the buffer's records to the consumer as
+    /// buffered.  A synchronized queue reports them only once its bound admits
+    /// them, so that the pipeline does not take steps for records that it may
+    /// not flush yet.
+    counted: bool,
 }
 
 impl<A, B> InputQueueEntry<A, B> {
@@ -329,6 +340,8 @@ impl<A, B> InputQueueEntry<A, B> {
             on_all_hosts: false,
             commit_transaction: false,
             aux,
+            upper: None,
+            counted: false,
         }
     }
 
@@ -367,6 +380,12 @@ impl<A, B> InputQueueEntry<A, B> {
     }
 }
 
+/// Returns true if `bound` admits an entry whose records all have keys below
+/// `upper`, or that has no records to order if `upper` is `None`.
+fn admits(bound: &InputBound, upper: Option<&OrderKey>) -> bool {
+    upper.is_none_or(|upper| InputBound::Key(upper.clone()) <= *bound)
+}
+
 /// A thread-safe queue for collecting and flushing input buffers.
 ///
 /// Commonly used by `InputReader` implementations for staging buffers from
@@ -380,6 +399,23 @@ pub struct InputQueue<A = (), B = Box<dyn InputBuffer>> {
     /// A transaction boundary that the connector requested and the pipeline
     /// has not reached yet.  The queue flushes nothing until it does.
     pending_boundary: Mutex<Pending>,
+
+    /// For a synchronized queue (see [Self::synchronized]), the global bound:
+    /// the queue flushes only entries whose records are all below it.  `None`
+    /// for a queue that is not synchronized.
+    bound: Mutex<Option<InputBound>>,
+
+    /// For a synchronized queue, the upper key that [Self::push_entry] gives
+    /// the entries pushed now (see [Self::set_push_upper]).
+    push_upper: Mutex<Option<OrderKey>>,
+
+    /// For a synchronized queue, the bound, for tasks that wait for it (see
+    /// [Self::wait_for_input_bound]).
+    bound_watch: tokio::sync::watch::Sender<InputBound>,
+
+    /// For a synchronized queue, a bound below which the connector has
+    /// queued all of its records (see [Self::set_promise]).
+    promise: Mutex<InputBound>,
 }
 
 /// How long a connector may wait for a transaction boundary before
@@ -441,7 +477,158 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
             consumer,
             transaction_in_progress: AtomicBool::new(false),
             pending_boundary: Mutex::new(Pending::new(PendingBoundary::None)),
+            bound: Mutex::new(None),
+            push_upper: Mutex::new(None),
+            bound_watch: tokio::sync::watch::Sender::new(InputBound::NotReady),
+            promise: Mutex::new(InputBound::NotReady),
         }
+    }
+
+    /// Returns this queue made synchronized, for a connector that orders its
+    /// input across hosts or partitions (see `TransportConfig::synchronizes_input`).
+    ///
+    /// A synchronized queue holds back each entry until its bound, initially
+    /// [InputBound::NotReady], admits all of the entry's records (see
+    /// [Self::set_input_bound]).  A flush takes every entry that the bound
+    /// admits, regardless of the batch size, because records below the bound
+    /// that one host left for a later step could be late by then.
+    pub fn synchronized(self) -> Self {
+        *self.bound.lock().unwrap() = Some(InputBound::NotReady);
+        self
+    }
+
+    /// Sets the bound of a synchronized queue, and reports the records that
+    /// it newly admits as buffered.
+    pub fn set_input_bound(&self, bound: InputBound) {
+        let mut queue = self.queue.lock().unwrap();
+        for entry in queue.iter_mut() {
+            if !entry.counted && admits(&bound, entry.upper.as_ref()) {
+                entry.counted = true;
+                self.consumer.buffered(Self::entry_len(entry));
+            }
+        }
+        *self.bound.lock().unwrap() = Some(bound.clone());
+        self.bound_watch.send_replace(bound);
+    }
+
+    /// Waits until the bound of a synchronized queue is at least `bound`.
+    pub async fn wait_for_input_bound(&self, bound: InputBound) {
+        let _ = self
+            .bound_watch
+            .subscribe()
+            .wait_for(|current| *current >= bound)
+            .await;
+    }
+
+    /// For a synchronized queue, records that the connector has queued all
+    /// of its records below `promise`, and reports its bound (see
+    /// [Self::report_input_bound]).
+    pub fn set_promise(&self, promise: InputBound) {
+        *self.promise.lock().unwrap() = promise;
+        self.report_input_bound();
+    }
+
+    /// For a synchronized queue, reports the connector's bound to the
+    /// consumer: the smaller of the promise (see [Self::set_promise]) and a
+    /// cap that keeps a step to about one batch (see [Self::bound_cap]).  If
+    /// the consumer answers with the global bound at once, sets it.  A queue
+    /// that is not synchronized does nothing.
+    ///
+    /// The queue reports again after each flush, because a flush can raise
+    /// the cap.
+    pub fn report_input_bound(&self) {
+        if self.input_bound().is_none() {
+            return;
+        }
+        let promise = self.promise.lock().unwrap().clone();
+        let cap = self.bound_cap(self.consumer.max_batch_size());
+        if let Some(bound) = self.consumer.report_input_bound(promise.min(cap)) {
+            self.set_input_bound(bound);
+        }
+    }
+
+    /// For a synchronized queue of a connector that reads its input in
+    /// ranges in key order, runs `read`, which queues one range, all of
+    /// whose keys are below `upper`.
+    ///
+    /// Tags the range's entries with `upper`, and then promises `upper`.
+    /// `uppers` holds the upper keys of the ranges read so far, which the
+    /// caller keeps across calls.  Before reading, waits until the bound is
+    /// past the oldest of them if two ranges are already ahead of it, because
+    /// records that the bound holds back do not count for backpressure.
+    pub async fn read_synchronized_range<T>(
+        &self,
+        upper: OrderKey,
+        uppers: &mut VecDeque<OrderKey>,
+        read: impl Future<Output = T>,
+    ) -> T {
+        if uppers.len() >= 2 {
+            let oldest = uppers.pop_front().unwrap();
+            self.wait_for_input_bound(InputBound::Key(oldest)).await;
+        }
+        self.set_push_upper(Some(upper.clone()));
+        let result = read.await;
+        self.set_push_upper(None);
+        uppers.push_back(upper.clone());
+        self.set_promise(InputBound::Key(upper));
+        result
+    }
+
+    /// Returns the bound of a synchronized queue, or `None` if the queue is
+    /// not synchronized.
+    pub fn input_bound(&self) -> Option<InputBound> {
+        self.bound.lock().unwrap().clone()
+    }
+
+    /// Gives the entries that [Self::push_entry] pushes from now on the upper
+    /// key `upper`, until the next call.
+    pub fn set_push_upper(&self, upper: Option<OrderKey>) {
+        *self.push_upper.lock().unwrap() = upper;
+    }
+
+    /// For a synchronized queue, returns the highest upper key that admits
+    /// no more than about `max` queued records: the upper key of the last of
+    /// the queued groups of entries, in order, whose records together are no
+    /// more than `max`, or of the first group if it alone has more.  Returns
+    /// [InputBound::Done] if all of the queued records fit.
+    pub fn bound_cap(&self, max: usize) -> InputBound {
+        let queue = self.queue.lock().unwrap();
+        let mut groups: Vec<(OrderKey, usize)> = Vec::new();
+        for entry in queue.iter() {
+            let Some(upper) = &entry.upper else {
+                continue;
+            };
+            let records = Self::entry_len(entry).records;
+            match groups.last_mut() {
+                Some((key, total)) if key == upper => *total += records,
+                _ => groups.push((upper.clone(), records)),
+            }
+        }
+        let mut total = 0;
+        for (index, (_key, records)) in groups.iter().enumerate() {
+            total += records;
+            if total > max {
+                let (key, _) = &groups[index.saturating_sub(1)];
+                return InputBound::Key(key.clone());
+            }
+        }
+        InputBound::Done
+    }
+
+    fn entry_len(entry: &InputQueueEntry<A, B>) -> BufferSize {
+        entry
+            .buffer
+            .as_ref()
+            .map_or(BufferSize::empty(), |buffer| buffer.len())
+    }
+
+    /// Returns true if the front entry of `queue` may be flushed now: always
+    /// for a queue that is not synchronized, and once the bound admits it for
+    /// one that is.
+    fn front_admitted(&self, queue: &VecDeque<InputQueueEntry<A, B>>) -> bool {
+        queue
+            .front()
+            .is_some_and(|entry| entry.counted || self.bound.lock().unwrap().is_none())
     }
 
     fn set_pending_boundary(&self, boundary: PendingBoundary) {
@@ -534,16 +721,23 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         });
     }
 
-    pub fn push_entry(&self, entry: InputQueueEntry<A, B>, errors: Vec<ParseError>) {
+    pub fn push_entry(&self, mut entry: InputQueueEntry<A, B>, errors: Vec<ParseError>) {
         self.consumer.parse_errors(errors);
-        let len = entry
-            .buffer
-            .as_ref()
-            .map_or(BufferSize::empty(), |buffer| buffer.len());
+        let len = Self::entry_len(&entry);
 
         let mut queue = self.queue.lock().unwrap();
+        if entry.upper.is_none() {
+            entry.upper = self.push_upper.lock().unwrap().clone();
+        }
+        entry.counted = match &*self.bound.lock().unwrap() {
+            None => true,
+            Some(bound) => admits(bound, entry.upper.as_ref()),
+        };
+        let counted = entry.counted;
         queue.push_back(entry);
-        self.consumer.buffered(len);
+        if counted {
+            self.consumer.buffered(len);
+        }
 
         // The endpoint pushed an empty buffer. This likely indicates that the accompanying aux data
         // needs to be processed by the endpoint after preceding buffers have been flushed. However,
@@ -618,7 +812,16 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
     ) -> (BufferSize, Option<Xxh3Default>, Vec<(DateTime<Utc>, A)>) {
         let mut total = BufferSize::empty();
         let mut hasher = self.consumer.hasher();
-        let n = self.consumer.max_batch_size();
+        // A synchronized queue flushes every entry that its bound admits (see
+        // [Self::synchronized]), regardless of the batch size and of
+        // `stop_at`.  The last entry that the bound admits ends a range, so
+        // this still stops where a connector that reads ranges could resume.
+        let synchronized = self.bound.lock().unwrap().is_some();
+        let (n, stop_at): (usize, &dyn Fn(&A) -> bool) = if synchronized {
+            (usize::MAX, &|_| false)
+        } else {
+            (self.consumer.max_batch_size(), stop_at)
+        };
         let mut consumed_aux = Vec::new();
 
         let mut stop = false;
@@ -631,7 +834,16 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                 start_transaction,
                 on_all_hosts,
                 commit_transaction,
-            }) = self.queue.lock().unwrap().pop_front()
+                upper,
+                counted,
+            }) = ({
+                let mut queue = self.queue.lock().unwrap();
+                if self.front_admitted(&queue) {
+                    queue.pop_front()
+                } else {
+                    None
+                }
+            })
             else {
                 break;
             };
@@ -648,6 +860,8 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                         start_transaction: None,
                         on_all_hosts: false,
                         commit_transaction,
+                        upper,
+                        counted,
                     });
                     stop = true;
                     break;
@@ -674,6 +888,7 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         let mut queue = self.queue.lock().unwrap();
         while !stop
             && !self.awaiting_boundary()
+            && self.front_admitted(&queue)
             && queue
                 .front()
                 .is_some_and(|InputQueueEntry { buffer, .. }| buffer.is_none())
@@ -684,6 +899,8 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                 start_transaction,
                 on_all_hosts,
                 commit_transaction,
+                upper,
+                counted,
                 ..
             }) = queue.pop_front()
             else {
@@ -700,6 +917,8 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                         start_transaction: None,
                         on_all_hosts: false,
                         commit_transaction,
+                        upper,
+                        counted,
                     });
                     break;
                 }
@@ -714,6 +933,7 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         }
         drop(queue);
         self.report_long_wait();
+        self.report_input_bound();
 
         (total, hasher, consumed_aux)
     }
@@ -813,6 +1033,8 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
                         on_all_hosts: false,
                         commit_transaction,
                         aux: (),
+                        upper: None,
+                        counted: true,
                     });
                     break;
                 }
@@ -834,6 +1056,8 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
                         on_all_hosts: false,
                         commit_transaction,
                         aux: (),
+                        upper: None,
+                        counted: true,
                     });
                     break;
                 }
@@ -933,6 +1157,15 @@ pub trait InputReader: Send + Sync {
     fn startup_choice(&self) -> Option<JsonValue> {
         None
     }
+
+    /// For a synchronized input connector (see
+    /// `TransportConfig::synchronizes_input`), sets the global bound `B` that
+    /// the coordinator computed: the reader may stage only records whose keys
+    /// are below `bound` (see the `feldera_types::coordination` module).
+    ///
+    /// A reader that synchronizes its input starts with
+    /// [InputBound::NotReady].  The default implementation does nothing.
+    fn set_input_bound(&self, _bound: InputBound) {}
 }
 
 /// Position in an input stream, including the timestamp when the data was ingested
@@ -1129,6 +1362,23 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// input alone, such as the host that follows a table's log after the
     /// snapshot, reports `(1, 1)`.  The default implementation does nothing.
     fn set_input_share(&self, _mine: usize, _total: usize) {}
+
+    /// For a synchronized input connector (see
+    /// `TransportConfig::synchronizes_input`), reports this host's bound
+    /// `R_h`: every record that the reader has not staged yet has a key of at
+    /// least `bound`, and the records below `bound` fit in about one batch
+    /// (see the `feldera_types::coordination` module).
+    ///
+    /// Returns the global bound to use from now on, if this host decides it
+    /// alone, because it reads all of the connector's input.  Otherwise,
+    /// returns `None`, and the global bound arrives later through
+    /// [InputReader::set_input_bound].
+    ///
+    /// The default implementation returns `Some(bound)`, as for a connector
+    /// on a single host.
+    fn report_input_bound(&self, bound: InputBound) -> Option<InputBound> {
+        Some(bound)
+    }
 
     /// Returns a watch receiver that fires each time pipeline step processing
     /// completes.  The value is the count of fully-processed steps
@@ -2710,5 +2960,212 @@ mod transaction_boundary_model_tests {
         ) {
             run(host_entries, actions, max_batch_size, queue_flush);
         }
+    }
+}
+
+#[cfg(test)]
+mod synchronized_queue_tests {
+    use std::hash::Hasher;
+    use std::sync::{Arc, Mutex};
+
+    use anyhow::Error as AnyError;
+    use chrono::Utc;
+    use feldera_types::adapter_stats::ConnectorHealth;
+    use feldera_types::config::FtModel;
+    use feldera_types::coordination::{Completion, InputBound, OrderKey};
+
+    use super::{InputConsumer, InputQueue, InputQueueEntry, Resume, Watermark};
+    use crate::format::{BufferSize, InputBuffer, ParseError};
+
+    /// What the connector reported: the records buffered, and the IDs flushed.
+    #[derive(Default)]
+    struct State {
+        buffered: usize,
+        flushed: Vec<u32>,
+    }
+
+    /// A consumer with a batch size of 2.
+    #[derive(Clone, Default)]
+    struct Consumer(Arc<Mutex<State>>);
+
+    impl InputConsumer for Consumer {
+        fn max_batch_size(&self) -> usize {
+            2
+        }
+        fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
+            None
+        }
+        fn parse_errors(&self, _errors: Vec<ParseError>) {}
+        fn buffered(&self, amt: BufferSize) {
+            self.0.lock().unwrap().buffered += amt.records;
+        }
+        fn replayed(&self, _amt: BufferSize, _hash: u64) {}
+        fn extended(&self, _amt: BufferSize, _resume: Option<Resume>, _watermarks: Vec<Watermark>) {
+        }
+        fn eoi(&self) {}
+        fn request_step(&self) {}
+        fn start_transaction(&self, _label: Option<&str>) {}
+        fn commit_transaction(&self) {}
+        fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
+            None
+        }
+        fn error(&self, _fatal: bool, _error: AnyError, _tag: Option<&'static str>) {}
+        fn update_connector_health(&self, _health: ConnectorHealth) {}
+    }
+
+    struct Records {
+        ids: Vec<u32>,
+        consumer: Consumer,
+    }
+
+    impl InputBuffer for Records {
+        fn flush(&mut self) -> anyhow::Result<()> {
+            self.consumer
+                .0
+                .lock()
+                .unwrap()
+                .flushed
+                .append(&mut self.ids);
+            Ok(())
+        }
+        fn len(&self) -> BufferSize {
+            BufferSize {
+                records: self.ids.len(),
+                bytes: self.ids.len(),
+            }
+        }
+        fn hash(&self, _hasher: &mut dyn Hasher) {}
+        fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {
+            unreachable!()
+        }
+    }
+
+    fn key(key: u64) -> OrderKey {
+        OrderKey::U64(key)
+    }
+
+    /// Pushes records `ids` with upper key `upper` to `queue`.
+    fn push(queue: &InputQueue, consumer: &Consumer, upper: u64, ids: &[u32]) {
+        queue.set_push_upper(Some(key(upper)));
+        queue.push_entry(
+            InputQueueEntry::new_with_aux(Utc::now(), ()).with_buffer(Some(Box::new(Records {
+                ids: ids.to_vec(),
+                consumer: consumer.clone(),
+            })
+                as Box<dyn InputBuffer>)),
+            Vec::new(),
+        );
+        queue.set_push_upper(None);
+    }
+
+    /// A synchronized queue holds back records until its bound admits them,
+    /// reports them as buffered only then, and flushes all of the admitted
+    /// ones at once, even past the batch size.
+    #[test]
+    fn synchronized_queue_follows_its_bound() {
+        let consumer = Consumer::default();
+        let queue = InputQueue::new(Box::new(consumer.clone())).synchronized();
+        let state = || {
+            let state = consumer.0.lock().unwrap();
+            (state.buffered, state.flushed.clone())
+        };
+
+        // Range 1 has records 1 to 3, all below key 10, and range 2 has
+        // records 4 and 5, below key 20.  Each range ends with an entry
+        // without records, as a connector's resume information does.
+        push(&queue, &consumer, 10, &[1, 2, 3]);
+        queue.push_entry(InputQueueEntry::new_with_aux(Utc::now(), ()), Vec::new());
+        push(&queue, &consumer, 20, &[4, 5]);
+        assert_eq!(state(), (0, vec![]));
+        queue.flush_with_aux();
+        assert_eq!(state(), (0, vec![]));
+
+        // A cap of 2 records still admits all of range 1, so that the bound
+        // moves forward.  A cap of 5 admits everything.
+        assert_eq!(queue.bound_cap(2), InputBound::Key(key(10)));
+        assert_eq!(queue.bound_cap(4), InputBound::Key(key(10)));
+        assert_eq!(queue.bound_cap(5), InputBound::Done);
+
+        // Bound 10 admits range 1, all 3 records, but not range 2.
+        queue.set_input_bound(InputBound::Key(key(10)));
+        assert_eq!(state(), (3, vec![]));
+        queue.flush_with_aux();
+        assert_eq!(state(), (3, vec![1, 2, 3]));
+        assert_eq!(queue.len(), 1);
+
+        // Bound 15 admits nothing more.
+        queue.set_input_bound(InputBound::Key(key(15)));
+        queue.flush_with_aux();
+        assert_eq!(state(), (3, vec![1, 2, 3]));
+
+        // Records pushed while the bound admits them count at once.
+        queue.set_input_bound(InputBound::Done);
+        assert_eq!(state(), (5, vec![1, 2, 3]));
+        push(&queue, &consumer, 30, &[6]);
+        assert_eq!(state(), (6, vec![1, 2, 3]));
+        queue.flush_with_aux();
+        assert_eq!(state(), (6, vec![1, 2, 3, 4, 5, 6]));
+    }
+
+    /// A synchronized queue flushes every entry that its bound admits, even
+    /// when the connector asks it to stop early, as for a checkpoint.
+    /// Otherwise records below the bound could wait for a later step.
+    #[test]
+    fn synchronized_queue_ignores_stop_at() {
+        let consumer = Consumer::default();
+        let queue = InputQueue::new(Box::new(consumer.clone())).synchronized();
+        for (upper, id) in [(10, 1), (20, 2), (30, 3)] {
+            push(&queue, &consumer, upper, &[id]);
+            queue.push_entry(InputQueueEntry::new_with_aux(Utc::now(), ()), Vec::new());
+        }
+        queue.set_input_bound(InputBound::Key(key(20)));
+        queue.flush_with_aux_until(&|_| true);
+        assert_eq!(consumer.0.lock().unwrap().flushed, [1, 2]);
+    }
+
+    /// On a single host, where the consumer answers with the global bound at
+    /// once, a promise sets the bound, capped to about one batch.
+    #[test]
+    fn promise_sets_the_bound_on_one_host() {
+        let consumer = Consumer::default();
+        let queue = InputQueue::new(Box::new(consumer.clone())).synchronized();
+        for (upper, id) in [(10, 1), (20, 2), (30, 3)] {
+            push(&queue, &consumer, upper, &[id]);
+        }
+        // The batch size is 2, so the cap is 20.
+        queue.set_promise(InputBound::Key(key(25)));
+        assert_eq!(queue.input_bound(), Some(InputBound::Key(key(20))));
+        queue.set_promise(InputBound::Key(key(15)));
+        assert_eq!(queue.input_bound(), Some(InputBound::Key(key(15))));
+    }
+
+    /// An entry without an upper key stays behind the entries that the bound
+    /// holds back, and a bound that goes down does not hold back entries that
+    /// it already admitted, because the hosts may already count them.
+    #[test]
+    fn order_kept_and_bound_regression() {
+        let consumer = Consumer::default();
+        let queue = InputQueue::new(Box::new(consumer.clone())).synchronized();
+        push(&queue, &consumer, 10, &[1]);
+        queue.push_entry(InputQueueEntry::new_with_aux(Utc::now(), ()), Vec::new());
+        push(&queue, &consumer, 20, &[2]);
+        queue.flush_with_aux();
+        assert_eq!(queue.len(), 3);
+        queue.set_input_bound(InputBound::Key(key(20)));
+        queue.set_input_bound(InputBound::Key(key(5)));
+        queue.flush_with_aux();
+        assert_eq!(consumer.0.lock().unwrap().flushed, [1, 2]);
+        assert_eq!(consumer.0.lock().unwrap().buffered, 2);
+    }
+
+    /// A queue that is not synchronized ignores upper keys.
+    #[test]
+    fn unsynchronized_queue_ignores_upper_keys() {
+        let consumer = Consumer::default();
+        let queue = InputQueue::new(Box::new(consumer.clone()));
+        push(&queue, &consumer, 10, &[1]);
+        assert_eq!(consumer.0.lock().unwrap().buffered, 1);
+        queue.flush_with_aux();
+        assert_eq!(consumer.0.lock().unwrap().flushed, [1]);
     }
 }

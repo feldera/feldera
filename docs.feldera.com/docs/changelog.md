@@ -10,6 +10,22 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (connectors): a distributed input connector that
+  feeds a table with `LATENESS` now fails to start, unless it synchronizes
+  its hosts, because a host that reads ahead of the others could make
+  their input late.  A distributed Kafka connector can now set
+  `synchronize_partitions` to synchronize its hosts, and a distributed
+  Delta Lake or Iceberg connector can now set `timestamp_column` (with
+  `transaction_mode` set to `none`).  To keep such a pipeline running,
+  synchronize the connector, or remove `distributed`.
+
+- Behavior change (Kafka input connector): with `synchronize_partitions`,
+  the connector now ingests all of the records whose timestamps are no
+  later than the earliest of its partitions' latest timestamps, instead
+  of one record at a time while every partition has a record waiting.  A
+  partition that has received all of its records no longer stops the
+  other partitions.
+
 ## v0.385.0
 
 - Security: pipeline diagnostics replace registered Secret values with their

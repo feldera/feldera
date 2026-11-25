@@ -1,6 +1,7 @@
 use crate::errors::journal::ControllerError;
 use anyhow::{Error as AnyError, anyhow};
 use arrow::array::Array;
+use chrono::{NaiveDate, NaiveDateTime};
 use datafusion::common::ScalarValue;
 use datafusion::common::arrow::array::{AsArray, RecordBatch};
 use datafusion::execution::SessionStateBuilder;
@@ -15,6 +16,7 @@ use datafusion::sql::sqlparser::parser::Parser;
 use datafusion::sql::sqlparser::tokenizer::Token;
 use feldera_types::config::PipelineConfig;
 use feldera_types::constants::DATAFUSION_TEMP_DIR;
+use feldera_types::coordination::OrderKey;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
@@ -511,6 +513,43 @@ pub fn timestamp_to_sql_expression(column_type: &ColumnType, expr: &str) -> Stri
     }
 }
 
+/// Returns the ordering key (see `feldera_types::coordination::OrderKey`) of
+/// `raw`, a value of `timestamp_column` that DataFusion cast to a string, such
+/// as the end of a range of an ordered snapshot read.
+///
+/// A `TIMESTAMP` maps to microseconds since the epoch, a `DATE` to days since
+/// the epoch, and an integer to its value, so that the keys of values of one
+/// type are in the same order as the values.
+pub fn timestamp_order_key(timestamp_column: &Field, raw: &str) -> Result<OrderKey, AnyError> {
+    // DataFusion produced `raw` from the column, so this is a bug, not a
+    // problem with the user's data or configuration.
+    let error = || {
+        anyhow!(
+            "cannot read '{raw}' as a value of timestamp column '{}' of type {}, to synchronize the hosts of a distributed connector (this is a bug, please report it to Feldera)",
+            timestamp_column.name,
+            serde_json::to_string(&timestamp_column.columntype).unwrap()
+        )
+    };
+    match timestamp_column.columntype.typ {
+        SqlType::Timestamp => {
+            let timestamp = ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"]
+                .into_iter()
+                .find_map(|format| NaiveDateTime::parse_from_str(raw, format).ok())
+                .ok_or_else(error)?;
+            Ok(OrderKey::from_i64(timestamp.and_utc().timestamp_micros()))
+        }
+        SqlType::Date => {
+            let date = NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| error())?;
+            let days = date.signed_duration_since(NaiveDate::default()).num_days();
+            Ok(OrderKey::from_i64(days))
+        }
+        SqlType::UTinyInt | SqlType::USmallInt | SqlType::UInt | SqlType::UBigInt => {
+            Ok(OrderKey::U64(raw.parse().map_err(|_| error())?))
+        }
+        _ => Ok(OrderKey::from_i64(raw.parse().map_err(|_| error())?)),
+    }
+}
+
 /// Check that the `timestamp` field has one of supported types.
 pub fn validate_timestamp_type(
     endpoint_name: &str,
@@ -599,8 +638,61 @@ pub async fn validate_timestamp_column(
 mod tests {
     use super::{
         columns_referenced_by_expression, columns_referenced_by_order_by, create_runtime_env,
-        create_session_context,
+        create_session_context, execute_singleton_query, timestamp_order_key,
+        timestamp_to_sql_expression,
     };
+    use datafusion::prelude::SessionContext;
+    use feldera_types::coordination::OrderKey;
+    use feldera_types::program_schema::{ColumnType, Field, SqlIdentifier};
+
+    fn ts_column(column_type: &ColumnType) -> Field {
+        Field::new(SqlIdentifier::new("ts", false), column_type.clone())
+    }
+
+    /// The ordering key of the end of a range, computed as an ordered snapshot
+    /// read computes it: `start + lateness`, cast to a string.
+    async fn range_end_key(column_type: &ColumnType, start: &str, lateness: &str) -> OrderKey {
+        let start = timestamp_to_sql_expression(column_type, start);
+        let raw = execute_singleton_query(
+            &SessionContext::new(),
+            &format!("select cast(({start} + {lateness}) as string)"),
+        )
+        .await
+        .unwrap();
+        timestamp_order_key(&ts_column(column_type), &raw).unwrap()
+    }
+
+    /// Range ends map to keys that are the values in the documented units.
+    #[tokio::test]
+    async fn range_ends_have_order_keys() {
+        let timestamp = ColumnType::timestamp(false);
+        assert_eq!(
+            range_end_key(&timestamp, "2024-01-01 00:00:00", "interval '90 minutes'").await,
+            OrderKey::from_i64(1_704_072_600_000_000)
+        );
+        assert_eq!(
+            range_end_key(&timestamp, "1969-12-31 23:59:59.5", "interval '1 second'").await,
+            OrderKey::from_i64(500_000)
+        );
+        assert_eq!(
+            range_end_key(&ColumnType::date(false), "2024-01-01", "interval '2 days'").await,
+            OrderKey::from_i64(19_725)
+        );
+        assert_eq!(
+            range_end_key(&ColumnType::bigint(false), "-7", "3").await,
+            OrderKey::from_i64(-4)
+        );
+        assert_eq!(
+            timestamp_order_key(
+                &ts_column(&ColumnType::ubigint(false)),
+                "18446744073709551615"
+            )
+            .unwrap(),
+            OrderKey::U64(u64::MAX)
+        );
+        let error = timestamp_order_key(&ts_column(&timestamp), "yesterday").unwrap_err();
+        assert!(error.to_string().contains("column 'ts'"), "{error}");
+    }
     use datafusion::execution::memory_pool::MemoryLimit;
     use feldera_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig, StorageConfig};
     use feldera_types::constants::DATAFUSION_TEMP_DIR;
