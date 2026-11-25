@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -23,6 +24,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -472,6 +474,57 @@ public class JoinInputProjectionTests {
             var actual = hybrid.input().node().to(DBSPMapIndexOperator.class);
             Assert.assertTrue(EquivalenceContext.equiv(expected.getClosureFunction(), actual.getClosureFunction()));
             Assert.assertTrue(pair.keyType.sameType(actual.getOutputIndexedZSetType().keyType));
+        }
+    }
+
+    @Test
+    public void streamAggregatesShareTheInputProjectionAndCheckOriginalBindings() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b INT, c INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var rows = source.getOutput(0);
+        var row = rows.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var index = new DBSPMapIndexOperator(site,
+                new DBSPRawTupleExpression(new DBSPTupleExpression(), row.deref()).closure(row), rows);
+        var first = row.deref().field(0);
+        var acc = first.getType().var();
+        var identity = acc.closure(acc);
+        var empty = first.getType().none();
+        var right = new LinearAggregate(site, row.deref().field(2).closure(row), identity, empty);
+        for (boolean shared : List.of(false, true)) {
+            var nested = first.closure(row.asParameter());
+            var left = new LinearAggregate(site, shared
+                    ? new DBSPBlockExpression(List.of(nested.toStatement()), first).closure(row)
+                    : first.closure(row), identity, empty);
+            var list = new DBSPAggregateList(site, row, List.of(left, right));
+            var output = new DBSPTypeIndexedZSet(site, index.getOutputIndexedZSetType().keyType, list.getEmptySetResultType());
+            var operator = new DBSPStreamAggregateOperator(site, output, null, list, index.outputPort());
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            circuit.addOperator(source);
+            circuit.addOperator(index);
+            circuit.addOperator(operator);
+            String diagnostic = null;
+            DBSPAggregateList expected = null;
+            for (boolean hybrid : List.of(false, true)) {
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                var pass = new RemoveUnusedFields(compiler, new AnalyzedSet<>());
+                if (shared) {
+                    var error = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+                    Assert.assertTrue(error.getMessage(), error.getMessage().contains("Changing declaration"));
+                    if (hybrid)
+                        Assert.assertEquals(diagnostic, error.getMessage());
+                    diagnostic = error.getMessage();
+                } else {
+                    var result = pass.apply(circuit).allOperators.getLast().to(DBSPStreamAggregateOperator.class);
+                    Assert.assertEquals(2, result.input().getOutputIndexedZSetType().elementType.to(DBSPTypeTuple.class).size());
+                    Assert.assertSame(empty, result.aggregateList.aggregates.get(1).getEmptySetResult());
+                    if (hybrid)
+                        Assert.assertTrue(expected.equivalent(result.aggregateList));
+                    expected = result.aggregateList;
+                }
+            }
         }
     }
 

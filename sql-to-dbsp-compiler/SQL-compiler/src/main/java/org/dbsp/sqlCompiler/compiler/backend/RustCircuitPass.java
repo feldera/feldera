@@ -178,6 +178,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -1686,6 +1689,52 @@ public final class RustCircuitPass implements CircuitTransform {
             return Pair.of(projection, narrowed);
         } catch (IOException error) {
             throw new UncheckedIOException("Could not encode UNNEST collection field paths", error);
+        }
+    }
+
+    @Nullable
+    public static Pair<DBSPClosureExpression, DBSPAggregateList> trimStreamAggregateInput(
+            DBSPCompiler compiler, DBSPAggregateList list, DBSPType input) {
+        var parts = new ArrayList<IDBSPInnerNode>();
+        parts.add(input);
+        parts.add(list.rowVar.getType());
+        var reads = new ArrayList<List<List<Integer>>>();
+        for (var part : list.aggregates) {
+            if (part instanceof MinMaxAggregate minMax) {
+                reads.add(requiredParameterFieldDependencies(compiler, minMax.comparedValue).getFirst());
+                parts.add(minMax.withCopiedIncrement());
+            } else if (part instanceof NonLinearAggregate aggregate) {
+                reads.add(requiredParameterFieldDependencies(compiler, aggregate.increment).get(1));
+                parts.add(aggregate);
+            } else {
+                var aggregate = part.to(LinearAggregate.class);
+                reads.add(requiredParameterFieldDependencies(compiler, aggregate.map).getFirst());
+                parts.add(aggregate);
+            }
+        }
+
+        String pass = "RemoveUnusedFields/StreamAggregateInput";
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(reads), parts.toArray(IDBSPInnerNode[]::new));
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.isNull())
+                return null;
+            if (reply.value.has("diagnostic"))
+                checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
+            var roots = reply.value.required("roots");
+            Utilities.enforce(roots.size() == parts.size());
+            var decoder = expressionDecoder(reply.writer);
+            var project = Objects.requireNonNull(decodeLiveRoot(decoder, roots.required(0), DBSPClosureExpression.class));
+            var type = Objects.requireNonNull(decodeLiveRoot(decoder, roots.required(1), DBSPType.class));
+            var row = new DBSPVariablePath(list.rowVar.variable, type);
+            var components = new ArrayList<IAggregate>();
+            for (int i = 2; i < roots.size(); i++)
+                components.add(Objects.requireNonNull(decodeLiveRoot(decoder, roots.required(i), IAggregate.class)));
+            finishLowering(compiler, reply.value);
+            return Pair.of(project, new DBSPAggregateList(list.getNode(), row, components));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode stream aggregate field reads", error);
         }
     }
 

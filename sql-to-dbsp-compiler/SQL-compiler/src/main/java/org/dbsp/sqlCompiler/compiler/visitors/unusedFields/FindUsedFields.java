@@ -527,12 +527,7 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
     AggregateUseMap computeUsedFields(MinMaxAggregate aggregate) {
         DBSPClosureExpression closure = aggregate.comparedValue;
         var parameterFieldUse = this.findUsedFields(closure);
-        return new AggregateUseMap(
-                new MinMaxAggregate(aggregate.getNode(), aggregate.zero,
-                        aggregate.increment.deepCopy().to(DBSPClosureExpression.class),
-                        aggregate.emptySetResult, aggregate.semigroup, closure,
-                        aggregate.postProcess, aggregate.operation),
-                parameterFieldUse, closure.parameters[0]);
+        return new AggregateUseMap(aggregate.withCopiedIncrement(), parameterFieldUse, closure.parameters[0]);
     }
 
     public AggregateUseMap computeUsedFields(IAggregate aggregate) {

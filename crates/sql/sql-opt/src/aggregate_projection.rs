@@ -68,19 +68,8 @@ pub fn trim_indexed_reader<'a>(
         _ => return Err(Error::new("unexpected parameter count in indexed input reader").into()),
     };
     let declared = edit.type_id(edit.node(parameter)?.edge("type")?)?;
-    let mut fields = RowFields::new(original);
-    if !fields.unused(declared.into(), &[], paths, 1)? {
+    let Some(mut used) = RowFields::new(original).projection_mask(declared.into(), paths)? else {
         return Ok(None);
-    }
-
-    let mut row = declared;
-    while edit.type_kind(row)? == TypeKind::Ref {
-        row = edit.type_id(edit.node(row.into())?.edge("type")?)?;
-    }
-    let mut used = if matches!(edit.type_kind(row)?, TypeKind::Tuple | TypeKind::RawTuple) {
-        fields.column_mask(&edit.node(row.into())?.edges("tupFields")?, &[], paths)?
-    } else {
-        vec![!paths.is_empty()]
     };
     if let IndexedValueUse::TopK {
         compared_columns, ..

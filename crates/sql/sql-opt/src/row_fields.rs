@@ -40,6 +40,29 @@ impl<'a> RowFields<'a> {
         self.unused(ty, &[], paths, if borrowed { 1 } else { 2 })
     }
 
+    /// Return the top-level column mask when narrowing can discard an input field.
+    pub(super) fn projection_mask(
+        &mut self,
+        mut ty: NodeId,
+        paths: &BTreeSet<Vec<usize>>,
+    ) -> Result<Option<Vec<bool>>, Error> {
+        if !self.unused(ty, &[], paths, 1)? {
+            return Ok(None);
+        }
+        loop {
+            let node = self.circuit.node(ty).expect("validated row type");
+            match node.inner_kind() {
+                Some(InnerKind::Type(Ty::Ref)) => ty = node.edge("type")?,
+                Some(InnerKind::Type(Ty::Tuple | Ty::RawTuple)) => {
+                    return self
+                        .column_mask(&node.edges("tupFields")?, &[], paths)
+                        .map(Some);
+                }
+                _ => return Ok(Some(vec![!paths.is_empty()])),
+            }
+        }
+    }
+
     /// At a projection boundary, a read of any descendant keeps its entire column.
     /// Empty tuples also occupy a slot when their parent is projected.
     pub(super) fn column_mask(

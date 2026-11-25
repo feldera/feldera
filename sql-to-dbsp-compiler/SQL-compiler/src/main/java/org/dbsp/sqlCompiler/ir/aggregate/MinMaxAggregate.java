@@ -45,6 +45,12 @@ public class MinMaxAggregate extends NonLinearAggregate {
         this.operation = operation;
     }
 
+    /** Isolate the increment's expression occurrences before rewriting its input fields. */
+    public MinMaxAggregate withCopiedIncrement() {
+        return new MinMaxAggregate(this.getNode(), this.zero, this.increment.deepCopy().to(DBSPClosureExpression.class),
+                this.emptySetResult, this.semigroup, this.comparedValue, this.postProcess, this.operation);
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);

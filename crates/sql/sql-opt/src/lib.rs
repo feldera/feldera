@@ -1,6 +1,8 @@
 //! Transform the circuit in explicit pass order, preserving operator identities.
 
 mod aggregate_groups;
+mod aggregate_input;
+pub use aggregate_input::{AggregateInput, ProjectedAggregateInput, trim_aggregate_input};
 mod aggregate_projection;
 pub use aggregate_projection::{project_indexed_value, trim_aggregate_projection, trim_indexed_reader, AggregateProjection, IndexedValueUse, IndexedReaderProjection};
 mod aggregate_fold;

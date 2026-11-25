@@ -1277,6 +1277,22 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(json!({"functions": edit.circuit().additional_expressions(&arena, &functions)?,
                 "next_generated_name": next}));
         }
+        ("RemoveUnusedFields/StreamAggregateInput", [pair, row, components @ ..]) => {
+            let input = feldera_sql_opt::AggregateInput {
+                pair: edit.type_id(*pair)?, row: edit.type_id(*row)?, components,
+            };
+            let reads = serde_json::from_slice(state)?;
+            let plan = match feldera_sql_opt::trim_aggregate_input(&arena, &mut edit, input, reads, &mut next, &mut warnings) {
+                Ok(Some(plan)) => plan,
+                Ok(None) => return Ok(Value::Null),
+                Err(feldera_sql_opt::FieldRewriteError::Binding(issue)) => return Ok(json!({"diagnostic": binding_diagnostic(issue)})),
+                Err(feldera_sql_opt::FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
+            };
+            let mut roots = vec![plan.projection.into(), plan.row.into()];
+            roots.extend(plan.components.into_iter().map(NodeId::from));
+            return Ok(json!({"roots": edit.circuit().live_inner_roots(&arena, &roots)?,
+                "warnings": pass_warnings(warnings), "next_generated_name": next}));
+        }
         ("RemoveUnusedFields/AggregateReader", [aggregate, rows @ ..]) => {
             let used: Vec<bool> = serde_json::from_slice(state)?;
             let aggregate = feldera_sql_opt::rebind_projected_aggregate(&mut edit, *aggregate, rows, &used)?;
@@ -1648,7 +1664,7 @@ fn transform(
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
-        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/LinearAggregateInput" | "RemoveUnusedFields/TopKInput"
+        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/LinearAggregateInput" | "RemoveUnusedFields/TopKInput" | "RemoveUnusedFields/StreamAggregateInput"
         | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
         | "FuseExpensiveMaps/Scan" | "FuseExpensiveMaps/DuplicateField" | "FuseExpensiveMaps/Siblings" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {

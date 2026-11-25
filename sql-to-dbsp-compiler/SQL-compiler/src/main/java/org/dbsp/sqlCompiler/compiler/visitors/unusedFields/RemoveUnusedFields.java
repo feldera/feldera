@@ -301,9 +301,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
      * to keep only the specified fields */
     DBSPMapIndexOperator projectValue(DBSPUnaryOperator operator, FieldUseMap fm) {
         DBSPType inputType = operator.input().getOutputIndexedZSetType().getKVRefType();
-        DBSPClosureExpression projection = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.projectUsedFields(this.compiler, fm.getType(), fm.usageAtDepth(1), inputType)
-                : indexedValueProjection(this.compiler, inputType, Objects.requireNonNull(fm.getProjection(1)));
+        var projection = indexedValueProjection(this.compiler, inputType, Objects.requireNonNull(fm.getProjection(1)));
 
         return this.projectValue(operator, projection);
     }
@@ -498,6 +496,22 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
 
+        var split = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.trimStreamAggregateInput(this.compiler, list, operator.input().getOutputIndexedZSetType().getKVRefType())
+                : this.trimStreamAggregateInput(operator, list);
+        if (split == null) {
+            super.postorder(operator);
+            return;
+        }
+        var adjust = this.projectValue(operator, split.left);
+        var result = new DBSPStreamAggregateOperator(operator.getRelNode(), operator.getOutputIndexedZSetType(),
+                null, split.right, adjust.outputPort()).copyAnnotations(operator);
+        this.map(operator, result);
+    }
+
+    @Nullable
+    private Pair<DBSPClosureExpression, DBSPAggregateList> trimStreamAggregateInput(
+            DBSPStreamAggregateOperator operator, DBSPAggregateList list) {
         Map<IAggregate, ParameterFieldUse> useMaps = new HashMap<>();
         FieldUseMap fum = new FieldUseMap(list.rowVar.getType(), false);
         // FindUnusedFields converts closures to trees, so it allocates new aggregates
@@ -510,10 +524,8 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             fum = fum.reduce(used.useMap().get(used.parameter()));
         }
 
-        if (!fum.hasUnusedFields(1)) {
-            super.postorder(operator);
-            return;
-        }
+        if (!fum.hasUnusedFields(1))
+            return null;
 
         List<IAggregate> results = new ArrayList<>();
         for (IAggregate aggregate: treeified) {
@@ -527,12 +539,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         DBSPVariablePath rowVar = new DBSPVariablePath(list.rowVar.variable,
                 Objects.requireNonNull(fum.compressedType(1)));
-        DBSPMapIndexOperator adjust = this.projectValue(operator, fum);
-        DBSPAggregateList newList = new DBSPAggregateList(operator.aggregateList.getNode(), rowVar, results);
-        DBSPSimpleOperator result = new DBSPStreamAggregateOperator(operator.getRelNode(), operator.getOutputIndexedZSetType(),
-                null, newList, adjust.outputPort())
-                .copyAnnotations(operator);
-        this.map(operator, result);
+        var input = operator.input().getOutputIndexedZSetType().getKVRefType();
+        var projection = indexedValueProjection(this.compiler, input, Objects.requireNonNull(fum.getProjection(1)));
+        return Pair.of(projection, new DBSPAggregateList(list.getNode(), rowVar, results));
     }
 
     @Override
