@@ -28,6 +28,22 @@ On Nexmark, direct Java and hybrid p95 were 6.461 s and 7.179 s for single-file
 classic output, 6.967 s and 8.285 s for workspace output, and 6.569 s and
 12.084 s for Gen-2. The Gen-2 result exceeded the 1.2× ceiling on three workloads.
 
+The Gen-2 rerun used the single-request JVM settings from `01cad538c` with
+the optimizer from `d8147d2ce`. It ran two warmup pairs and 21 measured pairs
+per workload on CPU 14 of the same VM. All 184 pairs matched through emission.
+Every workload met the 1.2× ceiling. [Timings, build identities, and raw sample digests](evidence/p3-cold-gen2-c1.json)
+
+| Workload | Direct Java p95 (s) | Hybrid Gen-2 p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Aggregate | 2.653 | 2.197 | 0.828× |
+| Correlated array subquery | 2.790 | 2.260 | 0.810× |
+| ASOF join | 2.835 | 2.262 | 0.798× |
+| Connector | 2.495 | 1.951 | 0.782× |
+| Keyed update | 2.572 | 1.979 | 0.769× |
+| Nexmark suite | 6.178 | 6.627 | 1.073× |
+| Outer join | 2.666 | 2.065 | 0.774× |
+| Set operations | 2.424 | 2.002 | 0.826× |
+
 ## Unary output projections, 2026-11-25
 
 Each pair compiled the same SQL with direct Java and the packaged hybrid

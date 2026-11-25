@@ -1,0 +1,135 @@
+{
+  "scope": "Window sharing compares field and direct comparator chains, equality wrappers, and ordered asymmetric collations.",
+  "source_commit": "b5df721155fd1f5dfa23e132f8b9051b6087b3d5",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "33e3ecd61d1e14e10eae7610822628dad8aebf1c03be0246a0226f18d4fe7261",
+    "bin/sql-difftest": "fef237355cb91f0eafb681082d10857eca9018e04a1a73a8b1ac756f20217396",
+    "maven/tests.jar": "6c2e56f8ec2b7a0b59657c407c6fbeaa8190992e0d25ac033c59c4e4a80d5d37",
+    "maven/sql-compiler.jar": "c0de6c105e144b7e6e8973970ea61c918163bccc7500c85776c9e2a6baf825d3",
+    "bin/sql2dbsp": "87ae2a0a1eaa47dd5fe7869f5c631b2ae0edbd33927c65178fbf10315e46ab92"
+  },
+  "engines": {
+    "classic": {
+      "cases": 18,
+      "ordered_s4_observations": 9181,
+      "population_sha256": "d97f1d16862d0ab4abdd8e7ad6b790ea966c312310fe8f8c76d57c3d1093a55e",
+      "mismatches": 0,
+      "receipt_sha256": "127afc18624f6e0544ce07f5014b11830623611a6e5b0026c95583acdaf01974",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    },
+    "gen2": {
+      "cases": 18,
+      "ordered_s4_observations": 9594,
+      "population_sha256": "f3d5dca5128184ee416703a59d6e3a4422e1f59c049ea0ae5200f02b6b6e3574",
+      "mismatches": 0,
+      "receipt_sha256": "eb83f96cd2b5e6a2bae2b18f7ae8f7ea3817253233a340365506e0037cb88d4a",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    }
+  },
+  "rust_tests": 231,
+  "clippy_exit_code": 0,
+  "junit_tests": 324,
+  "nightly_optimizer_junit": 341,
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 14.294555,
+    "largest_driver_plus_front_end_rss_bytes": 70770688
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a213c5-bb92-7892-b27a-c870bb661999",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a213c5-bbc1-7ee2-82b1-2ef26ff736df",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a213c6-eba9-75d3-a73b-5f26e9ddbfbb",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a213c6-ebcb-76f3-ac2a-02284e605631",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}

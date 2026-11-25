@@ -140,5 +140,36 @@
       "windowSharingDistinguishesMutableBorrows"
     ],
     "result": "All three cases required a Java fallback on the previous library."
+  },
+  "classic_runtime": {
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "worker_sha256": "59163164d08125ff96d0de2ed91170889fe66d89f493aa1be5add3ab945bf986",
+    "batch_size": 64,
+    "rust_min_stack": 8388608,
+    "case_named_tests": true,
+    "optimizer_library_sha256": "e71781b1e5259c207ce455f72b9499aef030e6dbff83756c74618f1e8bd2008b",
+    "executed": 8256,
+    "compile_only": 315,
+    "batches": 143,
+    "total_frozen_cases": 8571,
+    "input_commands": 11407,
+    "expected_runtime_errors": 232,
+    "catalog_cases": 0,
+    "handle_cases": 8256,
+    "batch_receipts_sha256": "826a1d2fe929281842fc7e0be022c5ebcc922d6d6946966529cc2097dc829af5",
+    "environment": {
+      "classpath_sha256": [
+        "fb27f01f8e6b1cda50e0494f1acf7d3581eb50790a03e0a342d794c2b38fe8a0",
+        "e78bca699e69841f294a58e53babcaf3dcc84074028e32fb3464d729591ae7d7",
+        "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3",
+        "66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9",
+        "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
+      ],
+      "test_manifest_sha256": "86962638f99fc1555ef5f4384f39c4059902e4d3f4dbf4c59b72c3a7943bceac",
+      "test_lock_sha256": "25cac7fffc13522659eb4d06adbc58c05703743735d7421f015d9f5273b76523",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cargo": "/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)\ncargo 1.99.0 (5f94df478 2026-08-27)",
+      "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)"
+    }
   }
 }
