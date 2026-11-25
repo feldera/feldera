@@ -1232,10 +1232,11 @@ pub fn rest_follow_empty_table(engine: &dyn PipelineTestEngine) {
     pipeline.start();
     wait(|| output_record_count(second_out.path()) >= 5, 120_000)
         .expect("timed out following the table");
-    assert_eq!(
-        iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total"),
-        5.0
-    );
+    // The connector counts the rows after it queues them, so the metric can lag the output.
+    let follow_records =
+        || iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total");
+    wait(|| follow_records() >= 5.0, 10_000).expect("the follow record count stayed below 5");
+    assert_eq!(follow_records(), 5.0);
     pipeline.stop().unwrap();
 
     let zset = follow_output_zset(second_out.path());
