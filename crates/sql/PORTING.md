@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | Build `46cbf6890` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `10a4d9029` passed all 8,256 executable classic cases and 350 nightly optimizer tests. Build `4303dd6e3` matched 216 selected compilations and restored COUNT and LATENESS in both directions. [Full replay](evidence/p3-indexed-waterline-propagation.json) · [Runtime](evidence/p3-constant-views-and-static-windows.json) · [Selected checks](evidence/p3-checked-static-initializers.json) | Finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build, including the three latency modes. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
+| P3 | Build `d325a41b8` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `10a4d9029` passed all 8,256 executable classic cases. Build `4303dd6e3` restored COUNT and LATENESS in both directions. Build `1222fd75f` matched 216 selected compilations and passed 351 nightly optimizer tests. [Full replay](evidence/p3-asof-window-keys.json) · [Runtime](evidence/p3-constant-views-and-static-windows.json) · [Restores](evidence/p3-checked-static-initializers.json) · [DATE defaults](evidence/p3-date-default-year-range.json) | Finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build, including the three latency modes. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -490,13 +490,16 @@ its runtime conversion and emits the same warning as Java. All 46 selected
 compilations matched through 20,116 ordered optimizer observations and artifact
 emission. [Temporal default comparisons](evidence/p3-temporal-column-defaults.json)
 
-Three additional `DATE DEFAULT CAST(... AS DATE)` inputs expose a year-range
-issue on `10a4d9029` in both engines. For `'0000-01-01'`, direct Java and
-the hybrid fail with `Year out of range: [0]`. For `'-0001-01-01'` and
-`'+10000-01-01'`, direct Java reports an internal error and the hybrid
-accepts the program with a warning. The boundary dates `'0001-01-01'` and
-`'9999-12-31'` compile on both paths. The reference behavior for years
-outside that range is awaiting an owner decision.
+On `10a4d9029`, direct Java failed to compile DATE defaults with year
+`0000`, `-0001`, or `+10000`. The hybrid also failed on year zero.
+On `1222fd75f`, both compilers issue one `Suspicious argument` warning and
+keep the runtime cast for each of these defaults and for `'-001-01-01'`.
+The endpoints `'0001-01-01'` and `'9999-12-31'` compile without warnings.
+The packaged compilers matched diagnostics and artifacts for all six dates
+in classic and Gen-2. In the generated classic circuit, supplying the dates
+accepted the row. Omitting each invalid default in turn produced the range
+error for that column. Both 108-case replays matched through 87,780 ordered
+S4 observations. [DATE comparisons and runtime results](evidence/p3-date-default-year-range.json) · [Compiler PR #8078](https://github.com/feldera/feldera/pull/8078)
 
 The packaged CLI and the S4 replay exercise different paths in ASOF lowering.
 All 12 classic demos and the 11 accepted Gen-2 demos matched through 13,588
@@ -509,7 +512,7 @@ all 14 yielded the same order. That isolated change gave matching CLI results
 for every shipped demo, including the Gen-2 medallion LATENESS diagnostic.
 The owner approved insertion order as the reference. Commit `8180d4b5f` applies
 it to ordinary Java compilation and checks the order in the ASOF regression.
-[Product demo results](evidence/p3-product-demos.json)
+[Product demo results](evidence/p3-product-demos.json) · [Compiler PR #8079](https://github.com/feldera/feldera/pull/8079)
 
 Rust now preserves shared operands in compound window keys and accounts for
 comparator declarations when naming variables. On `d325a41b8`, the two cases

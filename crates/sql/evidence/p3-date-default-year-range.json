@@ -1,0 +1,125 @@
+{
+  "compiler_commit": "1222fd75f28cd156b505f87ec73055c4dedd26e9",
+  "control_commit": "10a4d9029ab9bc3a1f5e90798a328988e0fd76b4",
+  "build_sha256": {
+    "libfeldera_sql_opt_jni.so": "21d255d32abe1373f2deab0b59cb3af1c0e22c6931eeb6eb015eb7e59841d3d9",
+    "sql-difftest": "51e78fc1a800657b2fa5f70960fa31e273acef89f00f2c33e01a31df643875a2",
+    "sql2dbsp": "40c4520f4a4cae918c754095b2162a16f937cf16765c21736243fd305206f4b6"
+  },
+  "java_classpath_sha256": {
+    "tests.jar": "d00cbbdd193b5888300c5b724f6a59068329c611ba4ba3780ca6a6b8f643faf4",
+    "sql-compiler.jar": "592824c134f047f21054b9c54655d6b89f33ac2ebf4fb92536335429f80a57d2"
+  },
+  "sql": "CREATE TABLE t(d DATE DEFAULT CAST('<input>' AS DATE)); CREATE VIEW v AS SELECT * FROM t;",
+  "packaged_comparisons": [
+    {
+      "input": "+10000-01-01",
+      "control": {
+        "direct": "error",
+        "hybrid": "ok"
+      },
+      "classic_receipt_sha256": "703e75c93b968e58ff9ea33e4e83abc46d32edc8640d5c1588608392466754f7",
+      "gen2_receipt_sha256": "fd490a73a553f2dcf434aff39fc9b520ee4498704265743226187fa0e908a8d6",
+      "warnings_after_fix": 1
+    },
+    {
+      "input": "-0001-01-01",
+      "control": {
+        "direct": "error",
+        "hybrid": "ok"
+      },
+      "classic_receipt_sha256": "5ebff8116f75ef147a824f192c6ae8eebeeffc76140835b62964ff7eee70e1b3",
+      "gen2_receipt_sha256": "f6bac89681a2478d9c91e440c1d0c4e5c912f4d42a1b5f17de8fd136e9672ae5",
+      "warnings_after_fix": 1
+    },
+    {
+      "input": "-001-01-01",
+      "control": {
+        "direct": "ok",
+        "hybrid": "ok"
+      },
+      "classic_receipt_sha256": "9f2a767debe10634786a0781c974074bc23b9b0eb9c35cc6433240676dc133bb",
+      "gen2_receipt_sha256": "35ea410bf7fc70c9cb1e7f49ee392616e98158fb6e575172a25906b3ef0834c3",
+      "warnings_after_fix": 1
+    },
+    {
+      "input": "0000-01-01",
+      "control": {
+        "direct": "error",
+        "hybrid": "internal_error"
+      },
+      "classic_receipt_sha256": "4b203e50b362ad62318a7ae8603beef8d2b778625d968e1e978aabf386ec42da",
+      "gen2_receipt_sha256": "f038e179cc6202d88f0c7f8b0ce15001c1ef4ae89767e7b8e9b37622e0eb8271",
+      "warnings_after_fix": 1
+    },
+    {
+      "input": "0001-01-01",
+      "control": {
+        "direct": "ok",
+        "hybrid": "ok"
+      },
+      "classic_receipt_sha256": "2f9505ccaef5ef28e8a6da9512600b6b4bc71519d618b0ee06e254e3409e395d",
+      "gen2_receipt_sha256": "1c36ed62339a74b54bd26930c78a91d31fa000496957c85cf14c04d50fda0980",
+      "warnings_after_fix": 0
+    },
+    {
+      "input": "9999-12-31",
+      "control": {
+        "direct": "ok",
+        "hybrid": "ok"
+      },
+      "classic_receipt_sha256": "06360e4f3ce605c586de888927cda75922c1b5d783c42343e00a25a126a0115e",
+      "gen2_receipt_sha256": "ec09bd8096e93f6bf39935df845879bf9bda55217606065bf3f96e83ad83c627",
+      "warnings_after_fix": 0
+    }
+  ],
+  "replay": {
+    "classic": {
+      "cases": 108,
+      "mismatches": 0,
+      "ordered_s4_observations": 43560,
+      "full_optimizer_trace": true,
+      "require_native_decisions": true,
+      "population_sha256": "41a42b47c7439c734b558449f1cb09ea81ea6b487a7ea2775ba413f1aeac32fa",
+      "receipt_sha256": "b1726a312fdf6925e49588630dc277ad4d8409e00061ce15fa99600a931e478e"
+    },
+    "gen2": {
+      "cases": 108,
+      "mismatches": 0,
+      "ordered_s4_observations": 44220,
+      "full_optimizer_trace": true,
+      "require_native_decisions": true,
+      "population_sha256": "0732aa07600726e194671ca1bb47312e7a0fc94758509fda614fa19b32d6c554",
+      "receipt_sha256": "5e0f41e88711e4c5d14a62e5af4f3c2f67f3839175bbde9c624499ed30efef2f"
+    }
+  },
+  "classic_default_runtime": {
+    "circuit_rs_sha256": "a7a67644788a7945565c7e9d21dc6365ebd3f991c967c73bc57a0b3bce240d4a",
+    "binary_sha256": "e213b628f105cefbfb150ee5b52b2b9290e247be932b3c907f589eb20c40e159",
+    "input": {
+      "d": "2024-02-29",
+      "zero_year": "2024-02-29",
+      "negative_year": "2024-02-29",
+      "expanded_year": "2024-02-29"
+    },
+    "output": {
+      "ts": "2020-03-01 00:00:00",
+      "d": "2024-02-29",
+      "zero_year": "2024-02-29",
+      "negative_year": "2024-02-29",
+      "expanded_year": "2024-02-29",
+      "chosen": "2021-05-01 00:00:00"
+    },
+    "omitted_column_errors": {
+      "d": "Converting '-001-01-01' to DATE produces a value outside the range 0001-01-01 to 9999-12-31",
+      "zero_year": "Converting '0000-01-01' to DATE produces a value outside the range 0001-01-01 to 9999-12-31",
+      "negative_year": "Converting '-0001-01-01' to DATE produces a value outside the range 0001-01-01 to 9999-12-31",
+      "expanded_year": "Converting '+10000-01-01' to DATE produces a value outside the range 0001-01-01 to 9999-12-31"
+    }
+  },
+  "tests": {
+    "focused_junit": 334,
+    "nightly_optimizer": 351,
+    "packaged_driver_receipt_sha256": "e214196bdac70f5e44060824a004b265bdf848b54fb351d94280ae377c92cbb0"
+  }
+}
