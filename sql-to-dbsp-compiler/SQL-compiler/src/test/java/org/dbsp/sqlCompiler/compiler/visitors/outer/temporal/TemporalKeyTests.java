@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
@@ -41,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
@@ -55,6 +57,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -1117,6 +1120,49 @@ public class TemporalKeyTests {
         var b = new ExpressionBuilder();
         assertWindowGroups(3, (row, index) -> b.call(DBSPTypeTimestamp.INSTANCE,
                 "read_timestamp", b.field(row, 0).borrow(index == 1)), List.of(0, 2));
+    }
+
+    @Test
+    public void windowSharingComparesFrameOffsetsWithTheirPrintedConstructors() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var offsets = new ArrayList<DBSPExpression>();
+        for (boolean before : List.of(true, false)) {
+            var distance = b.lit(1);
+            offsets.add(new DBSPWindowBoundExpression(CalciteObject.EMPTY, before, distance));
+            offsets.add(b.call(distance.getType(), before ? "RelOffset::Before" : "RelOffset::After", distance));
+        }
+        offsets.add(new DBSPWindowBoundExpression(CalciteObject.EMPTY, true, b.lit(2)));
+        assertStaticWindowGroups(offsets, Set.of(0, 1, 2, 3));
+    }
+
+    @Test
+    public void windowSharingPreservesTheAggregateOpcodeAndFilter() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var value = b.lit(1);
+        var weight = b.lit(2);
+        var enabled = new DBSPBoolLiteral(true);
+        var sum = new DBSPConditionalIncrementExpression(CalciteObject.EMPTY, DBSPOpcode.AGG_ADD,
+                value.getType(), value, weight, enabled);
+        var max = new DBSPConditionalIncrementExpression(CalciteObject.EMPTY, DBSPOpcode.AGG_MAX,
+                value.getType(), value, weight, enabled);
+        assertStaticWindowGroups(List.of(sum, b.call(value.getType(), "agg_plus", value, weight, enabled),
+                max, b.call(value.getType(), "agg_plus", value, weight),
+                b.call(value.getType(), "agg_plus", weight, value, enabled)), Set.of(0, 1));
+    }
+
+    @Test
+    public void windowSharingComparesLazyAndEarlyExitExpressions() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(4, (row, index) -> {
+            var value = b.call(time.withMayBeNull(true), "read_time", b.field(row, index == 2 ? 1 : 0));
+            DBSPExpression result = index == 3 ? b.unwrap(value) : value.question();
+            var returned = new DBSPReturnExpression(CalciteObject.EMPTY, result);
+            return b.call(time, "choose_time", new DBSPLazyExpression(returned));
+        }, List.of(0, 1));
     }
 
     @Test

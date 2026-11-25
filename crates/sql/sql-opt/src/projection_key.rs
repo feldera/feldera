@@ -45,6 +45,9 @@ enum Term {
     Deref,
     Clone,
     IsNull,
+    Question,
+    Return,
+    Lazy,
     Unwrap(String),
     If,
     Call(String),
@@ -365,6 +368,7 @@ fn preserves_static_children(kind: Expr) -> bool {
                 | Expr::Tuple | Expr::RawTuple | Expr::Array | Expr::Map
                 | Expr::If | Expr::Binary | Expr::TimeAddSub | Expr::Unary
                 | Expr::Cast | Expr::IsNull | Expr::Field
+                | Expr::WindowBound | Expr::ConditionalIncrement | Expr::Lazy | Expr::Return
         )
 }
 
@@ -533,6 +537,39 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         Expr::Deref => (Term::Deref, vec![child("expression")?]),
         Expr::Clone => (Term::Clone, vec![child("expression")?]),
         Expr::IsNull => (Term::IsNull, vec![child("expression")?]),
+        Expr::Lazy => (Term::Lazy, vec![child("expression")?]),
+        Expr::Question => (Term::Question, vec![child("source")?]),
+        Expr::Return => (Term::Return, vec![child("argument")?]),
+        Expr::WindowBound => {
+            let preceding = node.data("isPreceding").and_then(|value| value.as_bool())
+                .ok_or_else(|| Error::new("missing window bound direction"))?;
+            let name = if preceding { "RelOffset::Before" } else { "RelOffset::After" };
+            (Term::Call(name.into()), vec![child("representation")?])
+        }
+        Expr::ConditionalIncrement => {
+            // The aggregate printer emits an ordinary call, including the
+            // predicate as its third argument only for a filtered aggregate.
+            let name = match string(node, "opcode") {
+                Some("AGG_ADD") => "agg_plus",
+                Some("AGG_ADD_NON_NULL") => "agg_plus_non_null",
+                Some("AGG_MIN") => "agg_min",
+                Some("AGG_MAX") => "agg_max",
+                Some("AGG_MIN1") => "agg_min1",
+                Some("AGG_MAX1") => "agg_max1",
+                Some("AGG_AND") => "agg_and",
+                Some("AGG_OR") => "agg_or",
+                Some("AGG_XOR") => "agg_xor",
+                Some("AGG_GTE") => "agg_gte",
+                Some("AGG_LTE") => "agg_lte",
+                Some("CONTROLLED_FILTER_GTE") => "cf_compare_gte",
+                _ => return Ok(None),
+            };
+            let mut arguments = vec![child("left")?, child("right")?];
+            if node.field("condition").is_some() {
+                arguments.push(child("condition")?);
+            }
+            (Term::Call(name.into()), arguments)
+        }
         Expr::Unwrap => {
             // The empty message prints .unwrap(); other messages print .expect("…").
             let Some(message) = string(node, "message") else {
