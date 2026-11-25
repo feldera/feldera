@@ -79,20 +79,26 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
             else:
                 assert actual.read_bytes() == expected.read_bytes(), filename
 
-    for engine in ["classic", "gen2"]:
-        proc = start(engine, engine=engine)
-        record = finish(proc, engine, "ok")
+    def compare_compilation(name, engine, sql):
+        record = finish(start(name, engine=engine, sql=str(sql)), name, "ok")
         assert record["compiler"] == "hybrid" and record["attempts"] == 1
-        direct = directory / f"{engine}-java"
+        direct = directory / f"{name}-java"
         direct.mkdir()
-        artifact = "circuit.json" if engine == "gen2" else "circuit.rs"
+        artifact = direct / ("circuit.json" if engine == "gen2" else "circuit.rs")
+        diagnostics = directory / f"{name}-messages.json"
         args = ["java", "-cp", classpath, "org.dbsp.sqlCompiler.CompilerMain", "-i", "-je",
-                "--alltables", "--ignoreOrder", "-js", direct / "schema.json", "--dataflow",
-                direct / "dataflow.json", "-o", direct / artifact]
+                "--alltables", "--ignoreOrder", "--errors", diagnostics, "-js", direct / "schema.json",
+                "--dataflow", direct / "dataflow.json", "-o", artifact]
         if engine == "gen2":
             args.append("--gen2")
-        subprocess.run([*args, source], check=True, timeout=60)
-        compare_files(engine, record, direct, {file.name for file in direct.iterdir() if file.is_file()})
+        subprocess.run([*args, sql], check=True, timeout=60)
+        warnings = json.loads(diagnostics.read_bytes() or b"[]")
+        assert record["messages"] == warnings, name
+        compare_files(name, record, direct, {file.name for file in direct.iterdir() if file.is_file()})
+        return warnings, artifact
+
+    for engine in ("classic", "gen2"):
+        compare_compilation(engine, engine, source)
 
     runtime_sources = Path(__file__).resolve().parents[3]
     workspace = {"crate_name": "p2_example", "runtime_sources": str(runtime_sources)}
@@ -135,20 +141,12 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
         );
         CREATE VIEW v AS SELECT * FROM t;
         """)
-        direct = directory / "temporal-defaults-java"
-        direct.mkdir()
-        diagnostics = directory / "temporal-defaults-messages.json"
-        subprocess.run(["java", "-cp", classpath, "org.dbsp.sqlCompiler.CompilerMain",
-                        "-i", "-je", "--alltables", "--ignoreOrder", "--errors", diagnostics,
-                        "-js", direct / "schema.json", "--dataflow", direct / "dataflow.json",
-                        "-o", direct / "circuit.rs", defaults], check=True, timeout=60)
-        record = finish(start("temporal-defaults", sql=str(defaults)), "temporal-defaults", "ok")
-        warnings = json.loads(diagnostics.read_bytes())
-        assert record["messages"] == warnings
-        assert [(m["warning"], m["error_type"], m["message"]) for m in warnings] == [
-            (True, "Suspicious argument", "String '-001-01-01' cannot be interpreted as a DATE")]
-        assert "Timestamp::from_microseconds(1583020800000000" in (direct / "circuit.rs").read_text()
-        compare_files("temporal-defaults", record, direct, {p.name for p in direct.iterdir()})
+        for engine in ("classic", "gen2"):
+            warnings, artifact = compare_compilation(f"temporal-defaults-{engine}", engine, defaults)
+            assert [(m["warning"], m["error_type"], m["message"]) for m in warnings] == [
+                (True, "Suspicious argument", "String '-001-01-01' cannot be interpreted as a DATE")]
+            if engine == "classic":
+                assert "Timestamp::from_microseconds(1583020800000000" in artifact.read_text()
         check_sql_error(compiler, classpath, directory, "emit-final",
                         "CREATE TABLE t(ts BIGINT LATENESS 1, other BIGINT);\n"
                         "CREATE VIEW v WITH ('emit_final' = 'other') AS SELECT * FROM t;",
