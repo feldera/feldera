@@ -40,8 +40,12 @@ class MeasuredArtifacts(unittest.TestCase):
                         self.assertEqual(run.call_args.args[0], ["sql-difftest", direct / artifact, hybrid / artifact])
                         run.return_value.returncode = 1
                         run.return_value.stderr = "different graphs"
-                        with self.assertRaisesRegex(ValueError, "different graphs"):
+                        (direct / "dataflow.json").write_text('{"mir": {}}')
+                        with self.assertRaises(ValueError) as error:
                             compare(direct, hybrid, artifact, "sql-difftest")
+                        self.assertEqual(str(error.exception).splitlines(), [
+                            "Gen-2 circuit comparison failed: different graphs", "dataflow.json differs",
+                        ])
 
     def test_public_json_parity_preserves_types_and_precision(self):
         self.assertEqual(artifact_json('{"rows": [1, false], "n": 2}'),

@@ -52,7 +52,8 @@ def compare(direct, hybrid, artifact="circuit.rs", comparator=None):
             any(path.startswith("rust/") and path.endswith(suffix) for path in artifacts)
             for suffix in ("/src/lib.rs", "/src/stubs.rs")):
         raise ValueError("Compiler workspace is missing generated Rust sources")
-    for name in artifacts:
+    differences = []
+    for name in sorted(artifacts):
         if file_digest(hybrid / name) != result["artifacts"][name]:
             raise ValueError(f"Incorrect output digest for {name}")
         if name in {"dataflow.json", "schema.json"}:
@@ -61,12 +62,14 @@ def compare(direct, hybrid, artifact="circuit.rs", comparator=None):
             comparison = subprocess.run([comparator, direct / name, hybrid / name],
                                         capture_output=True, text=True, timeout=30)
             if comparison.returncode:
-                raise ValueError(f"Gen-2 circuit comparison failed: {comparison.stderr[-4096:]}")
-            equal = True
+                differences.append(f"Gen-2 circuit comparison failed: {comparison.stderr[-4096:].strip()}")
+            continue
         else:
             equal = file_digest(direct / name) == result["artifacts"][name]
         if not equal:
-            raise ValueError(f"{name} differs")
+            differences.append(f"{name} differs")
+    if differences:
+        raise ValueError("\n".join(differences))
     return result["artifacts"]
 
 

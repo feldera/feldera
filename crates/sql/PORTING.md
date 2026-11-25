@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | Build `46cbf6890` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `21022dda5` passed all 8,256 executable classic cases. Build `3e9fb8f3a` matched 36 selected compilations, passed 344 nightly optimizer tests, and restored COUNT and LATENESS in both directions. [Full replay](evidence/p3-indexed-waterline-propagation.json) · [Runtime](evidence/p3-window-map-composition.json) · [Selected checks](evidence/p3-window-closure-calls.json) | Resolve ordinary CLI order for ASOF retainers, meet the workspace p95 gate, finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
+| P3 | Build `46cbf6890` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `21022dda5` matched all 8,527 frozen Gen-2 compilations through 3,510,660 observations and passed all 8,256 executable classic cases. Build `57e90022b` matched 36 selected compilations, passed 346 nightly optimizer tests, and restored COUNT and LATENESS in both directions. [Full replay](evidence/p3-indexed-waterline-propagation.json) · [Runtime](evidence/p3-window-map-composition.json) · [Selected checks](evidence/p3-window-ordered-values.json) | Resolve ordinary CLI order for ASOF retainers, finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build, including the three latency modes. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -466,11 +466,12 @@ The packaged CLI and the S4 replay exercise different paths in ASOF lowering.
 All 12 classic demos and the 11 accepted Gen-2 demos matched through 13,588
 ordered S4 observations on `b4e9ddc15`. With observation disabled, the ordinary
 compilers on `53da0a69d` reversed two ASOF retainers in the feature-engineering
-demo. Both engines emitted different dataflow graphs. The Gen-2 medallion
-demo produced the same LATENESS diagnostic in both compilers. In a local
-experiment, preserving insertion order for the retainer edges also in direct
-Java gave matching results for every demo in both engines. The reference
-change awaits an owner decision. [Product demo results](evidence/p3-product-demos.json)
+demo. The ordering also changed the classic workspace's generated `main.rs`
+and the Gen-2 circuit. Across 14 ordinary Java compilations, a three-statement
+SQL reproducer yielded both retainer orders. With an insertion-ordered map,
+all 14 yielded the same order. That isolated change gave matching CLI results
+for every shipped demo, including the Gen-2 medallion LATENESS diagnostic.
+The reference change awaits an owner decision. [Product demo results](evidence/p3-product-demos.json)
 
 Run the unobserved comparison from a Linux devcontainer with a release build
 of the worker, its sibling JNI library, the comparator, and the compiler JAR.
@@ -487,7 +488,13 @@ done
 Rust compares the body, captured columns, and arguments of a closure call
 when selecting shared windows. The old library delegated the directed case
 to Java. Build `3e9fb8f3a` handled it in Rust and matched Java at all 18,775
-ordered S4 observations in the selected corpus. [Closure calls](evidence/p3-window-closure-calls.json)
+ordered S4 observations in the selected corpus. Build `a51fd38af` also
+matched failure messages, including the distinct Unicode escaping used by
+explicit panic calls. Build `43e369d81` folded scoped keys containing shared
+literals and checked that repeated variable reads refer to the same
+declaration. Build `57e90022b` also handled sort closures and custom-ordered
+values in Rust. All three builds matched the same 36 compilations and restored
+COUNT and LATENESS in both directions. [Ordered values](evidence/p3-window-ordered-values.json) · [Closure calls](evidence/p3-window-closure-calls.json) · [Failure messages](evidence/p3-window-failure-calls.json) · [Scoped keys](evidence/p3-window-shared-leaves.json)
 
 The unshared window partition classifies every conjunct before comparing
 timestamp keys. On `4c007bca8`, a failing later conjunct produced the same

@@ -171,5 +171,59 @@
       "cargo": "/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)\ncargo 1.99.0 (5f94df478 2026-08-27)",
       "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)"
     }
+  },
+  "full_frozen_replay": {
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "ordered_s4_observations": 3510660,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "workers": 4,
+      "build": {
+        "producer": "window-map-composition",
+        "runtime": "live",
+        "classpath_sha256": [
+          "fb27f01f8e6b1cda50e0494f1acf7d3581eb50790a03e0a342d794c2b38fe8a0",
+          "e78bca699e69841f294a58e53babcaf3dcc84074028e32fb3464d729591ae7d7"
+        ],
+        "comparator_sha256": "cf61e664246eeee4acf872cefc49ca663ac3b51b01b3b5590531932966579d74",
+        "optimizer_library_sha256": "e71781b1e5259c207ce455f72b9499aef030e6dbff83756c74618f1e8bd2008b"
+      },
+      "shards": [
+        {
+          "manifest_sha256": "76395c7e3421e0b2b617da36e995ab504b505d4f66880c433d4a060917124e79",
+          "records_sha256": "d617c81c73caa5a69ffd93c4795aaca9185481e64b13bfa54895a5121143d58f"
+        },
+        {
+          "manifest_sha256": "8051c377b36c54239d7ff691f281f51084ba9f9a32e7ceccec6f7990b27809dd",
+          "records_sha256": "1f5f2a09146195f2ac1fcdff864e8f0adaed62d47ee690cd2fa7da3a03cbeb11"
+        },
+        {
+          "manifest_sha256": "4c88a7a23bf33ee2b0c18eb81838154d4f9dc0255d9b5fcec1ccda0172565cdb",
+          "records_sha256": "8fdfc0e9b0a65220400c1543d636d3121ba3497d26a5b111644f535db484922e"
+        },
+        {
+          "manifest_sha256": "0fe5b59153feb27bb6bc848e25d3f697229658966d3c95d7d4cd38baeb2947f3",
+          "records_sha256": "f64f30eb6feead600e2281f2ed1a45932162b2f07cb0ab7a2d42c87070701bdb"
+        },
+        {
+          "manifest_sha256": "99e98e0e9f9c09ef1bd3623a0b49ff65b4cf87839c8b11cd74a46a0a2675de14",
+          "records_sha256": "3292854d97864fac4983bb2e65e3fb708f44935f1ec21d43779b19161d693e12"
+        },
+        {
+          "manifest_sha256": "9952c854685fb7f5aef473e37b82103338f5318c992a7dcd25d9d9eca713893b",
+          "records_sha256": "3a1d612e7937304b67d3498363eff1c1ee3267633ab763e563a87d36ad9555d1"
+        },
+        {
+          "manifest_sha256": "61abfd77c5027e09dc446383fcb0a190318cec0b4a7352b3d9d1bb0da70eccb7",
+          "records_sha256": "32f2d82791618faa3b22e8045474a548dff2eb1f6e178c55de00c4892dc2c939"
+        },
+        {
+          "manifest_sha256": "617b94f69d7c3e28cc4a8c0d5f894ce43d516da3611b873d5a182d14e9781313",
+          "records_sha256": "06510e9e3498b3e1f129ac868358096fe2b59f44e081f9cac9bdc123ce8e5c9d"
+        }
+      ],
+      "receipt_sha256": "4cd121c6baebc2f4e1ce80ec98d3f58aaf161ca354dfe880ad5b60bee33d81de"
+    }
   }
 }

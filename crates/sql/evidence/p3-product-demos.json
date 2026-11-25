@@ -133,5 +133,43 @@
         "feature_engineering_artifacts": 3
       }
     }
+  },
+  "repeated_ordinary_compilation": {
+    "sql": "CREATE TABLE l (k BIGINT NOT NULL, ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY);\nCREATE TABLE r (k BIGINT NOT NULL, ts TIMESTAMP LATENESS INTERVAL 7 DAYS, value VARCHAR);\nCREATE VIEW v AS SELECT l.k, l.ts, r.value FROM l LEFT ASOF JOIN r\nMATCH_CONDITION(l.ts >= r.ts) ON l.k = r.k;\n",
+    "repetitions_per_program": 14,
+    "order_symbols": {
+      "V": "DBSPIntegrateTraceRetainValuesOperator",
+      "N": "DBSPIntegrateTraceRetainNValuesOperator"
+    },
+    "ordinary_java": {
+      "asof.sql": [
+        "NV",
+        "VN"
+      ],
+      "05-feature-engineering.sql": [
+        "NV",
+        "VN"
+      ]
+    },
+    "isolated_insertion_order": {
+      "asof.sql": [
+        "VN"
+      ],
+      "05-feature-engineering.sql": [
+        "VN"
+      ]
+    }
+  },
+  "unobserved_feature_engineering": {
+    "compiler_commit": "b4e9ddc15322e9dbbb5a7795ce19db49d2d4c0fd",
+    "classic_differences": [
+      "dataflow.json",
+      "rust/crates/feldera_pipe_baseline_main/src/main.rs"
+    ],
+    "gen2_differences": [
+      "circuit.json",
+      "dataflow.json"
+    ],
+    "gen2_first_circuit_difference": "/inner/601/type"
   }
 }

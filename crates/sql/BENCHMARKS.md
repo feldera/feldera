@@ -50,7 +50,13 @@ workloads. Nexmark had the largest ratio in both modes, at 1.103× (6.574 s
 hybrid, 5.962 s Java) and 1.051× (6.276 s hybrid, 5.974 s Java), respectively.
 Classic workspace output passed on seven workloads. Its Nexmark p95 reached
 10.499 s hybrid and 6.973 s Java, or 1.506×. The three modes ran concurrently
-on separate pinned CPUs in the shared VM. [Paired measurements](evidence/p3-ordered-integer-cold.json)
+on separate pinned CPUs in the shared VM. Repeating Nexmark alone on its
+original CPU gave 6.628 s hybrid and 6.083 s Java at p95 (1.090×). The
+workspace files matched in all 23 repeat pairs. A subsequent complete
+eight-workload workspace rerun on CPU 13, without the other benchmark modes
+running, met the ceiling on all eight. Nexmark had the highest ratio at
+1.122× (6.005 s hybrid, 5.350 s Java). All 184 repeat pairs reproduced the
+original artifact hashes. [Paired measurements](evidence/p3-ordered-integer-cold.json)
 
 ## Unary output projections, 2026-11-25
 
