@@ -560,19 +560,25 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         if (map.hasAnnotation(a -> a.is(IsProjection.class)) || this.done(map, map.getClosureFunction()))
             return false;
         var closure = map.getClosureFunction();
-        boolean indexedInput = !map.input().outputType().is(DBSPTypeZSet.class);
-        boolean indexedOutput = map instanceof DBSPMapIndexOperator;
-        Pair<DBSPClosureExpression, DBSPClosureExpression> split;
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
             var layout = Utilities.getExists(this.nativeMapFields, closure.id);
-            split = switch (layout.kind()) {
-                case Keep -> null;
-                case Project -> RustCircuitPass.splitMapInput(this.compiler, map, Objects.requireNonNull(layout.paths()));
-                case Inspect -> RustCircuitPass.splitMapInput(this.compiler, map, null);
+            var operators = switch (layout.kind()) {
+                case Keep -> List.<DBSPSimpleOperator>of();
+                case Project -> RustCircuitPass.splitMapOperators(this.compiler, map, this.mapped(map.input()),
+                        Objects.requireNonNull(layout.paths()));
+                case Inspect -> RustCircuitPass.splitMapOperators(this.compiler, map, this.mapped(map.input()), null);
             };
-        } else {
-            split = this.splitMapClosure(closure, indexedInput, indexedOutput);
+            if (operators.isEmpty()) {
+                this.noUnusedFields(closure);
+                return false;
+            }
+            this.addOperator(operators.getFirst());
+            this.map(map, operators.getLast());
+            return true;
         }
+        boolean indexedInput = !map.input().outputType().is(DBSPTypeZSet.class);
+        boolean indexedOutput = map instanceof DBSPMapIndexOperator;
+        var split = this.splitMapClosure(closure, indexedInput, indexedOutput);
         if (split == null) {
             this.noUnusedFields(closure);
             return false;

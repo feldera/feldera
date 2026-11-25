@@ -85,7 +85,11 @@ pub fn projection_edits(
     })
 }
 
-fn projected_type(edit: &mut CircuitEditor, closure: NodeId, kind: Op) -> Result<TypeId, Error> {
+pub(crate) fn projected_type(
+    edit: &mut CircuitEditor,
+    closure: NodeId,
+    kind: Op,
+) -> Result<TypeId, Error> {
     let body = edit.node(closure)?.edge("body")?;
     let result = edit.expression_type(edit.expression(body)?)?;
     if kind == Op::MapIndex {

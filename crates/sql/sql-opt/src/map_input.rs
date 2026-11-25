@@ -3,12 +3,64 @@ use crate::{
     FieldRewriteError, inspect_references, row_fields::RowFields, row_projection::RowProjection,
     terms::Terms,
 };
-use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId};
+use feldera_sql_ir::{
+    Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort, TypeId,
+    TypeKind,
+};
 use std::collections::BTreeSet;
 
 pub enum MapOutput {
     Row,
     Indexed,
+}
+
+/// Insert the projection before the rebound reader. The reader keeps the
+/// original output type object, even when its new closure has a fresh tuple.
+/// Return whether the projection inherits the reader's live annotations.
+pub fn append_split_map(
+    edit: &mut CircuitEditor,
+    body: NodeId,
+    origin: NodeId,
+    input: OutputPort,
+    input_type: TypeId,
+    output_type: TypeId,
+    [projection, reader]: [ExpressionId; 2],
+) -> Result<bool, Error> {
+    let kind = |ty| match edit.type_kind(ty)? {
+        TypeKind::ZSet => Ok(OperatorKind::Map),
+        TypeKind::IndexedZSet => Ok(OperatorKind::MapIndex),
+        _ => Err(Error::new("map split requires a collection type")),
+    };
+    let project_kind = kind(input_type)?;
+    let read_kind = kind(output_type)?;
+    let narrowed =
+        crate::replace_projections::projected_type(edit, projection.into(), project_kind)?;
+    let fields = |ty: TypeId, closure: ExpressionId| {
+        [
+            ("outputType", Field::Reference(ty.into())),
+            ("function", Field::Reference(closure.into())),
+        ]
+    };
+    let project = edit.append_operator(
+        body,
+        origin,
+        project_kind,
+        &[input],
+        fields(narrowed, projection),
+    )?;
+    let projected = OutputPort {
+        operator: project,
+        number: 0,
+    };
+    edit.append_operator(
+        body,
+        origin,
+        read_kind,
+        &[projected],
+        fields(output_type, reader),
+    )?;
+    // An indexed-to-indexed map preserves the original annotations on its projection.
+    Ok(project_kind == OperatorKind::MapIndex && read_kind == OperatorKind::MapIndex)
 }
 
 pub fn split_map_input(

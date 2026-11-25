@@ -1,6 +1,7 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
 mod fragment;
+mod split_map;
 mod repeat;
 mod waterlines;
 mod delta_expansion;
@@ -1652,6 +1653,7 @@ fn transform(
         "Monotonicity/Asof" => return asof_waterline(input, state, next),
         "Monotonicity/Hop" => return hop_waterline(input, state, next),
         "ExpandHop/Window" => return expand_hop(input, state, next),
+        "RemoveUnusedFields/SplitMap" => return split_map::operators(input, state, next),
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader"

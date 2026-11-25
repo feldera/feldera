@@ -1,6 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
+import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
@@ -419,6 +423,71 @@ public class JoinInputProjectionTests {
                     Assert.assertEquals(List.of(true), answers);
                 } else {
                     expectedNames = allocated;
+                }
+            }
+        }
+    }
+
+    @Test
+    public void splitMapsPreserveTheirDeclaredOutputsAndProjectionAnnotations() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b INT, c INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var rows = source.getOutput(0);
+        var row = rows.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var index = new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(
+                new DBSPTupleExpression(row.deref().field(0)), row.deepCopy().deref()).closure(row), rows);
+        var decisions = new ArrayList<Boolean>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) {}
+            @Override public void nativeDecision(String pass, boolean answered) {
+                if (pass.equals("RemoveUnusedFields/SplitMap"))
+                    decisions.add(answered);
+            }
+        };
+        for (boolean indexedInput : List.of(false, true)) {
+            var port = indexedInput ? index.outputPort() : rows;
+            for (boolean indexedOutput : List.of(false, true)) {
+                var arg = indexedInput ? index.getOutputIndexedZSetType().getKVRefType().var()
+                        : rows.getOutputRowType().ref().var();
+                var column = (indexedInput ? arg.field(1) : arg).deref().field(2);
+                var pair = new DBSPTupleExpression(column, column.deepCopy());
+                DBSPUnaryOperator map = indexedOutput
+                        ? new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(pair, pair.deepCopy()).closure(arg), port)
+                        : new DBSPMapOperator(site, pair.closure(arg), port);
+                map.addAnnotation(AlwaysMonotone.INSTANCE, DBSPUnaryOperator.class);
+                var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+                circuit.addOperator(source);
+                if (indexedInput)
+                    circuit.addOperator(index);
+                circuit.addOperator(map);
+                decisions.clear();
+                DBSPUnaryOperator reference = null;
+                for (boolean hybrid : List.of(false, true)) {
+                    compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                    var analyzed = new AnalyzedSet<DBSPOperator>();
+                    analyzed.done(index);
+                    var result = new RemoveUnusedFields(compiler, analyzed).apply(circuit)
+                            .allOperators.getLast().to(DBSPUnaryOperator.class);
+                    var projection = result.input().node().to(DBSPUnaryOperator.class);
+                    Assert.assertSame(port.node(), projection.input().node());
+                    Assert.assertSame(map.outputType, result.outputType);
+                    Assert.assertEquals(indexedInput, projection instanceof DBSPMapIndexOperator);
+                    Assert.assertEquals(indexedOutput, result instanceof DBSPMapIndexOperator);
+                    Assert.assertEquals(indexedInput && indexedOutput,
+                            projection.annotations.annotations.contains(AlwaysMonotone.INSTANCE));
+                    Assert.assertEquals(map.getFunction().getType().getToplevelFieldCount(),
+                            projection.annotations.first(IsProjection.class).outputSize);
+                    if (hybrid) {
+                        Assert.assertTrue(reference.getFunction().equivalent(result.getFunction()));
+                        Assert.assertTrue(reference.input().simpleNode().getFunction().equivalent(projection.getFunction()));
+                        Assert.assertEquals(List.of(true), decisions);
+                    } else {
+                        reference = result;
+                    }
                 }
             }
         }

@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.CheckPersistentIds;
@@ -1911,6 +1912,43 @@ public final class RustCircuitPass implements CircuitTransform {
                 checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
             var functions = reply.value.required("functions");
             return functions.isNull() ? null : decodeClosurePair(new LoweringReply(reply.writer, functions));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode map input fields", error);
+        }
+    }
+
+    /** Decode the two operators of a map split against the actual upstream port. */
+    public static List<DBSPSimpleOperator> splitMapOperators(DBSPCompiler compiler, DBSPUnaryOperator map,
+            OutputPort input, @Nullable List<List<Integer>> paths) {
+        String pass = "RemoveUnusedFields/SplitMap";
+        boolean inspected = paths == null;
+        var reader = map.getClosureFunction();
+        if (inspected)
+            paths = requiredParameterFieldDependencies(compiler, reader).getFirst();
+        var request = expressionSite(map.getRelNode());
+        request.put("port", input.outputNumber);
+        request.put("inspected", inspected);
+        request.set("paths", MAPPER.valueToTree(paths));
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request),
+                    reader, input.outputType(), map.outputType);
+            if (compiler.stateObserver != null) {
+                compiler.stateObserver.nativeDecision(pass, true);
+                if (inspected)
+                    compiler.stateObserver.nativeDecision("SplitInspectedMapInput", true);
+            }
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            if (reply.value.has("diagnostic"))
+                checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
+            var operators = decodeOperatorFragment(reply, op -> map.getRelNode(), input.node());
+            if (!operators.isEmpty()) {
+                Utilities.enforce(operators.size() == 2);
+                var projection = operators.getFirst();
+                if (reply.value.required("inherit_annotations").booleanValue())
+                    projection.copyAnnotations(map);
+                projection.addAnnotation(new IsProjection(reader.getType().getToplevelFieldCount()), DBSPSimpleOperator.class);
+            }
+            return operators;
         } catch (IOException error) {
             throw new UncheckedIOException("Could not encode map input fields", error);
         }
