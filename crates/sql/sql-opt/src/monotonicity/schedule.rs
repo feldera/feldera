@@ -4,7 +4,7 @@
 use crate::state_bounds::column_lateness;
 use feldera_sql_ir::{BodyOrder, Circuit, Error, InnerKind, Node, NodeId, OperatorKind as Op};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 /// Construct a waterline type from the corresponding live key or value type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -198,6 +198,27 @@ fn rolling_transfer(
     })
 }
 
+/// Which parts of a live output can carry a lower bound. A detached
+/// topology only establishes that a bound is possible.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputWaterline {
+    Absent,
+    Row,
+    Key,
+    Value,
+    KeyAndValue,
+}
+
+impl OutputWaterline {
+    fn has_key(self) -> bool {
+        matches!(self, Self::Row | Self::Key | Self::KeyAndValue)
+    }
+
+    fn has_value(self) -> bool {
+        matches!(self, Self::Row | Self::Value | Self::KeyAndValue)
+    }
+}
+
 pub fn monotonicity_transfers(
     circuit: &Circuit,
 ) -> Result<Vec<(NodeId, MonotonicityTransfer)>, Error> {
@@ -205,7 +226,7 @@ pub fn monotonicity_transfers(
     propagate_waterlines(circuit, |id, transfer| {
         transfers.push((id, transfer));
         // A detached topology does not contain the result of closure analysis.
-        Ok::<_, Error>(true)
+        Ok::<_, Error>(OutputWaterline::Row)
     })?;
     Ok(transfers)
 }
@@ -215,14 +236,21 @@ pub fn monotonicity_transfers(
 /// unconditional diagnostics must still be visited on an unbounded branch.
 pub fn propagate_waterlines<E: From<Error>>(
     circuit: &Circuit,
-    mut apply: impl FnMut(NodeId, MonotonicityTransfer) -> Result<bool, E>,
+    mut apply: impl FnMut(NodeId, MonotonicityTransfer) -> Result<OutputWaterline, E>,
 ) -> Result<(), E> {
     use MonotonicityTransfer::*;
-    let mut bounded = HashSet::new();
+    let mut bounded = HashMap::new();
     for id in circuit.operator_order(BodyOrder::Postorder)? {
         let node = circuit.node(id).expect("validated circuit member");
-        let mut inputs = node.inputs().map(|p| bounded.contains(&p.operator));
-        let first = inputs.next().unwrap_or(false);
+        let mut inputs = node.inputs().map(|p| {
+            bounded
+                .get(&p.operator)
+                .copied()
+                .unwrap_or(OutputWaterline::Absent)
+        });
+        let first_bound = inputs.next().unwrap_or(OutputWaterline::Absent);
+        let first = first_bound != OutputWaterline::Absent;
+        let second = inputs.next().unwrap_or(OutputWaterline::Absent) != OutputWaterline::Absent;
         let clock = || {
             node.data("annotations")
                 .and_then(|v| v.as_array())
@@ -242,7 +270,7 @@ pub fn propagate_waterlines<E: From<Error>>(
                     .ok_or_else(|| Error::new("window requires its lower-bound policy"))?;
                 // Without a lower bound, newly arriving rows may have arbitrary
                 // keys unless the input key itself has a waterline.
-                (!unbounded || first).then_some(ProjectIndex {
+                (!unbounded || first_bound.has_key()).then_some(ProjectIndex {
                     projection: IndexedWaterline {
                         require_input_key: unbounded,
                         key: FieldWaterline::Whole,
@@ -271,7 +299,7 @@ pub fn propagate_waterlines<E: From<Error>>(
             Some(Op::Map | Op::MapIndex | Op::FlatMap) => first.then_some(ApplyClosure {
                 function: ClosureBody::Operator,
             }),
-            Some(Op::Deindex) => first.then_some(ApplyClosure {
+            Some(Op::Deindex) => first_bound.has_value().then_some(ApplyClosure {
                 function: ClosureBody::IndexedValue,
             }),
             Some(Op::Hop) => first.then_some(ApplyClosure {
@@ -297,23 +325,16 @@ pub fn propagate_waterlines<E: From<Error>>(
                     None => Analyze,
                 })
             }
-            Some(Op::BinaryDistinct) => inputs
-                .next()
-                .unwrap_or(false)
-                .then_some(Identity { input: 1 }),
-            Some(Op::AntiJoin) => {
-                (first && inputs.next().unwrap_or(false)).then_some(IntersectKeys)
-            }
+            Some(Op::BinaryDistinct) => second.then_some(Identity { input: 1 }),
+            Some(Op::AntiJoin) => (first && second).then_some(IntersectKeys),
             Some(Op::Sum | Op::AtomicSum | Op::Subtract) => {
                 // An empty sum must still receive the visitor's normal validation.
                 node.inputs()
-                    .all(|p| bounded.contains(&p.operator))
+                    .all(|p| bounded.contains_key(&p.operator))
                     .then_some(IntersectRows)
             }
-            Some(Op::StreamJoin | Op::StreamJoinIndex) => {
-                (first || inputs.next().unwrap_or(false)).then_some(JoinClosure)
-            }
-            Some(Op::AsofJoin) if first || inputs.next().unwrap_or(false) => {
+            Some(Op::StreamJoin | Op::StreamJoinIndex) => (first || second).then_some(JoinClosure),
+            Some(Op::AsofJoin) if first || second => {
                 // Only a left timestamp at or after the right timestamp has a lower bound.
                 match asof_ascending(circuit, node) {
                     Some(true) => Some(JoinClosure),
@@ -321,9 +342,12 @@ pub fn propagate_waterlines<E: From<Error>>(
                     None => Some(Analyze),
                 }
             }
-            Some(Op::AggregateLinearPostprocess) => first.then_some(AggregateKey),
-            Some(Op::PartitionedRollingAggregate) => rolling_transfer(circuit, node, first)?,
-            Some(Op::PrimitiveAggregate) => first.then(|| primitive_transfer(circuit, node)),
+            Some(Op::AggregateLinearPostprocess) => first_bound.has_key().then_some(AggregateKey),
+            Some(Op::PartitionedRollingAggregate) => rolling_transfer(circuit, node, first)?
+                .filter(|rule| *rule != RollingTimestamp || first_bound.has_key()),
+            Some(Op::PrimitiveAggregate) => first
+                .then(|| primitive_transfer(circuit, node))
+                .filter(|rule| *rule != AggregateKey || first_bound.has_key()),
             // The other operators have no transfer in the expanded graph.
             // Visiting an input with a bound does not give them a bound.
             // Nested circuits have already contributed their children in postorder.
@@ -333,8 +357,9 @@ pub fn propagate_waterlines<E: From<Error>>(
             // Chain classification checks both closures even without an input
             // bound. Only a chain with a bounded input can propagate a bound.
             let can_propagate = transfer != ChainMinimumOrKey || first;
-            if apply(id, transfer)? && can_propagate {
-                bounded.insert(id);
+            let output = apply(id, transfer)?;
+            if output != OutputWaterline::Absent && can_propagate {
+                bounded.insert(id, output);
             }
         }
     }
@@ -345,6 +370,47 @@ pub fn propagate_waterlines<E: From<Error>>(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn indexed_consumers_select_the_key_or_value_they_propagate() -> Result<(), Error> {
+        let port = |id| json!({"operator": {"node": id}, "outputNumber": 0});
+        let graph = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": [
+                {"class": "DBSPSourceMultisetOperator", "id": 1, "inputs": [],
+                 "metadata": {"columnMetadata": [{"lateness": true}]}},
+                {"class": "DBSPMapIndexOperator", "id": 2, "inputs": [port(1)]},
+                {"class": "DBSPDeindexOperator", "id": 3, "inputs": [port(2)]},
+                {"class": "DBSPAggregateLinearPostprocessOperator", "id": 4, "inputs": [port(2)]},
+                {"class": "DBSPWindowOperator", "id": 5, "inputs": [port(2)], "lowerUnbounded": true},
+                {"class": "DBSPPartitionedRollingAggregateOperator", "id": 6, "inputs": [port(2)],
+                 "upperPreceding": true},
+                {"class": "DBSPPrimitiveAggregateOperator", "id": 7, "inputs": [port(2)], "function": null},
+                {"class": "DBSPPrimitiveAggregateOperator", "id": 8, "inputs": [port(2)], "aggregateKind": "Min"}
+            ]
+        }))?;
+        for (bound, consumers) in [
+            (OutputWaterline::Key, vec![4, 5, 6, 7, 8]),
+            (OutputWaterline::Value, vec![3, 8]),
+            (OutputWaterline::KeyAndValue, vec![3, 4, 5, 6, 7, 8]),
+        ] {
+            let mut visited = Vec::new();
+            propagate_waterlines(&graph, |id, _| {
+                if !matches!(id, NodeId::Outer(1 | 2)) {
+                    visited.push(id);
+                }
+                Ok::<_, Error>(if id == NodeId::Outer(2) {
+                    bound
+                } else {
+                    OutputWaterline::Row
+                })
+            })?;
+            assert_eq!(
+                visited,
+                consumers.into_iter().map(NodeId::Outer).collect::<Vec<_>>()
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn set_operations_and_minimums_select_their_distinct_bound_rules() -> Result<(), Error> {
@@ -555,7 +621,12 @@ mod tests {
                 json!(f64::NAN.to_bits().cast_signed()),
                 Some(RollingTimestamp),
             ),
-            (false, "DBSPI64Literal", json!(null), Some(InvalidRollingOffset)),
+            (
+                false,
+                "DBSPI64Literal",
+                json!(null),
+                Some(InvalidRollingOffset),
+            ),
             (true, "DBSPI64Literal", json!(null), Some(RollingTimestamp)),
             (false, "DBSPVariablePath", json!(null), None),
         ] {

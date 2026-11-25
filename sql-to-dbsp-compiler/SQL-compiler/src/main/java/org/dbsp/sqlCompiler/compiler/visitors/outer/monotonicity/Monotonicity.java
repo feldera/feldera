@@ -182,7 +182,7 @@ public class Monotonicity extends CircuitVisitor {
         }
     }
 
-    private boolean applyTransfer(RustCircuitPass.MonotonicityTransfer transfer) {
+    private RustCircuitPass.OutputWaterline applyTransfer(RustCircuitPass.MonotonicityTransfer transfer) {
         if (this.compiler().stateObserver != null) {
             this.compiler().stateObserver.monotonicityTransfer(
                     transfer.operator().getClass().getSimpleName(), transfer.rule().name());
@@ -214,7 +214,15 @@ public class Monotonicity extends CircuitVisitor {
             case InvalidIndexedSource -> throw indexedSourceError(transfer.operator().to(DBSPSourceMapOperator.class));
             case Analyze -> transfer.operator().accept(this);
         }
-        return this.getMonotoneExpression(transfer.operator().to(DBSPSimpleOperator.class)) != null;
+        var operator = transfer.operator().to(DBSPSimpleOperator.class);
+        var result = this.getMonotoneExpression(operator);
+        if (result == null)
+            return RustCircuitPass.OutputWaterline.Absent;
+        if (operator.getType().is(DBSPTypeIndexedZSet.class)
+                && getBodyType(result) instanceof PartiallyMonotoneTuple pair && pair.size() == 2)
+            return RustCircuitPass.OutputWaterline.indexed(pair.getFieldType(0).mayBeMonotone(),
+                    pair.getFieldType(1).mayBeMonotone());
+        return RustCircuitPass.OutputWaterline.Row;
     }
 
     private void projectIndex(DBSPSimpleOperator operator, RustCircuitPass.IndexedWaterline projection) {

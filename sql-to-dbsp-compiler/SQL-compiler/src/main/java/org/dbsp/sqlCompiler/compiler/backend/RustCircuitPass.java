@@ -3702,28 +3702,45 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    /** A plain row or an indexed row whose key and value bounds are known separately. */
+    public enum OutputWaterline {
+        Absent(0), Row(1), Key(2), Value(3), KeyAndValue(4);
+
+        final int wireValue;
+        OutputWaterline(int wireValue) {
+            this.wireValue = wireValue;
+        }
+
+        public static OutputWaterline indexed(boolean key, boolean value) {
+            if (key)
+                return value ? KeyAndValue : Key;
+            return value ? Value : Absent;
+        }
+    }
+
     @FunctionalInterface
     private interface WaterlineStep {
-        boolean apply(long operator, byte[] transfer);
+        int apply(long operator, byte[] transfer);
     }
 
     private static native void propagateWaterlines(byte[] topology, WaterlineStep step);
 
     /** Report whether each live transfer produced a bound before Rust visits its consumers. */
-    public static void visitWaterlines(DBSPCompiler compiler, DBSPCircuit circuit, Predicate<MonotonicityTransfer> visit) {
+    public static void visitWaterlines(DBSPCompiler compiler, DBSPCircuit circuit,
+                                       Function<MonotonicityTransfer, OutputWaterline> visit) {
         record Step(TransferRule rule, int input, @Nullable List<ColumnWaterline> columns,
                     @Nullable IndexedWaterline projection, @Nullable ClosureBody function) {}
         propagateWaterlines(OptimizerTopology.monotonicity(compiler, circuit), new WaterlineStep() {
             @Nullable Map<Long, DBSPOperator> operators;
 
             @Override
-            public boolean apply(long operator, byte[] transfer) {
+            public int apply(long operator, byte[] transfer) {
                 if (this.operators == null)
                     this.operators = operatorsById(circuit);
                 try {
                     var step = MAPPER.readValue(transfer, Step.class);
-                    return visit.test(new MonotonicityTransfer(Utilities.getExists(this.operators, operator),
-                            step.rule(), step.input(), step.columns(), step.projection(), step.function()));
+                    return visit.apply(new MonotonicityTransfer(Utilities.getExists(this.operators, operator),
+                            step.rule(), step.input(), step.columns(), step.projection(), step.function())).wireValue;
                 } catch (IOException error) {
                     throw new UncheckedIOException("Invalid monotonicity transfer", error);
                 }
@@ -3736,7 +3753,7 @@ public final class RustCircuitPass implements CircuitTransform {
         var transfers = new ArrayList<MonotonicityTransfer>();
         visitWaterlines(compiler, circuit, transfer -> {
             transfers.add(transfer);
-            return true;
+            return OutputWaterline.Row;
         });
         return transfers;
     }

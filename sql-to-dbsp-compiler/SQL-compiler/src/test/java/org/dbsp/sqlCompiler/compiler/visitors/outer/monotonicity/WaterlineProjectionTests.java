@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
@@ -219,13 +220,35 @@ public class WaterlineProjectionTests {
         }
     }
 
+    private static DBSPOperator sourceWithOneBound(DBSPCompiler compiler) {
+        compiler.submitStatementsForCompilation("CREATE TABLE t(x BIGINT NOT NULL LATENESS 1, y BIGINT NOT NULL);"
+                + "CREATE VIEW v AS SELECT * FROM t;");
+        return compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+    }
+
+    private static List<String> observeWaterlineTransfers(DBSPCompiler compiler) {
+        var visited = new ArrayList<String>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void monotonicityTransfer(String operator, String rule) {
+                visited.add(rule);
+            }
+
+            @Override
+            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
+
+            @Override
+            public void after(String parent, int index, int iteration, CircuitTransform pass,
+                              DBSPCircuit circuit, boolean completed) {}
+        };
+        return visited;
+    }
+
     @Test
     public void lostMapWaterlineStopsOnlyItsOwnBranch() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
         var compiler = new DBSPCompiler(new CompilerOptions());
-        compiler.submitStatementsForCompilation("CREATE TABLE t(x BIGINT NOT NULL LATENESS 1, y BIGINT NOT NULL);"
-                + "CREATE VIEW v AS SELECT * FROM t;");
-        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var source = sourceWithOneBound(compiler);
         var input = source.getOutput(0);
         var row = input.getOutputRowType().ref().var();
         var site = CalciteEmptyRel.INSTANCE;
@@ -241,26 +264,50 @@ public class WaterlineProjectionTests {
         Assert.assertNull(direct.getMonotoneExpression(unbounded));
         var expected = direct.getMonotoneExpression(bounded).getReducedExpression();
 
-        var visited = new ArrayList<String>();
-        compiler.stateObserver = new DBSPCompiler.StateObserver() {
-            @Override
-            public void monotonicityTransfer(String operator, String rule) {
-                visited.add(rule);
-            }
-
-            @Override
-            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
-
-            @Override
-            public void after(String parent, int index, int iteration, CircuitTransform pass,
-                              DBSPCircuit circuit, boolean completed) {}
-        };
+        var visited = observeWaterlineTransfers(compiler);
         compiler.options.ioOptions.rustOptimizerPasses = true;
         var hybrid = new Monotonicity(compiler);
         hybrid.apply(circuit);
         Assert.assertNull(hybrid.getMonotoneExpression(unbounded));
         Assert.assertTrue(expected.equivalent(hybrid.getMonotoneExpression(bounded).getReducedExpression()));
         Assert.assertEquals(List.of("DeclaredColumns", "ApplyClosure", "Identity"), visited);
+    }
+
+    @Test
+    public void deindexUsesOnlyTheValueWaterline() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var source = sourceWithOneBound(compiler);
+        var input = source.getOutput(0);
+        var site = CalciteEmptyRel.INSTANCE;
+        for (int keyField : List.of(0, 1)) {
+            var row = input.getOutputRowType().ref().var();
+            var pair = new DBSPRawTupleExpression(row.deepCopy().deref().field(keyField),
+                    row.deref().field(1 - keyField));
+            var index = new DBSPMapIndexOperator(site, pair.closure(row), input);
+            var deindex = new DBSPDeindexOperator(site, site, index.outputPort());
+            var circuit = new DBSPCircuit(new ProgramMetadata(), true);
+            for (var op : List.of(source, index, deindex))
+                circuit.addOperator(op);
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            var direct = new Monotonicity(compiler);
+            direct.apply(circuit);
+            var expected = direct.getMonotoneExpression(deindex);
+
+            var visited = observeWaterlineTransfers(compiler);
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            var hybrid = new Monotonicity(compiler);
+            hybrid.apply(circuit);
+            var actual = hybrid.getMonotoneExpression(deindex);
+            if (keyField == 0) {
+                Assert.assertNull(expected);
+                Assert.assertNull(actual);
+                Assert.assertEquals(List.of("DeclaredColumns", "ApplyClosure"), visited);
+            } else {
+                Assert.assertTrue(expected.getReducedExpression().equivalent(actual.getReducedExpression()));
+                Assert.assertEquals(List.of("DeclaredColumns", "ApplyClosure", "ApplyClosure"), visited);
+            }
+        }
     }
 
     @Test
