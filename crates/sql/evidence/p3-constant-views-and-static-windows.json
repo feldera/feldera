@@ -317,5 +317,45 @@
       ],
       "receipt_sha256": "a3c516f805ead8a19dd4e7cd5e874488fb3b8975ba260fad1475b5e96376e268"
     }
+  },
+  "worker_limits": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "cpu_affinity": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      6.122801,
+      9.890515,
+      6.811552,
+      6.123134,
+      13.003478,
+      8.521763,
+      8.741305,
+      9.947931,
+      9.393347,
+      7.393219,
+      10.238349,
+      8.665013,
+      7.111469,
+      6.316967,
+      6.517426,
+      7.090802,
+      4.405215,
+      7.236302,
+      6.325301,
+      6.260884
+    ],
+    "p95_ms": 10.238349,
+    "largest_driver_plus_front_end_rss_bytes": 70381568,
+    "compiler_sha256": "34b53db4d2feb85831752e7174ac308eb2d64eec2e9e4aecb297331a5081a787",
+    "receipt_sha256": "e517a5cc69faf593279afcc774999bafa7fc2ea22cb4f99967a7d58307acb00e"
   }
 }
