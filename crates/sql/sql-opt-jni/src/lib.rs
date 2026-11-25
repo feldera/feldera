@@ -1677,6 +1677,7 @@ fn transform(
         "ExpandHop/Window" => return expand_hop(input, state, next),
         "OptimizeProjections/PushThrough" => return push_projection::operators(input, state, next),
         "OptimizeProjections/Antijoin" => return antijoin_reader::operators(input, state, next),
+        "OptimizeProjections/UnaryOutput" => return output_projection::unary(input, state, next),
         "RemoveUnusedFields/UnaryOperators" => return narrowed_unary::operators(input, state, next),
         "RemoveUnusedFields/TopKOperators" => return topk_input::operators(input, state, next),
         "OptimizeProjections/TopKOutput" | "OptimizeProjections/AggregateOutput" =>

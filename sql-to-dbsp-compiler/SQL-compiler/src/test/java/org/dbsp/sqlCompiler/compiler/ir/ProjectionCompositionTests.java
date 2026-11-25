@@ -1126,6 +1126,60 @@ public class ProjectionCompositionTests {
         Assert.assertTrue(EquivalenceContext.equiv(borrowed, inner.initializer));
     }
 
+    @Test public void fuseMapReadersUsingTheOriginalProjectionWidth() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var row = b.tuple(b.lit(1), b.lit(2));
+        var source = new DBSPConstantOperator(site, new DBSPZSetExpression(row));
+        var input = row.getType().ref().var();
+        var transpose = b.tuple(input.deref().field(1), input.deref().field(0)).closure(input);
+        var producer = new DBSPMapOperator(site, transpose, source.outputPort());
+        producer.addAnnotation(new IsProjection(1), DBSPMapOperator.class);
+        var mapped = producer.outputPort().getOutputRowType().ref().var();
+        var discard = b.tuple(mapped.deref().field(0));
+        var rowReader = new DBSPMapOperator(site, discard.closure(mapped), producer.outputPort());
+        var indexReader = new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(b.tuple(), discard).closure(mapped),
+                producer.outputPort());
+        var decisions = new ArrayList<Boolean>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) { }
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit, boolean completed) { }
+            @Override public void nativeDecision(String pass, boolean answered) {
+                if (pass.equals("OptimizeProjections/UnaryOutput"))
+                    decisions.add(answered);
+            }
+        };
+        for (var reader : List.<DBSPUnaryOperator>of(rowReader, indexReader)) {
+            var circuit = new DBSPCircuit(compiler.metadata, false);
+            circuit.addOperator(source);
+            circuit.addOperator(producer);
+            circuit.addOperator(reader);
+            var graph = new Graph(compiler);
+            graph.apply(circuit);
+            for (boolean onlyProjections : List.of(true, false)) {
+                DBSPUnaryOperator direct = null;
+                for (boolean hybrid : List.of(false, true)) {
+                    compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                    var pass = new OptimizeProjections(compiler, onlyProjections, graph.getGraphs(), new AnalyzedSet<>());
+                    var result = pass.apply(circuit).allOperators.getLast().to(DBSPUnaryOperator.class);
+                    Assert.assertEquals(onlyProjections, result == reader);
+                    if (!onlyProjections) {
+                        Assert.assertEquals(source.outputPort(), result.input());
+                        Assert.assertSame(reader.outputType, result.outputType);
+                        Assert.assertEquals(1, result.annotations.first(IsProjection.class).outputSize);
+                    }
+                    if (hybrid) {
+                        Assert.assertEquals(direct.getClass(), result.getClass());
+                        Assert.assertTrue(EquivalenceContext.equiv(direct.getFunction(), result.getFunction()));
+                    } else {
+                        direct = result;
+                    }
+                }
+            }
+        }
+        Assert.assertEquals(List.of(true, true, true, true), decisions);
+    }
+
     @Test public void retainCompositeKeysOnBothAntijoinInputs() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
         var key = b.tup(b.tup(b.strn()), b.i32());

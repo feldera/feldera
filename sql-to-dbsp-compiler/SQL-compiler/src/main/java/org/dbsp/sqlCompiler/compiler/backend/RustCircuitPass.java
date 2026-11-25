@@ -20,6 +20,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.CheckPersistentIds;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
@@ -470,6 +471,51 @@ public final class RustCircuitPass implements CircuitTransform {
             return operators.getFirst().copyAnnotations(producer);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode filtered join projection", error);
+        }
+    }
+
+    @Nullable
+    public static DBSPSimpleOperator projectUnaryOutput(DBSPCompiler compiler, DBSPUnaryOperator producer,
+            DBSPUnaryOperator reader, boolean onlyProjections, int width) {
+        String pass = "OptimizeProjections/UnaryOutput";
+        var request = expressionSite(producer.getRelNode());
+        request.put("producer", producer.getClass().getSimpleName());
+        request.put("port", producer.input().outputNumber);
+        boolean indexed = reader instanceof DBSPMapIndexOperator;
+        request.put("indexed", indexed);
+        request.put("only_projections", onlyProjections);
+        request.put("reader_width", width);
+        var annotation = producer.annotations.first(IsProjection.class);
+        if (annotation != null)
+            request.put("producer_width", annotation.outputSize);
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request),
+                    producer.getFunction(), reader.getFunction(), reader.outputType);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.isNull())
+                return null;
+            if (reply.value.has("closure")) {
+                var op = reply.value.required("closure").textValue().equals("producer") ? producer : reader;
+                op.getClosureFunction();
+                throw new IllegalStateException("Expected a non-closure function on " + op);
+            }
+            if (reply.value.has("invalid_arity"))
+                throw new InternalCompilerError("Expected closure with 1 parameter", reader);
+            if (reply.value.has("projection_error"))
+                throw projectionError(reply.writer, reply.value.required("projection_error"), reader.getFunction());
+            if (reply.value.has("binding_error"))
+                checkBindingErrors(reply.writer, reply.value.required("binding_error"));
+            var origin = indexed ? reader.getRelNode().after(producer.getRelNode()) : producer.getRelNode();
+            var operators = decodeOperatorFragment(reply, op -> origin, producer.input().node());
+            Utilities.enforce(operators.size() == 1);
+            reportWarnings(compiler, reply.value.required("warnings"));
+            var result = operators.getFirst();
+            if (indexed)
+                result.copyAnnotations(reader);
+            return producer instanceof DBSPDeindexOperator ? result : result.copyAnnotations(producer);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode unary output projection", error);
         }
     }
 

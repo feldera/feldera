@@ -196,6 +196,57 @@ impl ProjectedOutput {
 }
 
 impl OutputProjection {
+    /// Fuse a Map or MapIndex reader into a unary operator selected by OptimizeProjections.
+    pub fn compose_unary(
+        &self,
+        edit: &mut CircuitEditor,
+        before: ExpressionId,
+        reader: NodeId,
+        only_projections: bool,
+        next: &mut u64,
+        warnings: &mut Vec<SimplifyWarning>,
+    ) -> Result<Option<ProjectedOutput>, CompositionError> {
+        let (kind, function) = match self.producer {
+            Op::Map => (
+                if self.indexed { Op::MapIndex } else { Op::Map },
+                crate::compose_projection(edit, before.into(), reader, true, warnings)?,
+            ),
+            Op::MapIndex if self.indexed => (
+                Op::MapIndex,
+                crate::compose_indexed_projection(
+                    edit,
+                    before.into(),
+                    reader,
+                    only_projections,
+                    next,
+                    warnings,
+                )?,
+            ),
+            Op::FlatMap if !self.indexed => {
+                (Op::FlatMap, project_unnest(edit, before.into(), reader)?)
+            }
+            Op::Deindex if !self.indexed => (
+                Op::Map,
+                Some(inline_projection(edit, before.into(), reader, warnings)?),
+            ),
+            _ => return Err(Error::new("unsupported unary projection").into()),
+        };
+        let Some(function) = function else {
+            return Ok(None);
+        };
+        let output = if self.producer == Op::Deindex {
+            let body = edit.expression(edit.node(function.into())?.edge("body")?)?;
+            edit.zset_type(edit.expression_type(body)?)?
+        } else {
+            self.output_type
+        };
+        Ok(Some(ProjectedOutput {
+            kind,
+            function,
+            output,
+        }))
+    }
+
     fn accepts_producer(&self) -> bool {
         match self.producer {
             Op::Constant => !self.indexed || self.single_reader,
