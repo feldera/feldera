@@ -2,9 +2,11 @@
 use crate::projection_key::{row_parameter, SourceRows, ProjectionKey};
 use super::source::{compose_timestamp, filter_sources, TemporalFilterSource};
 use super::temporal::{shared_temporal_inputs, TemporalCandidate};
-use crate::conjunct_windows;
+use crate::filters::conjuncts;
 use crate::projection_composition::CompositionError;
-use feldera_sql_expr::{ensure_expression_tree, SimplifyWarning};
+use crate::temporal_filters::checked_closure;
+use crate::{ClockError, ConjunctWindow, TemporalDiagnostic};
+use feldera_sql_expr::{copy_expression, ensure_expression_tree, SimplifyWarning};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
 
 pub enum TemporalScan {
@@ -12,6 +14,13 @@ pub enum TemporalScan {
     /// its original filter and the conjunct to move to the front.
     Groups {
         groups: Vec<Vec<(NodeId, usize)>>,
+        warnings: Vec<SimplifyWarning>,
+        generated_names: u64,
+    },
+    /// The failing conjunct and everything the scan observed before reaching it.
+    Failed {
+        graph: Circuit,
+        diagnostic: TemporalDiagnostic,
         warnings: Vec<SimplifyWarning>,
         generated_names: u64,
     },
@@ -27,18 +36,25 @@ pub fn scan_temporal_windows(circuit: Circuit, threshold: usize) -> Result<Tempo
     let mut warnings = Vec::new();
     let mut generated_names = 0;
     for path in &paths {
-        let Some(keys) = source_candidates(
+        match source_candidates(
             &mut edit,
             path,
             &mut input_types,
             &mut warnings,
             &mut generated_names,
-        )?
-        else {
-            // Replaying the paths will report every diagnostic, including earlier ones.
-            return Ok(TemporalScan::Paths(paths));
-        };
-        candidates.push(keys);
+        ) {
+            Ok(Some(keys)) => candidates.push(keys),
+            Ok(None) => return Ok(TemporalScan::Paths(paths)),
+            Err(ClockError::InvalidIr(error)) => return Err(error),
+            Err(ClockError::Diagnostic(diagnostic)) => {
+                return Ok(TemporalScan::Failed {
+                    graph: edit.circuit().clone(),
+                    diagnostic,
+                    warnings,
+                    generated_names,
+                });
+            }
+        }
     }
     let groups = shared_temporal_inputs(&candidates, threshold)
         .into_iter()
@@ -64,24 +80,29 @@ fn source_candidates(
     input_types: &mut SourceRows,
     warnings: &mut Vec<SimplifyWarning>,
     next: &mut u64,
-) -> Result<Option<Vec<SourceCandidate>>, Error> {
+) -> Result<Option<Vec<SourceCandidate>>, ClockError> {
     let function = edit.node(path.filter)?.edge("function")?;
     let tree = ensure_expression_tree(edit, function)?;
     let predicate = edit.node(tree)?;
     let parameter = predicate.edges("parameters")?[0]; // filter_sources checked the arity
     let body = edit.expression(predicate.edge("body")?)?;
-    let Some(windows) = conjunct_windows(edit, parameter, body, next)? else {
-        return Ok(None);
-    };
     let maps = path
         .maps
         .iter()
         .map(|&id| edit.node(id)?.edge("function"))
         .collect::<Result<Vec<_>, _>>()?;
     let mut candidates = Vec::new();
-    for (conjunct, window) in windows.into_iter().enumerate() {
-        let Some(window) = window else { continue };
-        let Some((input, key)) = source_key(edit, parameter, window.key, &maps, warnings)? else {
+    for (index, conjunct) in conjuncts(edit, body)?.into_iter().enumerate() {
+        // Each classification gets a fresh unary filter. Compose its timestamp
+        // before inspecting the next conjunct, since composition can emit a warning.
+        let copy = copy_expression(edit, conjunct.into())?;
+        let predicate = edit.wrap_bool_if_needed(edit.expression(copy)?)?;
+        let closure = edit.closure_with_parameters(predicate, &[parameter])?;
+        let Some((row, predicates)) = checked_closure(edit, closure, next)? else {
+            return Ok(None);
+        };
+        let Some(window) = ConjunctWindow::from_predicates(&predicates) else { continue };
+        let Some((input, key)) = source_key(edit, row, window.key, &maps, warnings)? else {
             return Ok(None);
         };
         let Some(row) = input_types.representative(edit, path.source, input)? else {
@@ -89,7 +110,7 @@ fn source_candidates(
         };
         candidates.push(TemporalCandidate {
             fingerprint: (path.source, row, key),
-            conjunct,
+            conjunct: index,
         });
     }
     Ok(Some(candidates))

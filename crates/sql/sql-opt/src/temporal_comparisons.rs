@@ -26,6 +26,18 @@ pub struct ConjunctWindow {
     pub lower: bool,
 }
 
+impl ConjunctWindow {
+    pub(super) fn from_predicates(parts: &[TemporalPredicate]) -> Option<Self> {
+        let [TemporalPredicate::Bound { key, comparison, .. }] = parts else {
+            return None;
+        };
+        Some(Self {
+            key: *key,
+            lower: matches!(comparison, WindowComparison::Greater | WindowComparison::GreaterEqual),
+        })
+    }
+}
+
 /// Window sharing inspects each conjunct independently. A residual interrupts
 /// window lowering in predicate order, but later conjuncts can still be moved
 /// to share a window with another filter.
@@ -67,24 +79,10 @@ pub(super) fn analyze_conjuncts(
         let Some(parts) = infer_temporal_predicates(edit, parameter, term, &mut names)? else {
             return Ok(None);
         };
-        let window = match parts.as_slice() {
-            [
-                TemporalPredicate::Bound {
-                    key, comparison, ..
-                },
-            ] => Some(ConjunctWindow {
-                key: *key,
-                lower: matches!(
-                    comparison,
-                    WindowComparison::Greater | WindowComparison::GreaterEqual
-                ),
-            }),
-            _ => None,
-        };
         analyzed.push(AnalyzedConjunct {
             expression,
             names,
-            window,
+            window: ConjunctWindow::from_predicates(&parts),
         });
     }
     Ok(Some(analyzed))

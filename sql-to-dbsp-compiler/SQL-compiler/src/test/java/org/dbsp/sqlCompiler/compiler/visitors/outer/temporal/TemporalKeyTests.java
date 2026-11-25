@@ -205,6 +205,73 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void windowScanReportsTheFirstInvalidClockOperand() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        for (boolean scalarInput : List.of(false, true)) {
+            var invalid = b.call(b.i32(), "sign_i32");
+            var clock = new DBSPBlockExpression(List.of(invalid.toStatement()), b.call(time, "now"));
+            var circuit = temporalFilterChain(scalarInput ? b.call(time, "now") : clock);
+            if (scalarInput) {
+                var source = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(time));
+                circuit.addOperator(source);
+                var row = b.refVar(time);
+                var predicate = b.binary(DBSPOpcode.GTE, row.deref(), b.call(time, "now"));
+                circuit.addOperator(new DBSPFilterOperator(site, predicate.closure(row), source.outputPort()));
+            }
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            var decisions = new ArrayList<Boolean>();
+            var expected = scalarInput ? NullPointerException.class : IndexOutOfBoundsException.class;
+            long start = DBSPVariablePath.nextGeneratedName();
+            var direct = Assert.assertThrows(expected, () -> scanWindows(compiler, circuit, decisions));
+            long names = DBSPVariablePath.nextGeneratedName() - start;
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            start = DBSPVariablePath.nextGeneratedName();
+            var hybrid = Assert.assertThrows(expected, () -> scanWindows(compiler, circuit, decisions));
+            Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+            Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+            Assert.assertEquals(List.of(true), decisions);
+        }
+    }
+
+    @Test
+    public void windowScanKeepsAnEarlierConjunctsCastWarning() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var range = new SourcePositionRange(new SourcePosition(2, 3), new SourcePosition(2, 18));
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var rowType = b.tup(time);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+        circuit.addOperator(input);
+        var value = b.tuple(b.lit("invalid timestamp"));
+        var map = new DBSPMapOperator(site, value.closure(b.refVar(rowType)), input.outputPort());
+        circuit.addOperator(map);
+        var row = b.refVar(value.getType());
+        var key = new DBSPCastExpression(CalciteObject.create(range), b.field(row, 0), time,
+                DBSPCastExpression.CastType.SqlUnsafe);
+        var first = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+        var invalid = new DBSPBlockExpression(List.of(b.call(b.i32(), "sign_i32").toStatement()), b.call(time, "now"));
+        var second = b.binary(DBSPOpcode.LT, key.deepCopy(), invalid);
+        var filter = new DBSPFilterOperator(site, b.binary(DBSPOpcode.AND, first, second).closure(row), map.outputPort());
+        circuit.addOperator(filter);
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var decisions = new ArrayList<Boolean>();
+            Assert.assertThrows(IndexOutOfBoundsException.class, () -> scanWindows(compiler, circuit, decisions));
+            Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
+            Assert.assertEquals(1, compiler.messages.messages.size());
+            var warning = compiler.messages.messages.get(0);
+            Assert.assertEquals(range, warning.range);
+            Assert.assertEquals("Not a TIMESTAMP", warning.errorType);
+        }
+    }
+
+    @Test
     public void temporalMergeChecksScalarInputBeforeEvaluatingClockBounds() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();

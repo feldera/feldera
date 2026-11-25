@@ -3016,11 +3016,14 @@ public final class RustCircuitPass implements CircuitTransform {
                     MAPPER.writeValueAsBytes(compiler.metadata.windowSharingThreshold()));
             var reply = MAPPER.readTree(result);
             var groups = reply.get("groups");
+            var failure = reply.get("failure");
             if (compiler.stateObserver != null)
-                compiler.stateObserver.nativeDecision("WindowGroups/Scan", groups != null);
-            if (groups != null) {
+                compiler.stateObserver.nativeDecision("WindowGroups/Scan", groups != null || failure != null);
+            if (groups != null || failure != null) {
                 advanceTemporalNames(reply);
                 reportWarnings(compiler, reply.required("warnings"));
+                if (failure != null)
+                    throw temporalError(compiler, writer.innerVisitor, failure);
                 var chosen = new LinkedHashMap<DBSPFilterOperator, Integer>();
                 for (var group : groups)
                     for (var member : group) {

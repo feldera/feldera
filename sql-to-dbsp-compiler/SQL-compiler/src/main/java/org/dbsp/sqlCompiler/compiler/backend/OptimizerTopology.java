@@ -184,9 +184,10 @@ final class OptimizerTopology {
                 new OptimizerExpressionWriter(compiler, JsonStream.compactCircuit(), 0, false));
     }
 
-    /** A temporal scan can report a warning while composing expressions from several maps. */
+    /** Keep the live operands for diagnostics raised while classifying window candidates. */
     static ToJsonOuterVisitor temporalScan(DBSPCompiler compiler, DBSPCircuit circuit, Set<Long> selected) {
         var inner = new OptimizerExpressionWriter(compiler, JsonStream.compactCircuit(), 1, false);
+        inner.liveNodes = new HashMap<>();
         return selectedExpressions(compiler, circuit, selected, Details.NONE, inner);
     }
 

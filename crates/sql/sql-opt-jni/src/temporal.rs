@@ -120,7 +120,7 @@ pub(super) fn scan(
 ) -> Result<Value, Box<dyn std::error::Error>> {
     use feldera_sql_opt::TemporalScan;
     Ok(
-        match feldera_sql_opt::scan_temporal_windows(circuit, threshold)? {
+        match feldera_sql_opt::scan_temporal_windows(circuit.clone(), threshold)? {
             TemporalScan::Groups {
                 groups,
                 warnings,
@@ -137,6 +137,11 @@ pub(super) fn scan(
                     .collect();
                 json!({ "groups": groups, "warnings": super::pass_warnings(warnings), "generated_names": generated_names })
             }
+            TemporalScan::Failed { graph, diagnostic, warnings, generated_names } => json!({
+                "failure": temporal_failure(&graph, &circuit, diagnostic)?,
+                "warnings": super::pass_warnings(warnings),
+                "generated_names": generated_names,
+            }),
             TemporalScan::Paths(paths) => json!({ "paths": source_paths(paths) }),
         },
     )
