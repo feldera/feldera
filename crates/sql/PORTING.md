@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `df4ca6fff`, both engines matched Java's column defaults for 26 temporal
+spellings and two conditional defaults. The timestamp cast of
+`2020-02-30 00:00:00` folds to March 1. The date cast of `-001-01-01` keeps
+its runtime conversion and emits the same warning as Java. All 46 selected
+compilations matched through 20,116 ordered optimizer observations and artifact
+emission. [Temporal default comparisons](evidence/p3-temporal-column-defaults.json)
+
 The packaged CLI and the S4 replay exercise different paths in ASOF lowering.
 All 12 classic demos and the 11 accepted Gen-2 demos matched through 13,588
 ordered S4 observations on `b4e9ddc15`. With observation disabled, the ordinary

@@ -1,0 +1,131 @@
+{
+  "compiler_commit": "df4ca6fff091f0a32f6d8186a4c47b31812ee93e",
+  "java_jar_sha256": "aaf31825f8a579a770a3ea7eed70eea9b451cb15f5566e25654a8365114d3989",
+  "release_sha256": {
+    "sql2dbsp": "0fb0cb67ba8bd791e05693ca932954d0f7675679d1f43385facaa9118531cb9f",
+    "sql-difftest": "bd77ab2b7f342e8ab3f71faeab400df2785c4be6eb31f13da19af2359265c6ba",
+    "libfeldera_sql_opt_jni.so": "948c53334532ffe7c2b8616430ea7b91de170c9bd9db942c9b256a8e8013d29d"
+  },
+  "rust_tests": 299,
+  "clippy": "passed",
+  "distinct_frozen_default_graphs": 44,
+  "frozen_default_graph_differences": 0,
+  "programs": {
+    "timestamp": "CREATE TABLE t (id INT, ts TIMESTAMP DEFAULT CAST('2020-02-30 00:00:00' AS TIMESTAMP));\nCREATE VIEW v AS SELECT * FROM t;",
+    "date": "CREATE TABLE t (id INT, d DATE DEFAULT CAST('-001-01-01' AS DATE));\nCREATE VIEW v AS SELECT * FROM t;",
+    "matrix": "CREATE TABLE t (\nc0 TIME DEFAULT CAST('12:00:00.10' AS TIME),\nc1 TIME DEFAULT CAST('24:00:00' AS TIME),\nc2 TIME DEFAULT CAST('12:00:60' AS TIME),\nc3 TIME DEFAULT CAST('12:00:00.' AS TIME),\nc4 TIME DEFAULT CAST('12:00:00.1234567891' AS TIME),\nc5 TIME DEFAULT CAST(' 12:00:00 ' AS TIME),\nc6 TIME DEFAULT CAST('1:00:00' AS TIME),\nc7 TIME DEFAULT CAST('12:00:00.000' AS TIME),\nc8 TIMESTAMP DEFAULT CAST('2020-01-01 00:00:00.10' AS TIMESTAMP),\nc9 TIMESTAMP DEFAULT CAST('2020-01-01' AS TIMESTAMP),\nc10 TIMESTAMP DEFAULT CAST('2020-02-30 00:00:00' AS TIMESTAMP),\nc11 TIMESTAMP DEFAULT CAST('2020-01-01T00:00:00' AS TIMESTAMP),\nc12 TIMESTAMP DEFAULT CAST('2020-01-01 00:00:00.1234567' AS TIMESTAMP),\nc13 TIMESTAMP DEFAULT CAST('0001-01-01 00:00:00' AS TIMESTAMP),\nc14 TIMESTAMP DEFAULT CAST('9999-12-31 23:59:59.999999' AS TIMESTAMP),\nc15 TIMESTAMP DEFAULT CAST('2020-01-01 24:00:00' AS TIMESTAMP),\nc16 TIMESTAMP DEFAULT CAST('2020-01-01  00:00:00' AS TIMESTAMP),\nc17 TIMESTAMP DEFAULT CAST('1969-12-31 23:59:59.5' AS TIMESTAMP),\nc18 TIMESTAMP DEFAULT CAST('2020-01-01 00:00:00.' AS TIMESTAMP),\nc19 TIMESTAMP DEFAULT CAST('-001-01-01 00:00:00' AS TIMESTAMP),\nc20 DATE DEFAULT CAST('2020-02-30' AS DATE),\nc21 DATE DEFAULT CAST('2020-2-3' AS DATE),\nc22 DATE DEFAULT CAST(' 2020-02-03 ' AS DATE),\nc23 DATE DEFAULT CAST('+020-01-01' AS DATE),\nc24 DATE DEFAULT CAST('9999-12-31' AS DATE),\nc25 DATE DEFAULT CAST('0001-01-01' AS DATE)\n);\nCREATE VIEW v AS SELECT * FROM t;",
+    "conditional": "CREATE TABLE t (\n    ts TIMESTAMP DEFAULT CASE WHEN 1 = 1 THEN CAST('2020-02-30 00:00:00' AS TIMESTAMP) ELSE TIMESTAMP '1999-01-01 00:00:00' END,\n    d DATE DEFAULT CASE WHEN 1 = 0 THEN CAST('-001-01-01' AS DATE) ELSE DATE '2024-02-29' END\n);\nCREATE VIEW v AS SELECT * FROM t;"
+  },
+  "engines": {
+    "classic": {
+      "packaged_cli": {
+        "timestamp": {
+          "old_result": "circuit.rs differs\ndataflow.json differs",
+          "matching_artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "matching_diagnostics": 0,
+          "receipt_sha256": "8f11f43893b21e4a6eacfc61665ca3c7d51fb004fa0b8145ddb70465b0db187d"
+        },
+        "date": {
+          "old_result": "Java compiler failure: \"Invalid date format: [000/-01-01]\"",
+          "matching_artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "matching_diagnostics": 1,
+          "receipt_sha256": "651822b74c0758280866388ad1dd08d1624e82b6afcffc12cb3b3afc3dfe3251"
+        },
+        "matrix": {
+          "old_result": "Compiler diagnostics differ",
+          "matching_artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "matching_diagnostics": 12,
+          "receipt_sha256": "2e541d0ed8b345eca48b35f3944e6c7ec0ce0d07bd62a74ced92264f8e9ec446"
+        },
+        "conditional": {
+          "old_result": "circuit.rs differs\ndataflow.json differs",
+          "matching_artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "matching_diagnostics": 1,
+          "receipt_sha256": "e6bbfa56de278a62847bee3cd345b513bda29b6de134eb43f0dab10771fcd924"
+        }
+      },
+      "s4_replay": {
+        "ordered_s4_observations": 10013,
+        "population_sha256": "661361ca8ccb4c490f0b39b7e848fb21a1408732f76c52db5c0ea65d1bce2018",
+        "cases": 23,
+        "mismatches": 0,
+        "receipt_sha256": "9c3ec96e0cf67de75fb6b7486f5a5877fa9416ce3b20ec1bc4aa7046635347ed"
+      }
+    },
+    "gen2": {
+      "packaged_cli": {
+        "timestamp": {
+          "old_result": "Gen-2 circuit comparison failed: /inner: array lengths differ\ndataflow.json differs",
+          "matching_artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "matching_diagnostics": 0,
+          "receipt_sha256": "6fe250a4065ec0ad5adbc5e67c0af4c9d6b09cd042cc7940e471482b5e5cd27b"
+        },
+        "date": {
+          "old_result": "Java compiler failure: \"Invalid date format: [000/-01-01]\"",
+          "matching_artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "matching_diagnostics": 1,
+          "receipt_sha256": "14fdd87c7374539c71cd7b22eb76d54fdcb4744231dea9d5edac5d4f53f65ef3"
+        },
+        "matrix": {
+          "old_result": "Compiler diagnostics differ",
+          "matching_artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "matching_diagnostics": 12,
+          "receipt_sha256": "b3eee7b04470481bc5ec5e71a113b7e57641b0d5ff9c8abb4c6aae5e7defe6a6"
+        },
+        "conditional": {
+          "old_result": "Gen-2 circuit comparison failed: /inner: array lengths differ\ndataflow.json differs",
+          "matching_artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "matching_diagnostics": 1,
+          "receipt_sha256": "aab692a6bf4506b53f8d26edb3a06d963fda448ef5be0b5bd07b029e93534156"
+        }
+      },
+      "s4_replay": {
+        "ordered_s4_observations": 10103,
+        "population_sha256": "ff9a201661d4dd8039b2f1d4617dafd212485d1dd2daabeb860bbf15c56c3093",
+        "cases": 23,
+        "mismatches": 0,
+        "receipt_sha256": "e5029d989a1650f1b2104e7c40aa00ca4999852f670e44c5f7f23abe3255e8eb"
+      }
+    }
+  },
+  "control_commits": {
+    "timestamp_date_and_matrix": "d325a41b87b9771d47a98dd4b6746743ecf2cbc5",
+    "conditional": "ac50de1e899979511949a1e55391039f17741630"
+  }
+}
