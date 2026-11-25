@@ -41,6 +41,13 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-25. Rust now selects input projections for UNNEST, linear aggregates,
+  TopK and grouped aggregates. The grouped-aggregate build matched Java on
+  252 selected classic and Gen-2 compilations and restored COUNT and LATENESS
+  checkpoints in both directions. P3 remains opt-in while work continues on
+  the optimizer and the exit checks in section 7.3.
+  [Optimizer replay](crates/sql/PORTING.md#p3-optimizer-replay)
+
 - 2026-11-23. Rust uses one expression analysis for temporal predicates and
   LATENESS. The 133 frozen clock programs and 20 directed compilations
   matched Java through all 81,200 optimizer observations and emission.

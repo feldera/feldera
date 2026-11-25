@@ -1,0 +1,143 @@
+{
+  "scope": "Narrow the indexed input to a linear aggregate using the row columns that its closure reads.",
+  "source_base": "9e1d02c27f3ee91c9ef0ebb10c6343c1f1d71e54",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "4b9c50acedf891729969246132a662744f1573bfa9001e9e488bcb582d80d455",
+    "crates/sql/sql-opt/src/aggregate_projection.rs": "ff6e747672391730079ac1729ef72397c8ab06fc961b92dff82d2332d47df572",
+    "crates/sql/sql-opt/src/lib.rs": "1beca5aec86c3e3a1f7cc8045b07801e8e4a36e40d1e5b4d2597388051ea9eb2",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "f6f36dc9eecdb33ee0c0587e19bd399815138415d1a60d93c3910a94fc17fc71",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/RemoveUnusedFields.java": "f7d982130090a76bb0278147577a2188d671d28386b7fd4198a5d836130fa08b",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "6cee74b590b1692273e4ae0efb7f421583e16eb9cecccacb943d3c3dec61c940"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "04c9710689728e3befc721e301ecab1230a4ab739f08228e489769a71d6a50c8",
+    "bin/sql-difftest": "e444a4d337c452f327841a47f9bc2f8d463b89e3399e2a3484eb0296f7710b44",
+    "maven/tests.jar": "6059743d00381e9b426c626083d89c89b1abaf318cb5805a168f982a18346832",
+    "maven/sql-compiler.jar": "d53523a978a9d10913113e75ecd02270980a8eb137c6e9c6fea00579b9e03655",
+    "bin/sql2dbsp": "89698613496046d05b1ef2b8479daca5b60ba55022bbe27e4899d043a2cc85fe"
+  },
+  "negative_control": {
+    "library_sha256": "a62245620c985758a77ec326fcfac3a93cbac012545ed036d32b8671ec967024",
+    "failed_tests": [
+      "linearAggregateNarrowsOnlyTheIndexedValue"
+    ],
+    "java_compiler_sha256": "0b1c851b6e7ec7d5339e65d3a8487a08a63ffb0282d32e5e130d6643c8582cb9"
+  },
+  "rust_tests": 227,
+  "junit_tests": 276,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "baca87732932a45526f9b80801199b2334c23acc7091f1200cf11458cf9b3e9d"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "654e1256fa70a26ac3d69afbbd3ca9b5dbe2ad87157b064172b0afdc803f1985"
+    }
+  },
+  "source_commit": "2c4e6508f6378e8bcd178b371ea84f12fb860bd1",
+  "nightly_optimizer_junit": 293,
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a212c6-8dd2-7350-8034-62c2c90d8916",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a212c6-8de9-7c22-acb5-2c2fc5d063ae",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "4dad9eb5fdc34adec3c0c1a18188c7d8c223a7097fefd84c66769e82df925c8f"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a212c7-1b80-70e3-a017-b50d64dd556e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a212c7-1b9a-7113-ad17-b910a3e236b8",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "ebac7beee2dbe4cb4512bc2be9f523ff4af19da9ed89bece552dc6e889cb162d"
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "scope": "Project the indexed value from the union of TopK producer, ranking, and tie-comparator reads.",
+  "source_base": "2c4e6508f6378e8bcd178b371ea84f12fb860bd1",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "1d7f0ad5c947d3274926fca5b1779708b2cd84519846f5d362f2370cbf2baca5",
+    "crates/sql/sql-opt/src/aggregate_projection.rs": "8adbd055a0331eb8ef499a100809e060ef034fa5ed2d71ad6330daa6969c8a97",
+    "crates/sql/sql-opt/src/lib.rs": "d96ccdf3e78ea7c4196bf06d77a52e9ba0a47a919a7bda57e0986a900098f43c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "918f18c6f530ce4c31b2e4b137a2d440516ccf32ef5518db74ea871a13e93473",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/RemoveUnusedFields.java": "939c5d21fecba3813d014b998a70151fee719320bb2bfb78195ec5081d49372b",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/unusedFields/JoinInputProjectionTests.java": "40e9645f6a4f6b3c62bb1d1c641d155252b0956609a8b854936e7f3760977f13"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "72dab1064c53b3e982140d838e3b9a4f7d3d7896e8fed81f66eaaa53c26e0880",
+    "bin/sql-difftest": "769849d8d948e2efa58d4ba95ec1d2f848655a936c1fc581ed7d02e6c12a8827",
+    "maven/tests.jar": "7c56f7d245237557aea95ad9db72c640501de759b97a4748a54726adbb13836e",
+    "maven/sql-compiler.jar": "c1933a37e84c57268e41b45274f7e20575ba37ed820d28d11ebd431e2421b97a",
+    "bin/sql2dbsp": "e8e95818e1df0b7aa644dc4649b8c965d7eb8a56256b9c8e4267af3e6e8b1bad"
+  },
+  "negative_control": {
+    "library_sha256": "04c9710689728e3befc721e301ecab1230a4ab739f08228e489769a71d6a50c8",
+    "failed_tests": [
+      "sqlTopKUsesRustToDiscoverAndRemapComparedFields"
+    ],
+    "java_compiler_sha256": "d53523a978a9d10913113e75ecd02270980a8eb137c6e9c6fea00579b9e03655"
+  },
+  "rust_tests": 227,
+  "junit_tests": 276,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "ed9129824a1fcc8caadf8df8d51c6e3f6bb45833c15a645e4b5c2510c8a68af1"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "dfda17565698dafca095261fa5fd2d8932681b30fdb91d4a7d38f7a7165bde8d"
+    }
+  },
+  "frozen_rank_and_topk_test_classes": {
+    "classic": {
+      "cases": 92,
+      "ordered_s4_observations": 43242,
+      "mismatches": 0,
+      "population_sha256": "1ee8331c464b371bc7283f03791008410f28ce6a0807808d2b58a0a18a3d1f35",
+      "native_requests": {
+        "RemoveUnusedFields/TopKInput": 306
+      },
+      "receipt_sha256": "8244eb4a9db115f900fd739c587f849955744c5f9e9bd86ac61815d5d89ac693"
+    },
+    "gen2": {
+      "cases": 92,
+      "ordered_s4_observations": 43256,
+      "mismatches": 0,
+      "population_sha256": "c7cfba575d1d5813125970453dc107f9bdc3d15f44d46853047813a0fc56f0d5",
+      "native_requests": {
+        "RemoveUnusedFields/TopKInput": 306
+      },
+      "receipt_sha256": "47f5a1093c56591329d4cf4755bd2e507250826e021baf840581438ab984c68d"
+    }
+  },
+  "source_commit": "e4aa91774ecc53da34e02fe47d1d8b11d581389f",
+  "nightly_optimizer_junit": 293
+}

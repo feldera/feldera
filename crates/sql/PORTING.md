@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | On `bf8cd8423`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission, and all 8,256 executable classic cases passed. On `c0b527a18`, 72 selected compilations matched across 42,449 ordered observations and emission. COUNT and LATENESS restored in both directions. On `1af0e4688`, the highest cold compile p95 ratio was 1.049×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay and classic runtime](evidence/p3-evaluated-statement-fields.json) · [Field trimming and restores](evidence/p3-checked-join-readers.json) · [Latency](evidence/p3-field-use-diagnostics-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port remaining Java optimizer logic in waterline analysis and field trimming. Repeat exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
+| P3 | On `bf8cd8423`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission, and all 8,256 executable classic cases passed. On `1193f3252`, 252 selected aggregate compilations matched across 104,428 ordered observations and emission. COUNT and LATENESS restored in both directions. On `1af0e4688`, the highest cold compile p95 ratio was 1.049×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay and classic runtime](evidence/p3-evaluated-statement-fields.json) · [Aggregate trimming and restores](evidence/p3-stream-aggregate-inputs.json) · [Latency](evidence/p3-field-use-diagnostics-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port the remaining Java waterline analysis and circuit rewrites that apply field trimming. Repeat exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -461,6 +461,20 @@ The result in `/campaign/results/decoder.json` records whether the worker
 reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
+
+Rust now computes the input fields for UNNEST, linear aggregates, TopK and
+grouped aggregates. TopK retains fields used to break ties. Grouped aggregates
+share one projection across their components and check the original parameter
+bindings before rewriting a reader. The successive builds matched Java on all
+373 frozen compilations containing UNNEST, 184 rank and TopK compilations,
+and 252 aggregate compilations selected by test name. The grouped-aggregate
+build passed 227 Rust tests, 294 nightly Java tests and both directions of
+COUNT and LATENESS checkpoint interchange.
+[UNNEST](evidence/p3-unnest-reader-paths.json) · [Linear aggregates](evidence/p3-linear-aggregate-reader.json) · [TopK](evidence/p3-topk-indexed-reader.json) · [Grouped aggregates](evidence/p3-stream-aggregate-inputs.json)
+
+Rust also checks copied temporal predicates for shared expressions before
+merging filters. A failed merge preserves the names allocated by earlier
+successful merges. [Temporal predicate replay](evidence/p3-temporal-predicate-trees.json)
 
 On `c0b527a18`, Rust also narrows joins whose field analysis needs a copied
 reader. Both ordinary and ASOF joins preserve the generated-name count and
