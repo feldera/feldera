@@ -19,7 +19,7 @@ pub(super) struct Visited {
 pub(super) enum Evaluation {
     Value(ProjectedValue),
     Failed(WaterlineError),
-    NeedsVisitor,
+    IncompleteInput,
 }
 
 pub(super) enum FlatmapInput<'a> {
@@ -27,12 +27,6 @@ pub(super) enum FlatmapInput<'a> {
     JoinOrIndex,
     /// A detached row projection has no live generated-name allocator.
     Detached,
-}
-
-impl From<Option<ProjectedValue>> for Evaluation {
-    fn from(value: Option<ProjectedValue>) -> Self {
-        value.map_or(Self::NeedsVisitor, Self::Value)
-    }
 }
 
 impl Evaluation {
@@ -50,7 +44,7 @@ impl Evaluation {
     pub(super) fn projected(self) -> Option<ProjectedValue> {
         match self {
             Self::Value(value) => Some(value),
-            Self::Failed(_) | Self::NeedsVisitor => None,
+            Self::Failed(_) | Self::IncompleteInput => None,
         }
     }
 }
@@ -125,7 +119,7 @@ impl Operation {
                 let right = children.next().expect("visited right operand");
                 scalar::binary_bound(edit, id, operands, [left, right])
             }
-            Self::Tuple => project_tuple(edit, id, children).map(Evaluation::from),
+            Self::Tuple => Ok(Evaluation::Value(project_tuple(edit, id, children)?)),
             Self::Call(_) => unreachable!("calls consume optional argument facts above"),
             Self::Unbounded => unbounded(edit, id, false),
         }
@@ -139,7 +133,7 @@ fn schedule(
     base: usize,
     record_callee: bool,
     work: &mut Vec<Step>,
-) -> Result<bool, Error> {
+) -> Result<(), Error> {
     let node = edit.node(id.into())?;
     let child = |name| edit.expression(node.edge(name)?);
     let mark = work.len();
@@ -191,53 +185,19 @@ fn schedule(
         | Expr::BinaryLiteral
         | Expr::UuidLiteral
         | Expr::VariantNullLiteral => reduce(Operation::Unbounded),
-        // These results have no transfer rule, but their operands still contribute clock facts.
-        Expr::If
-        | Expr::IsNull
-        | Expr::Array
-        | Expr::Map
-        | Expr::ApplyMethod
-        | Expr::Constructor
-        | Expr::Lazy
-        | Expr::Question
-        | Expr::Variant
-        | Expr::GeoPointConstructor
-        | Expr::UnwrapCustomOrd
-        | Expr::CustomOrd
-        | Expr::HandleError
-        | Expr::Assignment
-        | Expr::ConditionalIncrement
-        | Expr::Return
-        | Expr::QualifyType
-        | Expr::CustomOrdField
-        | Expr::DirectComparator
-        | Expr::FieldComparator
-        | Expr::EqualityComparator
-        | Expr::AsymmetricFieldComparator
-        | Expr::NoComparator
-        | Expr::WindowBound
-        | Expr::Sort
-        | Expr::Static
-        | Expr::EnumValue
-        | Expr::For
-        | Expr::Fold
-        | Expr::MinMax
-        | Expr::LinearAggregate
-        | Expr::NonLinearAggregate
-        | Expr::MinMaxAggregate
-        | Expr::ZSet
-        | Expr::IndexedZSet => {
-            let mut children = Vec::new();
-            for (_, field) in node.fields() {
-                field.collect_inner_edges(&mut children);
-            }
-            for child in children {
-                match edit.node(child)?.inner_kind() {
-                    Some(InnerKind::Type(_)) => {}
+        // Expressions without a transfer rule still visit their operands. Type
+        // information and the aggregate's cached empty result are not operands.
+        _ => {
+            let mut pending = crate::lexical_scope::expression_children(node);
+            pending.reverse();
+            while let Some(child) = pending.pop() {
+                let node = edit.node(child)?;
+                match node.inner_kind() {
                     Some(InnerKind::Expression(_)) => {
-                        work.extend([Step::Read(edit.expression(child)?), Step::Discard])
+                        work.extend([Step::Read(edit.expression(child)?), Step::Discard]);
                     }
-                    _ => return Ok(false),
+                    Some(InnerKind::Type(_) | InnerKind::Parameter) => {}
+                    _ => pending.extend(crate::lexical_scope::expression_children(node).into_iter().rev()),
                 }
             }
             match kind {
@@ -249,11 +209,10 @@ fn schedule(
                 _ => reduce(Operation::Unbounded),
             }
         }
-        _ => return Ok(false),
     };
     work.push(finish);
     work[mark..].reverse();
-    Ok(true)
+    Ok(())
 }
 
 impl Row {
@@ -339,16 +298,14 @@ impl Row {
         let mut references_replaced = false;
         let mut active = HashSet::new();
         while let Some(step) = work.pop() {
-            let (id, value) = match step {
+            let (id, mut value) = match step {
                 Step::Read(id) => {
                     if !active.insert(id) {
                         return Err(Error::new("cycle in a waterline expression"));
                     }
                     match edit.expr_kind(id)? {
                         Expr::Let | Expr::Block => {
-                            if !super::scope::schedule(edit, id, self.locals.len(), &mut work)? {
-                                return Ok(Evaluation::NeedsVisitor);
-                            }
+                            super::scope::schedule(edit, id, self.locals.len(), &mut work)?;
                             continue;
                         }
                         Expr::Flatmap => {
@@ -357,11 +314,11 @@ impl Row {
                                 FlatmapInput::JoinOrIndex => {
                                     return Ok(Evaluation::Failed(WaterlineError::FlatmapInput(id)));
                                 }
-                                FlatmapInput::Detached => return Ok(Evaluation::NeedsVisitor),
+                                FlatmapInput::Detached => return Ok(Evaluation::IncompleteInput),
                             };
                             references_replaced = true;
                             match self.nested_flatmap(edit, id, names)? {
-                                Evaluation::Value(value) => (id, Some(value)),
+                                Evaluation::Value(value) => (id, value),
                                 other => return Ok(other),
                             }
                         }
@@ -369,7 +326,7 @@ impl Row {
                             return Ok(Evaluation::Failed(WaterlineError::MissingReference(id)));
                         }
                         Expr::VariablePath => match self.variable(edit, id)? {
-                            VariableRead::Projected(value) => (id, Some(value)),
+                            VariableRead::Projected(value) => (id, value),
                             VariableRead::TypeMismatch(mut declaration) => {
                                 // The visitor records the declaration's fact at the read
                                 // before checking the path's annotated type.
@@ -380,30 +337,34 @@ impl Row {
                                 work.push(Step::NoFact(id));
                                 continue;
                             }
-                            VariableRead::NeedsVisitor => {
-                                return Ok(Evaluation::NeedsVisitor);
+                            VariableRead::MissingDeclaration => {
+                                // Detached projections receive only their supplied bindings.
+                                // Whole closures resolved this path before visiting the body.
+                                if matches!(input, FlatmapInput::Detached) {
+                                    return Ok(Evaluation::IncompleteInput);
+                                }
+                                work.push(Step::NoFact(id));
+                                continue;
                             }
                         },
                         kind if ordered_literal(kind) => match scalar::literal_bound(edit, id)? {
-                            Evaluation::Value(value) => (id, Some(value)),
+                            Evaluation::Value(value) => (id, value),
                             other => return Ok(other),
                         },
                         _ => {
-                            if !schedule(
+                            schedule(
                                 edit,
                                 id,
                                 values.len(),
                                 matches!(self.observations, Observations::Facts(_)),
                                 &mut work,
-                            )? {
-                                return Ok(Evaluation::NeedsVisitor);
-                            }
+                            )?;
                             continue;
                         }
                     }
                 }
                 Step::Reduce(id, op, base) => match op.reduce(edit, id, values.drain(base..))? {
-                    Evaluation::Value(value) => (id, Some(value)),
+                    Evaluation::Value(value) => (id, value),
                     other => return Ok(other),
                 },
                 Step::NoFact(id) => {
@@ -450,11 +411,8 @@ impl Row {
                     for &scope in scopes.iter().skip(1).rev() {
                         self.observe(edit, scope, &mut value)?;
                     }
-                    (scopes[0], Some(value))
+                    (scopes[0], value)
                 }
-            };
-            let Some(mut value) = value else {
-                return Ok(Evaluation::NeedsVisitor);
             };
             active.remove(&id);
             self.observe(edit, id, &mut value)?;

@@ -192,6 +192,11 @@ fn checked_closure(
         return Err(Error::new("a temporal filter requires one row parameter").into());
     };
     let body = edit.expression(node.edge("body")?)?;
+    // Copying RETURN preserves its argument. If two copies still share an
+    // expression, the waterline visitor rejects the body before evaluating it.
+    if tree != closure.into() && feldera_sql_expr::first_repeated_expression(edit, body.into())?.is_some() {
+        return Err(TemporalDiagnostic::Predicate { parameter, body }.into());
+    }
     Ok(checked_temporal_predicates(edit, parameter, body, next)?
         .map(|predicates| (parameter, predicates)))
 }

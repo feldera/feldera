@@ -189,7 +189,7 @@ fn project_wrapper(
     let result = read.apply(edit, expression.into(), edit.expression_type(expression)?, value)?;
     Ok(match result {
         ProjectedRead::Value(value) => Evaluation::Value(value),
-        ProjectedRead::NeedsVisitor => Evaluation::NeedsVisitor,
+        ProjectedRead::NeedsVisitor => Evaluation::IncompleteInput,
         ProjectedRead::MissingBound => {
             let operand = edit.expression(edit.node(expression.into())?.edge("expression")?)?;
             Evaluation::Failed(WaterlineError::MissingBound(operand))
@@ -224,7 +224,7 @@ fn project_tuple(
     edit: &mut CircuitEditor,
     expression: ExpressionId,
     values: impl Iterator<Item = ProjectedValue>,
-) -> Result<Option<ProjectedValue>, Error> {
+) -> Result<ProjectedValue, Error> {
     let id = expression.into();
     let mut fields = Vec::new();
     let mut types = Vec::new();
@@ -243,7 +243,7 @@ fn project_tuple(
         .monotone()
         .then(|| tuple_waterline(edit, id, raw, &bounds))
         .transpose()?;
-    Ok(Some(ProjectedValue {
+    Ok(ProjectedValue {
         shape,
         constant,
         row_type: RowType::Tuple {
@@ -252,7 +252,7 @@ fn project_tuple(
             nullable,
         },
         reduced,
-    }))
+    })
 }
 
 /// A temporal filter's input has no declared waterline. Record the original
@@ -695,7 +695,7 @@ fn project_validated_closure(
         Evaluation::Failed(error) => {
             return Ok(Some(ClosureAnalysis::Failed { error, facts }));
         }
-        Evaluation::NeedsVisitor => return Ok(None),
+        Evaluation::IncompleteInput => return Ok(None),
     };
     let closure = match (value.reduced, parameters) {
         (None, _) => None,

@@ -13,7 +13,7 @@ pub(super) enum VariableRead {
     Projected(ProjectedValue),
     TypeMismatch(ProjectedValue),
     Uninitialized,
-    NeedsVisitor,
+    MissingDeclaration,
 }
 
 struct Initializer {
@@ -27,7 +27,7 @@ fn schedule_statement(
     edit: &CircuitEditor,
     statement: &Node,
     work: &mut Vec<Step>,
-) -> Result<bool, Error> {
+) -> Result<(), Error> {
     match statement.class() {
         "DBSPComment" | "DBSPStructItem" => {}
         "DBSPExpressionStatement" | "DBSPStaticItem" | "DBSPComparatorItem" => work.extend([
@@ -60,9 +60,9 @@ fn schedule_statement(
                 initializer,
             });
         }
-        _ => return Ok(false),
+        _ => return Err(Error::new(format!("unknown waterline statement {}", statement.class()))),
     }
-    Ok(true)
+    Ok(())
 }
 
 fn binding_name(node: &Node, field: &str) -> Result<String, Error> {
@@ -79,7 +79,7 @@ pub(super) fn schedule(
     expression: ExpressionId,
     outer: usize,
     work: &mut Vec<Step>,
-) -> Result<bool, Error> {
+) -> Result<(), Error> {
     let mark = work.len();
     let mut seen = std::collections::HashSet::new();
     let mut scopes = Vec::new();
@@ -104,9 +104,7 @@ pub(super) fn schedule(
             Some(edit.expression(node.edge("consumer")?)?)
         } else {
             for statement in node.edges("contents")? {
-                if !schedule_statement(edit, edit.node(statement)?, work)? {
-                    return Ok(false);
-                }
+                schedule_statement(edit, edit.node(statement)?, work)?;
             }
             node.field("lastExpression")
                 .and_then(Field::node_id)
@@ -127,7 +125,7 @@ pub(super) fn schedule(
     }
     work.push(Step::FinishScope { scopes, outer });
     work[mark..].reverse();
-    Ok(true)
+    Ok(())
 }
 
 impl Row {
@@ -168,9 +166,8 @@ impl Row {
         expression: ExpressionId,
     ) -> Result<VariableRead, Error> {
         let node = edit.node(expression.into())?;
-        let Some(name) = node.data("variable").and_then(|v| v.as_str()) else {
-            return Ok(VariableRead::NeedsVisitor);
-        };
+        let name = node.data("variable").and_then(|v| v.as_str())
+            .ok_or_else(|| Error::new("waterline variable has no name"))?;
         let (shape, row_type, reduced, declared) = if let Some((index, local)) = self
             .locals
             .iter()
@@ -200,7 +197,7 @@ impl Row {
                 parameter.declared_type,
             )
         } else {
-            return Ok(VariableRead::NeedsVisitor);
+            return Ok(VariableRead::MissingDeclaration);
         };
         let value = ProjectedValue {
             shape: shape.clone(),

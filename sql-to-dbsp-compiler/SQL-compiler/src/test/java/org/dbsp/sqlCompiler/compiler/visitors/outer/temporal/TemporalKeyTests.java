@@ -52,6 +52,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -219,6 +220,33 @@ public class TemporalKeyTests {
         Assert.assertEquals(diagnostic, hybrid.getMessage().lines().findFirst().orElseThrow());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
         Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
+    }
+
+    @Test
+    public void temporalMergeChecksTheCopiedPredicateBeforeReadingItsClock() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var clock = b.call(DBSPTypeTimestamp.INSTANCE, "now");
+        var returned = new DBSPReturnExpression(CalciteEmptyRel.INSTANCE, clock);
+        var lastClock = new DBSPBlockExpression(List.of(returned.toStatement(), returned.toStatement()),
+                b.call(DBSPTypeTimestamp.INSTANCE, "now"));
+        var circuit = temporalFilterChain(lastClock);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        long directNames = 0;
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var reference = new MergeFilters(compiler);
+            var pass = hybrid ? new RustCircuitPass(compiler, pairAnalysisOnly(compiler),
+                    new OptimizerSnapshots(compiler)) : reference;
+            long start = DBSPVariablePath.nextGeneratedName();
+            var failure = Assert.assertThrows(RuntimeException.class, () -> pass.apply(circuit));
+            Assert.assertTrue(failure.getMessage(), failure.getMessage().contains(
+                    "contains multiple instances of " + clock + " " + clock.getId() + " context:"));
+            long names = DBSPVariablePath.nextGeneratedName() - start;
+            if (hybrid)
+                Assert.assertEquals(directNames, names);
+            directNames = names;
+        }
     }
 
     @Test

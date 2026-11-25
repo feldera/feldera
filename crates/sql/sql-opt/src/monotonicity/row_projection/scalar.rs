@@ -53,7 +53,7 @@ fn copy_scalar_type(
 ) -> Result<Evaluation, Error> {
     match source.shape {
         Shape::Scalar(monotone) => scalar_type(edit, ty, monotone, constant),
-        Shape::Opaque(_) => Ok(Evaluation::NeedsVisitor),
+        Shape::Opaque(_) => Ok(Evaluation::IncompleteInput),
         _ => Ok(Evaluation::Failed(WaterlineError::ExpectedScalarOperand(
             source.row_type,
         ))),
