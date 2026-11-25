@@ -72,9 +72,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -90,6 +92,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
@@ -990,6 +993,29 @@ public class TemporalKeyTests {
             offsets.add(new DBSPHandleErrorExpression(site, i, behavior, checked, false));
         }
         assertStaticWindowGroups(offsets, Set.of(0, 1));
+    }
+
+    @Test
+    public void windowSharingComparesNullableVariantAndPointInitializers() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var offset = b.call(b.lit(0).getType(), "offset");
+        var present = offset.some();
+        assertStaticWindowGroups(List.of(present, b.call(present.getType(), "Some", offset.deepCopy()),
+                b.call(offset.getType(), "other_offset").some()), Set.of(0, 1));
+
+        var variant = new DBSPVariantExpression(b.lit(1));
+        assertStaticWindowGroups(List.of(variant, b.call(variant.getType(), "VARIANT", b.lit(1)),
+                new DBSPVariantExpression(b.lit(2)), DBSPVariantExpression.sqlNull(true),
+                new DBSPVariantExpression(null, true)), Set.of(0, 1, 3, 4));
+
+        var x = new DBSPDoubleLiteral(1.0);
+        var y = new DBSPDoubleLiteral(2.0);
+        var point = DBSPTypeGeoPoint.INSTANCE;
+        var site = CalciteEmptyRel.INSTANCE;
+        assertStaticWindowGroups(List.of(new DBSPGeoPointConstructor(site, x, y, point),
+                b.call(point, point.toString(), x, y), new DBSPGeoPointConstructor(site, y, x, point),
+                new DBSPGeoPointConstructor()), Set.of(0, 1));
     }
 
     private static void assertStaticWindowGroups(List<DBSPExpression> offsets, Set<Integer> shared) {

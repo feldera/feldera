@@ -416,6 +416,7 @@ fn preserves_static_children(kind: Expr) -> bool {
             kind,
             Expr::Apply | Expr::ApplyMethod | Expr::Constructor | Expr::Block
                 | Expr::Tuple | Expr::RawTuple | Expr::Array | Expr::Map
+                | Expr::Some | Expr::Variant | Expr::GeoPointConstructor
                 | Expr::If | Expr::Binary | Expr::TimeAddSub | Expr::Unary
                 | Expr::Cast | Expr::HandleError | Expr::Unwrap | Expr::IsNull | Expr::Field
                 | Expr::Borrow | Expr::Deref | Expr::Clone | Expr::Question
