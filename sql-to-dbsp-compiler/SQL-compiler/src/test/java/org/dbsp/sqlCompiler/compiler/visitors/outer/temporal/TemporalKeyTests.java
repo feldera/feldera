@@ -32,12 +32,17 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAsymmetricFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -1155,6 +1160,38 @@ public class TemporalKeyTests {
         assertStaticWindowGroups(List.of(sum, b.call(value.getType(), "agg_plus", value, weight, enabled),
                 max, b.call(value.getType(), "agg_plus", value, weight),
                 b.call(value.getType(), "agg_plus", weight, value, enabled)), Set.of(0, 1));
+    }
+
+    @Test
+    public void windowKeysCompareThePrintedOrderingChain() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteObject.EMPTY;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(7, (row, i) -> {
+            var base = new DBSPNoComparatorExpression(site, b.tup(time, i == 5 ? b.bool() : time));
+            var field = new DBSPFieldComparatorExpression(site, base, i == 3 ? 1 : 0, i != 4, i == 1);
+            var order = new DBSPDirectComparatorExpression(site, field, i != 6);
+            return b.call(time, "ordered_time", b.field(row, 0),
+                    i == 2 ? new DBSPEqualityComparatorExpression(site, order) : order);
+        }, List.of(0, 1, 2));
+    }
+
+    @Test
+    public void windowKeysCompareAsymmetricCollationsInOrder() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteObject.EMPTY;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(7, (row, i) -> {
+            var type = i == 1 ? b.tup(b.bool(), b.bool()) : b.tup(time, time);
+            var first = new DBSPAsymmetricFieldComparatorExpression.Collation(
+                    i == 2 ? 1 : 0, i == 3 ? 0 : 1, i != 4, i == 5);
+            var second = new DBSPAsymmetricFieldComparatorExpression.Collation(1, 0, true, true);
+            var order = new DBSPAsymmetricFieldComparatorExpression(site, type, type,
+                    i == 6 ? List.of(second, first) : List.of(first, second));
+            return b.call(time, "ordered_time", b.field(row, 0), order);
+        }, List.of(0, 1));
     }
 
     @Test

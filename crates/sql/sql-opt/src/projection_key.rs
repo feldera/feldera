@@ -1,6 +1,7 @@
 //! Compare the canonical spelling of a projection over one bound row. The Java
 //! window and map fusion passes use printed closures, so cast safety and call result types do
 //! not distinguish keys, while operand nullability in a binary expression does.
+mod comparators;
 mod numbers;
 mod types;
 use numbers::{decimal_text, floating_text};
@@ -73,6 +74,8 @@ enum Term {
         right_nullable: bool,
     },
     CollectionConversion(BinaryOp),
+    Compare { field: Option<u64>, ascending: bool },
+    AsymmetricComparator(Vec<comparators::Collation>),
     Unary {
         opcode: String,
         nullable: bool,
@@ -184,11 +187,13 @@ impl ProjectionKey {
                     }
                     let node = edit.node(at.id)?;
                     if let Some(InnerKind::Expression(kind)) = node.inner_kind() {
-                        if *kind == Expr::Static {
-                            // The key printer renders the initializer in place.
+                        if matches!(kind, Expr::Static | Expr::EqualityComparator) {
+                            // Both wrappers print only their operand. A static
+                            // initializer has additional canonicalization checks.
+                            let is_static = *kind == Expr::Static;
                             let value = ScopedNode {
-                                id: node.edge("initializer")?,
-                                in_static: true,
+                                id: node.edge(if is_static { "initializer" } else { "comparator" })?,
+                                in_static: at.in_static || is_static,
                                 ..at
                             };
                             work.extend([Visit::Alias(at, value), Visit::Read(value)]);
@@ -369,6 +374,8 @@ fn preserves_static_children(kind: Expr) -> bool {
                 | Expr::If | Expr::Binary | Expr::TimeAddSub | Expr::Unary
                 | Expr::Cast | Expr::IsNull | Expr::Field
                 | Expr::WindowBound | Expr::ConditionalIncrement | Expr::Lazy | Expr::Return
+                | Expr::NoComparator | Expr::FieldComparator | Expr::DirectComparator
+                | Expr::AsymmetricFieldComparator
         )
 }
 
@@ -451,6 +458,8 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
     };
     let kind = edit.expr_kind(id)?;
     Ok(Some(match kind {
+        Expr::NoComparator | Expr::DirectComparator | Expr::FieldComparator
+        | Expr::AsymmetricFieldComparator => comparators::printed(node, kind)?,
         Expr::Field => {
             let column = node
                 .data("fieldNo")
