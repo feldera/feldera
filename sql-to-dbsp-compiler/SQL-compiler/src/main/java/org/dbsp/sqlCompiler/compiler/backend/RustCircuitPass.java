@@ -3702,6 +3702,8 @@ public final class RustCircuitPass implements CircuitTransform {
             var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, payloads, OptimizerTopology.Details.NONE);
             var result = this.invoke("CSE", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                     next, this.passState(circuit, writer));
+            if (result.has("comparison_failure"))
+                reportComparisonFailure(result.required("comparison_failure"));
             var live = operatorsById(circuit);
             for (var pair : result.required("aliases")) {
                 var original = Objects.requireNonNull(live.get(pair.required(0).longValue()), "Unknown CSE operand");

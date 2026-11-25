@@ -1,10 +1,13 @@
 //! Eliminate equivalent operators within each circuit body. A trace can be
 //! shared only when the collectors attached to each output agree as well.
 
+use crate::index_key_equivalence::{KeyComparisonError, check_bodies};
 use crate::operator_inputs::{OperatorInputs, output_port};
 use crate::terms::Terms;
+use feldera_sql_expr::constant_rows::entries;
 use feldera_sql_ir::{
-    BodyOrder, Circuit, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort,
+    BodyOrder, Circuit, CircuitEditor, Error, ExpressionKind, Field, Node, NodeId,
+    OperatorKind as Op, OutputPort,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, hash_map::Entry};
 
@@ -210,15 +213,61 @@ fn is_retainer(kind: Op) -> bool {
     )
 }
 
+/// Java first compares the collection values. If they differ, sameRows also
+/// accepts computed rows whose expressions and weights match in source order.
+fn same_constant(
+    edit: &CircuitEditor,
+    left: &Node,
+    right: &Node,
+    terms: &mut Terms,
+) -> Result<bool, KeyComparisonError> {
+    let (Some(a), Some(b)) = (
+        left.field("function").and_then(Field::node_id),
+        right.field("function").and_then(Field::node_id),
+    ) else {
+        return Ok(payload(edit.circuit(), left, terms) == payload(edit.circuit(), right, terms));
+    };
+    let mut equivalent = |a: NodeId, b: NodeId| -> Result<bool, KeyComparisonError> {
+        // Detached snapshots can omit live comparison metadata. Preserve their
+        // structural comparison for that operand alone.
+        Ok(check_bodies(edit, a, b, None)?.unwrap_or_else(|| {
+            terms.field(edit.circuit(), &Field::Reference(a), &[])
+                == terms.field(edit.circuit(), &Field::Reference(b), &[])
+        }))
+    };
+    if equivalent(a, b)? {
+        return Ok(true);
+    }
+    let a = edit.expression(a)?;
+    let b = edit.expression(b)?;
+    if edit.expr_kind(a)? != ExpressionKind::ZSet
+        || edit.expr_kind(b)? != ExpressionKind::ZSet
+        || !edit.same_type(edit.expression_type(a)?, edit.expression_type(b)?)?
+    {
+        return Ok(false);
+    }
+    let left_rows = entries(edit, a)?;
+    let right_rows = entries(edit, b)?;
+    if left_rows.len() != right_rows.len() {
+        return Ok(false);
+    }
+    for ((a, left_weight), (b, right_weight)) in left_rows.into_iter().zip(right_rows) {
+        if left_weight != right_weight || !equivalent(a.into(), b.into())? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn aliases_in_body(
     circuit: &Circuit,
     parent: &Node,
     terms: &mut Terms,
     aliases: &mut BTreeMap<NodeId, NodeId>,
     inactive_constants: &BTreeSet<NodeId>,
-) {
+) -> Result<(), KeyComparisonError> {
     let Some(Field::Array(body)) = parent.field("allOperators") else {
-        return;
+        return Ok(());
     };
     let operators = || {
         body.iter().map(|f| {
@@ -246,18 +295,30 @@ fn aliases_in_body(
         gc.sort_unstable();
     }
     let mut candidates = HashMap::new();
-    for (id, node) in operators() {
+    let mut constants = HashMap::<Op, Vec<NodeId>>::new();
+    let editor = std::cell::OnceCell::new();
+    'operators: for (id, node) in operators() {
         let kind = node.operator_kind().expect("validated operator");
         let inputs: Vec<_> = node.inputs().collect();
         if !can_have_sibling(kind, &inputs) {
             continue;
         }
-        let constant = matches!(kind, Op::Constant | Op::IncrementalConstant);
+        if matches!(kind, Op::Constant | Op::IncrementalConstant) {
+            let previous = constants.entry(kind).or_default();
+            for &base in previous.iter() {
+                let edit = editor.get_or_init(|| CircuitEditor::new(circuit.clone()));
+                if same_constant(edit, edit.node(base)?, node, terms)? {
+                    aliases.insert(id, base);
+                    continue 'operators;
+                }
+            }
+            previous.push(id);
+            continue;
+        }
         // FindCSE compares a producer's successors when it visits that producer.
         // Its special Delta visitor only compares delta inputs. A constant seen
         // earlier in this CSE instance returns before visiting its successors.
-        if !constant
-            && kind != Op::Delta
+        if kind != Op::Delta
             && !inputs.iter().any(|port| {
                 match circuit.node(port.operator).and_then(Node::operator_kind) {
                     Some(Op::Delta) => false,
@@ -278,14 +339,16 @@ fn aliases_in_body(
             }
             Entry::Occupied(entry) => entry.into_mut().matching_payload(circuit, node, terms),
         };
-        if let Some(&base) = group.iter().find(|base| {
-            constant || kind == Op::Delta || collectors.get(base) == collectors.get(&id)
-        }) {
+        if let Some(&base) = group
+            .iter()
+            .find(|base| kind == Op::Delta || collectors.get(base) == collectors.get(&id))
+        {
             aliases.insert(id, base);
         } else {
             group.push(id);
         }
     }
+    Ok(())
 }
 
 /// Repeat until merging an operator no longer exposes new sibling candidates.
@@ -349,6 +412,19 @@ impl CseState {
         circuit: &Circuit,
         shuffles: &BTreeMap<NodeId, u64>,
     ) -> Result<BTreeMap<NodeId, NodeId>, Error> {
+        self.checked_aliases(circuit, shuffles)
+            .map_err(|error| match error {
+                KeyComparisonError::Diagnostic(diagnostic) => Error::new(diagnostic.to_string()),
+                KeyComparisonError::InvalidIr(error) => error,
+            })
+    }
+
+    /// Preserve the first failed expression comparison for the live compiler's diagnostics.
+    pub fn checked_aliases(
+        &self,
+        circuit: &Circuit,
+        shuffles: &BTreeMap<NodeId, u64>,
+    ) -> Result<BTreeMap<NodeId, NodeId>, KeyComparisonError> {
         let mut terms = Terms::with_shuffles(shuffles);
         let mut aliases = BTreeMap::new();
         aliases_in_body(
@@ -357,7 +433,7 @@ impl CseState {
             &mut terms,
             &mut aliases,
             &self.seen_constants,
-        );
+        )?;
 
         for id in circuit.operator_order(BodyOrder::Preorder)? {
             let node = circuit.node(id).expect("validated body member");
@@ -368,7 +444,7 @@ impl CseState {
                     &mut terms,
                     &mut aliases,
                     &self.seen_constants,
-                );
+                )?;
             }
         }
         Ok(aliases)
@@ -414,6 +490,47 @@ mod tests {
             .map(|n| json!({"operator":{"node":n}, "outputNumber":0}))
             .collect();
         json!({"class":kind.wire_name(),"id":id,"inputs":inputs,"annotations":[]})
+    }
+
+    #[test]
+    fn constant_aliases_follow_weighted_rows_in_any_order() -> Result<(), KeyComparisonError> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let (graph, types) = graph.with_inner_roots([json!({
+            "class":"DBSPTypeInteger", "id":1, "width":32, "signed":true, "code":"INT32", "mayBeNull":false
+        })])?;
+        let mut edit = CircuitEditor::new(graph);
+        let int = edit.type_id(types[0])?;
+        let site = edit.circuit().root_id();
+        let mut ops = Vec::new();
+        for rows in [[(1, 2), (2, 1)], [(2, 2), (1, 1)], [(2, 1), (1, 2)]] {
+            let mut entries = Vec::new();
+            for (value, weight) in rows {
+                let value = edit.make_expr(
+                    site,
+                    ExpressionKind::I32Literal,
+                    int,
+                    [("value", Field::Data(value.to_string().into()))],
+                )?;
+                entries.push((value, weight));
+            }
+            let set = feldera_sql_expr::constant_rows::multiset(&mut edit, int, entries)?;
+            let ty = edit.expression_type(set)?;
+            ops.push(edit.append_operator(
+                site,
+                site,
+                Op::Constant,
+                &[],
+                [
+                    ("function", Field::Reference(set.into())),
+                    ("outputType", Field::Reference(ty.into())),
+                ],
+            )?);
+        }
+        let aliases = CseState::default().aliases(&edit.finish()?, &BTreeMap::new())?;
+        assert_eq!(aliases, BTreeMap::from([(ops[2], ops[0])]));
+        Ok(())
     }
 
     #[test]

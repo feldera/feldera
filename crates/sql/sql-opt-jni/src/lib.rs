@@ -2321,8 +2321,13 @@ fn transform(
                 .into_iter()
                 .map(|(id, group)| (NodeId::Inner(id), group))
                 .collect();
-            let aliases: Vec<_> = cse
-                .aliases(&circuit, &shuffles)?
+            let aliases = match cse.checked_aliases(&circuit, &shuffles) {
+                Ok(aliases) => aliases,
+                Err(feldera_sql_opt::KeyComparisonError::Diagnostic(failure)) =>
+                    return Ok(json!({"comparison_failure": failure})),
+                Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => return Err(error.into()),
+            };
+            let aliases: Vec<_> = aliases
                 .into_iter()
                 .map(|(id, base)| [operator_number(id), operator_number(base)])
                 .collect();
