@@ -974,6 +974,24 @@ public class TemporalKeyTests {
         assertStaticWindowGroups(offsets, Set.of(0, 1));
     }
 
+    @Test
+    public void windowSharingComparesCheckedStaticInitializers() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var offsets = new ArrayList<DBSPExpression>();
+        var type = b.lit(0).getType();
+        for (int i = 0; i < 4; i++) {
+            var value = b.call(type.withMayBeNull(true), "get_offset");
+            var offset = new DBSPUnwrapExpression(site, i == 2 ? "invalid offset" : "missing offset", value);
+            var checked = b.call(new DBSPTypeSqlResult(type), "check_offset", offset);
+            var behavior = i == 3 ? DBSPHandleErrorExpression.RuntimeBehavior.PanicWithSource
+                    : DBSPHandleErrorExpression.RuntimeBehavior.Panic;
+            offsets.add(new DBSPHandleErrorExpression(site, i, behavior, checked, false));
+        }
+        assertStaticWindowGroups(offsets, Set.of(0, 1));
+    }
+
     private static void assertStaticWindowGroups(List<DBSPExpression> offsets, Set<Integer> shared) {
         var b = new ExpressionBuilder();
         var site = CalciteEmptyRel.INSTANCE;

@@ -417,7 +417,7 @@ fn preserves_static_children(kind: Expr) -> bool {
             Expr::Apply | Expr::ApplyMethod | Expr::Constructor | Expr::Block
                 | Expr::Tuple | Expr::RawTuple | Expr::Array | Expr::Map
                 | Expr::If | Expr::Binary | Expr::TimeAddSub | Expr::Unary
-                | Expr::Cast | Expr::IsNull | Expr::Field
+                | Expr::Cast | Expr::HandleError | Expr::Unwrap | Expr::IsNull | Expr::Field
                 | Expr::Borrow | Expr::Deref | Expr::Clone | Expr::Question
                 | Expr::WindowBound | Expr::ConditionalIncrement | Expr::Lazy | Expr::Return
                 | Expr::NoComparator | Expr::FieldComparator | Expr::DirectComparator
