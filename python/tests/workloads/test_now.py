@@ -145,7 +145,7 @@ class TestNow(unittest.TestCase):
         validate_outputs(pipeline, tables, views)
 
         # Tighten clock resolution, restart, confirm runtime and clock endpoint,
-        # then wait for two more clock ticks before validating again.
+        # then wait for one more clock tick before validating again.
         pipeline.stop(force=False)
         runtime_cfg = pipeline.runtime_config()
         runtime_cfg.clock_resolution_usecs = CLOCK_RESOLUTION_USECS_AFTER_RESTART
@@ -161,8 +161,10 @@ class TestNow(unittest.TestCase):
         assert clock_status.config is not None
         assert clock_status.config.get("stream") == "now"
 
-        # Two ticks at 3s resolution need at least ~6s; allow slack for scheduling.
-        _wait_clock_record_ticks(pipeline, 2, timeout_s=30.0)
+        # A tick changes `now_ts` in every row of `v`, so the step that
+        # ingests it updates all INPUT_RECORDS rows.  That takes longer than
+        # the 3s resolution, more so on a loaded CI node.
+        _wait_clock_record_ticks(pipeline, 1, timeout_s=120.0)
 
         validate_outputs(pipeline, tables, views)
 
