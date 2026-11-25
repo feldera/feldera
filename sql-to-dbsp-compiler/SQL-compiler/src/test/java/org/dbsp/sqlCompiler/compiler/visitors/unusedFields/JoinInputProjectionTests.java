@@ -9,6 +9,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -654,6 +656,66 @@ public class JoinInputProjectionTests {
     }
 
     @Test
+    public void selfJoinTrimmingPreservesIndependentProjectionsAndTimestampOffsets() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b INT, c INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var rows = source.getOutput(0);
+        var row = rows.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var delta = new DBSPDifferentiateOperator(site, rows);
+        var index = new DBSPMapIndexOperator(site,
+                new DBSPRawTupleExpression(new DBSPTupleExpression(), row.deref()).closure(row), delta.outputPort());
+        var type = index.getOutputIndexedZSetType();
+        var port = index.outputPort();
+        var key = type.keyType.ref().var();
+        var left = type.elementType.ref().var();
+        var right = type.elementType.ref().var();
+        var reader = new DBSPTupleExpression(left.deref().field(2), right.deref().field(0)).closure(key, left, right);
+        var output = new DBSPTypeZSet(reader.getResultType());
+        var comparator = new DBSPDirectComparatorExpression(CalciteObject.EMPTY,
+                new DBSPNoComparatorExpression(CalciteObject.EMPTY, row.deref().field(1).getType()), true);
+        for (var join : List.of(new DBSPJoinOperator(site, output, reader, port, port, true),
+                new DBSPAsofJoinOperator(site, output, reader, 1, 2, comparator, true, port, port))) {
+            join.addAnnotation(AlwaysMonotone.INSTANCE, DBSPJoinBaseOperator.class);
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            circuit.addOperator(source);
+            circuit.addOperator(delta);
+            circuit.addOperator(index);
+            circuit.addOperator(join);
+            DBSPJoinBaseOperator expected = null;
+            for (boolean hybrid : List.of(false, true)) {
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                var analyzed = new AnalyzedSet<DBSPOperator>();
+                analyzed.done(index);
+                var result = new RemoveUnusedFields(compiler, analyzed).apply(circuit)
+                        .allOperators.getLast().to(DBSPJoinBaseOperator.class);
+                Assert.assertSame(output, result.outputType);
+                Assert.assertEquals(join.balanced, result.balanced);
+                Assert.assertNotSame(result.left().node(), result.right().node());
+                for (int i = 0; i < result.inputs.size(); ++i) {
+                    var projection = result.inputs.get(i).node().to(DBSPMapIndexOperator.class);
+                    Assert.assertSame(index, projection.input().node());
+                    if (hybrid)
+                        Assert.assertTrue(expected.inputs.get(i).simpleNode().getFunction().equivalent(projection.getFunction()));
+                }
+                if (result instanceof DBSPAsofJoinOperator asof) {
+                    Assert.assertEquals(0, asof.leftTimestampIndex);
+                    Assert.assertEquals(1, asof.rightTimestampIndex);
+                    Assert.assertSame(comparator, asof.comparator);
+                    Assert.assertTrue(asof.isLeft);
+                }
+                if (hybrid) {
+                    Assert.assertTrue(expected.getClosureFunction().equivalent(result.getClosureFunction()));
+                    Assert.assertEquals(expected.annotations.annotations, result.annotations.annotations);
+                }
+                expected = result;
+            }
+        }
+    }
+
+    @Test
     public void joinTrimmingChecksSharedReadersAfterProjectingInputs() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
         var compiler = new DBSPCompiler(new CompilerOptions());
@@ -716,7 +778,7 @@ public class JoinInputProjectionTests {
                     long names = DBSPVariablePath.nextGeneratedName() - before;
                     if (hybrid) {
                         Assert.assertEquals(allocations, names);
-                        Assert.assertEquals(List.of("RemoveUnusedFields/Narrow" + (asof ? "Asof" : "Join") + "=true"), decisions);
+                        Assert.assertEquals(List.of("RemoveUnusedFields/NarrowJoinOperators=true"), decisions);
                     }
                     allocations = names;
                 }

@@ -25,6 +25,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -1490,21 +1492,46 @@ public final class RustCircuitPass implements CircuitTransform {
         return lowerFunction(compiler, "AntijoinProjection", input, projection, DBSPClosureExpression.class);
     }
 
-    public record JoinInputProjection(List<DBSPClosureExpression> inputs, @Nullable DBSPClosureExpression reader,
-                                      List<Integer> timestamps) {}
-
-    /** A null projection for an input keeps its port. A null reader keeps the entire join. */
-    public static JoinInputProjection narrowJoinInputs(DBSPCompiler compiler, DBSPSimpleOperator join) {
+    /** Return the projected inputs in insertion order, followed by the rebound join. */
+    public static List<DBSPSimpleOperator> narrowJoinInputs(DBSPCompiler compiler, DBSPSimpleOperator join,
+            List<OutputPort> mappedInputs) {
+        String pass = "RemoveUnusedFields/NarrowJoinOperators";
         var site = expressionSite(join.getRelNode());
-        String pass = "RemoveUnusedFields/NarrowJoin";
-        if (join instanceof DBSPAsofJoinOperator asof) {
-            pass = "RemoveUnusedFields/NarrowAsof";
-            site.putArray("timestamps").add(asof.leftTimestampIndex).add(asof.rightTimestampIndex);
-        }
+        site.put("kind", join.getClass().getSimpleName());
+        var ports = site.putArray("ports");
         var roots = new ArrayList<IDBSPInnerNode>();
         roots.add(join.getClosureFunction());
-        for (var port : join.inputs)
-            roots.add(port.getOutputIndexedZSetType().getKVRefType());
+        roots.add(join.outputType);
+        for (int i = 0; i < join.inputs.size(); ++i) {
+            ports.add(mappedInputs.get(i).outputNumber);
+            roots.add(join.inputs.get(i).getOutputIndexedZSetType().getKVRefType());
+        }
+        var extra = site.putArray("extra");
+        if (join instanceof DBSPAsofJoinOperator asof) {
+            site.putArray("timestamps").add(asof.leftTimestampIndex).add(asof.rightTimestampIndex);
+            site.put("left", asof.isLeft);
+            extra.add("comparator");
+            roots.add(asof.comparator);
+        } else if (join instanceof DBSPJoinBaseOperator binary) {
+            site.put("balanced", binary.balanced);
+            DBSPClosureExpression filter = null;
+            DBSPClosureExpression map = null;
+            if (join instanceof DBSPJoinFilterMapOperator filtered) {
+                filter = filtered.filter;
+                map = filtered.map;
+            } else if (join instanceof DBSPLeftJoinFilterMapOperator filtered) {
+                filter = filtered.filter;
+                map = filtered.map;
+            }
+            if (filter != null) {
+                extra.add("filter");
+                roots.add(filter);
+            }
+            if (map != null) {
+                extra.add("map");
+                roots.add(map);
+            }
+        }
         try {
             var inputs = roots.toArray(IDBSPInnerNode[]::new);
             var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site), inputs);
@@ -1526,18 +1553,12 @@ public final class RustCircuitPass implements CircuitTransform {
                             MAPPER.convertValue(reply.value.required("paths"), new TypeReference<>() {}));
             }
             if (!reply.value.required("narrowed").booleanValue())
-                return new JoinInputProjection(List.of(), null, List.of());
-            var decoder = expressionDecoder(reply.writer);
-            var functions = reply.value.required("functions").elements();
-            var projections = new ArrayList<DBSPClosureExpression>();
-            for (var changed : reply.value.required("changed"))
-                projections.add(changed.booleanValue() ? decoder.decodeInner(functions.next(), DBSPClosureExpression.class) : null);
-            var reader = decoder.decodeInner(functions.next(), DBSPClosureExpression.class);
-            Utilities.enforce(projections.size() == join.inputs.size() && !functions.hasNext());
-            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
-            List<Integer> timestamps = join instanceof DBSPAsofJoinOperator
-                    ? MAPPER.convertValue(reply.value.required("timestamps"), new TypeReference<>() {}) : List.of();
-            return new JoinInputProjection(projections, reader, timestamps);
+                return List.of();
+            var operators = decodeOperatorFragment(reply, op -> join.getRelNode(),
+                    mappedInputs.stream().map(OutputPort::node).toArray(DBSPOperator[]::new));
+            if (!(join instanceof DBSPAsofJoinOperator))
+                operators.getLast().copyAnnotations(join);
+            return operators;
         } catch (IOException error) {
             throw new UncheckedIOException("Could not encode join input projections", error);
         }

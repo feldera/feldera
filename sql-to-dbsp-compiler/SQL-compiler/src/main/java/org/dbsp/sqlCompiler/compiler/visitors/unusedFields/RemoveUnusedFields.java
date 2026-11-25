@@ -131,26 +131,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         this.fullyUsedFunctions.done(function);
     }
 
-    private void applyJoinProjection(DBSPSimpleOperator join, RustCircuitPass.JoinInputProjection plan) {
-        var inputs = new ArrayList<OutputPort>(join.inputs.size());
-        for (int i = 0; i < join.inputs.size(); i++) {
-            var input = this.mapped(join.inputs.get(i));
-            var projection = plan.inputs().get(i);
-            if (projection != null) {
-                var map = new DBSPMapIndexOperator(join.getRelNode(), projection, input);
-                this.addOperator(map);
-                input = map.outputPort();
-            }
-            inputs.add(input);
-        }
-        var reader = Objects.requireNonNull(plan.reader());
-        if (join instanceof DBSPAsofJoinOperator asof) {
-            this.map(asof, new DBSPAsofJoinOperator(asof.getRelNode(), asof.getOutputZSetType(), reader,
-                    plan.timestamps().get(0), plan.timestamps().get(1), asof.comparator, asof.isLeft,
-                    inputs.get(0), inputs.get(1)));
-        } else {
-            this.map(join, join.with(reader, join.outputType, inputs, false).to(DBSPSimpleOperator.class));
-        }
+    private boolean applyJoinProjection(DBSPSimpleOperator join) {
+        var operators = RustCircuitPass.narrowJoinInputs(this.compiler, join, Linq.map(join.inputs, this::mapped));
+        if (operators.isEmpty())
+            return false;
+        operators.subList(0, operators.size() - 1).forEach(this::addOperator);
+        this.map(join, operators.getLast());
+        return true;
     }
 
     boolean processJoin(DBSPSimpleOperator join) {
@@ -158,13 +145,10 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         if (this.done(join, function))
             return false;
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-            var plan = RustCircuitPass.narrowJoinInputs(this.compiler, join);
-            if (plan.reader() == null) {
-                this.noUnusedFields(function);
-                return false;
-            }
-            this.applyJoinProjection(join, plan);
-            return true;
+            if (this.applyJoinProjection(join))
+                return true;
+            this.noUnusedFields(function);
+            return false;
         }
 
         var uses = this.find.findUsedFields(function);
@@ -195,11 +179,8 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             DBSPParameter left = joinFunction.parameters[1];
             DBSPParameter right = joinFunction.parameters[2];
             if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-                var plan = RustCircuitPass.narrowJoinInputs(this.compiler, join);
-                if (plan.reader() == null)
+                if (!this.applyJoinProjection(join))
                     super.postorder(join);
-                else
-                    this.applyJoinProjection(join, plan);
                 return;
             }
             var useMap = this.find.findUsedFields(join.fieldUseClosure());

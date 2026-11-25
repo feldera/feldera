@@ -3,6 +3,7 @@
 mod fragment;
 mod split_map;
 mod narrowed_unary;
+mod narrowed_join;
 mod repeat;
 mod waterlines;
 mod delta_expansion;
@@ -277,37 +278,6 @@ fn project_join_input(input: &[u8], state: &[u8], mut next: u64) -> Result<Value
     let pair = edit.type_id(*pair)?;
     let f = feldera_sql_opt::project_join_input(&mut edit, arena.root_id(), pair, &request.columns, &mut next)?;
     lowered_function_reply(&arena, &edit, Some(f), next, vec![])
-}
-
-fn narrow_join_inputs(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
-    use feldera_sql_opt::JoinInputRewrite;
-    #[derive(serde::Deserialize)]
-    struct JoinRequest {
-        #[serde(flatten)]
-        site: ExpressionSite,
-        timestamps: Option<[usize; 2]>,
-        paths: Option<Vec<BTreeSet<Vec<usize>>>>,
-    }
-    let request: JoinRequest = serde_json::from_slice(state)?;
-    let (arena, roots) = request.site.arena(input)?;
-    let (function, pairs) = roots.split_first().ok_or("missing join closure")?;
-    let mut edit = CircuitEditor::new(arena.clone());
-    match feldera_sql_opt::narrow_join_inputs(&arena, &mut edit, *function, pairs, request.timestamps, request.paths, &mut next)? {
-        JoinInputRewrite::InspectReader => Ok(Value::Null),
-        JoinInputRewrite::InvalidInput { parameter, paths } => Ok(json!({
-            "invalid_input": parameter, "paths": paths, "next_generated_name": next
-        })),
-        JoinInputRewrite::Binding(issue) => Ok(json!({
-            "diagnostic": binding_diagnostic(issue), "next_generated_name": next
-        })),
-        JoinInputRewrite::Unchanged => Ok(json!({"narrowed": false})),
-        JoinInputRewrite::Narrowed { inputs, reader, timestamps } => {
-            let changed: Vec<_> = inputs.iter().map(Option::is_some).collect();
-            let functions: Vec<_> = inputs.into_iter().flatten().chain([reader]).collect();
-            Ok(json!({"narrowed": true, "changed": changed, "timestamps": timestamps, "next_generated_name": next,
-                "functions": edit.circuit().additional_expressions(&arena, &functions)?}))
-        }
-    }
 }
 
 fn asof_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
@@ -1450,7 +1420,7 @@ fn transform(
                 .map(feldera_sql_opt::ProjectionRules::for_producer).unwrap_or_default();
             return Ok(serde_json::to_value(rules)?);
         }
-        "RemoveUnusedFields/NarrowJoin" | "RemoveUnusedFields/NarrowAsof" => return narrow_join_inputs(input, state, next),
+        "RemoveUnusedFields/NarrowJoinOperators" => return narrowed_join::operators(input, state, next),
         "RemoveUnusedFields/JoinInput" => return project_join_input(input, state, next),
         "OptimizerOrder" => {
             let options = serde_json::from_slice(input)?;
