@@ -36,6 +36,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAsymmetricFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -1273,6 +1275,46 @@ public class TemporalKeyTests {
                 new DBSPSortExpression(site, value.getType(), ascending),
                 new DBSPSortExpression(site, b.tup(b.bool()), ascending),
                 new DBSPSortExpression(site, value.getType(), descending)), Set.of(0, 1));
+    }
+
+    @Test
+    public void omittedComparatorBindingsAffectLaterPrintedNames() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteObject.EMPTY;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(5, (row, i) -> {
+            var value = b.tuple(b.field(row, 0));
+            DBSPExpression comparator = new DBSPNoComparatorExpression(site, value.getType());
+            if (i == 0 || i == 2) {
+                var local = new DBSPLetStatement("ordering" + i, comparator);
+                comparator = new DBSPBlockExpression(List.of(local), local.getVarReference());
+            } else if (i == 3) {
+                comparator = b.call(comparator.getType(), "make_order");
+            }
+            var ordered = new DBSPCustomOrdExpression(site, value, comparator);
+            var kept = new DBSPLetStatement("timestamp" + i, b.field(row, i == 4 ? 1 : 0));
+            return b.call(time, "pick", ordered,
+                    new DBSPBlockExpression(List.of(kept), kept.getVarReference()));
+        }, List.of(0, 2, 1, 3));
+    }
+
+    @Test
+    public void windowKeysReadTheValueAndFieldOfCustomOrderedRows() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteObject.EMPTY;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(5, (row, i) -> {
+            var value = b.tuple(b.field(row, 0), b.field(row, 1));
+            var ordered = new DBSPCustomOrdExpression(site, value, new DBSPNoComparatorExpression(site, value.getType()));
+            if (i < 2)
+                return b.call(time, "pick", new DBSPUnwrapCustomOrdExpression(ordered));
+            // ASOF represents an unmatched right-hand row with a nullable reference.
+            var right = ordered.getType().ref().withMayBeNull(true).var();
+            var field = new DBSPCustomOrdField(right, i == 3 ? 1 : 0);
+            return b.call(time, "pick", field.closure(right));
+        }, List.of(0, 1, 2, 4));
     }
 
     @Test

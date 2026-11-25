@@ -79,6 +79,8 @@ enum Term {
     },
     CollectionConversion(BinaryOp),
     Sort,
+    UnwrapCustomOrd,
+    CustomOrdField(u64),
     Compare { field: Option<u64>, ascending: bool },
     AsymmetricComparator(Vec<comparators::Collation>),
     Unary {
@@ -212,6 +214,12 @@ impl ProjectionKey {
                             return Ok(None);
                         }
                         needs_canonical_form |= simplifies;
+                        if *kind == Expr::CustomOrd && form == KeyForm::Original {
+                            // The printer omits the comparator. Its declarations
+                            // still consume names before later operands are visited.
+                            let comparator = edit.expression(node.edge("comparator")?)?;
+                            needs_canonical_form |= !comparators::is_ordering_chain(edit, comparator)?;
+                        }
                         if *kind == Expr::Fail {
                             let message = string(node, "message")
                                 .ok_or_else(|| Error::new("missing failure message"))?;
@@ -414,6 +422,7 @@ fn preserves_static_children(kind: Expr) -> bool {
                 | Expr::NoComparator | Expr::FieldComparator | Expr::DirectComparator
                 | Expr::AsymmetricFieldComparator | Expr::UnsignedWrap | Expr::UnsignedUnwrap
                 | Expr::For | Expr::Assignment | Expr::Fail | Expr::Sort | Expr::CustomOrd
+                | Expr::CustomOrdField | Expr::UnwrapCustomOrd
         )
 }
 
@@ -514,13 +523,12 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         Expr::NoComparator | Expr::DirectComparator | Expr::FieldComparator
         | Expr::AsymmetricFieldComparator => comparators::printed(node, kind)?,
         Expr::Sort => (Term::Sort, vec![child("comparator")?]),
-        Expr::CustomOrd => {
-            // The wrapper prints WithCustomOrd(source). A computed comparator can
-            // still allocate canonical names even though the printer omits it.
-            if !comparators::is_ordering_chain(edit, edit.expression(node.edge("comparator")?)?)? {
-                return Ok(None);
-            }
-            (Term::Call("WithCustomOrd".into()), vec![child("source")?])
+        Expr::CustomOrd => (Term::Call("WithCustomOrd".into()), vec![child("source")?]),
+        Expr::UnwrapCustomOrd => (Term::UnwrapCustomOrd, vec![child("expression")?]),
+        Expr::CustomOrdField => {
+            let column = node.data("fieldNo").and_then(|v| v.as_u64())
+                .ok_or_else(|| Error::new("invalid custom-ordered field number"))?;
+            (Term::CustomOrdField(column), vec![child("expression")?])
         }
         Expr::Field => {
             let column = node

@@ -16,6 +16,7 @@ struct Names {
     next: usize,
     aggregate_row: Option<(String, String)>,
     scopes: Vec<HashMap<String, Binding>>,
+    changed_static_initializer: bool,
 }
 
 impl Names {
@@ -248,6 +249,11 @@ impl Transformation for &mut Names {
         }
         let kind = node.inner_kind();
         match kind {
+            Some(InnerKind::Expression(Expr::Static)) => {
+                // The name hashes the original initializer. The reference reports
+                // an error if canonicalization would change it.
+                self.changed_static_initializer |= original != rebuilt;
+            }
             Some(InnerKind::Expression(kind @ (Expr::Field | Expr::IsNull | Expr::Cast)))
                 if original == rebuilt || *kind == Expr::Cast =>
             {
@@ -353,9 +359,8 @@ pub fn canonicalize_projection(
     }
     let mut names = Names::default();
     names.scopes.push(HashMap::new());
-    Rewrite::bound_projection(&mut names)
-        .apply(edit, closure)
-        .map(Some)
+    let result = Rewrite::bound_projection(&mut names).apply(edit, closure)?;
+    Ok((!names.changed_static_initializer).then_some(result))
 }
 
 #[cfg(test)]
@@ -363,6 +368,27 @@ mod tests {
     use super::*;
     use feldera_sql_ir::{Circuit, TypeKind};
     use serde_json::json;
+
+    #[test]
+    fn a_projection_preserves_the_initializer_of_a_named_static() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = circuit.root_id();
+        let mut edit = CircuitEditor::new(circuit);
+        let ty = edit.bool_type(site, false)?;
+        let row = edit.named_variable(ty, "row")?;
+        let literal = edit.make_expr(site, Expr::BoolLiteral, ty, [("value", Field::Data(true.into()))])?;
+        for (initializer, allowed) in [(row, false), (literal, true)] {
+            let value = edit.make_expr(site, Expr::Static, ty, [
+                ("initializer", Field::Reference(initializer.into())),
+                ("name", Field::Data("named_static".into())),
+            ])?;
+            let closure = edit.closure_from_variables(value, &[row])?;
+            assert_eq!(canonicalize_projection(&mut edit, closure.into())?.is_some(), allowed);
+        }
+        Ok(())
+    }
 
     #[test]
     fn deep_calls_in_blocks_keep_the_outer_parameter() -> Result<(), Error> {
