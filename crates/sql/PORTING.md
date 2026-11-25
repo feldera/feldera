@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust now classifies temporal bounds in the order the reorder pass visits them.
+Choosing a shared timestamp can cause its conjunct to fail before the first
+conjunct in source order. Build `a0c71d3c4` preserved the exception and name
+counter for both orders, matched all 18,775 observations in the 36 selected
+compilations, and passed 329 nightly optimizer tests.
+[Window reordering](evidence/p3-window-reorder-diagnostics.json)
+
 The Rust window scan checks each filter conjunct against its input row before
 moving to the next conjunct. A later invalid clock preserves earlier warnings
 and name allocations. On `767495855`, 18 classic and 18 Gen-2 compilations
@@ -478,7 +485,8 @@ compilations. [Constructed-row fields](evidence/p3-canonical-field-keys.json) ·
 
 Rust compares the live operands when deciding whether to merge temporal filters.
 On `68ffb8822`, both engines matched Java at all 11,965 observations across
-24 selected compilations. On `ce202e4c1`, a failed window predicate now
+24 selected compilations. All 8,256 executable classic cases passed on that build,
+including 232 expected runtime errors. On `ce202e4c1`, a failed window predicate now
 preserves the diagnostic and the names consumed by earlier windows. All 324
 nightly optimizer tests passed. Cold hybrid p95 measured 0.849× Java on the
 array subquery, 1.100× on Nexmark, and 0.820× on the outer join.

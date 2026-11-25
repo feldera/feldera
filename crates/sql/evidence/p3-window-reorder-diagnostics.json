@@ -1,0 +1,38 @@
+{
+  "scope": "Classify window bounds in the actual order of the shared and unshared partitions. Check diagnostics and generated names on scalar rows and invalid clocks.",
+  "source_commit": "a0c71d3c419bfc6698bf1312884472a93885b6b9",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "7d40753a4728ca7f8a735348cb661b7e4e2902fa34b7e9580cec9f9fa624d211",
+    "bin/sql-difftest": "cf61e664246eeee4acf872cefc49ca663ac3b51b01b3b5590531932966579d74",
+    "maven/tests.jar": "543f5ddbc51cd84e38fe44c92548f12d51bd7a0ad63fa78d5fb0d3bfb6b3673a",
+    "maven/sql-compiler.jar": "c08032aa4a8bb473b18f18dd5672ef196372eb7f1488bf62e5c5e6a6586f4056"
+  },
+  "engines": {
+    "classic": {
+      "cases": 18,
+      "ordered_s4_observations": 9181,
+      "population_sha256": "d97f1d16862d0ab4abdd8e7ad6b790ea966c312310fe8f8c76d57c3d1093a55e",
+      "mismatches": 0,
+      "receipt_sha256": "b9ca2454bcbcf494aafcba764451f57b013448d4f6cd6c5d4e53d58c149b0dd0",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    },
+    "gen2": {
+      "cases": 18,
+      "ordered_s4_observations": 9594,
+      "population_sha256": "f3d5dca5128184ee416703a59d6e3a4422e1f59c049ea0ae5200f02b6b6e3574",
+      "mismatches": 0,
+      "receipt_sha256": "95e2d17a92ecc17d852a27aba8a1a059508fbda354c1cc55bd504e26f4d7cff0",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    }
+  },
+  "rust_tests": 231,
+  "clippy_exit_code": 0,
+  "junit_tests": 312,
+  "nightly_optimizer_junit": 329,
+  "negative_control": {
+    "source_commit": "76749585597fffaeb2bef906fe45c6d1954afc16",
+    "failed_test": "reorderChecksTheSharedConjunctBeforeTheOtherClockOperands"
+  }
+}
