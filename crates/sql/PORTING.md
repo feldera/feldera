@@ -462,6 +462,20 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The Rust window scan checks each filter conjunct against its input row before
+moving to the next conjunct. A later invalid clock preserves earlier warnings
+and name allocations. On `767495855`, 18 classic and 18 Gen-2 compilations
+matched Java through 18,775 ordered S4 observations and artifact emission.
+COUNT and LATENESS checkpoints restored in both directions. Cold hybrid p95
+was 0.810× direct Java for the array subquery, 1.107× for Nexmark, and 0.789×
+for the outer join. [Window scan](evidence/p3-window-scan-diagnostics.json) · [Paired timings](evidence/p3-window-scan-diagnostics-cold.json)
+
+Rust simplifies constructed-row field reads, identity casts, and SQL null tests
+before comparing window keys. The previous builds missed sharing groups that
+Java selected. Builds `784413986` and `52acb8033` each matched Java at all
+11,965 ordered observations and through emission on 12 classic and 12 Gen-2
+compilations. [Constructed-row fields](evidence/p3-canonical-field-keys.json) · [Casts and null tests](evidence/p3-null-test-window-keys.json)
+
 Rust compares the live operands when deciding whether to merge temporal filters.
 On `68ffb8822`, both engines matched Java at all 11,965 observations across
 24 selected compilations. On `ce202e4c1`, a failed window predicate now

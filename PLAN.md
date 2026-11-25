@@ -41,6 +41,13 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-25. The Rust window scan reports the first failing clock operand and
+  preserves earlier cast warnings. Build `767495855` matched 36 selected
+  compilations through 18,775 optimizer observations, restored COUNT and
+  LATENESS in both directions, and met the 1.2× cold p95 ceiling on all three
+  measured workloads. The field-shadow gate remains open.
+  [Scan and restores](crates/sql/evidence/p3-window-scan-diagnostics.json) · [Cold compilation](crates/sql/evidence/p3-window-scan-diagnostics-cold.json)
+
 - 2026-11-25. Rust builds antijoin projections and fuses unary output maps.
   On `de6b20ee5`, all 72 selected compilations matched Java through 34,416
   optimizer observations and emission. Cold hybrid p95 was 0.790× direct

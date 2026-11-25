@@ -1,0 +1,36 @@
+{
+  "scope": "Compare projections from constructed rows using the field selected by the Java canonical expression constructor.",
+  "source_commit": "784413986d9a12c7d5aa5868f554bd1e8cdb59e7",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "3aa52a88cdda2f7ae55cbbe4527ea212dadfe9aa37f955c191b603f5ad9d9f8a",
+    "bin/sql-difftest": "7ef1285583ea2e3c49d3a3f40651b6f413dc06f55cd3e94451e5f4b98f2aa1f4",
+    "maven/tests.jar": "98813ef6f4909a66f9d2578681a4d9b5641f46ae889aff9491402554295f605d",
+    "maven/sql-compiler.jar": "f0e446126dca5f6310f95f202153e024d11b3c2b3f3fb715bf32b74b3bfd7ff3"
+  },
+  "negative_control": {
+    "library_sha256": "265c4cc3dac423a319e79d9d312c4cd36bbda6ad19db7a180c41bda8fd0515ba",
+    "failed_tests": [
+      "windowSharingProjectsFieldsFromConstructedRows"
+    ]
+  },
+  "rust_tests": 231,
+  "junit_tests": 308,
+  "nightly_optimizer_junit": 325,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "6c466973b21a30c481849989f1014946c8bbe09d1c3efad4d0e13410867ebb3a"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "2565a3016dac9821cac38735ce21d6ff174ecf421e05698a02896c9d146ccc0e"
+    }
+  }
+}

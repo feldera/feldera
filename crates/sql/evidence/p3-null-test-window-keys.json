@@ -1,0 +1,36 @@
+{
+  "scope": "Compare window keys after canonicalization of identity casts and SQL null tests. The regression checks two sharing groups in selection order and a separate input column.",
+  "source_commit": "52acb80336204f03d83f8c5ee9a708fd2bb33d97",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "12885a7908fc167226e8c15bf121fbff60a0aa3c305abf1736663353eadbc5a6",
+    "bin/sql-difftest": "2f5f0eecb1304cd4bdff50901f5da43bfee68d510cf550daa04256e6486f641d",
+    "maven/tests.jar": "50eca12d328d8910c5188bccc0b947c388b7f165b49623f36227caba4561b140",
+    "maven/sql-compiler.jar": "7ce3e0c49a8dfdd9cd4b3c79948ca61f9dcee4767096512dabab22e445dcca00"
+  },
+  "negative_control": {
+    "library_sha256": "3aa52a88cdda2f7ae55cbbe4527ea212dadfe9aa37f955c191b603f5ad9d9f8a",
+    "failed_tests": [
+      "windowSharingCanonicalizesCastsAndNullTests"
+    ]
+  },
+  "rust_tests": 231,
+  "junit_tests": 309,
+  "nightly_optimizer_junit": 326,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "f6a29faf85f0dd13b638b4bb8f80057cb6e5015636dda1cc6143a98718f3d78c"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "87677f7abd4faf0b0431611e15a53664233344184cafbd72170ce29e9bb83c25"
+    }
+  }
+}
