@@ -280,14 +280,14 @@ public class Simplify extends ExpressionTranslator {
                         result = new DBSPBoolLiteral(lit.getNode(), type, value);
                     }
                 } else if (type.is(DBSPTypeDate.class)) {
-                    // We have to validate the date, it may be invalid, and in this case
-                    // the result is 'null'.  This pattern is hardwired in Calcite.
+                    // LocalDate checks the calendar date. DateString also requires a
+                    // four-digit year from 0001 through 9999.
                     DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US)
                             .withResolverStyle(ResolverStyle.STRICT);
                     try {
                         LocalDate.parse(trimmed, dateFormatter); // executed for exception
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(trimmed));
-                    } catch (DateTimeParseException ex) {
+                    } catch (DateTimeParseException | IllegalArgumentException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Suspicious argument",
                                 "String " + Utilities.singleQuote(text) +
                                         " cannot be interpreted as a DATE");

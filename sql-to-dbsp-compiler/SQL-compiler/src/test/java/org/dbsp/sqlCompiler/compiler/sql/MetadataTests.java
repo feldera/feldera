@@ -250,6 +250,26 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void dateDefaultsOutsideTheSupportedYearRange() {
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t(
+                    zero_year DATE DEFAULT CAST('0000-01-01' AS DATE),
+                    negative_year DATE DEFAULT CAST('-0001-01-01' AS DATE),
+                    expanded_year DATE DEFAULT CAST('+10000-01-01' AS DATE),
+                    first_date DATE DEFAULT CAST('0001-01-01' AS DATE),
+                    last_date DATE DEFAULT CAST('9999-12-31' AS DATE));
+                CREATE VIEW v AS SELECT * FROM t;""");
+        compiler.getFinalCircuit(true);
+        Assert.assertEquals(0, compiler.messages.errorCount());
+        Assert.assertEquals(3, compiler.messages.warningCount());
+        for (String value : List.of("0000-01-01", "-0001-01-01", "+10000-01-01")) {
+            TestUtil.assertMessagesContain(compiler.messages,
+                    "Suspicious argument: String '" + value + "' cannot be interpreted as a DATE");
+        }
+    }
+
+    @Test
     public void testFormatWarnings() {
         String sql = "CREATE TABLE T(d DATE);\n" +
                 "CREATE VIEW V AS SELECT FORMAT_DATE(DATE '2020-10-10', '%Y-%m');";

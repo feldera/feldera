@@ -135,6 +135,9 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
         defaults.write_text("""CREATE TABLE t (
             ts TIMESTAMP DEFAULT CAST('2020-02-30 00:00:00' AS TIMESTAMP),
             d DATE DEFAULT CAST('-001-01-01' AS DATE),
+            zero_year DATE DEFAULT CAST('0000-01-01' AS DATE),
+            negative_year DATE DEFAULT CAST('-0001-01-01' AS DATE),
+            expanded_year DATE DEFAULT CAST('+10000-01-01' AS DATE),
             chosen TIMESTAMP DEFAULT CASE WHEN 1 = 1
                 THEN CAST('2021-04-31 00:00:00' AS TIMESTAMP)
                 ELSE TIMESTAMP '1999-01-01 00:00:00' END
@@ -144,7 +147,8 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
         for engine in ("classic", "gen2"):
             warnings, artifact = compare_compilation(f"temporal-defaults-{engine}", engine, defaults)
             assert [(m["warning"], m["error_type"], m["message"]) for m in warnings] == [
-                (True, "Suspicious argument", "String '-001-01-01' cannot be interpreted as a DATE")]
+                (True, "Suspicious argument", f"String '{value}' cannot be interpreted as a DATE")
+                for value in ("-001-01-01", "0000-01-01", "-0001-01-01", "+10000-01-01")]
             if engine == "classic":
                 assert "Timestamp::from_microseconds(1583020800000000" in artifact.read_text()
         check_sql_error(compiler, classpath, directory, "emit-final",

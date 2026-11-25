@@ -46,6 +46,10 @@ pub(super) fn fold(text: &str, kind: Ty) -> Option<(Expr, Field)> {
     match kind {
         Ty::Date => {
             let [year, month, day] = fields(text, '-', 4)?;
+            // Chrono accepts year zero, which Calcite's DateString rejects.
+            if year == 0 {
+                return None;
+            }
             let date = NaiveDate::from_ymd_opt(year, month as u32, day as u32)?;
             Some((Expr::DateLiteral, Field::Data(date.to_epoch_days().into())))
         }
@@ -110,6 +114,9 @@ mod tests {
     fn temporal_types_enforce_their_own_spelling_and_ranges() {
         for (text, ty) in [
             ("-001-01-01", Ty::Date),
+            ("0000-01-01", Ty::Date),
+            ("-0001-01-01", Ty::Date),
+            ("+10000-01-01", Ty::Date),
             ("+020-01-01", Ty::Date),
             ("2020-02-30", Ty::Date),
             ("24:00:00", Ty::Time),
@@ -119,6 +126,13 @@ mod tests {
             ("1970-01-01 00:00:00.", Ty::Timestamp),
         ] {
             assert!(fold(text, ty).is_none(), "{text}");
+        }
+        for (text, days) in [("0001-01-01", -719_162), ("9999-12-31", 2_932_896)] {
+            assert_eq!(
+                fold(text, Ty::Date),
+                Some((Expr::DateLiteral, Field::Data(days.into()))),
+                "{text}"
+            );
         }
     }
 }
