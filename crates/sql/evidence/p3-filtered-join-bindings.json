@@ -1,0 +1,150 @@
+{
+  "scope": "Rust rebuilds binary and star filtered joins, preserves their original predicates and ports, and diagnoses conflicting variable bindings across a composed map.",
+  "source_base": "eabae7c48810c164c8354466c9b4365846d0a051",
+  "source_files_sha256": {
+    "crates/sql/sql-expr/src/lexical_scope.rs": "61c26d10e6e42df70a8993632c2b2af731683963de4c94431424ae8197d44d83",
+    "crates/sql/sql-opt-jni/src/fragment.rs": "281903b351acf0d0e697a40de574bb64fa4591d80ae99437e4110b1c731b13f6",
+    "crates/sql/sql-opt-jni/src/lib.rs": "bcd8717afe15d56ba6c69e67a0243608f757755465e4d9d4da9c7011b9e0e5ed",
+    "crates/sql/sql-opt-jni/src/push_projection.rs": "39251d0315e03f1268d5ebd4eae89975d6be0816b8e0640c3b059bf73e839ddc",
+    "crates/sql/sql-opt/src/lib.rs": "9cc28f01608457135f3ee9f00842ac669d1879e090965e59046319233e4d49e7",
+    "crates/sql/sql-opt/src/projection_composition.rs": "e4255631d5a07070f364eca1d5ba54f22c6bb86682310b468429551f3c762248",
+    "crates/sql/sql-opt/src/projection_rules.rs": "568049d70c7141c89855a2c4ffadeb710aa3cb06908b52a72b7d6857a8a55992",
+    "crates/sql/sql-opt/src/window_groups/source.rs": "ac925e7de156949d30a62047badde30b5b331f2f94a803f037f544030eb289cc",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "f4bc26ab475050dcc8aac61f287c435d7930c23d8c6b4fc4d1caf1983847bc5e",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/OptimizeProjections.java": "559f4a61cd928f074f5f786e21245150c1c5cd1fd17b9a9ff346aa473fdeab4f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/ir/ProjectionCompositionTests.java": "a30cccb325bfe5a499b69a8298ea423b55bb5c81a6f7a6eb834d64570d59a436",
+    "crates/sql/sql-opt-jni/src/filtered_join_projection.rs": "a12f4b62c1824043f3614fc87773f9c6eb16081d17739ac6f6036d0c67b6c88d"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "0786b75b120df7b66486df27792b61353ed259b70cc15a4785ef6131c9e3c9aa",
+    "bin/sql-difftest": "e9c88b54cc0715452b5d805606335e41bb18932091dd15faba3b31d76d53c00e",
+    "maven/tests.jar": "616d93637e9b5c60370c74d52ff73e39403184213f307a99f065d8eeff9c938d",
+    "maven/sql-compiler.jar": "bfbe73f61da0e1d7212efe1c58846ea12f5fab3f759a2f5f64be622ef9746216",
+    "bin/sql2dbsp": "5ab7b48bde7cb28f8e7d389fb7a89feda4d03a0d3de734c0bda655d3273ccfe7"
+  },
+  "negative_control": {
+    "library_sha256": "989e503950a421555aeab446a16c4bafd39e69cf26f170149be10a2e096a0da9",
+    "failed_tests": [
+      "filteredJoinsPreservePredicatesAndComposeOutputMaps",
+      "compositionDetectsASharedReadBoundToDifferentParameters"
+    ],
+    "java_compiler_sha256": "f3706aa033884f7afd7a406cb097d99b5470f6a3d82243fb396a09c76d9984dd"
+  },
+  "rust_tests": 229,
+  "junit_tests": 295,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "a0f3362709010ab7c4f69d18f056d075c2816a094e75e0970bf46aff1608a259"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "d8a0f1b51c869d7d89f326b5a310dc6c01d3db28c1dd55d1689e91217f566b16"
+    }
+  },
+  "source_commit": "4e0b345b9041949079ae8162f4a61aaff3609e29",
+  "nightly_optimizer_junit": 312,
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21328-d028-7372-998c-b3804d481f63",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21328-d040-7ea1-a0e8-50d5e61c70b2",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "97a75fb6920e574ea319252d71491e766488cff72610e177608c210dc508c8e3"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21329-786c-7b23-aa71-308b7172e874",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21329-7886-70b0-aa6a-8eadb4cd7e38",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "ebc8f9f991e6914e94f31f4f089a2a6d951b45b19d3f7a65efa4452f87ab36bf"
+    }
+  }
+}
