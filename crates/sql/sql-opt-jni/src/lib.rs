@@ -825,7 +825,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         }
         ("ExpandMetadataCasts/Initializer", [root]) => {
             let root = edit.expression(*root)?;
-            feldera_sql_expr::prepare_column_default(&mut edit, root, &mut next)?
+            feldera_sql_expr::prepare_column_default_with_warnings(&mut edit, root, &mut next, Some(&mut warnings))?
         }
         ("Monotonicity/RowClosure", [body, parameter]) => {
             let body = edit.expression(*body)?;
@@ -2359,6 +2359,7 @@ fn transform(
         | "LowerAsofInner"
         | "InsertLimiters"
         | "ExpandStreamAggregates"
+        | "ExpandMetadataCasts"
         | "Fuse"
         | "RemoveStarJoinsPass"
         | "RemoveStarJoins"
@@ -2441,6 +2442,7 @@ fn transform(
                 "PullFilterVisitor" => feldera_sql_opt::pull_filters(circuit, &mut next)?,
                 "PropagateConstants" => feldera_sql_opt::propagate_constants(circuit, &mut next)?,
                 "Simplify" => feldera_sql_opt::simplify_expressions(circuit, &mut next)?,
+                "ExpandMetadataCasts" => feldera_sql_opt::expand_metadata_casts_with_warnings(circuit, &mut next)?,
                 "MergeFilters" => {
                     let mut warnings = Vec::new();
                     let Some(output) = feldera_sql_opt::merge_temporal_filters(circuit, &mut next, &mut warnings)? else {
@@ -2518,7 +2520,6 @@ fn transform(
             };
             feldera_sql_opt::expand_circuit_casts(circuit, &mut next, safety)?
         }
-        "ExpandMetadataCasts" => feldera_sql_opt::expand_metadata_casts(circuit, &mut next)?,
         "CreateRuntimeErrorWrappers" => {
             feldera_sql_opt::create_runtime_error_wrappers(circuit, &mut next)?
         }

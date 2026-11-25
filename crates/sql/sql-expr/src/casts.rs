@@ -13,6 +13,7 @@ mod zoned_timestamp;
 pub use zoned_timestamp::{TimestampComparison, compare_timestamp_literals};
 pub use comparison::{ValueComparisonError, compare_literal_values, decimal_literal_parts, literal_is_positive, numeric_value_is_positive, same_literal_value};
 mod literals;
+mod temporal;
 mod simplify;
 pub(crate) use simplify::SimplifyDefault;
 pub use simplify::SimplifyWarning;
@@ -35,7 +36,17 @@ pub fn prepare_column_default(
     default: ExpressionId,
     next_name: &mut u64,
 ) -> Result<ExpressionId, Error> {
-    let mut root = simplify_scalar(editor, default.into())?;
+    prepare_column_default_with_warnings(editor, default, next_name, None)
+}
+
+/// Collect the diagnostics that Java's metadata cast pass reports before expanding casts.
+pub fn prepare_column_default_with_warnings(
+    editor: &mut CircuitEditor,
+    default: ExpressionId,
+    next_name: &mut u64,
+    warnings: Option<&mut Vec<SimplifyWarning>>,
+) -> Result<ExpressionId, Error> {
+    let mut root = simplify_scalar_with_warnings(editor, default.into(), warnings)?;
     let mut name = *next_name;
     // Java allocates converter parameters for all safe casts before visiting unsafe casts.
     for safety in [CastSafety::Safe, CastSafety::Unsafe] {

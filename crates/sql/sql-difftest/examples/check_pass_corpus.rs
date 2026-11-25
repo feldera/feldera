@@ -209,6 +209,7 @@ fn compare_invocation(
         "LowerCircuitVisitor"
         | "LowerAsofInner"
         | "ExpandStreamAggregates"
+        | "ExpandMetadataCasts"
         | "Fuse"
         | "Simplify"
         | "PropagateConstants"
@@ -239,6 +240,7 @@ fn compare_invocation(
                         .ok_or("Cannot compare fused map columns from this snapshot")?;
                     (circuit, warnings)
                 }
+                "ExpandMetadataCasts" => feldera_sql_opt::expand_metadata_casts_with_warnings(input, &mut next)?,
                 "Simplify" => feldera_sql_opt::simplify_expressions(input, &mut next)?,
                 "OptimizeProjectionVisitor" => feldera_sql_opt::project_outputs(input, &mut next)?,
                 "PullFilterVisitor" => feldera_sql_opt::pull_filters(input, &mut next)?,
@@ -618,7 +620,6 @@ fn compare_invocation(
             };
             feldera_sql_opt::expand_circuit_casts(input, &mut next, safety)?
         }
-        "ExpandMetadataCasts" => feldera_sql_opt::expand_metadata_casts(input, &mut next)?,
         "AdjustSqlIndex" => feldera_sql_opt::adjust_sql_index(input)?,
         "Gen2Passes" => feldera_sql_opt::gen2_passes(input)?,
         "CompactNames" => feldera_sql_opt::compact_names(input)?,

@@ -21,7 +21,9 @@ pub use flatmap::{flatmap_generated_types, project_flatmap, rebuild_flatmap, rep
 mod sql_index;
 pub use casts::{
     ValueComparisonError, compare_literal_values,
-    compare_timestamp_literals, TimestampComparison, decimal_literal_parts, expand_sql_casts, prepare_column_default, literal_is_positive, numeric_value_is_positive, same_literal_value, CastSafety, SimplifyWarning,
+    compare_timestamp_literals, decimal_literal_parts, expand_sql_casts, literal_is_positive,
+    numeric_value_is_positive, prepare_column_default, prepare_column_default_with_warnings,
+    same_literal_value, CastSafety, SimplifyWarning, TimestampComparison,
 };
 pub use sql_index::{adjust_index_root, adjust_sql_index};
 

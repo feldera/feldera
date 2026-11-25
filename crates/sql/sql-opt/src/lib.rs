@@ -258,7 +258,7 @@ pub use linear_retention::{
 pub use merge_gc::{
     merge_retention_policies, retention_groups, share_trace_inputs, RetentionGroup, SharedTraceInputs,
 };
-pub use metadata_casts::{expand_circuit_casts, expand_metadata_casts};
+pub use metadata_casts::{expand_circuit_casts, expand_metadata_casts, expand_metadata_casts_with_warnings};
 pub use multiset::{plan_multiplicities, stream_multiplicities, Multiplicities, MultiplicityPlan};
 pub use nested::{build_nested_operators, NestedDiagnostics, NestedResult};
 pub use operator_hashes::{

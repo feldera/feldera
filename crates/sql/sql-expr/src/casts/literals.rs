@@ -1,5 +1,5 @@
 //! Constant conversions used by the Java default printer's simplification pass.
-use chrono::{NaiveDate, NaiveTime};
+use super::temporal;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId,
     TypeKind as Ty,
@@ -45,7 +45,7 @@ pub(super) fn fold(
             Some((Expr::BoolLiteral, Field::Data(value.into())))
         }
         (Ty::String, Ty::Date | Ty::Timestamp | Ty::Time) if from_text => {
-            temporal(text, target_kind)
+            temporal::fold(text, target_kind)
         }
         (Ty::String, Ty::Uuid) if from_text => {
             // Calcite passes the untrimmed string to its UUID parser.
@@ -194,70 +194,6 @@ fn uuid_literal(s: &str) -> Option<uuid::Uuid> {
         }
     }
     uuid::Uuid::parse_str(&digits).ok()
-}
-
-fn temporal(s: &str, kind: Ty) -> Option<(Expr, Field)> {
-    fn date(s: &str) -> Option<NaiveDate> {
-        if s.len() != 10 || s.as_bytes()[4] != b'-' || s.as_bytes()[7] != b'-' {
-            return None;
-        }
-        NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
-    }
-    fn time(s: &str) -> Option<(NaiveTime, &str)> {
-        let (whole, fraction) = if let Some((whole, fraction)) = s.split_once('.') {
-            if fraction.is_empty() {
-                return None;
-            }
-            (whole, fraction)
-        } else {
-            (s, "")
-        };
-        if whole.len() != 8
-            || whole.as_bytes()[2] != b':'
-            || whole.as_bytes()[5] != b':'
-            || &whole[6..8] >= "60"
-            || !fraction.bytes().all(|b| b.is_ascii_digit())
-        {
-            return None;
-        }
-        let parsed = NaiveTime::parse_from_str(whole, "%H:%M:%S").ok()?;
-        Some((parsed, fraction))
-    }
-    match kind {
-        Ty::Time => {
-            let (_, fraction) = time(s)?;
-            let fraction = fraction.trim_end_matches('0');
-            let end = if fraction.is_empty() {
-                8
-            } else {
-                9 + fraction.len()
-            };
-            Some((Expr::TimeLiteral, Field::Data(s[..end].into())))
-        }
-        Ty::Timestamp => {
-            let (d, t) = s.split_once(' ')?;
-            let (time, fraction) = time(t)?;
-            if fraction.len() > 6 {
-                return None;
-            }
-            let fractional_micros = fraction
-                .bytes()
-                .fold(0i64, |micros, digit| micros * 10 + i64::from(digit - b'0'))
-                * 10i64.pow(6 - fraction.len() as u32);
-            let micros = date(d)?.and_time(time).and_utc().timestamp_micros() + fractional_micros;
-            Some((
-                Expr::TimestampLiteral,
-                Field::Data(micros.to_string().into()),
-            ))
-        }
-        Ty::Date => {
-            let days = date(s)?
-                .signed_duration_since(NaiveDate::from_ymd_opt(1970, 1, 1)?)
-                .num_days();
-            Some((Expr::DateLiteral, Field::Data(days.into())))
-        }
-        _ => None,
-    }
 }
 
 /// Java BigDecimal uses half-even for strings and truncation for existing decimals.

@@ -125,6 +125,27 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
     assert sql["attempts"] == 1 and any(m["warning"] is False for m in sql["messages"])
 
     if rust_optimizer_passes:
+        defaults = directory / "temporal-defaults.sql"
+        defaults.write_text("""CREATE TABLE t (
+            ts TIMESTAMP DEFAULT CAST('2020-02-30 00:00:00' AS TIMESTAMP),
+            d DATE DEFAULT CAST('-001-01-01' AS DATE)
+        );
+        CREATE VIEW v AS SELECT * FROM t;
+        """)
+        direct = directory / "temporal-defaults-java"
+        direct.mkdir()
+        diagnostics = directory / "temporal-defaults-messages.json"
+        subprocess.run(["java", "-cp", classpath, "org.dbsp.sqlCompiler.CompilerMain",
+                        "-i", "-je", "--alltables", "--ignoreOrder", "--errors", diagnostics,
+                        "-js", direct / "schema.json", "--dataflow", direct / "dataflow.json",
+                        "-o", direct / "circuit.rs", defaults], check=True, timeout=60)
+        record = finish(start("temporal-defaults", sql=str(defaults)), "temporal-defaults", "ok")
+        warnings = json.loads(diagnostics.read_bytes())
+        assert record["messages"] == warnings
+        assert [(m["warning"], m["error_type"], m["message"]) for m in warnings] == [
+            (True, "Suspicious argument", "String '-001-01-01' cannot be interpreted as a DATE")]
+        assert "Timestamp::from_microseconds(1583020800000000" in (direct / "circuit.rs").read_text()
+        compare_files("temporal-defaults", record, direct, {p.name for p in direct.iterdir()})
         check_sql_error(compiler, classpath, directory, "emit-final",
                         "CREATE TABLE t(ts BIGINT LATENESS 1, other BIGINT);\n"
                         "CREATE VIEW v WITH ('emit_final' = 'other') AS SELECT * FROM t;",
