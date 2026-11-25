@@ -58,6 +58,14 @@ running, met the ceiling on all eight. Nexmark had the highest ratio at
 1.122× (6.005 s hybrid, 5.350 s Java). All 184 repeat pairs reproduced the
 original artifact hashes. [Paired measurements](evidence/p3-ordered-integer-cold.json)
 
+Build `d325a41b8` passed the 1.2× p95 ceiling on all eight workloads in all
+three output modes. The modes ran sequentially on CPU 15. Artifacts and
+diagnostics matched in all 552 cold compilation pairs. Nexmark had the highest
+ratio in each mode. Single-file classic took 5.606 s for Java and 6.303 s for
+hybrid (1.124×), classic workspace took 5.921 s and 6.587 s (1.112×), and
+Gen-2 took 5.346 s and 5.667 s (1.060×). This build predates the temporal
+column-default fixes. [Build identities and paired measurements](evidence/p3-asof-window-cold.json)
+
 ## Unary output projections, 2026-11-25
 
 Each pair compiled the same SQL with direct Java and the packaged hybrid
