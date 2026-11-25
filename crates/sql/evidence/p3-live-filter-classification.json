@@ -1,0 +1,140 @@
+{
+  "scope": "Compare checked unary filter classification with detached scalar analysis, including original operand identities and projected-row errors.",
+  "source_commit": "2e2c26d7d1fedfaac6972f1d29839f6162ca44b2",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "9f4191bb09ce582058367e82d550b6b5de980422c4692471626aa98f8171cc77",
+    "bin/sql-difftest": "cf61e664246eeee4acf872cefc49ca663ac3b51b01b3b5590531932966579d74",
+    "maven/tests.jar": "11baa3f4b420683ae83f1064170681f037d99270dc644a6710ac734bf9270b9e",
+    "maven/sql-compiler.jar": "4bb209049dce5c090dcf8a8848b832d358d95c77233942f97c95d1e3b7e24376",
+    "bin/sql2dbsp": "3f190e3ba902b232bbc106280148dbe1e274dea177987bfb2885fd5ee9d27d69"
+  },
+  "engines": {
+    "classic": {
+      "cases": 18,
+      "ordered_s4_observations": 9181,
+      "population_sha256": "d97f1d16862d0ab4abdd8e7ad6b790ea966c312310fe8f8c76d57c3d1093a55e",
+      "mismatches": 0,
+      "receipt_sha256": "d94dcb82c3d5b5551dff961b41a94ab4bf8b29e016fd8bb1b0f609cfd54593fe",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    },
+    "gen2": {
+      "cases": 18,
+      "ordered_s4_observations": 9594,
+      "population_sha256": "f3d5dca5128184ee416703a59d6e3a4422e1f59c049ea0ae5200f02b6b6e3574",
+      "mismatches": 0,
+      "receipt_sha256": "043104ee28a493b0ee11bed6953b8f21257cd051ea7e0cdf67ec837ee763d908",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    }
+  },
+  "rust_tests": 231,
+  "clippy_exit_code": 0,
+  "junit_tests": 313,
+  "nightly_optimizer_junit": 330,
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 11.022722,
+    "largest_driver_plus_front_end_rss_bytes": 70610944
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2138d-9424-7763-966f-2942992adaac",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2138d-943d-7730-a69f-005d7b237f53",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a2138e-39ca-7ff3-8ac3-2bfc99b4a224",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a2138e-39e5-7603-bcfd-3a75b5513342",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "negative_control": {
+    "source_commit": "a0c71d3c419bfc6698bf1312884472a93885b6b9",
+    "failed_test": "liveFilterClassificationRequiresAProjectedRow",
+    "result": "The previous hybrid accepted a scalar row for which direct Java threw NullPointerException."
+  }
+}

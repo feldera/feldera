@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | Build `46cbf6890` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. Build `68ffb8822` restored COUNT and LATENESS checkpoints in both directions. Build `ce202e4c1` matched all 24 selected compilations and met the 1.2× cold p95 ceiling on all three measured workloads. [Full replay and runtime](evidence/p3-indexed-waterline-propagation.json) · [Checkpoint restores](evidence/p3-temporal-merge-operands.json) · [Selected replay](evidence/p3-clock-filter-diagnostics.json) · [Cold compilation](evidence/p3-clock-filter-diagnostics-cold.json) | Finish the remaining Java optimizer paths for window sharing and expression analysis, repeat the exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
+| P3 | Build `46cbf6890` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases also passed on `68ffb8822`. Build `fba89b513` matched 36 selected compilations, passed 331 nightly optimizer tests, and restored COUNT and LATENESS in both directions. Build `767495855` met the 1.2× cold p95 ceiling on the three measured workloads. [Full replay](evidence/p3-indexed-waterline-propagation.json) · [Runtime](evidence/p3-temporal-merge-operands.json) · [Scoped window keys](evidence/p3-scoped-window-keys.json) · [Cold compilation](evidence/p3-window-scan-diagnostics-cold.json) | Finish the remaining Java paths for window sharing and expression analysis, run the exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -461,6 +461,18 @@ The result in `/campaign/results/decoder.json` records whether the worker
 reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
+
+When a window key projects a field from a tuple, the discarded fields can
+contain declarations that affect the names printed in the retained field.
+Build `fba89b513` distinguished the two resulting sharing groups, passed the
+128-level shared-expression regression, and matched all 18,775 observations
+on 36 selected compilations. [Scoped window keys](evidence/p3-scoped-window-keys.json)
+
+Build `2e2c26d7d` checks the declared input row when classifying a live filter.
+The previous hybrid accepted a scalar row that Java rejected. The corrected
+build matched all 36 selected compilations, passed 330 nightly optimizer
+tests, and restored COUNT and LATENESS checkpoints in both directions.
+[Live filter classification](evidence/p3-live-filter-classification.json)
 
 Rust now classifies temporal bounds in the order the reorder pass visits them.
 Choosing a shared timestamp can cause its conjunct to fail before the first

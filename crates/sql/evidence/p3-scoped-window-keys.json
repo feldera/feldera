@@ -1,0 +1,140 @@
+{
+  "scope": "Keep the names of surviving declarations when a folded window key discards a tuple field containing a local binding. Check the order of the two sharing groups.",
+  "source_commit": "fba89b5130eb4ae9a7a6270f25643d41010a45d9",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "7422048900c37b005cc1a2a91d9af060701f8af8bba5f60757e27fc56a71f973",
+    "bin/sql-difftest": "cf61e664246eeee4acf872cefc49ca663ac3b51b01b3b5590531932966579d74",
+    "maven/tests.jar": "669131d9f5fddef024e4e47e4c0ba1bb9317d191bdb86457a360bd314545d18b",
+    "maven/sql-compiler.jar": "d691b079554ba137035b9179f174e099007e4c321bef3ec7350e8feb69d99da1",
+    "bin/sql2dbsp": "00ccf5d7c36748dc90f9d40d8908f704afb512118132604ac634a10641587b5b"
+  },
+  "engines": {
+    "classic": {
+      "cases": 18,
+      "ordered_s4_observations": 9181,
+      "population_sha256": "d97f1d16862d0ab4abdd8e7ad6b790ea966c312310fe8f8c76d57c3d1093a55e",
+      "mismatches": 0,
+      "receipt_sha256": "1a5770f5f61d6d44061af1ce74b28f440abdbe6ae1bbd5801934442e285c39f7",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    },
+    "gen2": {
+      "cases": 18,
+      "ordered_s4_observations": 9594,
+      "population_sha256": "f3d5dca5128184ee416703a59d6e3a4422e1f59c049ea0ae5200f02b6b6e3574",
+      "mismatches": 0,
+      "receipt_sha256": "e64b0d65713efb2e0d26c1361e6da0d9a5b3c03c950e19448e02cf17d7edc222",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    }
+  },
+  "rust_tests": 231,
+  "clippy_exit_code": 0,
+  "junit_tests": 314,
+  "nightly_optimizer_junit": 331,
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 9.756594,
+    "largest_driver_plus_front_end_rss_bytes": 70418432
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21396-3829-77c3-820c-0775d0c4ab4b",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21396-3842-7b22-9963-af96681844d7",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21396-e4e6-7962-971b-036dbcf4162e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21396-e502-7b31-82b3-bf60f590df9c",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "negative_control": {
+    "source_commit": "2e2c26d7d1fedfaac6972f1d29839f6162ca44b2",
+    "failed_test": "windowKeysKeepNamesAllocatedInDiscardedTupleFields",
+    "result": "Direct Java selected both groups. The previous Rust scan delegated the calculation to Java."
+  }
+}
