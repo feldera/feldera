@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAsymmetricFieldComparatorExpression;
@@ -1164,6 +1165,22 @@ public class TemporalKeyTests {
         assertStaticWindowGroups(List.of(sum, b.call(value.getType(), "agg_plus", value, weight, enabled),
                 max, b.call(value.getType(), "agg_plus", value, weight),
                 b.call(value.getType(), "agg_plus", weight, value, enabled)), Set.of(0, 1));
+    }
+
+    @Test
+    public void failureKeysFollowThePrintedPanicMessage() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var site = CalciteObject.EMPTY;
+        String ascii = "bad\t\"value\"\n";
+        String unicode = "bad\u0007😀";
+        assertStaticWindowGroups(List.of(
+                new DBSPFailExpression(site, time, ascii),
+                DBSPApplyExpression.panic(site, time, ascii),
+                new DBSPFailExpression(site, time, unicode),
+                DBSPApplyExpression.panic(site, time, unicode),
+                new DBSPFailExpression(site, time, unicode),
+                new DBSPFailExpression(site, time, "different")), Set.of(0, 1, 2, 4));
     }
 
     @Test

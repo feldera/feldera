@@ -65,6 +65,7 @@ enum Term {
     Number(String),
     Bool(bool),
     String(String),
+    Utf16EscapedString(String),
     Bytes(String),
     Uuid(String),
     TemporalText(String),
@@ -210,6 +211,22 @@ impl ProjectionKey {
                             return Ok(None);
                         }
                         needs_canonical_form |= simplifies;
+                        if *kind == Expr::Fail {
+                            let message = string(node, "message")
+                                .ok_or_else(|| Error::new("missing failure message"))?;
+                            // Fail prints a panic! call. Its printer escapes non-ASCII
+                            // and control characters as UTF-16 rather than Rust's \u{...}.
+                            let text = if message.chars().all(|c| matches!(c, ' '..='~' | '\t' | '\n' | '\r')) {
+                                Term::String(message.to_owned())
+                            } else {
+                                Term::Utf16EscapedString(message.to_owned())
+                            };
+                            let arg = terms.insert_full((text, vec![])).0;
+                            let call = terms.insert_full((Term::Call("panic!".into()), vec![arg])).0;
+                            numbers.insert(at, call);
+                            active.remove(&at.id);
+                            continue;
+                        }
                         if matches!(kind, Expr::UnsignedWrap | Expr::UnsignedUnwrap) {
                             let source = edit.expression(node.edge("source")?)?;
                             let Some(method) = comparators::unsigned_method(
@@ -403,7 +420,7 @@ fn preserves_static_children(kind: Expr) -> bool {
                 | Expr::WindowBound | Expr::ConditionalIncrement | Expr::Lazy | Expr::Return
                 | Expr::NoComparator | Expr::FieldComparator | Expr::DirectComparator
                 | Expr::AsymmetricFieldComparator | Expr::UnsignedWrap | Expr::UnsignedUnwrap
-                | Expr::For | Expr::Assignment
+                | Expr::For | Expr::Assignment | Expr::Fail
         )
 }
 
@@ -912,7 +929,7 @@ fn call_path(
         let Some(identifier) = string(segment, "identifier") else {
             return Ok(None);
         };
-        if !identifier.split("::").all(|part| {
+        if identifier != "panic!" && !identifier.split("::").all(|part| {
             !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
         }) {
             return Ok(None);
