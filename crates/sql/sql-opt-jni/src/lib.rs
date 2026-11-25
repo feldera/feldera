@@ -829,9 +829,12 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("TemporalGroups" | "MergeTemporalBounds", roots) => {
             return temporal::groups(&arena, &mut edit, roots, state, pass == "MergeTemporalBounds");
         }
-        ("WindowGroups/ComposeTimestamp", [timestamp, maps @ ..]) => {
+        ("WindowGroups/ComposeTimestamp", [timestamp, map]) => {
             let timestamp = edit.expression(*timestamp)?;
-            feldera_sql_opt::compose_timestamp(&mut edit, timestamp, maps, &mut warnings)?
+            match feldera_sql_opt::compose_timestamp(&mut edit, timestamp, &[*map], &mut warnings) {
+                Ok(composed) => composed,
+                Err(error) => return composition_error(error),
+            }
         }
         ("TemporalComparisons", roots) => return temporal::classify(&arena, &mut edit, roots, state),
         ("WindowGroups/Conjuncts", [parameter, body]) => {

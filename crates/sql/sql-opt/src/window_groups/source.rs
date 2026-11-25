@@ -1,7 +1,7 @@
 //! Find the input on which temporal filters can share a window index.
 use crate::{
     function_calls::contains_now,
-    projection_composition::compose_projection,
+    projection_composition::{CompositionError, compose_projection},
     stream_rewrites::{body_members, reader_counts},
 };
 use feldera_sql_expr::SimplifyWarning;
@@ -112,10 +112,9 @@ pub fn compose_timestamp(
     mut timestamp: ExpressionId,
     maps: &[NodeId],
     warnings: &mut Vec<SimplifyWarning>,
-) -> Result<ExpressionId, Error> {
+) -> Result<ExpressionId, CompositionError> {
     for &map in maps {
-        if let Some(composed) = compose_projection(edit, map, timestamp.into(), true, warnings)
-            .map_err(|error| Error::new(error.to_string()))? {
+        if let Some(composed) = compose_projection(edit, map, timestamp.into(), true, warnings)? {
             timestamp = composed;
             continue;
         }
@@ -150,7 +149,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn timestamp_binds_a_reused_expensive_input_once() -> Result<(), Error> {
+    fn timestamp_binds_a_reused_expensive_input_once() -> Result<(), CompositionError> {
         let circuit = Circuit::from_json(json!({
             "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
         }))?;

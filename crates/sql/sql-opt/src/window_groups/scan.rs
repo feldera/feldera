@@ -3,6 +3,7 @@ use crate::projection_key::{row_parameter, SourceRows, ProjectionKey};
 use super::source::{compose_timestamp, filter_sources, TemporalFilterSource};
 use super::temporal::{shared_temporal_inputs, TemporalCandidate};
 use crate::conjunct_windows;
+use crate::projection_composition::CompositionError;
 use feldera_sql_expr::{ensure_expression_tree, SimplifyWarning};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
 
@@ -103,7 +104,12 @@ fn source_key(
 ) -> Result<Option<(TypeId, ProjectionKey)>, Error> {
     if !maps.is_empty() {
         let closure = edit.closure_with_parameters(key, &[parameter])?;
-        let timestamp = compose_timestamp(edit, closure, maps, warnings)?;
+        let timestamp = match compose_timestamp(edit, closure, maps, warnings) {
+            Ok(timestamp) => timestamp,
+            // The live replay can identify both declarations in the failing map.
+            Err(CompositionError::BindingConflict { .. }) => return Ok(None),
+            Err(CompositionError::Ir(error)) => return Err(error),
+        };
         let closure = edit.node(timestamp.into())?;
         let [input] = closure.edges("parameters")?[..] else {
             return Ok(None);

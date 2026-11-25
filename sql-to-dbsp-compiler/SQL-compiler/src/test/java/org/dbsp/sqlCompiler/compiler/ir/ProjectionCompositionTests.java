@@ -409,6 +409,20 @@ public class ProjectionCompositionTests {
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
     }
 
+    @Test public void timestampCompositionReportsTheConflictingLiveDeclarations() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var row = b.tuple(b.lit(1)).getType().ref().var();
+        var shared = row.deref().field(0);
+        var map = b.tuple(shared).closure(row);
+        var timestamp = b.tuple(shared).closure(row);
+        var direct = Assert.assertThrows(InternalCompilerError.class,
+                () -> timestamp.applyAfter(compiler, map, Maybe.MAYBE));
+        Assert.assertTrue(direct.getMessage().contains("Changing declaration"));
+        var hybrid = Assert.assertThrows(InternalCompilerError.class,
+                () -> RustCircuitPass.composeTimestamp(compiler, timestamp, List.of(map)));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+    }
+
     @Test public void projectedJoinPreservesPortsAndReportsCrossClosureBindings() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
         compiler.submitStatementsForCompilation("CREATE TABLE t(a INT); CREATE VIEW v AS SELECT * FROM t;");

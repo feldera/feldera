@@ -2910,11 +2910,14 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public static DBSPClosureExpression composeTimestamp(DBSPCompiler compiler, DBSPClosureExpression timestamp,
                                                          List<DBSPClosureExpression> maps) {
-        var inputs = new ArrayList<DBSPClosureExpression>(maps.size() + 1);
-        inputs.add(timestamp);
-        inputs.addAll(maps);
-        return loweredClosure(compiler, invokeLowering(compiler, "WindowGroups/ComposeTimestamp",
-                inputs.toArray(DBSPClosureExpression[]::new)));
+        // A later map's diagnostic can refer to an expression created by an earlier map.
+        for (var map : maps) {
+            var reply = invokeLowering(compiler, "WindowGroups/ComposeTimestamp", timestamp, map);
+            if (reply.value.has("binding_error"))
+                checkBindingErrors(reply.writer, reply.value.required("binding_error"));
+            timestamp = loweredClosure(compiler, reply);
+        }
+        return timestamp;
     }
 
     private static void scanTemporalWindows(DBSPCompiler compiler, DBSPCircuit circuit, ReorderTemporalFilters.Scan scan) {
