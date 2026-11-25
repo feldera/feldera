@@ -2,12 +2,47 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from benchmark_live_optimizer import artifact_json, compare
 from run_determinism import file_digest
 
 
 class MeasuredArtifacts(unittest.TestCase):
+    def test_workspace_checks_nested_sources_and_gen2_uses_the_circuit_comparator(self):
+        for artifact in ("rust/Cargo.toml", "circuit.json"):
+            with self.subTest(artifact=artifact), TemporaryDirectory() as root:
+                direct, hybrid = (Path(root) / name for name in ("direct", "hybrid"))
+                files = {artifact: b"{}", "schema.json": b"{}", "dataflow.json": b"{}"}
+                if artifact == "rust/Cargo.toml":
+                    files.update({"rust/crates/baseline/src/lib.rs": b"mod stubs;",
+                                  "rust/crates/baseline/src/stubs.rs": b""})
+                for directory in (direct, hybrid):
+                    for name, contents in files.items():
+                        path = directory / name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(contents)
+                digests = {name: file_digest(hybrid / name) for name in files}
+                (hybrid / "result.json").write_text(json.dumps({
+                    "compiler": "hybrid", "attempts": 1, "status": "ok",
+                    "rust_optimizer_passes": True, "artifacts": digests, "messages": [],
+                }))
+                if artifact == "rust/Cargo.toml":
+                    self.assertEqual(compare(direct, hybrid, artifact), digests)
+                    (direct / "rust/crates/baseline/src/lib.rs").write_text("mod other;")
+                    with self.assertRaisesRegex(ValueError, "lib.rs differs"):
+                        compare(direct, hybrid, artifact)
+                else:
+                    (direct / artifact).write_text('{"id": 1}')
+                    with patch("benchmark_live_optimizer.subprocess.run") as run:
+                        run.return_value.returncode = 0
+                        self.assertEqual(compare(direct, hybrid, artifact, "sql-difftest"), digests)
+                        self.assertEqual(run.call_args.args[0], ["sql-difftest", direct / artifact, hybrid / artifact])
+                        run.return_value.returncode = 1
+                        run.return_value.stderr = "different graphs"
+                        with self.assertRaisesRegex(ValueError, "different graphs"):
+                            compare(direct, hybrid, artifact, "sql-difftest")
+
     def test_public_json_parity_preserves_types_and_precision(self):
         self.assertEqual(artifact_json('{"rows": [1, false], "n": 2}'),
                          artifact_json('{"n":2,"rows":[1,false]}'))

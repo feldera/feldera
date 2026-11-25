@@ -11,6 +11,7 @@ import signal
 import subprocess
 import tempfile
 import time
+import tomllib
 
 
 def check_sql_error(compiler, classpath, directory, name, program, expected, *, engine="classic"):
@@ -93,7 +94,7 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
         subprocess.run([*args, source], check=True, timeout=60)
         compare_files(engine, record, direct, {file.name for file in direct.iterdir() if file.is_file()})
 
-    runtime_sources = Path(__file__).resolve().parents[2]
+    runtime_sources = Path(__file__).resolve().parents[3]
     workspace = {"crate_name": "p2_example", "runtime_sources": str(runtime_sources)}
     direct_workspace = directory / "workspace-java"
     (direct_workspace / "rust" / "crates").mkdir(parents=True)
@@ -108,6 +109,15 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
     normal_workspace = finish(start("workspace", workspace=workspace), "workspace", "ok")
     assert normal_workspace["compiler"] == "hybrid" and normal_workspace["attempts"] == 1
     compare_files("workspace", normal_workspace, direct_workspace, workspace_files)
+    manifest = directory / "workspace/result/rust/Cargo.toml"
+    with manifest.open("rb") as stream:
+        dependencies = tomllib.load(stream)["workspace"]["dependencies"]
+    assert "path" in dependencies["dbsp"]
+    for name, dependency in dependencies.items():
+        if isinstance(dependency, dict) and "path" in dependency:
+            crate = manifest.parent / dependency["path"] / "Cargo.toml"
+            if not crate.is_file():
+                raise ValueError(f"Generated workspace dependency {name} points to missing {crate}")
 
     bad = directory / "invalid.sql"
     bad.write_text("SELECT FROM;")
