@@ -1192,8 +1192,12 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.stop(force=True)
 
         assert standby.status() == PipelineStatus.STANDBY
-        standby.activate(
+        # activate() also returns on AwaitingApproval, so check the result.
+        status = standby.activate(
             timeout_s=(pull_interval * extra_ckpts) + ACTIVATE_PULL_BUDGET_S
+        )
+        assert status == PipelineStatus.RUNNING, (
+            f"standby activation stopped at {status}, not RUNNING"
         )
 
         got_after = list(standby.query("SELECT * FROM v0"))
@@ -1552,13 +1556,16 @@ class TestCheckpointSync(SharedTestPipeline):
         # checkpoint by now.
         try:
             assert standby.status() == PipelineStatus.STANDBY
-            # activate() blocks until the manager reports RUNNING. Do not wait
-            # on the "pipeline activated" log line instead: it is logged once,
-            # and the manager's bounded log buffer evicts it under trace noise.
-            standby.activate(
+            # activate() blocks until the manager reports RUNNING or
+            # AwaitingApproval, so check the result. Do not wait on the
+            # "pipeline activated" log line instead: it is logged once, and the
+            # manager's bounded log buffer evicts it under trace noise.
+            status = standby.activate(
                 timeout_s=(pull_interval * extra_ckpts) + ACTIVATE_PULL_BUDGET_S
             )
-            assert standby.status() == PipelineStatus.RUNNING
+            assert status == PipelineStatus.RUNNING, (
+                f"standby activation stopped at {status}, not RUNNING"
+            )
 
             got = list(standby.query("SELECT * FROM v0"))
             print(
