@@ -5,13 +5,13 @@
 //! which connectors to distribute and tells each host through
 //! `CoordinationActivate::input_distribution`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_types::circuit::Layout;
 use feldera_types::{
     config::{ConnectorConfig, TransportConfig},
-    coordination::{InputDistribution, InputShard},
+    coordination::{InputDistribution, InputShard, legacy_output_distribution},
 };
 use serde_json::Value as JsonValue;
 use tracing::{info, warn};
@@ -78,16 +78,50 @@ pub fn validate_distribution(
     Ok(())
 }
 
-/// Returns whether output connector `config` runs as a distributed connector, with a part on
-/// every host: it sets `distributed`, its transport supports that (see
-/// `TransportConfig::supports_output_distribution`), and the pipeline is `multihost`.
-/// Otherwise, `distributed` has no effect, as before output connectors could be distributed.
-pub fn output_is_distributed(config: &ConnectorConfig, multihost: bool) -> bool {
-    config.distributed && config.transport.supports_output_distribution() && multihost
+/// Returns whether output connector `endpoint_name`, with configuration `config`, runs as a
+/// distributed connector, with a part on every host.
+///
+/// On one host, no connector is distributed.  On multihost, the coordinator decides, from what
+/// every host reported (see `CoordinationStatus::distributable_outputs`), and names the
+/// connectors that it distributes in `distributed_outputs` (see
+/// `CoordinationActivate::distributed_outputs`).  A coordinator that predates that list sends
+/// `None`, and then a connector is distributed if [legacy_output_distribution] accepts it.
+///
+/// Returns an error if the coordinator distributes a connector that this pipeline cannot run as
+/// a distributed connector, which it does not report as distributable.
+pub fn output_is_distributed(
+    endpoint_name: &str,
+    config: &ConnectorConfig,
+    multihost: bool,
+    distributed_outputs: Option<&BTreeSet<String>>,
+) -> Result<bool, ConfigError> {
+    if !multihost {
+        return Ok(false);
+    }
+    let Some(distributed_outputs) = distributed_outputs else {
+        return Ok(legacy_output_distribution(config));
+    };
+    if !distributed_outputs.contains(endpoint_name) {
+        return Ok(false);
+    }
+    let refusal = if config.distributed {
+        config.output_distribution_refusal()
+    } else {
+        Some("the connector does not set 'distributed'".into())
+    };
+    match refusal {
+        None => Ok(true),
+        Some(refusal) => Err(ConfigError::invalid_transport_configuration(
+            endpoint_name,
+            &format!(
+                "the coordinator runs this connector on every host, but this host cannot: {refusal}"
+            ),
+        )),
+    }
 }
 
-/// Returns an error if output connector `config` runs as a distributed connector (see
-/// [output_is_distributed]) in a way that its transport does not support.
+/// Returns an error if output connector `config` can run as a distributed connector in a way
+/// that its transport does not support.
 pub fn validate_output_distribution(
     endpoint_name: &str,
     config: &ConnectorConfig,
@@ -95,7 +129,9 @@ pub fn validate_output_distribution(
 ) -> Result<(), ConfigError> {
     // The parts commit through a leader one transaction at a time, but output buffering flushes
     // each host's buffer at its own time, so the hosts' batches would not line up.
-    if output_is_distributed(config, multihost)
+    if config.distributed
+        && config.supports_output_distribution()
+        && multihost
         && matches!(config.transport, TransportConfig::DeltaTableOutput(_))
         && config.output_buffer_config.enable_output_buffer
     {
@@ -167,7 +203,7 @@ mod tests {
         transport::{datagen::DatagenInputConfig, kafka::KafkaInputConfig},
     };
 
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use super::{
         input_shard, output_is_distributed, resume_distribution, validate_distribution,
@@ -299,20 +335,33 @@ mod tests {
         TransportConfig::DeltaTableOutput(serde_json::from_value(json).unwrap())
     }
 
-    /// Only the null output, and the Delta Lake output that appends a change log, run as
-    /// distributed connectors, and only on multihost.  Elsewhere `distributed` has no effect and is
-    /// accepted, as it was before output connectors could be distributed.
+    /// Returns whether output connector `c`, with `config`, is distributed on multihost, with
+    /// `list` as the coordinator's list of distributed connectors.
+    fn distributed(config: &ConnectorConfig, list: Option<&[&str]>) -> bool {
+        let list = list.map(|list| list.iter().map(|name| name.to_string()).collect());
+        output_is_distributed("c", config, true, list.as_ref()).unwrap()
+    }
+
+    /// The null output and the Delta Lake output that appends a change log support distribution.
+    /// The coordinator's list decides whether they are distributed.  Without a list, they are
+    /// distributed, as they were before the list.  Elsewhere `distributed` has no effect and is
+    /// accepted, as it was before output connectors could be distributed.  The coordinator
+    /// distributes only connectors that every host can distribute, so one that this host cannot
+    /// means that the hosts disagree.
     #[test]
     fn output_distribution_depends_on_the_transport() {
-        let supported = [
+        let legacy = [
             TransportConfig::NullOutput,
             delta(serde_json::json!({"mode": "append"})),
             delta(serde_json::json!({"mode": "append", "update_mode": "cdc"})),
         ];
-        for transport in supported {
+        for transport in legacy {
             let config = output(transport);
-            assert!(output_is_distributed(&config, true));
-            assert!(!output_is_distributed(&config, false));
+            assert!(config.supports_output_distribution());
+            assert!(distributed(&config, None));
+            assert!(distributed(&config, Some(&["c"])));
+            assert!(!distributed(&config, Some(&[])));
+            assert!(!output_is_distributed("c", &config, false, None).unwrap());
             validate_output_distribution("c", &config, true).unwrap();
         }
 
@@ -327,10 +376,18 @@ mod tests {
                 }))
                 .unwrap(),
             ),
+            TransportConfig::FileOutput(
+                serde_json::from_value(serde_json::json!({"path": "f"})).unwrap(),
+            ),
         ];
         for transport in unsupported {
             let config = output(transport);
-            assert!(!output_is_distributed(&config, true));
+            assert!(config.output_distribution_refusal().is_some());
+            assert!(!distributed(&config, None));
+            assert!(!distributed(&config, Some(&[])));
+            let list = BTreeSet::from(["c".to_string()]);
+            let error = output_is_distributed("c", &config, true, Some(&list)).unwrap_err();
+            assert!(error.to_string().contains("this host cannot"), "{error}");
             validate_output_distribution("c", &config, true).unwrap();
         }
 

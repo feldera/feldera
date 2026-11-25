@@ -273,7 +273,7 @@ impl PipelineConfig {
             .values()
             .filter(|output| {
                 let config = &output.connector_config;
-                config.distributed && config.transport.supports_output_distribution()
+                config.distributed && config.supports_output_distribution()
             })
             .map(|output| {
                 output
@@ -283,6 +283,23 @@ impl PipelineConfig {
                     .unwrap_or(output.stream.as_ref())
             })
             .map(|name| SqlIdentifier::from(name).name())
+            .collect()
+    }
+
+    /// Returns the output connectors, by name, that this pipeline can run as distributed
+    /// connectors: those that set [`ConnectorConfig::distributed`] and support it.  A multihost
+    /// pipeline reports these to the coordinator (see
+    /// [`crate::coordination::CoordinationStatus::distributable_outputs`]).
+    pub fn distributable_outputs(
+        &self,
+    ) -> BTreeMap<String, crate::coordination::DistributableOutput> {
+        self.outputs
+            .iter()
+            .filter(|(_, output)| {
+                let config = &output.connector_config;
+                config.distributed && config.supports_output_distribution()
+            })
+            .map(|(name, _)| (name.to_string(), Default::default()))
             .collect()
     }
 
@@ -3020,6 +3037,14 @@ mod test {
             config.distributed_output_streams(),
             std::collections::BTreeSet::from(["a".into(), "b_idx".into()])
         );
+        // A host reports the connectors themselves to the coordinator.
+        assert_eq!(
+            config
+                .distributable_outputs()
+                .into_keys()
+                .collect::<Vec<_>>(),
+            ["a", "b"]
+        );
     }
 
     /// The older size spelling means the same settings to this release, so a
@@ -3986,6 +4011,33 @@ pub struct ConnectorConfig {
 }
 
 impl ConnectorConfig {
+    /// Returns true if this output connector accepts [`ConnectorConfig::distributed`] (see
+    /// [`Self::output_distribution_refusal`]).
+    pub fn supports_output_distribution(&self) -> bool {
+        self.output_distribution_refusal().is_none()
+    }
+
+    /// Returns why this output connector does not accept [`ConnectorConfig::distributed`], or
+    /// `None` if it accepts it.
+    pub fn output_distribution_refusal(&self) -> Option<String> {
+        match &self.transport {
+            TransportConfig::NullOutput => None,
+            TransportConfig::DeltaTableOutput(config)
+                if config.mode == DeltaTableWriteMode::Append
+                    && config.update_mode == DeltaTableUpdateMode::Cdc =>
+            {
+                None
+            }
+            TransportConfig::DeltaTableOutput(_) => Some(
+                "a distributed 'delta_table_output' connector requires 'mode: append' and 'update_mode: cdc'".into(),
+            ),
+            transport => Some(format!(
+                "the '{}' output transport does not support 'distributed'",
+                transport.name()
+            )),
+        }
+    }
+
     pub fn new(transport: TransportConfig, format: Option<FormatConfig>) -> Self {
         Self {
             send_snapshot: false,
@@ -4398,19 +4450,6 @@ impl TransportConfig {
                 | TransportConfig::DeltaTableInput(_)
                 | TransportConfig::IcebergInput(_)
         )
-    }
-
-    /// Returns true if an output connector with this transport accepts
-    /// [`ConnectorConfig::distributed`].
-    pub fn supports_output_distribution(&self) -> bool {
-        match self {
-            TransportConfig::NullOutput => true,
-            TransportConfig::DeltaTableOutput(config) => {
-                config.mode == DeltaTableWriteMode::Append
-                    && config.update_mode == DeltaTableUpdateMode::Cdc
-            }
-            _ => false,
-        }
     }
 
     /// Returns true if host 0 of a distributed input connector with this

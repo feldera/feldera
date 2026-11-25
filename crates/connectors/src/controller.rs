@@ -272,6 +272,11 @@ pub struct ControllerBuilder {
     /// or with a coordinator that predates it.
     host_urls: Vec<String>,
 
+    /// The output connectors that the coordinator runs on every host (see
+    /// [coordination::CoordinationActivate::distributed_outputs]).  This is `None` without a
+    /// coordinator, or with a coordinator that predates it.
+    distributed_outputs: Option<BTreeSet<String>>,
+
     /// The root CA that the other hosts' HTTPS certificates chain to, for a pipeline that
     /// serves HTTPS without requiring client certificates (otherwise, see `exchange_tls`).
     peer_root_certificate: Option<reqwest::Certificate>,
@@ -343,6 +348,7 @@ impl ControllerBuilder {
             input_distribution: BTreeMap::new(),
             input_choices: BTreeMap::new(),
             host_urls: Vec::new(),
+            distributed_outputs: None,
             peer_root_certificate: None,
             output_assignment: BTreeMap::new(),
             distributed_output_streams: config.distributed_output_streams(),
@@ -470,6 +476,17 @@ impl ControllerBuilder {
         Self { host_urls, ..self }
     }
 
+    /// Sets the output connectors that the coordinator runs on every host.
+    pub(crate) fn with_distributed_outputs(
+        self,
+        distributed_outputs: Option<BTreeSet<String>>,
+    ) -> Self {
+        Self {
+            distributed_outputs,
+            ..self
+        }
+    }
+
     /// Sets the root CA that the other hosts' HTTPS certificates chain to.
     pub(crate) fn with_peer_root_certificate(
         self,
@@ -547,6 +564,7 @@ impl ControllerBuilder {
             .with_exchange_tls(self.exchange_tls)
             .with_exchange_uuid(self.exchange_uuid)
             .with_host_urls(self.host_urls)
+            .with_distributed_outputs(self.distributed_outputs)
             .with_peer_root_certificate(self.peer_root_certificate)
     }
 
@@ -3345,6 +3363,7 @@ impl CircuitThread {
             checkpointed_output_assignment: _,
             input_choices,
             host_urls,
+            distributed_outputs,
             peer_root_certificate,
             view_integrals,
             #[cfg(any(test, feature = "testing"))]
@@ -3595,6 +3614,7 @@ impl CircuitThread {
             view_integrals,
             input_choices,
             peer_client,
+            distributed_outputs,
             output_assignment,
             storage
                 .as_ref()
@@ -6531,6 +6551,9 @@ pub struct ControllerInit {
     /// See [ControllerBuilder::host_urls].
     host_urls: Vec<String>,
 
+    /// See [ControllerBuilder::distributed_outputs].
+    distributed_outputs: Option<BTreeSet<String>>,
+
     /// See [ControllerBuilder::peer_root_certificate].
     peer_root_certificate: Option<reqwest::Certificate>,
 
@@ -6561,6 +6584,14 @@ impl ControllerInit {
     /// Sets the base URL of each host of a multihost pipeline.
     fn with_host_urls(self, host_urls: Vec<String>) -> Self {
         Self { host_urls, ..self }
+    }
+
+    /// Sets the output connectors that the coordinator runs on every host.
+    fn with_distributed_outputs(self, distributed_outputs: Option<BTreeSet<String>>) -> Self {
+        Self {
+            distributed_outputs,
+            ..self
+        }
     }
 
     /// Sets the root CA that the other hosts' HTTPS certificates chain to.
@@ -6612,6 +6643,7 @@ impl ControllerInit {
             checkpointed_output_assignment: None,
             input_choices: BTreeMap::new(),
             host_urls: Vec::new(),
+            distributed_outputs: None,
             peer_root_certificate: None,
             #[cfg(any(test, feature = "testing"))]
             feed_replay_early: false,
@@ -6882,6 +6914,7 @@ impl ControllerInit {
             checkpointed_output_assignment,
             input_choices: BTreeMap::new(),
             host_urls: Vec::new(),
+            distributed_outputs: None,
             peer_root_certificate: None,
             #[cfg(any(test, feature = "testing"))]
             feed_replay_early: false,
@@ -8511,6 +8544,9 @@ pub struct ControllerInner {
     /// connector use it to report to their leader (see [output_leader]).
     peer_client: Option<PeerClient>,
 
+    /// See [ControllerBuilder::distributed_outputs].
+    distributed_outputs: Option<BTreeSet<String>>,
+
     /// The host that writes each output relation of a multihost pipeline, as the coordinator
     /// assigns them.  The part of a distributed output connector on its stream's host is the
     /// connector's leader (see [output_leader]).  Each checkpoint records it (see
@@ -8654,6 +8690,7 @@ impl ControllerInner {
         view_integrals: ViewIntegrals,
         input_choices: BTreeMap<String, JsonValue>,
         peer_client: Option<PeerClient>,
+        distributed_outputs: Option<BTreeSet<String>>,
         output_assignment: BTreeMap<String, usize>,
         storage_path: Option<PathBuf>,
         publish_input_choices: Box<dyn FnOnce(BTreeMap<String, JsonValue>) + Send>,
@@ -8692,6 +8729,7 @@ impl ControllerInner {
                 next_output_id: Atomic::new(0),
                 layout,
                 peer_client,
+                distributed_outputs,
                 output_assignment,
                 output_leaders: Mutex::new(BTreeMap::new()),
                 input_distribution: input_distribution.clone(),
@@ -9536,18 +9574,18 @@ impl ControllerInner {
         };
 
         // On multihost, a distributed connector reads this host's shard of the stream.
+        let connector_config = &endpoint_config.connector_config;
         let distributed = output_is_distributed(
-            &endpoint_config.connector_config,
+            endpoint_name,
+            connector_config,
             self.layout.is_multihost(),
-        );
-        if endpoint_config.connector_config.distributed
-            && !distributed
-            && self.layout.is_multihost()
-        {
-            warn!(
-                "{endpoint_name}: the '{}' output transport does not support 'distributed', so this connector runs on one host",
-                endpoint_config.connector_config.transport.name()
-            );
+            self.distributed_outputs.as_ref(),
+        )?;
+        if connector_config.distributed && !distributed && self.layout.is_multihost() {
+            let reason = connector_config
+                .output_distribution_refusal()
+                .unwrap_or_else(|| "the coordinator does not run it on every host".into());
+            warn!("{endpoint_name}: {reason}, so this connector runs on one host");
         }
         let handles = if distributed {
             handles.distributed.as_deref().ok_or_else(|| {

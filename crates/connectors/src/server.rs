@@ -74,8 +74,8 @@ use feldera_types::config::{
 };
 use feldera_types::coordination::{
     AdHocScan, CheckpointOutputAssignment, CheckpointOutputAssignmentQuery, CoordinationActivate,
-    CoordinationCapabilities, CoordinationStatus, InputChoices, Labels, OutputPartReport,
-    RestartArgs, Step, StepRequest,
+    CoordinationCapabilities, CoordinationStatus, DistributableOutput, InputChoices, Labels,
+    OutputPartReport, RestartArgs, Step, StepRequest,
 };
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -317,6 +317,11 @@ pub(crate) struct ServerState {
 
     coordination_activate: Mutex<Option<CoordinationActivate>>,
 
+    /// The output connectors that this host can run as distributed connectors, which it
+    /// reports to the coordinator (see [CoordinationStatus::distributable_outputs]).  Set once,
+    /// from the pipeline configuration, at startup.
+    distributable_outputs: OnceLock<BTreeMap<String, DistributableOutput>>,
+
     /// Leaf lock.
     ///
     /// The values that this host's distributed input connectors chose for all
@@ -431,6 +436,7 @@ impl ServerState {
             rate_limiter,
             samply_state: Default::default(),
             coordination_activate: Default::default(),
+            distributable_outputs: OnceLock::new(),
             input_choices: Default::default(),
             leases: Default::default(),
             incarnation_uuid: Uuid::now_v7(),
@@ -1095,6 +1101,9 @@ pub fn run_server(
             builder.sync_config(),
             host_info,
         ));
+        let _ = state
+            .distributable_outputs
+            .set(config.distributable_outputs());
 
         // Initialize the pipeline in a separate thread.  On success, this thread
         // will create a `Controller` instance and store it in `state.controller`.
@@ -1612,6 +1621,7 @@ fn do_bootstrap(
                 if let Some(mut ca) = state.coordination_activate.lock().unwrap().take() {
                     builder = builder.with_output_assignment(take(&mut ca.output_assignment));
                     builder = builder.with_host_urls(take(&mut ca.host_urls));
+                    builder = builder.with_distributed_outputs(take(&mut ca.distributed_outputs));
 
                     builder = builder.with_layout(
                         Layout::new_multihost(&ca.exchanges, ca.local_address).map_err(|e| {
@@ -3053,6 +3063,9 @@ pub mod test_http_helpers {
                     None,
                     None,
                 ));
+                let _ = state
+                    .distributable_outputs
+                    .set(config.distributable_outputs());
                 let circuit = TestCircuit::Identity {
                     relation: relation(),
                     persistent_output_ids: vec![Some(view_persistent_id.clone())],
@@ -3081,6 +3094,8 @@ pub mod test_http_helpers {
             MultihostTestHosts {
                 activated: vec![false; servers.len()],
                 send_host_urls: true,
+                send_distributed_outputs: true,
+                withheld_outputs: Default::default(),
                 servers,
                 states,
                 exchanges,
@@ -3105,6 +3120,16 @@ pub mod test_http_helpers {
         /// Whether the activations send each host's URL, as a coordinator that predates
         /// `CoordinationActivate::host_urls` does not.
         pub(crate) send_host_urls: bool,
+
+        /// Whether the activations name the distributed output connectors, as a coordinator that
+        /// predates `CoordinationActivate::distributed_outputs` does not.  Without the list, the
+        /// activations distribute the connectors that `legacy_output_distribution` accepts, as
+        /// such a coordinator does.
+        pub(crate) send_distributed_outputs: bool,
+
+        /// Output connectors that the activations do not distribute, as a coordinator does when
+        /// some host cannot distribute them.
+        pub(crate) withheld_outputs: std::collections::BTreeSet<String>,
     }
 
     impl MultihostTestHosts {
@@ -3119,16 +3144,34 @@ pub mod test_http_helpers {
             } else {
                 Vec::new()
             };
+            // As the coordinator does, a distributed connector goes to every host, and any other
+            // connector, including one that cannot be distributed, to the host that the stream is
+            // assigned to.  Every host reports the same connectors as distributable, because they
+            // have the same configuration.
+            let distributed: std::collections::BTreeSet<String> = if self.send_distributed_outputs {
+                self.pipeline_config
+                    .distributable_outputs()
+                    .into_keys()
+                    .filter(|name| !self.withheld_outputs.contains(name))
+                    .collect()
+            } else {
+                self.pipeline_config
+                    .outputs
+                    .iter()
+                    .filter(|(_, output)| {
+                        feldera_types::coordination::legacy_output_distribution(
+                            &output.connector_config,
+                        )
+                    })
+                    .map(|(name, _)| name.to_string())
+                    .collect()
+            };
             let outputs = self
                 .pipeline_config
                 .outputs
                 .iter()
-                // As the coordinator does, a distributed connector goes to every host, and
-                // any other connector, including one whose transport cannot be distributed,
-                // to the host that the stream is assigned to.
-                .filter(|(_, output)| {
-                    let config = &output.connector_config;
-                    (config.distributed && config.transport.supports_output_distribution())
+                .filter(|(name, output)| {
+                    distributed.contains(name.as_ref())
                         || self
                             .output_assignment
                             .get(&*output.stream)
@@ -3149,6 +3192,7 @@ pub mod test_http_helpers {
                 input_distribution: BTreeMap::new(),
                 input_choices: BTreeMap::new(),
                 host_urls,
+                distributed_outputs: self.send_distributed_outputs.then_some(distributed),
             };
             let response = self.servers[host]
                 .post("/coordination/activate")
@@ -3213,7 +3257,11 @@ pub mod test_http_helpers {
 
     impl MultihostTestPipeline {
         /// Returns the first line of `host`'s stream at `path`, as JSON.
-        async fn first_line<T: serde::de::DeserializeOwned>(&self, host: usize, path: &str) -> T {
+        pub(crate) async fn first_line<T: serde::de::DeserializeOwned>(
+            &self,
+            host: usize,
+            path: &str,
+        ) -> T {
             let mut response = self.servers[host].get(path).send().await.unwrap();
             let mut line = Vec::new();
             while !line.ends_with(b"\n") {
@@ -5521,6 +5569,9 @@ async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse
                 incarnation_uuid: state.incarnation_uuid,
                 status: status.clone(),
                 capabilities: CoordinationCapabilities::current(),
+                // Unset means that this host does not know, not that it can
+                // distribute nothing.
+                distributable_outputs: state.distributable_outputs.get().cloned(),
             },
             (state, Some(status)),
         ))
@@ -7517,6 +7568,81 @@ pub mod test_http {
             let shares = output_shares(&pipeline, "spread", 300).await;
             assert!(shares.iter().all(|&share| share > 0), "{shares:?}");
             assert_eq!(shares.iter().sum::<u64>(), 300, "{shares:?}");
+        });
+    }
+
+    /// A host runs an output connector as a distributed connector only if the coordinator's list
+    /// names it.  A distributed null output that the coordinator leaves out of the list runs on
+    /// the one host that the coordinator gives it to, which writes all of the view.
+    #[engine_test(requires(Multihost))]
+    pub fn multihost_distributed_outputs_follow_the_coordinator(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let config = json!({
+                "name": "test",
+                "inputs": {},
+                "outputs": {
+                    "spread": {
+                        "stream": "test_output1",
+                        "distributed": true,
+                        "transport": {"name": "null_output"},
+                        "format": {"name": "csv"},
+                    },
+                },
+            });
+            let mut hosts =
+                MultihostTestPipeline::serve(engine, 3, 2, &config, &[("test_output1", 1)], &[]);
+            hosts.withheld_outputs.insert("spread".into());
+            let mut pipeline = hosts.activate(None).await.unwrap();
+
+            // Every host reports that it can distribute the connector, which is the coordinator's
+            // input to its decision.
+            for host in 0..3 {
+                let status: feldera_types::coordination::CoordinationStatus =
+                    pipeline.first_line(host, "/coordination/status").await;
+                let distributable = status
+                    .distributable_outputs
+                    .map(|outputs| outputs.into_keys().collect::<Vec<_>>());
+                assert_eq!(
+                    distributable,
+                    Some(vec!["spread".to_string()]),
+                    "host {host}"
+                );
+            }
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+
+            timeout(Duration::from_secs(30), async {
+                loop {
+                    let stats = get_stats(&pipeline.servers[1]).await;
+                    let output = stats
+                        .outputs
+                        .iter()
+                        .find(|output| output.endpoint_name == "spread")
+                        .expect("host 1 runs the connector");
+                    if output.metrics.transmitted_records >= 300 {
+                        assert_eq!(output.metrics.transmitted_records, 300);
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("host 1 did not send all of the output");
+            for host in [0, 2] {
+                let stats = get_stats(&pipeline.servers[host]).await;
+                assert!(
+                    stats
+                        .outputs
+                        .iter()
+                        .all(|output| output.endpoint_name != "spread"),
+                    "host {host} runs the connector"
+                );
+            }
         });
     }
 
