@@ -5148,6 +5148,9 @@ public final class RustCircuitPass implements CircuitTransform {
                         if (orders.isEmpty())
                             return circuit;
                         result = this.invoke("Live/Reorder", input, initial, MAPPER.writeValueAsBytes(orders));
+                    } else if (result.has("failure")) {
+                        DBSPVariablePath.restoreGeneratedNames(result.required("next_generated_name").longValue());
+                        throw temporalError(this.compiler, writer.innerVisitor, result.required("failure"));
                     }
                 }
                 case "Simplify" -> {

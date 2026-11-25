@@ -46,7 +46,7 @@ pub(super) fn conjuncts(
     Ok(terms)
 }
 
-pub(super) fn rewrite_filters(
+pub(super) fn rewrite_filters<E: From<Error>>(
     circuit: Circuit,
     next: &mut u64,
     mut rewrite: impl FnMut(
@@ -55,8 +55,8 @@ pub(super) fn rewrite_filters(
         NodeId,
         &mut u64,
         &mut Vec<SimplifyWarning>,
-    ) -> Result<Option<(NodeId, OutputPort)>, Error>,
-) -> Result<(Circuit, Vec<SimplifyWarning>), Error> {
+    ) -> Result<Option<(NodeId, OutputPort)>, E>,
+) -> Result<(Circuit, Vec<SimplifyWarning>), E> {
     let bodies: HashMap<_, _> = body_members(&circuit)?
         .into_iter()
         .map(|(body, id)| (id, body))

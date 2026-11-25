@@ -13,7 +13,7 @@ pub struct TemporalCandidate<K = String> {
 
 /// Each top-level conjunct either supplies a timestamp bound or has no
 /// temporal classification. Bounds with the same fingerprint share a window.
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct TemporalBound<K = String> {
     pub fingerprint: K,
     pub lower: bool,

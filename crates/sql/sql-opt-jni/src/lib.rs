@@ -2338,10 +2338,16 @@ fn transform(
         "SimplifyWaterline" => feldera_sql_opt::simplify_waterlines(circuit, &mut next)?,
         "WindowGroups/Reorder" => {
             let chosen = serde_json::from_slice(state)?;
-            let Some(output) = feldera_sql_opt::reorder_shared_windows(circuit, &chosen, &mut next)? else {
-                return Ok(Value::Null);
-            };
-            output
+            use feldera_sql_opt::ReorderError;
+            match feldera_sql_opt::reorder_shared_windows(circuit, &chosen, &mut next) {
+                Ok(output) => output,
+                Err(ReorderError::Unsupported) => return Ok(Value::Null),
+                Err(ReorderError::InvalidIr(error)) => return Err(error.into()),
+                Err(ReorderError::Diagnostic { graph, diagnostic, next_name }) => return Ok(json!({
+                    "failure": temporal::temporal_failure(&graph, &original, diagnostic)?,
+                    "next_generated_name": next_name,
+                })),
+            }
         }
         "Reorder" => feldera_sql_opt::reorder_temporal_filters(circuit, serde_json::from_slice(state)?, &mut next)?,
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(circuit, &mut next)?,

@@ -210,7 +210,7 @@ pub use window_groups::{
     reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate,
     scan_temporal_windows, shared_temporal_inputs, shared_window_fields, temporal_filter_sources,
     window_candidates, IndexedWindows, TemporalBound, TemporalCandidate, TemporalFilterSource,
-    TemporalOrder, TemporalScan, WindowFields, WindowProjection,
+    ReorderError, TemporalOrder, TemporalScan, WindowFields, WindowProjection,
 };
 
 pub use aggregate_groups::{aggregate_groups, AggregateKind};

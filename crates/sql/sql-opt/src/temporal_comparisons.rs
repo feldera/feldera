@@ -47,45 +47,18 @@ pub fn conjunct_windows(
     body: ExpressionId,
     next: &mut u64,
 ) -> Result<Option<Vec<Option<ConjunctWindow>>>, Error> {
-    let Some(terms) = analyze_conjuncts(edit, parameter, body)? else {
-        return Ok(None);
-    };
-    let mut windows = Vec::with_capacity(terms.len());
-    for term in terms {
-        *next = next
-            .checked_add(term.names)
-            .ok_or_else(|| Error::new("generated names exhausted classifying conjuncts"))?;
-        windows.push(term.window);
-    }
-    Ok(Some(windows))
-}
-
-pub(super) struct AnalyzedConjunct {
-    pub expression: ExpressionId,
-    pub window: Option<ConjunctWindow>,
-    pub names: u64,
-}
-
-pub(super) fn analyze_conjuncts(
-    edit: &mut CircuitEditor,
-    parameter: NodeId,
-    body: ExpressionId,
-) -> Result<Option<Vec<AnalyzedConjunct>>, Error> {
     let terms = crate::filters::conjuncts(edit, body)?;
-    let mut analyzed = Vec::with_capacity(terms.len());
+    let mut names = *next;
+    let mut windows = Vec::with_capacity(terms.len());
     for expression in terms {
         let term = crate::filters::strip_wrap_bool(edit, expression)?;
-        let mut names = 0;
         let Some(parts) = infer_temporal_predicates(edit, parameter, term, &mut names)? else {
             return Ok(None);
         };
-        analyzed.push(AnalyzedConjunct {
-            expression,
-            names,
-            window: ConjunctWindow::from_predicates(&parts),
-        });
+        windows.push(ConjunctWindow::from_predicates(&parts));
     }
-    Ok(Some(analyzed))
+    *next = names;
+    Ok(Some(windows))
 }
 
 /// Java keys its waterline facts by node ID and its lexical references by expression.

@@ -6,7 +6,7 @@ use feldera_sql_opt::limiters::{Stream, StreamKind};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
-fn temporal_failure(
+pub(super) fn temporal_failure(
     graph: &Circuit,
     input: &Circuit,
     diagnostic: feldera_sql_opt::TemporalDiagnostic,

@@ -237,6 +237,56 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void reorderChecksTheSharedConjunctBeforeTheOtherClockOperands() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        for (boolean scalar : List.of(false, true)) {
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            var rowType = scalar ? time : b.tup(time);
+            var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+            circuit.addOperator(input);
+            var row = b.refVar(rowType);
+            var key = scalar ? row.deref() : b.field(row, 0);
+            var allocates = flatmap(new IdShuffle(2), 0, b.lit(1));
+            var firstClock = new DBSPBlockExpression(List.of(allocates.toStatement()), b.call(time, "now"));
+            var secondClock = new DBSPBlockExpression(List.of(b.call(b.i32(), "sign_i32").toStatement()), b.call(time, "now"));
+            var first = b.binary(DBSPOpcode.GTE, key, firstClock);
+            var second = b.binary(DBSPOpcode.LT, key.deepCopy(), secondClock);
+            var filter = new DBSPFilterOperator(site, b.binary(DBSPOpcode.AND, first, second).closure(row), input.outputPort());
+            circuit.addOperator(filter);
+            var counts = new ArrayList<Long>();
+            for (var chosen : List.of(Map.<DBSPFilterOperator, Integer>of(), Map.of(filter, 0), Map.of(filter, 1))) {
+                var compiler = new DBSPCompiler(new CompilerOptions());
+                var pass = new ReorderTemporalFilters.Reorder(compiler, chosen);
+                long start = DBSPVariablePath.nextGeneratedName();
+                Class<? extends RuntimeException> error = scalar ? NullPointerException.class : IndexOutOfBoundsException.class;
+                var expected = Assert.assertThrows(error, () -> pass.apply(circuit));
+                long names = DBSPVariablePath.nextGeneratedName() - start;
+                counts.add(names);
+                compiler.options.ioOptions.rustOptimizerPasses = true;
+                var decisions = new LinkedHashMap<String, Boolean>();
+                compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                    @Override public void nativeDecision(String op, boolean success) { decisions.put(op, success); }
+                    @Override public void before(String p, int i, int n, CircuitTransform t, DBSPCircuit graph) {}
+                    @Override public void after(String p, int i, int n, CircuitTransform t, DBSPCircuit graph, boolean done) {}
+                };
+                var hybrid = new RustCircuitPass(compiler, pass, new OptimizerSnapshots(compiler));
+                start = DBSPVariablePath.nextGeneratedName();
+                var actual = Assert.assertThrows(expected.getClass(), () -> hybrid.apply(circuit));
+                Assert.assertEquals(expected.getMessage(), actual.getMessage());
+                Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+                Assert.assertEquals(Boolean.TRUE, decisions.get("WindowGroups/Reorder"));
+            }
+            if (!scalar) {
+                Assert.assertTrue(counts.get(1) > counts.get(0));
+                Assert.assertTrue(counts.get(0) > counts.get(2));
+            }
+        }
+    }
+
+    @Test
     public void windowScanKeepsAnEarlierConjunctsCastWarning() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();

@@ -1,36 +1,27 @@
 //! Rebuild a filter's conjunction in the order chosen for its temporal windows.
 use super::temporal::{TemporalBound, temporal_filter_order};
-use crate::filters::{conjuncts, is_boolean_wrapper, rewrite_filters, strip_wrap_bool};
+use crate::filters::{conjuncts, is_boolean_wrapper, rewrite_filters};
 use crate::projection_key::{ProjectionKey, row_parameter};
-use crate::{
-    function_calls::contains_now,
-    temporal_comparisons::{AnalyzedConjunct, analyze_conjuncts},
-};
+use crate::{ClockError, ConjunctWindow, TemporalDiagnostic, function_calls::contains_now};
 use feldera_sql_expr::ensure_expression_tree;
 use feldera_sql_ir::{
-    BinaryOp, BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr,
-    Field, InnerKind, NodeId, OperatorKind, OutputPort,
+    BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field,
+    InnerKind, NodeId, OperatorKind, OutputPort,
 };
 use serde::Deserialize;
-use std::{collections::HashMap, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+    rc::Rc,
+};
 
 /// The timestamp classification belongs to each original comparison. An implicit
 /// cast around a rebuilt subtree is an opaque conjunct in subsequent partitions.
 pub fn reorder_temporal_predicate<K: Eq + Hash>(
     edit: &mut CircuitEditor,
-    body: ExpressionId,
-    bounds: &[Option<TemporalBound<K>>],
-    chosen: Option<usize>,
-) -> Result<ExpressionId, Error> {
-    reorder_partitions(edit, body, bounds, chosen, |_, _| Ok(()))
-}
-
-fn reorder_partitions<K: Eq + Hash>(
-    edit: &mut CircuitEditor,
     mut body: ExpressionId,
     bounds: &[Option<TemporalBound<K>>],
     chosen: Option<usize>,
-    mut visit: impl FnMut(&mut CircuitEditor, &[ExpressionId]) -> Result<(), Error>,
 ) -> Result<ExpressionId, Error> {
     let terms = conjuncts(edit, body)?;
     if terms.len() != bounds.len() {
@@ -52,40 +43,57 @@ fn reorder_partitions<K: Eq + Hash>(
         .zip(bounds)
         .filter_map(|(id, bound)| Some((id, &bound.as_ref()?.fingerprint)))
         .collect();
-    for partition in temporal_filter_order(bounds, shared) {
-        let terms = conjuncts(edit, body)?;
-        if terms.len() < 2 {
-            continue;
-        }
-        visit(edit, &terms)?;
-        let mut ordered = terms.clone();
-        ordered.sort_by_key(|term| {
-            let selected = keys
-                .get(term)
-                .is_some_and(|key| partition.timestamps.contains(key));
-            selected != partition.first
-        });
-        if ordered == terms {
-            continue;
-        }
-        let mut nullable = false;
-        for &term in &ordered {
-            nullable |= edit.nullable(edit.expression_type(term)?)?;
-        }
-        let origin = ordered[0].into();
-        let ty = edit.bool_type(origin, nullable)?;
-        let predicate = edit.binary_expressions(origin, ty, BinaryOp::And, &ordered)?;
-        body = if is_boolean_wrapper(edit, body)? {
-            let wrapper = edit.derive_inner(
-                body.into(),
-                [("source", Field::Reference(predicate.into()))],
-            )?;
-            edit.expression(wrapper)?
-        } else {
-            predicate
-        };
+    for group in temporal_filter_order(bounds, shared) {
+        body = partition(edit, body, group.first, |_, term| {
+            Ok::<_, Error>(
+                keys.get(&term)
+                    .is_some_and(|key| group.timestamps.contains(key)),
+            )
+        })?;
     }
     Ok(body)
+}
+
+/// Evaluate every operand once in source order before rebuilding the conjunction.
+fn partition<E: From<Error>>(
+    edit: &mut CircuitEditor,
+    body: ExpressionId,
+    first: bool,
+    mut selected: impl FnMut(&mut CircuitEditor, ExpressionId) -> Result<bool, E>,
+) -> Result<ExpressionId, E> {
+    let terms = conjuncts(edit, body)?;
+    if terms.len() < 2 {
+        return Ok(body);
+    }
+    let mut leading = Vec::new();
+    let mut trailing = Vec::new();
+    for &term in &terms {
+        if selected(edit, term)? == first {
+            leading.push(term);
+        } else {
+            trailing.push(term);
+        }
+    }
+    leading.extend(trailing);
+    if leading == terms {
+        return Ok(body);
+    }
+    let mut nullable = false;
+    for &term in &leading {
+        nullable |= edit.nullable(edit.expression_type(term)?)?;
+    }
+    let origin = leading[0].into();
+    let ty = edit.bool_type(origin, nullable)?;
+    let predicate = edit.binary_expressions(origin, ty, BinaryOp::And, &leading)?;
+    if is_boolean_wrapper(edit, body)? {
+        let wrapper = edit.derive_inner(
+            body.into(),
+            [("source", Field::Reference(predicate.into()))],
+        )?;
+        Ok(edit.expression(wrapper)?)
+    } else {
+        Ok(predicate)
+    }
 }
 
 /// Classification of one filter in original conjunct order. The Java monotonicity
@@ -97,140 +105,167 @@ pub struct TemporalOrder<K = String> {
     classification_names: u64,
 }
 
-/// Classify against the original row. Even when two windows share a source
-/// after map composition, Reorder compares the keys *before* composition.
+pub enum ReorderError {
+    Unsupported,
+    Diagnostic {
+        graph: Box<Circuit>,
+        diagnostic: TemporalDiagnostic,
+        next_name: u64,
+    },
+    InvalidIr(Error),
+}
+
+impl From<Error> for ReorderError {
+    fn from(error: Error) -> Self {
+        Self::InvalidIr(error)
+    }
+}
+
+type Bound = TemporalBound<Rc<ProjectionKey>>;
+
+/// A pass can classify the same term several times. Reuse its result and
+/// advance the name counter on each visit, including visits before a failure.
+struct WindowBounds {
+    parameter: NodeId,
+    cache: HashMap<ExpressionId, (Option<Bound>, u64)>,
+}
+
+impl WindowBounds {
+    fn classify(
+        &mut self,
+        edit: &mut CircuitEditor,
+        term: ExpressionId,
+        next: &mut u64,
+    ) -> Result<Option<Bound>, ReorderError> {
+        if let Some((bound, cost)) = self.cache.get(&term) {
+            *next = next
+                .checked_add(*cost)
+                .ok_or_else(|| Error::new("generated names exhausted"))?;
+            return Ok(bound.clone());
+        }
+        let start = *next;
+        let (row, predicates) = match super::checked_conjunct(edit, self.parameter, term, next) {
+            Ok(Some(parts)) => parts,
+            Ok(None) => return Err(ReorderError::Unsupported),
+            Err(ClockError::InvalidIr(error)) => return Err(error.into()),
+            Err(ClockError::Diagnostic(diagnostic)) => {
+                return Err(ReorderError::Diagnostic {
+                    graph: Box::new(edit.circuit().clone()),
+                    diagnostic,
+                    next_name: *next,
+                });
+            }
+        };
+        let bound = match ConjunctWindow::from_predicates(&predicates) {
+            Some(window) => {
+                let row = row_parameter(edit, row)?;
+                let key =
+                    ProjectionKey::read(edit, window.key, row)?.ok_or(ReorderError::Unsupported)?;
+                Some(TemporalBound {
+                    fingerprint: Rc::new(key),
+                    lower: window.lower,
+                })
+            }
+            None => None,
+        };
+        self.cache.insert(term, (bound.clone(), *next - start));
+        Ok(bound)
+    }
+
+    fn reorder(
+        &mut self,
+        edit: &mut CircuitEditor,
+        body: ExpressionId,
+        chosen: Option<usize>,
+        next: &mut u64,
+    ) -> Result<ExpressionId, ReorderError> {
+        let terms = conjuncts(edit, body)?;
+        let mut ordered = body;
+        let mut shared = None;
+        if let Some(i) = chosen {
+            let term = *terms
+                .get(i)
+                .ok_or_else(|| Error::new("shared conjunct is out of range"))?;
+            shared = self
+                .classify(edit, term, next)?
+                .map(|bound| bound.fingerprint);
+            // Both the caller and the shared-window partition inspect this term.
+            self.classify(edit, term, next)?;
+        }
+        ordered = partition(edit, ordered, false, |edit, term| {
+            Ok::<_, ReorderError>(
+                self.classify(edit, term, next)?
+                    .is_some_and(|bound| Some(&bound.fingerprint) != shared.as_ref()),
+            )
+        })?;
+        if chosen.is_some() {
+            ordered = partition(edit, ordered, true, |edit, term| {
+                Ok::<_, ReorderError>(
+                    self.classify(edit, term, next)?
+                        .is_some_and(|bound| Some(&bound.fingerprint) == shared.as_ref()),
+                )
+            })?;
+        }
+        let mut upper_only = HashSet::new();
+        let mut lower = HashSet::new();
+        for term in terms {
+            if let Some(bound) = self.classify(edit, term, next)? {
+                // The reference visitor reads the fingerprint and the direction separately.
+                self.classify(edit, term, next)?;
+                if bound.lower {
+                    lower.insert(bound.fingerprint);
+                } else {
+                    upper_only.insert(bound.fingerprint);
+                }
+            }
+        }
+        upper_only.retain(|key| Some(key) != shared.as_ref() && !lower.contains(key));
+        if !upper_only.is_empty() {
+            ordered = partition(edit, ordered, false, |edit, term| {
+                Ok::<_, ReorderError>(
+                    self.classify(edit, term, next)?
+                        .is_some_and(|bound| upper_only.contains(&bound.fingerprint)),
+                )
+            })?;
+        }
+        Ok(ordered)
+    }
+}
+
 pub fn reorder_shared_windows(
     circuit: Circuit,
     chosen: &HashMap<u64, usize>,
     next: &mut u64,
-) -> Result<Option<Circuit>, Error> {
-    let mut edit = CircuitEditor::new(circuit.clone());
-    let mut orders = HashMap::new();
-    for id in circuit.operator_order(BodyOrder::Postorder)? {
-        let filter = edit.node(id)?;
-        if filter.operator_kind() != Some(OperatorKind::Filter) {
-            continue;
-        }
-        let Some(function) = filter.field("function").and_then(Field::node_id) else {
-            continue;
+) -> Result<Circuit, ReorderError> {
+    let (result, _) = rewrite_filters::<ReorderError>(circuit, next, |edit, parent, id, next, _| {
+        let Some(function) = edit.node(id)?.field("function").and_then(Field::node_id) else {
+            return Ok(None);
         };
         let closure = edit.node(function)?;
-        if !matches!(
-            closure.inner_kind(),
-            Some(InnerKind::Expression(Expr::Closure))
-        ) || closure.edges("parameters")?.len() != 1
+        if !matches!(closure.inner_kind(), Some(InnerKind::Expression(Expr::Closure)))
+            || closure.edges("parameters")?.len() != 1
+            || !contains_now(edit.circuit(), &[function])?
         {
-            continue;
+            return Ok(None);
         }
-        if !contains_now(edit.circuit(), &[function])? {
-            continue;
-        }
-        let tree = ensure_expression_tree(&mut edit, function)?;
+        let NodeId::Outer(number) = id else {
+            return Err(Error::new("expected a filter operator").into());
+        };
+        let tree = ensure_expression_tree(edit, function)?;
         let condition = edit.node(tree)?;
         let parameter = condition.edges("parameters")?[0];
         let body = edit.expression(condition.edge("body")?)?;
-        let Some(terms) = analyze_conjuncts(&mut edit, parameter, body)? else {
+        let mut bounds = WindowBounds {
+            parameter,
+            cache: HashMap::new(),
+        };
+        let ordered = bounds.reorder(edit, body, chosen.get(&number).copied(), next)?;
+        if ordered == body {
             return Ok(None);
-        };
-        let has_names = terms.iter().any(|term| term.names != 0);
-        if !has_names && (terms.len() < 2 || terms.iter().all(|term| term.window.is_none())) {
-            continue;
         }
-        let NodeId::Outer(number) = id else {
-            return Err(Error::new("expected a filter operator"));
-        };
-        let chosen = chosen.get(&number).copied();
-        let mut bounds = Vec::with_capacity(terms.len());
-        let row = row_parameter(&edit, parameter)?;
-        for term in &terms {
-            bounds.push(match &term.window {
-                Some(window) => {
-                    let Some(fingerprint) = ProjectionKey::read(&edit, window.key, row)? else {
-                        return Ok(None);
-                    };
-                    Some(TemporalBound {
-                        fingerprint,
-                        lower: window.lower,
-                    })
-                }
-                None => None,
-            });
-        }
-        let Some(classification_names) =
-            classification_names(&mut edit, parameter, body, &terms, &bounds, chosen)?
-        else {
-            return Ok(None);
-        };
-        orders.insert(
-            number,
-            TemporalOrder {
-                bounds,
-                chosen,
-                classification_names,
-            },
-        );
-    }
-    drop(edit);
-    if orders.is_empty() {
-        return Ok(Some(circuit));
-    }
-    apply_orders(circuit, orders, next).map(Some)
-}
-
-/// Account for the repeated classifications in Reorder.reorderWithJava.
-fn classification_names(
-    edit: &mut CircuitEditor,
-    parameter: NodeId,
-    body: ExpressionId,
-    terms: &[AnalyzedConjunct],
-    bounds: &[Option<TemporalBound<ProjectionKey>>],
-    chosen: Option<usize>,
-) -> Result<Option<u64>, Error> {
-    if terms.iter().all(|term| term.names == 0) {
-        return Ok(Some(0));
-    }
-    let mut classification_names = 0;
-    // The shared fingerprint is read twice. Checking for a lower bound
-    // visits each original conjunct once, and each window a second time.
-    if let Some(index) = chosen {
-        let term = terms
-            .get(index)
-            .ok_or_else(|| Error::new("shared conjunct is out of range"))?;
-        classification_names += 2 * term.names;
-    }
-    let mut costs = HashMap::new();
-    for term in terms {
-        costs.insert(term.expression, term.names);
-        classification_names += if term.window.is_some() {
-            2 * term.names
-        } else {
-            term.names
-        };
-    }
-    // Stable partitioning classifies its current operands. A nullable
-    // cast around a rebuilt AND can make a later partition see a new term.
-    let mut resolved = true;
-    reorder_partitions(edit, body, bounds, chosen, |edit, operands| {
-        for operand in operands {
-            if let Some(cost) = costs.get(operand) {
-                classification_names += cost;
-            } else {
-                let term = strip_wrap_bool(edit, *operand)?;
-                let mut names = 0;
-                if crate::infer_temporal_predicates(edit, parameter, term, &mut names)?.is_none() {
-                    resolved = false;
-                    break;
-                }
-                costs.insert(*operand, names);
-                classification_names += names;
-            }
-        }
-        Ok(())
+        Ok(Some(replace_filter(edit, parent, id, parameter, ordered)?))
     })?;
-    if !resolved {
-        return Ok(None);
-    }
-    Ok(Some(classification_names))
+    Ok(result)
 }
 
 pub fn reorder_temporal_filters(
@@ -260,40 +295,51 @@ fn apply_orders<K: Eq + Hash>(
             return Ok(None);
         }
         let filter = edit.node(id)?;
-        let output_type = filter.edge("outputType")?;
         let function = filter.edge("function")?;
-        let input = filter
-            .inputs()
-            .next()
-            .ok_or_else(|| Error::new("temporal filter requires an input"))?;
         let tree = ensure_expression_tree(edit, function)?;
         let body = edit.expression(edit.node(tree)?.edge("body")?)?;
         let ordered = reorder_temporal_predicate(edit, body, &order.bounds, order.chosen)?;
         if ordered == body {
             return Ok(None);
         }
-        let parameters = edit.node(tree)?.edges("parameters")?;
-        let closure = edit.closure_with_parameters(ordered, &parameters)?;
-        let replacement = edit.append_operator(
-            parent,
-            id,
-            OperatorKind::Filter,
-            &[input],
-            [
-                ("function", Field::Reference(closure.into())),
-                ("outputType", Field::Reference(output_type)),
-            ],
-        )?;
-        Ok(Some((
-            replacement,
-            OutputPort {
-                operator: replacement,
-                number: 0,
-            },
-        )))
+        let parameter = edit.node(tree)?.edges("parameters")?[0];
+        Ok(Some(replace_filter(edit, parent, id, parameter, ordered)?))
     })?;
     if !orders.is_empty() {
         return Err(Error::new("temporal order refers to a missing filter"));
     }
     Ok(result)
+}
+
+fn replace_filter(
+    edit: &mut CircuitEditor,
+    parent: NodeId,
+    filter: NodeId,
+    parameter: NodeId,
+    predicate: ExpressionId,
+) -> Result<(NodeId, OutputPort), Error> {
+    let node = edit.node(filter)?;
+    let output_type = node.edge("outputType")?;
+    let input = node
+        .inputs()
+        .next()
+        .ok_or_else(|| Error::new("temporal filter requires an input"))?;
+    let closure = edit.closure_with_parameters(predicate, &[parameter])?;
+    let replacement = edit.append_operator(
+        parent,
+        filter,
+        OperatorKind::Filter,
+        &[input],
+        [
+            ("function", Field::Reference(closure.into())),
+            ("outputType", Field::Reference(output_type)),
+        ],
+    )?;
+    Ok((
+        replacement,
+        OutputPort {
+            operator: replacement,
+            number: 0,
+        },
+    ))
 }

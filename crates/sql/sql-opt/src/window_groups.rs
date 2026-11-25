@@ -11,7 +11,7 @@ use feldera_sql_ir::{
 pub use implement::{implement_window_groups, WindowProjection};
 pub use indexed::{indexed_window_groups, IndexedWindows};
 pub use reorder::{
-    reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate, TemporalOrder,
+    reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate, TemporalOrder, ReorderError,
 };
 pub use scan::{scan_temporal_windows, TemporalScan};
 pub use source::{compose_timestamp, temporal_filter_sources, TemporalFilterSource};
@@ -19,6 +19,19 @@ pub use temporal::{shared_temporal_inputs, TemporalBound, TemporalCandidate};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::hash::Hash;
+
+/// Classify the copied conjunct as a unary filter, including the row projection.
+fn checked_conjunct(
+    edit: &mut feldera_sql_ir::CircuitEditor,
+    parameter: NodeId,
+    term: feldera_sql_ir::ExpressionId,
+    next: &mut u64,
+) -> Result<Option<(NodeId, Vec<crate::TemporalPredicate>)>, crate::ClockError> {
+    let copy = feldera_sql_expr::copy_expression(edit, term.into())?;
+    let predicate = edit.wrap_bool_if_needed(edit.expression(copy)?)?;
+    let closure = edit.closure_with_parameters(predicate, &[parameter])?;
+    crate::temporal_filters::checked_closure(edit, closure, next)
+}
 
 /// The left input must index a stream by a key and a tuple of projected values.
 pub fn window_candidates(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {

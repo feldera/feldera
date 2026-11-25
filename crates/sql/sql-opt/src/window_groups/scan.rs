@@ -4,9 +4,9 @@ use super::source::{compose_timestamp, filter_sources, TemporalFilterSource};
 use super::temporal::{shared_temporal_inputs, TemporalCandidate};
 use crate::filters::conjuncts;
 use crate::projection_composition::CompositionError;
-use crate::temporal_filters::checked_closure;
+use super::checked_conjunct;
 use crate::{ClockError, ConjunctWindow, TemporalDiagnostic};
-use feldera_sql_expr::{copy_expression, ensure_expression_tree, SimplifyWarning};
+use feldera_sql_expr::{ensure_expression_tree, SimplifyWarning};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
 
 pub enum TemporalScan {
@@ -95,10 +95,7 @@ fn source_candidates(
     for (index, conjunct) in conjuncts(edit, body)?.into_iter().enumerate() {
         // Each classification gets a fresh unary filter. Compose its timestamp
         // before inspecting the next conjunct, since composition can emit a warning.
-        let copy = copy_expression(edit, conjunct.into())?;
-        let predicate = edit.wrap_bool_if_needed(edit.expression(copy)?)?;
-        let closure = edit.closure_with_parameters(predicate, &[parameter])?;
-        let Some((row, predicates)) = checked_closure(edit, closure, next)? else {
+        let Some((row, predicates)) = checked_conjunct(edit, parameter, conjunct, next)? else {
             return Ok(None);
         };
         let Some(window) = ConjunctWindow::from_predicates(&predicates) else { continue };

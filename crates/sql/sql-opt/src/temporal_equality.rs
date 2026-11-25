@@ -76,7 +76,7 @@ impl Transformation for ClockEquality {
 }
 
 pub fn desugar_now_equality(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
-    Ok(rewrite_filters(circuit, next, |edit, body, id, _, _| {
+    Ok(rewrite_filters::<Error>(circuit, next, |edit, body, id, _, _| {
         let node = edit.node(id)?;
         let closure = node.edge("function")?;
         if !contains_now(edit.circuit(), &[closure])? {
