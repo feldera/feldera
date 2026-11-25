@@ -1,0 +1,86 @@
+{
+  "source_commit": "ce202e4c1a26858d56a85b49e8cc0a5b69efeaaf",
+  "source_manifest_sha256": "56a0cb4e5c29cd0f982b4a3b58304c65f22fdaf615aabfd390de4548a4a0be60",
+  "changes_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "archive": ".bench-results/p1-p5/p3-cold-compilation/2026-25-11-16-51-ce202",
+  "profile": "Cold SQL-to-classic artifact emission. Each invocation starts a fresh compiler process pinned to CPU 15. Verification ran concurrently on other CPUs of the same ARM64 VM.",
+  "matched_pairs": 69,
+  "warmup_pairs_per_workload": 2,
+  "measured_pairs_per_workload": 21,
+  "identities": {
+    "inputs": {
+      "array-subquery.sql": "42e09a2b580b083bb2653efdb4e32f8b79c1d1d6ca13796cb13e0eedaa93b33d",
+      "nexmark-suite.sql": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+      "outer-join.sql": "1a475a4c0d4e68f13d124dc2a7c30100baecf86a640ac8ac787ca0bb12d0435d"
+    },
+    "compiler": "91dd1f2ba6a2d279c27e8d4f68dd03a4a069e944d78b0513f7f9bc7611e72f35",
+    "library": "265c4cc3dac423a319e79d9d312c4cd36bbda6ad19db7a180c41bda8fd0515ba",
+    "classpath": {
+      "/stage/p3-clock-filter-diagnostics/maven/sql-compiler.jar": "e758a3d49ac4f5d2674e11402ceec08af51dd770462fa14ad9e0c3ee22929b94"
+    },
+    "affinity": [
+      15
+    ],
+    "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+    "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n"
+  },
+  "sha256": {
+    "measurements/pairs.jsonl": "60a44ceb662350dc59f429ecdeec3a43323f348a792b833c326082e1b1bd6c98",
+    "measurements/environment.json": "693d34c738e257019aff72193d5a7e95d18d8edce9727c893a5b77e0525a96d5",
+    "measurements/results.json": "d517c7ad157f6f2a2cfd08ff505e3b2fd8ea60e98c8fb66d826501896db7f2f8",
+    "env.txt": "347140a8009aeac93a97f929878fc6973eb40ebf77d63252dda57bba90a3cf80"
+  },
+  "workloads": {
+    "array-subquery.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.941386609,
+        "empirical_p95_seconds": 2.105986615
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 2.330351381,
+        "empirical_p95_seconds": 2.48093695
+      },
+      "p95_ratio": 0.8488674470344763,
+      "mean_ratio_paired_95pct_interval": [
+        0.8146599752502166,
+        0.8581441861299762
+      ]
+    },
+    "nexmark-suite.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 6.155246926,
+        "empirical_p95_seconds": 6.508626435
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 5.487192885,
+        "empirical_p95_seconds": 5.919447517
+      },
+      "p95_ratio": 1.099532754755903,
+      "mean_ratio_paired_95pct_interval": [
+        1.0836559580014749,
+        1.1253678219368792
+      ]
+    },
+    "outer-join.sql": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 1.805500189,
+        "empirical_p95_seconds": 2.013141263
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 2.21823779,
+        "empirical_p95_seconds": 2.454628533
+      },
+      "p95_ratio": 0.8201409035767938,
+      "mean_ratio_paired_95pct_interval": [
+        0.7988767073355829,
+        0.8293583713079906
+      ]
+    }
+  }
+}

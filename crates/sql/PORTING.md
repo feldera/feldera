@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | Build `46cbf6890` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. On `de6b20ee5`, 72 selected compilations matched Java and all three cold workloads met the 1.2× p95 ceiling. On `1200f1a96`, the compiler also accepts signed projection widths from circuit JSON. All 24 selected compilations matched and COUNT and LATENESS checkpoints restored in both directions. [Full replay and runtime](evidence/p3-indexed-waterline-propagation.json) · [Unary projections](evidence/p3-unary-output-operators.json) · [Signed widths](evidence/p3-signed-projection-width.json) · [Cold compilation](evidence/p3-unary-output-operators-cold.json) | Finish the remaining Java optimizer paths, including the general temporal-filter merge callback. Repeat the exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
+| P3 | Build `46cbf6890` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. All 8,256 executable classic cases passed. Build `68ffb8822` restored COUNT and LATENESS checkpoints in both directions. Build `ce202e4c1` matched all 24 selected compilations and met the 1.2× cold p95 ceiling on all three measured workloads. [Full replay and runtime](evidence/p3-indexed-waterline-propagation.json) · [Checkpoint restores](evidence/p3-temporal-merge-operands.json) · [Selected replay](evidence/p3-clock-filter-diagnostics.json) · [Cold compilation](evidence/p3-clock-filter-diagnostics-cold.json) | Finish the remaining Java optimizer paths for window sharing and expression analysis, repeat the exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -461,6 +461,14 @@ The result in `/campaign/results/decoder.json` records whether the worker
 reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
+
+Rust compares the live operands when deciding whether to merge temporal filters.
+On `68ffb8822`, both engines matched Java at all 11,965 observations across
+24 selected compilations. On `ce202e4c1`, a failed window predicate now
+preserves the diagnostic and the names consumed by earlier windows. All 324
+nightly optimizer tests passed. Cold hybrid p95 measured 0.849× Java on the
+array subquery, 1.100× on Nexmark, and 0.820× on the outer join.
+[Merge and restores](evidence/p3-temporal-merge-operands.json) · [Merge timings](evidence/p3-temporal-merge-operands-cold.json) · [Window diagnostic](evidence/p3-clock-filter-diagnostics.json) · [Window timings](evidence/p3-clock-filter-diagnostics-cold.json)
 
 On `de6b20ee5`, Rust fuses a map or indexed map with its reader, composes
 UNNEST output shuffles and folds a map after deindex. Alongside the 24 selected

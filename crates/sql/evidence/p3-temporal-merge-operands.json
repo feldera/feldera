@@ -1,0 +1,151 @@
+{
+  "scope": "Temporal-filter merge decisions, scoped live key operands, and scalar ZSet parameter diagnostics.",
+  "source_base": "8c180ce9f77867495297bfe88da63ab784af3042",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/temporal.rs": "2c4472f3fe7922fa799aa5ce14fe1e05e7742debe8e805a3ffaf1c6b382f481f",
+    "crates/sql/sql-opt/src/index_key_equivalence.rs": "896fa83492d5778ae39f953c244d4ca5f29b38c5f8ab8221abf184c508a6da4b",
+    "crates/sql/sql-opt/src/lib.rs": "586fe86292d432cb5bef854314d4e4873649de96c963b67ece3d1494c61a070b",
+    "crates/sql/sql-opt/src/monotonicity/row_projection.rs": "105c20658186e59a918de6dc77cf3eecaad093c00110856d8bd7687f9bf2d9da",
+    "crates/sql/sql-opt/src/temporal_comparisons.rs": "2ddb65be144ae09153a25467d5fb638ff984cbb4acbb0390220baa4339e2a0f3",
+    "crates/sql/sql-opt/src/temporal_filters.rs": "171c6997fe850e754e542d7e0325a694abf1f90e490eaed7b04c9bda79c24dd4",
+    "crates/sql/sql-opt/src/temporal_groups.rs": "a1c12987a07bf73ead691a19fd784921291bc783825b3e04f4599a08cc6180a0",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "490ea7bbe12761932e282a0640a69cd25c6dc11eee241188eeb10498abaa23af",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/monotone/MonotoneTransferFunctions.java": "f0fd804244781e99d02643f4359d5780f9bca0ca408e9959aa3cae1fc098b5ad",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/MergeFilters.java": "2434458a5ca607dbfbb1da079044358983f8c04dad2dcc03fcea5e93a201ed6a",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/backend/LiveIndexOperandsTests.java": "6b5323df96c25a20df27361e840c8223dcecac0c14b64aac43855ce127834b7c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/CorpusDeterminism.java": "73c53815be6033fe448950c0f1c0a992f6e7e353dd413fa1a3728b57cee352a0",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/PassCorpusOracle.java": "c495bfd91a7904bdb76a83f586781ba61c631667a79405eb48f917127ed2ce28",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "3ddd9dc7e829f8dce1932f2535793cac2c497c066eed6adab7c01ce8914d481c"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "d7892946e9648b79e6acbdb809d1509f9c3eab95b04f17c1472433b8f956c049",
+    "bin/sql-difftest": "2579e699733d24ccd047256f201deca09a138691a4096cb8d8f640f32eca6db1",
+    "maven/tests.jar": "73115610248350ff0c4c5865e3c20bcd8565f45a5daf98f8b5f4d6859dd9953b",
+    "maven/sql-compiler.jar": "c37cabaf291e10645865e702de59468e8dd43b331f3680b6b0ef42cd18d9be4e",
+    "bin/sql2dbsp": "16df407fc100504fa86cfbc3839a3c93b4e6283278e84935109f81909d3e81b5"
+  },
+  "negative_control": {
+    "library_sha256": "cad7329b321d086aeca70190c170e94996bde62fe69238d1cd50f568dfd75e4c",
+    "failed_tests": [
+      "temporalMergeChecksScalarInputBeforeEvaluatingClockBounds"
+    ],
+    "java_compiler_sha256": "367d3a222349aeefd507c9793b4d768db221010a1300888e747b5bde2f6db9b0"
+  },
+  "rust_tests": 231,
+  "junit_tests": 306,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "dcbddea9c7e048f5f5fd0dca74244c406e54759c99675e1ced96bbd29345ae2f"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "8d353822f41abf439845c8a00d64e8eee5cf8ea1ddde098df5a2a47b755e457b"
+    }
+  },
+  "source_commit": "68ffb88225bea02a91400543e0efa33fdd3ef6ff",
+  "nightly_optimizer_junit": 323,
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21360-1740-7571-8f85-56a5acbd1b9f",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21360-175a-7cb3-8b47-9e388b6b1960",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "f85813c854560d26580e1c1f54559385710f6fdf0d0fb531b38029177761e625"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21360-b9fc-7641-a49e-bd8347f96c13",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21360-ba17-75e3-bde1-5e6d32fef8a0",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "8ce303ba6e2b4d344b42e506817525b113e04165b985cd55a57cb0e0c1b86c8b"
+    }
+  }
+}

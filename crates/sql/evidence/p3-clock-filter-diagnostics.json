@@ -1,0 +1,48 @@
+{
+  "scope": "Rust reports window-lowering errors at the failing predicate after earlier windows consume their generated names.",
+  "source_base": "68ffb88225bea02a91400543e0efa33fdd3ef6ff",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/temporal.rs": "30080e13f862c6223a4da3bdcd4f1ae4eea7c44ce6c3dbe9ca8df23eed66115e",
+    "crates/sql/sql-opt/src/lib.rs": "7b0b93d2c787d8ada8f72b3b6ef885099442d9e63b8c762248d1791158839dfa",
+    "crates/sql/sql-opt/src/temporal_comparisons.rs": "46b22d5961f1abc87bbc11837a359a1292e55af04b1548a0e89769cfba53ee79",
+    "crates/sql/sql-opt/src/temporal_filter_lowering.rs": "c24c43836533d85c1ab9fecc1af5559bc37068736b025498c0a9ee438fd08e66",
+    "crates/sql/sql-opt/src/temporal_filters.rs": "d8f5c2bc3a56a9c269b299af8bca680255db8720b515f57bd61909bcc14017ae",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "c58933c9f6d568d0c1dbd1ddd8fd3f9f320d20316fe29d62c646d098f3055451",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/TemporalKeyTests.java": "fe969c50c70426115aa81336fb7c32708293c9b2645595238620272876047a32"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "265c4cc3dac423a319e79d9d312c4cd36bbda6ad19db7a180c41bda8fd0515ba",
+    "bin/sql-difftest": "4062ba6d707deb5f01acf54ba383104dd651b3a703d6bf85d89535efd93aacfd",
+    "maven/tests.jar": "6cc34be1b1d863bc65931d32ea0cf347ce432da895ea35f90d181bb8adcb05e1",
+    "maven/sql-compiler.jar": "e758a3d49ac4f5d2674e11402ceec08af51dd770462fa14ad9e0c3ee22929b94",
+    "bin/sql2dbsp": "91dd1f2ba6a2d279c27e8d4f68dd03a4a069e944d78b0513f7f9bc7611e72f35"
+  },
+  "negative_control": {
+    "library_sha256": "d7892946e9648b79e6acbdb809d1509f9c3eab95b04f17c1472433b8f956c049",
+    "failed_tests": [
+      "clockFilterLoweringReportsTheFailingConjunctAfterEarlierWindows"
+    ],
+    "java_compiler_sha256": "c37cabaf291e10645865e702de59468e8dd43b331f3680b6b0ef42cd18d9be4e"
+  },
+  "rust_tests": 231,
+  "junit_tests": 307,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "1a03e2c033b3f60d6c57c517c73abb335cb1e7adfbcd6dae8939cde2816f771c"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "a5daaf295dcc5c390b9c35fa8e7536cad3f30c1e855ca675a7f1c93c276dcd73"
+    }
+  },
+  "source_commit": "ce202e4c1a26858d56a85b49e8cc0a5b69efeaaf",
+  "nightly_optimizer_junit": 324
+}
