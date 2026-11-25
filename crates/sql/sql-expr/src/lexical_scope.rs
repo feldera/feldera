@@ -62,7 +62,7 @@ pub fn inspect_references(
     root: NodeId,
     allow_free: bool,
 ) -> Result<ReferenceInspection<'_>, Error> {
-    resolve_variables(circuit, root, Vec::new(), allow_free)
+    resolve_variables(circuit, [root], Vec::new(), allow_free)
 }
 
 impl Resolution<'_> {
@@ -101,13 +101,29 @@ pub fn resolve_body(
             .ok_or_else(|| Error::new("missing closure parameter"))?;
         bindings.push((name(parameter, "name")?, id));
     }
-    Ok(resolve_variables(circuit, body, bindings, false)?.resolution())
+    Ok(resolve_variables(circuit, [body], bindings, false)?.resolution())
+}
+
+/// A row-map composition reduces `|args| after(&before.body)`. The callee is
+/// visited first and the argument second, both inside the producer's parameter scope.
+pub fn inspect_composition(
+    circuit: &Circuit,
+    before: NodeId,
+    after: NodeId,
+) -> Result<Option<BindingDiagnostic<'_>>, Error> {
+    let before = circuit.node(before).ok_or_else(|| Error::new("missing producer closure"))?;
+    let mut parameters = Vec::new();
+    for id in before.edges("parameters")? {
+        let parameter = circuit.node(id).expect("validated parameter");
+        parameters.push((name(parameter, "name")?, id));
+    }
+    Ok(resolve_variables(circuit, [after, before.edge("body")?], parameters, true)?.diagnostic)
 }
 
 /// An unbound name is a normal outcome when testing a partially projected closure.
 fn resolve_variables<'a>(
     circuit: &'a Circuit,
-    closure: NodeId,
+    roots: impl IntoIterator<Item = NodeId, IntoIter: DoubleEndedIterator>,
     mut bindings: Vec<(&'a str, NodeId)>,
     allow_free: bool,
 ) -> Result<ReferenceInspection<'a>, Error> {
@@ -119,7 +135,7 @@ fn resolve_variables<'a>(
     let mut completed = HashSet::new();
     let mut scope = 0;
     let mut next_scope = 1;
-    let mut pending = vec![Visit::Enter(closure)];
+    let mut pending: Vec<_> = roots.into_iter().rev().map(Visit::Enter).collect();
     while let Some(visit) = pending.pop() {
         let id = match visit {
             Visit::Enter(id) => id,

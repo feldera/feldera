@@ -36,6 +36,26 @@ impl<const N: usize> Fragment<[OutputPort; N]> {
     }
 }
 
+impl Fragment<Vec<OutputPort>> {
+    /// Keep port numbers and repeated inputs in the order expected by the live decoder.
+    pub(super) fn with_ports(
+        site: ExpressionSite,
+        numbers: Vec<usize>,
+        kind: OperatorKind,
+        bytes: &[u8],
+    ) -> Result<(Self, Vec<NodeId>), Box<dyn std::error::Error>> {
+        let inputs = numbers
+            .into_iter()
+            .enumerate()
+            .map(|(index, number)| OutputPort {
+                operator: NodeId::Outer(index as u64 + 1),
+                number,
+            })
+            .collect();
+        Self::with_inputs(site, inputs, std::iter::repeat(kind), bytes)
+    }
+}
+
 impl<I: AsRef<[OutputPort]>> Fragment<I> {
     pub(super) fn with_inputs(
         site: ExpressionSite,

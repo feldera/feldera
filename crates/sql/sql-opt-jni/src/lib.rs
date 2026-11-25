@@ -4,6 +4,7 @@ mod fragment;
 mod split_map;
 mod narrowed_unary;
 mod push_projection;
+mod filtered_join_projection;
 mod narrowed_join;
 mod topk_input;
 mod trim_output;
@@ -514,6 +515,14 @@ fn waterline_inspection(inspection: feldera_sql_opt::WaterlineInspection) -> Val
         WaterlineInspection::Bound { references, repeated } => {
             json!({"bindings": binding_ids(references), "repeated": repeated.into_iter().map(inner_number).collect::<Vec<_>>()})
         }
+    }
+}
+
+fn composition_error(error: feldera_sql_opt::CompositionError) -> Result<Value, Box<dyn std::error::Error>> {
+    match error {
+        feldera_sql_opt::CompositionError::BindingConflict { variable, previous, current } =>
+            Ok(json!({"binding_error": binding_conflict(variable, previous, current)})),
+        feldera_sql_opt::CompositionError::Ir(error) => Err(error.into()),
     }
 }
 
@@ -1227,12 +1236,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return lowered_function_reply(&arena, &edit, function, next, warnings);
         }
         ("ComposeProjection" | "TryComposeProjection", [before, after]) => {
-            let Some(closure) = feldera_sql_opt::compose_projection(
-                &mut edit, *before, *after, pass == "TryComposeProjection", &mut warnings,
-            )? else {
-                return Ok(Value::Null);
-            };
-            closure
+            match feldera_sql_opt::compose_projection(&mut edit, *before, *after, pass == "TryComposeProjection", &mut warnings) {
+                Ok(Some(closure)) => closure,
+                Ok(None) => return Ok(Value::Null),
+                Err(error) => return composition_error(error),
+            }
         }
         ("ComposeIndexedJoinOutput", [before, after]) => {
             let before = edit.expression(*before)?;
@@ -1445,6 +1453,7 @@ fn transform(
     let live = pass.strip_prefix("Live/");
     let pass = live.unwrap_or(pass);
     match pass {
+        "OptimizeProjections/FilteredJoin" => return filtered_join_projection::operators(input, state, next),
         "OptimizeProjections/Producer" => {
             let classes = serde_json::from_slice::<Vec<&str>>(input)?;
             let rules = classes.into_iter().find_map(feldera_sql_ir::OperatorKind::from_wire)

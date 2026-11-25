@@ -439,6 +439,39 @@ public final class RustCircuitPass implements CircuitTransform {
         return fanout == 1 ? rules.row : rules.sharedRow;
     }
 
+    public static DBSPSimpleOperator projectFilteredJoin(DBSPCompiler compiler, DBSPSimpleOperator producer,
+                                                          DBSPMapOperator reader) {
+        String pass = "OptimizeProjections/FilteredJoin";
+        var site = expressionSite(producer.getRelNode());
+        site.set("ports", MAPPER.valueToTree(producer.inputs.stream().map(p -> p.outputNumber).toList()));
+        DBSPClosureExpression filter, map;
+        if (producer instanceof DBSPJoinFilterMapOperator binary) {
+            site.put("balanced", binary.balanced);
+            filter = binary.filter;
+            map = binary.map;
+        } else {
+            var star = producer.to(DBSPStarJoinFilterMapOperator.class);
+            filter = star.filter;
+            map = star.map;
+        }
+        site.put("has_filter", filter != null);
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site),
+                    reader.outputType, producer.getFunction(), reader.getClosureFunction(), filter, map);
+            if (reply.value.has("binding_error"))
+                checkBindingErrors(reply.writer, reply.value.required("binding_error"));
+            var operators = decodeOperatorFragment(reply, op -> producer.getRelNode(),
+                    producer.inputs.stream().map(OutputPort::node).toArray(DBSPOperator[]::new));
+            Utilities.enforce(operators.size() == 1);
+            reportWarnings(compiler, reply.value.required("warnings"));
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return operators.getFirst().copyAnnotations(producer);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode filtered join projection", error);
+        }
+    }
+
     public static List<DBSPSimpleOperator> pushProjection(DBSPCompiler compiler,
             DBSPUnaryOperator reader, DBSPSimpleOperator producer) {
         String pass = "OptimizeProjections/PushThrough";
@@ -2044,6 +2077,8 @@ public final class RustCircuitPass implements CircuitTransform {
         var reply = invokeLowering(compiler, pass, input, second);
         if (reply.value.isNull())
             return null;
+        if (reply.value.has("binding_error"))
+            checkBindingErrors(reply.writer, reply.value.required("binding_error"));
         if (reply.value.has("projection_error"))
             throw projectionError(reply.writer, reply.value.required("projection_error"),
                     Objects.requireNonNull(second).to(DBSPExpression.class));

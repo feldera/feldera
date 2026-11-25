@@ -648,39 +648,28 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
 
         var rule = this.producerRule(source.node(), false, inputFanout);
         int size = operator.outputType().getToplevelFieldCount();
-        if (rule == ProjectionRule.PROJECT_FILTERED_JOIN) {
+        if (rule == ProjectionRule.PROJECT_FILTERED_JOIN || rule == ProjectionRule.PROJECT_FILTERED_STAR) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
             if (this.isProjection(operator, false) || !this.onlyProjections) {
-                // map(joinFilter) = joinFilter
-                DBSPJoinFilterMapOperator jfm = source.node().to(DBSPJoinFilterMapOperator.class);
-                DBSPClosureExpression newMap = operator.getClosureFunction();
-                if (jfm.map != null) {
-                    newMap = this.compose(jfm.map.to(DBSPClosureExpression.class), newMap);
+                DBSPSimpleOperator result;
+                if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                    result = RustCircuitPass.projectFilteredJoin(this.compiler, source.simpleNode(), operator);
+                } else {
+                    var reader = operator.getClosureFunction();
+                    if (source.node() instanceof DBSPJoinFilterMapOperator join) {
+                        var map = join.map == null ? reader : this.compose(join.map, reader);
+                        result = new DBSPJoinFilterMapOperator(join.getRelNode(), operator.getOutputZSetType(),
+                                join.getFunction(), join.filter, map, join.left(), join.right(), join.balanced);
+                    } else {
+                        var join = source.node().to(DBSPStarJoinFilterMapOperator.class);
+                        var map = join.map == null ? reader : this.compose(join.map, reader);
+                        result = new DBSPStarJoinFilterMapOperator(join.getRelNode(), operator.getOutputZSetType(),
+                                join.getClosureFunction(), join.filter, map, join.inputs);
+                    }
+                    result.copyAnnotations(source.node());
                 }
-                DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(
-                        jfm.getRelNode(), operator.getOutputZSetType(), jfm.getFunction(),
-                        jfm.filter, newMap, jfm.left(), jfm.right(), jfm.balanced)
-                        .copyAnnotations(operator).copyAnnotations(source.node()).to(DBSPSimpleOperator.class);
-                this.map(operator, result);
-                return;
-            }
-        } else if (rule == ProjectionRule.PROJECT_FILTERED_STAR) {
-            Logger.INSTANCE.belowLevel(this, 2)
-                    .appendSupplier(() -> source.simpleNode().operation + " -> Map")
-                    .newline();
-            if (this.isProjection(operator, false) || !this.onlyProjections) {
-                // map(joinFilter) = joinFilter
-                DBSPStarJoinFilterMapOperator jfm = source.node().to(DBSPStarJoinFilterMapOperator.class);
-                DBSPClosureExpression newMap = operator.getClosureFunction();
-                if (jfm.map != null) {
-                    newMap = this.compose(jfm.map.to(DBSPClosureExpression.class), newMap);
-                }
-                DBSPSimpleOperator result = new DBSPStarJoinFilterMapOperator(
-                        jfm.getRelNode(), operator.getOutputZSetType(), jfm.getClosureFunction(),
-                        jfm.filter, newMap, jfm.inputs)
-                        .copyAnnotations(operator).copyAnnotations(source.node()).to(DBSPSimpleOperator.class);
                 this.map(operator, result);
                 return;
             }

@@ -8,10 +8,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
@@ -47,6 +49,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -388,6 +391,100 @@ public class ProjectionCompositionTests {
                 expected = error.getMessage();
             }
         }
+    }
+
+    @Test public void compositionDetectsASharedReadBoundToDifferentParameters() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var row = b.tuple(b.lit(1)).getType().ref().var();
+        var shared = row.deref().field(0);
+        var before = b.tuple(shared).closure(row);
+        var after = b.tuple(shared).closure(row);
+        var direct = Assert.assertThrows(InternalCompilerError.class,
+                () -> after.applyAfter(compiler, before, Maybe.YES));
+        Assert.assertTrue(direct.getMessage().contains("Changing declaration"));
+        var hybrid = Assert.assertThrows(InternalCompilerError.class,
+                () -> RustCircuitPass.composeProjection(compiler, before, after));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+    }
+
+    @Test public void filteredJoinsPreservePredicatesAndComposeOutputMaps() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var port = source.getOutput(0);
+        var row = port.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var index = new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(b.tuple(), row.deref()).closure(row), port);
+        var delta = new DBSPDifferentiateOperator(site, index.outputPort());
+        var input = delta.outputPort();
+        var key = index.getOutputIndexedZSetType().keyType.ref().var();
+        var right = row.getType().var();
+        var binaryFunction = row.deref().closure(key, row, right);
+        var starFunction = right.deref().closure(key, row, right, row.getType().var());
+        var predicate = new DBSPBoolLiteral(true).closure(row);
+        var swap = b.tuple(row.deref().field(1), row.deepCopy().deref().field(0)).closure(row);
+        var decisions = new ArrayList<Boolean>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) {}
+            @Override public void nativeDecision(String pass, boolean answered) {
+                if (pass.equals("OptimizeProjections/FilteredJoin"))
+                    decisions.add(answered);
+            }
+        };
+        for (boolean star : List.of(false, true)) {
+            for (int options = 0; options < 4; options++) {
+                var filter = (options & 1) == 0 ? null : predicate;
+                var before = (options & 2) == 0 ? null : swap;
+                DBSPSimpleOperator join = star
+                        ? new DBSPStarJoinFilterMapOperator(site, port.outputType(), starFunction, filter, before,
+                                List.of(input, input, input))
+                        : new DBSPJoinFilterMapOperator(site, port.getOutputZSetType(), binaryFunction, filter, before,
+                                input, input, true);
+                join.addAnnotation(AlwaysMonotone.INSTANCE, DBSPSimpleOperator.class);
+                var output = row.getType().var();
+                var read = b.tuple(output.deref().field(0)).closure(output);
+                var reader = new DBSPMapOperator(site, read, join.outputPort());
+                reader.addAnnotation(new IsProjection(1), DBSPSimpleOperator.class);
+                var circuit = new DBSPCircuit(compiler.metadata, false);
+                circuit.addOperator(source);
+                circuit.addOperator(index);
+                circuit.addOperator(delta);
+                circuit.addOperator(join);
+                circuit.addOperator(reader);
+                var graph = new Graph(compiler);
+                graph.apply(circuit);
+                compiler.options.ioOptions.rustOptimizerPasses = false;
+                var direct = new OptimizeProjections(compiler, true, graph.getGraphs(), new AnalyzedSet<>())
+                        .apply(circuit).allOperators.getLast().to(DBSPSimpleOperator.class);
+                compiler.options.ioOptions.rustOptimizerPasses = true;
+                var hybrid = new OptimizeProjections(compiler, true, graph.getGraphs(), new AnalyzedSet<>())
+                        .apply(circuit).allOperators.getLast().to(DBSPSimpleOperator.class);
+                Assert.assertEquals(join.getClass(), hybrid.getClass());
+                Assert.assertSame(reader.outputType, hybrid.outputType);
+                Assert.assertSame(join.getFunction(), hybrid.getFunction());
+                Assert.assertEquals(join.inputs, hybrid.inputs);
+                Assert.assertNull(direct.annotations.first(IsProjection.class));
+                Assert.assertNull(hybrid.annotations.first(IsProjection.class));
+                Assert.assertSame(AlwaysMonotone.INSTANCE, hybrid.annotations.first(AlwaysMonotone.class));
+                DBSPClosureExpression actual, expected;
+                if (hybrid instanceof DBSPStarJoinFilterMapOperator projected) {
+                    Assert.assertSame(filter, projected.filter);
+                    actual = projected.map;
+                    expected = direct.to(DBSPStarJoinFilterMapOperator.class).map;
+                } else {
+                    var projected = hybrid.to(DBSPJoinFilterMapOperator.class);
+                    Assert.assertTrue(projected.balanced);
+                    Assert.assertSame(filter, projected.filter);
+                    actual = projected.map;
+                    expected = direct.to(DBSPJoinFilterMapOperator.class).map;
+                }
+                Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
+                if (before == null)
+                    Assert.assertSame(read, actual);
+            }
+        }
+        Assert.assertEquals(java.util.Collections.nCopies(8, true), decisions);
     }
 
     @Test public void narrowRankedAndAggregateOutputsWithTheirReaders() {

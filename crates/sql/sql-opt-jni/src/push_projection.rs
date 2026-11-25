@@ -1,6 +1,6 @@
 //! Bind the inputs of a linear projection rewrite to live ports.
 use crate::{ExpressionSite, fragment::Fragment};
-use feldera_sql_ir::{CircuitEditor, NodeId, OperatorKind as Op, OutputPort};
+use feldera_sql_ir::{CircuitEditor, OperatorKind as Op};
 use feldera_sql_opt::ProjectionPushdown;
 use serde::Deserialize;
 use serde_json::Value;
@@ -21,17 +21,7 @@ pub(super) fn operators(
 ) -> Result<Value, Box<dyn Error>> {
     let request: Request = serde_json::from_slice(state)?;
     let producer = Op::from_wire(&request.producer).ok_or("unknown projection producer")?;
-    let ports: Vec<_> = request
-        .ports
-        .into_iter()
-        .enumerate()
-        .map(|(i, number)| OutputPort {
-            operator: NodeId::Outer(i as u64 + 1),
-            number,
-        })
-        .collect();
-    let (fragment, roots) =
-        Fragment::with_inputs(request.site, ports, std::iter::repeat(Op::Map), input)?;
+    let (fragment, roots) = Fragment::with_ports(request.site, request.ports, Op::Map, input)?;
     let mut edit = CircuitEditor::new(fragment.base.clone());
     let (reader, output, producer_function) = match *roots.as_slice() {
         [reader, output] => (reader, output, None),

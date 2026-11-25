@@ -78,6 +78,54 @@ impl ProjectionRules {
     }
 }
 
+/// A filtered join keeps its join function and predicate when it absorbs a row map.
+pub struct FilteredJoinProjection {
+    pub function: ExpressionId,
+    pub filter: Option<ExpressionId>,
+    pub map: Option<ExpressionId>,
+    pub reader: ExpressionId,
+    pub output: TypeId,
+    /// Binary joins have a balance policy. Star joins accept any number of indexed inputs.
+    pub balanced: Option<bool>,
+}
+
+impl FilteredJoinProjection {
+    pub fn append(
+        self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        inputs: &[OutputPort],
+        warnings: &mut Vec<SimplifyWarning>,
+    ) -> Result<(), crate::CompositionError> {
+        let map = match self.map {
+            Some(before) => {
+                crate::projection_composition::inline_projection(edit, before.into(), self.reader.into(), warnings)?
+            }
+            None => self.reader,
+        };
+        let mut fields = vec![
+            ("outputType", Field::Reference(self.output.into())),
+            ("function", Field::Reference(self.function.into())),
+        ];
+        if let Some(filter) = self.filter {
+            fields.push(("filter", Field::Reference(filter.into())));
+        }
+        fields.push(("map", Field::Reference(map.into())));
+        let kind = match self.balanced {
+            Some(balanced) => {
+                if inputs.len() != 2 {
+                    return Err(Error::new("a binary filtered join requires two inputs").into());
+                }
+                fields.push(("balanced", Field::Data(balanced.into())));
+                OperatorKind::JoinFilterMap
+            }
+            None => OperatorKind::StarJoinFilterMap,
+        };
+        edit.append_operator(body, body, kind, inputs, fields)?;
+        Ok(())
+    }
+}
+
 /// Move a reader before a linear operator. All copies share the original
 /// closure and declared output type, including when two ports name the same input.
 pub struct ProjectionPushdown {

@@ -54,6 +54,14 @@ pub(crate) fn should_inline(
     Ok(parameter_references(edit, body, *parameter)? <= 1)
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum CompositionError {
+    #[error(transparent)]
+    Ir(#[from] Error),
+    #[error("shared variable {variable:?} refers to both {previous:?} and {current:?}")]
+    BindingConflict { variable: NodeId, previous: NodeId, current: NodeId },
+}
+
 /// Inline a projection after its producer. During map fusion, a consumer that
 /// would duplicate expensive work keeps its own operator.
 pub fn compose_projection(
@@ -62,12 +70,26 @@ pub fn compose_projection(
     after: NodeId,
     check_cost: bool,
     warnings: &mut Vec<SimplifyWarning>,
-) -> Result<Option<ExpressionId>, Error> {
+) -> Result<Option<ExpressionId>, CompositionError> {
     if check_cost && !should_inline(edit, after, before)? {
         return Ok(None);
     }
+    Ok(Some(inline_projection(edit, before, after, warnings)?))
+}
+
+pub(super) fn inline_projection(
+    edit: &mut CircuitEditor,
+    before: NodeId,
+    after: NodeId,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<ExpressionId, CompositionError> {
+    if let Some(feldera_sql_expr::lexical_scope::BindingDiagnostic::Conflict { variable, previous, current }) =
+        feldera_sql_expr::lexical_scope::inspect_composition(edit.circuit(), before, after)?
+    {
+        return Err(CompositionError::BindingConflict { variable, previous, current });
+    }
     let before = edit.expression(before)?;
-    compose_closures(edit, before, false, after, Some(warnings)).map(Some)
+    Ok(compose_closures(edit, before, false, after, Some(warnings))?)
 }
 
 /// Fuse two indexed maps. Expensive producers must run once per input even

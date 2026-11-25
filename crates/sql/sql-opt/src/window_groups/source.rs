@@ -114,7 +114,8 @@ pub fn compose_timestamp(
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<ExpressionId, Error> {
     for &map in maps {
-        if let Some(composed) = compose_projection(edit, map, timestamp.into(), true, warnings)? {
+        if let Some(composed) = compose_projection(edit, map, timestamp.into(), true, warnings)
+            .map_err(|error| Error::new(error.to_string()))? {
             timestamp = composed;
             continue;
         }
