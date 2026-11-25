@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
@@ -447,7 +448,8 @@ public final class RustCircuitPass implements CircuitTransform {
         var roots = new ArrayList<IDBSPInnerNode>();
         roots.add(reader.getFunction());
         roots.add(reader.outputType);
-        if (producer instanceof DBSPDelayOperator && producer.function != null)
+        if ((producer instanceof DBSPDelayOperator || producer instanceof DBSPAggregateZeroOperator)
+                && producer.function != null)
             roots.add(producer.function);
         try {
             var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request),
@@ -458,7 +460,9 @@ public final class RustCircuitPass implements CircuitTransform {
                     producer.inputs.stream().map(OutputPort::node).toArray(DBSPOperator[]::new));
             Utilities.enforce(operators.size() == producer.inputs.size() + 1);
             operators.subList(0, producer.inputs.size()).forEach(op -> op.copyAnnotations(reader));
-            operators.getLast().copyAnnotations(producer);
+            if (!(producer instanceof DBSPAggregateZeroOperator))
+                operators.getLast().copyAnnotations(producer);
+            reportWarnings(compiler, reply.value.required("warnings"));
             if (compiler.stateObserver != null)
                 compiler.stateObserver.nativeDecision(pass, true);
             return operators;

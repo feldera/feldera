@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.ir;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -201,6 +202,45 @@ public class ProjectionCompositionTests {
             if (hybrid)
                 Assert.assertEquals(expected, error.getMessage());
             expected = error.getMessage();
+        }
+    }
+
+    @Test public void pushProjectionThroughAggregateMapsTheEmptyResult() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT NOT NULL, b INT NOT NULL); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var site = CalciteEmptyRel.INSTANCE;
+        var empty = b.tuple(b.lit(17), b.lit(19));
+        var zero = new DBSPAggregateZeroOperator(site, empty, input);
+        zero.addAnnotation(AlwaysMonotone.INSTANCE, DBSPSimpleOperator.class);
+        var row = empty.type.ref().var();
+        var reader = new DBSPMapOperator(site, b.tuple(row.deref().field(1)).closure(row), zero.outputPort());
+        reader.addAnnotation(new IsProjection(2), DBSPSimpleOperator.class);
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var operators = RustCircuitPass.pushProjection(compiler, reader, zero);
+        Assert.assertEquals(2, operators.size());
+        var mapped = operators.getFirst().to(DBSPMapOperator.class);
+        Assert.assertSame(source, mapped.input().node());
+        Assert.assertSame(reader.getFunction(), mapped.getFunction());
+        Assert.assertEquals(2, mapped.annotations.first(IsProjection.class).outputSize);
+        var result = operators.getLast().to(DBSPAggregateZeroOperator.class);
+        Assert.assertSame(mapped, result.input().node());
+        Assert.assertTrue(EquivalenceContext.equiv(b.tuple(b.lit(19)), result.getFunction()));
+        Assert.assertNull(result.annotations.first(AlwaysMonotone.class));
+
+        var circuit = new DBSPCircuit(compiler.metadata, false);
+        circuit.addOperator(source);
+        circuit.addOperator(zero);
+        circuit.addOperator(reader);
+        var graph = new Graph(compiler);
+        graph.apply(circuit);
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var pass = new OptimizeProjections(compiler, true, graph.getGraphs(), new AnalyzedSet<>());
+            var rewritten = pass.apply(circuit).allOperators.getLast().to(DBSPAggregateZeroOperator.class);
+            Assert.assertTrue(EquivalenceContext.equiv(result.getFunction(), rewritten.getFunction()));
+            Assert.assertSame(source, rewritten.input().node().to(DBSPMapOperator.class).input().node());
         }
     }
 

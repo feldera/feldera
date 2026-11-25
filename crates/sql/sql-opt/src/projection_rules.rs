@@ -1,4 +1,5 @@
 //! Candidate rewrites for a Map or MapIndex following a live producer.
+use feldera_sql_expr::{SimplifyWarning, apply_closure};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort, TypeId, TypeKind,
 };
@@ -78,7 +79,7 @@ impl ProjectionRules {
 /// closure and declared output type, including when two ports name the same input.
 pub struct ProjectionPushdown {
     pub producer: OperatorKind,
-    pub initial: Option<ExpressionId>,
+    pub producer_function: Option<ExpressionId>,
     pub reader: ExpressionId,
     pub output: TypeId,
 }
@@ -90,6 +91,7 @@ impl ProjectionPushdown {
         body: NodeId,
         inputs: &[OutputPort],
         next: &mut u64,
+        warnings: &mut Vec<SimplifyWarning>,
     ) -> Result<(), Error> {
         use OperatorKind as Op;
         let map = match edit.type_kind(self.output)? {
@@ -105,7 +107,9 @@ impl ProjectionPushdown {
         };
         if !matches!(
             rule,
-            ProjectionRule::PushThrough | ProjectionRule::ProjectSum
+            ProjectionRule::PushThrough
+                | ProjectionRule::ProjectSum
+                | ProjectionRule::ProjectAggregateZero
         ) {
             return Err(Error::new("operator does not admit a pushed projection"));
         }
@@ -127,16 +131,39 @@ impl ProjectionPushdown {
                 number: 0,
             });
         }
-        let function = if self.producer == Op::Noop {
-            Some(crate::rebuild::noop_function(edit, self.output, next)?)
-        } else {
-            self.initial
+        let (output, function) = match self.producer {
+            Op::Noop => (
+                self.output,
+                Some(crate::rebuild::noop_function(edit, self.output, next)?),
+            ),
+            Op::AggregateZero => {
+                let zero = self
+                    .producer_function
+                    .ok_or_else(|| Error::new("aggregate requires its empty result"))?;
+                let projected_zero = project_empty_result(edit, zero, self.reader, warnings)?;
+                (
+                    edit.zset_type(edit.expression_type(projected_zero)?)?,
+                    Some(projected_zero),
+                )
+            }
+            _ => (self.output, self.producer_function),
         };
-        let fields = std::iter::once(("outputType", output))
+        let fields = std::iter::once(("outputType", Field::Reference(output.into())))
             .chain(function.map(|f| ("function", Field::Reference(f.into()))));
         edit.append_operator(body, body, self.producer, &projected, fields)?;
         Ok(())
     }
+}
+
+/// Apply the same reader to the row that a global aggregate emits on empty input.
+pub fn project_empty_result(
+    edit: &mut CircuitEditor,
+    zero: ExpressionId,
+    reader: ExpressionId,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<ExpressionId, Error> {
+    let borrowed = edit.borrow_value(zero)?;
+    apply_closure(edit, reader.into(), &[borrowed], warnings)
 }
 
 #[cfg(test)]

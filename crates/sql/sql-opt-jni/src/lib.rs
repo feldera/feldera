@@ -1180,8 +1180,8 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         }
         ("ProjectAggregateZero", [zero, reader]) => {
             let zero = edit.expression(*zero)?;
-            let borrowed = edit.borrow_value(zero)?;
-            feldera_sql_expr::apply_closure(&mut edit, *reader, &[borrowed], &mut warnings)?
+            let reader = edit.expression(*reader)?;
+            feldera_sql_opt::project_empty_result(&mut edit, zero, reader, &mut warnings)?
         }
         ("PullFilters/Map" | "PullFilters/MapIndex", [producer, filter]) => {
             use feldera_sql_ir::OperatorKind;

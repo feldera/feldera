@@ -147,7 +147,7 @@ mod project_outputs;
 mod projection;
 pub use projection::{MapProjection, is_map_projection, map_projection};
 mod projection_rules;
-pub use projection_rules::{ProjectionPushdown, ProjectionRules};
+pub use projection_rules::{ProjectionPushdown, ProjectionRules, project_empty_result};
 mod projection_composition;
 pub use projection_composition::{compose_indexed_projection, compose_projection};
 mod propagate_constants;

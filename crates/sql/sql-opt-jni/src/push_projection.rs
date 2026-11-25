@@ -33,14 +33,14 @@ pub(super) fn operators(
     let (fragment, roots) =
         Fragment::with_inputs(request.site, ports, std::iter::repeat(Op::Map), input)?;
     let mut edit = CircuitEditor::new(fragment.base.clone());
-    let (reader, output, initial) = match *roots.as_slice() {
+    let (reader, output, producer_function) = match *roots.as_slice() {
         [reader, output] => (reader, output, None),
-        [reader, output, initial] if producer == Op::Delay => {
-            (reader, output, Some(edit.expression(initial)?))
+        [reader, output, function] if matches!(producer, Op::Delay | Op::AggregateZero) => {
+            (reader, output, Some(edit.expression(function)?))
         }
         _ => {
             return Err(
-                "expected a projection, its output type and an optional delay initializer".into(),
+                "expected a projection, its output type and an optional producer value".into(),
             );
         }
     };
@@ -48,13 +48,17 @@ pub(super) fn operators(
         producer,
         reader: edit.expression(reader)?,
         output: edit.type_id(output)?,
-        initial,
+        producer_function,
     };
+    let mut warnings = Vec::new();
     pushdown.append(
         &mut edit,
         fragment.base.root_id(),
         &fragment.inputs,
         &mut next,
+        &mut warnings,
     )?;
-    fragment.reply(&edit, next)
+    let mut reply = fragment.reply(&edit, next)?;
+    reply["warnings"] = crate::pass_warnings(warnings).into();
+    Ok(reply)
 }

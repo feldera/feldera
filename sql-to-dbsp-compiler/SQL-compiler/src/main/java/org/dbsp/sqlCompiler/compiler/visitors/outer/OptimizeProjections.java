@@ -226,7 +226,12 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             this.addOperator(projection);
             inputs.add(projection.outputPort());
         }
-        this.map(reader, producer.withInputs(inputs, true).to(DBSPSimpleOperator.class));
+        if (producer instanceof DBSPAggregateZeroOperator zero) {
+            var emptyResult = reader.getClosureFunction().call(zero.getFunction().borrow()).reduce(this.compiler);
+            this.map(reader, new DBSPAggregateZeroOperator(zero.getRelNode(), emptyResult, inputs.getFirst()));
+        } else {
+            this.map(reader, producer.withInputs(inputs, true).to(DBSPSimpleOperator.class));
+        }
     }
 
     @Override
@@ -764,16 +769,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 super.postorder(operator);
                 return;
             }
-            DBSPAggregateZeroOperator zero = source.node().to(DBSPAggregateZeroOperator.class);
-            DBSPSimpleOperator newProjection = operator
-                    .withInputs(Linq.list(zero.input()), true).to(DBSPSimpleOperator.class);
-            this.addOperator(newProjection);
-            DBSPExpression newZero = this.compiler.options.ioOptions.rustOptimizerPasses
-                    ? RustCircuitPass.projectAggregateZero(this.compiler, zero.getFunction(), operator.getClosureFunction())
-                    : operator.getClosureFunction().call(zero.getFunction().borrow()).reduce(this.compiler);
-            DBSPAggregateZeroOperator result = new DBSPAggregateZeroOperator(
-                    zero.getRelNode(), newZero, newProjection.outputPort());
-            this.map(operator, result);
+            this.pushThrough(operator, source.simpleNode());
             return;
         }
 
