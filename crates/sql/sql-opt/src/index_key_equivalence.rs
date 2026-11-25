@@ -214,7 +214,7 @@ pub(super) fn check_closures(
 
 /// Compare a freshly serialized pair of live expressions. Map fusion supplies the
 /// shared variable whose declaration encloses both fields. Index keys can instead
-/// be complete closures, which introduce their own parameter scopes.
+/// be complete closures. Window keys each come with their enclosing parameter.
 pub fn compare_live_operands(
     edit: &CircuitEditor,
     roots: &[NodeId],
@@ -225,7 +225,10 @@ pub fn compare_live_operands(
             let row = bindings::name(edit.node(row)?, "variable")?;
             compare_keys(edit, left, right, Some([(row, row)]))?
         }
-        _ => return Err(Error::new("expected two comparison operands and an optional row").into()),
+        [lp, left, rp, right] => {
+            check_bodies(edit, left, right, Some((edit.node(lp)?, edit.node(rp)?)))?
+        }
+        _ => return Err(Error::new("invalid number of live comparison operands").into()),
     };
     // The live writer supplies every loop name, shuffle owner and JDK timestamp
     // conversion, including failed conversions. Detached snapshots can omit them.

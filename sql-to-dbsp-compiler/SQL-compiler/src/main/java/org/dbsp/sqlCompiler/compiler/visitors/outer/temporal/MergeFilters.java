@@ -26,6 +26,8 @@ public class MergeFilters extends CircuitCloneVisitor {
     /** Analyze the supplied predicates. An earlier merge can have changed the source closure. */
     public boolean canBeMerged(DBSPFilterOperator source, DBSPClosureExpression sourceFunction,
                                DBSPFilterOperator filter, DBSPClosureExpression function) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses && this.compiler.stateObserver != null)
+            this.compiler.stateObserver.nativeDecision("MergeFilters", false);
         // We want to only merge filters that can be combined into a single window.
         // They should look like "col > expression0" and "col < expression1", respectively, for the same column.
         var s = FindComparisons.decomposeIntoTemporalFilters(this.compiler, source,

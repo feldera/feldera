@@ -342,6 +342,8 @@ public final class CorpusDeterminism {
                 @Override
                 public void nativeDecision(String operation, boolean answered) {
                     nativeRequests.record(operation, answered);
+                    if (operation.equals("MergeFilters") && !answered)
+                        temporalMergeFallbacks.incrementAndGet();
                 }
 
                 public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {
@@ -370,12 +372,8 @@ public final class CorpusDeterminism {
                         linearRetentionGraphs.incrementAndGet();
                     if (completed && container.equals("LowerAsof") && pass.getName().equals("MoveGC"))
                         asofMoves.incrementAndGet();
-                    if (completed && pass instanceof RustCircuitPass rust) {
-                        if (rust.usedGeneralTemporalAnalysis())
-                            temporalMergeFallbacks.incrementAndGet();
-                        else
-                            rustPasses.merge(pass.getName(), 1, Integer::sum);
-                    }
+                    if (completed && pass instanceof RustCircuitPass)
+                        rustPasses.merge(pass.getName(), 1, Integer::sum);
                 }
             };
         }

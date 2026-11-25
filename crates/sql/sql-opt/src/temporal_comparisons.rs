@@ -120,6 +120,14 @@ pub(crate) enum ClockError {
     InvalidIr(Error),
 }
 
+/// Only a complete filter closure binds a projected ZSet row. Detached
+/// expression analysis can use an arbitrary value as its binding.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClockInput {
+    Expression,
+    Filter,
+}
+
 impl From<TemporalDiagnostic> for ClockError {
     fn from(diagnostic: TemporalDiagnostic) -> Self {
         Self::Diagnostic(diagnostic)
@@ -165,7 +173,7 @@ pub fn infer_temporal_predicates(
     next: &mut u64,
 ) -> Result<Option<Vec<TemporalPredicate>>, Error> {
     speculative_clock(next, |names| {
-        checked_temporal_predicates(edit, parameter, body, names)
+        checked_temporal_predicates(edit, parameter, body, names, ClockInput::Expression)
     })
 }
 
@@ -174,9 +182,10 @@ pub(super) fn checked_temporal_predicates(
     parameter: NodeId,
     body: ExpressionId,
     next: &mut u64,
+    input: ClockInput,
 ) -> Result<Option<Vec<TemporalPredicate>>, ClockError> {
     let Some(operands) =
-        crate::monotonicity::row_projection::clock_facts(edit, parameter, body, next)?
+        crate::monotonicity::row_projection::clock_facts(edit, parameter, body, next, input)?
     else {
         return Ok(None);
     };

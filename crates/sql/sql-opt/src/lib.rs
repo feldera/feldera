@@ -292,7 +292,7 @@ pub use temporal_groups::{accepts_temporal_bound, check_temporal_bound, check_te
 pub use temporal_comparisons::{TemporalDiagnostic, MissingClockKey, classify_temporal_predicates, conjunct_windows, infer_temporal_predicates, ConjunctWindow, TemporalPredicate};
 pub use temporal_equality::desugar_now_equality;
 pub use temporal_filters::{
-    TemporalFilterPair, TemporalMerge, break_temporal_filters, merge_temporal_filters, merge_temporal_filters_with,
+    TemporalMerge, break_temporal_filters, merge_temporal_filters, merge_temporal_filters_with_operands,
     merge_temporal_predicates,
 };
 pub use topology::needs_full_snapshot;

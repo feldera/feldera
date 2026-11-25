@@ -254,15 +254,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         else
             new RepeatedExpressions(this.compiler, true, true).apply(expression.body);
 
-        DBSPParameter[] projectedParameters = new DBSPParameter[projectedTypes.length];
+        DBSPParameter[] projectedParameters;
         if (pair != null) {
             DBSPType[] fields = Linq.map(projectedTypes[0].to(DBSPTypeTupleBase.class).tupFields,
                     DBSPType::ref, DBSPType.class);
             var type = pair.raw ? new DBSPTypeRawTuple(fields) : new DBSPTypeTuple(fields);
-            projectedParameters[0] = new DBSPParameter(expression.parameters[0].getName(), type);
+            projectedParameters = new DBSPParameter[]{new DBSPParameter(expression.parameters[0].getName(), type)};
         } else {
-            for (int i = 0; i < projectedTypes.length; i++)
-                projectedParameters[i] = new DBSPParameter(expression.parameters[i].getName(), projectedTypes[i].ref());
+            projectedParameters = projectParameters(expression.parameters, projectedTypes);
         }
         for (int i = 0; i < projectedTypes.length; i++) {
             var parameter = new MonotoneExpression(expression.parameters[i].asVariable(), this.parameterTypes[i],
@@ -281,6 +280,13 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             this.recordClosure(expression, bodyValue.type, closure);
         }
         return VisitDecision.STOP;
+    }
+
+    public static DBSPParameter[] projectParameters(DBSPParameter[] parameters, DBSPType[] projectedTypes) {
+        var projected = new DBSPParameter[projectedTypes.length];
+        for (int i = 0; i < projected.length; i++)
+            projected[i] = new DBSPParameter(parameters[i].getName(), projectedTypes[i].ref());
+        return projected;
     }
 
     private void recordClosure(DBSPClosureExpression expression, IMaybeMonotoneType bodyType,

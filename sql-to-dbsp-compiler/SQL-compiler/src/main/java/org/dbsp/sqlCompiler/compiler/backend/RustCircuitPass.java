@@ -137,6 +137,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneFunction;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneRefType;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
@@ -265,13 +266,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final FindMapChains mapChains;
     @Nullable private final FindSharedIndexes sharedIndexes;
     @Nullable private final ReplaceSharedIndexes replaceSharedIndexes;
-    @Nullable private final MergeFilters mergeFilters;
-    private boolean usedGeneralTemporalAnalysis;
-
-    public boolean usedGeneralTemporalAnalysis() {
-        return this.usedGeneralTemporalAnalysis;
-    }
-
+    private final boolean mergeFilters;
     @Nullable private final FindUnboundedState.DetectStreamingOperations streaming;
     @Nullable private final FindUnboundedState.FindGCedStreams garbageCollected;
     @Nullable private final FindUnboundedState.FindBounded bounded;
@@ -381,7 +376,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.windowImplementation = original instanceof ImplementWindowGroups windows ? windows : null;
         this.collapseChains = original instanceof CollapseSharedChains collapse ? collapse : null;
         this.sharedIndexes = original instanceof FindSharedIndexes find ? find : null;
-        this.mergeFilters = original instanceof MergeFilters merge ? merge : null;
+        this.mergeFilters = original instanceof MergeFilters;
         this.replaceSharedIndexes = original instanceof ReplaceSharedIndexes replace ? replace : null;
         this.mapChains = original instanceof FindMapChains find ? find : null;
         this.errorOrder = original instanceof OrderErrorConsumers order ? order : null;
@@ -878,6 +873,12 @@ public final class RustCircuitPass implements CircuitTransform {
         var roots = new ArrayList<IDBSPInnerNode>();
         roots.add(body);
         for (int i = 0; i < parameters.length; i++) {
+            if (projectedTypes[i] == null && !indexed) {
+                // Resolve declarations and check for shared expressions before
+                // reporting a missing parameter projection, as the visitor does.
+                inspectWaterline(compiler, body.closure(parameters)).checkTree();
+                MonotoneTransferFunctions.projectParameters(parameters, projectedTypes);
+            }
             roots.add(parameters[i]);
             roots.add(projectedTypes[i]);
         }
@@ -3149,7 +3150,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private record AsofRetention(long retainer, long join, boolean rebuilt) {}
 
     private boolean reusesOperators() {
-        return this.insertLimiters != null || this.mergeFilters != null;
+        return this.insertLimiters != null || this.mergeFilters;
     }
 
     private DBSPCircuit readGraph(DBSPCircuit input, JsonNode result, ToJsonOuterVisitor writer) throws IOException {
@@ -4348,9 +4349,9 @@ public final class RustCircuitPass implements CircuitTransform {
         return bytes -> {
             var roots = MAPPER.readTree(bytes);
             var decoder = expressionDecoder(writer);
-            var operands = new DBSPExpression[roots.size()];
+            var operands = new IDBSPInnerNode[roots.size()];
             for (int i = 0; i < operands.length; i++)
-                operands[i] = decodeLiveRoot(decoder, roots.required(i), DBSPExpression.class);
+                operands[i] = decodeLiveRoot(decoder, roots.required(i), IDBSPInnerNode.class);
             return new OptimizerExpressionWriter(compiler, false).encode(operands);
         };
     }
@@ -4361,40 +4362,15 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] fuseMaps(byte[] snapshot, long next, byte[] clusters, LiveOperands operands);
 
-    @FunctionalInterface
-    private interface TemporalAnalysis {
-        byte[] analyze(byte[] predicates) throws IOException;
-    }
+    static native byte[] mergeFilters(byte[] snapshot, long next, LiveOperands operands);
 
-    private static native byte[] mergeFilters(byte[] snapshot, long next, TemporalAnalysis analysis);
-
-    private JsonNode mergeTemporalFilters(DBSPCircuit circuit, ToJsonOuterVisitor writer,
-                                          byte[] snapshot, long next) throws IOException {
-        var result = mergeFilters(snapshot, next, bytes -> {
-            if (!this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
-                this.compiler.stateObserver.nativeDecision("MergeFilters", false);
-            this.usedGeneralTemporalAnalysis = true;
-            var request = MAPPER.readTree(bytes);
-            finishLowering(this.compiler, request);
-            var operators = request.required("operators");
-            var closures = request.required("closures");
-            var decoder = expressionDecoder(writer.innerVisitor);
-            var source = Objects.requireNonNull(findOperator(circuit.allOperators, operators.required(0).longValue()));
-            var target = Objects.requireNonNull(findOperator(circuit.allOperators, operators.required(1).longValue()));
-            boolean merge = Objects.requireNonNull(this.mergeFilters).canBeMerged(source.to(DBSPFilterOperator.class),
-                    decodeLiveRoot(decoder, closures.required(0), DBSPClosureExpression.class),
-                    target.to(DBSPFilterOperator.class),
-                    decodeLiveRoot(decoder, closures.required(1), DBSPClosureExpression.class));
-            var reply = MAPPER.createObjectNode();
-            reply.put("merge", merge);
-            reply.put("next_generated_name", DBSPVariablePath.nextGeneratedName());
-            return MAPPER.writeValueAsBytes(reply);
-        });
+    private JsonNode mergeTemporalFilters(ToJsonOuterVisitor writer, byte[] snapshot, long next) throws IOException {
+        var result = mergeFilters(snapshot, next, liveOperands(this.compiler, writer.innerVisitor));
         var reply = MAPPER.readTree(result);
         var failure = reply.get("failure");
         if (failure != null) {
             finishLowering(this.compiler, reply);
-            if (!this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
+            if (this.compiler.stateObserver != null)
                 this.compiler.stateObserver.nativeDecision("MergeFilters", true);
             if (failure.has("predicate"))
                 throw temporalPredicateError(this.compiler, writer.innerVisitor, failure.required("predicate"));
@@ -4870,7 +4846,6 @@ public final class RustCircuitPass implements CircuitTransform {
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
-        this.usedGeneralTemporalAnalysis = false;
         long initial = DBSPVariablePath.nextGeneratedName();
         try {
             byte[] state = EMPTY_CONTEXT;
@@ -5325,15 +5300,15 @@ public final class RustCircuitPass implements CircuitTransform {
                     result = this.replaceIndexGroups(writer, snapshot, initial, state);
                 } else if (this.mapFusion != null) {
                     result = this.fuseMapClusters(writer, snapshot, initial);
-                } else if (this.mergeFilters != null) {
-                    result = this.mergeTemporalFilters(circuit, writer, snapshot, initial);
+                } else if (this.mergeFilters) {
+                    result = this.mergeTemporalFilters(writer, snapshot, initial);
                 } else {
                     if (state == EMPTY_CONTEXT)
                         state = this.passState(circuit, writer);
                     result = this.invoke("Live/" + this.nativeName, snapshot, initial, state);
                 }
             }
-            if (this.mergeFilters != null && !this.usedGeneralTemporalAnalysis && this.compiler.stateObserver != null)
+            if (this.mergeFilters && this.compiler.stateObserver != null)
                 this.compiler.stateObserver.nativeDecision("MergeFilters", true);
             JsonNode counter = result.required("next_generated_name");
             if (!counter.isIntegralNumber() || !counter.canConvertToLong()

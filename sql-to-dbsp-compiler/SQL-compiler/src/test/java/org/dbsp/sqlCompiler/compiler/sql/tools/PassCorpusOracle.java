@@ -413,10 +413,14 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     }
 
     @Override
+    public void nativeDecision(String operation, boolean answered) {
+        if (this.passClass.equals("MergeFilters") && operation.equals("MergeFilters") && !answered)
+            throw new IllegalStateException("The observed MergeFilters invocation required Java temporal analysis");
+    }
+
+    @Override
     public void after(String container, int index, int iteration, CircuitTransform pass,
                       DBSPCircuit circuit, boolean completed) {
-        if (completed && this.selected(pass) && pass instanceof RustCircuitPass rust && rust.usedGeneralTemporalAnalysis())
-            throw new IllegalStateException("The observed MergeFilters invocation required Java temporal analysis");
         pass = this.originalPasses.getOrDefault(pass, pass);
         if (this.compareMonotonicity(pass))
             this.compiler.options.ioOptions.rustOptimizerPasses = this.previousRustPasses;

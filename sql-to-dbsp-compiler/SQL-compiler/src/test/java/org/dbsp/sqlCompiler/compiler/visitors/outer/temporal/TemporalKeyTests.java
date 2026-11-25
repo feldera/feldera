@@ -139,10 +139,16 @@ public class TemporalKeyTests {
         assertSameConjuncts(body, parts.get(0).expression());
     }
 
-    private static MergeFilters pairAnalysisOnly(DBSPCompiler compiler) {
+    private static MergeFilters nativeMergeOnly(DBSPCompiler compiler) {
         return new MergeFilters(compiler) {
             @Override
             public String getName() { return "MergeFilters"; }
+
+            @Override
+            public boolean canBeMerged(DBSPFilterOperator source, DBSPClosureExpression upstream,
+                                       DBSPFilterOperator filter, DBSPClosureExpression downstream) {
+                throw new AssertionError("delegated a temporal merge decision to Java");
+            }
 
             @Override
             public void postorder(DBSPFilterOperator filter) { Assert.fail("restarted the Java filter pass"); }
@@ -169,6 +175,35 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void temporalMergeChecksScalarInputBeforeEvaluatingClockBounds() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var circuit = temporalFilterChain(b.call(time, "now"));
+        var source = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, DBSPZSetExpression.emptyWithElementType(time));
+        circuit.addOperator(source);
+        var rows = source.outputPort();
+        for (int i = 0; i < 2; i++) {
+            var row = b.refVar(time);
+            var predicate = b.binary(DBSPOpcode.GTE, row.deref(), b.call(time, "now"));
+            var filter = new DBSPFilterOperator(CalciteEmptyRel.INSTANCE, predicate.closure(row), rows);
+            circuit.addOperator(filter);
+            rows = filter.outputPort();
+        }
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(NullPointerException.class, () -> new MergeFilters(compiler).apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        Assert.assertTrue(names > 0);
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
+        start = DBSPVariablePath.nextGeneratedName();
+        var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+    }
+
+    @Test
     public void temporalMergeValidatesTheInputRowBeforeExaminingItsClock() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();
@@ -192,12 +227,11 @@ public class TemporalKeyTests {
         var direct = Assert.assertThrows(InternalCompilerError.class, () -> new MergeFilters(compiler).apply(circuit));
         long names = DBSPVariablePath.nextGeneratedName() - start;
         compiler.options.ioOptions.rustOptimizerPasses = true;
-        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
         start = DBSPVariablePath.nextGeneratedName();
         var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
         Assert.assertEquals(direct.getMessage().lines().findFirst(), hybrid.getMessage().lines().findFirst());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test
@@ -213,13 +247,12 @@ public class TemporalKeyTests {
         long names = DBSPVariablePath.nextGeneratedName() - start;
         compiler.options.ioOptions.rustOptimizerPasses = true;
         start = DBSPVariablePath.nextGeneratedName();
-        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
         var hybrid = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
         var diagnostic = direct.getMessage().lines().findFirst().orElseThrow();
         Assert.assertTrue(diagnostic.contains("Type should have been scalar"));
         Assert.assertEquals(diagnostic, hybrid.getMessage().lines().findFirst().orElseThrow());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test
@@ -236,7 +269,7 @@ public class TemporalKeyTests {
         for (boolean hybrid : List.of(false, true)) {
             compiler.options.ioOptions.rustOptimizerPasses = hybrid;
             var reference = new MergeFilters(compiler);
-            var pass = hybrid ? new RustCircuitPass(compiler, pairAnalysisOnly(compiler),
+            var pass = hybrid ? new RustCircuitPass(compiler, nativeMergeOnly(compiler),
                     new OptimizerSnapshots(compiler)) : reference;
             long start = DBSPVariablePath.nextGeneratedName();
             var failure = Assert.assertThrows(RuntimeException.class, () -> pass.apply(circuit));
@@ -264,11 +297,10 @@ public class TemporalKeyTests {
         long names = DBSPVariablePath.nextGeneratedName() - start;
         compiler.options.ioOptions.rustOptimizerPasses = true;
         start = DBSPVariablePath.nextGeneratedName();
-        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
         var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test
@@ -286,11 +318,10 @@ public class TemporalKeyTests {
         long names = DBSPVariablePath.nextGeneratedName() - start;
         compiler.options.ioOptions.rustOptimizerPasses = true;
         start = DBSPVariablePath.nextGeneratedName();
-        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
         var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test
@@ -322,7 +353,7 @@ public class TemporalKeyTests {
                 @Override public void after(String p, int i, int n, CircuitTransform pass, DBSPCircuit graph, boolean done) {}
             };
             compiler.options.ioOptions.rustOptimizerPasses = true;
-            var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+            var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
             start = DBSPVariablePath.nextGeneratedName();
             var actual = Assert.assertThrows(expected.getClass(), () -> pass.apply(circuit));
             Assert.assertEquals(expected.getMessage().lines().findFirst(), actual.getMessage().lines().findFirst());
@@ -356,12 +387,11 @@ public class TemporalKeyTests {
             long names = DBSPVariablePath.nextGeneratedName() - start;
             Assert.assertTrue(names > 0);
             compiler.options.ioOptions.rustOptimizerPasses = true;
-            var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+            var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
             start = DBSPVariablePath.nextGeneratedName();
             var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
             Assert.assertEquals(direct.getMessage().lines().findFirst(), hybrid.getMessage().lines().findFirst());
             Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-            Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
         }
     }
 
@@ -380,7 +410,7 @@ public class TemporalKeyTests {
         long names = DBSPVariablePath.nextGeneratedName() - start;
         compiler.options.ioOptions.rustOptimizerPasses = true;
         start = DBSPVariablePath.nextGeneratedName();
-        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
         var hybrid = pass.apply(circuit);
         var expected = direct.allOperators.get(direct.allOperators.size() - 1).to(DBSPFilterOperator.class);
         var actual = hybrid.allOperators.get(hybrid.allOperators.size() - 1).to(DBSPFilterOperator.class);
@@ -388,7 +418,6 @@ public class TemporalKeyTests {
                 hybrid.allOperators.indexOf(actual.input().node()));
         Assert.assertTrue(expected.getClosureFunction().equivalent(actual.getClosureFunction()));
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test
@@ -409,12 +438,11 @@ public class TemporalKeyTests {
         long names = DBSPVariablePath.nextGeneratedName() - start;
         Assert.assertTrue(direct.getMessage(), direct.getMessage().contains("saved_clock"));
         compiler.options.ioOptions.rustOptimizerPasses = true;
-        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
         start = DBSPVariablePath.nextGeneratedName();
         var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test
@@ -432,12 +460,11 @@ public class TemporalKeyTests {
         long names = DBSPVariablePath.nextGeneratedName() - start;
         Assert.assertTrue(direct.getMessage(), direct.getMessage().contains("saved_clock"));
         compiler.options.ioOptions.rustOptimizerPasses = true;
-        var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+        var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
         start = DBSPVariablePath.nextGeneratedName();
         var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
         Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-        Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
     }
 
     @Test
@@ -1336,12 +1363,11 @@ public class TemporalKeyTests {
             Assert.assertTrue(names > 0);
             Assert.assertEquals(invalid.getMessage(), direct.getMessage());
             compiler.options.ioOptions.rustOptimizerPasses = true;
-            var pass = new RustCircuitPass(compiler, pairAnalysisOnly(compiler), new OptimizerSnapshots(compiler));
+            var pass = new RustCircuitPass(compiler, nativeMergeOnly(compiler), new OptimizerSnapshots(compiler));
             start = DBSPVariablePath.nextGeneratedName();
             var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
             Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
             Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
-            Assert.assertFalse(pass.usedGeneralTemporalAnalysis());
         }
     }
 

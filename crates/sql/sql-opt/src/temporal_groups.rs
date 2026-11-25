@@ -2,7 +2,7 @@
 use crate::index_key_equivalence::{KeyComparisonError, check_bodies, speculative};
 use crate::temporal_comparisons::conjoin;
 use crate::{TemporalPredicate, WindowComparison};
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId};
+use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, NodeId};
 
 #[derive(Clone, Copy)]
 pub struct TemporalBoundKey {
@@ -70,6 +70,15 @@ pub fn check_temporal_bound(
     upstream: &[WindowTerm],
     downstream: WindowTerm,
 ) -> Result<Option<bool>, KeyComparisonError> {
+    check_temporal_bound_with(edit, upstream, downstream, &mut |_, _| Ok(None))
+}
+
+pub(super) fn check_temporal_bound_with(
+    edit: &CircuitEditor,
+    upstream: &[WindowTerm],
+    downstream: WindowTerm,
+    capture: &mut impl FnMut(&Circuit, [NodeId; 4]) -> Result<Option<bool>, KeyComparisonError>,
+) -> Result<Option<bool>, KeyComparisonError> {
     let WindowTerm::Bound(next) = downstream else {
         return Ok(Some(false));
     };
@@ -77,9 +86,15 @@ pub fn check_temporal_bound(
         let WindowTerm::Bound(bound) = *term else {
             return Ok(Some(false));
         };
-        match bound.compatible(edit, next)? {
-            Some(true) => {}
-            other => return Ok(other),
+        let equal = match bound.compatible(edit, next)? {
+            Some(equal) => Some(equal),
+            None => capture(
+                edit.circuit(),
+                [bound.parameter, bound.key.into(), next.parameter, next.key.into()],
+            )?,
+        };
+        if equal != Some(true) {
+            return Ok(equal);
         }
     }
     Ok(Some(!upstream.is_empty()))

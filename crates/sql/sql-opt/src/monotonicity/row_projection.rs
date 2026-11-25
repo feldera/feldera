@@ -12,6 +12,7 @@ use self::{
     shape::{Shape, UnorderedRow, UnorderedType},
 };
 use crate::limiters::Projection;
+use crate::temporal_comparisons::ClockInput;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
     TypeId,
@@ -262,6 +263,7 @@ pub(crate) fn clock_facts(
     parameter: NodeId,
     body: ExpressionId,
     next: &mut u64,
+    input: ClockInput,
 ) -> Result<Option<HashSet<ExpressionId>>, crate::temporal_comparisons::ClockError> {
     use crate::temporal_comparisons::{MissingClockKey, TemporalDiagnostic};
     let node = edit.node(parameter)?;
@@ -280,11 +282,18 @@ pub(crate) fn clock_facts(
     // Rebuild a diagnostic that needs prior facts from this predicate alone.
     // The live projector accepts a projected row type for this ZSet parameter.
     let predicate_failure = || TemporalDiagnostic::Predicate { parameter, body }.into();
-    let live_row = edit.type_kind(ty)? == feldera_sql_ir::TypeKind::Ref
-        && matches!(
-            edit.type_kind(edit.type_id(edit.node(ty.into())?.edge("type")?)?)?,
-            feldera_sql_ir::TypeKind::Tuple | feldera_sql_ir::TypeKind::RawTuple
-        );
+    let live_row = matches!(shape, Shape::Reference(_));
+    if input == ClockInput::Filter && live_row {
+        let mut base = &shape;
+        while let Shape::Reference(target) = base {
+            base = target;
+        }
+        // Tuples have a projected type even when they retain no fields.
+        // A reference to an unordered scalar cannot bind a filter parameter.
+        if !matches!(base, Shape::Tuple { .. }) {
+            return Err(predicate_failure());
+        }
+    }
     let references = crate::lexical_scope::resolve_body(edit.circuit(), [parameter], body.into())?;
     if !matches!(references, crate::LexicalResolution::Bound(_)) {
         return if live_row { Err(predicate_failure()) } else { Ok(None) };
@@ -341,7 +350,7 @@ pub(crate) fn clock_operands(
     body: ExpressionId,
 ) -> Result<Option<HashSet<ExpressionId>>, Error> {
     crate::temporal_comparisons::speculative_clock(&mut 0, |names| {
-        clock_facts(edit, parameter, body, names)
+        clock_facts(edit, parameter, body, names, ClockInput::Expression)
     })
 }
 

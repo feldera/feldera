@@ -1,26 +1,27 @@
 //! Split temporal predicates and merge bounds that share a NOW window.
 use crate::{
-    TemporalPredicate, WindowTerm, check_temporal_bound,
+    KeyComparisonError, TemporalPredicate, WindowTerm,
     filters::rewrite_filters,
     function_calls::contains_now,
     temporal_comparisons::{
-        ClockError, TemporalDiagnostic, checked_temporal_predicates, speculative_clock,
+        ClockError, ClockInput, TemporalDiagnostic, checked_temporal_predicates, speculative_clock,
     },
+    temporal_groups::check_temporal_bound_with,
 };
 use feldera_sql_expr::{SimplifyWarning, ensure_expression_tree, simplify_closure_with_warnings};
 use feldera_sql_ir::{
     BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
-    OperatorKind as Op, OutputPort,
+    OperatorKind as Op, OutputPort, TypeKind,
 };
 
-/// Decide if adjacent filters can use a single window. An unknown result asks
-/// the caller for its general closure analysis. Publish temporary names only
-/// after both predicates and their key comparisons have been decided.
+/// Decide whether adjacent filters can use a single window. A detached
+/// snapshot can lack the live identities needed to compare two keys.
 fn can_merge_temporal_filters(
     edit: &mut CircuitEditor,
     source: ExpressionId,
     filter: ExpressionId,
     next: &mut u64,
+    capture: &mut impl FnMut(&Circuit, [NodeId; 4]) -> Result<Option<bool>, KeyComparisonError>,
 ) -> Result<Option<bool>, ClockError> {
     if !contains_now(edit.circuit(), &[filter.into()])?
         || !contains_now(edit.circuit(), &[source.into()])?
@@ -34,7 +35,7 @@ fn can_merge_temporal_filters(
         return Ok(None);
     };
     let decision = match downstream.as_slice() {
-        [term] => check_temporal_bound(edit, &upstream, *term)?,
+        [term] => check_temporal_bound_with(edit, &upstream, *term, capture)?,
         _ => Some(false),
     };
     Ok(decision)
@@ -48,20 +49,10 @@ pub fn merge_temporal_filters(
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<Option<Circuit>, Error> {
-    match merge_temporal_filters_with(circuit, next, warnings, |_| Ok(None))? {
+    match merge_temporal_filters_with_operands(circuit, next, warnings, |_, _| Ok(None))? {
         Some(TemporalMerge::Rewritten(circuit)) => Ok(Some(circuit)),
         _ => Ok(None),
     }
-}
-
-/// The upstream closure can already contain earlier merges. The live analyzer
-/// consumes queued warnings and resumes the same generated-name sequence.
-pub struct TemporalFilterPair<'a> {
-    pub graph: &'a Circuit,
-    pub operators: [NodeId; 2],
-    pub closures: [ExpressionId; 2],
-    pub next: &'a mut u64,
-    pub warnings: &'a mut Vec<SimplifyWarning>,
 }
 
 /// A live caller publishes the name and warning prefix even when analysis fails.
@@ -75,11 +66,13 @@ pub enum TemporalMerge {
     },
 }
 
-pub fn merge_temporal_filters_with(
+/// The live bridge can recover the original key operands and their parameter
+/// bindings when a comparison needs metadata omitted from the snapshot.
+pub fn merge_temporal_filters_with_operands(
     circuit: Circuit,
     next: &mut u64,
     warnings: &mut Vec<SimplifyWarning>,
-    mut analyze: impl FnMut(TemporalFilterPair<'_>) -> Result<Option<bool>, Error>,
+    mut capture: impl FnMut(&Circuit, [NodeId; 4]) -> Result<Option<bool>, KeyComparisonError>,
 ) -> Result<Option<TemporalMerge>, Error> {
     let order = circuit.operator_order(feldera_sql_ir::BodyOrder::Postorder)?;
     let mut edit = CircuitEditor::new(circuit.clone());
@@ -109,36 +102,19 @@ pub fn merge_temporal_filters_with(
             .inputs()
             .next()
             .ok_or_else(|| Error::new("upstream filter requires an input"))?;
-        let mut trial_names = names;
-        let decision =
-            match can_merge_temporal_filters(&mut edit, upstream, downstream, &mut trial_names) {
-                Ok(Some(merge)) => {
-                    names = trial_names;
-                    Some(merge)
-                }
-                Err(ClockError::Diagnostic(diagnostic)) => {
-                    return Ok(Some(TemporalMerge::Failed {
-                        graph: edit.circuit().clone(),
-                        diagnostic,
-                        next_name: trial_names,
-                        warnings: diagnostics,
-                    }));
-                }
-                Err(ClockError::InvalidIr(error)) => return Err(error),
-                Ok(None) => {
-                    analyze(TemporalFilterPair {
-                        graph: edit.circuit(),
-                        operators: [input.operator, id],
-                        closures: [upstream, downstream],
-                        next: &mut names,
-                        warnings: &mut diagnostics,
-                    })?
-                }
-            };
-        match decision {
-            None => return Ok(None),
-            Some(false) => continue,
-            Some(true) => {}
+        match can_merge_temporal_filters(&mut edit, upstream, downstream, &mut names, &mut capture) {
+            Ok(Some(true)) => {}
+            Ok(Some(false)) => continue,
+            Ok(None) => return Ok(None),
+            Err(ClockError::InvalidIr(error)) => return Err(error),
+            Err(ClockError::Diagnostic(diagnostic)) => {
+                return Ok(Some(TemporalMerge::Failed {
+                    graph: edit.circuit().clone(),
+                    diagnostic,
+                    next_name: names,
+                    warnings: diagnostics,
+                }));
+            }
         }
         let function = merge_temporal_predicates(
             &mut edit,
@@ -192,12 +168,18 @@ fn checked_closure(
         return Err(Error::new("a temporal filter requires one row parameter").into());
     };
     let body = edit.expression(node.edge("body")?)?;
+    // A filter may have an ANY parameter. The reference compiler attempts
+    // to dereference it before resolving any variables in the predicate.
+    let ty = edit.type_id(edit.node(parameter)?.edge("type")?)?;
+    if edit.type_kind(ty)? != TypeKind::Ref {
+        return Err(TemporalDiagnostic::Predicate { parameter, body }.into());
+    }
     // Copying RETURN preserves its argument. If two copies still share an
     // expression, the waterline visitor rejects the body before evaluating it.
     if tree != closure.into() && feldera_sql_expr::first_repeated_expression(edit, body.into())?.is_some() {
         return Err(TemporalDiagnostic::Predicate { parameter, body }.into());
     }
-    Ok(checked_temporal_predicates(edit, parameter, body, next)?
+    Ok(checked_temporal_predicates(edit, parameter, body, next, ClockInput::Filter)?
         .map(|predicates| (parameter, predicates)))
 }
 

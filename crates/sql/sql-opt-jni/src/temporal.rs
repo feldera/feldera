@@ -6,62 +6,8 @@ use feldera_sql_opt::limiters::{Stream, StreamKind};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
-/// A live temporal analysis can report diagnostics and allocate variable names.
-/// Publish the Rust prefix before invoking it, even if it throws.
-fn analyze_live_pair(
-    env: &mut jni::Env,
-    analyzer: &jni::objects::JObject,
-    input: &Circuit,
-    pair: feldera_sql_opt::TemporalFilterPair<'_>,
-) -> Result<Option<bool>, Error> {
-    use jni::{JValue, jni_sig, jni_str, objects::JByteArray};
-    #[derive(serde::Deserialize)]
-    struct Decision {
-        merge: bool,
-        next_generated_name: u64,
-    }
-
-    let roots = pair
-        .graph
-        .live_inner_roots(input, &pair.closures.map(NodeId::from))?;
-    let request = json!({
-        "operators": pair.operators.map(super::operator_number),
-        "closures": roots,
-        "next_generated_name": *pair.next,
-        "warnings": super::pass_warnings(std::mem::take(pair.warnings)),
-    });
-    let bytes = serde_json::to_vec(&request).map_err(|e| Error::new(e.to_string()))?;
-    if bytes.len() > super::MAX_BYTES {
-        return Err(Error::new("temporal predicate pair exceeds 64 MiB"));
-    }
-    let reply = env
-        .with_local_frame(4, |env| -> jni::errors::Result<Vec<u8>> {
-            let request = env.byte_array_from_slice(&bytes)?;
-            let result = env
-                .call_method(
-                    analyzer,
-                    jni_str!("analyze"),
-                    jni_sig!("([B)[B"),
-                    &[JValue::Object(&request)],
-                )?
-                .l()?;
-            let result = JByteArray::cast_local(env, result)?;
-            env.convert_byte_array(&result)
-        })
-        .map_err(|e| Error::new(e.to_string()))?;
-    let decision: Decision =
-        serde_json::from_slice(&reply).map_err(|e| Error::new(e.to_string()))?;
-    if decision.next_generated_name < *pair.next {
-        return Err(Error::new(
-            "temporal analysis moved the name counter backwards",
-        ));
-    }
-    *pair.next = decision.next_generated_name;
-    Ok(Some(decision.merge))
-}
-
 // SAFETY: the symbol matches RustCircuitPass.mergeFilters. EnvUnowned contains
-// panics at the JVM boundary and preserves exceptions raised by the analyzer.
+// panics at the JVM boundary and preserves exceptions from operand capture.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPass_mergeFilters<
     'local,
@@ -70,7 +16,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     _class: jni::objects::JClass<'local>,
     snapshot: jni::objects::JByteArray<'local>,
     next: i64,
-    analyzer: jni::objects::JObject<'local>,
+    operands: jni::objects::JObject<'local>,
 ) -> jni::objects::JByteArray<'local> {
     use super::BridgeError;
     use jni::errors::ThrowRuntimeExAndDefault;
@@ -83,14 +29,16 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             .map_err(|e| error(e.to_string()))?;
         let mut next = u64::try_from(next).map_err(|e| error(e.to_string()))?;
         let mut warnings = Vec::new();
-        let output = feldera_sql_opt::merge_temporal_filters_with(
+        let output = feldera_sql_opt::merge_temporal_filters_with_operands(
             input.clone(),
             &mut next,
             &mut warnings,
-            |pair| analyze_live_pair(env, &analyzer, &input, pair),
+            |graph, fields| {
+                super::live_equality::compare(env, &operands, graph, &input, &fields).map(Some)
+            },
         )
         .map_err(|e| error(e.to_string()))?
-        .ok_or_else(|| error("missing pair decision".into()))?;
+        .ok_or_else(|| error("incomplete temporal filter snapshot".into()))?;
         let result = match output {
             feldera_sql_opt::TemporalMerge::Rewritten(circuit) => json!({
                 "diagnostics": super::pass_warnings(warnings),
