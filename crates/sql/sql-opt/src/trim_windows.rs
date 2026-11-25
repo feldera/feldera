@@ -188,6 +188,55 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn detached_window_keeps_a_shared_reader_that_reads_every_value_field() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let site = graph.root_id();
+        let mut edit = CircuitEditor::new(graph);
+        let key = edit.bool_type(site, false)?;
+        let value = edit.tuple_type(site, false, [key.into(), key.into()])?;
+        let key_ref = edit.reference_type(key)?;
+        let value_ref = edit.reference_type(value)?;
+        let pair = edit.tuple_type(site, true, [key_ref.into(), value_ref.into()])?;
+        let shared = edit.named_variable(pair, "pair")?;
+        let value = edit.tuple_field(shared, 1)?;
+        let value = edit.dereference(value)?;
+        let inner = edit.closure_from_variables(value, &[shared])?;
+        let statement = edit.inner_at(
+            site,
+            feldera_sql_ir::InnerKind::Other("DBSPExpressionStatement".into()),
+            [("expression", link(inner))],
+        )?;
+        let key = edit.tuple_field(shared, 0)?;
+        let key = edit.dereference(key)?;
+        let returned = edit.tuple_expr(site, true, &[key, value])?;
+        let block = edit.make_expr(
+            site,
+            Expr::Block,
+            edit.expression_type(returned)?,
+            [
+                ("contents", Field::Array(vec![link(statement)])),
+                ("lastExpression", link(returned)),
+            ],
+        )?;
+        let reader = edit.closure_from_variables(block, &[shared])?;
+        assert!(input_field_paths(edit.circuit(), reader.into()).is_err());
+
+        let data = edit.append_operator(site, site, Op::IncrementalConstant, &[], [])?;
+        let control = edit.append_operator(site, site, Op::Waterline, &[output(data)], [])?;
+        let window =
+            edit.append_operator(site, site, Op::Window, &[output(data), output(control)], [])?;
+        append_map(&mut edit, site, site, Op::MapIndex, output(window), reader)?;
+        let graph = edit.finish()?;
+        let mut names = 0;
+        let result = trim_windows(graph.clone(), &mut names)?;
+        assert_eq!(result.to_json(), graph.to_json());
+        assert_eq!(names, 0);
+        Ok(())
+    }
+
+    #[test]
     fn nullable_window_values_retain_empty_rows_and_rebind_sparse_columns() {
         let graph = Circuit::from_json(json!({
             "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[],
