@@ -316,6 +316,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
             @Override
             public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
+                // Both retainers depend on the join. Their relative order must be stable.
+                Assert.assertEquals(1, this.integrateTraceValues);
                 this.integrateTraceValuesLastN++;
             }
 

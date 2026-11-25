@@ -59,9 +59,8 @@ public class LowerAsof implements CircuitTransform {
         // Maps an integrate trace node in the original graph to the asof join operator that it should be moved to
         Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces = new HashMap<>();
         Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces = new HashMap<>();
-        // Replay uses insertion order to reproduce the order of GC edges.
-        Map<IGCOperator, IGCOperator> original = this.compiler.usesCircuitSeam()
-                ? new LinkedHashMap<>() : new HashMap<>();
+        // Extra dependency edges break ties when the circuit is sorted. Add them in circuit order.
+        Map<IGCOperator, IGCOperator> original = new LinkedHashMap<>();
 
         Graph graph = new Graph(this.compiler);
         this.compiler.applyObservedPass(this.getName(), 0, 0, this.select.apply(graph), circuit);
