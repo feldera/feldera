@@ -320,18 +320,31 @@ def reclaim_pipeline(name: str, delete: bool = False) -> List[str]:
 
 
 def enterprise_only(fn):
+    """Skips a test unless the instance under test is enterprise.
+
+    Uses ``pytest.mark.skipif`` rather than ``unittest.skipUnless``: pytest
+    evaluates a skip mark before setting up the test's fixtures, while a
+    ``unittest`` skip only fires once the (already fixture-filled) test body
+    runs. A test that depends on a fixture which itself needs an enterprise
+    feature (e.g. a shared fixture that builds a fault-tolerant pipeline)
+    would otherwise still run that fixture, and fail, under OSS.
+    """
+    import pytest
+
     fn._enterprise_only = True
-    return unittest.skipUnless(
-        TEST_CLIENT.get_config().edition.is_enterprise(),
-        f"{fn.__name__} is enterprise only, skipping",
+    return pytest.mark.skipif(
+        not TEST_CLIENT.get_config().edition.is_enterprise(),
+        reason=f"{fn.__name__} is enterprise only, skipping",
     )(fn)
 
 
 def single_host_only(fn):
+    import pytest
+
     fn._single_host_only = True
-    return unittest.skipUnless(
-        FELDERA_TEST_NUM_HOSTS == 1,
-        f"multihost not yet supported for {fn.__name__}, skipping",
+    return pytest.mark.skipif(
+        FELDERA_TEST_NUM_HOSTS != 1,
+        reason=f"multihost not yet supported for {fn.__name__}, skipping",
     )(fn)
 
 
