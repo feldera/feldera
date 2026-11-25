@@ -44,6 +44,14 @@ Every workload met the 1.2× ceiling. [Timings, build identities, and raw sample
 | Outer join | 2.666 | 2.065 | 0.774× |
 | Set operations | 2.424 | 2.002 | 0.826× |
 
+A same-build repeat on `b4e9ddc15` matched artifacts and diagnostics in all
+552 pairs. Single-file classic and Gen-2 met the 1.2× ceiling on all eight
+workloads. Nexmark had the largest ratio in both modes, at 1.103× (6.574 s
+hybrid, 5.962 s Java) and 1.051× (6.276 s hybrid, 5.974 s Java), respectively.
+Classic workspace output passed on seven workloads. Its Nexmark p95 reached
+10.499 s hybrid and 6.973 s Java, or 1.506×. The three modes ran concurrently
+on separate pinned CPUs in the shared VM. [Paired measurements](evidence/p3-ordered-integer-cold.json)
+
 ## Unary output projections, 2026-11-25
 
 Each pair compiled the same SQL with direct Java and the packaged hybrid

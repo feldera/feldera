@@ -1,0 +1,137 @@
+{
+  "shipped_demos": {
+    "00-accelerating-batch-analytics.sql": "db784b37c771f56a842778a9a2e7d18482b93f5140d9056ca808f25bb982045f",
+    "01-medallion-architecture.sql": "5338597ee8598ad465beb51753a36c41641a04e45a02e69097fcc2ef15d5936b",
+    "02-fraud-detection.sql": "888a0acf8031de593daea0c3dbf0eb4ac9cfc44013ff2befde526f14dacebdbc",
+    "03-sec-ops.sql": "49b495684020922e82ae8a3631604b196d05e645148a82faa27ba83e20a5a259",
+    "04-product-availability.sql": "c430d559d372c7e4111f3aa1921ab1af47991a540b30aa02266bf63f1ff41911",
+    "05-feature-engineering.sql": "f7eabd3f257dc84afd361c15ead7033ce747f241ac8de5f98f320e6f4713d3ef",
+    "06-supply-chain.sql": "7cc35c1cd17796f6bae3d87adcbb192f18cd9ad6cd999c2b4a303addfd9d3fdf",
+    "07-udf-tutorial.sql": "3a0231e1516f1244c2542c2fa52e5959c010e92c91a6a310a8f15e37053260ca",
+    "08-time-series-tutorial.sql": "d1cd6bdb8b4133faf31c164104562cb3a6d64a6bc814bb26310768ea8c86523d",
+    "09-fine-grained-authorization.sql": "af178c1c301ccee66e7bd90ad0b265c4fdd3fec90a4780e85dceff7c1303d875",
+    "10-dynamic-fga.sql": "2de2af22c6b7504faaaba3a038da11bb62e1cd0fae5a2bf79dbb347b5ad1c6fe",
+    "11-spreadsheet.sql": "f5e1ba6063a87eb29b58b225d42de926e8c649ab8d21ed9ff49458879a6d2572"
+  },
+  "observed_replay": {
+    "compiler_commit": "b4e9ddc15322e9dbbb5a7795ce19db49d2d4c0fd",
+    "engines": {
+      "classic": {
+        "cases": 12,
+        "equal": true,
+        "mismatches": 0,
+        "ordered_s4_observations": 7177,
+        "population_sha256": "2feac3df78c75d88bca69ccb6d68798a62c7d947f665a124b24023addd4c1690",
+        "optimizer_library_sha256": "82732f8ad51d6c08535cff93b082484272d763d63c6df01eab84c77d560c502d",
+        "receipt_sha256": "ee83a4953ca55850bbf750983a1f217ea2c81552d9f1a1e167a101970f616fc9"
+      },
+      "gen2": {
+        "cases": 11,
+        "equal": true,
+        "mismatches": 0,
+        "ordered_s4_observations": 6411,
+        "population_sha256": "2917900263afc1218c9c3eff57bc413cf5d1b8b5c3435ad1fa4856557a347e31",
+        "optimizer_library_sha256": "82732f8ad51d6c08535cff93b082484272d763d63c6df01eab84c77d560c502d",
+        "receipt_sha256": "298e060ee8fb38cc7bebd97c55e2cf7138743151adc7408283199b16ac91efe1"
+      }
+    }
+  },
+  "ordinary_cli": {
+    "compiler_commit": "53da0a69d28f25f976b7a3df662f77f66348bc0f",
+    "engines": {
+      "classic": {
+        "classpath": {
+          "/stage/p3-window-loop-keys/maven/sql-compiler.jar": "1a2850c9daf252f20defb915095809286613c26438817801a4fb19a3db3cbbd7"
+        },
+        "compiler": "3a8bdcf99cbb61222390c4ea2f50b02c7a8b3a9efbf4c498bf6e88e65b3708ea",
+        "optimizer": "df5bc38490c9b73aa51180fdedb35a7f0c8a136b9978ba99b3b117c2eedbd2c8",
+        "comparator": "fef237355cb91f0eafb681082d10857eca9018e04a1a73a8b1ac756f20217396",
+        "receipt_sha256": "6b0e68d4d95ba605b0772126c1002c21a93b7e88fb3cdc8c0dfbfc5afb181262",
+        "accepted": 11,
+        "matching_sql_errors": {},
+        "differences": {
+          "05-feature-engineering.sql": {
+            "comparison": "dataflow.json differs"
+          }
+        }
+      },
+      "gen2": {
+        "classpath": {
+          "/stage/p3-window-loop-keys/maven/sql-compiler.jar": "1a2850c9daf252f20defb915095809286613c26438817801a4fb19a3db3cbbd7"
+        },
+        "compiler": "3a8bdcf99cbb61222390c4ea2f50b02c7a8b3a9efbf4c498bf6e88e65b3708ea",
+        "optimizer": "df5bc38490c9b73aa51180fdedb35a7f0c8a136b9978ba99b3b117c2eedbd2c8",
+        "comparator": "fef237355cb91f0eafb681082d10857eca9018e04a1a73a8b1ac756f20217396",
+        "receipt_sha256": "9d7c0643c5777010f39b365e8f33cebdc471f24887067bd62951f67e40790968",
+        "accepted": 10,
+        "matching_sql_errors": {
+          "01-medallion-architecture.sql": [
+            {
+              "start_line_number": 0,
+              "start_column": 0,
+              "end_line_number": 0,
+              "end_column": 0,
+              "warning": false,
+              "error_type": "Not yet implemented",
+              "message": "LATENESS on the primary-key table 'bronze_clickstream_events' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues",
+              "snippet": ""
+            }
+          ]
+        },
+        "differences": {
+          "05-feature-engineering.sql": {
+            "comparison": "Gen-2 circuit comparison failed: /inner/601/type: values or JSON types differ\n"
+          }
+        }
+      }
+    }
+  },
+  "isolated_java_change": {
+    "optimizer_commit": "3e9fb8f3af8ef01f03d168953fb7a7628fe8ae8c",
+    "change": "Use LinkedHashMap for original in LowerAsof.apply in the direct and hybrid compilers.",
+    "lower_asof_source_sha256": "3b7e799f0b64414334b119ec3db9ad21d77e3dc93bb786e4bf82b8c31dd96a36",
+    "engines": {
+      "classic": {
+        "classpath": {
+          "/stage/p3-ordered-integer-keys/asof-order-control/classes": "6a2823036eb9c69ce3fa5abe92a50e2f2291b74a03008b66c0a71c1684fc0a73",
+          "/stage/p3-window-closure-calls/maven/sql-compiler.jar": "abac76bd7ac7b80ad3a9c9e2a2ad86f89be60eab289a770139f20ecc39b37770"
+        },
+        "compiler": "ec314b04bdb7d208e9ff9bdf873a3241cfcb4721fec06089bebdb65105183843",
+        "optimizer": "6ff1532323744859b415cc4280432a94f6b130351c21fd0d1e4ec185ad0c56bd",
+        "comparator": "fef237355cb91f0eafb681082d10857eca9018e04a1a73a8b1ac756f20217396",
+        "receipt_sha256": "6cc02d4e375dd7da8de4c2b87364defecb7b85f03d80ef10cd0ab1e89a2983c0",
+        "accepted": 12,
+        "matching_sql_errors": {},
+        "differences": {},
+        "feature_engineering_artifacts": 113
+      },
+      "gen2": {
+        "classpath": {
+          "/stage/p3-ordered-integer-keys/asof-order-control/classes": "6a2823036eb9c69ce3fa5abe92a50e2f2291b74a03008b66c0a71c1684fc0a73",
+          "/stage/p3-window-closure-calls/maven/sql-compiler.jar": "abac76bd7ac7b80ad3a9c9e2a2ad86f89be60eab289a770139f20ecc39b37770"
+        },
+        "compiler": "ec314b04bdb7d208e9ff9bdf873a3241cfcb4721fec06089bebdb65105183843",
+        "optimizer": "6ff1532323744859b415cc4280432a94f6b130351c21fd0d1e4ec185ad0c56bd",
+        "comparator": "fef237355cb91f0eafb681082d10857eca9018e04a1a73a8b1ac756f20217396",
+        "receipt_sha256": "8cf4b31b0ccebc84a2ee1b262fae7cc2dcf72bd183a4fda68b9b0d788b27fc5f",
+        "accepted": 11,
+        "matching_sql_errors": {
+          "01-medallion-architecture.sql": [
+            {
+              "start_line_number": 0,
+              "start_column": 0,
+              "end_line_number": 0,
+              "end_column": 0,
+              "warning": false,
+              "error_type": "Not yet implemented",
+              "message": "LATENESS on the primary-key table 'bronze_clickstream_events' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues",
+              "snippet": ""
+            }
+          ]
+        },
+        "differences": {},
+        "feature_engineering_artifacts": 3
+      }
+    }
+  }
+}
