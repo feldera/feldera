@@ -1,0 +1,142 @@
+{
+  "scope": "Compare computed window keys on custom-ordered rows and preserve the effect of hidden comparator declarations on later printed variable names.",
+  "source_commit": "d325a41b87b9771d47a98dd4b6746743ecf2cbc5",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "bcf3a931dff87e22162fa2ab44b32be60047866ac9835f09c9a1cafaa9c889c1",
+    "bin/sql-difftest": "fef237355cb91f0eafb681082d10857eca9018e04a1a73a8b1ac756f20217396",
+    "maven/tests.jar": "7c381d81774ad95f6230de29e04949f8108bfa900cc0bd6f7048f8b6ba5a97f1",
+    "maven/sql-compiler.jar": "aaf31825f8a579a770a3ea7eed70eea9b451cb15f5566e25654a8365114d3989",
+    "bin/sql2dbsp": "fabddc77296baf62ac5ddd50c96a10b9ab54e95a79f0dc19f04a028b8be25921"
+  },
+  "engines": {
+    "classic": {
+      "cases": 18,
+      "ordered_s4_observations": 9181,
+      "population_sha256": "d97f1d16862d0ab4abdd8e7ad6b790ea966c312310fe8f8c76d57c3d1093a55e",
+      "mismatches": 0,
+      "receipt_sha256": "21669a22b3e0441e5ecc45346359e5fb9e8d5ef6d99068619f4b98199eb80c72",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    },
+    "gen2": {
+      "cases": 18,
+      "ordered_s4_observations": 9594,
+      "population_sha256": "f3d5dca5128184ee416703a59d6e3a4422e1f59c049ea0ae5200f02b6b6e3574",
+      "mismatches": 0,
+      "receipt_sha256": "7b0c05e8f1df090dbd8818aa66ffa535f91e85dce60807621a4a103f9b9efd8e",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    }
+  },
+  "rust_tests": 234,
+  "clippy_exit_code": 0,
+  "junit_tests": 332,
+  "nightly_optimizer_junit": 349,
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 13.631888,
+    "largest_driver_plus_front_end_rss_bytes": 70344704
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21402-e531-7c21-9172-49ba872c8969",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21402-e54d-7c50-84ec-20406a2775b4",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21403-f459-74f0-9d6a-13452a4ef425",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21403-f48f-7bd2-ac7d-d97561a588a4",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "previous_jni_control": {
+    "tests": 332,
+    "failures": [
+      "windowKeysReadTheValueAndFieldOfCustomOrderedRows",
+      "omittedComparatorBindingsAffectLaterPrintedNames"
+    ]
+  }
+}

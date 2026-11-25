@@ -1,0 +1,135 @@
+{
+  "scope": "Fold repeated operands across closure and call boundaries when each variable refers to a single declaration. Exercise a 128-level graph with two references to each child.",
+  "source_commit": "a8dd444dfba772e7c16a02909b5ed55d4b69bac9",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "8d67b0e657f79b39338ab5e30042469bf71ba1c5ff66d710de59d05112cd1d0b",
+    "bin/sql-difftest": "fef237355cb91f0eafb681082d10857eca9018e04a1a73a8b1ac756f20217396",
+    "maven/tests.jar": "cfa5b3900066f86970363e8033ad6e6bf6ed4337decb7064e40e50c06e5e62ea",
+    "maven/sql-compiler.jar": "4933acb353007b2b62b8440bb92a53ce7ec3bc097703dfc78be2c9e98f3567e4",
+    "bin/sql2dbsp": "7b27dc1537d1f1ad368c87fe043f456bd55e50d926b4a5f04c7f93a39eeb3891"
+  },
+  "engines": {
+    "classic": {
+      "cases": 18,
+      "ordered_s4_observations": 9181,
+      "population_sha256": "d97f1d16862d0ab4abdd8e7ad6b790ea966c312310fe8f8c76d57c3d1093a55e",
+      "mismatches": 0,
+      "receipt_sha256": "cb53fb7f9a5561903cfc155e20f1a91e61a36da92d681a74e370f4fc27a18b6d",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    },
+    "gen2": {
+      "cases": 18,
+      "ordered_s4_observations": 9594,
+      "population_sha256": "f3d5dca5128184ee416703a59d6e3a4422e1f59c049ea0ae5200f02b6b6e3574",
+      "mismatches": 0,
+      "receipt_sha256": "a76e005c06ba6d960a952baf2a13b9ca95ea75b7c7c0159dd4b560df8b495842",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    }
+  },
+  "rust_tests": 233,
+  "clippy_exit_code": 0,
+  "junit_tests": 330,
+  "nightly_optimizer_junit": 347,
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 6.78134,
+    "largest_driver_plus_front_end_rss_bytes": 70631424
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a213f8-4a4b-7412-ae2d-e786a10a7591",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a213f8-4a68-7180-ad1a-b6291394814b",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a213f8-e9ba-7cc1-8cde-76ebe8c6706d",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a213f8-e9d8-7c61-a0d9-d2b3c3bbf798",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  }
+}
