@@ -357,5 +357,37 @@
     "largest_driver_plus_front_end_rss_bytes": 70381568,
     "compiler_sha256": "34b53db4d2feb85831752e7174ac308eb2d64eec2e9e4aecb297331a5081a787",
     "receipt_sha256": "e517a5cc69faf593279afcc774999bafa7fc2ea22cb4f99967a7d58307acb00e"
+  },
+  "classic_runtime": {
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "worker_sha256": "34b53db4d2feb85831752e7174ac308eb2d64eec2e9e4aecb297331a5081a787",
+    "batch_size": 64,
+    "rust_min_stack": 8388608,
+    "case_named_tests": true,
+    "optimizer_library_sha256": "ef4cbcb23debce9b14793f446e6a1c34523c0c56d85a59d6263d18d6a6c2d049",
+    "executed": 8256,
+    "compile_only": 315,
+    "batches": 143,
+    "total_frozen_cases": 8571,
+    "input_commands": 11407,
+    "expected_runtime_errors": 232,
+    "catalog_cases": 0,
+    "handle_cases": 8256,
+    "batch_receipts_sha256": "d05201023e612e168a9c46de5b286a3878838ee16644847ac1e08bf7b660726f",
+    "environment": {
+      "classpath_sha256": [
+        "3bbc766a87bf41de3ca74ed82e70cd8d8625c0e30ea5c22d388ad61ee7e4ab8c",
+        "d5b49b702f62310feb1a4450810a571648ea1edc85fac928581851a423028490",
+        "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3",
+        "66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9",
+        "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
+      ],
+      "test_manifest_sha256": "86962638f99fc1555ef5f4384f39c4059902e4d3f4dbf4c59b72c3a7943bceac",
+      "test_lock_sha256": "25cac7fffc13522659eb4d06adbc58c05703743735d7421f015d9f5273b76523",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cargo": "/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)\ncargo 1.99.0 (5f94df478 2026-08-27)",
+      "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)"
+    },
+    "receipt_sha256": "74be05570da1e92ef653795251ad3c8a12814c22f5ad8d1d386995d54d8f45b2"
   }
 }
