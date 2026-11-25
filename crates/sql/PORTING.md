@@ -469,6 +469,10 @@ The preceding build used Java for this decision. The regression and 333 other
 focused JUnit tests passed, and both engines matched Java on the same 216
 selected compilations and temporal column defaults. COUNT and LATENESS
 checkpoints restored in both directions and retained their count deltas.
+In the generated classic circuit, inserting `{"d":"2024-02-29"}` into the
+temporal-defaults table returned `2020-03-01 00:00:00` for the omitted
+timestamp. Inserting `{}` evaluated the signed date's cast and reported its
+runtime range error.
 [Checked static initializers](evidence/p3-checked-static-initializers.json)
 
 Build `10a4d9029` matched Java through 87,780 ordered optimizer observations

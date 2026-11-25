@@ -137,5 +137,21 @@
       ],
       "receipt_sha256": "b8e85e4f2e96f72cca43a30a3be905da746dfda449d19ce4ba0996df620a3f1f"
     }
+  },
+  "classic_default_runtime": {
+    "sql": "CREATE TABLE t (\n            ts TIMESTAMP DEFAULT CAST('2020-02-30 00:00:00' AS TIMESTAMP),\n            d DATE DEFAULT CAST('-001-01-01' AS DATE),\n            chosen TIMESTAMP DEFAULT CASE WHEN 1 = 1\n                THEN CAST('2021-04-31 00:00:00' AS TIMESTAMP)\n                ELSE TIMESTAMP '1999-01-01 00:00:00' END\n        );\n        CREATE VIEW v AS SELECT * FROM t;",
+    "input_with_date": {
+      "d": "2024-02-29"
+    },
+    "input_without_date": {},
+    "circuit_rs_sha256": "55fbcc6d7afaed92fbea01c1ad2c8b0732f2bd616a10902c415c78a5617c1517",
+    "binary_sha256": "b6f1e75d3724e2cc6c13b04360576adf3996526d67d0237a0362c79ebcb6a88a",
+    "supplied_date_output": {
+      "ts": "2020-03-01 00:00:00",
+      "d": "2024-02-29",
+      "chosen": "2021-05-01 00:00:00"
+    },
+    "omitted_date_error": "Converting '-001-01-01' to DATE produces a value outside the range 0001-01-01 to 9999-12-31",
+    "receipt_sha256": "e0e54828627da02ba0226cfade16e907deefa6470b1fe3b13da9ce9b74bcecea"
   }
 }
