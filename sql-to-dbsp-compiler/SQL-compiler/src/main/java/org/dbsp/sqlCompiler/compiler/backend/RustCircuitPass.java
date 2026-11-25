@@ -100,6 +100,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.BorrowedField;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldSet;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.IUsedFields;
@@ -1488,7 +1489,6 @@ public final class RustCircuitPass implements CircuitTransform {
                                       List<Integer> timestamps) {}
 
     /** A null projection for an input keeps its port. A null reader keeps the entire join. */
-    @Nullable
     public static JoinInputProjection narrowJoinInputs(DBSPCompiler compiler, DBSPSimpleOperator join) {
         var site = expressionSite(join.getRelNode());
         String pass = "RemoveUnusedFields/NarrowJoin";
@@ -1501,12 +1501,25 @@ public final class RustCircuitPass implements CircuitTransform {
         for (var port : join.inputs)
             roots.add(port.getOutputIndexedZSetType().getKVRefType());
         try {
-            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site),
-                    roots.toArray(IDBSPInnerNode[]::new));
+            var inputs = roots.toArray(IDBSPInnerNode[]::new);
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site), inputs);
+            if (reply.value.isNull()) {
+                var reader = join instanceof DBSPAsofJoinOperator asof
+                        ? asof.fieldUseClosure() : join.getClosureFunction();
+                site.set("paths", MAPPER.valueToTree(requiredParameterFieldDependencies(compiler, reader)));
+                reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site), inputs);
+            }
             if (compiler.stateObserver != null)
-                compiler.stateObserver.nativeDecision(pass, !reply.value.isNull());
-            if (reply.value.isNull())
-                return null;
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.has("diagnostic") || reply.value.has("invalid_input")) {
+                DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+                if (reply.value.has("diagnostic"))
+                    checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
+                else
+                    FindUsedFields.reportInvalidJoinInput(join.getClosureFunction().parameters[
+                            reply.value.required("invalid_input").intValue()],
+                            MAPPER.convertValue(reply.value.required("paths"), new TypeReference<>() {}));
+            }
             if (!reply.value.required("narrowed").booleanValue())
                 return new JoinInputProjection(List.of(), null, List.of());
             var decoder = expressionDecoder(reply.writer);

@@ -464,15 +464,24 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
     static ParameterFieldUse fromPaths(DBSPClosureExpression expression, List<List<List<Integer>>> paths) {
         Utilities.enforce(paths.size() == expression.parameters.length);
         var uses = new ParameterFieldUse();
-        for (int i = 0; i < expression.parameters.length; i++) {
-            var parameter = expression.parameters[i];
-            var fields = paths.get(i);
-            if (fields.isEmpty())
-                uses.set(parameter, new FieldUseMap(parameter.getType(), false));
-            for (var field : fields)
-                new ParameterField(parameter, field).markParameterUse(uses);
-        }
+        for (int i = 0; i < expression.parameters.length; i++)
+            recordPaths(uses, expression.parameters[i], paths.get(i));
         return uses;
+    }
+
+    private static void recordPaths(ParameterFieldUse uses, DBSPParameter parameter, List<List<Integer>> paths) {
+        if (paths.isEmpty())
+            uses.set(parameter, new FieldUseMap(parameter.getType(), false));
+        for (var path : paths)
+            new ParameterField(parameter, path).markParameterUse(uses);
+    }
+
+    /** Report a failed join value projection using the live parameter's field map. */
+    public static void reportInvalidJoinInput(DBSPParameter parameter, List<List<Integer>> paths) {
+        var uses = new ParameterFieldUse();
+        recordPaths(uses, parameter, paths);
+        uses.get(parameter).deref().getUsedFields();
+        throw new IllegalStateException("Expected an invalid join value projection");
     }
 
     private ParameterFieldUse interpret(DBSPClosureExpression expression) {

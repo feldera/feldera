@@ -94,9 +94,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
         var columns = fieldMap.deref().getUsedFields();
-        DBSPClosureExpression projection = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.projectJoinInput(this.compiler, node, inputType, columns)
-                : joinInputProjection(node, inputType, columns);
+        DBSPClosureExpression projection = joinInputProjection(node, inputType, columns);
         DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, source);
         this.addOperator(map);
         return map.outputPort();
@@ -161,14 +159,12 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return false;
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
             var plan = RustCircuitPass.narrowJoinInputs(this.compiler, join);
-            if (plan != null) {
-                if (plan.reader() == null) {
-                    this.noUnusedFields(function);
-                    return false;
-                }
-                this.applyJoinProjection(join, plan);
-                return true;
+            if (plan.reader() == null) {
+                this.noUnusedFields(function);
+                return false;
             }
+            this.applyJoinProjection(join, plan);
+            return true;
         }
 
         var uses = this.find.findUsedFields(function);
@@ -190,18 +186,6 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         return true;
     }
 
-    private ParameterFieldUse asofReferenceFields(DBSPAsofJoinOperator join) {
-        var function = join.getClosureFunction();
-        DBSPTupleExpression tuple = function.body.to(DBSPTupleExpression.class);
-        Utilities.enforce(tuple.fields != null);
-        DBSPExpression[] extra = new DBSPExpression[tuple.size() + 2];
-        System.arraycopy(tuple.fields, 0, extra, 0, tuple.size());
-        extra[tuple.size()] = function.parameters[1].asVariable().deref().field(join.leftTimestampIndex);
-        extra[tuple.size() + 1] = function.parameters[2].asVariable().deref().field(join.rightTimestampIndex);
-        DBSPClosureExpression fakeFunction = new DBSPTupleExpression(extra).closure(function.parameters);
-        return this.find.findUsedFields(fakeFunction);
-    }
-
     @Override
     public void postorder(DBSPAsofJoinOperator join) {
         boolean done = false;
@@ -212,15 +196,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             DBSPParameter right = joinFunction.parameters[2];
             if (this.compiler.options.ioOptions.rustOptimizerPasses) {
                 var plan = RustCircuitPass.narrowJoinInputs(this.compiler, join);
-                if (plan != null) {
-                    if (plan.reader() == null)
-                        super.postorder(join);
-                    else
-                        this.applyJoinProjection(join, plan);
-                    return;
-                }
+                if (plan.reader() == null)
+                    super.postorder(join);
+                else
+                    this.applyJoinProjection(join, plan);
+                return;
             }
-            var useMap = this.asofReferenceFields(join);
+            var useMap = this.find.findUsedFields(join.fieldUseClosure());
             RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
             FieldUseMap leftRemap = rw.getUseMap(left);
             FieldUseMap rightRemap = rw.getUseMap(right);

@@ -281,13 +281,20 @@ fn narrow_join_inputs(input: &[u8], state: &[u8], mut next: u64) -> Result<Value
         #[serde(flatten)]
         site: ExpressionSite,
         timestamps: Option<[usize; 2]>,
+        paths: Option<Vec<BTreeSet<Vec<usize>>>>,
     }
     let request: JoinRequest = serde_json::from_slice(state)?;
     let (arena, roots) = request.site.arena(input)?;
     let (function, pairs) = roots.split_first().ok_or("missing join closure")?;
     let mut edit = CircuitEditor::new(arena.clone());
-    match feldera_sql_opt::narrow_join_inputs(&mut edit, arena.root_id(), *function, pairs, request.timestamps, &mut next)? {
-        JoinInputRewrite::Unsupported => Ok(Value::Null),
+    match feldera_sql_opt::narrow_join_inputs(&arena, &mut edit, *function, pairs, request.timestamps, request.paths, &mut next)? {
+        JoinInputRewrite::InspectReader => Ok(Value::Null),
+        JoinInputRewrite::InvalidInput { parameter, paths } => Ok(json!({
+            "invalid_input": parameter, "paths": paths, "next_generated_name": next
+        })),
+        JoinInputRewrite::Binding(issue) => Ok(json!({
+            "diagnostic": binding_diagnostic(issue), "next_generated_name": next
+        })),
         JoinInputRewrite::Unchanged => Ok(json!({"narrowed": false})),
         JoinInputRewrite::Narrowed { inputs, reader, timestamps } => {
             let changed: Vec<_> = inputs.iter().map(Option::is_some).collect();

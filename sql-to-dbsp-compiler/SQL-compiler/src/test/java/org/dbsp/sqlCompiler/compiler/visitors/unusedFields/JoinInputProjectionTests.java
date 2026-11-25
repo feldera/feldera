@@ -1,6 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -29,6 +32,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
@@ -50,6 +54,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -407,6 +412,77 @@ public class JoinInputProjectionTests {
                     Assert.assertEquals(List.of(true), answers);
                 } else {
                     expectedNames = allocated;
+                }
+            }
+        }
+    }
+
+    @Test
+    public void joinTrimmingChecksSharedReadersAfterProjectingInputs() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var row = input.getOutputRowType().ref().var();
+        var index = new DBSPMapIndexOperator(CalciteEmptyRel.INSTANCE,
+                new DBSPRawTupleExpression(new DBSPTupleExpression(), row.deref()).closure(row), input);
+        var indexed = index.outputPort();
+        var type = indexed.getOutputIndexedZSetType();
+        var key = new DBSPParameter("key", type.keyType.ref());
+        var left = new DBSPParameter("left", type.elementType.ref());
+        var right = new DBSPParameter("right", type.elementType.ref());
+        var nested = new DBSPParameter("left", left.getType());
+        var shared = left.asVariable();
+        var discarded = shared.deref().field(0).closure(nested).toStatement();
+        var comparator = new DBSPDirectComparatorExpression(CalciteObject.EMPTY,
+                new DBSPNoComparatorExpression(CalciteObject.EMPTY, row.deref().field(1).getType()), true);
+        var decisions = new ArrayList<String>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void nativeDecision(String pass, boolean answered) {
+                if (pass.startsWith("RemoveUnusedFields/Narrow"))
+                    decisions.add(pass + "=" + answered);
+            }
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass,
+                                        DBSPCircuit output, boolean completed) {}
+        };
+        for (boolean asof : List.of(false, true)) {
+            for (boolean narrow : List.of(false, true)) {
+                var leftOutput = narrow ? shared.deref().field(1) : shared.deref();
+                var reader = new DBSPTupleExpression(new DBSPBlockExpression(List.of(discarded), leftOutput),
+                        right.asVariable().deref()).closure(key, left, right);
+                var output = new DBSPTypeZSet(reader.getResultType());
+                var join = asof
+                        ? new DBSPAsofJoinOperator(CalciteEmptyRel.INSTANCE, output, reader, 1, 1,
+                                comparator, false, indexed, indexed)
+                        : new DBSPJoinOperator(CalciteEmptyRel.INSTANCE, output, reader, indexed, indexed, false);
+                var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+                circuit.addOperator(source);
+                circuit.addOperator(index);
+                circuit.addOperator(join);
+                String message = null;
+                long allocations = 0;
+                for (boolean hybrid : List.of(false, true)) {
+                    compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                    var pass = new RemoveUnusedFields(compiler, new AnalyzedSet<>());
+                    long before = DBSPVariablePath.nextGeneratedName();
+                    decisions.clear();
+                    if (narrow) {
+                        var failure = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+                        Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("Changing declaration"));
+                        if (hybrid)
+                            Assert.assertEquals(message, failure.getMessage());
+                        message = failure.getMessage();
+                    } else {
+                        Assert.assertSame(join, pass.apply(circuit).allOperators.getLast());
+                    }
+                    long names = DBSPVariablePath.nextGeneratedName() - before;
+                    if (hybrid) {
+                        Assert.assertEquals(allocations, names);
+                        Assert.assertEquals(List.of("RemoveUnusedFields/Narrow" + (asof ? "Asof" : "Join") + "=true"), decisions);
+                    }
+                    allocations = names;
                 }
             }
         }

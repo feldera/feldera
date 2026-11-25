@@ -8,8 +8,10 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
@@ -67,6 +69,18 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements 
                 leftTimestampIndex <= argumentTypes[1].to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class).size());
         Utilities.enforce(rightTimestampIndex >= 0 &&
                 rightTimestampIndex <= argumentTypes[2].to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class).size());
+    }
+
+    /** Include both timestamp reads when computing the fields needed by this join. */
+    public DBSPClosureExpression fieldUseClosure() {
+        var function = this.getClosureFunction();
+        DBSPTupleExpression tuple = function.body.to(DBSPTupleExpression.class);
+        Utilities.enforce(tuple.fields != null);
+        DBSPExpression[] extra = new DBSPExpression[tuple.size() + 2];
+        System.arraycopy(tuple.fields, 0, extra, 0, tuple.size());
+        extra[tuple.size()] = function.parameters[1].asVariable().deref().field(this.leftTimestampIndex);
+        extra[tuple.size() + 1] = function.parameters[2].asVariable().deref().field(this.rightTimestampIndex);
+        return new DBSPTupleExpression(extra).closure(function.parameters);
     }
 
     @Override

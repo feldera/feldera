@@ -1,14 +1,21 @@
 //! Narrow an indexed join input while retaining its key and the nullability of its value.
-use crate::row_fields::RowFields;
+use crate::{inspect_references, row_fields::RowFields, BindingDiagnostic};
 use feldera_sql_expr::copy_expression;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId, TypeKind,
+    Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId,
+    TypeKind,
 };
+use std::collections::BTreeSet;
 
 /// The join key is never narrowed. Each changed value input gets its own
 /// projection before the join; unchanged inputs keep their original ports.
-pub enum JoinInputRewrite {
-    Unsupported,
+pub enum JoinInputRewrite<'a> {
+    InspectReader,
+    InvalidInput {
+        parameter: usize,
+        paths: BTreeSet<Vec<usize>>,
+    },
+    Binding(BindingDiagnostic<'a>),
     Unchanged,
     Narrowed {
         inputs: Vec<Option<ExpressionId>>,
@@ -20,18 +27,21 @@ pub enum JoinInputRewrite {
 struct JoinValue {
     fields: Vec<bool>,
     has_unused_leaf: bool,
+    projectable: bool,
 }
 
 /// Narrow all value inputs together, including the outer rows of star joins.
 /// A partially-read nested value still occupies its full top-level column.
-pub fn narrow_join_inputs(
+pub fn narrow_join_inputs<'a>(
+    original: &'a Circuit,
     edit: &mut CircuitEditor,
-    site: NodeId,
     reader: NodeId,
     input_pairs: &[NodeId],
     mut timestamps: Option<[usize; 2]>,
+    checked_paths: Option<Vec<BTreeSet<Vec<usize>>>>,
     next: &mut u64,
-) -> Result<JoinInputRewrite, Error> {
+) -> Result<JoinInputRewrite<'a>, Error> {
+    let site = original.root_id();
     if timestamps.is_some() {
         if input_pairs.len() != 2 {
             return Err(Error::new(
@@ -41,12 +51,16 @@ pub fn narrow_join_inputs(
         let body = edit.expression(edit.node(reader)?.edge("body")?)?;
         if edit.expr_kind(body)? != Expr::Tuple || edit.node(body.into())?.field("fields").is_none()
         {
-            return Ok(JoinInputRewrite::Unsupported);
+            return Ok(JoinInputRewrite::InspectReader);
         }
     }
-    let Some(mut paths) = feldera_sql_expr::live_parameter_field_paths(edit.circuit(), reader)?
-    else {
-        return Ok(JoinInputRewrite::Unsupported);
+    let checked = checked_paths.is_some();
+    let mut paths = match checked_paths {
+        Some(paths) => paths,
+        None => match feldera_sql_expr::live_parameter_field_paths(original, reader)? {
+            Some(paths) => paths,
+            None => return Ok(JoinInputRewrite::InspectReader),
+        },
     };
     let parameters = edit.node(reader)?.edges("parameters")?;
     if parameters.len() != input_pairs.len() + 1 || parameters.len() != paths.len() {
@@ -58,20 +72,27 @@ pub fn narrow_join_inputs(
     let mut values = Vec::with_capacity(input_pairs.len());
     for (side, (&parameter, paths)) in parameters[1..].iter().zip(&mut paths[1..]).enumerate() {
         let ty = edit.type_id(edit.node(parameter)?.edge("type")?)?;
-        if edit.type_kind(ty)? != TypeKind::Ref {
-            return Ok(JoinInputRewrite::Unsupported);
+        let mut row = ty;
+        while edit.type_kind(row)? == TypeKind::Ref {
+            row = edit.type_id(edit.node(row.into())?.edge("type")?)?;
         }
-        let row = edit.type_id(edit.node(ty.into())?.edge("type")?)?;
         if !matches!(edit.type_kind(row)?, TypeKind::Tuple | TypeKind::RawTuple) {
-            return Ok(JoinInputRewrite::Unsupported);
+            let unused = shapes.unused(ty.into(), &[], paths, 1)?;
+            values.push(JoinValue {
+                fields: vec![!unused],
+                has_unused_leaf: unused,
+                projectable: false,
+            });
+            continue;
         }
+        let projectable = edit.type_kind(ty)? == TypeKind::Ref
+            && edit.node(ty.into())?.edge("type")? == row.into();
         let columns = edit.node(row.into())?.edges("tupFields")?;
         if let Some(indices) = timestamps {
             let ts = indices[side];
             if ts >= columns.len() {
-                return Err(Error::new(
-                    "ASOF timestamp index exceeds the input row width",
-                ));
+                // Constructing the live timestamp read reports its source location.
+                return Ok(JoinInputRewrite::InspectReader);
             }
             // The match condition reads each timestamp even if the output does not.
             paths.insert(vec![ts]);
@@ -91,6 +112,7 @@ pub fn narrow_join_inputs(
         values.push(JoinValue {
             fields,
             has_unused_leaf,
+            projectable,
         });
     }
     if values.iter().all(|row| !row.fields.contains(&false)) {
@@ -99,11 +121,22 @@ pub fn narrow_join_inputs(
 
     let mut inputs = Vec::with_capacity(values.len());
     let mut replacements = Vec::with_capacity(values.len());
-    for ((&pair, &param), row) in input_pairs.iter().zip(&parameters[1..]).zip(&values) {
+    for (side, ((&pair, &param), row)) in input_pairs
+        .iter()
+        .zip(&parameters[1..])
+        .zip(&values)
+        .enumerate()
+    {
         let reference = edit.type_id(edit.node(param)?.edge("type")?)?;
         let ty = crate::compressed_field_type(edit, reference, 1, &row.fields)?;
         replacements.push(edit.derive_inner(param, [("type", Field::Reference(ty.into()))])?);
         let projection = if row.has_unused_leaf {
+            if !row.projectable {
+                return Ok(JoinInputRewrite::InvalidInput {
+                    parameter: side + 1,
+                    paths: std::mem::take(&mut paths[side + 1]),
+                });
+            }
             let columns = row
                 .fields
                 .iter()
@@ -121,6 +154,13 @@ pub fn narrow_join_inputs(
             None
         };
         inputs.push(projection);
+    }
+    // Field uses may belong to a copied tree. Rebinding the original reader
+    // happens after allocating every input projection.
+    if checked {
+        if let Some(issue) = inspect_references(original, reader, false)?.diagnostic {
+            return Ok(JoinInputRewrite::Binding(issue));
+        }
     }
     let projected = replacements
         .into_iter()
@@ -237,12 +277,14 @@ mod tests {
 
         let pair = edit.tuple_type(site, true, [reference.into(), reference.into()])?;
         let mut next = 0;
+        let original = edit.circuit().clone();
         let rewrite = narrow_join_inputs(
+            &original,
             &mut edit,
-            site,
             closure.into(),
             &[pair.into(), pair.into()],
             Some([2, 3]),
+            None,
             &mut next,
         )?;
         let JoinInputRewrite::Narrowed {
