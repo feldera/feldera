@@ -289,7 +289,7 @@ pub use stream_rewrites::{
 pub use sums::merge_sums;
 pub use index_key_equivalence::{compare_live_operands, ColumnRewriteError, ComparisonDiagnostic, KeyComparisonError};
 pub use temporal_groups::{accepts_temporal_bound, check_temporal_bound, check_temporal_groups, group_temporal_filters, TemporalBoundKey, TemporalGroup, WindowTerm};
-pub use temporal_comparisons::{TemporalDiagnostic, MissingClockKey, classify_temporal_predicates, conjunct_windows, infer_temporal_predicates, ConjunctWindow, TemporalPredicate};
+pub use temporal_comparisons::{ClockError, TemporalDiagnostic, MissingClockKey, classify_temporal_predicates, conjunct_windows, infer_temporal_predicates, ConjunctWindow, TemporalPredicate};
 pub use temporal_equality::desugar_now_equality;
 pub use temporal_filters::{
     TemporalMerge, break_temporal_filters, merge_temporal_filters, merge_temporal_filters_with_operands,

@@ -175,6 +175,33 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void clockFilterLoweringReportsTheFailingConjunctAfterEarlierWindows() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var invalid = b.call(b.i32(), "sign_i32");
+        var clock = new DBSPBlockExpression(List.of(invalid.toStatement()), b.call(time, "now"));
+        var circuit = temporalFilterChain(clock);
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.options.ioOptions.nowStream = false;
+        long start = DBSPVariablePath.nextGeneratedName();
+        var direct = Assert.assertThrows(IndexOutOfBoundsException.class, () -> new RewriteNow(compiler).apply(circuit));
+        long names = DBSPVariablePath.nextGeneratedName() - start;
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var pass = new RewriteNow(compiler) {
+            @Override
+            public List<BooleanExpression> findTemporalFilters(DBSPFilterOperator filter, DBSPClosureExpression predicate) {
+                throw new AssertionError("reclassified a clock predicate in Java");
+            }
+        };
+        start = DBSPVariablePath.nextGeneratedName();
+        var hybrid = Assert.assertThrows(direct.getClass(), () -> pass.apply(circuit));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - start);
+        Assert.assertEquals(2, pass.nativeClockFilters());
+    }
+
+    @Test
     public void temporalMergeChecksScalarInputBeforeEvaluatingClockBounds() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();

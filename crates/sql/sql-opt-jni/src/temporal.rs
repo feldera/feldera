@@ -6,6 +6,33 @@ use feldera_sql_opt::limiters::{Stream, StreamKind};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
+fn temporal_failure(
+    graph: &Circuit,
+    input: &Circuit,
+    diagnostic: feldera_sql_opt::TemporalDiagnostic,
+) -> Result<Value, Error> {
+    use feldera_sql_opt::TemporalDiagnostic as Diagnostic;
+    let live_root = |id| graph.live_inner_node(input, id);
+    Ok(match diagnostic {
+        Diagnostic::Predicate { parameter, body } => {
+            let roots = graph.live_inner_roots(input, &[parameter, body.into()])?;
+            json!({"predicate": roots})
+        }
+        Diagnostic::Comparison(error) => json!({"comparison_failure": error}),
+        Diagnostic::MissingBound => json!({"missing_clock_bound": true}),
+        Diagnostic::Type(kind, ty) => json!({"type_error": {
+            "kind": kind, "type": live_root(ty.into())?,
+        }}),
+        Diagnostic::FunctionArgument(call, error) => json!({
+            "call": live_root(call.into())?, "argument_error": error,
+        }),
+        Diagnostic::Missing(key) => json!({
+            "missing_clock_key": live_root(key.expression().into())?,
+            "key_is_node_id": matches!(key, feldera_sql_opt::MissingClockKey::Fact(_)),
+        }),
+    })
+}
+
 // SAFETY: the symbol matches RustCircuitPass.mergeFilters. EnvUnowned contains
 // panics at the JVM boundary and preserves exceptions from operand capture.
 #[unsafe(no_mangle)]
@@ -46,27 +73,8 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
                 "circuit": circuit.changed_live_graph(&input),
             }),
             feldera_sql_opt::TemporalMerge::Failed { graph, diagnostic, next_name, warnings } => {
-                use feldera_sql_opt::TemporalDiagnostic as Diagnostic;
-                let live_root = |id| graph.live_inner_node(&input, id).map_err(|e| error(e.to_string()));
-                let failure = match diagnostic {
-                    Diagnostic::Predicate { parameter, body } => {
-                        let roots = graph.live_inner_roots(&input, &[parameter, body.into()])
-                            .map_err(|e| error(e.to_string()))?;
-                        json!({"predicate": roots})
-                    }
-                    Diagnostic::Comparison(error) => json!({"comparison_failure": error}),
-                    Diagnostic::MissingBound => json!({"missing_clock_bound": true}),
-                    Diagnostic::Type(kind, ty) => json!({"type_error": {
-                        "kind": kind, "type": live_root(ty.into())?,
-                    }}),
-                    Diagnostic::FunctionArgument(call, error) => json!({
-                        "call": live_root(call.into())?, "argument_error": error,
-                    }),
-                    Diagnostic::Missing(key) => json!({
-                        "missing_clock_key": live_root(key.expression().into())?,
-                        "key_is_node_id": matches!(key, feldera_sql_opt::MissingClockKey::Fact(_)),
-                    }),
-                };
+                let failure = temporal_failure(&graph, &input, diagnostic)
+                    .map_err(|e| error(e.to_string()))?;
                 json!({
                     "failure": failure,
                     "next_generated_name": next_name,
@@ -242,8 +250,14 @@ pub(super) fn filter(
         indexed_clock: fragment.inputs[2],
         join_key: edit.type_id(*join_key)?,
     };
-    let Some(result) = lowering.lower_filter(&mut edit, rows, filter, &mut next)? else {
-        return Ok(Value::Null);
+    let result = match lowering.lower_checked_filter(&mut edit, rows, filter, &mut next) {
+        Ok(Some(result)) => result,
+        Ok(None) => return Ok(Value::Null),
+        Err(feldera_sql_opt::ClockError::InvalidIr(error)) => return Err(error.into()),
+        Err(feldera_sql_opt::ClockError::Diagnostic(diagnostic)) => {
+            let failure = temporal_failure(edit.circuit(), &fragment.base, diagnostic)?;
+            return Ok(json!({"failure": failure, "next_generated_name": next}));
+        }
     };
     if let LoweredClockFilter::UnsupportedLambda { predicate, lambda } = result {
         let sites = edit

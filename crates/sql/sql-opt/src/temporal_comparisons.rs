@@ -115,7 +115,7 @@ pub enum TemporalDiagnostic {
     Predicate { parameter: NodeId, body: ExpressionId },
 }
 
-pub(crate) enum ClockError {
+pub enum ClockError {
     Diagnostic(TemporalDiagnostic),
     InvalidIr(Error),
 }

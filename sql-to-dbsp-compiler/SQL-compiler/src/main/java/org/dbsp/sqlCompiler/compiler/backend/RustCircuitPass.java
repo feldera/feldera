@@ -2430,6 +2430,11 @@ public final class RustCircuitPass implements CircuitTransform {
                     filter.getOutputZSetType(), filter.getClosureFunction());
             if (!answered(compiler, "RewriteNow/Filter", reply.value))
                 return null;
+            var failure = reply.value.get("failure");
+            if (failure != null) {
+                DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+                throw temporalError(compiler, reply.writer, failure);
+            }
             var rejection = reply.value.get("rejected_lambda");
             if (rejection != null) {
                 var decoder = expressionDecoder(reply.writer);
@@ -4372,27 +4377,31 @@ public final class RustCircuitPass implements CircuitTransform {
             finishLowering(this.compiler, reply);
             if (this.compiler.stateObserver != null)
                 this.compiler.stateObserver.nativeDecision("MergeFilters", true);
-            if (failure.has("predicate"))
-                throw temporalPredicateError(this.compiler, writer.innerVisitor, failure.required("predicate"));
-            if (failure.has("comparison_failure"))
-                reportComparisonFailure(failure.required("comparison_failure"));
-            var typeError = failure.get("type_error");
-            if (typeError != null) {
-                var type = decodeLiveRoot(expressionDecoder(writer.innerVisitor), typeError.required("type"), DBSPType.class);
-                throw waterlineTypeError(type, typeError.required("kind").textValue());
-            }
-            if (failure.has("argument_error")) {
-                var call = decodeLiveRoot(expressionDecoder(writer.innerVisitor), failure.required("call"), DBSPApplyExpression.class);
-                throw MAPPER.convertValue(failure.required("argument_error"), FunctionArgumentError.class).exception(call);
-            }
-            if (failure.has("missing_clock_bound"))
-                // MonotoneExpression.getReducedExpression requires a non-null bound.
-                throw new NullPointerException();
-            var expression = decodeLiveRoot(expressionDecoder(writer.innerVisitor),
-                    failure.required("missing_clock_key"), DBSPExpression.class);
-            throw Utilities.missingKey(failure.required("key_is_node_id").booleanValue() ? expression.getId() : expression);
+            throw temporalError(this.compiler, writer.innerVisitor, failure);
         }
         return reply;
+    }
+
+    private static RuntimeException temporalError(DBSPCompiler compiler, ToJsonInnerVisitor writer, JsonNode failure) {
+        if (failure.has("predicate"))
+            return temporalPredicateError(compiler, writer, failure.required("predicate"));
+        if (failure.has("comparison_failure"))
+            reportComparisonFailure(failure.required("comparison_failure"));
+        var typeError = failure.get("type_error");
+        if (typeError != null) {
+            var type = decodeLiveRoot(expressionDecoder(writer), typeError.required("type"), DBSPType.class);
+            return waterlineTypeError(type, typeError.required("kind").textValue());
+        }
+        if (failure.has("argument_error")) {
+            var call = decodeLiveRoot(expressionDecoder(writer), failure.required("call"), DBSPApplyExpression.class);
+            return MAPPER.convertValue(failure.required("argument_error"), FunctionArgumentError.class).exception(call);
+        }
+        if (failure.has("missing_clock_bound"))
+            // MonotoneExpression.getReducedExpression requires a non-null bound.
+            return new NullPointerException();
+        var expression = decodeLiveRoot(expressionDecoder(writer),
+                failure.required("missing_clock_key"), DBSPExpression.class);
+        return Utilities.missingKey(failure.required("key_is_node_id").booleanValue() ? expression.getId() : expression);
     }
 
     /** Materialize the Rust waterline diagnostic against the failing predicate's

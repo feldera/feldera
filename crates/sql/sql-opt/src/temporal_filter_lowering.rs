@@ -1,10 +1,11 @@
 //! Lower a clock predicate into ordinary filters, temporal windows and a residual join.
 use crate::limiters::Stream;
-use crate::temporal_filters::classify_closure;
+use crate::temporal_comparisons::{ClockError, speculative_clock};
+use crate::temporal_filters::checked_closure;
 use crate::{
     ClockConsumer, ClockJoinInputs, ClockProjection, ClockRewrite, InitialBounds,
     TemporalPredicate, TemporalStreams, WindowComparison, WindowKey, WindowTerm, append_clock_join,
-    append_temporal_window, apply_joined_clock, group_temporal_filters, scalar_clock_operators,
+    append_temporal_window, apply_joined_clock, check_temporal_groups, scalar_clock_operators,
     temporal_window,
 };
 use feldera_sql_ir::{
@@ -77,18 +78,30 @@ impl TemporalFilterLowering {
     pub fn lower_filter(
         &self,
         edit: &mut CircuitEditor,
-        mut rows: Stream,
+        rows: Stream,
         filter: ClockFilter,
         next: &mut u64,
     ) -> Result<Option<LoweredClockFilter>, Error> {
-        let Some((parameter, predicates)) = classify_closure(edit, filter.function, next)? else {
+        speculative_clock(next, |names| self.lower_checked_filter(edit, rows, filter, names))
+    }
+
+    /// A live caller can render a diagnostic using the operands of the failed
+    /// predicate. Earlier classifications have already consumed their names.
+    pub fn lower_checked_filter(
+        &self,
+        edit: &mut CircuitEditor,
+        mut rows: Stream,
+        filter: ClockFilter,
+        next: &mut u64,
+    ) -> Result<Option<LoweredClockFilter>, ClockError> {
+        let Some((parameter, predicates)) = checked_closure(edit, filter.function, next)? else {
             return Ok(None);
         };
         let terms: Vec<_> = predicates
             .iter()
             .map(|predicate| WindowTerm::from_predicate(parameter, predicate))
             .collect();
-        let Some(groups) = group_temporal_filters(edit, &terms)? else {
+        let Some(groups) = check_temporal_groups(edit, &terms)? else {
             return Ok(None);
         };
         let original_parameters = edit.node(filter.function.into())?.edges("parameters")?;

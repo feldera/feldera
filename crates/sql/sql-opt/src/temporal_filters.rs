@@ -4,7 +4,7 @@ use crate::{
     filters::rewrite_filters,
     function_calls::contains_now,
     temporal_comparisons::{
-        ClockError, ClockInput, TemporalDiagnostic, checked_temporal_predicates, speculative_clock,
+        ClockError, ClockInput, TemporalDiagnostic, checked_temporal_predicates,
     },
     temporal_groups::check_temporal_bound_with,
 };
@@ -149,15 +149,7 @@ fn window_terms(
     )
 }
 
-pub(super) fn classify_closure(
-    edit: &mut CircuitEditor,
-    closure: ExpressionId,
-    next: &mut u64,
-) -> Result<Option<(NodeId, Vec<TemporalPredicate>)>, Error> {
-    speculative_clock(next, |names| checked_closure(edit, closure, names))
-}
-
-fn checked_closure(
+pub(super) fn checked_closure(
     edit: &mut CircuitEditor,
     closure: ExpressionId,
     next: &mut u64,
