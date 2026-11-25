@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -56,6 +57,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
@@ -436,6 +438,35 @@ public final class RustCircuitPass implements CircuitTransform {
         return fanout == 1 ? rules.row : rules.sharedRow;
     }
 
+    public static List<DBSPSimpleOperator> pushProjection(DBSPCompiler compiler,
+            DBSPUnaryOperator reader, DBSPSimpleOperator producer) {
+        String pass = "OptimizeProjections/PushThrough";
+        var request = expressionSite(producer.getRelNode());
+        request.put("producer", producer.getClass().getSimpleName());
+        request.set("ports", MAPPER.valueToTree(producer.inputs.stream().map(p -> p.outputNumber).toList()));
+        var roots = new ArrayList<IDBSPInnerNode>();
+        roots.add(reader.getFunction());
+        roots.add(reader.outputType);
+        if (producer instanceof DBSPDelayOperator && producer.function != null)
+            roots.add(producer.function);
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request),
+                    roots.toArray(IDBSPInnerNode[]::new));
+            var operators = decodeOperatorFragment(reply,
+                    op -> op instanceof DBSPMapOperator || op instanceof DBSPMapIndexOperator
+                            ? reader.getRelNode() : producer.getRelNode(),
+                    producer.inputs.stream().map(OutputPort::node).toArray(DBSPOperator[]::new));
+            Utilities.enforce(operators.size() == producer.inputs.size() + 1);
+            operators.subList(0, producer.inputs.size()).forEach(op -> op.copyAnnotations(reader));
+            operators.getLast().copyAnnotations(producer);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return operators;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode projection inputs", error);
+        }
+    }
+
     public static List<OptimizerStep> optimizerOrder(boolean outputsAreSets, boolean incrementalize) {
         try {
             byte[] options = MAPPER.writeValueAsBytes(Map.of(
@@ -468,6 +499,14 @@ public final class RustCircuitPass implements CircuitTransform {
         LiveDecoder(ToJsonInnerVisitor writer, ProvenanceCodec.Decoder provenance) {
             super(null, provenance);
             this.writer = writer;
+        }
+
+        @Override
+        protected RuntimeException constructorFailure(String nodeClass, long id, Throwable cause) {
+            // These constructors run as part of the live optimizer pass.
+            if (cause instanceof BaseCompilerException diagnostic)
+                return diagnostic;
+            return super.constructorFailure(nodeClass, id, cause);
         }
 
         @Override

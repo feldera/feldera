@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
@@ -212,6 +213,22 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         return ProjectionRule.KEEP;
     }
 
+    private void pushThrough(DBSPUnaryOperator reader, DBSPSimpleOperator producer) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var operators = RustCircuitPass.pushProjection(this.compiler, reader, producer);
+            operators.subList(0, operators.size() - 1).forEach(this::addOperator);
+            this.map(reader, operators.getLast());
+            return;
+        }
+        var inputs = new ArrayList<OutputPort>();
+        for (var input : producer.inputs) {
+            var projection = reader.withInputs(List.of(input), true).to(DBSPSimpleOperator.class);
+            this.addOperator(projection);
+            inputs.add(projection.outputPort());
+        }
+        this.map(reader, producer.withInputs(inputs, true).to(DBSPSimpleOperator.class));
+    }
+
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         int inputFanout = this.getGraph().getFanout(operator.input().node());
@@ -263,20 +280,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
                     .newline();
-            // For all such operators we can swap them with the mapindex
-            List<OutputPort> newSources = new ArrayList<>();
-            for (OutputPort sourceSource: source.node().inputs) {
-                DBSPSimpleOperator newProjection = operator
-                        .withInputs(Linq.list(sourceSource), true)
-                        .copyAnnotations(operator)
-                        .to(DBSPSimpleOperator.class);
-                newSources.add(newProjection.outputPort());
-                this.addOperator(newProjection);
-            }
-            DBSPSimpleOperator result = source.simpleNode()
-                    .withInputs(newSources, true)
-                    .to(DBSPSimpleOperator.class);
-            this.map(operator, result, operator != result);
+            this.pushThrough(operator, source.simpleNode());
             return;
         } else if (rule == ProjectionRule.TRIM_AGGREGATE) {
             DBSPStreamAggregateOperator aggregate = source.node().to(DBSPStreamAggregateOperator.class);
@@ -305,11 +309,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 super.postorder(operator);
             return;
         } else {
-            // The Java visitor examines every remaining reader. Rust requests its
-            // closure only for producers that can use a join projection.
-            boolean probeJoin = !this.compiler.options.ioOptions.rustOptimizerPasses
-                    || rule == ProjectionRule.PROJECT_JOIN || rule == ProjectionRule.PROJECT_INDEXED_JOIN;
-            if (probeJoin && (!this.onlyProjections || this.isProjection(operator, false))) {
+            // Projection analysis also validates bindings, even if the producer cannot absorb the reader.
+            if (!this.onlyProjections || this.isProjection(operator, false)) {
                 if (rule == ProjectionRule.PROJECT_JOIN) {
                     Logger.INSTANCE.belowLevel(this, 2)
                             .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
@@ -753,19 +754,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 }
             }
 
-            // For all such operators we can swap them with the map
-            List<OutputPort> newSources = new ArrayList<>();
-            for (OutputPort sourceSource: source.node().inputs) {
-                DBSPSimpleOperator newProjection = operator
-                        .withInputs(Linq.list(sourceSource), true)
-                        .to(DBSPSimpleOperator.class);
-                newSources.add(newProjection.outputPort());
-                this.addOperator(newProjection);
-            }
-            DBSPSimpleOperator result = source.simpleNode()
-                    .withInputs(newSources, true)
-                    .to(DBSPSimpleOperator.class);
-            this.map(operator, result, operator != result);
+            this.pushThrough(operator, source.simpleNode());
             return;
         } else if (rule == ProjectionRule.PROJECT_AGGREGATE_ZERO) {
             Logger.INSTANCE.belowLevel(this, 2)

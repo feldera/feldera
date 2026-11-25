@@ -1,5 +1,7 @@
 //! Candidate rewrites for a Map or MapIndex following a live producer.
-use feldera_sql_ir::OperatorKind;
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort, TypeId, TypeKind,
+};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -69,6 +71,71 @@ impl ProjectionRules {
             shared_row,
             index,
         }
+    }
+}
+
+/// Move a reader before a linear operator. All copies share the original
+/// closure and declared output type, including when two ports name the same input.
+pub struct ProjectionPushdown {
+    pub producer: OperatorKind,
+    pub initial: Option<ExpressionId>,
+    pub reader: ExpressionId,
+    pub output: TypeId,
+}
+
+impl ProjectionPushdown {
+    pub fn append(
+        self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        inputs: &[OutputPort],
+        next: &mut u64,
+    ) -> Result<(), Error> {
+        use OperatorKind as Op;
+        let map = match edit.type_kind(self.output)? {
+            TypeKind::IndexedZSet => Op::MapIndex,
+            TypeKind::ZSet => Op::Map,
+            _ => return Err(Error::new("pushed projection requires a collection output")),
+        };
+        let rules = ProjectionRules::for_producer(self.producer);
+        let rule = if map == Op::MapIndex {
+            rules.index
+        } else {
+            rules.row
+        };
+        if !matches!(
+            rule,
+            ProjectionRule::PushThrough | ProjectionRule::ProjectSum
+        ) {
+            return Err(Error::new("operator does not admit a pushed projection"));
+        }
+        let output = Field::Reference(self.output.into());
+        let mut projected = Vec::with_capacity(inputs.len());
+        for &input in inputs {
+            let operator = edit.append_operator(
+                body,
+                body,
+                map,
+                &[input],
+                [
+                    ("function", Field::Reference(self.reader.into())),
+                    ("outputType", output.clone()),
+                ],
+            )?;
+            projected.push(OutputPort {
+                operator,
+                number: 0,
+            });
+        }
+        let function = if self.producer == Op::Noop {
+            Some(crate::rebuild::noop_function(edit, self.output, next)?)
+        } else {
+            self.initial
+        };
+        let fields = std::iter::once(("outputType", output))
+            .chain(function.map(|f| ("function", Field::Reference(f.into()))));
+        edit.append_operator(body, body, self.producer, &projected, fields)?;
+        Ok(())
     }
 }
 

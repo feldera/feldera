@@ -1,0 +1,60 @@
+//! Bind the inputs of a linear projection rewrite to live ports.
+use crate::{ExpressionSite, fragment::Fragment};
+use feldera_sql_ir::{CircuitEditor, NodeId, OperatorKind as Op, OutputPort};
+use feldera_sql_opt::ProjectionPushdown;
+use serde::Deserialize;
+use serde_json::Value;
+use std::error::Error;
+
+#[derive(Deserialize)]
+struct Request {
+    #[serde(flatten)]
+    site: ExpressionSite,
+    producer: String,
+    ports: Vec<usize>,
+}
+
+pub(super) fn operators(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn Error>> {
+    let request: Request = serde_json::from_slice(state)?;
+    let producer = Op::from_wire(&request.producer).ok_or("unknown projection producer")?;
+    let ports: Vec<_> = request
+        .ports
+        .into_iter()
+        .enumerate()
+        .map(|(i, number)| OutputPort {
+            operator: NodeId::Outer(i as u64 + 1),
+            number,
+        })
+        .collect();
+    let (fragment, roots) =
+        Fragment::with_inputs(request.site, ports, std::iter::repeat(Op::Map), input)?;
+    let mut edit = CircuitEditor::new(fragment.base.clone());
+    let (reader, output, initial) = match *roots.as_slice() {
+        [reader, output] => (reader, output, None),
+        [reader, output, initial] if producer == Op::Delay => {
+            (reader, output, Some(edit.expression(initial)?))
+        }
+        _ => {
+            return Err(
+                "expected a projection, its output type and an optional delay initializer".into(),
+            );
+        }
+    };
+    let pushdown = ProjectionPushdown {
+        producer,
+        reader: edit.expression(reader)?,
+        output: edit.type_id(output)?,
+        initial,
+    };
+    pushdown.append(
+        &mut edit,
+        fragment.base.root_id(),
+        &fragment.inputs,
+        &mut next,
+    )?;
+    fragment.reply(&edit, next)
+}

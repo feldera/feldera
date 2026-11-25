@@ -3,6 +3,7 @@
 mod fragment;
 mod split_map;
 mod narrowed_unary;
+mod push_projection;
 mod narrowed_join;
 mod topk_input;
 mod repeat;
@@ -1609,6 +1610,7 @@ fn transform(
         "Monotonicity/Asof" => return asof_waterline(input, state, next),
         "Monotonicity/Hop" => return hop_waterline(input, state, next),
         "ExpandHop/Window" => return expand_hop(input, state, next),
+        "OptimizeProjections/PushThrough" => return push_projection::operators(input, state, next),
         "RemoveUnusedFields/UnaryOperators" => return narrowed_unary::operators(input, state, next),
         "RemoveUnusedFields/TopKOperators" => return topk_input::operators(input, state, next),
         "RemoveUnusedFields/SplitMap" => return split_map::operators(input, state, next),

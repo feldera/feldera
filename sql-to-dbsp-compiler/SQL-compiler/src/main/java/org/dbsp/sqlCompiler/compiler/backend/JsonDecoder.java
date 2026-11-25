@@ -250,10 +250,14 @@ public class JsonDecoder {
             }
             return result;
         } catch (InvocationTargetException e) {
-            throw new RuntimeException("Error decoding " + cls.asText() + " with id " + originalId, e.getCause());
+            throw this.constructorFailure(cls.asText(), originalId, e.getCause());
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Class " + cls.asText() + " has no static fromJson(JsonNode, JsonDecoder) method", e);
         }
+    }
+
+    protected RuntimeException constructorFailure(String nodeClass, long id, Throwable cause) {
+        return new RuntimeException("Error decoding " + nodeClass + " with id " + id, cause);
     }
 
     /** Called by DBSPCircuit.fromJson before it decodes the operators. */
