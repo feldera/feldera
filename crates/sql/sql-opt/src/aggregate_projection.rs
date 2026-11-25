@@ -1,7 +1,16 @@
 //! Drop unused aggregate components while preserving the following map's input layout.
-use crate::row_projection::{RowProjection, tuple_of_fields};
+use crate::{
+    FieldRewriteError, compressed_field_type, inspect_references, project_used_fields,
+    projected_reader::rebind_parameters,
+    row_fields::RowFields,
+    row_projection::{RowProjection, tuple_of_fields},
+    terms::Terms,
+};
 use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, TypeId};
+use feldera_sql_ir::{
+    Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, TypeId, TypeKind,
+};
+use std::collections::BTreeSet;
 
 /// Lift a projection of the input value to the indexed stream consumed by
 /// aggregates and TopK. Nested key fields must survive the narrowing.
@@ -21,6 +30,61 @@ pub fn project_indexed_value(
     let body = edit.tuple_expr(pair.into(), true, &[key, value])?;
     let body = reduce_closure_body_with_warnings(edit, body.into(), &[], &[], Some(warnings))?;
     edit.closure_from_variables(edit.expression(body)?, &[pair])
+}
+
+/// Narrow the value read by a linear aggregate, retaining the key of its indexed input.
+/// The reader must change before the optimizer allocates a projection for it.
+pub fn trim_linear_aggregate_input<'a>(
+    original: &'a Circuit,
+    edit: &mut CircuitEditor,
+    reader: NodeId,
+    input: TypeId,
+    paths: &BTreeSet<Vec<usize>>,
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<Option<[ExpressionId; 2]>, FieldRewriteError<'a>> {
+    let [parameter] = edit.node(reader)?.edges("parameters")?[..] else {
+        return Err(Error::new("a linear aggregate requires one input parameter").into());
+    };
+    let declared = edit.type_id(edit.node(parameter)?.edge("type")?)?;
+    let mut fields = RowFields::new(original);
+    if !fields.unused(declared.into(), &[], paths, 1)? {
+        return Ok(None);
+    }
+    if let Some(issue) = inspect_references(original, reader, false)?.diagnostic {
+        return Err(FieldRewriteError::Binding(issue));
+    }
+
+    let mut row = declared;
+    while edit.type_kind(row)? == TypeKind::Ref {
+        row = edit.type_id(edit.node(row.into())?.edge("type")?)?;
+    }
+    let used = if matches!(edit.type_kind(row)?, TypeKind::Tuple | TypeKind::RawTuple) {
+        fields.column_mask(&edit.node(row.into())?.edges("tupFields")?, &[], paths)?
+    } else {
+        vec![!paths.is_empty()]
+    };
+    let narrowed = compressed_field_type(edit, declared, 1, &used)?;
+    let replacement =
+        edit.derive_inner(parameter, [("type", Field::Reference(narrowed.into()))])?;
+    let rebound = rebind_parameters(edit, reader, [(0, replacement, used.as_slice())])?;
+    let mut terms = Terms::default();
+    if terms.field(edit.circuit(), &Field::Reference(reader), &[])
+        == terms.field(edit.circuit(), &Field::Reference(rebound.into()), &[])
+    {
+        return Ok(None);
+    }
+
+    // Recording a use borrows the original value again. A constant reader
+    // retains the original reference type, which is shared in the output graph.
+    let projection_type = if !paths.is_empty() && edit.type_kind(declared)? == TypeKind::Ref {
+        edit.reference_type(edit.type_id(edit.node(declared.into())?.edge("type")?)?)?
+    } else {
+        declared
+    };
+    let value = project_used_fields(edit, projection_type, used, next)?;
+    let projection = project_indexed_value(edit, input, value, next, warnings)?;
+    Ok(Some([projection, rebound]))
 }
 
 pub struct AggregateProjection {

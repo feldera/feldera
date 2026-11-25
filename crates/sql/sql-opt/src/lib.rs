@@ -2,7 +2,7 @@
 
 mod aggregate_groups;
 mod aggregate_projection;
-pub use aggregate_projection::{project_indexed_value, trim_aggregate_projection, AggregateProjection};
+pub use aggregate_projection::{project_indexed_value, trim_aggregate_projection, trim_linear_aggregate_input, AggregateProjection};
 mod aggregate_fold;
 pub use aggregate_fold::lower_aggregate_fold;
 mod aggregate_zero;

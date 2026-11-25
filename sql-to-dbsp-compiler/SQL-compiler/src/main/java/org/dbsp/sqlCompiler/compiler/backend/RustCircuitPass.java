@@ -1624,6 +1624,26 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @Nullable
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> trimLinearAggregateInput(DBSPCompiler compiler,
+            DBSPClosureExpression reader, DBSPType input) {
+        String pass = "RemoveUnusedFields/LinearAggregateInput";
+        var paths = requiredParameterFieldDependencies(compiler, reader).getFirst();
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(paths), reader, input);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.isNull())
+                return null;
+            if (reply.value.has("diagnostic"))
+                checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
+            finishLowering(compiler, reply.value);
+            return decodeClosurePair(new LoweringReply(reply.writer, reply.value.required("functions")));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode linear aggregate field paths", error);
+        }
+    }
+
+    @Nullable
     public static Pair<DBSPClosureExpression, DBSPFlatmap> trimFlatmapInput(DBSPCompiler compiler, DBSPFlatmap flatmap) {
         String pass = "RemoveUnusedFields/FlatmapInput";
         var paths = requiredParameterFieldDependencies(compiler, flatmap.collectionExpression).getFirst();

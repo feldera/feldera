@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -418,6 +419,59 @@ public class JoinInputProjectionTests {
                     expectedNames = allocated;
                 }
             }
+        }
+    }
+
+    @Test
+    public void linearAggregateNarrowsOnlyTheIndexedValue() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b INT, c VARCHAR); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var rows = source.getOutput(0);
+        var row = rows.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var index = new DBSPMapIndexOperator(site,
+                new DBSPRawTupleExpression(new DBSPTupleExpression(row.deref().field(0)), row.deepCopy().deref()).closure(row), rows);
+        var pair = index.getOutputIndexedZSetType();
+        var calls = new ArrayList<String>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) {}
+            @Override public void nativeDecision(String pass, boolean answered) {
+                if (pass.equals("RemoveUnusedFields/LinearAggregateInput") && answered)
+                    calls.add(pass);
+            }
+        };
+        for (var body : List.of(row.deref(), new DBSPTupleExpression(row.deref().field(2)), new DBSPTupleExpression())) {
+            var reader = body.closure(row);
+            var outputRow = body.getType().ref().var();
+            var output = new DBSPTypeIndexedZSet(CalciteObject.EMPTY, pair.keyType, body.getType());
+            var aggregate = new DBSPAggregateLinearPostprocessOperator(site, output, reader,
+                    outputRow.deref().closure(outputRow), index.outputPort());
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            circuit.addOperator(source);
+            circuit.addOperator(index);
+            circuit.addOperator(aggregate);
+            compiler.options.ioOptions.rustOptimizerPasses = false;
+            long before = DBSPVariablePath.nextGeneratedName();
+            var direct = new RemoveUnusedFields(compiler, new AnalyzedSet<>()).apply(circuit)
+                    .allOperators.getLast().to(DBSPAggregateLinearPostprocessOperator.class);
+            long names = DBSPVariablePath.nextGeneratedName() - before;
+            compiler.options.ioOptions.rustOptimizerPasses = true;
+            before = DBSPVariablePath.nextGeneratedName();
+            calls.clear();
+            var hybrid = new RemoveUnusedFields(compiler, new AnalyzedSet<>()).apply(circuit)
+                    .allOperators.getLast().to(DBSPAggregateLinearPostprocessOperator.class);
+            Assert.assertEquals(names, DBSPVariablePath.nextGeneratedName() - before);
+            Assert.assertEquals(List.of("RemoveUnusedFields/LinearAggregateInput"), calls);
+            Assert.assertEquals(direct == aggregate, hybrid == aggregate);
+            Assert.assertSame(aggregate.postProcess, hybrid.postProcess);
+            Assert.assertTrue(EquivalenceContext.equiv(direct.getClosureFunction(), hybrid.getClosureFunction()));
+            var expected = direct.input().node().to(DBSPMapIndexOperator.class);
+            var actual = hybrid.input().node().to(DBSPMapIndexOperator.class);
+            Assert.assertTrue(EquivalenceContext.equiv(expected.getClosureFunction(), actual.getClosureFunction()));
+            Assert.assertTrue(pair.keyType.sameType(actual.getOutputIndexedZSetType().keyType));
         }
     }
 

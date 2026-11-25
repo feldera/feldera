@@ -300,14 +300,17 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
     /** Given an operator with an IndexedZSet input, project the value part
      * to keep only the specified fields */
     DBSPMapIndexOperator projectValue(DBSPUnaryOperator operator, FieldUseMap fm) {
-        OutputPort source = this.mapped(operator.input());
         DBSPType inputType = operator.input().getOutputIndexedZSetType().getKVRefType();
         DBSPClosureExpression projection = this.compiler.options.ioOptions.rustOptimizerPasses
                 ? RustCircuitPass.projectUsedFields(this.compiler, fm.getType(), fm.usageAtDepth(1), inputType)
                 : indexedValueProjection(this.compiler, inputType, Objects.requireNonNull(fm.getProjection(1)));
 
+        return this.projectValue(operator, projection);
+    }
+
+    private DBSPMapIndexOperator projectValue(DBSPUnaryOperator operator, DBSPClosureExpression projection) {
         int size = operator.getType().getToplevelFieldCount();
-        DBSPMapIndexOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
+        DBSPMapIndexOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, this.mapped(operator.input()))
                 .addAnnotation(new IsProjection(size), DBSPMapIndexOperator.class);
         this.addOperator(adjust);
         return adjust;
@@ -331,29 +334,36 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
         Utilities.enforce(closure.parameters.length == 1);
-        var useMap = this.find.findUsedFields(closure);
-
-        if (!useMap.hasUnusedFields(1)) {
+        var split = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.trimLinearAggregateInput(this.compiler, closure,
+                        operator.input().getOutputIndexedZSetType().getKVRefType())
+                : this.trimLinearAggregateInput(closure, operator.input());
+        if (split == null) {
             this.noUnusedFields(closure);
             super.postorder(operator);
             return;
         }
-        // closure = compressed \circ projection
-        RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
-        FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
-        DBSPClosureExpression compressed = rw.rewriteClosure(closure);
-        if (EquivalenceContext.equiv(closure, compressed)) {
-            // This optimization achieves nothing
-            this.noUnusedFields(closure);
-            super.postorder(operator);
-            return;
-        }
-
-        DBSPMapIndexOperator adjust = this.projectValue(operator, fm);
+        var adjust = this.projectValue(operator, split.left);
         DBSPSimpleOperator result = new DBSPAggregateLinearPostprocessOperator(
-                operator.getRelNode(), operator.getOutputIndexedZSetType(), compressed,
+                operator.getRelNode(), operator.getOutputIndexedZSetType(), split.right,
                 operator.postProcess, adjust.outputPort());
         this.map(operator, result);
+    }
+
+    @Nullable
+    private Pair<DBSPClosureExpression, DBSPClosureExpression> trimLinearAggregateInput(
+            DBSPClosureExpression closure, OutputPort input) {
+        var uses = this.find.findUsedFields(closure);
+        if (!uses.hasUnusedFields(1))
+            return null;
+        var rewriter = uses.getFieldRewriter(this.compiler, 1);
+        var compressed = rewriter.rewriteClosure(closure);
+        if (EquivalenceContext.equiv(closure, compressed))
+            return null;
+        var row = rewriter.getUseMap(closure.parameters[0]);
+        var pairType = input.getOutputIndexedZSetType().getKVRefType();
+        var projection = indexedValueProjection(this.compiler, pairType, Objects.requireNonNull(row.getProjection(1)));
+        return Pair.of(projection, compressed);
     }
 
     /** Mark in 'rowFields' the fields of the sorted row that the comparator reads.

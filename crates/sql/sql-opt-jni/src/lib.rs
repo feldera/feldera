@@ -1242,6 +1242,21 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             closure
         }
+        ("RemoveUnusedFields/LinearAggregateInput", [reader, input]) => {
+            use feldera_sql_opt::FieldRewriteError;
+            let paths = serde_json::from_slice(state)?;
+            let input = edit.type_id(*input)?;
+            let result = feldera_sql_opt::trim_linear_aggregate_input(
+                &arena, &mut edit, *reader, input, &paths, &mut next, &mut warnings,
+            );
+            let functions = match result {
+                Ok(Some(functions)) => edit.circuit().live_inner_roots(&arena, &functions.map(NodeId::from))?,
+                Ok(None) => return Ok(Value::Null),
+                Err(FieldRewriteError::Binding(issue)) => return Ok(json!({"diagnostic": binding_diagnostic(issue)})),
+                Err(FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
+            };
+            return Ok(json!({"functions": functions, "warnings": pass_warnings(warnings), "next_generated_name": next}));
+        }
         ("RemoveUnusedFields/FlatmapInput", [flatmap]) => {
             use feldera_sql_opt::FieldRewriteError;
             let paths = serde_json::from_slice(state)?;
@@ -1627,7 +1642,8 @@ fn transform(
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
-        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
+        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/LinearAggregateInput"
+        | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
         | "FuseExpensiveMaps/Scan" | "FuseExpensiveMaps/DuplicateField" | "FuseExpensiveMaps/Siblings" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
             return lower_function(pass, input, state, next);
