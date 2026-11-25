@@ -19,6 +19,9 @@ pub(super) fn temporal_failure(
             json!({"predicate": roots})
         }
         Diagnostic::Comparison(error) => json!({"comparison_failure": error}),
+        Diagnostic::ConflictingDeclarations { variable, previous, current } => json!({
+            "conflicting_declarations": graph.live_inner_roots(input, &[variable, previous, current])?,
+        }),
         Diagnostic::MissingBound => json!({"missing_clock_bound": true}),
         Diagnostic::Type(kind, ty) => json!({"type_error": {
             "kind": kind, "type": live_root(ty.into())?,

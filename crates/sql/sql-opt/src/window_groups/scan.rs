@@ -119,15 +119,14 @@ fn source_key(
     mut key: ExpressionId,
     maps: &[NodeId],
     warnings: &mut Vec<SimplifyWarning>,
-) -> Result<Option<(TypeId, ProjectionKey)>, Error> {
+) -> Result<Option<(TypeId, ProjectionKey)>, ClockError> {
     if !maps.is_empty() {
         let closure = edit.closure_with_parameters(key, &[parameter])?;
-        let timestamp = match compose_timestamp(edit, closure, maps, warnings) {
-            Ok(timestamp) => timestamp,
-            // The live replay can identify both declarations in the failing map.
-            Err(CompositionError::BindingConflict { .. }) => return Ok(None),
-            Err(CompositionError::Ir(error)) => return Err(error),
-        };
+        let timestamp = compose_timestamp(edit, closure, maps, warnings).map_err(|error| match error {
+            CompositionError::BindingConflict { variable, previous, current } =>
+                ClockError::Diagnostic(TemporalDiagnostic::ConflictingDeclarations { variable, previous, current }),
+            CompositionError::Ir(error) => ClockError::InvalidIr(error),
+        })?;
         let closure = edit.node(timestamp.into())?;
         let [input] = closure.edges("parameters")?[..] else {
             return Ok(None);

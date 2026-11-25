@@ -85,6 +85,7 @@ pub enum TemporalDiagnostic {
     Type(WaterlineTypeError, TypeId),
     FunctionArgument(ExpressionId, FunctionArgumentError),
     Comparison(crate::ComparisonDiagnostic),
+    ConflictingDeclarations { variable: NodeId, previous: NodeId, current: NodeId },
     /// The diagnostic needs the live types of earlier expressions in this predicate.
     Predicate { parameter: NodeId, body: ExpressionId },
 }

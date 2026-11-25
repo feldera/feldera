@@ -4402,6 +4402,14 @@ public final class RustCircuitPass implements CircuitTransform {
     private static RuntimeException temporalError(DBSPCompiler compiler, ToJsonInnerVisitor writer, JsonNode failure) {
         if (failure.has("predicate"))
             return temporalPredicateError(compiler, writer, failure.required("predicate"));
+        var conflict = failure.get("conflicting_declarations");
+        if (conflict != null) {
+            var decoder = expressionDecoder(writer);
+            var variable = decodeLiveRoot(decoder, conflict.required(0), DBSPVariablePath.class);
+            var previous = decodeLiveRoot(decoder, conflict.required(1), IDBSPInnerNode.class).to(IDBSPDeclaration.class);
+            var current = decodeLiveRoot(decoder, conflict.required(2), IDBSPInnerNode.class).to(IDBSPDeclaration.class);
+            return ReferenceMap.conflictingDeclaration(variable, previous, current);
+        }
         if (failure.has("comparison_failure"))
             reportComparisonFailure(failure.required("comparison_failure"));
         var typeError = failure.get("type_error");

@@ -297,7 +297,9 @@ public class TemporalKeyTests {
         var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
         circuit.addOperator(input);
         var row = b.refVar(rowType);
-        var key = b.call(time, "read_timestamp", b.field(row, 0).borrow(false));
+        // Printing this key would fail while renaming a declaration in a static initializer.
+        var initializer = new DBSPBlockExpression(List.of(new DBSPLetStatement("offset", b.lit(1))), b.lit(2));
+        var key = b.call(time, "shift_timestamp", b.field(row, 0), new DBSPStaticExpression(site, initializer, "saved"));
         var first = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
         var invalid = new DBSPBlockExpression(List.of(b.call(b.i32(), "sign_i32").toStatement()), b.call(time, "now"));
         var second = b.binary(DBSPOpcode.LT, b.field(row, 0), invalid);
@@ -1073,6 +1075,77 @@ public class TemporalKeyTests {
             }
             return new DBSPTupleExpression(discarded, key).field(CalciteEmptyRel.INSTANCE, 1);
         }, List.of(0, 2, 1, 3));
+    }
+
+    @Test
+    public void windowSharingKeepsRepeatedReadsOfAnExpensiveMapBoundOnce() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var inputType = b.tup(time, time);
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(inputType));
+        circuit.addOperator(input);
+        var filters = new ArrayList<DBSPFilterOperator>();
+        for (int column : List.of(0, 1, 0)) {
+            var source = b.refVar(inputType);
+            var values = b.tuple(b.call(time, "derive_timestamp", b.field(source, column)));
+            var map = new DBSPMapOperator(site, values.closure(source), input.outputPort());
+            circuit.addOperator(map);
+            var row = b.refVar(values.getType());
+            var key = b.call(time, "combine_timestamps", b.field(row, 0), b.field(row, 0));
+            var predicate = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+            var filter = new DBSPFilterOperator(site, predicate.closure(row), map.outputPort());
+            circuit.addOperator(filter);
+            filters.add(filter);
+        }
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            compiler.metadata.set(ProgramMetadata.WINDOW_SHARING_THRESHOLD, b.lit(2), SourcePositionRange.INVALID, compiler);
+            var decisions = new ArrayList<Boolean>();
+            var scan = scanWindows(compiler, circuit, decisions);
+            Assert.assertEquals(List.of(filters.get(0), filters.get(2)), List.copyOf(scan.chosenConjunct.keySet()));
+            Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
+        }
+    }
+
+    @Test
+    public void windowSharingDistinguishesMutableBorrows() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        assertWindowGroups(3, (row, index) -> b.call(DBSPTypeTimestamp.INSTANCE,
+                "read_timestamp", b.field(row, 0).borrow(index == 1)), List.of(0, 2));
+    }
+
+    @Test
+    public void windowScanReportsAConflictingDeclarationInItsSourceMap() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var rowType = b.tup(time);
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+        circuit.addOperator(input);
+        var inner = b.refVar(rowType);
+        var shared = b.field(inner, 0);
+        var callbacks = b.call(time, "combine", shared.closure(inner), shared.closure(inner));
+        var map = new DBSPMapOperator(site, b.tuple(callbacks).closure(b.refVar(rowType)), input.outputPort());
+        circuit.addOperator(map);
+        var outer = b.refVar(rowType);
+        var condition = b.binary(DBSPOpcode.GTE, b.field(outer, 0), b.call(time, "now"));
+        circuit.addOperator(new DBSPFilterOperator(site, condition.closure(outer), map.outputPort()));
+
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var decisions = new ArrayList<Boolean>();
+        var direct = Assert.assertThrows(InternalCompilerError.class, () -> scanWindows(compiler, circuit, decisions));
+        Assert.assertTrue(direct.getMessage(), direct.getMessage().contains("Changing declaration"));
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var hybrid = Assert.assertThrows(InternalCompilerError.class, () -> scanWindows(compiler, circuit, decisions));
+        Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+        Assert.assertEquals(List.of(true), decisions);
     }
 
     private static void assertWindowGroups(int count,

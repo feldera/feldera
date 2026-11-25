@@ -41,6 +41,7 @@ enum Term {
         nullable: bool,
     },
     Field(u64),
+    Borrow { mutable: bool },
     Deref,
     Clone,
     IsNull,
@@ -524,6 +525,11 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         // Both NULL constructors print their complete collection type, including
         // the element type of an array and both type arguments of a map.
         Expr::Array | Expr::Map => (Term::NullCollection, vec![edit.expression_type(id)?.into()]),
+        Expr::Borrow => {
+            let mutable = node.data("mut").and_then(|value| value.as_bool())
+                .ok_or_else(|| Error::new("missing borrow mutability"))?;
+            (Term::Borrow { mutable }, vec![child("expression")?])
+        }
         Expr::Deref => (Term::Deref, vec![child("expression")?]),
         Expr::Clone => (Term::Clone, vec![child("expression")?]),
         Expr::IsNull => (Term::IsNull, vec![child("expression")?]),
