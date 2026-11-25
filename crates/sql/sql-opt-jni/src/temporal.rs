@@ -390,6 +390,23 @@ pub(super) fn clock_join(
     }
 }
 
+pub(super) fn classify_filter(
+    input: &Circuit,
+    edit: &mut CircuitEditor,
+    closure: feldera_sql_ir::ExpressionId,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let mut names = 0;
+    match feldera_sql_opt::checked_filter_closure(edit, closure, &mut names) {
+        Ok(Some((_, parts))) => comparison_reply(input, edit, parts, names),
+        Ok(None) => Ok(Value::Null),
+        Err(feldera_sql_opt::ClockError::InvalidIr(error)) => Err(error.into()),
+        Err(feldera_sql_opt::ClockError::Diagnostic(diagnostic)) => Ok(json!({
+            "failure": temporal_failure(edit.circuit(), input, diagnostic)?,
+            "generated_names": names,
+        })),
+    }
+}
+
 /// Encode all predicate roots together so consecutive residuals can share types.
 pub(super) fn classify(
     input: &Circuit,
@@ -427,6 +444,15 @@ pub(super) fn classify(
             );
         }
     };
+    comparison_reply(input, edit, parts, generated_names)
+}
+
+fn comparison_reply(
+    input: &Circuit,
+    edit: &CircuitEditor,
+    parts: Vec<TemporalPredicate>,
+    generated_names: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let mut roots = Vec::new();
     let mut headers = Vec::with_capacity(parts.len());
     for part in parts {

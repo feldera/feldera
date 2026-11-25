@@ -140,7 +140,7 @@ fn window_terms(
     next: &mut u64,
 ) -> Result<Option<Vec<WindowTerm>>, ClockError> {
     Ok(
-        checked_closure(edit, closure, next)?.map(|(parameter, predicates)| {
+        checked_filter_closure(edit, closure, next)?.map(|(parameter, predicates)| {
             predicates
                 .iter()
                 .map(|predicate| WindowTerm::from_predicate(parameter, predicate))
@@ -149,7 +149,8 @@ fn window_terms(
     )
 }
 
-pub(super) fn checked_closure(
+/// Classify a unary ZSet filter against its declared row and preserve the first clock diagnostic.
+pub fn checked_filter_closure(
     edit: &mut CircuitEditor,
     closure: ExpressionId,
     next: &mut u64,

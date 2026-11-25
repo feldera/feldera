@@ -52,9 +52,12 @@ pub fn conjunct_windows(
     let mut windows = Vec::with_capacity(terms.len());
     for expression in terms {
         let term = crate::filters::strip_wrap_bool(edit, expression)?;
-        let Some(parts) = infer_temporal_predicates(edit, parameter, term, &mut names)? else {
+        let mut cost = 0;
+        let Some(parts) = infer_temporal_predicates(edit, parameter, term, &mut cost)? else {
             return Ok(None);
         };
+        names = names.checked_add(cost)
+            .ok_or_else(|| Error::new("generated names exhausted classifying conjuncts"))?;
         windows.push(ConjunctWindow::from_predicates(&parts));
     }
     *next = names;

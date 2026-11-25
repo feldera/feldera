@@ -2908,6 +2908,20 @@ public final class RustCircuitPass implements CircuitTransform {
         return answered(compiler, "TemporalComparisons", reply.value) ? temporalComparisons(reply) : null;
     }
 
+    /** Classify a filter with the ZSet row projection used by the live waterline visitor. */
+    @Nullable
+    public static List<TemporalComparison> filterTemporalPredicates(DBSPCompiler compiler,
+            DBSPClosureExpression function) {
+        var reply = invokeLowering(compiler, "FilterTemporalComparisons", function);
+        if (!answered(compiler, "FilterTemporalComparisons", reply.value))
+            return null;
+        if (reply.value.has("failure")) {
+            advanceTemporalNames(reply.value);
+            throw temporalError(compiler, reply.writer, reply.value.required("failure"));
+        }
+        return temporalComparisons(reply);
+    }
+
     public static List<TemporalComparison> classifyTemporalPredicates(DBSPCompiler compiler,
             DBSPExpression body, Set<Long> monotoneOperands) {
         try {

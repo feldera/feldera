@@ -878,6 +878,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 Err(error) => return composition_error(error),
             }
         }
+        ("FilterTemporalComparisons", [closure]) => {
+            let closure = edit.expression(*closure)?;
+            return temporal::classify_filter(&arena, &mut edit, closure);
+        }
         ("TemporalComparisons", roots) => return temporal::classify(&arena, &mut edit, roots, state),
         ("WindowGroups/Conjuncts", [parameter, body]) => {
             let body = edit.expression(*body)?;
@@ -1686,7 +1690,7 @@ fn transform(
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader"
-        | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp" | "WindowGroups/Conjuncts"
+        | "TemporalComparisons" | "FilterTemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp" | "WindowGroups/Conjuncts"
         | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/FindLiteral" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
         | "EnsureExpressionTree" | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"

@@ -359,14 +359,8 @@ public class ReorderTemporalFilters extends Passes {
     private static void visitWindows(DBSPCompiler compiler, DBSPFilterOperator filter,
                                      DBSPClosureExpression condition,
                                      BiConsumer<Integer, RustCircuitPass.ConjunctWindow> visit) {
-        if (compiler.options.ioOptions.rustOptimizerPasses) {
-            var windows = RustCircuitPass.conjunctWindows(compiler, condition);
-            if (windows != null) {
-                for (int i = 0; i < windows.size(); i++)
-                    visit.accept(i, windows.get(i));
-                return;
-            }
-        }
+        // The consumer can emit a warning or fail on this key. Finish it
+        // before classifying the next conjunct.
         var conjuncts = condition.body.conjuncts();
         for (int i = 0; i < conjuncts.size(); i++) {
             var bound = temporalFilter(compiler, filter, condition.parameters[0], conjuncts.get(i));

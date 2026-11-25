@@ -30,7 +30,7 @@ fn checked_conjunct(
     let copy = feldera_sql_expr::copy_expression(edit, term.into())?;
     let predicate = edit.wrap_bool_if_needed(edit.expression(copy)?)?;
     let closure = edit.closure_with_parameters(predicate, &[parameter])?;
-    crate::temporal_filters::checked_closure(edit, closure, next)
+    crate::temporal_filters::checked_filter_closure(edit, closure, next)
 }
 
 /// The left input must index a stream by a key and a tuple of projected values.

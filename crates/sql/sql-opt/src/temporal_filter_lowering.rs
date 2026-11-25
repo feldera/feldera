@@ -1,7 +1,7 @@
 //! Lower a clock predicate into ordinary filters, temporal windows and a residual join.
 use crate::limiters::Stream;
 use crate::temporal_comparisons::{ClockError, speculative_clock};
-use crate::temporal_filters::checked_closure;
+use crate::temporal_filters::checked_filter_closure;
 use crate::{
     ClockConsumer, ClockJoinInputs, ClockProjection, ClockRewrite, InitialBounds,
     TemporalPredicate, TemporalStreams, WindowComparison, WindowKey, WindowTerm, append_clock_join,
@@ -94,7 +94,7 @@ impl TemporalFilterLowering {
         filter: ClockFilter,
         next: &mut u64,
     ) -> Result<Option<LoweredClockFilter>, ClockError> {
-        let Some((parameter, predicates)) = checked_closure(edit, filter.function, next)? else {
+        let Some((parameter, predicates)) = checked_filter_closure(edit, filter.function, next)? else {
             return Ok(None);
         };
         let terms: Vec<_> = predicates

@@ -63,7 +63,7 @@ class FindComparisons {
         Utilities.enforce(function.parameters.length == 1);
         DBSPParameter param = function.parameters[0];
         if (compiler.options.ioOptions.rustOptimizerPasses) {
-            var parts = RustCircuitPass.inferTemporalPredicates(compiler, param, function.body);
+            var parts = RustCircuitPass.filterTemporalPredicates(compiler, function);
             if (parts != null)
                 return NativeTemporalComparisons.bind(param, parts);
         }

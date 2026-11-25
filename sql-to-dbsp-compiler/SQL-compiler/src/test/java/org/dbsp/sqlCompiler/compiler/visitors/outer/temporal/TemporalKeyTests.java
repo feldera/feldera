@@ -287,6 +287,42 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void liveFilterClassificationRequiresAProjectedRow() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        for (boolean scalar : List.of(false, true)) {
+            var rowType = scalar ? time : b.tup(time);
+            var row = b.refVar(rowType);
+            var key = scalar ? row.deref() : b.field(row, 0);
+            var clock = b.call(time, "now");
+            var condition = b.binary(DBSPOpcode.GTE, key, clock).closure(row);
+            var site = CalciteEmptyRel.INSTANCE;
+            var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+            var filter = new DBSPFilterOperator(site, condition, input.outputPort());
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            var detached = RustCircuitPass.inferTemporalPredicates(compiler, condition.parameters[0], condition.body);
+            Assert.assertNotNull(detached);
+            Assert.assertSame(key, detached.get(0).expression());
+            for (boolean hybrid : List.of(false, true)) {
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                long start = DBSPVariablePath.nextGeneratedName();
+                if (scalar) {
+                    Assert.assertThrows(NullPointerException.class,
+                            () -> FindComparisons.decomposeIntoTemporalFilters(compiler, filter, condition));
+                } else {
+                    var parts = FindComparisons.decomposeIntoTemporalFilters(compiler, filter, condition);
+                    Assert.assertEquals(1, parts.size());
+                    var bound = parts.get(0).to(TemporalFilter.class);
+                    Assert.assertSame(key, bound.noNow());
+                    Assert.assertSame(clock, bound.withNow());
+                }
+                Assert.assertEquals(start, DBSPVariablePath.nextGeneratedName());
+            }
+        }
+    }
+
+    @Test
     public void windowScanKeepsAnEarlierConjunctsCastWarning() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();
