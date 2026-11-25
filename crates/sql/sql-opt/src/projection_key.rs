@@ -78,6 +78,7 @@ enum Term {
         right_nullable: bool,
     },
     CollectionConversion(BinaryOp),
+    Sort,
     Compare { field: Option<u64>, ascending: bool },
     AsymmetricComparator(Vec<comparators::Collation>),
     Unary {
@@ -447,7 +448,7 @@ fn preserves_static_children(kind: Expr) -> bool {
                 | Expr::WindowBound | Expr::ConditionalIncrement | Expr::Lazy | Expr::Return
                 | Expr::NoComparator | Expr::FieldComparator | Expr::DirectComparator
                 | Expr::AsymmetricFieldComparator | Expr::UnsignedWrap | Expr::UnsignedUnwrap
-                | Expr::For | Expr::Assignment | Expr::Fail
+                | Expr::For | Expr::Assignment | Expr::Fail | Expr::Sort | Expr::CustomOrd
         )
 }
 
@@ -547,6 +548,15 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         }
         Expr::NoComparator | Expr::DirectComparator | Expr::FieldComparator
         | Expr::AsymmetricFieldComparator => comparators::printed(node, kind)?,
+        Expr::Sort => (Term::Sort, vec![child("comparator")?]),
+        Expr::CustomOrd => {
+            // The wrapper prints WithCustomOrd(source). A computed comparator can
+            // still allocate canonical names even though the printer omits it.
+            if !comparators::is_ordering_chain(edit, edit.expression(node.edge("comparator")?)?)? {
+                return Ok(None);
+            }
+            (Term::Call("WithCustomOrd".into()), vec![child("source")?])
+        }
         Expr::Field => {
             let column = node
                 .data("fieldNo")

@@ -3,6 +3,25 @@ use super::Term;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId, TypeKind,
 };
+use std::collections::HashSet;
+
+/// A lowered comparator is either a path or an ordering chain over type operands.
+/// Neither form introduces declarations during canonicalization.
+pub(super) fn is_ordering_chain(edit: &CircuitEditor, mut value: ExpressionId) -> Result<bool, Error> {
+    let mut seen = HashSet::new();
+    loop {
+        if !seen.insert(value) {
+            return Err(Error::new("cycle in a window key comparator"));
+        }
+        match edit.expr_kind(value)? {
+            Expr::Path | Expr::NoComparator | Expr::AsymmetricFieldComparator => return Ok(true),
+            Expr::FieldComparator | Expr::DirectComparator => {
+                value = edit.expression(edit.node(value.into())?.edge("source")?)?;
+            }
+            _ => return Ok(false),
+        }
+    }
+}
 
 /// The ordered integer encoding selects its conversion from the SQL value's
 /// type, which is the input when wrapping and the result when unwrapping.

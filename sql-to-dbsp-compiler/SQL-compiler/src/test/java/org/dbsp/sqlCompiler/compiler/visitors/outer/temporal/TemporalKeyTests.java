@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAsymmetricFieldComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -45,6 +46,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
@@ -1234,6 +1236,26 @@ public class TemporalKeyTests {
                         new DBSPUnsignedUnwrapExpression(site, wrap, valueType, true, true)), Set.of(0, 1, 2, 3));
             }
         }
+    }
+
+    @Test
+    public void windowKeysUseTheComparatorPrintedBySortAndTheValuePrintedByCustomOrd() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteObject.EMPTY;
+        var value = b.tuple(b.lit(1));
+        var base = new DBSPNoComparatorExpression(site, value.getType());
+        var ascending = new DBSPFieldComparatorExpression(site, base, 0, true, false);
+        var descending = new DBSPFieldComparatorExpression(site, base, 0, false, false);
+        var ordered = new DBSPCustomOrdExpression(site, value, ascending);
+        assertStaticWindowGroups(List.of(ordered,
+                new DBSPCustomOrdExpression(site, value, descending),
+                b.call(ordered.getType(), "WithCustomOrd", value),
+                new DBSPCustomOrdExpression(site, b.tuple(b.lit(2)), ascending)), Set.of(0, 1, 2));
+        assertStaticWindowGroups(List.of(
+                new DBSPSortExpression(site, value.getType(), ascending),
+                new DBSPSortExpression(site, b.tup(b.bool()), ascending),
+                new DBSPSortExpression(site, value.getType(), descending)), Set.of(0, 1));
     }
 
     @Test
