@@ -1,0 +1,144 @@
+{
+  "scope": "Compare repeated reads of an expensive map in window keys, distinguish mutable borrows, and report conflicting declarations from the Rust scan.",
+  "source_commit": "21022dda53a4928bc2af51f21518701c97fb3806",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "e71781b1e5259c207ce455f72b9499aef030e6dbff83756c74618f1e8bd2008b",
+    "bin/sql-difftest": "cf61e664246eeee4acf872cefc49ca663ac3b51b01b3b5590531932966579d74",
+    "maven/tests.jar": "fb27f01f8e6b1cda50e0494f1acf7d3581eb50790a03e0a342d794c2b38fe8a0",
+    "maven/sql-compiler.jar": "e78bca699e69841f294a58e53babcaf3dcc84074028e32fb3464d729591ae7d7",
+    "bin/sql2dbsp": "59163164d08125ff96d0de2ed91170889fe66d89f493aa1be5add3ab945bf986"
+  },
+  "engines": {
+    "classic": {
+      "cases": 18,
+      "ordered_s4_observations": 9181,
+      "population_sha256": "d97f1d16862d0ab4abdd8e7ad6b790ea966c312310fe8f8c76d57c3d1093a55e",
+      "mismatches": 0,
+      "receipt_sha256": "ec5c884f402d656071c134c3f95d6a1eaa20689e982f39632e92ae4dcafa444c",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    },
+    "gen2": {
+      "cases": 18,
+      "ordered_s4_observations": 9594,
+      "population_sha256": "f3d5dca5128184ee416703a59d6e3a4422e1f59c049ea0ae5200f02b6b6e3574",
+      "mismatches": 0,
+      "receipt_sha256": "560206dc136fdb396edbf6fd2dbfa3839caf537e438b934e0a1f22e7f039c9e1",
+      "native_window_scan_calls": 6,
+      "native_window_reorder_calls": 6
+    }
+  },
+  "rust_tests": 231,
+  "clippy_exit_code": 0,
+  "junit_tests": 318,
+  "nightly_optimizer_junit": 335,
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 11.520977,
+    "largest_driver_plus_front_end_rss_bytes": 70619136
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a213a3-353d-74d2-8c54-9691cf4ba935",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a213a3-3555-7481-a500-9a76f398a6d3",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a213a4-9f75-7822-b688-e6572458a1f9",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a213a4-9f9f-7f01-8e57-70c90a896b37",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "negative_control": {
+    "library_sha256": "15d215af564c452aa45b6410bbdbf1e88bf42186010fac3c52001da5c0f0dad8",
+    "failed_tests": [
+      "windowScanReportsAConflictingDeclarationInItsSourceMap",
+      "windowSharingKeepsRepeatedReadsOfAnExpensiveMapBoundOnce",
+      "windowSharingDistinguishesMutableBorrows"
+    ],
+    "result": "All three cases required a Java fallback on the previous library."
+  }
+}
