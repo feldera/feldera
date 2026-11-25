@@ -3702,25 +3702,43 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    /** Reconnect the transfer schedule to the live expressions of the expanded circuit. */
-    public static List<MonotonicityTransfer> monotonicityTransfers(DBSPCompiler compiler, DBSPCircuit circuit) {
-        record Step(long operator, TransferRule rule, int input, @Nullable List<ColumnWaterline> columns,
+    @FunctionalInterface
+    private interface WaterlineStep {
+        boolean apply(long operator, byte[] transfer);
+    }
+
+    private static native void propagateWaterlines(byte[] topology, WaterlineStep step);
+
+    /** Report whether each live transfer produced a bound before Rust visits its consumers. */
+    public static void visitWaterlines(DBSPCompiler compiler, DBSPCircuit circuit, Predicate<MonotonicityTransfer> visit) {
+        record Step(TransferRule rule, int input, @Nullable List<ColumnWaterline> columns,
                     @Nullable IndexedWaterline projection, @Nullable ClosureBody function) {}
-        byte[] topology = OptimizerTopology.monotonicity(compiler, circuit);
-        byte[] result = transformWithContext("Topology/Monotonicity", topology, 0, "", EMPTY_CONTEXT);
-        try {
-            var steps = MAPPER.readValue(result, Step[].class);
-            if (steps.length == 0)
-                return List.of();
-            var operators = operatorsById(circuit);
-            var transfers = new ArrayList<MonotonicityTransfer>(steps.length);
-            for (var step : steps)
-                transfers.add(new MonotonicityTransfer(Utilities.getExists(operators, step.operator()),
-                        step.rule(), step.input(), step.columns(), step.projection(), step.function()));
-            return transfers;
-        } catch (IOException error) {
-            throw new UncheckedIOException("Invalid monotonicity transfer schedule", error);
-        }
+        propagateWaterlines(OptimizerTopology.monotonicity(compiler, circuit), new WaterlineStep() {
+            @Nullable Map<Long, DBSPOperator> operators;
+
+            @Override
+            public boolean apply(long operator, byte[] transfer) {
+                if (this.operators == null)
+                    this.operators = operatorsById(circuit);
+                try {
+                    var step = MAPPER.readValue(transfer, Step.class);
+                    return visit.test(new MonotonicityTransfer(Utilities.getExists(this.operators, operator),
+                            step.rule(), step.input(), step.columns(), step.projection(), step.function()));
+                } catch (IOException error) {
+                    throw new UncheckedIOException("Invalid monotonicity transfer", error);
+                }
+            }
+        });
+    }
+
+    /** Inspect the possible transfers without evaluating their closures. */
+    public static List<MonotonicityTransfer> monotonicityTransfers(DBSPCompiler compiler, DBSPCircuit circuit) {
+        var transfers = new ArrayList<MonotonicityTransfer>();
+        visitWaterlines(compiler, circuit, transfer -> {
+            transfers.add(transfer);
+            return true;
+        });
+        return transfers;
     }
 
     /** Row renderings are inputs to the stable names of ASOF comparator declarations. */

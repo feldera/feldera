@@ -8,6 +8,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -215,6 +217,50 @@ public class WaterlineProjectionTests {
                 Assert.assertEquals(0, first.visits);
             }
         }
+    }
+
+    @Test
+    public void lostMapWaterlineStopsOnlyItsOwnBranch() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(x BIGINT NOT NULL LATENESS 1, y BIGINT NOT NULL);"
+                + "CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var row = input.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var map = new DBSPMapOperator(site, new DBSPTupleExpression(row.deref().field(1)).closure(row), input);
+        var unbounded = new DBSPNoopOperator(site, map.outputPort());
+        var bounded = new DBSPNoopOperator(site, input);
+        var circuit = new DBSPCircuit(new ProgramMetadata(), true);
+        for (var operator : List.of(source, map, unbounded, bounded))
+            circuit.addOperator(operator);
+
+        var direct = new Monotonicity(compiler);
+        direct.apply(circuit);
+        Assert.assertNull(direct.getMonotoneExpression(unbounded));
+        var expected = direct.getMonotoneExpression(bounded).getReducedExpression();
+
+        var visited = new ArrayList<String>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override
+            public void monotonicityTransfer(String operator, String rule) {
+                visited.add(rule);
+            }
+
+            @Override
+            public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {}
+
+            @Override
+            public void after(String parent, int index, int iteration, CircuitTransform pass,
+                              DBSPCircuit circuit, boolean completed) {}
+        };
+        compiler.options.ioOptions.rustOptimizerPasses = true;
+        var hybrid = new Monotonicity(compiler);
+        hybrid.apply(circuit);
+        Assert.assertNull(hybrid.getMonotoneExpression(unbounded));
+        Assert.assertTrue(expected.equivalent(hybrid.getMonotoneExpression(bounded).getReducedExpression()));
+        Assert.assertEquals(List.of("DeclaredColumns", "ApplyClosure", "Identity"), visited);
     }
 
     @Test

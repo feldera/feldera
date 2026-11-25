@@ -2,6 +2,7 @@
 //! objects when an invocation changes only the generated-name counter.
 mod fragment;
 mod repeat;
+mod waterlines;
 mod delta_expansion;
 mod shared_indexes;
 mod live_equality;
@@ -21,6 +22,8 @@ use std::{
 
 #[derive(Debug, thiserror::Error)]
 enum BridgeError {
+    #[error(transparent)]
+    Ir(#[from] feldera_sql_ir::Error),
     #[error(transparent)]
     Jni(#[from] jni::errors::Error),
     #[error("{0}")]

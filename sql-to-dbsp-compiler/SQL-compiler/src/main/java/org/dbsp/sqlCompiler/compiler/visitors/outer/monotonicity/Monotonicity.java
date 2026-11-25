@@ -175,43 +175,46 @@ public class Monotonicity extends CircuitVisitor {
             return super.apply(circuit);
         this.startVisit(circuit);
         try {
-            for (var transfer : RustCircuitPass.monotonicityTransfers(this.compiler(), circuit)) {
-                if (this.compiler().stateObserver != null) {
-                    this.compiler().stateObserver.monotonicityTransfer(
-                            transfer.operator().getClass().getSimpleName(), transfer.rule().name());
-                    this.compiler().stateObserver.nativeDecision("Monotonicity/Transfer",
-                            transfer.rule() != RustCircuitPass.TransferRule.Analyze);
-                }
-                switch (transfer.rule()) {
-                    case Identity -> this.identity(transfer.operator().to(DBSPSimpleOperator.class), transfer.input());
-                    case DeclaredColumns -> this.installColumnWaterlines(transfer.operator().to(DBSPSimpleOperator.class),
-                            Objects.requireNonNull(transfer.columns()));
-                    case ApplyClosure -> this.analyzeClosure(transfer.operator().to(DBSPUnaryOperator.class),
-                            Objects.requireNonNull(transfer.function()));
-                    case ProjectIndex -> this.projectIndex(transfer.operator().to(DBSPSimpleOperator.class),
-                            Objects.requireNonNull(transfer.projection()));
-                    case JoinClosure -> this.processJoinBase(transfer.operator().to(DBSPJoinBaseOperator.class));
-                    case AggregateKey, RollingTimestamp -> this.aggregate(transfer.operator().to(DBSPSimpleOperator.class),
-                            transfer.rule() == RustCircuitPass.TransferRule.RollingTimestamp);
-                    // Render the NULL-offset diagnostic at the original numeric literal.
-                    case InvalidRollingOffset -> transfer.operator().to(DBSPPartitionedRollingAggregateOperator.class)
-                            .upper.isFollowing();
-                    case IntersectRows -> this.sumOrDifference(transfer.operator().to(DBSPSimpleOperator.class));
-                    case IntersectKeys -> this.antiJoin(transfer.operator().to(DBSPAntiJoinOperator.class));
-                    case PrimitiveMinimumOrKey -> {
-                        var aggregate = transfer.operator().to(DBSPPrimitiveAggregateOperator.class);
-                        if (!this.minimumProjection(aggregate, aggregate.getFunction().to(DBSPMinMax.class)))
-                            this.aggregate(aggregate);
-                    }
-                    case ChainMinimumOrKey -> this.chainAggregate(transfer.operator().to(DBSPChainAggregateOperator.class));
-                    case InvalidIndexedSource -> throw indexedSourceError(transfer.operator().to(DBSPSourceMapOperator.class));
-                    case Analyze -> transfer.operator().accept(this);
-                }
-            }
+            RustCircuitPass.visitWaterlines(this.compiler(), circuit, this::applyTransfer);
             return circuit;
         } finally {
             this.endVisit();
         }
+    }
+
+    private boolean applyTransfer(RustCircuitPass.MonotonicityTransfer transfer) {
+        if (this.compiler().stateObserver != null) {
+            this.compiler().stateObserver.monotonicityTransfer(
+                    transfer.operator().getClass().getSimpleName(), transfer.rule().name());
+            this.compiler().stateObserver.nativeDecision("Monotonicity/Transfer",
+                    transfer.rule() != RustCircuitPass.TransferRule.Analyze);
+        }
+        switch (transfer.rule()) {
+            case Identity -> this.identity(transfer.operator().to(DBSPSimpleOperator.class), transfer.input());
+            case DeclaredColumns -> this.installColumnWaterlines(transfer.operator().to(DBSPSimpleOperator.class),
+                    Objects.requireNonNull(transfer.columns()));
+            case ApplyClosure -> this.analyzeClosure(transfer.operator().to(DBSPUnaryOperator.class),
+                    Objects.requireNonNull(transfer.function()));
+            case ProjectIndex -> this.projectIndex(transfer.operator().to(DBSPSimpleOperator.class),
+                    Objects.requireNonNull(transfer.projection()));
+            case JoinClosure -> this.processJoinBase(transfer.operator().to(DBSPJoinBaseOperator.class));
+            case AggregateKey, RollingTimestamp -> this.aggregate(transfer.operator().to(DBSPSimpleOperator.class),
+                    transfer.rule() == RustCircuitPass.TransferRule.RollingTimestamp);
+            // Render the NULL-offset diagnostic at the original numeric literal.
+            case InvalidRollingOffset -> transfer.operator().to(DBSPPartitionedRollingAggregateOperator.class)
+                    .upper.isFollowing();
+            case IntersectRows -> this.sumOrDifference(transfer.operator().to(DBSPSimpleOperator.class));
+            case IntersectKeys -> this.antiJoin(transfer.operator().to(DBSPAntiJoinOperator.class));
+            case PrimitiveMinimumOrKey -> {
+                var aggregate = transfer.operator().to(DBSPPrimitiveAggregateOperator.class);
+                if (!this.minimumProjection(aggregate, aggregate.getFunction().to(DBSPMinMax.class)))
+                    this.aggregate(aggregate);
+            }
+            case ChainMinimumOrKey -> this.chainAggregate(transfer.operator().to(DBSPChainAggregateOperator.class));
+            case InvalidIndexedSource -> throw indexedSourceError(transfer.operator().to(DBSPSourceMapOperator.class));
+            case Analyze -> transfer.operator().accept(this);
+        }
+        return this.getMonotoneExpression(transfer.operator().to(DBSPSimpleOperator.class)) != null;
     }
 
     private void projectIndex(DBSPSimpleOperator operator, RustCircuitPass.IndexedWaterline projection) {

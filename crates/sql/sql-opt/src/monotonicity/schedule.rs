@@ -201,9 +201,24 @@ fn rolling_transfer(
 pub fn monotonicity_transfers(
     circuit: &Circuit,
 ) -> Result<Vec<(NodeId, MonotonicityTransfer)>, Error> {
+    let mut transfers = Vec::new();
+    propagate_waterlines(circuit, |id, transfer| {
+        transfers.push((id, transfer));
+        // A detached topology does not contain the result of closure analysis.
+        Ok::<_, Error>(true)
+    })?;
+    Ok(transfers)
+}
+
+/// Apply transfers in operator order. Only a bound produced by the transfer
+/// can reach its consumers. Operators with their own declarations or
+/// unconditional diagnostics must still be visited on an unbounded branch.
+pub fn propagate_waterlines<E: From<Error>>(
+    circuit: &Circuit,
+    mut apply: impl FnMut(NodeId, MonotonicityTransfer) -> Result<bool, E>,
+) -> Result<(), E> {
     use MonotonicityTransfer::*;
     let mut bounded = HashSet::new();
-    let mut transfers = Vec::new();
     for id in circuit.operator_order(BodyOrder::Postorder)? {
         let node = circuit.node(id).expect("validated circuit member");
         let mut inputs = node.inputs().map(|p| bounded.contains(&p.operator));
@@ -317,13 +332,13 @@ pub fn monotonicity_transfers(
         if let Some(transfer) = transfer {
             // Chain classification checks both closures even without an input
             // bound. Only a chain with a bounded input can propagate a bound.
-            if transfer != ChainMinimumOrKey || first {
+            let can_propagate = transfer != ChainMinimumOrKey || first;
+            if apply(id, transfer)? && can_propagate {
                 bounded.insert(id);
             }
-            transfers.push((id, transfer));
         }
     }
-    Ok(transfers)
+    Ok(())
 }
 
 #[cfg(test)]
