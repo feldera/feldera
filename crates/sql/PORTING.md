@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | Build `46cbf6890` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `21022dda5` matched all 8,527 frozen Gen-2 compilations through 3,510,660 observations and passed all 8,256 executable classic cases. Build `d325a41b8` matched 36 selected compilations, passed 349 nightly optimizer tests, and restored COUNT and LATENESS in both directions. [Full replay](evidence/p3-indexed-waterline-propagation.json) · [Runtime](evidence/p3-window-map-composition.json) · [Selected checks](evidence/p3-asof-window-keys.json) | Finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build, including the three latency modes. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
+| P3 | Build `46cbf6890` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `d325a41b8` passed all 8,256 executable classic cases. Build `10a4d9029` matched 216 selected compilations, passed 350 nightly optimizer tests, and restored COUNT and LATENESS in both directions. [Full replay](evidence/p3-indexed-waterline-propagation.json) · [Runtime](evidence/p3-asof-window-keys.json) · [Selected checks](evidence/p3-constant-views-and-static-windows.json) | Finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build, including the three latency modes. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -461,6 +461,14 @@ The result in `/campaign/results/decoder.json` records whether the worker
 reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
+
+Build `10a4d9029` matched Java through 87,780 ordered optimizer observations
+across 108 classic and 108 Gen-2 compilations. The packaged compilers also
+agreed on constant views, integer remainder by one, and the temporal defaults
+below. They produced matching artifacts for all 12 classic demos and 11
+Gen-2 demos, and the same LATENESS diagnostic for the remaining Gen-2 demo.
+COUNT and LATENESS checkpoints restored in both directions without bootstrap.
+[Comparisons, tests, and restores](evidence/p3-constant-views-and-static-windows.json)
 
 On `df4ca6fff`, both engines matched Java's column defaults for 26 temporal
 spellings and two conditional defaults. The timestamp cast of

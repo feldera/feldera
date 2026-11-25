@@ -1,0 +1,321 @@
+{
+  "compiler_commit": "10a4d9029ab9bc3a1f5e90798a328988e0fd76b4",
+  "fixes": {
+    "temporal_casts": "ac50de1e899979511949a1e55391039f17741630",
+    "conditional_defaults": "df4ca6fff091f0a32f6d8186a4c47b31812ee93e",
+    "modulo": "623d48c486febddcb4f10191bd18b9b1109854cb",
+    "constant_views": "22f8da43d3780c766d877ed55120b01e38a3d276",
+    "static_window_keys": "10a4d9029ab9bc3a1f5e90798a328988e0fd76b4"
+  },
+  "control": {
+    "classic": {
+      "modulo": "circuit.rs differs\ndataflow.json differs",
+      "rows": "Java compiler failure: \"Operators IncrementalConstant s0 and IncrementalConstant s2 have the same persistent id 5740668d1b42f6474d5c2be258f1686992c7d67bc95ba0bc7344eea85277bc61\\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues\""
+    },
+    "gen2": {
+      "modulo": "Gen-2 circuit comparison failed: /inner: array lengths differ\ndataflow.json differs",
+      "rows": "Java compiler failure: \"Operators IncrementalConstant s0 and IncrementalConstant s2 have the same persistent id 5740668d1b42f6474d5c2be258f1686992c7d67bc95ba0bc7344eea85277bc61\\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues\""
+    }
+  },
+  "engines": {
+    "classic": {
+      "optimizer_replay": {
+        "cases": 108,
+        "population_sha256": "41a42b47c7439c734b558449f1cb09ea81ea6b487a7ea2775ba413f1aeac32fa",
+        "mismatches": 0,
+        "ordered_s4_observations": 43560,
+        "require_native_decisions": true,
+        "full_optimizer_trace": true,
+        "receipt_sha256": "465d346f0a13b6be3e69b5b3f436bf74aeebb7ad3c7ef03903adefff7ee24661"
+      },
+      "packaged_cli": {
+        "timestamp": {
+          "artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "diagnostics": 0,
+          "receipt_sha256": "acb50516a91309354f75d8f907eeb31a79410e17a6d2db8b3322375f5001793d"
+        },
+        "date": {
+          "artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "diagnostics": 1,
+          "receipt_sha256": "1543c53f97ef93d0b76dc896cb4feeaf6d23992d87cc4e40def8286425842227"
+        },
+        "matrix": {
+          "artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "diagnostics": 12,
+          "receipt_sha256": "a8924659b14f7cd49ad83d5d1d8bf0649582a69fdf4ec2aa79fcc056796d8989"
+        },
+        "conditional": {
+          "artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "diagnostics": 1,
+          "receipt_sha256": "9c78c1a50d5d01a7dee89694c42bfd17b61363294e63d4d944176d98009956d2"
+        },
+        "modulo": {
+          "artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "diagnostics": 0,
+          "receipt_sha256": "dadcc457a01e6a8478e7971c561bcd06b2753549d5a6357148f9b328e9a4667b"
+        },
+        "rows": {
+          "artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "diagnostics": 4,
+          "receipt_sha256": "07ddd268635d5d5ee7663eeececd89722b5fdbff4f3a5d85f401865cb52dd012"
+        },
+        "array": {
+          "artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "diagnostics": 0,
+          "receipt_sha256": "40bede890fc644b415a129eaf56d4a2e30ca403426b9addccbabfd448ef06edd"
+        },
+        "temporal": {
+          "artifacts": [
+            "circuit.rs",
+            "dataflow.json",
+            "schema.json",
+            "stubs.rs"
+          ],
+          "diagnostics": 2,
+          "receipt_sha256": "7a740382f581c8ab15ca8514c3255e9588866f9daa9c9faaa6dc994577f0af6f"
+        }
+      },
+      "shipped_demos": {
+        "artifact_matches": 12,
+        "matched_rejections": 0,
+        "receipt_sha256": "3e10e8064ede785647e982ef08e0eb338bc9edd22768d1dd92400fe2612857f5"
+      }
+    },
+    "gen2": {
+      "optimizer_replay": {
+        "cases": 108,
+        "population_sha256": "0732aa07600726e194671ca1bb47312e7a0fc94758509fda614fa19b32d6c554",
+        "mismatches": 0,
+        "ordered_s4_observations": 44220,
+        "require_native_decisions": true,
+        "full_optimizer_trace": true,
+        "receipt_sha256": "41f7d2aa076a06d39e599dc56419ebfbc53e2c5572b0037110d34c8412f0c558"
+      },
+      "packaged_cli": {
+        "timestamp": {
+          "artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "diagnostics": 0,
+          "receipt_sha256": "2a99fdf99342b2bff6312100f909ed2677873a3926c2bf96cd7abb4d75779f85"
+        },
+        "date": {
+          "artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "diagnostics": 1,
+          "receipt_sha256": "81aaff47c2a08e32bd0c1301f70ec892572a1f9260f0f1fa8f3abd23c8423ed5"
+        },
+        "matrix": {
+          "artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "diagnostics": 12,
+          "receipt_sha256": "4ac9e919dffac601691ee71f371d161b38439731de38e7d65a878cc0f6783778"
+        },
+        "conditional": {
+          "artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "diagnostics": 1,
+          "receipt_sha256": "5fed671ca5495d36ce7cabb1effde2758ba2d84b99faa3f3a13e00f4bf75031b"
+        },
+        "modulo": {
+          "artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "diagnostics": 0,
+          "receipt_sha256": "d9665d5f0d8284095379d689924cb33b8f88c347dda2099e994a1b3d15113a08"
+        },
+        "rows": {
+          "artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "diagnostics": 4,
+          "receipt_sha256": "34f69b8b6b39c2c14280b8c7c64c8a4e5fb27d033eaee0126825c1199124aa90"
+        },
+        "array": {
+          "artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "diagnostics": 0,
+          "receipt_sha256": "7feb63645ee77032409b900ced1b255cd76f02140c5262f9b77622587c4ab758"
+        },
+        "temporal": {
+          "artifacts": [
+            "circuit.json",
+            "dataflow.json",
+            "schema.json"
+          ],
+          "diagnostics": 2,
+          "receipt_sha256": "b4075cdccb61f92b1a169f4e46ad9fb4fa0343c7ff91eddbd6e28a9444e5049c"
+        }
+      },
+      "shipped_demos": {
+        "artifact_matches": 11,
+        "matched_rejections": 1,
+        "receipt_sha256": "f81481f5027792a732edaac11a829259f2696890210ec9b2e9d2c9ccb860f241"
+      }
+    }
+  },
+  "programs": {
+    "modulo": "CREATE TABLE t(i INT NOT NULL, n INT, amount DECIMAL(8,2) NOT NULL);\nCREATE VIEW v AS SELECT MOD(i, 1) AS integral, MOD(n, 1) AS nullable, MOD(amount, 1) AS fractional FROM t;",
+    "rows": "CREATE VIEW a(i) AS VALUES (1), (2), (1);\nCREATE VIEW b(i) AS VALUES (2), (1), (1);\nCREATE VIEW c(i) AS VALUES (2), (1), (2);",
+    "array": "CREATE VIEW a(v) AS VALUES (ARRAY[1,2]), (ARRAY[3,4]);\nCREATE VIEW b(v) AS VALUES (ARRAY[3,4]), (ARRAY[1,2]);\nCREATE VIEW c(v) AS VALUES (ARRAY[3,4]), (ARRAY[2,1]);",
+    "temporal": "CREATE VIEW a(i,d) AS VALUES (1, CAST('2020-02-30 00:00:00' AS TIMESTAMP)), (2, CAST(NULL AS TIMESTAMP));\nCREATE VIEW b(i,d) AS VALUES (2, CAST(NULL AS TIMESTAMP)), (1, TIMESTAMP '2020-03-01 00:00:00');\nCREATE VIEW c(i,d) AS VALUES (2, CAST(NULL AS TIMESTAMP)), (1, TIMESTAMP '2020-02-29 00:00:00');"
+  },
+  "temporal_default_programs": "p3-temporal-column-defaults.json",
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "ef4cbcb23debce9b14793f446e6a1c34523c0c56d85a59d6263d18d6a6c2d049",
+    "bin/sql-difftest": "51e78fc1a800657b2fa5f70960fa31e273acef89f00f2c33e01a31df643875a2",
+    "bin/sql2dbsp": "34b53db4d2feb85831752e7174ac308eb2d64eec2e9e4aecb297331a5081a787",
+    "maven/sql-compiler.jar": "d5b49b702f62310feb1a4450810a571648ea1edc85fac928581851a423028490",
+    "maven/tests.jar": "3bbc766a87bf41de3ca74ed82e70cd8d8625c0e30ea5c22d388ad61ee7e4ab8c"
+  },
+  "rust_tests": 308,
+  "clippy": "passed",
+  "junit_focused": 333,
+  "junit_nightly": 350,
+  "window_test_control": {
+    "compiler_commit": "22f8da43d3780c766d877ed55120b01e38a3d276",
+    "java_groups_match": true,
+    "rust_handled_scan": false
+  },
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21429-095e-7781-b6f0-064586b7b6a8",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21429-0976-7ba0-9153-80a5071244a6",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "8ea7b3b52e90d393fc908003e899e3394d45bbae590630f7f8c3f403f1faf585"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21429-b44f-7c81-aa83-7783afb48249",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21429-b46c-71d1-80b6-8977c24acbc3",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "a3c516f805ead8a19dd4e7cd5e874488fb3b8975ba260fad1475b5e96376e268"
+    }
+  }
+}
