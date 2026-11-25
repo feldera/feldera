@@ -119,7 +119,12 @@ impl Request {
                 .ok_or_else(|| Failure::Internal("compiler has no parent directory".into()))?;
             let mut library_path = OsString::from("-Djava.library.path=");
             library_path.push(directory);
-            command.arg(library_path).arg("-Xss8m");
+            // Each optimizer JVM serves one request. Limit JIT compilation to C1
+            // for both the classic printer session and the Gen-2 front end.
+            command
+                .arg(library_path)
+                .arg("-Xss8m")
+                .arg("-XX:TieredStopAtLevel=1");
         }
         command.args([
             "-Xmx512m",
@@ -271,10 +276,7 @@ impl Request {
         let mut front = self.compiler_args(true);
         front.extend(self.front_args(scratch));
         let mut session = self.jvm(true)?;
-        // This JVM serves one SQL request and exits after printing its workspace.
-        // Limit JIT compilation to C1 to reduce startup work on the cold path.
         session
-            .arg("-XX:TieredStopAtLevel=1")
             .arg("org.dbsp.sqlCompiler.compiler.backend.S3PrinterSession")
             .arg(&ready)
             .arg(front.len().to_string())

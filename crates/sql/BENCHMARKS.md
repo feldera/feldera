@@ -4,6 +4,30 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Cold compilation across output modes, 2026-11-25
+
+Build `21022dda5` compiled all eight frozen SQL workloads with direct Java and
+the packaged hybrid. Each mode ran two warmup pairs and 21 measured pairs per
+workload, alternating compiler order on one CPU of the shared ARM64 devcontainer
+VM. Timing ends at artifact emission, before compiling the generated workspace
+or starting a pipeline. Diagnostics and artifacts matched in all 552 pairs.
+The raw records reproduced every reported p95. [Build identities, absolute times, and sample digests](evidence/p3-cold-emission-modes.json)
+
+| Workload | Single-file classic p95 ratio | Workspace p95 ratio | Gen-2 p95 ratio |
+|---|---:|---:|---:|
+| Aggregate | 0.810× | 1.020× | 1.215× |
+| Correlated array subquery | 0.833× | 0.797× | 1.182× |
+| ASOF join | 0.858× | 0.782× | 1.232× |
+| Connector | 0.859× | 1.173× | 1.098× |
+| Keyed update | 0.818× | 0.884× | 1.160× |
+| Nexmark suite | 1.111× | 1.189× | 1.840× |
+| Outer join | 0.882× | 0.767× | 1.154× |
+| Set operations | 0.910× | 0.880× | 1.194× |
+
+On Nexmark, direct Java and hybrid p95 were 6.461 s and 7.179 s for single-file
+classic output, 6.967 s and 8.285 s for workspace output, and 6.569 s and
+12.084 s for Gen-2. The Gen-2 result exceeded the 1.2× ceiling on three workloads.
+
 ## Unary output projections, 2026-11-25
 
 Each pair compiled the same SQL with direct Java and the packaged hybrid
