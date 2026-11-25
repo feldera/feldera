@@ -128,7 +128,10 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
         defaults = directory / "temporal-defaults.sql"
         defaults.write_text("""CREATE TABLE t (
             ts TIMESTAMP DEFAULT CAST('2020-02-30 00:00:00' AS TIMESTAMP),
-            d DATE DEFAULT CAST('-001-01-01' AS DATE)
+            d DATE DEFAULT CAST('-001-01-01' AS DATE),
+            chosen TIMESTAMP DEFAULT CASE WHEN 1 = 1
+                THEN CAST('2021-04-31 00:00:00' AS TIMESTAMP)
+                ELSE TIMESTAMP '1999-01-01 00:00:00' END
         );
         CREATE VIEW v AS SELECT * FROM t;
         """)

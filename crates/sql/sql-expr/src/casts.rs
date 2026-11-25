@@ -19,15 +19,7 @@ pub(crate) use simplify::SimplifyDefault;
 pub use simplify::SimplifyWarning;
 
 pub(crate) fn simplify_scalar(editor: &mut CircuitEditor, id: NodeId) -> Result<NodeId, Error> {
-    simplify_scalar_with_warnings(editor, id, None)
-}
-
-pub(crate) fn simplify_scalar_with_warnings(
-    editor: &mut CircuitEditor,
-    id: NodeId,
-    warnings: Option<&mut Vec<SimplifyWarning>>,
-) -> Result<NodeId, Error> {
-    Rewrite::translating_expressions(SimplifyDefault { warnings }).apply(editor, id)
+    Rewrite::translating_expressions(SimplifyDefault { warnings: None }).apply(editor, id)
 }
 
 /// Prepare a default for the backend, advancing the compiler's name allocator on success.
@@ -46,7 +38,7 @@ pub fn prepare_column_default_with_warnings(
     next_name: &mut u64,
     warnings: Option<&mut Vec<SimplifyWarning>>,
 ) -> Result<ExpressionId, Error> {
-    let mut root = simplify_scalar_with_warnings(editor, default.into(), warnings)?;
+    let mut root = crate::simplify_closure_with_warnings(editor, default.into(), warnings)?;
     let mut name = *next_name;
     // Java allocates converter parameters for all safe casts before visiting unsafe casts.
     for safety in [CastSafety::Safe, CastSafety::Unsafe] {
