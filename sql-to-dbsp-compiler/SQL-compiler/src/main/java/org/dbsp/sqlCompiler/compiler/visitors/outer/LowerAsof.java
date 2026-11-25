@@ -35,6 +35,7 @@ import org.dbsp.util.graph.Port;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -54,8 +55,8 @@ public class LowerAsof implements CircuitTransform {
         // Maps an integrate trace node in the original graph to the asof join operator that it should be moved to
         Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces = new HashMap<>();
         Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces = new HashMap<>();
-        // Maps an integrate trace operator in the new graph to the original one
-        Map<IGCOperator, IGCOperator> original = new HashMap<>();
+        // Extra dependency edges break ties when the circuit is sorted. Add them in circuit order.
+        Map<IGCOperator, IGCOperator> original = new LinkedHashMap<>();
 
         Graph graph = new Graph(this.compiler);
         graph.apply(circuit);
