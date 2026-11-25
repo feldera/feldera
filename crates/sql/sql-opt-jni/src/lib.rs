@@ -162,6 +162,44 @@ impl ExpressionSite {
     }
 }
 
+/// Attach the selected retainer's predicate and waterline to the mapped aggregate.
+fn retained_linear_aggregate(
+    input: &[u8],
+    state: &[u8],
+    next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    use feldera_sql_ir::OperatorKind;
+
+    #[derive(serde::Deserialize)]
+    struct Request {
+        #[serde(flatten)]
+        site: ExpressionSite,
+        ports: [usize; 2],
+    }
+
+    let request: Request = serde_json::from_slice(state)?;
+    let (fragment, roots) =
+        fragment::Fragment::with_ports(request.site, request.ports.into(), OperatorKind::Map, input)?;
+    let [output_type, aggregate, postprocess, predicate] = roots[..] else {
+        return Err("linear retention requires the output type, aggregate, postprocess and predicate".into());
+    };
+    let mut edit = CircuitEditor::new(fragment.base.clone());
+    let body = fragment.base.root_id();
+    edit.append_operator(
+        body,
+        body,
+        OperatorKind::AggregateLinearPostprocessRetainKeys,
+        &fragment.inputs,
+        [
+            ("outputType", Field::Reference(output_type)),
+            ("function", Field::Reference(aggregate)),
+            ("postProcess", Field::Reference(postprocess)),
+            ("retainKeysFunction", Field::Reference(predicate)),
+        ],
+    )?;
+    fragment.reply(&edit, next)
+}
+
 fn tuple_bound(input: &[u8], state: &[u8], next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
@@ -1447,6 +1485,7 @@ fn transform(
                 .map(feldera_sql_opt::ProjectionRules::for_producer).unwrap_or_default();
             return Ok(serde_json::to_value(rules)?);
         }
+        "LinearPostprocessRetainKeys/Operator" => return retained_linear_aggregate(input, state, next),
         "SharedProjections/Operator" => return shared_projection::operator(input, state, next),
         "TrimFilters/Operators" => return trim_filter::operators(input, state, next),
         "RemoveUnusedFields/NarrowJoinOperators" => return narrowed_join::operators(input, state, next),

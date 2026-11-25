@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetai
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.graph.Port;
 
@@ -72,9 +73,11 @@ public class LinearPostprocessRetainKeys implements CircuitTransform, IWritesLog
             // The waterline precedes the aggregate after topological sorting.
             var integrator = selected.get();
             OutputPort right = this.mapped(integrator.right());
-            var replacement = new DBSPAggregateLinearPostprocessRetainKeysOperator(operator.getRelNode(),
-                    operator.getOutputIndexedZSetType(), operator.getFunction(), operator.postProcess,
-                    integrator.getClosureFunction(), left, right);
+            var replacement = this.planned != null
+                    ? RustCircuitPass.retainedLinearAggregate(this.compiler, operator, integrator, left, right)
+                    : new DBSPAggregateLinearPostprocessRetainKeysOperator(operator.getRelNode(),
+                            operator.getOutputIndexedZSetType(), operator.getFunction(), operator.postProcess,
+                            integrator.getClosureFunction(), left, right);
             this.map(operator, replacement);
         }
     }

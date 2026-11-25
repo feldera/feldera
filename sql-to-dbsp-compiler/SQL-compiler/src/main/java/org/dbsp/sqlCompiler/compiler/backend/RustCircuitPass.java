@@ -99,6 +99,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LinearPostprocessRetainKeys;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.HashPrefixPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.SetOperatorHashes;
@@ -3624,6 +3625,25 @@ public final class RustCircuitPass implements CircuitTransform {
                 DBSPVariablePath.nextGeneratedName(), EMPTY_CONTEXT);
         return LiveSharedProjections.apply(this.compiler, circuit, analysis, MAPPER.convertValue(edits,
                 new TypeReference<Map<Long, LiveSharedProjections.Edits>>() {}));
+    }
+
+    public static DBSPAggregateLinearPostprocessRetainKeysOperator retainedLinearAggregate(
+            DBSPCompiler compiler, DBSPAggregateLinearPostprocessOperator aggregate,
+            DBSPIntegrateTraceRetainKeysOperator retainer, OutputPort data, OutputPort waterline) {
+        String pass = "LinearPostprocessRetainKeys/Operator";
+        var site = expressionSite(aggregate.getRelNode());
+        site.putArray("ports").add(data.outputNumber).add(waterline.outputNumber);
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site), aggregate.outputType,
+                    aggregate.getFunction(), aggregate.postProcess, retainer.getClosureFunction());
+            var operators = decodeOperatorFragment(reply, op -> aggregate.getRelNode(), data.node(), waterline.node());
+            Utilities.enforce(operators.size() == 1);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            return operators.getFirst().to(DBSPAggregateLinearPostprocessRetainKeysOperator.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode linear aggregate retention", error);
+        }
     }
 
     private DBSPCircuit retainLinearAggregateKeys(DBSPCircuit circuit, long next) throws IOException {

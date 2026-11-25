@@ -3,6 +3,9 @@ package org.dbsp.sqlCompiler.compiler.ir;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
@@ -412,6 +415,57 @@ public class ProjectionCompositionTests {
         var hybrid = Assert.assertThrows(InternalCompilerError.class,
                 () -> RustCircuitPass.composeProjection(compiler, before, after));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+    }
+
+    @Test public void groupedCountUsesItsRetainersWaterlineAndPredicate() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"));
+        for (boolean hybrid : List.of(false, true)) {
+            var options = new CompilerOptions();
+            options.languageOptions.incrementalize = true;
+            options.ioOptions.rustOptimizerPasses = hybrid;
+            var compiler = new DBSPCompiler(options);
+            var decisions = new ArrayList<Boolean>();
+            var retainers = new ArrayList<DBSPIntegrateTraceRetainKeysOperator>();
+            var replacements = new ArrayList<DBSPAggregateLinearPostprocessRetainKeysOperator>();
+            compiler.stateObserver = new DBSPCompiler.StateObserver() {
+                @Override public void nativeDecision(String pass, boolean answered) {
+                    if (pass.equals("LinearPostprocessRetainKeys/Operator"))
+                        decisions.add(answered);
+                }
+                @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {
+                    if (parent.equals("LinearPostprocessRetainKeys") && pass.getName().equals("ReplaceLinear"))
+                        for (var op : input.allOperators)
+                            if (op instanceof DBSPIntegrateTraceRetainKeysOperator retain &&
+                                    retain.left().node() instanceof DBSPAggregateLinearPostprocessOperator)
+                                retainers.add(retain);
+                }
+                @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) {
+                    if (parent.equals("LinearPostprocessRetainKeys") && pass.getName().equals("ReplaceLinear") && completed)
+                        for (var op : output.allOperators)
+                            if (op instanceof DBSPAggregateLinearPostprocessRetainKeysOperator aggregate)
+                                replacements.add(aggregate);
+                }
+            };
+            compiler.submitStatementsForCompilation("""
+                    CREATE TABLE bid(channel VARCHAR, ts TIMESTAMP NOT NULL LATENESS INTERVAL 4 SECONDS);
+                    CREATE VIEW result AS SELECT channel, COUNT(*) AS n FROM bid GROUP BY channel, CAST(ts AS DATE);
+                    """);
+            compiler.getFinalCircuit(false);
+            compiler.throwIfErrorsOccurred();
+            Assert.assertEquals(1, replacements.size());
+            var replacement = replacements.getFirst();
+            Assert.assertEquals(1, retainers.size());
+            var retain = retainers.getFirst();
+            var aggregate = retain.left().node().to(DBSPAggregateLinearPostprocessOperator.class);
+            Assert.assertEquals(aggregate.input(), replacement.left());
+            Assert.assertEquals(retain.right(), replacement.right());
+            Assert.assertSame(retain.getFunction(), replacement.retainKeysFunction);
+            Assert.assertSame(aggregate.getFunction(), replacement.getFunction());
+            Assert.assertSame(aggregate.postProcess, replacement.postProcess);
+            Assert.assertSame(aggregate.outputType, replacement.outputType);
+            Assert.assertSame(aggregate.getRelNode(), replacement.getRelNode());
+            Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
+        }
     }
 
     @Test public void narrowBothReadersOfASharedProjection() {
