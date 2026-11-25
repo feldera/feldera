@@ -467,7 +467,8 @@ Two handlers that differ only in their site index share a window. Changing
 the handler behavior or the unwrap message keeps the windows distinct.
 The preceding build used Java for this decision. The regression and 333 other
 focused JUnit tests passed, and both engines matched Java on the same 216
-selected compilations and temporal column defaults.
+selected compilations and temporal column defaults. COUNT and LATENESS
+checkpoints restored in both directions and retained their count deltas.
 [Checked static initializers](evidence/p3-checked-static-initializers.json)
 
 Build `10a4d9029` matched Java through 87,780 ordered optimizer observations
@@ -484,6 +485,14 @@ spellings and two conditional defaults. The timestamp cast of
 its runtime conversion and emits the same warning as Java. All 46 selected
 compilations matched through 20,116 ordered optimizer observations and artifact
 emission. [Temporal default comparisons](evidence/p3-temporal-column-defaults.json)
+
+Three additional `DATE DEFAULT CAST(... AS DATE)` inputs expose a year-range
+issue on `10a4d9029` in both engines. For `'0000-01-01'`, direct Java and
+the hybrid fail with `Year out of range: [0]`. For `'-0001-01-01'` and
+`'+10000-01-01'`, direct Java reports an internal error and the hybrid
+accepts the program with a warning. The boundary dates `'0001-01-01'` and
+`'9999-12-31'` compile on both paths. The reference behavior for years
+outside that range is awaiting an owner decision.
 
 The packaged CLI and the S4 replay exercise different paths in ASOF lowering.
 All 12 classic demos and the 11 accepted Gen-2 demos matched through 13,588
