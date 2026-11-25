@@ -1167,6 +1167,20 @@ public class TemporalKeyTests {
     }
 
     @Test
+    public void windowKeysCompareClosureBodiesAndCallArguments() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(5, (row, i) -> {
+            var argument = new DBSPVariablePath("timestamp" + i, time);
+            var captured = b.field(row, i == 2 ? 1 : 0);
+            var body = i == 3 ? b.call(time, "shift", captured, argument)
+                    : b.call(time, "shift", argument, captured);
+            return new DBSPApplyExpression(body.closure(argument), b.field(row, i == 4 ? 0 : 1));
+        }, List.of(0, 1));
+    }
+
+    @Test
     public void windowKeysCompareLoopInputsAndAssignedValues() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();

@@ -54,6 +54,7 @@ enum Term {
     Unwrap(String),
     If,
     Call(String),
+    CallClosure,
     Method(String),
     Cast,
     ScalarType(String),
@@ -680,19 +681,26 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         ),
         Expr::Apply | Expr::ApplyMethod | Expr::Constructor => {
             let function = child("function")?;
-            if edit.expr_kind(edit.expression(function)?)? != Expr::Path {
-                return Ok(None);
-            }
-            let path = edit.node(edit.node(function)?.edge("path")?)?;
             let mut operands = Vec::new();
-            let Some(name) = call_path(edit, path, &mut operands)? else {
-                return Ok(None);
-            };
-            let term = if kind == Expr::ApplyMethod {
-                operands.push(child("self")?);
-                Term::Method(name)
-            } else {
-                Term::Call(name)
+            let term = match edit.expr_kind(edit.expression(function)?)? {
+                Expr::Path => {
+                    let path = edit.node(edit.node(function)?.edge("path")?)?;
+                    let Some(name) = call_path(edit, path, &mut operands)? else {
+                        return Ok(None);
+                    };
+                    if kind == Expr::ApplyMethod {
+                        operands.push(child("self")?);
+                        Term::Method(name)
+                    } else {
+                        Term::Call(name)
+                    }
+                }
+                Expr::Closure if kind != Expr::ApplyMethod => {
+                    // The callee prints its parameter types and body before the arguments.
+                    operands.push(function);
+                    Term::CallClosure
+                }
+                _ => return Ok(None),
             };
             operands.extend(children("arguments")?);
             (term, operands)
