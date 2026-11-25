@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -27,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
@@ -48,6 +50,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -55,6 +58,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.IdShuffle;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -413,6 +417,51 @@ public class JoinInputProjectionTests {
                 } else {
                     expectedNames = allocated;
                 }
+            }
+        }
+    }
+
+    @Test
+    public void unnestTrimmingResolvesTheOriginalCollectionReaderOnlyWhenNarrowing() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, items INT ARRAY); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var type = input.getOutputRowType().to(DBSPTypeTuple.class);
+        var row = type.ref().var();
+        var shadow = row.asParameter();
+        var statement = row.deref().field(0).closure(shadow).toStatement();
+        var reader = new DBSPBlockExpression(List.of(statement), row.deref().field(1)).closure(row);
+        for (boolean narrow : List.of(false, true)) {
+            var passthrough = narrow ? List.<Integer>of() : List.of(0);
+            int width = passthrough.size() + 1;
+            var flatmap = new DBSPFlatmap(CalciteObject.EMPTY, type, reader, passthrough,
+                    null, null, new IdShuffle(width));
+            var operator = new DBSPFlatMapOperator(CalciteEmptyRel.INSTANCE, flatmap,
+                    new DBSPTypeZSet(flatmap.getType().to(DBSPTypeFunction.class).resultType), input);
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            circuit.addOperator(source);
+            circuit.addOperator(operator);
+            String diagnostic = null;
+            long allocations = 0;
+            for (boolean hybrid : List.of(false, true)) {
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                var pass = new RemoveUnusedFields(compiler, new AnalyzedSet<>());
+                long before = DBSPVariablePath.nextGeneratedName();
+                if (narrow) {
+                    var failure = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+                    Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("Changing declaration"));
+                    if (hybrid)
+                        Assert.assertEquals(diagnostic, failure.getMessage());
+                    diagnostic = failure.getMessage();
+                } else {
+                    Assert.assertSame(operator, pass.apply(circuit).allOperators.getLast());
+                }
+                long consumed = DBSPVariablePath.nextGeneratedName() - before;
+                if (hybrid)
+                    Assert.assertEquals(allocations, consumed);
+                allocations = consumed;
             }
         }
     }

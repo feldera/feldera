@@ -1,6 +1,6 @@
 //! Split a map that reads a subset of its input into a projection and a narrower reader.
 use crate::{
-    BindingDiagnostic, inspect_references, row_fields::RowFields, row_projection::RowProjection,
+    FieldRewriteError, inspect_references, row_fields::RowFields, row_projection::RowProjection,
     terms::Terms,
 };
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId};
@@ -21,17 +21,6 @@ pub fn split_map_input(
     split_with(edit, reader, paths, output, next, RowProjection::rebind)
 }
 
-pub enum MapSplitError<'a> {
-    InvalidIr(Error),
-    Binding(BindingDiagnostic<'a>),
-}
-
-impl From<Error> for MapSplitError<'_> {
-    fn from(error: Error) -> Self {
-        Self::InvalidIr(error)
-    }
-}
-
 /// Field analysis can succeed on a copied tree even when the original reader
 /// shares a variable between declarations. Rewriting still uses that original.
 pub fn checked_split_map_input<'a>(
@@ -41,13 +30,13 @@ pub fn checked_split_map_input<'a>(
     paths: &BTreeSet<Vec<usize>>,
     output: MapOutput,
     next: &mut u64,
-) -> Result<Option<[ExpressionId; 2]>, MapSplitError<'a>> {
+) -> Result<Option<[ExpressionId; 2]>, FieldRewriteError<'a>> {
     if !RowFields::new(original).map_has_unused_fields(reader, paths)? {
         return Ok(None);
     }
     split_with(edit, reader, paths, output, next, |layout, edit, reader| {
         if let Some(issue) = inspect_references(original, reader, false)?.diagnostic {
-            return Err(MapSplitError::Binding(issue));
+            return Err(FieldRewriteError::Binding(issue));
         }
         Ok(layout.rebind(edit, reader)?)
     })

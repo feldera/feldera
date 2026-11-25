@@ -1,16 +1,22 @@
 //! Narrow the collection reader and the columns UNNEST copies from its input row.
-use crate::{compressed_field_type, project_used_fields, rebind_projected_reader};
-use feldera_sql_expr::{replace_flatmap_input, FlatmapColumns};
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, Field, NodeId};
+use crate::{
+    FieldRewriteError, compressed_field_type, inspect_references, project_used_fields,
+    rebind_projected_reader, row_fields::RowFields,
+};
+use feldera_sql_expr::{FlatmapColumns, replace_flatmap_input};
+use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId};
+use std::collections::BTreeSet;
 
 /// Return the projection that precedes UNNEST and the UNNEST over its output.
-/// The mask initially covers only reads of the collection-producing closure.
-pub fn trim_flatmap_input(
+/// Collection reads come from field analysis on its expression tree. Rebinding
+/// uses the original reader after allocating the input projection.
+pub fn trim_flatmap_input<'a>(
+    original: &'a Circuit,
     edit: &mut CircuitEditor,
     flatmap: NodeId,
-    mut used: Vec<bool>,
+    paths: &BTreeSet<Vec<usize>>,
     next: &mut u64,
-) -> Result<Option<[ExpressionId; 2]>, Error> {
+) -> Result<Option<[ExpressionId; 2]>, FieldRewriteError<'a>> {
     let node = edit.node(flatmap)?;
     let collection = node.edge("collectionExpression")?;
     let passthrough = FlatmapColumns::read(node)?.passthrough;
@@ -21,9 +27,8 @@ pub fn trim_flatmap_input(
         .map_err(|_| Error::new("UNNEST collection reader needs one parameter"))?;
     let reference = edit.type_id(edit.node(parameter)?.edge("type")?)?;
     let row = edit.type_id(edit.node(reference.into())?.edge("type")?)?;
-    if used.len() != edit.node(row.into())?.edges("tupFields")?.len() {
-        return Err(Error::new("UNNEST field mask differs from its input arity"));
-    }
+    let columns = edit.node(row.into())?.edges("tupFields")?;
+    let mut used = RowFields::new(original).column_mask(&columns, &[], paths)?;
     for &index in &passthrough {
         *used
             .get_mut(index)
@@ -39,6 +44,9 @@ pub fn trim_flatmap_input(
         .collect();
     let borrowed = edit.reference_type(row)?;
     let projection = project_used_fields(edit, borrowed, used.clone(), next)?;
+    if let Some(issue) = inspect_references(original, collection, false)?.diagnostic {
+        return Err(FieldRewriteError::Binding(issue));
+    }
     let reader_type = compressed_field_type(edit, reference, 1, &used)?;
     let declaration =
         edit.derive_inner(parameter, [("type", Field::Reference(reader_type.into()))])?;

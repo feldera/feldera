@@ -7,6 +7,17 @@ use feldera_sql_ir::{
 use serde::Deserialize;
 use std::collections::HashMap;
 
+pub enum FieldRewriteError<'a> {
+    InvalidIr(Error),
+    Binding(crate::BindingDiagnostic<'a>),
+}
+
+impl From<Error> for FieldRewriteError<'_> {
+    fn from(error: Error) -> Self {
+        Self::InvalidIr(error)
+    }
+}
+
 struct Parameter {
     name: String,
     ty: TypeId,

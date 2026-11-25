@@ -40,6 +40,27 @@ impl<'a> RowFields<'a> {
         self.unused(ty, &[], paths, if borrowed { 1 } else { 2 })
     }
 
+    /// At a projection boundary, a read of any descendant keeps its entire column.
+    /// Empty tuples also occupy a slot when their parent is projected.
+    pub(super) fn column_mask(
+        &mut self,
+        columns: &[NodeId],
+        prefix: &[usize],
+        paths: &BTreeSet<Vec<usize>>,
+    ) -> Result<Vec<bool>, Error> {
+        if (0..=prefix.len()).any(|len| paths.contains(&prefix[..len])) {
+            return Ok(vec![true; columns.len()]);
+        }
+        let mut path = prefix.to_vec();
+        let mut mask = Vec::with_capacity(columns.len());
+        for (index, &column) in columns.iter().enumerate() {
+            path.push(index);
+            mask.push(!self.unused(column, &path, paths, 0)?);
+            path.pop();
+        }
+        Ok(mask)
+    }
+
     /// Minimum projection depth at which a row with no reads has an unused field.
     /// An empty tuple is always kept. A row containing both an empty tuple and
     /// a scalar must be opened at least once before the scalar can be discarded.

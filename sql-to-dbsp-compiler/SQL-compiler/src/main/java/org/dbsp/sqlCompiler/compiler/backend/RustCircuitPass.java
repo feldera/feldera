@@ -1624,23 +1624,25 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @Nullable
-    public static Pair<DBSPClosureExpression, DBSPFlatmap> trimFlatmapInput(DBSPCompiler compiler,
-            DBSPFlatmap flatmap, List<Boolean> used) {
+    public static Pair<DBSPClosureExpression, DBSPFlatmap> trimFlatmapInput(DBSPCompiler compiler, DBSPFlatmap flatmap) {
         String pass = "RemoveUnusedFields/FlatmapInput";
+        var paths = requiredParameterFieldDependencies(compiler, flatmap.collectionExpression).getFirst();
         try {
-            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(used), flatmap);
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(paths), flatmap);
             if (compiler.stateObserver != null)
                 compiler.stateObserver.nativeDecision(pass, true);
             if (reply.value.isNull())
                 return null;
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            if (reply.value.has("diagnostic"))
+                checkBindingErrors(reply.writer, reply.value.required("diagnostic"));
             var functions = reply.value.required("functions");
             var decoder = expressionDecoder(reply.writer);
             var projection = decoder.decodeInner(functions.required(0), DBSPClosureExpression.class);
             var narrowed = decoder.decodeInner(functions.required(1), DBSPFlatmap.class);
-            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
             return Pair.of(projection, narrowed);
         } catch (IOException error) {
-            throw new UncheckedIOException("Could not encode UNNEST input field usage", error);
+            throw new UncheckedIOException("Could not encode UNNEST collection field paths", error);
         }
     }
 

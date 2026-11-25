@@ -97,11 +97,7 @@ pub fn narrow_join_inputs<'a>(
             // The match condition reads each timestamp even if the output does not.
             paths.insert(vec![ts]);
         }
-        let whole_row = paths.contains(&Vec::new());
-        let mut fields = Vec::with_capacity(columns.len());
-        for (index, column) in columns.into_iter().enumerate() {
-            fields.push(whole_row || !shapes.unused(column, &[index], paths, 0)?);
-        }
+        let fields = shapes.column_mask(&columns, &[], paths)?;
         if let Some(indices) = &mut timestamps {
             // Raw tuples retain field positions even when a field becomes empty.
             if edit.type_kind(row)? != TypeKind::RawTuple {

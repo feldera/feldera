@@ -444,11 +444,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
 
-        var uses = this.find.findUsedFields(flatmap.collectionExpression);
-        var row = uses.get(flatmap.collectionExpression.parameters[0]).deref();
         var narrowed = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.trimFlatmapInput(this.compiler, flatmap, row.usageAtDepth(1))
-                : this.trimFlatmapInput(flatmap, uses, row);
+                ? RustCircuitPass.trimFlatmapInput(this.compiler, flatmap)
+                : this.trimFlatmapInput(flatmap);
         if (narrowed == null) {
             super.postorder(operator);
             return;
@@ -462,8 +460,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
     }
 
     @Nullable
-    private Pair<DBSPClosureExpression, DBSPFlatmap> trimFlatmapInput(
-            DBSPFlatmap flatmap, ParameterFieldUse uses, FieldUseMap row) {
+    private Pair<DBSPClosureExpression, DBSPFlatmap> trimFlatmapInput(DBSPFlatmap flatmap) {
+        var uses = this.find.findUsedFields(flatmap.collectionExpression);
+        var row = uses.get(flatmap.collectionExpression.parameters[0]).deref();
         flatmap.passthroughIndexes.forEach(row::setUsed);
         if (!row.hasUnusedFields(1))
             return null;

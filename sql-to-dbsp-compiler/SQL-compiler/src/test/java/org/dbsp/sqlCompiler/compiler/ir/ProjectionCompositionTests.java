@@ -123,7 +123,7 @@ public class ProjectionCompositionTests {
         var shuffle = new ExplicitShuffle(4, List.of(3, 0, 2, 1));
         var flatmap = new DBSPFlatmap(CalciteObject.EMPTY, input, row.deref().field(2).closure(row),
                 List.of(3, 3), null, b.i32(), shuffle);
-        var reduced = RustCircuitPass.trimFlatmapInput(this.compiler, flatmap, List.of(false, false, true, false));
+        var reduced = RustCircuitPass.trimFlatmapInput(this.compiler, flatmap);
         Assert.assertNotNull(reduced);
         var narrowed = b.tup(array, b.str());
         Assert.assertTrue(narrowed.sameType(reduced.left.getResultType()));
@@ -137,8 +137,10 @@ public class ProjectionCompositionTests {
         Assert.assertSame(flatmap.ordinalityIndexType, reduced.right.ordinalityIndexType);
         Assert.assertTrue(flatmap.getType().to(DBSPTypeFunction.class).resultType
                 .sameType(reduced.right.getType().to(DBSPTypeFunction.class).resultType));
+        var allColumns = new DBSPFlatmap(CalciteObject.EMPTY, input, flatmap.collectionExpression,
+                List.of(0, 1, 3), null, null, new ExplicitShuffle(4, List.of(0, 1, 2, 3)));
         long nextName = DBSPVariablePath.nextGeneratedName();
-        Assert.assertNull(RustCircuitPass.trimFlatmapInput(this.compiler, flatmap, List.of(true, true, true, false)));
+        Assert.assertNull(RustCircuitPass.trimFlatmapInput(this.compiler, allColumns));
         Assert.assertEquals(nextName, DBSPVariablePath.nextGeneratedName());
     }
 

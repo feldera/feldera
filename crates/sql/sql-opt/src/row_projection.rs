@@ -32,19 +32,8 @@ impl Component {
         let tuple = matches!(kind, Ty::RawTuple | Ty::Tuple);
         let whole = paths.contains(&Vec::new()) || paths.contains(prefix);
         let used = if tuple {
-            let mut shape = RowFields::new(edit.circuit());
-            let mut used = Vec::new();
-            for (i, field) in edit
-                .node(ty.into())?
-                .edges("tupFields")?
-                .into_iter()
-                .enumerate()
-            {
-                let mut path = prefix.to_vec();
-                path.push(i);
-                used.push(whole || !shape.unused(field, &path, paths, 0)?);
-            }
-            used
+            let columns = edit.node(ty.into())?.edges("tupFields")?;
+            RowFields::new(edit.circuit()).column_mask(&columns, prefix, paths)?
         } else {
             vec![whole]
         };

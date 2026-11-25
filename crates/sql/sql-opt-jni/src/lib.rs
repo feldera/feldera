@@ -1172,14 +1172,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(serde_json::to_value(edit.circuit().additional_inner_nodes(&arena, statements)?)?);
         }
         ("SplitRowMapInput" | "SplitIndexedMapInput" | "SplitInspectedMapInput", [reader]) => {
-            use feldera_sql_opt::{MapOutput, MapSplitError};
+            use feldera_sql_opt::{MapOutput, FieldRewriteError};
             let pair = if pass == "SplitInspectedMapInput" {
                 let (indexed, paths) = serde_json::from_slice(state)?;
                 let output = if indexed { MapOutput::Indexed } else { MapOutput::Row };
                 match feldera_sql_opt::checked_split_map_input(&arena, &mut edit, *reader, &paths, output, &mut next) {
                     Ok(pair) => pair,
-                    Err(MapSplitError::InvalidIr(error)) => return Err(error.into()),
-                    Err(MapSplitError::Binding(issue)) => {
+                    Err(FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
+                    Err(FieldRewriteError::Binding(issue)) => {
                         return Ok(json!({"diagnostic":binding_diagnostic(issue), "next_generated_name":next}));
                     }
                 }
@@ -1243,9 +1243,15 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             closure
         }
         ("RemoveUnusedFields/FlatmapInput", [flatmap]) => {
-            let used = serde_json::from_slice(state)?;
-            let Some(functions) = feldera_sql_opt::trim_flatmap_input(&mut edit, *flatmap, used, &mut next)? else {
-                return Ok(Value::Null);
+            use feldera_sql_opt::FieldRewriteError;
+            let paths = serde_json::from_slice(state)?;
+            let functions = match feldera_sql_opt::trim_flatmap_input(&arena, &mut edit, *flatmap, &paths, &mut next) {
+                Ok(Some(functions)) => functions,
+                Ok(None) => return Ok(Value::Null),
+                Err(FieldRewriteError::Binding(issue)) => {
+                    return Ok(json!({"diagnostic": binding_diagnostic(issue), "next_generated_name": next}));
+                }
+                Err(FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
             };
             return Ok(json!({"functions": edit.circuit().additional_expressions(&arena, &functions)?,
                 "next_generated_name": next}));
