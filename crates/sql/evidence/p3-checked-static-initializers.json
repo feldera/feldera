@@ -1,0 +1,45 @@
+{
+  "compiler_commit": "4303dd6e3cac42f9366462aab4146a5bb4c1e00e",
+  "build_sha256": {
+    "libfeldera_sql_opt_jni.so": "2d156f83af8384628ed0e4e8a5723a7e79b29b3ca11150132465511f97a25329",
+    "sql-difftest": "51e78fc1a800657b2fa5f70960fa31e273acef89f00f2c33e01a31df643875a2",
+    "sql2dbsp": "868d2842f5fe60e5e9bbb692d32ac56a4d60846769a14e9dde9690c0332fd768"
+  },
+  "java_classpath_sha256": {
+    "sql-compiler.jar": "d5b49b702f62310feb1a4450810a571648ea1edc85fac928581851a423028490",
+    "tests.jar": "3bbc766a87bf41de3ca74ed82e70cd8d8625c0e30ea5c22d388ad61ee7e4ab8c"
+  },
+  "window_regression": {
+    "test": "TemporalKeyTests#windowSharingComparesCheckedStaticInitializers",
+    "control_build": "10a4d9029ab9bc3a1f5e90798a328988e0fd76b4",
+    "control_used_java_fallback": true,
+    "fixed_used_rust": true,
+    "control_log_sha256": "6474b6cdae122e10a8dcf926703f8b3cee6755e5d39c9560539d2adfe711f0b6",
+    "focused_junit_tests": 334,
+    "junit_log_sha256": "109ff4e3987f865dc32c5322b22b6061650c623f84d2a7f1e56bc5bf084141bb"
+  },
+  "replay": {
+    "classic": {
+      "cases": 108,
+      "ordered_s4_observations": 43560,
+      "mismatches": 0,
+      "require_native_decisions": true,
+      "full_optimizer_trace": true,
+      "population_sha256": "41a42b47c7439c734b558449f1cb09ea81ea6b487a7ea2775ba413f1aeac32fa",
+      "receipt_sha256": "2b6bd7272b049f5597cffa7498884d1ca253b53e3d55e598e1950da24534d944",
+      "temporal_default_receipt_sha256": "d1900d11d91df7b7ca00fb8d3a0b52b4206b2ba6cc3b51c7df2974afa72b94c0"
+    },
+    "gen2": {
+      "cases": 108,
+      "ordered_s4_observations": 44220,
+      "mismatches": 0,
+      "require_native_decisions": true,
+      "full_optimizer_trace": true,
+      "population_sha256": "0732aa07600726e194671ca1bb47312e7a0fc94758509fda614fa19b32d6c554",
+      "receipt_sha256": "73a4833f486dc075223e019ebaeb5ff31cc366ccfd4dd1762b2b9e5f411f6882",
+      "temporal_default_receipt_sha256": "45689bd0cc29e3960008cd10e499adeafa8ef7aa48730a5bc0e52d01c744f4e4"
+    }
+  },
+  "rust_optimizer_unit_tests": 170,
+  "clippy": "passed"
+}

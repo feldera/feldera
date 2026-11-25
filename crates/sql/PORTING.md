@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `4303dd6e3`, Rust compares checked expressions in static window keys.
+Two handlers that differ only in their site index share a window. Changing
+the handler behavior or the unwrap message keeps the windows distinct.
+The preceding build used Java for this decision. The regression and 333 other
+focused JUnit tests passed, and both engines matched Java on the same 216
+selected compilations and temporal column defaults.
+[Checked static initializers](evidence/p3-checked-static-initializers.json)
+
 Build `10a4d9029` matched Java through 87,780 ordered optimizer observations
 across 108 classic and 108 Gen-2 compilations. The packaged compilers also
 agreed on constant views, integer remainder by one, and the temporal defaults
