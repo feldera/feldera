@@ -45,6 +45,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -55,6 +56,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -93,6 +95,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 public class TemporalKeyTests {
@@ -840,6 +843,37 @@ public class TemporalKeyTests {
     public void windowSharingProjectsFieldsFromConstructedRows() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
         var b = new ExpressionBuilder();
+        assertWindowGroups(3, (row, i) -> {
+            var first = b.field(row, 0);
+            var last = b.field(row, 1);
+            // The located constructor retains the field access in the optimizer input.
+            return i == 0 ? first :
+                    new DBSPTupleExpression(last, first).field(CalciteEmptyRel.INSTANCE, i == 1 ? 1 : 0);
+        }, List.of(0, 1));
+    }
+
+    @Test
+    public void windowSharingCanonicalizesCastsAndNullTests() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        assertWindowGroups(6, (row, i) -> {
+            var field = b.field(row, i == 5 ? 1 : 0);
+            var key = i == 4 ? new DBSPCastExpression(site, field, time, DBSPCastExpression.CastType.SqlUnsafe) : field;
+            var flag = switch (i) {
+                case 2 -> new DBSPIsNullExpression(site, new DBSPI32Literal(1, true));
+                case 3 -> new DBSPIsNullExpression(site, new DBSPI32Literal(null, true));
+                default -> new DBSPBoolLiteral(i == 1);
+            };
+            return b.call(time, "shift_timestamp", key, flag);
+        }, List.of(0, 2, 4, 1, 3));
+    }
+
+    private static void assertWindowGroups(int count,
+            BiFunction<DBSPVariablePath, Integer, DBSPExpression> timestamp,
+            List<Integer> shared) {
+        var b = new ExpressionBuilder();
         var site = CalciteEmptyRel.INSTANCE;
         var time = DBSPTypeTimestamp.INSTANCE;
         var rowType = b.tup(time, time);
@@ -847,24 +881,21 @@ public class TemporalKeyTests {
         var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
         circuit.addOperator(input);
         var filters = new ArrayList<DBSPFilterOperator>();
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < count; i++) {
             var row = b.refVar(rowType);
-            var first = b.field(row, 0);
-            var last = b.field(row, 1);
-            // Use the located constructor to retain the field access in the optimizer input.
-            var key = i == 0 ? first : new DBSPTupleExpression(last, first).field(site, i == 1 ? 1 : 0);
-            var predicate = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+            var predicate = b.binary(DBSPOpcode.GTE, timestamp.apply(row, i), b.call(time, "now"));
             var filter = new DBSPFilterOperator(site, predicate.closure(row), input.outputPort());
-            filters.add(filter);
             circuit.addOperator(filter);
+            filters.add(filter);
         }
+        var expected = shared.stream().map(filters::get).toList();
         for (boolean hybrid : List.of(false, true)) {
             var compiler = new DBSPCompiler(new CompilerOptions());
             compiler.metadata.set(ProgramMetadata.WINDOW_SHARING_THRESHOLD, b.lit(2), SourcePositionRange.INVALID, compiler);
             compiler.options.ioOptions.rustOptimizerPasses = hybrid;
             var decisions = new ArrayList<Boolean>();
             var scan = scanWindows(compiler, circuit, decisions);
-            Assert.assertEquals(filters.subList(0, 2), List.copyOf(scan.chosenConjunct.keySet()));
+            Assert.assertEquals(expected, List.copyOf(scan.chosenConjunct.keySet()));
             Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
         }
     }

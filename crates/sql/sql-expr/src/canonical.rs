@@ -161,6 +161,27 @@ fn name(edit: &CircuitEditor, id: NodeId, field: &str) -> Result<String, Error> 
         .ok_or_else(|| Error::new(format!("missing {field} in canonical binding")))
 }
 
+/// CanonicalForm rebuilds these expressions even when their children keep their identity.
+pub fn canonical_constructor_simplifies(
+    edit: &CircuitEditor,
+    id: NodeId,
+    kind: Expr,
+) -> Result<bool, Error> {
+    let operand = |field| edit.expression(edit.node(id)?.edge(field)?);
+    match kind {
+        Expr::Field => edit.field_read_simplifies(operand("expression")?),
+        Expr::IsNull => {
+            let value = operand("expression")?;
+            Ok(edit.expr_kind(value)? == Expr::Clone || edit.known_nullness(value)?.is_some())
+        }
+        Expr::Cast => edit.same_type(
+            edit.expression_type(operand("source")?)?,
+            edit.type_id(edit.node(id)?.edge("type")?)?,
+        ),
+        _ => Ok(false),
+    }
+}
+
 impl Transformation for &mut Names {
     fn preorder(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<Visit, Error> {
         let node = edit.node(id)?;
@@ -227,10 +248,14 @@ impl Transformation for &mut Names {
         }
         let kind = node.inner_kind();
         match kind {
-            Some(InnerKind::Expression(Expr::Field)) if original == rebuilt => {
-                let row = edit.expression(node.edge("expression")?)?;
-                if edit.field_read_simplifies(row)? {
-                    return rebuild_result_type(edit, rebuilt, Some(Expr::Field), false);
+            Some(InnerKind::Expression(kind @ (Expr::Field | Expr::IsNull | Expr::Cast)))
+                if original == rebuilt || *kind == Expr::Cast =>
+            {
+                if canonical_constructor_simplifies(edit, rebuilt, *kind)? {
+                    if *kind == Expr::Cast {
+                        return edit.node(rebuilt)?.edge("source");
+                    }
+                    return rebuild_result_type(edit, rebuilt, Some(*kind), false);
                 }
             }
             Some(InnerKind::Expression(Expr::Closure)) => {

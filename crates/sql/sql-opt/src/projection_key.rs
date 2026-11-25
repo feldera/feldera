@@ -149,7 +149,7 @@ impl ProjectionKey {
         let mut terms = IndexSet::new();
         let mut numbers = HashMap::new();
         let mut active = HashSet::new();
-        let mut simplifies_field = false;
+        let mut needs_canonical_form = false;
         let mut work = vec![Visit::Read(ScopedNode {
             id: root,
             scope: 0,
@@ -176,13 +176,13 @@ impl ProjectionKey {
                             work.extend([Visit::Alias(at, value), Visit::Read(value)]);
                             continue;
                         }
-                        if at.in_static && !preserves_static_children(*kind) {
+                        let simplifies = feldera_sql_expr::canonical_constructor_simplifies(
+                            edit, at.id, *kind,
+                        )?;
+                        if at.in_static && (simplifies || !preserves_static_children(*kind)) {
                             return Ok(None);
                         }
-                        if *kind == Expr::Field && !simplifies_field {
-                            let row = edit.expression(node.edge("expression")?)?;
-                            simplifies_field = edit.field_read_simplifies(row)?;
-                        }
+                        needs_canonical_form |= simplifies;
                     }
                     let Some((term, children)) = scoped_term(edit, at, &mut scopes)? else {
                         return Ok(None);
@@ -229,8 +229,8 @@ impl ProjectionKey {
                 }
             }
         }
-        if simplifies_field {
-            // CanonicalForm visits discarded fields too. Their local declarations
+        if needs_canonical_form {
+            // CanonicalForm visits discarded operands too. Their local declarations
             // can change the printed names in the surviving expression.
             if canonical || scopes.len() != 1 {
                 return Ok(None);
@@ -325,6 +325,7 @@ fn preserves_static_children(kind: Expr) -> bool {
             Expr::Apply | Expr::ApplyMethod | Expr::Constructor | Expr::Block
                 | Expr::Tuple | Expr::RawTuple | Expr::Array | Expr::Map
                 | Expr::If | Expr::Binary | Expr::TimeAddSub | Expr::Unary
+                | Expr::Cast | Expr::IsNull | Expr::Field
         )
 }
 

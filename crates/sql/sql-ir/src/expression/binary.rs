@@ -142,13 +142,10 @@ impl CircuitEditor {
         )
     }
 
-    /// Build the IS NULL predicate, folding constructors whose presence is known.
-    pub fn null_test(&mut self, mut operand: ExpressionId) -> Result<ExpressionId, Error> {
-        while self.expr_kind(operand)? == Expr::Clone {
-            operand = self.expression(self.node(operand.0)?.edge("expression")?)?;
-        }
+    /// Whether the operand's type or constructor determines its SQL nullness.
+    pub fn known_nullness(&self, operand: ExpressionId) -> Result<Option<bool>, Error> {
         let value = self.node(operand.0)?;
-        let known = match self.expr_kind(operand)? {
+        Ok(match self.expr_kind(operand)? {
             _ if !self.nullable(self.expression_type(operand)?)? => Some(false),
             Expr::Tuple | Expr::RawTuple => Some(value.field("fields").is_none()),
             Expr::Array => Some(value.field("data").is_none()),
@@ -160,7 +157,15 @@ impl CircuitEditor {
             Expr::Some | Expr::ZSet | Expr::IndexedZSet => Some(false),
             kind if kind.wire_name().ends_with("Literal") => Some(self.is_null_literal(operand)?),
             _ => None,
-        };
+        })
+    }
+
+    /// Build the IS NULL predicate, folding constructors whose presence is known.
+    pub fn null_test(&mut self, mut operand: ExpressionId) -> Result<ExpressionId, Error> {
+        while self.expr_kind(operand)? == Expr::Clone {
+            operand = self.expression(self.node(operand.0)?.edge("expression")?)?;
+        }
+        let known = self.known_nullness(operand)?;
         let ty = self.empty_origin_node(
             operand.0,
             InnerKind::Type(Ty::Bool),
