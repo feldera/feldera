@@ -1,0 +1,178 @@
+{
+  "scope": "Distinguish key and value bounds in the live waterline transfer schedule.",
+  "source_base": "4cb50dc3bd67e7c4dcd626109711613e77b7daf8",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/waterlines.rs": "551e323b2a7cfe8be49c3e6d55960bf14ebbe63f36474163fccabfa208add8b8",
+    "crates/sql/sql-opt/src/lib.rs": "9eb7820fbe50e5dc5fcfbf23ab5a2fe2c298c02ab8705ace3bed900137755203",
+    "crates/sql/sql-opt/src/monotonicity/schedule.rs": "7db19d705a4a3fe1e1d5f7d2189795460bd3d56ddb228dba10eeabd13c756708",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "6f7c53525d5812e971afe562c4bd4cea4d60ed306f3587e3651a5900b3996666",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/Monotonicity.java": "2bee1b6e2fc0186e5fbf5f42affa493af34ab482635bc19ab5248db157a1de07",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/WaterlineProjectionTests.java": "ceb80a44e5da77038c8041862ad9d2e18a155be80f9d9ff3170d00f2b1855fae"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "c3fe00daf821531bfce4caa5c920df189ef3374150c96c2ba433a4f959a06dc5",
+    "bin/sql-difftest": "b1fb65efd284b0b19fe71d4985b13e08b7c6159295a412580528018c85314158",
+    "maven/tests.jar": "b405962083b7bd7651ed15e65fb7a090565d4b6abda845a1bd8ac7e5632d5399",
+    "maven/sql-compiler.jar": "c0383be10418f6abf153a65aaeb376248085e6aecb7589c5d4125fc05dd105d1",
+    "bin/sql2dbsp": "5be6158244c71e5a8231031d52bfad3748af58a78d8a62207fdb2f8f82448e45"
+  },
+  "negative_control": {
+    "library_sha256": "1feca8294706b333ad65403f02a76503b1defab1a92da8d2aa41e2c7f426f2fb",
+    "failed_tests": [
+      "deindexUsesOnlyTheValueWaterline"
+    ],
+    "java_compiler_sha256": "f7690fadede51d2e8f969bdc2c0264ccf7678a3171f539560907310e575d6577"
+  },
+  "rust_tests": 228,
+  "junit_tests": 279,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "36b380ca15628b0cadcc1ba0ad877f0bcecd0f255d12f9594b758f962d46965a"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "82e9458f8d768ddd2eab1ae7c187013254c8ff25a0bfbba6ba360423655950d4"
+    }
+  },
+  "source_commit": "46cbf689013833d3db0700d5baf8a21338b6beaa",
+  "nightly_optimizer_junit": 296,
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a212d7-858f-7fa0-8719-1fa3f4ba432e",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a212d7-85aa-7422-90f5-fa9c95f08e62",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "646ca46bb04f2e42a60d7959aac9e295357d626c98e1db45c5635dac48d7d2a5"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a212d8-329e-7523-9187-ceda95023cf5",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a212d8-32bb-7803-9804-a439ee7ba61f",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "ecbba5570042bb4b6193f8fd85de568e1e0225ae721f1f8c71ac2c08db5135d0"
+    }
+  },
+  "worker_limits": {
+    "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+    "cpu_affinity": [
+      14
+    ],
+    "rust_optimizer_passes": true,
+    "rounds": 5,
+    "slots_per_round": 4,
+    "signal_to_reap_ms": [
+      7.940976,
+      4.235862,
+      9.380346,
+      9.641388,
+      9.35868,
+      9.153139,
+      9.452471,
+      15.774994,
+      10.736175,
+      10.58651,
+      10.617593,
+      12.176088,
+      6.487772,
+      6.270689,
+      12.202546,
+      11.769839,
+      12.396712,
+      12.10863,
+      13.74475,
+      14.737205
+    ],
+    "p95_ms": 14.737205,
+    "largest_driver_plus_front_end_rss_bytes": 70569984,
+    "compiler_sha256": "5be6158244c71e5a8231031d52bfad3748af58a78d8a62207fdb2f8f82448e45",
+    "receipt_sha256": "81f8225f5676da41a404ce15a7c2a9496be0b963fcc6d46425fc17763973b1e2"
+  }
+}

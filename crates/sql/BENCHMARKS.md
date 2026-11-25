@@ -4,6 +4,20 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
+## Indexed waterline propagation, 2026-11-25
+
+On `46cbf6890`, the hybrid and direct compilers produced identical classic
+artifacts in all 69 pairs. Each workload ran two warmup pairs and 21 measured
+pairs, alternating compiler order on CPU 15 of the shared ARM64 VM. Frozen
+replay and runtime checks ran on other CPUs.
+[Timings and build identities](evidence/p3-indexed-waterline-propagation-cold.json)
+
+| Workload | Direct Java p95 (s) | Hybrid p95 (s) | Hybrid / Java |
+|---|---:|---:|---:|
+| Correlated array subquery | 2.550 | 2.215 | 0.869× |
+| Nexmark suite | 6.082 | 6.672 | 1.097× |
+| Outer join | 2.607 | 1.908 | 0.732× |
+
 ## MIN accumulator output shapes, 2026-11-24
 
 Build `fccd64201` matched diagnostics and classic source artifacts on all 69

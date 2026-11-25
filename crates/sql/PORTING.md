@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | On `bf8cd8423`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission, and all 8,256 executable classic cases passed. On `1193f3252`, 252 selected aggregate compilations matched across 104,428 ordered observations and emission. COUNT and LATENESS restored in both directions. On `1af0e4688`, the highest cold compile p95 ratio was 1.049×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay and classic runtime](evidence/p3-evaluated-statement-fields.json) · [Aggregate trimming and restores](evidence/p3-stream-aggregate-inputs.json) · [Latency](evidence/p3-field-use-diagnostics-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port the remaining Java waterline analysis and circuit rewrites that apply field trimming. Repeat exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
+| P3 | On `bf8cd8423`, all 17,098 frozen compilations matched Java through 6,996,738 ordered S4 observations and emission, and all 8,256 executable classic cases passed. On `1193f3252`, 252 selected aggregate compilations matched across 104,428 ordered observations and emission. COUNT and LATENESS restored in both directions. On `46cbf6890`, live propagation distinguishes key and value waterlines. Its highest cold compile p95 ratio was 1.097×. The earlier decoder campaign completed one CPU-hour on `881233749`. [Frozen replay and classic runtime](evidence/p3-evaluated-statement-fields.json) · [Aggregate trimming and restores](evidence/p3-stream-aggregate-inputs.json) · [Latency](evidence/p3-indexed-waterline-propagation-cold.json) · [Decoder campaign](evidence/p3-cse-tree-rewrite-replay.json) | Port the remaining Java waterline analysis and circuit rewrites that apply field trimming. Repeat exit checks on the finished build, obtain independent maintainer acceptance, and collect 30 qualifying field-shadow days with at least 200 distinct programs per day. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -461,6 +461,14 @@ The result in `/campaign/results/decoder.json` records whether the worker
 reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
+
+Rust drives the live waterline schedule. A closure that drops its last bound
+stops propagation along that branch. An indexed stream tracks bounds on keys
+and values separately, so deindex discards a key-only bound. On `46cbf6890`,
+24 classic and Gen-2 compilations matched through 11,965 ordered observations
+and emission. The build passed 228 Rust tests, 296 nightly optimizer tests
+and checkpoint interchange in both directions for COUNT and LATENESS.
+[Live propagation](evidence/p3-live-waterline-propagation.json) · [Indexed bounds](evidence/p3-indexed-waterline-propagation.json)
 
 Rust now computes the input fields for UNNEST, linear aggregates, TopK and
 grouped aggregates. TopK retains fields used to break ties. Grouped aggregates
