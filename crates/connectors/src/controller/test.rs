@@ -1,9 +1,9 @@
 use super::{
-    FtState, IDLE_STEP_INTERVAL, OutputEndpointDescr, TransactionState, journal::StepMetadata,
-    stats::CompletionToken,
+    Action, FtState, IDLE_STEP_INTERVAL, LastCheckpoint, OutputEndpointDescr, StepSelection,
+    StepTrigger, TransactionState, journal::StepMetadata, stats::CompletionToken,
 };
 #[cfg(test)]
-use super::{IdleStepTimer, OutputEndpointControl};
+use super::{IdleStepTimer, OutputEndpointControl, TimedPush};
 #[cfg(test)]
 use crate::controller::{ControllerStatusContext, TransactionInfo};
 use crate::{
@@ -47,7 +47,7 @@ use feldera_types::{
         DynamicConfig, DynamicResources, FormatConfig, FtModel, InputEndpointConfig,
         OutputEndpointConfig, PipelineConfig,
     },
-    coordination::StepAction,
+    coordination::{StepAction, StepInputs, StepRequest},
     error::DetailedError,
     postprocess::PostprocessorConfig,
     preprocess::PreprocessorConfig,
@@ -7856,6 +7856,138 @@ fn idle_step_timer() {
     assert!(!timer.due(at(11), 1));
     assert!(!timer.due(at(15), 1));
     assert!(timer.due(at(16), 1));
+}
+
+/// The push timer waits for the newest checkpoint until the pipeline has
+/// pushed it, and never on a host of a multihost pipeline.
+#[test]
+fn timed_push_waits_for_a_checkpoint_that_is_not_pushed() {
+    let interval = Duration::from_secs(10);
+    let pushed_at = Instant::now();
+    let pushed = uuid::Uuid::now_v7();
+    let newest = uuid::Uuid::now_v7();
+    let last_sync = LastCheckpoint {
+        timestamp: pushed_at,
+        id: Some(pushed),
+    };
+    let next = |checkpoint: Option<uuid::Uuid>,
+                interval: Option<Duration>,
+                push_requested: bool,
+                coordinated: bool| {
+        let last_checkpoint = LastCheckpoint {
+            timestamp: pushed_at,
+            id: checkpoint,
+        };
+        TimedPush::next(
+            interval,
+            &last_checkpoint,
+            &last_sync,
+            push_requested,
+            coordinated,
+        )
+    };
+
+    assert_eq!(
+        next(Some(newest), Some(interval), false, false),
+        Some(TimedPush {
+            checkpoint: newest,
+            at: pushed_at + interval,
+        })
+    );
+    // Nothing to push.
+    assert_eq!(next(Some(pushed), Some(interval), false, false), None);
+    assert_eq!(next(None, Some(interval), false, false), None);
+    assert_eq!(
+        next(Some(uuid::Uuid::nil()), Some(interval), false, false),
+        None
+    );
+    // No push timer, or a push requested already.
+    assert_eq!(next(Some(newest), None, false, false), None);
+    assert_eq!(next(Some(newest), Some(interval), true, false), None);
+    // The coordinator of a multihost pipeline starts the pushes of its hosts.
+    assert_eq!(next(Some(newest), Some(interval), false, true), None);
+}
+
+/// An idle pipeline parks until its push timer and then pushes. A host of a
+/// multihost pipeline does not park until a push that only its coordinator
+/// starts: that deadline is soon in the past, and the host's circuit thread
+/// would spin until the coordinator's push.
+#[engine_test]
+pub fn push_timer_wakes_only_a_pipeline_that_pushes_by_itself(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    let inner = controller.inner.clone();
+    // A stopped controller requests no more steps, so each call of `trigger`
+    // below sees only the state that the test sets up.
+    controller.stop().unwrap();
+    inner.status.unset_step_requested();
+
+    let mut trigger = StepTrigger::new(inner);
+    trigger.checkpoint_interval = None;
+    let pushed = LastCheckpoint {
+        timestamp: Instant::now(),
+        id: Some(uuid::Uuid::now_v7()),
+    };
+    let newest = LastCheckpoint {
+        timestamp: Instant::now(),
+        id: Some(uuid::Uuid::now_v7()),
+    };
+    let selection = StepSelection {
+        inputs: StepInputs::All,
+        committed: HashSet::new(),
+    };
+    let decide = |trigger: &mut StepTrigger, request: Option<StepRequest>| {
+        trigger.trigger(
+            newest.clone(),
+            pushed.clone(),
+            false,
+            false,
+            false,
+            false,
+            false,
+            &selection,
+            request,
+            0,
+        )
+    };
+
+    // Before the timer expires, an idle pipeline parks until it.
+    let interval = Duration::from_secs(3600);
+    trigger.sync_interval = Some(interval);
+    assert_eq!(
+        decide(&mut trigger, None),
+        Action::Park(Some(pushed.timestamp + interval))
+    );
+
+    // Once the timer expires, the pipeline pushes its newest checkpoint.
+    trigger.sync_interval = Some(Duration::ZERO);
+    assert_eq!(
+        decide(&mut trigger, None),
+        Action::SyncCheckpoint(newest.id.unwrap())
+    );
+
+    // A host that waits for its coordinator parks without that deadline.
+    let request = StepRequest::new(0, StepAction::Trigger, StepInputs::All);
+    let Action::Park(deadline) = decide(&mut trigger, Some(request)) else {
+        panic!("a host with nothing to do must park");
+    };
+    assert!(
+        deadline.is_none_or(|deadline| deadline > Instant::now()),
+        "the host parks until {deadline:?}, which has passed, so its circuit thread spins"
+    );
 }
 
 /// Waits until `controller` takes no step for 1 s, so that the steps after
