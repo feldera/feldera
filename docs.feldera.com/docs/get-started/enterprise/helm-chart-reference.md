@@ -216,6 +216,8 @@ Default settings applied to all pipeline pods.
 | `pipeline.terminationGracePeriodSeconds` | `60` | Seconds a pipeline has to write a checkpoint when Kubernetes evicts its pod or drains its node. See [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints). |
 | `pipeline.deniedConnectors` | `[]` | Connectors that pipelines may not use, by their `transport.name` (for example `file_input`). A pipeline that uses one fails to start. |
 | `pipeline.allowLocalFileUris` | `true` | Allow Delta Lake and Iceberg connectors to use a local path (`file://...` or a path with no scheme). When `false`, a pipeline that uses one fails to start. Use an object store URL instead, such as `s3://bucket/path`. |
+| `pipeline.networkPolicy.enabled` | `false` | Create a NetworkPolicy for each pipeline that isolates it from other pipelines. Chart v0.390.0 and later. See [Network policy](#network-policy). |
+| `pipeline.networkPolicy.extraIngress` | `[]` | Extra ingress rules for each pipeline's NetworkPolicy. Chart v0.390.0 and later. See [Network policy](#network-policy). |
 
 ### Extra volumes
 
@@ -273,6 +275,56 @@ The runner builds each pipeline pod from a template that includes these two valu
 | `{concurrent_bootstrap}` | `yes` or `no` |
 
 `{name}` and `{storage_class_name}` do not work in `pipeline.extraVolumes` or `pipeline.extraVolumeMounts`. The runner inserts them with their own quotes. Helm writes a quoted `"{name}"` as `'{name}'`, so the value becomes `'"my-pipeline"'` and keeps the quotes. Without quotes, YAML reads `{name}` as a map. Use `{id}` to name per-pipeline objects instead.
+
+### Network policy
+
+`pipeline.networkPolicy` is available in chart v0.390.0 and later. Older charts ignore it.
+
+The coordinator and the hosts of a multihost pipeline connect to each other on ports 8080 and 9000. A static NetworkPolicy cannot admit only the pods of the same pipeline, so a static policy that lets multihost pipelines work also lets every pipeline reach every other pipeline on these ports. With `pipeline.networkPolicy.enabled: true`, the Kubernetes runner creates a NetworkPolicy for each pipeline. The policy selects the pipeline's pods and admits only:
+
+| From | Ports |
+|------|-------|
+| The API server and the Kubernetes runner | 80 |
+| The pods of the same pipeline | 8080 and 9000 |
+| The rules in `pipeline.networkPolicy.extraIngress` | As the rules give |
+
+Egress is not limited. The isolation needs a network plugin that enforces NetworkPolicy.
+
+The runner creates the policy when the pipeline starts and deletes it when the pipeline stops. For a pipeline that was already running, it creates or replaces the policy at its next check. This also applies a changed template, because a change to `pipeline.networkPolicy` restarts the runner.
+
+When a policy selects a pod, Kubernetes refuses each connection to that pod that no policy admits. So when you enable the policy, a client that connects to pipeline pods directly can no longer connect, unless `pipeline.networkPolicy.extraIngress` or another policy admits it.
+
+Kubernetes admits a connection if any policy admits it. If a static policy in the namespace admits all pipelines on ports 8080 and 9000, the pipelines are not isolated. To enable the policy and remove such a rule safely:
+
+1. In the same upgrade, add an `extraIngress` rule for each other client that connects to pipeline pods directly (see below), and set `pipeline.networkPolicy.enabled: true`.
+2. Make sure that every running pipeline has its policy: `kubectl get networkpolicy -l feldera.com/part-of=pipeline`.
+3. Remove the static rule. A multihost pipeline that does not have its policy cannot reach its own hosts after this step.
+
+Add a rule to `pipeline.networkPolicy.extraIngress` for each other client that connects to pipeline pods directly, for example a client of `mtls.extraClientUris` or a metrics scraper. In these rules, the runner replaces `{id}` with `pipeline-<pipeline UUID>` and `{namespace}` with the namespace of the pipeline. Put these placeholders in quotes. Without quotes, YAML reads `{id}` as a map, and the runner does not start.
+
+```yaml
+pipeline:
+  networkPolicy:
+    enabled: true
+    extraIngress:
+      - from:
+          - podSelector:
+              matchLabels:
+                app: metrics-scraper
+        ports:
+          - protocol: TCP
+            port: 80
+      - from:
+          - podSelector:
+              matchLabels:
+                feldera.com/sidecar-of: "{id}"
+```
+
+The runner ignores fields that it does not know. For example, a rule with `port:` instead of `ports:` admits its peers on all ports.
+
+The policy finds the pipeline's pods by their label `feldera.com/pipeline-id`. A custom pipeline template (`kubernetesRunner.allowCustomPipelineTemplate`) must keep this label on its pods, with the value `{id}`.
+
+The runner deletes the policies only while `pipeline.networkPolicy.enabled` is `true`. Before you set it to `false`, stop all pipelines. If you do not, delete their policies yourself.
 
 ---
 
