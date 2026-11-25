@@ -66,6 +66,18 @@ hybrid (1.124×), classic workspace took 5.921 s and 6.587 s (1.112×), and
 Gen-2 took 5.346 s and 5.667 s (1.060×). This build predates the temporal
 column-default fixes. [Build identities and paired measurements](evidence/p3-asof-window-cold.json)
 
+Build `10a4d9029` includes the February 30 timestamp and signed three-digit
+DATE fixes. It matched Java's diagnostics and artifacts in all 552 cold
+compilation pairs and met the 1.2× p95 ceiling in every workload and mode.
+Nexmark had the highest ratio in each mode on CPU 15 of the shared VM.
+[Build identities, absolute times, and paired measurements](evidence/p3-constant-views-cold.json)
+
+| Nexmark output | Direct Java p95 | Hybrid p95 | Hybrid / Java |
+|---|---:|---:|---:|
+| Single-file classic | 5.377 s | 6.209 s | 1.155× |
+| Classic workspace | 5.470 s | 6.258 s | 1.144× |
+| Gen-2 | 4.318 s | 4.640 s | 1.075× |
+
 ## Unary output projections, 2026-11-25
 
 Each pair compiled the same SQL with direct Java and the packaged hybrid
