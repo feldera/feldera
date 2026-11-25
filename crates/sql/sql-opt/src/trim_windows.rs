@@ -4,7 +4,9 @@ use crate::rebuild::ProjectionNames;
 use crate::row_projection::RowProjection;
 use crate::stream_rewrites::{append_map, body_members, reader_counts};
 use crate::{FieldRewriteError, limiters::WindowBounds};
-use feldera_sql_expr::{input_field_paths, lexical_scope::inspect_references};
+use feldera_sql_expr::{
+    ensure_expression_tree, input_field_paths, lexical_scope::inspect_references,
+};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
     OutputPort,
@@ -137,7 +139,10 @@ pub fn trim_windows(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> 
             .ok_or_else(|| Error::new("window reader requires an input"))?
             .operator;
         let function = reader.edge("function")?;
-        let paths = input_field_paths(&circuit, function)?;
+        // FindUsedFields analyzes a tree. A shared read can bind to different
+        // parameters at different sites, even when the reader needs no rewrite.
+        let tree = ensure_expression_tree(&mut edit, function)?;
+        let paths = input_field_paths(edit.circuit(), tree)?;
         let Some(trim) = trim_window_fields(&circuit, &mut edit, function, paths, &mut names)
             .map_err(|e| match e {
                 FieldRewriteError::InvalidIr(error) => error,
