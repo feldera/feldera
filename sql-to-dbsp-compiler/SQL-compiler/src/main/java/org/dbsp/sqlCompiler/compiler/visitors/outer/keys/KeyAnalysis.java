@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
@@ -54,7 +56,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
@@ -63,7 +64,6 @@ import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -619,30 +619,58 @@ public class KeyAnalysis extends CircuitVisitor {
         this.set(node, keys, equivalence);
     }
 
-    /** The output keeps a subset of the rows of each group; with ROW_NUMBER and a limit
-     * of 1 the group's index value identifies the row. */
-    @Override
-    public void postorder(DBSPIndexedTopKOperator node) {
+    /** Record the keys of an operator that numbers the rows of each group, e.g., TopK or
+     * ROW_NUMBER.  Each output row keeps the index of its input row.  The output producer
+     * computes the output value from the rank and the input value.  An input key survives
+     * if the producer copies all its value columns.
+     * @param outputProducer  Function (rank, input value) -> output value.
+     * @param uniqueRanks     True if no two rows of a group get the same rank.
+     * @param oneRowPerGroup  True if the output has at most one row in each group. */
+    private void numberRows(DBSPUnaryOperator node, DBSPClosureExpression outputProducer,
+                            boolean uniqueRanks, boolean oneRowPerGroup) {
         if (!(node.outputPort().getShape() instanceof IndexedShape shape))
             return;
         // The producer computes the value tuple from (rank, input value)
         CollectionShape produced = new IndexedShape(0, shape.valueFields());
-        Provenance provenance = this.provenance(produced, node.outputProducer);
+        Provenance provenance = this.provenance(produced, outputProducer);
         // The operator keeps the index; a value column becomes what the producer copies it to
         ColumnCopyTransform transform = column -> column.part() == Part.INDEX ?
                 List.of(column) :
                 provenance.columnsReading(new Provenance.Source(1, Column.none(column.field())));
         ColumnEquivalence inputEquivalence = this.getEquivalence(node.input()).after(transform);
         ColumnEquivalence equivalence =
-                outputEquivalence(produced, node.outputProducer, provenance).merge(inputEquivalence);
+                outputEquivalence(produced, outputProducer, provenance).merge(inputEquivalence);
         Keys result = this.getKeys(node.input()).map(transform);
-        boolean rowNumber = node.numbering == DBSPIndexedTopKOperator.Numbering.ROW_NUMBER;
-        boolean limitOne = node.limit.is(DBSPUSizeLiteral.class) &&
-                node.limit.to(DBSPUSizeLiteral.class).value.equals(BigInteger.ONE);
-        boolean single = rowNumber && limitOne;
-        if (single)
+        if (oneRowPerGroup)
             result = result.plus(equivalence.keyOf(shape.indexColumns()));
+        int rankField = DBSPIndexedTopKOperator.rankField(outputProducer);
+        if (uniqueRanks && rankField >= 0) {
+            // The rank identifies the row in its group
+            List<Column> groupAndRank = new ArrayList<>(shape.indexColumns());
+            groupAndRank.add(Column.value(rankField));
+            result = result.plus(equivalence.keyOf(groupAndRank));
+        }
         this.set(node, result, equivalence);
+    }
+
+    /** The output keeps a subset of the rows of each group; with ROW_NUMBER and a limit
+     * of 1 the group's index value identifies the row. */
+    @Override
+    public void postorder(DBSPIndexedTopKOperator node) {
+        boolean uniqueRanks = !node.numbering.mayHaveDuplicates();
+        boolean limitOne = DBSPIndexedTopKOperator.isLimitOne(node.limit);
+        this.numberRows(node, node.outputProducer, uniqueRanks, uniqueRanks && limitOne);
+    }
+
+    @Override
+    public void postorder(DBSPRowNumberOperator node) {
+        this.numberRows(node, node.outputProducer, true, false);
+    }
+
+    /** RANK and DENSE_RANK give tied rows the same rank. */
+    @Override
+    public void postorder(DBSPRankOperator node) {
+        this.numberRows(node, node.outputProducer, false, false);
     }
 
     /** Where the columns of one join input end up in the output.  A column of the shared
