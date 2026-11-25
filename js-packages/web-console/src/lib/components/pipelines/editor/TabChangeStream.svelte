@@ -309,6 +309,13 @@
     if (changeStream[tenantName]) {
       delete changeStream[tenantName][pipelineId]
     }
+    // A new pipeline can take the name, so forget the id and its callback
+    delete pipelineNames[tenantName][pipelineId]
+    const registered = startPausedCallbacks[tenantName]?.[pipelineId]
+    if (registered) {
+      pipelineActionCallbacks.remove(registered.pipelineName, 'start_paused', registered.callback)
+      delete startPausedCallbacks[tenantName][pipelineId]
+    }
   }
 
   /**
@@ -417,7 +424,9 @@
   }
 
   $effect.pre(() => {
-    registerPipeline(api, tenantName, pipelineId, pipelineName)
+    // Track only the props: registerPipeline reads $state that the delete callback changes
+    const [tenant, id, name] = [tenantName, pipelineId, pipelineName]
+    untrack(() => registerPipeline(api, tenant, id, name))
   })
 
   $effect(() => {
