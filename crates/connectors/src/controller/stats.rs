@@ -3638,6 +3638,26 @@ mod test {
     use serde_json::json;
     use std::sync::{Arc, atomic::Ordering};
     use uuid::Uuid;
+    use crate::transport::s3::{S3Api, S3InputReader};
+    use aws_sdk_s3::{operation::get_object::GetObjectOutput, primitives::ByteStream};
+    use crossbeam::channel::{Receiver, Sender, bounded};
+    use feldera_adapterlib::{
+        ConnectorMetadata,
+        catalog::StagedBuffers,
+        format::{InputBuffer, ParseError, Parser, Splitter},
+        transport::{InputConsumer, InputReader, Resume},
+    };
+    use feldera_types::{
+        adapter_stats::ConnectorHealth,
+        config::{FtModel, TransportConfig},
+        coordination::Completion,
+    };
+    use std::{
+        hash::Hasher,
+        sync::Mutex,
+        time::{Duration, Instant},
+    };
+    use tokio::sync::{Notify, watch};
 
     /// A completion token must be labeled with the step that ingests its
     /// records, even when that step starts while the token is being created.
@@ -4185,6 +4205,302 @@ mod test {
             stored[0].message.len() <= MAX_CONNECTOR_ERROR_LEN + 64,
             "restored message is {} bytes",
             stored[0].message.len()
+        );
+    }
+
+    const TIMEOUT: Duration = Duration::from_secs(10);
+
+    struct Objects {
+        allow_b: Arc<Notify>,
+    }
+
+    #[async_trait::async_trait]
+    impl S3Api for Objects {
+        async fn get_object_keys(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<String>,
+            _: Option<String>,
+        ) -> anyhow::Result<(Vec<String>, Option<String>)> {
+            Ok((vec!["a".into(), "b".into()], None))
+        }
+
+        async fn get_object(
+            &self,
+            _: &str,
+            key: &str,
+            _: u64,
+            _: Option<u64>,
+        ) -> anyhow::Result<GetObjectOutput> {
+            let body = match key {
+                "a" => ByteStream::from_static(b"A\n"),
+                "b" => {
+                    self.allow_b.notified().await;
+                    ByteStream::from_static(b"B\n")
+                }
+                _ => panic!("unexpected object {key}"),
+            };
+            Ok(GetObjectOutput::builder().body(body).build())
+        }
+    }
+
+    #[derive(Clone)]
+    struct MarkerParser {
+        flushed: Arc<Mutex<Vec<u8>>>,
+        b_parse_started: Sender<()>,
+    }
+    struct LineSplitter;
+
+    impl Splitter for LineSplitter {
+        fn input(&mut self, data: &[u8]) -> Option<usize> {
+            data.iter().position(|b| *b == b'\n').map(|i| i + 1)
+        }
+        fn clear(&mut self) {}
+    }
+
+    impl Parser for MarkerParser {
+        fn parse(
+            &mut self,
+            data: &[u8],
+            _: Option<ConnectorMetadata>,
+        ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+            assert!(matches!(data, b"A\n" | b"B\n"));
+            if data == b"B\n" {
+                self.b_parse_started.send(()).unwrap();
+            }
+            (
+                Some(Box::new(MarkerBuffer {
+                    record: Some(data[0]),
+                    flushed: self.flushed.clone(),
+                })),
+                Vec::new(),
+            )
+        }
+        fn stage(&self, _: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+            unreachable!("S3 streaming does not stage buffers")
+        }
+        fn splitter(&self) -> Box<dyn Splitter> {
+            Box::new(LineSplitter)
+        }
+        fn fork(&self) -> Box<dyn Parser> {
+            Box::new(self.clone())
+        }
+    }
+
+    struct MarkerBuffer {
+        record: Option<u8>,
+        flushed: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl InputBuffer for MarkerBuffer {
+        fn flush(&mut self) -> anyhow::Result<()> {
+            if let Some(record) = self.record.take() {
+                self.flushed.lock().unwrap().push(record);
+            }
+            Ok(())
+        }
+        fn len(&self) -> BufferSize {
+            let records = usize::from(self.record.is_some());
+            BufferSize {
+                records,
+                bytes: records,
+            }
+        }
+        fn hash(&self, hasher: &mut dyn Hasher) {
+            if let Some(record) = self.record {
+                hasher.write_u8(record);
+            }
+        }
+        fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+            if n == 0 {
+                return None;
+            }
+            self.record.take().map(|record| {
+                Box::new(Self {
+                    record: Some(record),
+                    flushed: self.flushed.clone(),
+                }) as Box<dyn InputBuffer>
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct Consumer {
+        endpoint: Arc<InputEndpointStatus>,
+        counted_a: Sender<()>,
+        release_a: Receiver<()>,
+        counted_b: Sender<()>,
+        extended: Sender<usize>,
+    }
+
+    impl InputConsumer for Consumer {
+        fn max_batch_size(&self) -> usize {
+            1
+        }
+        fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
+            None
+        }
+        fn parse_errors(&self, errors: Vec<ParseError>) {
+            assert!(errors.is_empty());
+        }
+        fn buffered(&self, amt: BufferSize) {
+            if amt.records == 0 {
+                return;
+            }
+            self.endpoint.add_buffered(amt);
+            if self.endpoint.metrics.total_records.load(Ordering::Acquire) == 1 {
+                self.counted_a.send(()).unwrap();
+                // Model a descheduled reader after publishing A's record count.
+                // No queue code or scheduling hook is added to the production reader.
+                self.release_a
+                    .recv_timeout(TIMEOUT)
+                    .expect("reader A was not released");
+            } else {
+                self.counted_b.send(()).unwrap();
+            }
+        }
+        fn extended(&self, amt: BufferSize, resume: Option<Resume>, watermarks: Vec<Watermark>) {
+            let total = self
+                .endpoint
+                .metrics
+                .circuit_input_records
+                .load(Ordering::Acquire)
+                + (amt.records as u64);
+            self.endpoint
+                .extended(StepResults { amt, resume }, watermarks, total, 1, 0);
+            self.extended.send(amt.records).unwrap();
+        }
+        fn replayed(&self, _: BufferSize, _: u64) {
+            unreachable!();
+        }
+        fn eoi(&self) {}
+        fn request_step(&self) {}
+        fn start_transaction(&self, _: Option<&str>) {
+            unreachable!();
+        }
+        fn commit_transaction(&self) {
+            unreachable!();
+        }
+        fn error(&self, _: bool, error: anyhow::Error, _: Option<&'static str>) {
+            panic!("unexpected S3 error: {error:#}");
+        }
+        fn completion_watcher(&self) -> Option<watch::Receiver<Completion>> {
+            None
+        }
+        fn update_connector_health(&self, _: ConnectorHealth) {}
+    }
+
+    struct ReleaseOnDrop(Sender<()>);
+    impl Drop for ReleaseOnDrop {
+        fn drop(&mut self) {
+            let _ = self.0.try_send(());
+        }
+    }
+
+    #[test]
+    fn s3_completion_token_waits_for_counted_record() {
+        let config: InputEndpointConfig = serde_json::from_value(serde_json::json!({
+            "stream": "input",
+            "transport": { "name": "s3_input", "config": {
+                "bucket_name": "test-bucket", "prefix": "", "region": "us-east-1",
+                "no_sign_request": true, "max_concurrent_fetches": 2
+            }}
+        }))
+        .unwrap();
+        let TransportConfig::S3Input(transport) = config.connector_config.transport.clone() else {
+            unreachable!();
+        };
+        let endpoint = Arc::new(InputEndpointStatus::new("s3", config, None, None, None));
+        let global = GlobalControllerMetrics::new(0, None, Uuid::nil());
+        let (counted_a_tx, counted_a_rx) = bounded(1);
+        let (release_a_tx, release_a_rx) = bounded(1);
+        let (counted_b_tx, counted_b_rx) = bounded(1);
+        let (extended_tx, extended_rx) = bounded(1);
+        let (b_parse_started_tx, b_parse_started_rx) = bounded(1);
+        let allow_b = Arc::new(Notify::new());
+        let flushed = Arc::new(Mutex::new(Vec::new()));
+        let reader = S3InputReader::new_inner(
+            &Arc::new(transport),
+            Box::new(Consumer {
+                endpoint: endpoint.clone(),
+                counted_a: counted_a_tx,
+                release_a: release_a_rx,
+                counted_b: counted_b_tx,
+                extended: extended_tx,
+            }),
+            Box::new(MarkerParser {
+                flushed: flushed.clone(),
+                b_parse_started: b_parse_started_tx,
+            }),
+            Arc::new(Objects {
+                allow_b: allow_b.clone(),
+            }),
+            None,
+        );
+        let release = ReleaseOnDrop(release_a_tx);
+        reader.extend();
+        counted_a_rx
+            .recv_timeout(TIMEOUT)
+            .expect("A did not publish its count");
+        let token = endpoint.completion_token(&global);
+        assert_eq!(token, 1);
+        assert_eq!(endpoint.completion_status(token), None);
+
+        allow_b.notify_one();
+        b_parse_started_rx
+            .recv_timeout(TIMEOUT)
+            .expect("B did not enter parsing");
+
+        let b_counted_while_a_paused = counted_b_rx.recv_timeout(Duration::from_millis(200));
+
+        // Release A before asserting, so a failed assertion cannot leave it blocked.
+        drop(release);
+
+        assert!(
+            matches!(
+                b_counted_while_a_paused,
+                Err(crossbeam::channel::RecvTimeoutError::Timeout)
+            ),
+            "B published its count while A was paused"
+        );
+
+        counted_b_rx
+            .recv_timeout(TIMEOUT)
+            .expect("B did not publish its count after A was released");
+        global.total_initiated_steps.store(1, Ordering::Release);
+        assert_eq!(endpoint.completion_status(token), None);
+        let deadline = Instant::now() + TIMEOUT;
+        loop {
+            reader.queue(false);
+            let records = extended_rx
+                .recv_timeout(TIMEOUT)
+                .expect("Queue did not finish");
+            if records != 0 {
+                break;
+            }
+            assert!(Instant::now() < deadline, "No record was flushed");
+        }
+
+        // Simulate completion of the step containing the first flushed record.
+        global.total_completed_steps.store(1, Ordering::Release);
+        let status = endpoint.completion_status(token);
+        let observed = flushed.lock().unwrap().clone();
+        eprintln!(
+            "token captured while only A was counted: {token}\n\
+            after processing the first record: required completed steps={status:?}, completed steps=1, flushed={}",
+            String::from_utf8_lossy(&observed)
+        );
+
+        reader.disconnect();
+        assert_eq!(
+            observed, b"A",
+            "A must be flushed first because its count was published first"
+        );
+        assert_eq!(
+            status,
+            Some(1),
+            "A's token must be associated with the step that flushed A"
         );
     }
 }

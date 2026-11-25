@@ -767,20 +767,23 @@ impl S3InputReader {
                                             })
                                         })
                                         .collect::<Vec<_>>();
-                                    consumer.buffered(buffer.len());
                                     let end_offset = splitter.position();
 
                                     consumer.parse_errors(errors);
 
-                                    if !buffer.is_empty() {
-                                        queue.lock().await.push_back(QueuedBuffer {
-                                            key_index,
-                                            key: partially_processed_key.key.clone(),
-                                            start_offset,
-                                            end_offset: Some(end_offset),
-                                            buffer: Some(buffer.unwrap()),
-                                            timestamp,
-                                        });
+                                    {
+                                        let mut queue = queue.lock().await;
+                                        consumer.buffered(buffer.len());
+                                        if !buffer.is_empty() {
+                                            queue.push_back(QueuedBuffer {
+                                                key_index,
+                                                key: partially_processed_key.key.clone(),
+                                                start_offset,
+                                                end_offset: Some(end_offset),
+                                                buffer: Some(buffer.unwrap()),
+                                                timestamp,
+                                            });
+                                        }
                                     }
                                 }
                             }
