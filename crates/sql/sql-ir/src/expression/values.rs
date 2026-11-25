@@ -24,21 +24,56 @@ impl CircuitEditor {
         if self.type_kind(ty)? != Ty::Integer {
             return Err(Error::new("SQL array index requires an integer"));
         }
+        self.small_integer_literal(ty, 1)
+    }
+
+    /// Build the zero returned by the reference compiler's numeric type constructors.
+    pub fn numeric_zero(&mut self, ty: TypeId) -> Result<ExpressionId, Error> {
+        let kind = self.type_kind(ty)?;
+        let (literal, code, value) = match kind {
+            Ty::Integer => return self.small_integer_literal(ty, 0),
+            Ty::Decimal => {
+                return self.make_expr(
+                    ty.into(),
+                    Expr::DecimalLiteral,
+                    ty,
+                    [("value", Field::Data("0".into()))],
+                );
+            }
+            Ty::Real => (Expr::RealLiteral, "REAL", 0.into()),
+            Ty::Double => (Expr::DoubleLiteral, "DOUBLE", 0.into()),
+            Ty::ISize => (Expr::ISizeLiteral, "ISIZE", "0".into()),
+            Ty::USize => (Expr::USizeLiteral, "USIZE", "0".into()),
+            _ => return Err(Error::new("expected a numeric type for zero")),
+        };
+        let result_type = self.primitive_singleton(ty.0, kind, code, self.nullable(ty)?)?;
+        self.empty_origin_node(
+            ty.0,
+            InnerKind::Expression(literal),
+            [
+                ("type", Field::Reference(result_type.0)),
+                ("value", Field::Data(value)),
+            ],
+        )
+        .map(ExpressionId)
+    }
+
+    fn small_integer_literal(&mut self, ty: TypeId, value: u8) -> Result<ExpressionId, Error> {
         let node = self.node(ty.0)?;
         let width = self.number(ty, "width")?;
         let signed = node
             .data("signed")
             .and_then(Value::as_bool)
-            .ok_or_else(|| Error::new("integer index has no signedness"))?;
+            .ok_or_else(|| Error::new("integer type has no signedness"))?;
         let code = node
             .data("code")
             .cloned()
-            .ok_or_else(|| Error::new("integer index has no type code"))?;
+            .ok_or_else(|| Error::new("integer type has no type code"))?;
         let kind = Expr::from_wire(&format!(
             "DBSP{}{width}Literal",
             if signed { "I" } else { "U" }
         ))
-        .ok_or_else(|| Error::new("unsupported integer index width"))?;
+        .ok_or_else(|| Error::new("unsupported integer literal width"))?;
         let fresh = self.empty_origin_node(
             ty.0,
             InnerKind::Type(Ty::Integer),
@@ -54,7 +89,7 @@ impl CircuitEditor {
             InnerKind::Expression(kind),
             [
                 ("type", Field::Reference(fresh)),
-                ("value", Field::Data("1".into())),
+                ("value", Field::Data(value.to_string().into())),
             ],
         )
         .map(ExpressionId)

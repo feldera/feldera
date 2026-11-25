@@ -224,6 +224,12 @@ pub(super) fn simplify(
         Mul | MulInterval if l.is_some() => multiply_interval(editor, right, left)?,
         Mul | MulInterval if r.is_some() => multiply_interval(editor, left, right)?,
         Div | DivInterval if r == Some(One) => Some(left),
+        Mod if r == Some(One)
+            && editor.type_kind(lt)? == Ty::Integer
+            && !editor.nullable(lt)? =>
+        {
+            Some(editor.numeric_zero(rt)?)
+        }
         Div | DivInterval | Mod
             if r == Some(Zero) && (op == Mod || !float(editor.type_kind(rt)?)) =>
         {
@@ -319,4 +325,52 @@ fn fold_integer_arithmetic(editor: &mut CircuitEditor, id: NodeId) -> Result<Nod
             [("value", Field::Data(result.to_string().into()))],
         )
         .map(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_sql_ir::Circuit;
+    use serde_json::json;
+
+    #[test]
+    fn modulo_one_folds_only_nonnullable_integers() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let (graph, types) = graph.with_inner_roots([
+            json!({"class":"DBSPTypeInteger", "id":1, "width":64, "signed":true, "code":"INT64", "mayBeNull":false}),
+            json!({"class":"DBSPTypeDecimal", "id":2, "precision":8, "scale":2, "code":"DECIMAL", "mayBeNull":false}),
+        ])?;
+        let mut edit = CircuitEditor::new(graph);
+        let int = edit.type_id(types[0])?;
+        let nullable = edit.with_nullability(int, true)?;
+        let decimal = edit.type_id(types[1])?;
+        for ty in [int, nullable, decimal] {
+            let left = edit.named_variable(ty, "x")?;
+            let right = if ty == decimal {
+                edit.make_expr(
+                    ty.into(),
+                    Expr::DecimalLiteral,
+                    ty,
+                    [("value", Field::Data("1".into()))],
+                )?
+            } else {
+                edit.index_one(int)?
+            };
+            let expr = edit.binary_expression(ty.into(), ty, BinaryOp::Mod, left, right)?;
+            let folded = simplify(&mut edit, expr.into(), None)?;
+            if ty == int {
+                let zero = edit.node(folded)?;
+                assert_eq!(zero.class(), "DBSPI64Literal");
+                assert_eq!(zero.data("value"), Some(&json!("0")));
+                let zero_type = edit.expression_type(edit.expression(folded)?)?;
+                assert!(edit.same_type(zero_type, int)?);
+                assert_ne!(zero_type, edit.expression_type(right)?);
+            } else {
+                assert_eq!(folded, expr.into());
+            }
+        }
+        Ok(())
+    }
 }
