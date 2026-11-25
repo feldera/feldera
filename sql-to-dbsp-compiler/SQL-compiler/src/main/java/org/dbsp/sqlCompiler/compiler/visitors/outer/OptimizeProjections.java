@@ -315,7 +315,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             return;
         } else {
             // Projection analysis also validates bindings, even if the producer cannot absorb the reader.
-            if (!this.onlyProjections || this.isProjection(operator, false)) {
+            boolean projection = this.isProjection(operator, false);
+            if (!this.onlyProjections || projection) {
                 if (rule == ProjectionRule.PROJECT_JOIN) {
                     Logger.INSTANCE.belowLevel(this, 2)
                             .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
@@ -334,8 +335,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     return;
                 }
             }
-            if (rule == ProjectionRule.PROJECT_ANTI_JOIN
-                    && this.isProjection(operator, false)) {
+            if (rule == ProjectionRule.PROJECT_ANTI_JOIN && projection) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
                         .newline();
@@ -537,12 +537,12 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
 
     /** Drop aggregate components the following map never reads. */
     boolean processAggregate(DBSPStreamAggregateOperator aggregate, DBSPMapIndexOperator map) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return this.trimProjectedOutput(aggregate, map);
         var aggregates = Objects.requireNonNull(aggregate.aggregateList);
         var output = aggregate.getOutputIndexedZSetType();
         var reader = map.getClosureFunction();
-        var projection = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.trimAggregateProjection(this.compiler, aggregates, output, reader)
-                : this.aggregateProjection(aggregates, output, reader);
+        var projection = this.aggregateProjection(aggregates, output, reader);
         if (projection == null)
             return false;
 
@@ -588,6 +588,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
      * required changes, false if they are unchanged.  When the
      * operators require change, they are inserted in the circuit and map is replaced. */
     boolean processTopK(DBSPIndexedTopKOperator topK, DBSPMapIndexOperator map) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return this.trimProjectedOutput(topK, map);
         var functions = this.topKClosures(topK, map);
         if (functions == null)
             return false;
@@ -602,12 +604,19 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         return true;
     }
 
+    private boolean trimProjectedOutput(DBSPUnaryOperator producer, DBSPMapIndexOperator reader) {
+        var operators = RustCircuitPass.trimProjectedOutput(this.compiler, producer, reader);
+        if (operators.isEmpty())
+            return false;
+        operators.subList(0, operators.size() - 1).forEach(this::addOperator);
+        this.map(reader, operators.getLast());
+        return true;
+    }
+
     @Nullable
     private Pair<DBSPClosureExpression, DBSPClosureExpression> topKClosures(
             DBSPIndexedTopKOperator topK, DBSPMapIndexOperator map) {
         DBSPClosureExpression function = map.getClosureFunction();
-        if (this.compiler.options.ioOptions.rustOptimizerPasses)
-            return RustCircuitPass.trimTopKProjection(this.compiler, topK.outputProducer, function);
         DBSPClosureExpression topKClosure = topK.outputProducer
                 .ensureTree(this.compiler).to(DBSPClosureExpression.class);
         DBSPTupleExpression produced = topKClosure.body.as(DBSPTupleExpression.class);
@@ -643,7 +652,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            if (!this.onlyProjections || this.isProjection(operator, false)) {
+            if (this.isProjection(operator, false) || !this.onlyProjections) {
                 // map(joinFilter) = joinFilter
                 DBSPJoinFilterMapOperator jfm = source.node().to(DBSPJoinFilterMapOperator.class);
                 DBSPClosureExpression newMap = operator.getClosureFunction();
@@ -661,7 +670,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            if (!this.onlyProjections || this.isProjection(operator, false)) {
+            if (this.isProjection(operator, false) || !this.onlyProjections) {
                 // map(joinFilter) = joinFilter
                 DBSPStarJoinFilterMapOperator jfm = source.node().to(DBSPStarJoinFilterMapOperator.class);
                 DBSPClosureExpression newMap = operator.getClosureFunction();
@@ -679,7 +688,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            if (!this.onlyProjections || this.isProjection(operator, false)) {
+            if (this.isProjection(operator, false) || !this.onlyProjections) {
                 DBSPSimpleOperator result = OptimizeProjectionVisitor.mapAfterJoin(
                         this.compiler(), source.simpleNode(), operator);
                 this.map(operator, result);
@@ -700,7 +709,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            if (!this.onlyProjections || this.isProjection(operator, false)) {
+            if (this.isProjection(operator, false) || !this.onlyProjections) {
                 DBSPSimpleOperator result = OptimizeProjectionVisitor.mapAfterJoinIndex(
                         this.compiler(), source.simpleNode(), operator);
                 this.map(operator, result);

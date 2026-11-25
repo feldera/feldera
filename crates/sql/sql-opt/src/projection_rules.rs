@@ -56,7 +56,10 @@ impl ProjectionRules {
             Op::JoinIndex | Op::LeftJoinIndex | Op::StreamJoinIndex | Op::StarJoinIndex => {
                 (ProjectIndexedJoin, Keep, ProjectIndexedJoin)
             }
-            Op::AntiJoin | Op::StreamAntiJoin => (ProjectAntiJoin, Keep, ProjectAntiJoin),
+            // A shared antijoin still validates a row projection before checking fanout.
+            Op::AntiJoin | Op::StreamAntiJoin => {
+                (ProjectAntiJoin, ProjectAntiJoin, ProjectAntiJoin)
+            }
             Op::AsofJoin => (ProjectAsof, Keep, Keep),
             Op::JoinFilterMap => (ProjectFilteredJoin, Keep, Keep),
             Op::StarJoinFilterMap => (ProjectFilteredStar, Keep, Keep),
@@ -185,6 +188,18 @@ mod tests {
                 ProjectIndexedJoin,
             ),
             (Op::AsofJoin, ProjectAsof, Keep, Keep),
+            (
+                Op::AntiJoin,
+                ProjectAntiJoin,
+                ProjectAntiJoin,
+                ProjectAntiJoin,
+            ),
+            (
+                Op::StreamAntiJoin,
+                ProjectAntiJoin,
+                ProjectAntiJoin,
+                ProjectAntiJoin,
+            ),
         ] {
             let rules = ProjectionRules::for_producer(producer);
             assert_eq!(

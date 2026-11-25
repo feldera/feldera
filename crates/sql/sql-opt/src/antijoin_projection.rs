@@ -52,26 +52,46 @@ impl Transformation for RebindKey {
             return Ok(Visit::Replace(self.pair.into()));
         }
         let node = edit.node(id)?;
-        match node.inner_kind() {
-            Some(InnerKind::Type(_)) => Ok(Visit::Keep),
-            Some(InnerKind::Expression(Expr::Field))
-                if node.data("fieldNo").and_then(|v| v.as_u64()) == Some(1)
-                    && self.uses.contains(&node.edge("expression")?) =>
-            {
-                Err(Error::new("antijoin key projection reads the input value"))
-            }
-            _ => Ok(Visit::Children),
-        }
+        Ok(match node.inner_kind() {
+            Some(InnerKind::Type(_)) => Visit::Keep,
+            _ => Visit::Children,
+        })
     }
+}
+
+/// The original visitor checks the written parameter name before rebinding the key.
+/// This also detects a read of a shadowing variable with the same name.
+fn key_reads_value(edit: &CircuitEditor, key: NodeId, parameter: &str) -> Result<bool, Error> {
+    let mut pending = vec![key];
+    let mut seen = HashSet::new();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        let node = edit.node(id)?;
+        if matches!(node.inner_kind(), Some(InnerKind::Expression(Expr::Field)))
+            && node.data("fieldNo").and_then(|v| v.as_u64()) == Some(1)
+        {
+            let base = edit.node(node.edge("expression")?)?;
+            if matches!(base.inner_kind(), Some(InnerKind::Expression(Expr::VariablePath)))
+                && base.data("variable").and_then(|v| v.as_str()) == Some(parameter)
+            {
+                return Ok(true);
+            }
+        }
+        feldera_sql_expr::lexical_scope::push_expression_children(node, &mut pending);
+    }
+    Ok(false)
 }
 
 /// Split (key, value) -> (new_key, new_value) at the antijoin. The input
 /// projection preserves the old key. The output projection can compute its
 /// new key solely from the old key, after the join has discarded the old value.
+/// Return `None` when the key depends on the input value.
 pub fn split_antijoin_projection(
     edit: &mut CircuitEditor,
     closure: NodeId,
-) -> Result<[ExpressionId; 2], Error> {
+) -> Result<Option<[ExpressionId; 2]>, Error> {
     let node = edit.node(closure)?;
     let [param] = node
         .edges("parameters")?
@@ -94,6 +114,9 @@ pub fn split_antijoin_projection(
         .edges("tupFields")?
         .try_into()
         .map_err(|_| Error::new("antijoin projection requires a key/value input"))?;
+    if key_reads_value(edit, key, &name)? {
+        return Ok(None);
+    }
     let pair = edit.named_variable(input, &name)?;
     let borrowed = edit.tuple_field(pair, 0)?;
     let old_key = edit.dereference(borrowed)?;
@@ -125,5 +148,5 @@ pub fn split_antijoin_projection(
     let retained = tuple_of_fields(edit, value)?;
     let second = edit.tuple_expr(closure, true, &[key, retained])?;
     let second = edit.closure_from_variables(second, &[new_pair])?;
-    Ok([first, second])
+    Ok(Some([first, second]))
 }

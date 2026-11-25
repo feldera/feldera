@@ -6,6 +6,7 @@ mod narrowed_unary;
 mod push_projection;
 mod narrowed_join;
 mod topk_input;
+mod trim_output;
 mod repeat;
 mod waterlines;
 mod delta_expansion;
@@ -516,6 +517,20 @@ fn waterline_inspection(inspection: feldera_sql_opt::WaterlineInspection) -> Val
     }
 }
 
+fn checked_projection(edit: &CircuitEditor, function: NodeId, mode: feldera_sql_opt::ProjectionMode)
+    -> Result<Value, feldera_sql_ir::Error>
+{
+    use feldera_sql_opt::MapProjection;
+    if let Some(error) = feldera_sql_opt::inspect_references(edit.circuit(), function, false)?.diagnostic {
+        return Ok(binding_diagnostic(error));
+    }
+    Ok(match feldera_sql_opt::map_projection(edit, function, mode)? {
+        MapProjection::Accepted => Value::Bool(true),
+        MapProjection::Rejected => Value::Bool(false),
+        MapProjection::InvalidFieldMap { fields } => json!({"invalid_field_count": fields}),
+    })
+}
+
 fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     if pass == "Simplify/Root" {
         let cached = LIVE_COMPILATIONS.with_borrow(|stack| stack.last()?.simplified.get(input).copied());
@@ -666,18 +681,19 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let [function] = roots.as_slice() else {
             return Err("expected one map function".into());
         };
-        if let Some(error) = feldera_sql_opt::inspect_references(&arena, *function, false)?.diagnostic {
-            return Ok(binding_diagnostic(error));
-        }
-        let edit = feldera_sql_ir::CircuitEditor::new(arena);
-        use feldera_sql_opt::MapProjection;
-        return Ok(match feldera_sql_opt::map_projection(&edit, *function, mode)? {
-            MapProjection::Accepted => Value::Bool(true),
-            MapProjection::Rejected => Value::Bool(false),
-            MapProjection::InvalidFieldMap { fields } => json!({"invalid_field_count": fields}),
-        });
+        return Ok(checked_projection(&CircuitEditor::new(arena), *function, mode)?);
     }
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
+    // Both composition heuristics inspect the reader before deciding whether to inline it.
+    if let ("TryComposeProjection" | "TryIndexedProjection" | "ComposeIndexedProjection", [_, reader]) =
+        (pass, roots.as_slice())
+    {
+        let mode = if pass == "TryComposeProjection" { ProjectionMode::NestedWithCasts } else { ProjectionMode::Strict };
+        let decision = checked_projection(&edit, *reader, mode)?;
+        if !decision.is_boolean() {
+            return Ok(json!({"projection_error": decision}));
+        }
+    }
     let mut warnings = Vec::new();
     if let Some(name) = pass.strip_suffix("/Root") {
         use feldera_sql_expr::CastSafety;
@@ -1335,7 +1351,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Ok(json!({"retained": projection.retained, "expressions": expressions, "next_generated_name": next}));
         }
         ("SplitAntijoinProjection", [closure]) => {
-            let pair = feldera_sql_opt::split_antijoin_projection(&mut edit, *closure)?;
+            let Some(pair) = feldera_sql_opt::split_antijoin_projection(&mut edit, *closure)? else {
+                return Ok(Value::Null);
+            };
             return Ok(serde_json::to_value(edit.circuit().additional_expressions(&arena, &pair)?)?);
         }
         ("AntijoinProjection", [stream, projection @ ..]) if projection.len() <= 1 => {
@@ -1620,6 +1638,8 @@ fn transform(
         "OptimizeProjections/PushThrough" => return push_projection::operators(input, state, next),
         "RemoveUnusedFields/UnaryOperators" => return narrowed_unary::operators(input, state, next),
         "RemoveUnusedFields/TopKOperators" => return topk_input::operators(input, state, next),
+        "OptimizeProjections/TopKOutput" | "OptimizeProjections/AggregateOutput" =>
+            return trim_output::operators(pass, input, state, next),
         "RemoveUnusedFields/SplitMap" => return split_map::operators(input, state, next),
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),

@@ -122,6 +122,35 @@ pub struct AggregateProjection {
     pub filler: ExpressionId,
 }
 
+impl AggregateProjection {
+    /// Keep the retained aggregate implementations and the row variable by identity.
+    /// The filler and the aggregate share the type of the cached empty row.
+    pub fn narrow_list(&self, edit: &mut CircuitEditor, list: NodeId) -> Result<NodeId, Error> {
+        let components = edit.node(list)?.edges("aggregates")?;
+        let retained = self
+            .retained
+            .iter()
+            .map(|&i| {
+                components
+                    .get(i)
+                    .copied()
+                    .map(Field::Reference)
+                    .ok_or_else(|| Error::new("retained column exceeds aggregate list"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        edit.derive_inner(
+            list,
+            [
+                ("aggregates", Field::Array(retained)),
+                (
+                    "cachedEmptySetResult",
+                    Field::Reference(self.empty_row.into()),
+                ),
+            ],
+        )
+    }
+}
+
 /// Each aggregate contributes one column. Reuse its empty-set expression to
 /// fill discarded positions, which the unchanged reader can never observe.
 pub fn trim_aggregate_projection(

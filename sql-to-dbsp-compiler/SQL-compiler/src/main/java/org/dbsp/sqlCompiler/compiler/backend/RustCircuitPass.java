@@ -1905,12 +1905,16 @@ public final class RustCircuitPass implements CircuitTransform {
         var result = reply.value;
         if (result.isBoolean())
             return result.booleanValue();
-        checkBindingErrors(reply.writer, result);
+        throw projectionError(reply.writer, result, function);
+    }
+
+    private static RuntimeException projectionError(ToJsonInnerVisitor writer, JsonNode result, DBSPExpression function) {
+        checkBindingErrors(writer, result);
         if (result.has("invalid_field_count")) {
             var type = function.to(DBSPClosureExpression.class).body.getType().to(DBSPTypeTupleBase.class);
             Projection.checkFieldCount(type, result.required("invalid_field_count").intValue());
         }
-        throw new IllegalStateException("Invalid projection decision from Rust: " + result);
+        return new IllegalStateException("Invalid projection decision from Rust: " + result);
     }
 
     public static boolean isIdentityProjection(DBSPCompiler compiler, DBSPClosureExpression closure) {
@@ -1945,6 +1949,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public static Pair<DBSPClosureExpression, DBSPClosureExpression> splitAntijoinProjection(
             DBSPCompiler compiler, DBSPClosureExpression projection) {
         var reply = invokeLowering(compiler, "SplitAntijoinProjection", projection, null);
+        Utilities.enforce(!reply.value.isNull(), () -> "splitClosure cannot decompose closure " + projection);
         return decodeClosurePair(reply);
     }
 
@@ -1953,6 +1958,41 @@ public final class RustCircuitPass implements CircuitTransform {
             DBSPCompiler compiler, DBSPClosureExpression producer, DBSPClosureExpression reader) {
         var reply = invokeLowering(compiler, "TrimTopKProjection", producer, reader);
         return reply.value.isNull() ? null : decodeClosurePair(reply);
+    }
+
+    public static List<DBSPSimpleOperator> trimProjectedOutput(DBSPCompiler compiler,
+            DBSPUnaryOperator producer, DBSPMapIndexOperator reader) {
+        var site = expressionSite(producer.getRelNode());
+        site.put("port", producer.input().outputNumber);
+        final String pass;
+        final IDBSPInnerNode[] roots;
+        if (producer instanceof DBSPIndexedTopKOperator topK) {
+            pass = "OptimizeProjections/TopKOutput";
+            site.put("numbering", topK.numbering.name());
+            roots = new IDBSPInnerNode[]{reader.getClosureFunction(), producer.input().outputType(),
+                    topK.outputProducer, topK.getFunction(), topK.equalityComparator, topK.limit};
+        } else {
+            var aggregate = producer.to(DBSPStreamAggregateOperator.class);
+            pass = "OptimizeProjections/AggregateOutput";
+            roots = new IDBSPInnerNode[]{reader.getClosureFunction(), aggregate.outputType,
+                    aggregate.getAggregateList(), reader.outputType};
+        }
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(site), roots);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.isNull())
+                return List.of();
+            var operators = decodeOperatorFragment(reply,
+                    op -> op instanceof DBSPMapIndexOperator ? reader.getRelNode() : producer.getRelNode(),
+                    producer.input().node());
+            if (producer instanceof DBSPIndexedTopKOperator)
+                operators.getFirst().copyAnnotations(producer);
+            operators.getLast().copyAnnotations(reader);
+            return operators;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode projected output", error);
+        }
     }
 
     private static Pair<DBSPClosureExpression, DBSPClosureExpression> loweredClosurePair(LoweringReply reply) {
@@ -2004,6 +2044,9 @@ public final class RustCircuitPass implements CircuitTransform {
         var reply = invokeLowering(compiler, pass, input, second);
         if (reply.value.isNull())
             return null;
+        if (reply.value.has("projection_error"))
+            throw projectionError(reply.writer, reply.value.required("projection_error"),
+                    Objects.requireNonNull(second).to(DBSPExpression.class));
         var function = loweredFunction(compiler, reply.writer, reply.value, kind);
         DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
         return function;

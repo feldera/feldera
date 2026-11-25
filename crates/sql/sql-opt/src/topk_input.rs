@@ -3,6 +3,49 @@ use crate::{append_input_projection, project_topk_comparators};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort};
 use serde_json::json;
 
+/// The ordering and output closure of a TopK after projecting its input or output.
+pub struct TopK<'a> {
+    pub producer: ExpressionId,
+    pub rank: NodeId,
+    pub equality: NodeId,
+    pub limit: NodeId,
+    pub numbering: &'a str,
+}
+
+impl TopK<'_> {
+    pub fn append(
+        &self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        site: NodeId,
+        input: OutputPort,
+        collection: NodeId,
+    ) -> Result<OutputPort, Error> {
+        let key = edit.type_id(edit.node(collection)?.edge("keyType")?)?;
+        let function = edit.expression_type(self.producer)?;
+        let value = edit.type_id(edit.node(function.into())?.edge("resultType")?)?;
+        let output = edit.indexed_zset_type(collection, key, value)?;
+        let operator = edit.append_operator(
+            body,
+            site,
+            OperatorKind::IndexedTopK,
+            &[input],
+            [
+                ("outputType", Field::Reference(output.into())),
+                ("function", Field::Reference(self.rank)),
+                ("limit", Field::Reference(self.limit)),
+                ("numbering", Field::Data(self.numbering.into())),
+                ("outputProducer", Field::Reference(self.producer.into())),
+                ("equalityComparator", Field::Reference(self.equality)),
+            ],
+        )?;
+        Ok(OutputPort {
+            operator,
+            number: 0,
+        })
+    }
+}
+
 pub struct ProjectedTopK<'a> {
     pub projection: ExpressionId,
     pub producer: ExpressionId,
@@ -36,7 +79,6 @@ impl ProjectedTopK<'_> {
             json!({"class": "IsProjection", "outputSize": self.projection_width}),
         )?;
         let collection = edit.node(projected.operator)?.edge("outputType")?;
-        let key = edit.type_id(edit.node(collection)?.edge("keyType")?)?;
         let row = edit.type_id(edit.node(collection)?.edge("elementType")?)?;
         let ties = edit.node(self.equality)?.edge("comparator")?;
         let orders =
@@ -48,23 +90,14 @@ impl ProjectedTopK<'_> {
             self.equality,
             [("comparator", Field::Reference(ties.into()))],
         )?;
-        let function = edit.expression_type(self.producer)?;
-        let value = edit.type_id(edit.node(function.into())?.edge("resultType")?)?;
-        let output = edit.indexed_zset_type(collection, key, value)?;
-        edit.append_operator(
-            body,
-            site,
-            OperatorKind::IndexedTopK,
-            &[projected],
-            [
-                ("outputType", Field::Reference(output.into())),
-                ("function", Field::Reference(rank.into())),
-                ("limit", Field::Reference(self.limit)),
-                ("numbering", Field::Data(self.numbering.into())),
-                ("outputProducer", Field::Reference(self.producer.into())),
-                ("equalityComparator", Field::Reference(equality)),
-            ],
-        )?;
+        TopK {
+            producer: self.producer,
+            rank: rank.into(),
+            equality,
+            limit: self.limit,
+            numbering: self.numbering,
+        }
+        .append(edit, body, site, projected, collection)?;
         Ok(())
     }
 }

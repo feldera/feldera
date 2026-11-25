@@ -4,11 +4,16 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
@@ -34,12 +39,15 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -194,15 +202,37 @@ public class ProjectionCompositionTests {
         String expected = null;
         for (boolean hybrid : List.of(false, true)) {
             compiler.options.ioOptions.rustOptimizerPasses = hybrid;
-            var general = new OptimizeProjections(compiler, false, graph.getGraphs(), new AnalyzedSet<>());
-            Assert.assertSame(reader, general.apply(circuit).allOperators.getLast());
+            for (boolean strict : List.of(false, true)) {
+                var pass = new OptimizeProjections(compiler, strict, graph.getGraphs(), new AnalyzedSet<>());
+                var error = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+                Assert.assertTrue(error.getMessage().startsWith("Could not resolve " + unbound));
+                if (expected != null)
+                    Assert.assertEquals(expected, error.getMessage());
+                expected = error.getMessage();
+            }
+        }
+    }
 
-            var strict = new OptimizeProjections(compiler, true, graph.getGraphs(), new AnalyzedSet<>());
-            var error = Assert.assertThrows(InternalCompilerError.class, () -> strict.apply(circuit));
-            Assert.assertTrue(error.getMessage().startsWith("Could not resolve " + unbound));
-            if (hybrid)
-                Assert.assertEquals(expected, error.getMessage());
-            expected = error.getMessage();
+    @Test public void cheapMapCompositionStillValidatesTheReader() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var row = b.tup(b.i32()).ref().var();
+        var before = b.tuple(row.deref().field(0)).closure(row);
+        var unbound = new DBSPVariablePath("missing", row.type);
+        for (var after : List.of(b.tuple(unbound.deref().field(0)).closure(row), row.deref().closure(row))) {
+            var expected = Assert.assertThrows(InternalCompilerError.class, () -> after.shouldInlineComposition(compiler, before));
+            var actual = Assert.assertThrows(InternalCompilerError.class, () -> RustCircuitPass.tryComposeProjection(compiler, before, after));
+            Assert.assertEquals(expected.getMessage().lines().findFirst(), actual.getMessage().lines().findFirst());
+        }
+        var indexed = new DBSPRawTupleExpression(b.tuple(), b.tuple(row.deref().field(0))).closure(row);
+        var pair = new DBSPTypeRawTuple(b.tup().ref(), b.tup(b.i32()).ref()).var();
+        var missing = new DBSPVariablePath("missing", pair.type);
+        var reader = new DBSPRawTupleExpression(b.tuple(), missing.field(1).deref()).closure(pair);
+        var projection = new Projection(compiler);
+        var expected = Assert.assertThrows(InternalCompilerError.class, () -> projection.apply(reader));
+        for (boolean strict : List.of(false, true)) {
+            var actual = Assert.assertThrows(InternalCompilerError.class,
+                    () -> RustCircuitPass.composeIndexedProjection(compiler, indexed, reader, strict));
+            Assert.assertEquals(expected.getMessage(), actual.getMessage());
         }
     }
 
@@ -317,6 +347,119 @@ public class ProjectionCompositionTests {
                 var actual = Assert.assertThrows(expected.getClass(),
                         () -> RustCircuitPass.isMapProjection(this.compiler, function, nested));
                 Assert.assertEquals(expected.getMessage().lines().findFirst(), actual.getMessage().lines().findFirst());
+            }
+        }
+    }
+
+    @Test public void validateRowReaderOfASharedAntijoin() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var row = input.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var index = new DBSPMapIndexOperator(site, new DBSPRawTupleExpression(b.tuple(), row.deref()).closure(row), input);
+        var port = index.outputPort();
+        var delta = new DBSPDifferentiateOperator(site, port);
+        for (var join : List.of(new DBSPAntiJoinOperator(site, delta.outputPort(), delta.outputPort()),
+                new DBSPStreamAntiJoinOperator(site, port, port))) {
+            var pair = join.getOutputIndexedZSetType().getKVRefType().var();
+            var unbound = new DBSPVariablePath("missing", pair.type);
+            var valid = b.tuple(pair.field(1).deref().field(0)).closure(pair);
+            var invalid = b.tuple(unbound.field(1).deref().field(0)).closure(pair);
+            var circuit = new DBSPCircuit(compiler.metadata, false);
+            circuit.addOperator(source);
+            circuit.addOperator(index);
+            if (join instanceof DBSPAntiJoinOperator)
+                circuit.addOperator(delta);
+            circuit.addOperator(join);
+            circuit.addOperator(new DBSPMapOperator(site, valid, join.outputPort()));
+            circuit.addOperator(new DBSPMapOperator(site, invalid, join.outputPort()));
+            var graph = new Graph(compiler);
+            graph.apply(circuit);
+            String expected = null;
+            for (boolean hybrid : List.of(false, true)) {
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                var pass = new OptimizeProjections(compiler, false, graph.getGraphs(), new AnalyzedSet<>());
+                var error = Assert.assertThrows(InternalCompilerError.class, () -> pass.apply(circuit));
+                Assert.assertTrue(error.getMessage().startsWith("Could not resolve " + unbound));
+                if (hybrid)
+                    Assert.assertEquals(expected, error.getMessage());
+                expected = error.getMessage();
+            }
+        }
+    }
+
+    @Test public void narrowRankedAndAggregateOutputsWithTheirReaders() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT NOT NULL, b INT NOT NULL); CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var row = input.getOutputRowType().ref().var();
+        var site = CalciteEmptyRel.INSTANCE;
+        var index = new DBSPMapIndexOperator(site,
+                new DBSPRawTupleExpression(b.tuple(), row.deref()).closure(row), input);
+        var value = b.i32().var();
+        var post = value.closure(value);
+        var first = new LinearAggregate(site, row.deref().field(0).closure(row), post, b.lit(17));
+        var second = new LinearAggregate(site, row.deref().field(1).closure(row), post, b.lit(19));
+        var list = new DBSPAggregateList(site, row, List.of(first, second));
+        var stream = index.getOutputIndexedZSetType();
+        var aggregate = new DBSPStreamAggregateOperator(site,
+                new DBSPTypeIndexedZSet(site, stream.keyType, list.getEmptySetResultType()), null, list, index.outputPort());
+        var rank = new DBSPUSizeLiteral(1).type.var();
+        var producer = b.tuple(row.deref().field(0), row.deref().field(1)).closure(rank, row);
+        var order = new DBSPNoComparatorExpression(site, stream.elementType).field(0, true, false);
+        var delta = new DBSPDifferentiateOperator(site, index.outputPort());
+        var topK = new DBSPIndexedTopKOperator(site, DBSPIndexedTopKOperator.Numbering.RANK, order,
+                new DBSPUSizeLiteral(3), new DBSPEqualityComparatorExpression(site, order), producer, delta.outputPort());
+        for (var operator : List.<DBSPUnaryOperator>of(aggregate, topK)) {
+            operator.addAnnotation(AlwaysMonotone.INSTANCE, DBSPSimpleOperator.class);
+            var pair = operator.getOutputIndexedZSetType().getKVRefType().var();
+            var function = new DBSPRawTupleExpression(b.tuple(), b.tuple(pair.field(1).deref().field(1))).closure(pair);
+            var reader = new DBSPMapIndexOperator(site, function, operator.outputPort());
+            reader.addAnnotation(new IsProjection(2), DBSPSimpleOperator.class);
+            var operators = RustCircuitPass.trimProjectedOutput(compiler, operator, reader);
+            var last = operators.getLast().to(DBSPMapIndexOperator.class);
+            Assert.assertEquals(2, last.annotations.first(IsProjection.class).outputSize);
+            Assert.assertSame(operator.input().node(), operators.getFirst().inputs.getFirst().node());
+            if (operator == aggregate) {
+                Assert.assertEquals(3, operators.size());
+                var narrowed = operators.getFirst().to(DBSPStreamAggregateOperator.class);
+                Assert.assertEquals(List.of(second), narrowed.getAggregateList().aggregates);
+                Assert.assertSame(narrowed.getAggregateList().getEmptySetResultType(), narrowed.getOutputIndexedZSetType().elementType);
+                Assert.assertNull(narrowed.annotations.first(AlwaysMonotone.class));
+                Assert.assertSame(narrowed, operators.get(1).inputs.getFirst().node());
+                Assert.assertSame(operators.get(1), last.input().node());
+                Assert.assertSame(reader.outputType, last.outputType);
+                Assert.assertSame(function, last.getFunction());
+            } else {
+                Assert.assertEquals(2, operators.size());
+                var narrowed = operators.getFirst().to(DBSPIndexedTopKOperator.class);
+                Assert.assertSame(narrowed, last.input().node());
+                Assert.assertSame(order, narrowed.getFunction());
+                Assert.assertSame(topK.equalityComparator, narrowed.equalityComparator);
+                Assert.assertSame(topK.limit, narrowed.limit);
+                Assert.assertEquals(topK.numbering, narrowed.numbering);
+                Assert.assertNotNull(narrowed.annotations.first(AlwaysMonotone.class));
+                Assert.assertEquals(1, narrowed.getOutputIndexedZSetType().elementType.to(DBSPTypeTupleBase.class).size());
+            }
+            var circuit = new DBSPCircuit(compiler.metadata, false);
+            circuit.addOperator(source);
+            circuit.addOperator(index);
+            if (operator == topK)
+                circuit.addOperator(delta);
+            circuit.addOperator(operator);
+            circuit.addOperator(reader);
+            var graph = new Graph(compiler);
+            graph.apply(circuit);
+            for (boolean hybrid : List.of(false, true)) {
+                compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                var pass = new OptimizeProjections(compiler, true, graph.getGraphs(), new AnalyzedSet<>());
+                var rewritten = pass.apply(circuit).allOperators.getLast().to(DBSPMapIndexOperator.class);
+                Assert.assertTrue(EquivalenceContext.equiv(last.getFunction(), rewritten.getFunction()));
+                Assert.assertTrue(last.outputType.sameType(rewritten.outputType));
+                Assert.assertEquals(last.input().node().getClass(), rewritten.input().node().getClass());
             }
         }
     }
@@ -608,8 +751,8 @@ public class ProjectionCompositionTests {
 
         var invalid = b.lambda(input, pair -> new DBSPRawTupleExpression(
                 b.tuple(pair.field(1).deref().field(0)), b.tuple()));
-        var error = Assert.assertThrows(RuntimeException.class,
+        var error = Assert.assertThrows(InternalCompilerError.class,
                 () -> RustCircuitPass.splitAntijoinProjection(this.compiler, invalid));
-        Assert.assertTrue(error.getMessage().contains("key projection reads the input value"));
+        Assert.assertTrue(error.getMessage().startsWith("splitClosure cannot decompose closure " + invalid));
     }
 }
