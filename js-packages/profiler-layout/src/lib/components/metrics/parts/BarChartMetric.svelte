@@ -123,8 +123,8 @@
   // charts of one bar per worker, so a tooltip for each bar would mount thousands of components.
   // The tooltip opens on hover and on focus of a bar, and shows the reading of that bar.
   const barsId = $props.id()
-  let tooltipWorker = $state(0)
-  const tooltipCell = $derived(cells[tooltipWorker])
+  let workerIdOfTooltip = $state(0)
+  const tooltipCell = $derived(cells[workerIdOfTooltip])
 </script>
 
 <!-- One grid row: the six cells, on a subgrid so the band behind them is unbroken. -->
@@ -203,9 +203,9 @@
     class="whitespace-nowrap"
     placement="top"
     triggeredBy={`[data-bars="${barsId}"]`}
-    onbeforetoggle={(e) => (tooltipWorker = Number(e.trigger.dataset.worker))}
+    onbeforetoggle={(e) => (workerIdOfTooltip = Number(e.trigger.dataset.worker))}
   >
-    Worker {tooltipWorker}: {tooltipCell?.value.toString()}
+    Worker {workerIdOfTooltip}: {tooltipCell?.value.toString()}
   </Tooltip>
 {/key}
 

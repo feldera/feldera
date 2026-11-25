@@ -165,10 +165,27 @@ class GraphNode {
 /** Cytoscape graph edge.
  * Edge ids should be unique per graph to enable computing graph diffs. */
 class GraphEdge implements EncodableAsString {
+    /** The operators whose output streams this edge stands for. DBSP names a stream by the operator that
+     *  writes it, so two edges of `graph` from one operator carry the same stream. */
+    private readonly streamSources: Set<NodeId> = new Set();
+
     constructor(readonly source: string, readonly target: string, readonly id: string, readonly backedge: boolean) { }
+
+    addStream(writer: NodeId) {
+        this.streamSources.add(writer);
+    }
+
+    /** The label of an edge that stands for more than one stream, for example "3 streams". */
+    private label(): string | undefined {
+        const count = this.streamSources.size;
+        return count > 1 ? `${count} streams` : undefined;
+    }
 
     getDefinition(): EdgeDefinition {
         let def: EdgeDefinition = { "data": { "id": this.id, "source": this.source, "target": this.target } };
+        const label = this.label();
+        if (label !== undefined)
+            def.data["label"] = label;
         if (this.backedge)
             def["classes"] = "back";
         return def;
@@ -178,8 +195,9 @@ class GraphEdge implements EncodableAsString {
         return this.id;
     }
 
+    // The label is part of the string, so that `diff` draws the edge again if its label changes.
     asString(): string {
-        return this.id;
+        return this.id + (this.label() ?? "");
     }
 }
 
@@ -211,11 +229,13 @@ export class Cytograph {
     drawEdge(original: Edge<NodeId>, source: NodeId, target: NodeId) {
         // The id depends only on the drawn edge, so that `diff` keeps the edge when other edges change.
         const id = source + "->" + target + (original.back ? ":back" : "");
-        if (!this.edgesById.has(id)) {
-            const drawn = new GraphEdge(source, target, id, original.back);
+        let drawn = this.edgesById.get(id);
+        if (drawn === undefined) {
+            drawn = new GraphEdge(source, target, id, original.back);
             this.edgesById.set(id, drawn);
             this.edges.push(drawn);
         }
+        drawn.addStream(original.from);
         this.edgeMap.set(original.id, id);
     }
 
@@ -420,6 +440,8 @@ export class CytographRendering {
     private raisedEdges: EdgeCollection;
     /** The animation frame request of `scheduleRaise`, or null if no request is pending. */
     private raiseFrame: number | null = null;
+    /** Removes the chip button listeners from the graph container. `dispose` calls it. */
+    private removeChipButtonListeners: () => void = () => { };
 
     constructor(
         graphContainer: HTMLElement,
@@ -860,7 +882,7 @@ export class CytographRendering {
         document.addEventListener('keyup', (e) => this.keyup(e));
         // Called here rather than in the constructor because this is where the chips' actions arrive;
         // `setEvents` runs once per instance.
-        installChipButtons(this.cy, () => this.theme, {
+        this.removeChipButtonListeners = installChipButtons(this.cy, () => this.theme, {
             // A click on a code chip also pins the information of its node, and then shows its source.
             // A click on the counter chip expands or collapses the region. `toggleCircuitRegion` hides
             // the node information, because the graph changes.
@@ -924,6 +946,11 @@ export class CytographRendering {
     }
 
     layoutComplete() {
+        // The graph changed again during this layout, and a newer layout runs. That layout completes
+        // the change.
+        if (this.elkLayoutsRunning > 0) {
+            return;
+        }
         this.endFramePause();
         this.clearMessage();
         this.renderingInFlight = false;
@@ -1186,6 +1213,7 @@ export class CytographRendering {
             cancelAnimationFrame(this.raiseFrame);
             this.raiseFrame = null;
         }
+        this.removeChipButtonListeners();
 
         // Destroy the Cytoscape instance
         if (this.cy) {

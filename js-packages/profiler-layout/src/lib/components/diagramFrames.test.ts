@@ -2,31 +2,47 @@
 // until the layout is finished (see `pauseFrames` in profiler-lib). This depends on cytoscape renderer
 // internals, so these tests fail if a cytoscape update breaks it.
 
-import { describe, expect, it } from 'vitest'
+import { clearLayoutCache } from 'profiler-lib'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { mountDiagram, settle } from '../test-support/mountDiagram.js'
 
 const simple = (id: string, label: string) => ({ Simple: { id, label } })
 
 /** A region with a chain of 150 operators. ELK needs more than one animation frame to lay it out, so
  *  cytoscape has the time to draw a frame during the layout. */
+const chainRegion = (id: string, prefix: string) => ({
+  Cluster: {
+    id,
+    label: 'shard',
+    nodes: Array.from({ length: 150 }, (_, i) => simple(`${prefix}${i}`, `operator ${i}`))
+  }
+})
+const chainEdges = (prefix: string) =>
+  Array.from({ length: 149 }, (_, i) => ({
+    from_node: `${prefix}${i}`,
+    to_node: `${prefix}${i + 1}`
+  }))
+
 const LARGE_REGION = {
+  metrics: [],
+  worker_profiles: [{ metadata: {} }],
+  graph: {
+    nodes: { id: 'n', label: 'circuit', nodes: [chainRegion('region', 'n')] },
+    edges: chainEdges('n')
+  }
+}
+
+/** Two regions like the one in `LARGE_REGION`. */
+const TWO_LARGE_REGIONS = {
   metrics: [],
   worker_profiles: [{ metadata: {} }],
   graph: {
     nodes: {
       id: 'n',
       label: 'circuit',
-      nodes: [
-        {
-          Cluster: {
-            id: 'region',
-            label: 'shard',
-            nodes: Array.from({ length: 150 }, (_, i) => simple(`n${i}`, `operator ${i}`))
-          }
-        }
-      ]
+      nodes: [chainRegion('region', 'n'), chainRegion('other', 'm')]
     },
-    edges: Array.from({ length: 149 }, (_, i) => ({ from_node: `n${i}`, to_node: `n${i + 1}` }))
+    edges: [...chainEdges('n'), ...chainEdges('m')]
   }
 }
 
@@ -53,6 +69,10 @@ const expandRegion = (cy: Cy, during: () => void = () => {}) =>
   })
 
 describe('a running layout', () => {
+  // A cached layout is a preset layout that finishes at once, so each test starts without the layouts
+  // of the tests before it.
+  beforeEach(() => clearLayoutCache())
+
   it('draws no frame until the layout is finished, then draws the new layout', async () => {
     const { cy, nodeFill, cleanup } = await mountDiagram('light', LARGE_REGION)
     expect(await expandRegion(cy)).toBe(0)
@@ -60,6 +80,33 @@ describe('a running layout', () => {
     cy.on('render', () => frames++)
     await settle()
     expect(frames).toBeGreaterThan(0)
+    expect(nodeFill('n0').a).toBe(1)
+    cleanup()
+  })
+
+  it('draws no frame until the last of two overlapping layouts is finished', async () => {
+    const { cy, nodeFill, cleanup } = await mountDiagram('light', TWO_LARGE_REGIONS)
+    const frames = new Promise<number>((resolve) => {
+      let count = 0
+      const onRender = () => count++
+      cy.one('add', () => {
+        cy.on('render', onRender)
+        // The second toggle starts its layout while the layout of the first toggle runs.
+        cy.$id('other').emit('dblclick')
+      })
+      let layoutStops = 0
+      cy.on('layoutstop', () => {
+        layoutStops++
+        if (layoutStops === 2) {
+          cy.off('render', onRender)
+          resolve(count)
+        }
+      })
+    })
+    cy.$id('region').emit('dblclick')
+    expect(await frames).toBe(0)
+    // The last layout starts the frames again.
+    await settle()
     expect(nodeFill('n0').a).toBe(1)
     cleanup()
   })

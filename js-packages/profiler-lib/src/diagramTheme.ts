@@ -40,6 +40,13 @@ export const ID_FONT_WEIGHT = 600;
  *  same font. */
 export const NODE_FONT_SIZE = 12;
 export const NODE_FONT_FAMILY = 'Helvetica Neue, Helvetica, sans-serif';
+
+/** The smallest font size on screen, in CSS pixels, of the text that the diagram paints. At 4 px
+ *  a capital letter is about 3 px high, so the text cannot be read. But the paint of this text costs
+ *  as much as the paint of readable text, and it is most of the cost of a frame when the diagram is
+ *  zoomed out. */
+export const MIN_READABLE_FONT_PX = 4;
+
 /** The font as a canvas shorthand, in the order cytoscape builds it: style, weight, size, family. */
 export const labelFont = (weight: number | string = ID_FONT_WEIGHT): string =>
     `normal ${weight} ${NODE_FONT_SIZE}px ${NODE_FONT_FAMILY}`;
@@ -294,6 +301,23 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 'line-color': p.edge,
                 'target-arrow-color': p.edge,
                 'width': 2
+            }
+        },
+        {
+            // An edge that stands for more than one stream shows the count in a chip.
+            selector: 'edge[label]',
+            style: {
+                'label': 'data(label)',
+                'font-size': `${NODE_FONT_SIZE - 2}px`,
+                'min-zoomed-font-size': MIN_READABLE_FONT_PX,
+                'color': p.chipInk,
+                'text-background-color': p.chipFill,
+                'text-background-opacity': 1,
+                'text-background-shape': 'roundrectangle',
+                'text-background-padding': '2px',
+                'text-border-color': p.chipBorder,
+                'text-border-width': 1,
+                'text-border-opacity': 1
             }
         },
         {

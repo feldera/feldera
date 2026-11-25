@@ -1,5 +1,7 @@
 // Timing helpers for the performance suite (`*.perf.ts`, see `vitest.perf.config.ts`).
 
+import { afterNextPaint } from 'profiler-lib'
+
 export interface PerfResult {
   name: string
   medianMs: number
@@ -29,11 +31,6 @@ declare module 'vitest/browser' {
     savePerfResults: (report: PerfReport) => Promise<void>
   }
 }
-
-/** Resolve after the browser paints the next frame. Cytoscape draws in an animation frame callback
- *  that it requested before this one, so the draw is done when this resolves. */
-export const afterNextPaint = () =>
-  new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)))
 
 /** Run the garbage collector when Chromium exposes it (`--js-flags=--expose-gc`), so that a
  *  collection left over from the previous run does not land in the next measurement. */

@@ -1,3 +1,5 @@
+import { afterNextPaint } from 'profiler-lib'
+
 /**
  * Runs async loading work behind a guard that toggles `isLoading` and routes
  * any thrown error to a caller-provided handler — an inline try/catch/finally
@@ -35,12 +37,6 @@
  * `onError` is passed per call so each call site can choose its own fallback
  * message, much like the catch block it replaces.
  */
-/** Resolves after the browser paints the next frame. A `requestAnimationFrame` callback runs
- *  before the paint, and a timeout queued from it runs after the paint. */
-function afterNextPaint(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)))
-}
-
 export function createLoadGuard(opts: {
   setLoading: (loading: boolean) => void
   onFinally?: () => void
