@@ -14,8 +14,8 @@ struct UnaryRequest {
     port: usize,
     indexed: bool,
     only_projections: bool,
-    reader_width: usize,
-    producer_width: Option<usize>,
+    reader_width: i32,
+    producer_width: Option<i32>,
 }
 
 pub(super) fn unary(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn Error>> {

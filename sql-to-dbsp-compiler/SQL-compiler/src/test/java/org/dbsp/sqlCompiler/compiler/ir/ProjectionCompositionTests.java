@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.ir;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
@@ -1128,13 +1129,22 @@ public class ProjectionCompositionTests {
 
     @Test public void fuseMapReadersUsingTheOriginalProjectionWidth() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        this.checkFusedMapReaders(new IsProjection(1));
+    }
+
+    @Test public void keepSignedProjectionWidthsFromCircuitJson() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        this.checkFusedMapReaders(IsProjection.fromJson(JsonNodeFactory.instance.objectNode().put("outputSize", -1)));
+    }
+
+    private void checkFusedMapReaders(IsProjection projection) {
         var site = CalciteEmptyRel.INSTANCE;
         var row = b.tuple(b.lit(1), b.lit(2));
         var source = new DBSPConstantOperator(site, new DBSPZSetExpression(row));
         var input = row.getType().ref().var();
         var transpose = b.tuple(input.deref().field(1), input.deref().field(0)).closure(input);
         var producer = new DBSPMapOperator(site, transpose, source.outputPort());
-        producer.addAnnotation(new IsProjection(1), DBSPMapOperator.class);
+        producer.addAnnotation(projection, DBSPMapOperator.class);
         var mapped = producer.outputPort().getOutputRowType().ref().var();
         var discard = b.tuple(mapped.deref().field(0));
         var rowReader = new DBSPMapOperator(site, discard.closure(mapped), producer.outputPort());
@@ -1166,7 +1176,7 @@ public class ProjectionCompositionTests {
                     if (!onlyProjections) {
                         Assert.assertEquals(source.outputPort(), result.input());
                         Assert.assertSame(reader.outputType, result.outputType);
-                        Assert.assertEquals(1, result.annotations.first(IsProjection.class).outputSize);
+                        Assert.assertEquals(projection.outputSize, result.annotations.first(IsProjection.class).outputSize);
                     }
                     if (hybrid) {
                         Assert.assertEquals(direct.getClass(), result.getClass());
