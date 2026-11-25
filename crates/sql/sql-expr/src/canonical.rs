@@ -227,6 +227,12 @@ impl Transformation for &mut Names {
         }
         let kind = node.inner_kind();
         match kind {
+            Some(InnerKind::Expression(Expr::Field)) if original == rebuilt => {
+                let row = edit.expression(node.edge("expression")?)?;
+                if edit.field_read_simplifies(row)? {
+                    return rebuild_result_type(edit, rebuilt, Some(Expr::Field), false);
+                }
+            }
             Some(InnerKind::Expression(Expr::Closure)) => {
                 self.scopes.pop();
                 if original != rebuilt {

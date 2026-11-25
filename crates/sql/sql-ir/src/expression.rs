@@ -186,6 +186,15 @@ impl CircuitEditor {
         }
     }
 
+    /// The field constructor replaces these reads even when its operand did not change.
+    pub fn field_read_simplifies(&self, row: ExpressionId) -> Result<bool, Error> {
+        Ok(match self.expr_kind(row)? {
+            Expr::Tuple | Expr::RawTuple => true,
+            Expr::Unwrap => self.node(row.0)?.data("message").and_then(|v| v.as_str()) == Some(""),
+            _ => false,
+        })
+    }
+
     pub fn tuple_field(&mut self, row: ExpressionId, index: usize) -> Result<ExpressionId, Error> {
         let ty = self.expression_type(row)?;
         let result = self.tuple_field_type(ty, index)?;

@@ -836,6 +836,39 @@ public class TemporalKeyTests {
         }
     }
 
+    @Test
+    public void windowSharingProjectsFieldsFromConstructedRows() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteEmptyRel.INSTANCE;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        var rowType = b.tup(time, time);
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(rowType));
+        circuit.addOperator(input);
+        var filters = new ArrayList<DBSPFilterOperator>();
+        for (int i = 0; i < 3; i++) {
+            var row = b.refVar(rowType);
+            var first = b.field(row, 0);
+            var last = b.field(row, 1);
+            // Use the located constructor to retain the field access in the optimizer input.
+            var key = i == 0 ? first : new DBSPTupleExpression(last, first).field(site, i == 1 ? 1 : 0);
+            var predicate = b.binary(DBSPOpcode.GTE, key, b.call(time, "now"));
+            var filter = new DBSPFilterOperator(site, predicate.closure(row), input.outputPort());
+            filters.add(filter);
+            circuit.addOperator(filter);
+        }
+        for (boolean hybrid : List.of(false, true)) {
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            compiler.metadata.set(ProgramMetadata.WINDOW_SHARING_THRESHOLD, b.lit(2), SourcePositionRange.INVALID, compiler);
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var decisions = new ArrayList<Boolean>();
+            var scan = scanWindows(compiler, circuit, decisions);
+            Assert.assertEquals(filters.subList(0, 2), List.copyOf(scan.chosenConjunct.keySet()));
+            Assert.assertEquals(hybrid ? List.of(true) : List.of(), decisions);
+        }
+    }
+
     private static ReorderTemporalFilters.Scan scanWindows(
             DBSPCompiler compiler, DBSPCircuit circuit, List<Boolean> decisions) {
         compiler.stateObserver = new DBSPCompiler.StateObserver() {

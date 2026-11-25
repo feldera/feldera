@@ -132,6 +132,15 @@ impl ProjectionKey {
         root: NodeId,
         parameter: RowParameter<'_>,
     ) -> Result<Option<Self>, Error> {
+        Self::number_terms(edit, root, parameter, false)
+    }
+
+    fn number_terms(
+        edit: &CircuitEditor,
+        root: NodeId,
+        parameter: RowParameter<'_>,
+        canonical: bool,
+    ) -> Result<Option<Self>, Error> {
         let mut scopes = vec![Binding {
             variable: parameter,
             parent: None,
@@ -140,6 +149,7 @@ impl ProjectionKey {
         let mut terms = IndexSet::new();
         let mut numbers = HashMap::new();
         let mut active = HashSet::new();
+        let mut simplifies_field = false;
         let mut work = vec![Visit::Read(ScopedNode {
             id: root,
             scope: 0,
@@ -168,6 +178,10 @@ impl ProjectionKey {
                         }
                         if at.in_static && !preserves_static_children(*kind) {
                             return Ok(None);
+                        }
+                        if *kind == Expr::Field && !simplifies_field {
+                            let row = edit.expression(node.edge("expression")?)?;
+                            simplifies_field = edit.field_read_simplifies(row)?;
                         }
                     }
                     let Some((term, children)) = scoped_term(edit, at, &mut scopes)? else {
@@ -214,6 +228,16 @@ impl ProjectionKey {
                     active.remove(&id);
                 }
             }
+        }
+        if simplifies_field {
+            // CanonicalForm visits discarded fields too. Their local declarations
+            // can change the printed names in the surviving expression.
+            if canonical || scopes.len() != 1 {
+                return Ok(None);
+            }
+            let mut scratch = CircuitEditor::new(edit.circuit().clone());
+            let simplified = feldera_sql_expr::canonicalize_names(&mut scratch, root)?;
+            return Self::number_terms(&scratch, simplified, parameter, true);
         }
         Ok(Some(Self(terms.into_iter().collect())))
     }
