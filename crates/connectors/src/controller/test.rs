@@ -36,6 +36,7 @@ use feldera_adapterlib::{
     postprocess::{Postprocessor, PostprocessorCreateError, PostprocessorFactory},
     preprocess::{Preprocessor, PreprocessorCreateError, PreprocessorFactory},
     test::{Updates, default_timeout_ms, wait},
+    transport::require_resume_features,
 };
 use feldera_storage::tokio::TOKIO;
 use feldera_types::memory_pressure::MemoryPressure;
@@ -1367,6 +1368,36 @@ impl InputEndpoint for OpenRecordingEndpoint {
     }
 }
 
+/// A non-fault-tolerant input endpoint that knows the resume features
+/// `features` and records the resume info that it was opened with.
+struct ResumeFeaturesEndpoint {
+    features: &'static [&'static str],
+    opened_with: Arc<Mutex<Option<Option<serde_json::Value>>>>,
+}
+
+impl InputEndpoint for ResumeFeaturesEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+
+    fn resume_features(&self) -> &'static [&'static str] {
+        self.features
+    }
+}
+
+impl TransportInputEndpoint for ResumeFeaturesEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        *self.opened_with.lock().unwrap() = Some(resume_info.clone());
+        TransactionalInputEndpoint::new().open(consumer, parser, schema, resume_info)
+    }
+}
+
 /// An HTTP input endpoint whose `open` waits for a message on `gate`.
 struct GatedHttpEndpoint {
     inner: HttpInputEndpoint,
@@ -1520,6 +1551,77 @@ impl InputReader for QueueGatedReader {
     fn take_completion(&self) -> Option<futures::future::BoxFuture<'static, ()>> {
         self.inner.take_completion()
     }
+}
+
+/// The controller opens an endpoint from resume info that requires features
+/// only if the endpoint knows all of them, and then without the list of
+/// features.  Otherwise, it fails without opening the endpoint, for example
+/// when a newer version wrote the checkpoint.
+#[engine_test]
+pub fn resume_info_requires_known_features(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {}
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+
+    for (name, features, known) in [
+        ("knows_all", &["a", "b"][..], true),
+        ("knows_one", &["a"][..], false),
+    ] {
+        let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_input1",
+            "transport": { "name": "file_input", "config": { "path": "unused" } },
+            "format": { "name": "csv" }
+        }))
+        .unwrap();
+        let mut seek = json!({"cursor": 3});
+        require_resume_features(&mut seek, &["a", "b"]);
+        let opened_with = Arc::new(Mutex::new(None));
+        let result = controller.inner.add_input_endpoint(
+            name,
+            endpoint_config,
+            Some(Box::new(ResumeFeaturesEndpoint {
+                features,
+                opened_with: opened_with.clone(),
+            })),
+            Some((seek, Default::default())),
+        );
+        if known {
+            result.unwrap();
+            wait(
+                || opened_with.lock().unwrap().is_some(),
+                default_timeout_ms(),
+            )
+            .unwrap();
+            assert_eq!(
+                *opened_with.lock().unwrap(),
+                Some(Some(json!({"cursor": 3})))
+            );
+        } else {
+            let error = result.expect_err("an unknown required feature must be rejected");
+            assert!(error.to_string().contains("'b'"), "{error}");
+            assert!(!error.to_string().contains("'a'"), "{error}");
+            assert!(
+                opened_with.lock().unwrap().is_none(),
+                "the rejected endpoint was opened"
+            );
+            assert!(controller.input_endpoint_id_by_name(name).is_err());
+        }
+    }
+
+    controller.stop().unwrap();
 }
 
 /// A connector rejected by the fault-tolerance check must never be opened.
