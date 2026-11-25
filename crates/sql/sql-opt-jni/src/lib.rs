@@ -1,6 +1,7 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
 mod fragment;
+mod antijoin_reader;
 mod split_map;
 mod narrowed_unary;
 mod push_projection;
@@ -1675,6 +1676,7 @@ fn transform(
         "Monotonicity/Hop" => return hop_waterline(input, state, next),
         "ExpandHop/Window" => return expand_hop(input, state, next),
         "OptimizeProjections/PushThrough" => return push_projection::operators(input, state, next),
+        "OptimizeProjections/Antijoin" => return antijoin_reader::operators(input, state, next),
         "RemoveUnusedFields/UnaryOperators" => return narrowed_unary::operators(input, state, next),
         "RemoveUnusedFields/TopKOperators" => return topk_input::operators(input, state, next),
         "OptimizeProjections/TopKOutput" | "OptimizeProjections/AggregateOutput" =>

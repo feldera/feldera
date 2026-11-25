@@ -473,6 +473,36 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public record ProjectedAntijoin(List<DBSPSimpleOperator> operators, boolean replacesReader) {}
+
+    public static ProjectedAntijoin projectAntijoin(DBSPCompiler compiler, DBSPBinaryOperator join,
+                                                     DBSPUnaryOperator reader, int width) {
+        String pass = "OptimizeProjections/Antijoin";
+        var request = expressionSite(join.getFunctionNode());
+        request.put("join", join.getClass().getSimpleName());
+        request.putArray("ports").add(join.left().outputNumber).add(join.right().outputNumber);
+        request.put("indexed", reader instanceof DBSPMapIndexOperator);
+        request.put("width", width);
+        var function = reader.getClosureFunction();
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request),
+                    join.left().outputType(), join.right().outputType(), function);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            Utilities.enforce(!reply.value.isNull(), () -> "splitClosure cannot decompose closure " + function);
+            var operators = decodeOperatorFragment(reply,
+                    op -> op instanceof DBSPBinaryOperator ? join.getRelNode() : reader.getRelNode(),
+                    join.left().node(), join.right().node());
+            for (var op : operators)
+                if (op instanceof DBSPBinaryOperator)
+                    op.copyAnnotations(join);
+            reportWarnings(compiler, reply.value.required("warnings"));
+            return new ProjectedAntijoin(operators, reply.value.required("replaces_reader").booleanValue());
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode antijoin projection", error);
+        }
+    }
+
     public static List<DBSPSimpleOperator> pushProjection(DBSPCompiler compiler,
             DBSPUnaryOperator reader, DBSPSimpleOperator producer) {
         String pass = "OptimizeProjections/PushThrough";

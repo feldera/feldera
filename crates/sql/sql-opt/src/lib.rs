@@ -9,7 +9,7 @@ mod aggregate_fold;
 pub use aggregate_fold::lower_aggregate_fold;
 mod aggregate_zero;
 mod antijoin_projection;
-pub use antijoin_projection::{antijoin_projection, split_antijoin_projection};
+pub use antijoin_projection::{AntijoinReader, AntijoinRewrite, antijoin_projection, split_antijoin_projection};
 mod append_only;
 mod pipeline;
 pub use pipeline::{optimizer_order, OptimizerStep, PipelineOptions};

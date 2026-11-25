@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetai
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
@@ -1144,6 +1145,80 @@ public class ProjectionCompositionTests {
         Assert.assertTrue(EquivalenceContext.equiv(right, actualRight));
         Assert.assertSame(key, actualLeft.body.field(0).type);
         Assert.assertEquals(next + 2, DBSPVariablePath.nextGeneratedName());
+    }
+
+    @Test public void antijoinProjectionPreservesTheInputMapsWhenTheReaderStays() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var site = CalciteEmptyRel.INSTANCE;
+        var key = b.tup(b.i32());
+        var value = b.tup(b.i32(), b.i32());
+        var stream = new DBSPTypeIndexedZSet(CalciteObject.EMPTY, key, value);
+        var decisions = new ArrayList<Boolean>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) { }
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) { }
+            @Override public void nativeDecision(String pass, boolean answered) {
+                if (pass.equals("OptimizeProjections/Antijoin"))
+                    decisions.add(answered);
+            }
+        };
+        for (boolean delta : List.of(false, true)) {
+            var constant = new DBSPIndexedZSetExpression(CalciteObject.EMPTY, stream);
+            var source = delta ? new DBSPIncrementalConstantOperator(site, constant)
+                    : new DBSPConstantOperator(site, constant);
+            var port = source.outputPort();
+            var join = delta ? new DBSPAntiJoinOperator(site, port, port)
+                    : new DBSPStreamAntiJoinOperator(site, port, port);
+            var pair = stream.getKVRefType().var();
+            var left = pair.field(1).deref();
+            var narrow = b.tuple(left.field(0));
+            var swap = b.tuple(left.field(1), left.field(0));
+            var indexed = new DBSPRawTupleExpression(b.tuple(pair.field(0).deref().field(0)), narrow);
+            for (var body : List.of(narrow, indexed, swap)) {
+                DBSPUnaryOperator reader = body == indexed
+                        ? new DBSPMapIndexOperator(site, body.closure(pair), join.outputPort())
+                        : new DBSPMapOperator(site, body.closure(pair), join.outputPort());
+                var circuit = new DBSPCircuit(compiler.metadata, delta);
+                circuit.addOperator(source);
+                circuit.addOperator(join);
+                circuit.addOperator(reader);
+                var graph = new Graph(compiler);
+                graph.apply(circuit);
+                DBSPCircuit direct = null;
+                long directNames = 0;
+                for (boolean hybrid : List.of(false, true)) {
+                    compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+                    var pass = new OptimizeProjections(compiler, true, graph.getGraphs(), new AnalyzedSet<>());
+                    long before = DBSPVariablePath.nextGeneratedName();
+                    var result = pass.apply(circuit);
+                    long names = DBSPVariablePath.nextGeneratedName() - before;
+                    Assert.assertEquals(body == swap, reader == result.allOperators.getLast());
+                    if (!hybrid) {
+                        direct = result;
+                        directNames = names;
+                        continue;
+                    }
+                    Assert.assertEquals(directNames, names);
+                    Assert.assertEquals(direct.allOperators.size(), result.allOperators.size());
+                    for (int i = 2; i < result.allOperators.size(); i++) {
+                        var expected = direct.allOperators.get(i).to(DBSPSimpleOperator.class);
+                        var actual = result.allOperators.get(i).to(DBSPSimpleOperator.class);
+                        Assert.assertEquals(expected.getClass(), actual.getClass());
+                        Assert.assertSame(expected.getRelNode(), actual.getRelNode());
+                        Assert.assertTrue(expected.outputType.sameType(actual.outputType));
+                        if (expected.function != null)
+                            Assert.assertTrue(EquivalenceContext.equiv(expected.function, actual.getFunction()));
+                        var annotation = expected.annotations.first(IsProjection.class);
+                        if (annotation != null)
+                            Assert.assertEquals(annotation.outputSize, actual.annotations.first(IsProjection.class).outputSize);
+                        for (int j = 0; j < expected.inputs.size(); j++)
+                            Assert.assertEquals(direct.allOperators.indexOf(expected.inputs.get(j).node()),
+                                    result.allOperators.indexOf(actual.inputs.get(j).node()));
+                    }
+                }
+            }
+        }
+        Assert.assertEquals(List.of(true, true, true, true, true, true), decisions);
     }
 
     @Test public void splitAnIndexedProjectionAtTheAntijoin() {

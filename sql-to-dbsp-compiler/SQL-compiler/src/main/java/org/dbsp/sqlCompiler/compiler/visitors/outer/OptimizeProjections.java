@@ -213,6 +213,18 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         return ProjectionRule.KEEP;
     }
 
+    private boolean installProjectedAntijoin(DBSPBinaryOperator join, DBSPUnaryOperator reader, int width) {
+        var result = RustCircuitPass.projectAntijoin(this.compiler, join, reader, width);
+        var operators = result.operators();
+        if (!result.replacesReader()) {
+            operators.forEach(this::addOperator);
+            return false;
+        }
+        operators.subList(0, operators.size() - 1).forEach(this::addOperator);
+        this.map(reader, operators.getLast());
+        return true;
+    }
+
     private void pushThrough(DBSPUnaryOperator reader, DBSPSimpleOperator producer) {
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
             var operators = RustCircuitPass.pushProjection(this.compiler, reader, producer);
@@ -340,6 +352,11 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                         .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
                         .newline();
                 DBSPBinaryOperator join = source.node().to(DBSPBinaryOperator.class);
+                if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                    if (!this.installProjectedAntijoin(join, operator, size))
+                        super.postorder(operator);
+                    return;
+                }
                 OutputPort left = join.left();
                 OutputPort right = join.right();
 
@@ -777,6 +794,11 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     .newline();
             DBSPBinaryOperator join = source.node().to(DBSPBinaryOperator.class);
             if (this.isProjection(operator, false) && inputFanout == 1) {
+                if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                    if (!this.installProjectedAntijoin(join, operator, size))
+                        super.postorder(operator);
+                    return;
+                }
                 OutputPort left = join.left();
                 OutputPort right = join.right();
 
