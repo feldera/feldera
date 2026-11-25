@@ -3585,6 +3585,27 @@ public final class RustCircuitPass implements CircuitTransform {
         this.reportUnusedSources(circuit, pruning.required("unused_sources"));
     }
 
+    @Nullable
+    static DBSPSimpleOperator sharedProjection(DBSPCompiler compiler, boolean indexed, CalciteRelNode origin,
+            DBSPClosureExpression closure, OutputPort input, DBSPType widthType, @Nullable DBSPType original) {
+        String pass = "SharedProjections/Operator";
+        var request = expressionSite(origin);
+        request.put("indexed", indexed);
+        request.put("port", input.outputNumber);
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request), closure, widthType, original);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            if (reply.value.isNull())
+                return null;
+            var operators = decodeOperatorFragment(reply, op -> origin, input.node());
+            Utilities.enforce(operators.size() == 1);
+            return operators.getFirst();
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode shared projection", error);
+        }
+    }
+
     private DBSPCircuit replaceSharedProjections(DBSPCircuit circuit, FindCommonProjections analysis)
             throws IOException {
         if (analysis.outputProjection.isEmpty())

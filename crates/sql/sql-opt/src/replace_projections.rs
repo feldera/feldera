@@ -99,6 +99,57 @@ pub(crate) fn projected_type(
     }
 }
 
+/// A shared projection records the width of its input before it is optimized again.
+pub struct SharedProjection {
+    kind: Op,
+    function: NodeId,
+    output: TypeId,
+    width: usize,
+}
+
+impl SharedProjection {
+    pub fn new(
+        edit: &mut CircuitEditor,
+        kind: Op,
+        function: NodeId,
+        width_type: TypeId,
+        widths: &mut BTreeMap<NodeId, usize>,
+    ) -> Result<Self, Error> {
+        let width = type_width(edit.circuit(), width_type.into(), widths)?;
+        let output = projected_type(edit, function, kind)?;
+        Ok(Self {
+            kind,
+            function,
+            output,
+            width,
+        })
+    }
+
+    fn annotate(&self, edit: &mut CircuitEditor, id: NodeId) -> Result<(), Error> {
+        edit.annotate(id, json!({"class":"IsProjection","outputSize":self.width}))
+    }
+
+    pub fn append(
+        &self,
+        edit: &mut CircuitEditor,
+        body: NodeId,
+        input: OutputPort,
+        origin: Option<Value>,
+    ) -> Result<NodeId, Error> {
+        let mut fields = vec![
+            ("outputType", Field::Reference(self.output.into())),
+            ("function", Field::Reference(self.function)),
+        ];
+        if let Some(origin) = origin {
+            fields.push(("provenance", Field::Data(origin)));
+        }
+        let id =
+            edit.append_operator(body, edit.circuit().root_id(), self.kind, &[input], fields)?;
+        self.annotate(edit, id)?;
+        Ok(id)
+    }
+}
+
 struct Replacements {
     outputs: HashMap<NodeId, NodeId>,
     inputs: HashMap<NodeId, NodeId>,
@@ -126,12 +177,11 @@ impl Replacements {
         if edit.same_type(input_type(edit, before)?, ty)? {
             return Ok(false);
         }
-        let size = type_width(edit.circuit(), ty.into(), &mut self.widths, 0)?;
-        let output = projected_type(edit, function, kind)?;
+        let projection = SharedProjection::new(edit, kind, function, ty, &mut self.widths)?;
         edit.set_operator_field(id, "function", Field::Reference(function))?;
-        edit.set_operator_field(id, "outputType", Field::Reference(output.into()))?;
+        edit.set_operator_field(id, "outputType", Field::Reference(projection.output.into()))?;
         edit.clear_annotations(id)?;
-        edit.annotate(id, json!({"class":"IsProjection","outputSize":size}))?;
+        projection.annotate(edit, id)?;
         Ok(true)
     }
 
@@ -146,46 +196,35 @@ impl Replacements {
             return Ok(());
         };
         let ty = edit.node(id)?.edge("outputType")?;
-        let size = type_width(edit.circuit(), ty, &mut self.widths, 0)?;
+        let ty = edit.type_id(ty)?;
         let result = edit.node(function)?.edge("body")?;
         let result = edit.expression_type(edit.expression(result)?)?;
         let kind =
             ProjectionMap::producer(edit.type_kind(result)? == TypeKind::RawTuple).operator();
-        let output = projected_type(edit, function, kind)?;
-        // Java decodes the output type first. The closure can share its tuple type.
-        let mut fields = vec![
-            ("outputType", Field::Reference(output.into())),
-            ("function", Field::Reference(function)),
-        ];
-        if edit.node(id)?.field("provenance").is_some() {
+        let projection = SharedProjection::new(edit, kind, function, ty, &mut self.widths)?;
+        let origin = if edit.node(id)?.field("provenance").is_some() {
             let origin_id = self
                 .origin
                 .get("id")
                 .or_else(|| self.origin.get("ref"))
                 .and_then(Value::as_u64)
                 .ok_or_else(|| Error::new("missing shared projection origin"))?;
-            fields.push((
-                "provenance",
-                Field::Data(std::mem::replace(
-                    &mut self.origin,
-                    json!({"ref":origin_id}),
-                )),
-            ));
-        }
+            Some(std::mem::replace(
+                &mut self.origin,
+                json!({"ref":origin_id}),
+            ))
+        } else {
+            None
+        };
         let port = OutputPort {
             operator: id,
             number: 0,
         };
         // The inserted projection has an empty relational origin, with no inherited source position.
-        let projection =
-            edit.append_operator(body, edit.circuit().root_id(), kind, &[port], fields)?;
+        let projection = projection.append(edit, body, port, origin)?;
         if let Some(following) = following {
             edit.place_before(body, projection, following)?;
         }
-        edit.annotate(
-            projection,
-            json!({"class":"IsProjection","outputSize":size}),
-        )?;
         self.narrowed.insert(
             id,
             OutputPort {

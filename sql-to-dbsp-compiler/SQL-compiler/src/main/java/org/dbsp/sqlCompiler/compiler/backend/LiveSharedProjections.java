@@ -6,11 +6,11 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
-import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.Map;
+import java.util.Objects;
 
 /** Materialize Rust-selected projections with the closures computed by the preceding analysis. */
 final class LiveSharedProjections extends CircuitCloneVisitor {
@@ -40,12 +40,14 @@ final class LiveSharedProjections extends CircuitCloneVisitor {
         if (edit != null && edit.readerIfNarrowed() != null) {
             var original = operator.inputs.get(0);
             var source = this.mapped(original);
-            if (!source.outputType().sameType(original.outputType())) {
-                this.visited.add(operator);
-                var closure = this.analysis.inputProjection.get(operator);
-                this.map(operator, ReplaceCommonProjections.project(edit.readerIfNarrowed() == ProjectionMap.MapIndex, operator.getRelNode(), closure,
-                        source, source.outputType().getToplevelFieldCount()));
-                return;
+            if (source.outputType() != original.outputType()) {
+                var replacement = RustCircuitPass.sharedProjection(this.compiler, edit.readerIfNarrowed() == ProjectionMap.MapIndex,
+                        operator.getRelNode(), this.analysis.inputProjection.get(operator), source, source.outputType(), original.outputType());
+                if (replacement != null) {
+                    this.visited.add(operator);
+                    this.map(operator, replacement);
+                    return;
+                }
             }
         }
         if (edit == null || edit.afterProducer() == null) {
@@ -56,7 +58,8 @@ final class LiveSharedProjections extends CircuitCloneVisitor {
         var producer = operator.withInputs(Linq.map(operator.inputs, this::mapped), false).to(DBSPSimpleOperator.class);
         this.addOperator(producer);
         var closure = this.analysis.outputProjection.get(operator);
-        this.map(operator, ReplaceCommonProjections.project(edit.afterProducer() == ProjectionMap.MapIndex, CalciteEmptyRel.INSTANCE, closure,
-                producer.outputPort(), operator.outputType().getToplevelFieldCount()));
+        var projection = RustCircuitPass.sharedProjection(this.compiler, edit.afterProducer() == ProjectionMap.MapIndex,
+                CalciteEmptyRel.INSTANCE, closure, producer.outputPort(), operator.outputType(), null);
+        this.map(operator, Objects.requireNonNull(projection));
     }
 }

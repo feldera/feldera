@@ -14,6 +14,7 @@ mod repeat;
 mod waterlines;
 mod delta_expansion;
 mod shared_indexes;
+mod shared_projection;
 mod live_equality;
 mod star_join;
 mod temporal;
@@ -1446,6 +1447,7 @@ fn transform(
                 .map(feldera_sql_opt::ProjectionRules::for_producer).unwrap_or_default();
             return Ok(serde_json::to_value(rules)?);
         }
+        "SharedProjections/Operator" => return shared_projection::operator(input, state, next),
         "TrimFilters/Operators" => return trim_filter::operators(input, state, next),
         "RemoveUnusedFields/NarrowJoinOperators" => return narrowed_join::operators(input, state, next),
         "RemoveUnusedFields/JoinInput" => return project_join_input(input, state, next),

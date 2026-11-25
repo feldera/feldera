@@ -63,7 +63,7 @@ mod comparators;
 mod field_comparator;
 pub use field_comparator::{project_topk_comparators, topk_compared_fields};
 mod replace_projections;
-pub use replace_projections::{projection_edits, replace_common_projections, ProjectionClosures};
+pub use replace_projections::{projection_edits, replace_common_projections, ProjectionClosures, SharedProjection};
 mod row_fields;
 mod row_projection;
 pub use row_projection::project_used_fields;

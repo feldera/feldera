@@ -4,7 +4,7 @@ use feldera_sql_ir::{
     BodyOrder, Circuit, Error, Field, InnerKind, NodeId, OperatorKind, OutputPort, TypeKind,
 };
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -159,7 +159,7 @@ fn port_width(
             .get(port.number)
             .and_then(Field::node_id)
             .ok_or_else(|| Error::new("missing projected output type"))?;
-        return type_width(circuit, ty, widths, 0);
+        return type_width(circuit, ty, widths);
     }
     let ty = match port.number {
         0 => op.edge("outputType")?,
@@ -174,44 +174,88 @@ fn port_width(
         2 if op.operator_kind() == Some(OperatorKind::InputMapWithWaterline) => return Ok(1),
         _ => return Err(Error::new("invalid statistics output port")),
     };
-    type_width(circuit, ty, widths, 0)
+    type_width(circuit, ty, widths)
 }
 
 pub(super) fn type_width(
     circuit: &Circuit,
-    id: NodeId,
+    root: NodeId,
     widths: &mut BTreeMap<NodeId, usize>,
-    depth: usize,
 ) -> Result<usize, Error> {
-    if let Some(&width) = widths.get(&id) {
-        return Ok(width);
+    enum Visit {
+        Type(NodeId),
+        Sum(NodeId, Vec<NodeId>),
     }
-    if depth > 128 {
-        return Err(Error::new("row type exceeds circuit nesting limit"));
+    let mut pending = vec![Visit::Type(root)];
+    let mut active = HashSet::new();
+    while let Some(visit) = pending.pop() {
+        let id = match visit {
+            Visit::Type(id) if widths.contains_key(&id) => continue,
+            Visit::Type(id) => id,
+            Visit::Sum(id, children) => {
+                let width = children.into_iter().try_fold(0usize, |sum, child| {
+                    sum.checked_add(widths[&child])
+                        .ok_or_else(|| Error::new("row width exceeds platform size"))
+                })?;
+                widths.insert(id, width);
+                active.remove(&id);
+                continue;
+            }
+        };
+        let node = circuit
+            .node(id)
+            .ok_or_else(|| Error::new("missing row type"))?;
+        let Some(InnerKind::Type(kind)) = node.inner_kind() else {
+            return Err(Error::new("expected row type"));
+        };
+        let children = match kind {
+            TypeKind::RawTuple => node.edges("tupFields")?,
+            TypeKind::IndexedZSet => vec![node.edge("keyType")?, node.edge("elementType")?],
+            TypeKind::ZSet | TypeKind::Stream => vec![node.edge("elementType")?],
+            TypeKind::Function => vec![node.edge("resultType")?],
+            TypeKind::Ref => vec![node.edge("type")?],
+            TypeKind::Any => return Err(Error::new("ANY has no tuple width")),
+            _ => {
+                let width = match kind {
+                    TypeKind::Tuple => node.edges("tupFields")?.len(),
+                    TypeKind::Struct => node.edges("fields")?.len(),
+                    _ => 1,
+                };
+                widths.insert(id, width);
+                continue;
+            }
+        };
+        if !active.insert(id) {
+            return Err(Error::new("cycle in row width"));
+        }
+        let mark = pending.len();
+        pending.extend(children.iter().copied().rev().map(Visit::Type));
+        pending.insert(mark, Visit::Sum(id, children));
     }
-    let node = circuit
-        .node(id)
-        .ok_or_else(|| Error::new("missing row type"))?;
-    let Some(InnerKind::Type(kind)) = node.inner_kind() else {
-        return Err(Error::new("expected row type"));
-    };
-    let children = match kind {
-        TypeKind::RawTuple => node.edges("tupFields")?,
-        TypeKind::IndexedZSet => vec![node.edge("keyType")?, node.edge("elementType")?],
-        TypeKind::ZSet | TypeKind::Stream => vec![node.edge("elementType")?],
-        TypeKind::Function => vec![node.edge("resultType")?],
-        TypeKind::Ref => vec![node.edge("type")?],
-        TypeKind::Tuple => return Ok(node.edges("tupFields")?.len()),
-        TypeKind::Struct => return Ok(node.edges("fields")?.len()),
-        TypeKind::Any => return Err(Error::new("ANY has no tuple width")),
-        _ => return Ok(1),
-    };
-    let mut width = 0usize;
-    for child in children {
-        width = width
-            .checked_add(type_width(circuit, child, widths, depth + 1)?)
-            .ok_or_else(|| Error::new("row width exceeds platform size"))?;
+    Ok(widths[&root])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_sql_ir::CircuitEditor;
+    use serde_json::json;
+
+    #[test]
+    fn widths_follow_deep_wrappers_and_count_shared_fields_twice() -> Result<(), Error> {
+        let mut edit = CircuitEditor::new(Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
+        }))?);
+        let site = edit.circuit().root_id();
+        let mut ty = edit.bool_type(site, false)?;
+        for _ in 0..256 {
+            ty = edit.reference_type(ty)?;
+        }
+        let pair = edit.tuple_type(site, true, [ty.into(), ty.into()])?;
+        assert_eq!(
+            type_width(edit.circuit(), pair.into(), &mut BTreeMap::new())?,
+            2
+        );
+        Ok(())
     }
-    widths.insert(id, width);
-    Ok(width)
 }

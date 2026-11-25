@@ -39,6 +39,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjectionVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjections;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
@@ -410,6 +412,62 @@ public class ProjectionCompositionTests {
         var hybrid = Assert.assertThrows(InternalCompilerError.class,
                 () -> RustCircuitPass.composeProjection(compiler, before, after));
         Assert.assertEquals(direct.getMessage(), hybrid.getMessage());
+    }
+
+    @Test public void narrowBothReadersOfASharedProjection() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        compiler.submitStatementsForCompilation("CREATE TABLE t(a INT, b BIGINT, c VARCHAR);" +
+                "CREATE VIEW v AS SELECT * FROM t;");
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var input = source.getOutput(0);
+        var row = input.getOutputRowType().ref().var();
+        var reader = new DBSPMapOperator(source.getRelNode(), b.tuple(row.deref().field(2)).closure(row), input);
+        var index = new DBSPMapIndexOperator(source.getRelNode(), new DBSPRawTupleExpression(
+                b.tuple(row.deref().field(0)), b.tuple()).closure(row), input);
+        var circuit = new DBSPCircuit(compiler.metadata, false);
+        circuit.addOperator(source);
+        circuit.addOperator(reader);
+        circuit.addOperator(index);
+        var graph = new Graph(compiler);
+        graph.apply(circuit);
+        var decisions = new ArrayList<Boolean>();
+        compiler.stateObserver = new DBSPCompiler.StateObserver() {
+            @Override public void before(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit input) {}
+            @Override public void after(String parent, int index, int iteration, CircuitTransform pass, DBSPCircuit output, boolean completed) {}
+            @Override public void nativeDecision(String pass, boolean answered) {
+                if (pass.equals("SharedProjections/Operator"))
+                    decisions.add(answered);
+            }
+        };
+        DBSPCircuit direct = null;
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var analysis = new FindCommonProjections(compiler, graph.getGraphs());
+            var snapshots = new OptimizerSnapshots(compiler);
+            (hybrid ? new RustCircuitPass(compiler, analysis, snapshots) : analysis).apply(circuit);
+            var replace = new ReplaceCommonProjections(compiler, analysis);
+            var result = (hybrid ? new RustCircuitPass(compiler, replace, snapshots) : replace).apply(circuit);
+            Assert.assertEquals(4, result.allOperators.size());
+            var shared = result.allOperators.get(1).to(DBSPMapOperator.class);
+            Assert.assertEquals(input, shared.input());
+            Assert.assertSame(CalciteEmptyRel.INSTANCE, shared.getRelNode());
+            Assert.assertEquals(3, shared.annotations.first(IsProjection.class).outputSize);
+            for (int i = 2; i < 4; i++) {
+                var rewritten = result.allOperators.get(i).to(DBSPUnaryOperator.class);
+                Assert.assertEquals(shared.outputPort(), rewritten.input());
+                Assert.assertEquals(circuit.allOperators.get(i - 1).getClass(), rewritten.getClass());
+                Assert.assertSame(source.getRelNode(), rewritten.getRelNode());
+                Assert.assertEquals(2, rewritten.annotations.first(IsProjection.class).outputSize);
+            }
+            if (hybrid) {
+                for (int i = 1; i < 4; i++)
+                    Assert.assertTrue(EquivalenceContext.equiv(direct.allOperators.get(i).to(DBSPSimpleOperator.class).getFunction(),
+                            result.allOperators.get(i).to(DBSPSimpleOperator.class).getFunction()));
+            } else {
+                direct = result;
+            }
+        }
+        Assert.assertEquals(List.of(true, true, true), decisions);
     }
 
     private DBSPCircuit trimFilter(DBSPSimpleOperator source, DBSPFilterOperator filter,
