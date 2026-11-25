@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
@@ -27,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -36,7 +38,9 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Assume;
@@ -193,6 +197,39 @@ public class LineageTests extends BaseSQLTests {
         circuit.addOperator(keyed);
         var message = assertLineageFailure(compiler, circuit, InternalCompilerError.class, List.of("[ t.x > 0 ]"));
         Assert.assertEquals("Assertion failed", message);
+    }
+
+    @Test
+    public void hopReportsTheSourceOfARowWithoutTupleLineage() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustLineage"));
+        var compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t(x INT NOT NULL, r ROW(ts TIMESTAMP));
+                CREATE VIEW v AS SELECT * FROM t;
+                """);
+        var source = compiler.getFinalCircuit(true).getInput(new ProgramIdentifier("t", false)).asOperator();
+        var site = CalciteEmptyRel.INSTANCE;
+        var row = new DBSPVariablePath("row", source.getOutput(0).getOutputRowType().ref());
+        var positive = new DBSPBinaryExpression(site, DBSPTypeBool.INSTANCE, DBSPOpcode.GT,
+                row.deref().field(0), new DBSPI32Literal(0));
+        var filter = new DBSPFilterOperator(site, positive.closure(row), source.getOutput(0));
+        var nested = row.deref().field(1);
+        var rowType = nested.getType().to(DBSPTypeTuple.class);
+        var timestamp = rowType.getFieldType(0);
+        var hopType = new DBSPTypeZSet(new DBSPTypeTuple(timestamp, timestamp, timestamp));
+        var interval = DBSPShortIntervalLiteral.fromMicroseconds(DBSPTypeShortInterval.Units.SECONDS, 1000000, false);
+
+        for (var body : List.of(nested, DBSPTupleExpression.none(rowType))) {
+            var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+            var map = new DBSPMapOperator(site, body.closure(row), filter.outputPort());
+            circuit.addOperator(source);
+            circuit.addOperator(filter);
+            circuit.addOperator(map);
+            circuit.addOperator(new DBSPHopOperator(site, 0, interval, interval, interval, hopType, map.outputPort()));
+            String message = assertLineageFailure(compiler, circuit, RuntimeException.class, List.of("[ t.x > 0 ]"));
+            Assert.assertTrue(message, message.endsWith(" is not an instance of " + Lineage.Tuple.class));
+            Assert.assertTrue(message, body == nested ? message.startsWith("[t.r]") : message.startsWith("Constant["));
+        }
     }
 
     @Test

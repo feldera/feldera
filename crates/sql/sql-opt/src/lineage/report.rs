@@ -1,4 +1,5 @@
 //! Trace copied values to SQL table columns for the correlated-column report.
+use super::diagnostic::ExpectedSource;
 use super::{AnalysisError, Interpreter, LineageDiagnostic, Merge, Source};
 use feldera_sql_expr::FlatmapColumns;
 use feldera_sql_ir::{
@@ -8,7 +9,7 @@ use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 
-#[derive(Clone, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct TableColumn {
     table: String,
     column: String,
@@ -90,7 +91,9 @@ impl<'a> Report<'a> {
         self.outputs
             .get(&input)
             .cloned()
-            .ok_or(AnalysisError::Diagnostic(LineageDiagnostic::MissingInput(input)))
+            .ok_or(AnalysisError::Diagnostic(LineageDiagnostic::MissingInput(
+                input,
+            )))
     }
 
     fn borrow(&self, port: OutputPort) -> Result<Source, AnalysisError<'a>> {
@@ -105,10 +108,10 @@ impl<'a> Report<'a> {
             return Ok(Source::Ref(Rc::new(value)));
         }
         let Source::Tuple(pair) = value else {
-            return Err(AnalysisError::Reference("expected indexed input"));
+            return Err(AnalysisError::Diagnostic(LineageDiagnostic::ShapeAssertion));
         };
         let [key, value] = pair.as_ref() else {
-            return Err(AnalysisError::Reference("expected indexed pair"));
+            return Err(AnalysisError::Diagnostic(LineageDiagnostic::ShapeAssertion));
         };
         Ok(Source::Tuple(
             [
@@ -119,15 +122,24 @@ impl<'a> Report<'a> {
         ))
     }
 
-    fn closure(&mut self, function: NodeId, args: &[Source]) -> Result<Source, AnalysisError<'a>> {
-        let closure = self.edit.node(function)?;
-        let parameters = closure.edges("parameters")?;
-        if parameters.len() != args.len() {
-            return Err(AnalysisError::Reference(
-                "unexpected lineage parameter count",
-            ));
-        }
-        let declarations = parameters.into_iter().zip(args.iter().cloned()).collect();
+    fn unary_closure(
+        &mut self,
+        function: NodeId,
+        input: OutputPort,
+    ) -> Result<Source, AnalysisError<'a>> {
+        let input = self.borrow(input)?;
+        let parameters = self.edit.node(function)?.edges("parameters")?;
+        let [parameter] = parameters.as_slice() else {
+            return Err(AnalysisError::Diagnostic(LineageDiagnostic::ShapeAssertion));
+        };
+        self.closure(function, HashMap::from([(*parameter, input)]))
+    }
+
+    fn closure(
+        &mut self,
+        function: NodeId,
+        declarations: super::DeclarationValues,
+    ) -> Result<Source, AnalysisError<'a>> {
         let mut interpreter = Interpreter::new(self.edit, false);
         interpreter.track_constants = true;
         interpreter.comparisons = Some(Vec::new());
@@ -150,16 +162,30 @@ impl<'a> Report<'a> {
                 Source::Tuple(pair) if pair.len() == 2 => {
                     Ok((Some(pair[0].clone()), pair[1].clone()))
                 }
-                _ => Err(AnalysisError::Reference("expected indexed join input")),
+                _ => Err(source.wrong_cast(ExpectedSource::Tuple)),
             }
         }
-        let (lk, left) = split(self.borrow(left)?)?;
-        let (rk, right) = split(self.borrow(right)?)?;
+        let left = self.borrow(left)?;
+        let right = self.borrow(right)?;
+        let (lk, left) = split(left)?;
+        let (rk, right) = split(right)?;
         let key = match (lk, rk) {
             (Some(l), Some(r)) => l.combine(&r, self.edit, Merge::JoinSources)?,
             (l, r) => l.or(r).unwrap_or_default(),
         };
-        let result = self.closure(op.edge("function")?, &[key.clone(), left, right])?;
+        let function = op.edge("function")?;
+        let parameters = self.edit.node(function)?.edges("parameters")?;
+        // Join closures may have extra parameters. Only the first three have lineage.
+        if parameters.len() < 3 {
+            return Err(AnalysisError::Diagnostic(
+                LineageDiagnostic::JoinParameterIndex(parameters.len()),
+            ));
+        }
+        let bindings = parameters
+            .into_iter()
+            .zip([key.clone(), left, right])
+            .collect();
+        let result = self.closure(function, bindings)?;
         self.set(id, result)?;
         if let Source::Ref(inner) = key {
             if let Source::Tuple(fields) = inner.as_ref() {
@@ -183,23 +209,27 @@ impl<'a> Report<'a> {
             return Ok(Source::Unknown);
         }
         let Source::Ref(input) = source else {
-            return Err(AnalysisError::Reference("expected flatmap row"));
+            return Err(source.wrong_cast(ExpectedSource::Ref));
         };
         let Source::Tuple(row) = input.as_ref() else {
-            return Err(AnalysisError::Reference("expected flatmap columns"));
+            return Err(input.wrong_cast(ExpectedSource::Tuple));
         };
         let columns = FlatmapColumns::read(function)?;
-        let mut result = Vec::new();
-        for i in columns.output {
-            let value = match columns.passthrough.get(i) {
-                Some(&i) => row
-                    .get(i)
-                    .ok_or_else(|| Error::new("flatmap field outside its input row"))?
-                    .clone(),
-                None => Source::Unknown,
-            };
-            result.push(value);
+        // Read every passthrough field before the output shuffle discards or repeats any.
+        let mut fields = Vec::with_capacity(columns.passthrough.len());
+        for index in columns.passthrough {
+            fields.push(row.get(index).ok_or(AnalysisError::Diagnostic(
+                LineageDiagnostic::FieldIndex {
+                    index,
+                    size: row.len(),
+                },
+            ))?);
         }
+        let result: Vec<_> = columns
+            .output
+            .into_iter()
+            .map(|i| fields.get(i).copied().cloned().unwrap_or_default())
+            .collect();
         Ok(if result.iter().all(|s| matches!(s, Source::Unknown)) {
             Source::Unknown
         } else {
@@ -226,13 +256,13 @@ impl<'a> Report<'a> {
             Op::Map | Op::MapIndex | Op::Deindex => {
                 let function = node.edge("function")?;
                 if self.edit.node(function)?.class() == "DBSPClosureExpression" {
-                    self.closure(function, &[self.borrow(input(0)?)?])?
+                    self.unary_closure(function, input(0)?)?
                 } else {
                     Source::Unknown
                 }
             }
             Op::Filter => {
-                self.closure(node.edge("function")?, &[self.borrow(input(0)?)?])?;
+                self.unary_closure(node.edge("function")?, input(0)?)?;
                 self.read(input(0)?)?
             }
             Op::Negate
@@ -270,7 +300,7 @@ impl<'a> Report<'a> {
                     fields.extend([Source::Unknown, Source::Unknown]);
                     Source::Tuple(fields.into())
                 }
-                _ => return Err(AnalysisError::Reference("expected a tuple for HOP")),
+                source => return Err(source.wrong_cast(ExpectedSource::Tuple)),
             },
             Op::StreamJoin
             | Op::StreamJoinIndex
@@ -300,7 +330,9 @@ impl<'a> Report<'a> {
             };
             let width = match self.edit.type_kind(self.edit.type_id(row)?)? {
                 TypeKind::IndexedZSet if row == output => Some(2),
-                TypeKind::Tuple | TypeKind::RawTuple => Some(self.edit.node(row)?.edges("tupFields")?.len()),
+                TypeKind::Tuple | TypeKind::RawTuple => {
+                    Some(self.edit.node(row)?.edges("tupFields")?.len())
+                }
                 _ => None,
             };
             if width != Some(fields.len()) {
@@ -327,7 +359,9 @@ pub struct LineageReport<'a> {
     pub diagnostic: Option<LineageDiagnostic<'a>>,
 }
 
-pub fn lineage_report(edit: &CircuitEditor) -> Result<Option<LineageReport<'_>>, Error> {
+pub fn checked_lineage_report(
+    edit: &CircuitEditor,
+) -> Result<LineageReport<'_>, AnalysisError<'_>> {
     let mut report = Report {
         edit,
         outputs: HashMap::new(),
@@ -336,20 +370,28 @@ pub fn lineage_report(edit: &CircuitEditor) -> Result<Option<LineageReport<'_>>,
     for id in edit.circuit().operator_order(BodyOrder::Postorder)? {
         match report.visit(id) {
             Ok(()) => {}
-            Err(AnalysisError::Reference(_)) => return Ok(None),
             Err(AnalysisError::Diagnostic(diagnostic)) => {
-                return Ok(Some(LineageReport {
+                return Ok(LineageReport {
                     findings: report.findings,
                     diagnostic: Some(diagnostic),
-                }));
+                });
             }
-            Err(AnalysisError::InvalidIr(err)) => return Err(err),
+            Err(error) => return Err(error),
         }
     }
-    Ok(Some(LineageReport {
+    Ok(LineageReport {
         findings: report.findings,
         diagnostic: None,
-    }))
+    })
+}
+
+/// Detached snapshots may lack the JDK conversion used to compare timestamp literals.
+pub fn lineage_report(edit: &CircuitEditor) -> Result<Option<LineageReport<'_>>, Error> {
+    match checked_lineage_report(edit) {
+        Ok(report) => Ok(Some(report)),
+        Err(AnalysisError::Reference(_)) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }
 
 pub fn correlated_columns(edit: &CircuitEditor) -> Result<Option<Vec<Finding>>, Error> {

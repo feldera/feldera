@@ -1,5 +1,6 @@
 //! Track which parameter columns a closure copies into its result.
 mod columns;
+mod diagnostic;
 mod equivalence;
 mod evaluate;
 mod report;
@@ -7,7 +8,7 @@ pub use columns::{
     OutputShape, checked_column_copies, checked_fixed_columns, column_copies, fixed_columns,
 };
 pub use equivalence::{checked_equal_computations, equal_computations};
-pub use report::{correlated_columns, lineage_report};
+pub use report::{checked_lineage_report, correlated_columns, lineage_report};
 
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionKind as Expr, InnerKind, Node, NodeId, TypeKind as Ty,
@@ -148,7 +149,10 @@ impl Source {
                         Source::Ref(Rc::new(inner.clone()))
                     }
                 }
-                (Source::Tuple(l), Source::Tuple(r)) if l.len() == r.len() => {
+                (Source::Tuple(l), Source::Tuple(r)) if l.len() != r.len() => {
+                    return Err(AnalysisError::Diagnostic(LineageDiagnostic::ShapeAssertion));
+                }
+                (Source::Tuple(l), Source::Tuple(r)) => {
                     if !expanded {
                         pending.push((a, b, true));
                         pending.extend(l.iter().zip(r.iter()).rev().map(|(l, r)| (l, r, false)));
@@ -189,7 +193,20 @@ pub enum LineageDiagnostic<'a> {
     UnsupportedExpression(NodeId),
     Comparison(crate::ComparisonDiagnostic),
     MissingInput(feldera_sql_ir::OutputPort),
-    OutputWidth { operator: NodeId, fields: usize },
+    OutputWidth {
+        operator: NodeId,
+        fields: usize,
+    },
+    SourceCast {
+        expected: diagnostic::ExpectedSource,
+        values: Vec<diagnostic::ReportValue>,
+    },
+    ShapeAssertion,
+    JoinParameterIndex(usize),
+    FieldIndex {
+        index: usize,
+        size: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -221,11 +238,25 @@ impl From<AnalysisError<'_>> for Error {
         match error {
             AnalysisError::InvalidIr(error) => error,
             AnalysisError::Reference(message) => Error::new(message),
+            AnalysisError::Diagnostic(LineageDiagnostic::SourceCast { expected, .. }) => {
+                Error::new(format!("expected {expected:?} lineage"))
+            }
+            AnalysisError::Diagnostic(LineageDiagnostic::ShapeAssertion) => {
+                Error::new("incompatible lineage shape")
+            }
+            AnalysisError::Diagnostic(LineageDiagnostic::JoinParameterIndex(size)) => {
+                Error::new(format!("join lineage needs three parameters, found {size}"))
+            }
+            AnalysisError::Diagnostic(LineageDiagnostic::FieldIndex { index, size }) => {
+                Error::new(format!("lineage field {index} exceeds tuple width {size}"))
+            }
             AnalysisError::Diagnostic(LineageDiagnostic::MissingInput(port)) => {
                 Error::new(format!("missing lineage for input {port:?}"))
             }
             AnalysisError::Diagnostic(LineageDiagnostic::OutputWidth { operator, fields }) => {
-                Error::new(format!("{fields} lineage fields do not fit the output of {operator:?}"))
+                Error::new(format!(
+                    "{fields} lineage fields do not fit the output of {operator:?}"
+                ))
             }
             AnalysisError::Diagnostic(LineageDiagnostic::Comparison(issue)) => {
                 Error::new(issue.to_string())

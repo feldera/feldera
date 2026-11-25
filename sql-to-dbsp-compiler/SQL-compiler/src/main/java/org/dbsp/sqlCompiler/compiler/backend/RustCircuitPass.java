@@ -4065,7 +4065,53 @@ public final class RustCircuitPass implements CircuitTransform {
         analysis.restore(facts);
     }
 
+    /** Rebuild just the source printed by a failed cast, including its live SQL literals. */
+    private static Lineage.ValueSource lineageDiagnosticSource(ToJsonInnerVisitor writer, JsonNode encoded) {
+        var sources = new ArrayList<Lineage.ValueSource>(encoded.size());
+        for (var entry : encoded) {
+            Lineage.ValueSource source = switch (entry.required("kind").textValue()) {
+                case "unknown" -> Lineage.Unknown.INSTANCE;
+                case "constant" -> {
+                    var nodes = Objects.requireNonNull(writer.liveNodes);
+                    var expr = Utilities.getExists(nodes, entry.required("literal").longValue()).to(DBSPExpression.class);
+                    yield new Lineage.Constant(expr instanceof DBSPBaseTupleExpression tuple && tuple.fields == null
+                            ? expr.getType().none() : expr);
+                }
+                case "columns" -> new Lineage.Atom<>(new Lineage.ColumnSet(MAPPER.convertValue(
+                        entry.required("columns"), new TypeReference<java.util.TreeSet<Lineage.TableColumn>>() {})));
+                case "ref" -> new Lineage.Ref(sources.get(entry.required("value").intValue()));
+                case "tuple" -> {
+                    var fields = new ArrayList<Lineage.ValueSource>();
+                    for (var field : entry.required("fields"))
+                        fields.add(sources.get(field.intValue()));
+                    yield new Lineage.Tuple(fields);
+                }
+                default -> throw new IllegalStateException("Unknown lineage value " + entry);
+            };
+            sources.add(source);
+        }
+        return sources.get(sources.size() - 1);
+    }
+
     private static void reportLineageFailure(ToJsonInnerVisitor writer, JsonNode diagnostic) {
+        if (diagnostic.has("shape_assertion"))
+            Utilities.enforce(false);
+        if (diagnostic.has("join_parameter_count")) {
+            int size = diagnostic.required("join_parameter_count").intValue();
+            throw new ArrayIndexOutOfBoundsException("Index " + size + " out of bounds for length " + size);
+        }
+        if (diagnostic.has("field_index")) {
+            var bounds = diagnostic.required("field_index");
+            Objects.checkIndex(bounds.required("index").intValue(), bounds.required("size").intValue());
+        }
+        if (diagnostic.has("source_cast")) {
+            var source = lineageDiagnosticSource(writer, diagnostic.required("values"));
+            switch (diagnostic.required("source_cast").textValue()) {
+                case "tuple" -> source.to(Lineage.Tuple.class);
+                case "ref" -> source.to(Lineage.Ref.class);
+                default -> throw new IllegalStateException("Unknown lineage cast " + diagnostic);
+            }
+        }
         if (diagnostic.has("unsupported")) {
             var nodes = Objects.requireNonNull(writer.liveNodes);
             Lineage.InnerLineage.rejectUnsupported(
@@ -4087,7 +4133,7 @@ public final class RustCircuitPass implements CircuitTransform {
         var result = this.invoke("Lineage", writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                 initial, EMPTY_CONTEXT);
         if (!answered(this.compiler, "Lineage", result))
-            return report.apply(circuit);
+            throw new IllegalStateException("Missing lineage result for the live optimizer snapshot");
         var findings = result.isArray() ? result : result.required("findings");
         for (var finding : MAPPER.treeToValue(findings, LineageFinding[].class)) {
             var columns = new java.util.TreeSet<>(finding.columns());

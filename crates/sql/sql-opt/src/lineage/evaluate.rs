@@ -200,7 +200,12 @@ impl<'a> Interpreter<'a> {
                     .ok_or_else(|| Error::new("missing field number"))?
                     as usize;
                 match child("expression")? {
-                    Source::Tuple(fields) => fields.get(field).cloned().unwrap_or_default(),
+                    Source::Tuple(fields) => fields.get(field).cloned().ok_or(
+                        AnalysisError::Diagnostic(LineageDiagnostic::FieldIndex {
+                            index: field,
+                            size: fields.len(),
+                        }),
+                    )?,
                     _ => Source::Unknown,
                 }
             }

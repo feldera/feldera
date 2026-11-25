@@ -121,7 +121,7 @@ pub use input_fields::{
 };
 mod integrate;
 mod lineage;
-pub use lineage::{AnalysisError as LineageError, LineageDiagnostic, checked_column_copies, checked_fixed_columns, checked_equal_computations, correlated_columns, lineage_report, column_copies, equal_computations, fixed_columns, Column, OutputShape};
+pub use lineage::{AnalysisError as LineageError, LineageDiagnostic, checked_column_copies, checked_fixed_columns, checked_equal_computations, checked_lineage_report, correlated_columns, lineage_report, column_copies, equal_computations, fixed_columns, Column, OutputShape};
 mod collection_keys;
 pub use collection_keys::{JoinInputs, JoinKeys, KeyColumns, KeyProjection, circuit_keys, filter_keys};
 mod join_filter_map;

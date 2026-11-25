@@ -492,6 +492,10 @@ fn expression_facts_reply(
 fn lineage_diagnostic(issue: feldera_sql_opt::LineageDiagnostic<'_>) -> Value {
     use feldera_sql_opt::LineageDiagnostic;
     match issue {
+        LineageDiagnostic::FieldIndex { index, size } => json!({"field_index": {"index": index, "size": size}}),
+        LineageDiagnostic::ShapeAssertion => json!({"shape_assertion": true}),
+        LineageDiagnostic::SourceCast { expected, values } => json!({"source_cast": expected, "values": values}),
+        LineageDiagnostic::JoinParameterIndex(size) => json!({"join_parameter_count": size}),
         LineageDiagnostic::Binding(binding) => binding_diagnostic(binding),
         LineageDiagnostic::UnsupportedExpression(node) => json!({"unsupported": inner_number(node)}),
         LineageDiagnostic::Comparison(failure) => json!({"comparison": failure}),
@@ -1650,9 +1654,7 @@ fn transform(
     }
     if pass == "Lineage" {
         let edit = feldera_sql_ir::CircuitEditor::new(circuit);
-        let Some(report) = feldera_sql_opt::lineage_report(&edit)? else {
-            return Ok(Value::Null);
-        };
+        let report = feldera_sql_opt::checked_lineage_report(&edit).map_err(feldera_sql_ir::Error::from)?;
         return Ok(match report.diagnostic {
             Some(issue) => json!({"findings": report.findings, "diagnostic": lineage_diagnostic(issue)}),
             None => serde_json::to_value(report.findings)?,
