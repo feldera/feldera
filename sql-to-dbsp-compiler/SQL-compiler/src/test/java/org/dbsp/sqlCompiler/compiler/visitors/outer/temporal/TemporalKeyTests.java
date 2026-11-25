@@ -45,6 +45,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
@@ -81,6 +83,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -1160,6 +1163,30 @@ public class TemporalKeyTests {
         assertStaticWindowGroups(List.of(sum, b.call(value.getType(), "agg_plus", value, weight, enabled),
                 max, b.call(value.getType(), "agg_plus", value, weight),
                 b.call(value.getType(), "agg_plus", weight, value, enabled)), Set.of(0, 1));
+    }
+
+    @Test
+    public void orderedWindowKeysMatchTheConversionCallAndItsFlags() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        var site = CalciteObject.EMPTY;
+        var time = DBSPTypeTimestamp.INSTANCE;
+        for (DBSPType type : List.of(time, new DBSPTypeInteger(site, 32, true, false),
+                new DBSPTypeInteger(site, 32, false, false))) {
+            for (boolean nullable : List.of(false, true)) {
+                var valueType = type.withMayBeNull(nullable);
+                var value = b.call(valueType, "sort_key");
+                var wrap = new DBSPUnsignedWrapExpression(site, value, true, false);
+                var unwrapped = new DBSPUnsignedUnwrapExpression(site, wrap, valueType, true, false);
+                var ascending = new DBSPBoolLiteral(true);
+                var nullsLast = new DBSPBoolLiteral(false);
+                assertStaticWindowGroups(List.of(
+                        wrap, b.call(wrap.getType(), "UnsignedWrappers::" + wrap.getMethod(), value, ascending, nullsLast),
+                        unwrapped, b.call(valueType, "UnsignedWrappers::" + unwrapped.getMethod(), wrap, ascending, nullsLast),
+                        new DBSPUnsignedWrapExpression(site, value, false, false),
+                        new DBSPUnsignedUnwrapExpression(site, wrap, valueType, true, true)), Set.of(0, 1, 2, 3));
+            }
+        }
     }
 
     @Test

@@ -1,6 +1,38 @@
 //! Comparator expressions as printed in canonical closures.
 use super::Term;
-use feldera_sql_ir::{Error, ExpressionKind as Expr, Field, Node, NodeId};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId, TypeKind,
+};
+
+/// The ordered integer encoding selects its conversion from the SQL value's
+/// type, which is the input when wrapping and the result when unwrapping.
+pub(super) fn unsigned_method(
+    edit: &CircuitEditor,
+    id: ExpressionId,
+    source: ExpressionId,
+    wrap: bool,
+) -> Result<Option<&'static str>, Error> {
+    let ty = edit.expression_type(if wrap { source } else { id })?;
+    let signed = match edit.type_kind(ty)? {
+        TypeKind::Date | TypeKind::Time | TypeKind::Timestamp => true,
+        TypeKind::Integer => edit
+            .node(ty.into())?
+            .data("signed")
+            .and_then(|v| v.as_bool())
+            .ok_or_else(|| Error::new("missing signedness for ordered integer"))?,
+        _ => return Ok(None),
+    };
+    Ok(Some(match (wrap, signed, edit.nullable(ty)?) {
+        (true, true, false) => "from_signed",
+        (true, true, true) => "from_option",
+        (true, false, false) => "from_unsigned",
+        (true, false, true) => "from_unsigned_option",
+        (false, true, false) => "to_signed",
+        (false, true, true) => "to_signed_option",
+        (false, false, false) => "to_unsigned",
+        (false, false, true) => "to_unsigned_option",
+    }))
+}
 
 #[derive(Eq, Hash, PartialEq)]
 pub(super) struct Collation {

@@ -115,6 +115,7 @@ enum Visit {
     Read(ScopedNode),
     Alias(ScopedNode, ScopedNode),
     Intern(ScopedNode, Term, Vec<ScopedNode>),
+    OrderedCall(ScopedNode, &'static str, ScopedNode, [bool; 2]),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -206,6 +207,20 @@ impl ProjectionKey {
                             return Ok(None);
                         }
                         needs_canonical_form |= simplifies;
+                        if matches!(kind, Expr::UnsignedWrap | Expr::UnsignedUnwrap) {
+                            let source = edit.expression(node.edge("source")?)?;
+                            let Some(method) = comparators::unsigned_method(
+                                edit, edit.expression(at.id)?, source, *kind == Expr::UnsignedWrap,
+                            )? else {
+                                return Ok(None);
+                            };
+                            let flag = |field| node.data(field).and_then(|v| v.as_bool())
+                                .ok_or_else(|| Error::new(format!("missing ordered conversion flag {field}")));
+                            let flags = [flag("ascending")?, flag("nullsLast")?];
+                            let source = ScopedNode { id: source.into(), ..at };
+                            work.extend([Visit::OrderedCall(at, method, source, flags), Visit::Read(source)]);
+                            continue;
+                        }
                     }
                     let Some((term, children)) = scoped_term(edit, at, &mut scopes, form)? else {
                         return Ok(None);
@@ -215,6 +230,15 @@ impl ProjectionKey {
                 }
                 Visit::Alias(at, child) => {
                     numbers.insert(at, numbers[&child]);
+                    active.remove(&at.id);
+                }
+                Visit::OrderedCall(at, method, source, flags) => {
+                    // Intern the implicit arguments in print order so an explicit
+                    // conversion call receives the same value number.
+                    let mut operands = vec![numbers[&source]];
+                    operands.extend(flags.map(|flag| terms.insert_full((Term::Bool(flag), vec![])).0));
+                    let call = Term::Call(format!("UnsignedWrappers::{method}"));
+                    numbers.insert(at, terms.insert_full((call, operands)).0);
                     active.remove(&at.id);
                 }
                 Visit::Intern(at, term, children) => {
@@ -375,7 +399,7 @@ fn preserves_static_children(kind: Expr) -> bool {
                 | Expr::Cast | Expr::IsNull | Expr::Field
                 | Expr::WindowBound | Expr::ConditionalIncrement | Expr::Lazy | Expr::Return
                 | Expr::NoComparator | Expr::FieldComparator | Expr::DirectComparator
-                | Expr::AsymmetricFieldComparator
+                | Expr::AsymmetricFieldComparator | Expr::UnsignedWrap | Expr::UnsignedUnwrap
         )
 }
 
