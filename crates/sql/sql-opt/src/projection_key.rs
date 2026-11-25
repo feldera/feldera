@@ -20,8 +20,8 @@ pub(crate) struct ProjectionKey(Vec<(Term, Vec<usize>)>);
 #[derive(Eq, Hash, PartialEq)]
 enum Term {
     Variable(usize),
-    Closure,
-    Let,
+    Closure(Vec<String>),
+    Let(Option<String>),
     Block(Vec<BlockStatement>),
     ReferenceType {
         mutable: bool,
@@ -85,7 +85,7 @@ enum Term {
 enum BlockStatement {
     Expression,
     Comment(Option<String>),
-    Let { mutable: bool, initialized: bool },
+    Let { name: Option<String>, mutable: bool, initialized: bool },
 }
 
 /// A binding's position within the active parameter list identifies its uses
@@ -110,6 +110,20 @@ enum Visit {
     Intern(ScopedNode, Term, Vec<ScopedNode>),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KeyForm {
+    Original,
+    Canonical,
+    /// A discarded binding left a gap in the names printed by CanonicalForm.
+    PrintedNames,
+}
+
+impl KeyForm {
+    fn printed_name(self, name: &str) -> Option<String> {
+        (self == Self::PrintedNames).then(|| name.to_owned())
+    }
+}
+
 impl ProjectionKey {
     pub(crate) fn read(
         edit: &CircuitEditor,
@@ -132,14 +146,14 @@ impl ProjectionKey {
         root: NodeId,
         parameter: RowParameter<'_>,
     ) -> Result<Option<Self>, Error> {
-        Self::number_terms(edit, root, parameter, false)
+        Self::number_terms(edit, root, parameter, KeyForm::Original)
     }
 
     fn number_terms(
         edit: &CircuitEditor,
         root: NodeId,
         parameter: RowParameter<'_>,
-        canonical: bool,
+        form: KeyForm,
     ) -> Result<Option<Self>, Error> {
         let mut scopes = vec![Binding {
             variable: parameter,
@@ -184,7 +198,7 @@ impl ProjectionKey {
                         }
                         needs_canonical_form |= simplifies;
                     }
-                    let Some((term, children)) = scoped_term(edit, at, &mut scopes)? else {
+                    let Some((term, children)) = scoped_term(edit, at, &mut scopes, form)? else {
                         return Ok(None);
                     };
                     work.push(Visit::Intern(at, term, children.clone()));
@@ -230,14 +244,35 @@ impl ProjectionKey {
             }
         }
         if needs_canonical_form {
-            // CanonicalForm visits discarded operands too. Their local declarations
-            // can change the printed names in the surviving expression.
-            if canonical || scopes.len() != 1 {
+            if form != KeyForm::Original {
                 return Ok(None);
             }
             let mut scratch = CircuitEditor::new(edit.circuit().clone());
-            let simplified = feldera_sql_expr::canonicalize_names(&mut scratch, root)?;
-            return Self::number_terms(&scratch, simplified, parameter, true);
+            if scopes.len() == 1 {
+                let simplified = feldera_sql_expr::canonicalize_names(&mut scratch, root)?;
+                return Self::number_terms(&scratch, simplified, parameter, KeyForm::Canonical);
+            }
+            // Renaming a shared expression at every occurrence can expand a DAG.
+            // The live filter normally supplies a tree. Leave shared scoped inputs
+            // to the original visitor when a constructor also needs folding.
+            if feldera_sql_expr::first_repeated_expression(edit, root)?.is_some() {
+                return Ok(None);
+            }
+            let body = scratch.expression(root)?;
+            let row = scratch.named_variable(parameter.ty, parameter.name)?;
+            let closure = scratch.closure_from_variables(body, &[row])?;
+            let closure = feldera_sql_expr::canonicalize_names(&mut scratch, closure.into())?;
+            let node = scratch.node(closure)?;
+            let row = row_parameter(&scratch, node.edges("parameters")?[0])?;
+            return Self::number_terms(&scratch, node.edge("body")?, row, KeyForm::Canonical);
+        }
+        if form == KeyForm::Canonical && scopes.len() > 1 {
+            // The outer row is p0. With no discarded declarations the remaining
+            // names are dense, so ordinary lexical binding positions suffice.
+            let names: HashSet<_> = scopes[1..].iter().map(|b| b.variable.name).collect();
+            if (1..=names.len()).any(|i| !names.contains(format!("p{i}").as_str())) {
+                return Self::number_terms(edit, root, parameter, KeyForm::PrintedNames);
+            }
         }
         Ok(Some(Self(terms.into_iter().collect())))
     }
@@ -247,16 +282,19 @@ fn scoped_term<'a>(
     edit: &'a CircuitEditor,
     at: ScopedNode,
     scopes: &mut Vec<Binding<'a>>,
+    form: KeyForm,
 ) -> Result<Option<(Term, Vec<ScopedNode>)>, Error> {
     let node = edit.node(at.id)?;
     let same_scope = |id| ScopedNode { id, ..at };
     Ok(Some(match node.inner_kind() {
-        Some(InnerKind::Expression(Expr::Block)) => return block_term(edit, at, scopes),
+        Some(InnerKind::Expression(Expr::Block)) => return block_term(edit, at, scopes, form),
         Some(InnerKind::Expression(Expr::Closure)) => {
             let mut scope = at.scope;
             let mut children = Vec::new();
+            let mut names = Vec::new();
             for param in node.edges("parameters")? {
                 let variable = row_parameter(edit, param)?;
+                names.extend(form.printed_name(variable.name));
                 children.push(same_scope(variable.ty.into()));
                 scope = bind(scopes, scope, variable);
             }
@@ -265,7 +303,7 @@ fn scoped_term<'a>(
                 scope,
                 ..at
             });
-            (Term::Closure, children)
+            (Term::Closure(names), children)
         }
         Some(InnerKind::Expression(Expr::Let)) => {
             let path = edit.node(node.edge("variable")?)?;
@@ -277,7 +315,7 @@ fn scoped_term<'a>(
             let scope = bind(scopes, at.scope, variable);
             // Only the consumer sees the new binding.
             (
-                Term::Let,
+                Term::Let(form.printed_name(variable.name)),
                 vec![
                     same_scope(node.edge("initializer")?),
                     ScopedNode {
@@ -333,6 +371,7 @@ fn block_term<'a>(
     edit: &'a CircuitEditor,
     at: ScopedNode,
     scopes: &mut Vec<Binding<'a>>,
+    form: KeyForm,
 ) -> Result<Option<(Term, Vec<ScopedNode>)>, Error> {
     let block = edit.node(at.id)?;
     let mut scope = at.scope;
@@ -367,6 +406,7 @@ fn block_term<'a>(
                     .ok_or_else(|| Error::new("missing block variable mutability"))?;
                 let initializer = statement.field("initializer").and_then(|f| f.node_id());
                 statements.push(BlockStatement::Let {
+                    name: form.printed_name(name),
                     mutable,
                     initialized: initializer.is_some(),
                 });

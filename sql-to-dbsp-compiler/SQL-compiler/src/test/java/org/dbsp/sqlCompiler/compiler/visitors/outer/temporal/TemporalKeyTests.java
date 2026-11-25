@@ -1023,6 +1023,24 @@ public class TemporalKeyTests {
         }, List.of(0, 2, 4, 1, 3));
     }
 
+    @Test
+    public void windowKeysKeepNamesAllocatedInDiscardedTupleFields() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustTemporalKeys"));
+        var b = new ExpressionBuilder();
+        assertWindowGroups(5, (row, i) -> {
+            var retained = new DBSPLetStatement("kept" + i, b.field(row, i == 4 ? 1 : 0));
+            var key = new DBSPBlockExpression(List.of(retained), retained.getVarReference());
+            if (i == 1 || i == 4)
+                return key;
+            DBSPExpression discarded = b.lit(0);
+            if (i == 0 || i == 2) {
+                var local = new DBSPLetStatement("scratch" + i, b.lit(i));
+                discarded = new DBSPBlockExpression(List.of(local), local.getVarReference());
+            }
+            return new DBSPTupleExpression(discarded, key).field(CalciteEmptyRel.INSTANCE, 1);
+        }, List.of(0, 2, 1, 3));
+    }
+
     private static void assertWindowGroups(int count,
             BiFunction<DBSPVariablePath, Integer, DBSPExpression> timestamp,
             List<Integer> shared) {
