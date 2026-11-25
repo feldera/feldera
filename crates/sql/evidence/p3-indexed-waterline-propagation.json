@@ -174,5 +174,56 @@
     "largest_driver_plus_front_end_rss_bytes": 70569984,
     "compiler_sha256": "5be6158244c71e5a8231031d52bfad3748af58a78d8a62207fdb2f8f82448e45",
     "receipt_sha256": "81f8225f5676da41a404ce15a7c2a9496be0b963fcc6d46425fc17763973b1e2"
+  },
+  "full_frozen_replay": {
+    "gen2": {
+      "cases": 8527,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "ordered_s4_observations": 3510660,
+      "mismatches": 0,
+      "temporal_merge_fallbacks": 0,
+      "require_native_decisions": true,
+      "full_optimizer_trace": true,
+      "receipt_sha256": "b1f5d01e247f8bbfe80ade241aeea0e34a1c707f341fb31a618cc29d3787d55a",
+      "shard_receipts_sha256": [
+        "a1d32a2583b0eb2f2427846a26fcf0d250a7e5c45a442eac70d405bc591ab5f0",
+        "ef15a03c63f46f6fca32dd69775d0c958332ce7078b3a893b84f6142f7824fb5",
+        "c5ea72980a506273e9b2a46cefaa170e33ba71d15a11d8c951a268f47f21d8f8",
+        "9a1b254c6ed3d7248cf9284286aa54569a6a480602a0183da9062756c2f57b38"
+      ],
+      "native_request_calls": 208143
+    }
+  },
+  "classic_runtime": {
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "worker_sha256": "5be6158244c71e5a8231031d52bfad3748af58a78d8a62207fdb2f8f82448e45",
+    "batch_size": 64,
+    "rust_min_stack": 8388608,
+    "case_named_tests": true,
+    "optimizer_library_sha256": "c3fe00daf821531bfce4caa5c920df189ef3374150c96c2ba433a4f959a06dc5",
+    "executed": 8256,
+    "compile_only": 315,
+    "batches": 143,
+    "total_frozen_cases": 8571,
+    "input_commands": 11407,
+    "expected_runtime_errors": 232,
+    "catalog_cases": 0,
+    "handle_cases": 8256,
+    "batch_receipts_sha256": "af3d19ac367ad2e22c8c1b808c71067bebffc1edca667f1511aa59089731bac1",
+    "environment": {
+      "classpath_sha256": [
+        "b405962083b7bd7651ed15e65fb7a090565d4b6abda845a1bd8ac7e5632d5399",
+        "c0383be10418f6abf153a65aaeb376248085e6aecb7589c5d4125fc05dd105d1",
+        "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3",
+        "66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9",
+        "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
+      ],
+      "test_manifest_sha256": "86962638f99fc1555ef5f4384f39c4059902e4d3f4dbf4c59b72c3a7943bceac",
+      "test_lock_sha256": "25cac7fffc13522659eb4d06adbc58c05703743735d7421f015d9f5273b76523",
+      "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1",
+      "cargo": "/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)\ncargo 1.99.0 (5f94df478 2026-08-27)",
+      "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)"
+    },
+    "receipt_sha256": "14f5d6a5fc77aa32aeba3c1b14ee7520fe02468d94e761a86410fce449301242"
   }
 }

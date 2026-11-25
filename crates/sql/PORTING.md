@@ -462,6 +462,20 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+On `20e177426`, Rust selects windows with a single indexed reader and builds
+the narrower input, window and reader. Reading fields can require a copy of
+the closure. Rebinding checks the original declarations only when the value
+is narrowed. The 24 selected compilations matched Java at 11,965 ordered
+observations. Six additional compilations exercised ten native window
+decisions and matched at all 2,932 observations. COUNT and LATENESS checkpoints
+restored in both directions. [Window readers](evidence/p3-window-reader-bindings.json)
+
+Rust constructs shared reader projections, narrowed filters and retained
+linear aggregates. The retained aggregate keeps its original waterline and
+predicate. Rust also builds projected outputs and preserves the source
+declarations for temporal map diagnostics.
+[Shared projections](evidence/p3-shared-projection-operators.json) · [Filters](evidence/p3-trim-filter-operators.json) · [Retained aggregates](evidence/p3-linear-retention-operator.json) · [Projected outputs](evidence/p3-projected-output-operators.json) · [Temporal bindings](evidence/p3-temporal-map-bindings.json)
+
 Rust constructs both operators when field trimming splits a map. The rebound
 reader keeps its declared output type. Only an indexed-to-indexed split carries
 the original annotations onto the input projection. On `9f87de979`, the

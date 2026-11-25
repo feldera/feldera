@@ -1,0 +1,142 @@
+{
+  "scope": "Replay temporal map chains against live closures when a speculative shared-window key has a binding conflict.",
+  "source_base": "169ccf320651bb01357646628b2b458a57151212",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "d2f8457298d2c59ca7ad38acf4958b72c6965923fd4541343601600a4096bbfe",
+    "crates/sql/sql-opt/src/window_groups/scan.rs": "68e0f978e823988e0296f724e2967c586cc397d99787616ffc9b33e6071ad929",
+    "crates/sql/sql-opt/src/window_groups/source.rs": "3468f1fdb5655387865f9a811fe9b2352cc2b2c71b396e30658e1fc8978bbb42",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "91452de7edbd93d391a04b6ecce41675fd2dba3bc7972bcde2b360e3aa7924f1",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/ir/ProjectionCompositionTests.java": "64bad080096661d6436888412efad35886211c239a81bca6e0821778ec11b01a"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "b57646273dd78b31265334e963687e66f1cc0ad0aa6438da5e83061392a0f773",
+    "bin/sql-difftest": "6c618917f65383eae5415edce04cb715c4e1fcd36593d9fea3aa89d57d0303f8",
+    "maven/tests.jar": "75629e698d9703096d6bce7d4d7bf1f7a45674593c8fe4dc37d44413bc727d33",
+    "maven/sql-compiler.jar": "a9c8adbec32a73c6ccd21c6dc7d87250306e0404658cab0500cd2895ea43c263",
+    "bin/sql2dbsp": "61e41a77fdb7810b389227970b2804c8e880252798852e12c33d04f1b62b3fe8"
+  },
+  "negative_control": {
+    "library_sha256": "79c25dd43125abd125f798bc704e6e2fccc566c439ec41297512d0d1cad2ba37",
+    "failed_tests": [
+      "timestampCompositionReportsTheConflictingLiveDeclarations"
+    ],
+    "java_compiler_sha256": "e3c3468edaac26e50288bc5388402e2daa06d757baeb111fcb1fc6798996c240"
+  },
+  "rust_tests": 229,
+  "junit_tests": 297,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "1962c331a67ac9383ffcf9147a19daaed2137af0a26b31725bdde07840591031"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "b32491ddc6edfef8249449bc1f223d17b05898e6d7a69181d8944d112afb2e17"
+    }
+  },
+  "source_commit": "7f9a6cb1a113bb799c6dfbb1ba21124e10efcd89",
+  "nightly_optimizer_junit": 314,
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21333-7198-7eb0-b7b6-09b12f0211ec",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21333-71b3-7d10-98fa-2217f1854883",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "ab0e1d42f48c49be85ed085433b354feaecf0a7febbcd6957b54ca48c1d0cf5e"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21334-1999-7122-b3dd-6c1b3b3af432",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21334-19b4-7a43-bfa3-d1a6fe436e09",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "f75b96b16827d78429c82bad4e0a4b2e19eebc9bf44eca62dda1cec93f741453"
+    }
+  }
+}

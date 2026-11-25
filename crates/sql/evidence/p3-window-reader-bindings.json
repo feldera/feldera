@@ -1,0 +1,163 @@
+{
+  "scope": "Rust narrows the indexed input to a window when its only reader projects away value fields. Field use follows the copied tree and rebinding checks the original reader.",
+  "source_base": "4c47f8f48c3a777ba0af18da61851a188a1bd662",
+  "source_files_sha256": {
+    "crates/sql/sql-opt-jni/src/lib.rs": "613aae83849b66d4b2a3a9ed7b92e4c57604b75d312d880917c7d59ba8f75ea2",
+    "crates/sql/sql-opt/src/lib.rs": "2991b5e7f94de1db46d56bc88a5c714dea15ba4736190203c5762ef62524d1f1",
+    "crates/sql/sql-opt/src/limiters/streams.rs": "2b3198c5255b8c155178789ed1e2fd33b10b519797427a6f9a431d4e5cc91300",
+    "crates/sql/sql-opt/src/projected_reader.rs": "0ab7e3f4b5cc6bc3cbc9ad7ff2ee2a54f42368a88f5703e59092737e6fe79f24",
+    "crates/sql/sql-opt/src/trim_windows.rs": "293ad3fabcf7b0abc6e26038fbf0ade684f3f2fb5bda81b2c849889e338079e7",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.java": "3377b7c0198267231f1f308d8a37010a7c78d9b29bf72dd49f567dfbdb76bf36",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/ir/ProjectionCompositionTests.java": "751d9d7ed3a114dc0d13e8bd2e60ac48f9a8637f912edabe9e888cdae20fe62c",
+    "crates/sql/sql-opt-jni/src/trim_window.rs": "470a1204590406a24be68c497b3229cff0b4cbd831d094f79d16fe84babd88b1"
+  },
+  "build_sha256": {
+    "bin/libfeldera_sql_opt_jni.so": "0721a895561e4d44268175b5112b45163189735d645c1efb03bb02031a12e02f",
+    "bin/sql-difftest": "fdb7d49fef7dca106d580a13b7fb02a537699e24bb604785573208b47ee72821",
+    "maven/tests.jar": "5db3f90ed72f6a33c117a73e2195f1eaf9a08c4fb0d8453acc8538683e0210a4",
+    "maven/sql-compiler.jar": "cd4ea4d413c2afbb5de81e11e077ac693a292e486613f927a9108d378ca2a5ea",
+    "bin/sql2dbsp": "4d0f87796bb273d1d65615e04409cbe6cd49543814fe81299a5f2e9774ba6472"
+  },
+  "negative_control": {
+    "library_sha256": "6f85928ab9710a3c47d797387cd45a95d35679e917afb422f8871458cb179458",
+    "failed_tests": [
+      "windowTrimmingChecksTheOriginalReaderOnlyWhenRebinding"
+    ],
+    "java_compiler_sha256": "8d52a7bcd46b13cf0573e5447331d5feaede7c982b2d3d18993c84e9693cf783"
+  },
+  "rust_tests": 230,
+  "junit_tests": 301,
+  "clippy_exit_code": 0,
+  "engines": {
+    "classic": {
+      "cases": 12,
+      "ordered_s4_observations": 5784,
+      "mismatches": 0,
+      "population_sha256": "8fc9f495eecc72b3c9685f250b9784bb2c5e5c287c1dad2761aacea6ee06f8ee",
+      "receipt_sha256": "6ef6b04f6af5363e3b0e598e1e5347c3d25bef05d4a7abe060ffb568bcf74766"
+    },
+    "gen2": {
+      "cases": 12,
+      "ordered_s4_observations": 6181,
+      "mismatches": 0,
+      "population_sha256": "a8aca29c780bba282739fde0f0f998fed07ae0facbadd9a76d6c4e8a33472d5b",
+      "receipt_sha256": "3d4006df09dd2cd59f048a1afbbcaadbf42cc86d576a2282b76d41d1a218308d"
+    }
+  },
+  "source_commit": "20e17742619434b7b5d762685efb8c788841b72a",
+  "nightly_optimizer_junit": 318,
+  "checkpoint_interchange": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "6859e57b6f803720774d0871e1da500452c871cbea25ba32f1a58ddb229fecfe",
+        "hybrid": "3a88f434a997afd7f4687c923d2edf7bd2d9ed314fc81953e84a6df1f5a3dd31"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21341-79eb-7a01-9b5f-18a3d38b4919",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21341-7a04-7f80-846d-15e270cc4d3b",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ],
+      "receipt_sha256": "31f4a93ae73ad7d4fa8d3169ba3324038baee9cbc80e97d1d7d89c9d1cd5ada8"
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "b58eae67e2e3cf9dee0b77915572012dd51f6b91a87b5656125637801e371259",
+        "hybrid": "17ae2848a2f68df1efe5afedbd15f7ee4250673015fb9ec2c9455901433f8b39"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a21342-12bf-7430-aa76-652c36eb05b3",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a21342-12d9-7882-bd2b-289a5e06854c",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ],
+      "receipt_sha256": "34cdb47e625c17a18050ee8ac99368055ab643013a8350063dbc861fa08edb99"
+    }
+  },
+  "targeted_window_replay": {
+    "classic": {
+      "cases": 3,
+      "ordered_s4_observations": 1463,
+      "mismatches": 0,
+      "population_sha256": "12981bf6bd59129a0778705fe0410223c55800a31c94cff702f48170e82906a3",
+      "window_operator_requests": 5,
+      "receipt_sha256": "9de761da249e75808d597b86e872d30831d24cf9d9e34994b0894b4ff590deea"
+    },
+    "gen2": {
+      "cases": 3,
+      "ordered_s4_observations": 1469,
+      "mismatches": 0,
+      "population_sha256": "4e59e1c88e92915f3034db1536ebde7d03a5bf244a34a60ec601954558026a96",
+      "window_operator_requests": 5,
+      "receipt_sha256": "c160d24dd6c4f6406f51036b92b40e2278b979509ad514dabd0dd009a975283d"
+    }
+  }
+}

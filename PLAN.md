@@ -41,6 +41,12 @@ Path prefixes used in this document:
 
 ### Implementation progress
 
+- 2026-11-25. Rust now narrows window inputs and constructs retained linear
+  aggregates. Build `20e177426` matched Java on 24 selected compilations and
+  six additional window compilations across both engines. COUNT and LATENESS
+  checkpoints restored in both directions. The field-shadow gate is open.
+  [Window readers](crates/sql/evidence/p3-window-reader-bindings.json) · [Retained aggregates](crates/sql/evidence/p3-linear-retention-operator.json)
+
 - 2026-11-25. Rust now selects input projections for UNNEST, linear aggregates,
   TopK and grouped aggregates. The grouped-aggregate build matched Java on
   252 selected classic and Gen-2 compilations and restored COUNT and LATENESS
