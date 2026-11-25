@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -194,6 +195,62 @@ public class JoinInputProjectionTests {
                 Assert.assertTrue(decisions.contains("FindUnusedInputFields/Columns"));
             } else {
                 expected = reader.getClosureFunction();
+            }
+        }
+    }
+
+    @Test
+    public void sourceTrimmingReportsTheOriginalBindingAfterEarlierRebuilds() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustFieldUses"));
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t(a INT, b INT);
+                CREATE TABLE u(a INT, b INT);
+                CREATE VIEW v AS SELECT * FROM t UNION ALL SELECT * FROM u;
+                """);
+        var compiled = compiler.getFinalCircuit(true);
+        var first = compiled.getInput(new ProgramIdentifier("t", false)).asOperator();
+        var second = compiled.getInput(new ProgramIdentifier("u", false)).asOperator();
+        var site = CalciteEmptyRel.INSTANCE;
+        var input = first.getOutput(0).getOutputRowType().ref().var();
+        var project = new DBSPMapOperator(site, new DBSPTupleExpression(input.deref().field(1)).closure(input),
+                first.getOutput(0));
+        var type = second.getOutput(0).getOutputRowType().ref();
+        var outer = new DBSPParameter("row", type);
+        var inner = new DBSPParameter("row", type);
+        var shared = outer.asVariable();
+        var nested = shared.deref().field(0).closure(inner);
+        var result = new DBSPTupleExpression(shared.deref().field(1));
+        var reader = new DBSPBlockExpression(List.of(nested.toStatement()), result).closure(outer);
+        var circuit = new DBSPCircuit(compiler.metadata, false);
+        circuit.addOperator(first);
+        circuit.addOperator(second);
+        circuit.addOperator(project);
+        circuit.addOperator(new DBSPNoopOperator(site, project.outputPort()));
+        circuit.addOperator(new DBSPMapOperator(site, reader, second.getOutput(0)));
+        circuit.addOperator(new DBSPNoopOperator(site, project.outputPort()));
+        var graph = new Graph(compiler);
+        graph.apply(circuit);
+
+        InternalCompilerError expected = null;
+        for (boolean hybrid : List.of(false, true)) {
+            compiler.options.ioOptions.rustOptimizerPasses = hybrid;
+            var snapshots = new OptimizerSnapshots(compiler);
+            var fields = new UnusedFields.FindUnusedInputFields(compiler, graph.getGraphs());
+            CircuitTransform find = hybrid ? new RustCircuitPass(compiler, fields, snapshots) : fields;
+            find.apply(circuit);
+            var trim = new UnusedFields.TrimInputs(compiler, fields);
+            Assert.assertEquals(2, trim.layouts().size());
+            CircuitTransform rewrite = hybrid ? new RustCircuitPass(compiler, trim, snapshots) : trim;
+            long start = DBSPVariablePath.nextGeneratedName();
+            var error = Assert.assertThrows(InternalCompilerError.class, () -> rewrite.apply(circuit));
+            Assert.assertEquals(1, DBSPVariablePath.nextGeneratedName() - start);
+            if (hybrid) {
+                Assert.assertEquals(expected.getMessage(), error.getMessage());
+                Assert.assertSame(expected.dbspNode, error.dbspNode);
+            } else {
+                Assert.assertTrue(error.getMessage(), error.getMessage().contains("Changing declaration"));
+                expected = error;
             }
         }
     }

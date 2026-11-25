@@ -1,12 +1,12 @@
 //! Trim unused columns from a non-materialized input and rebind its sole reader.
 //! The preceding field-use analysis supplies the ordered columns. The struct's
 //! generated name comes from the compiler that owns the SQL type printer.
-use crate::rebuild::rebuild_input_closures;
+use crate::{BindingDiagnostic, FieldRewriteError, inspect_references, rebuild::rebuild_input_closures};
 use feldera_sql_ir::{
-    Circuit, CircuitEditor, Error, Field, InnerKind, NodeId, OperatorKind as Op, TypeKind,
+    BodyOrder, Circuit, CircuitEditor, Error, Field, InnerKind, NodeId, OperatorKind as Op, TypeKind,
 };
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -103,22 +103,58 @@ pub fn trim_inputs(
     layouts: &BTreeMap<u64, InputLayout>,
     next: &mut u64,
 ) -> Result<Circuit, Error> {
-    if layouts.is_empty() {
-        return Ok(circuit);
-    }
-    let mut edit = CircuitEditor::new(circuit);
-    for (&source, layout) in layouts {
-        let table = NodeId::Outer(source);
-        let reader = NodeId::Outer(layout.reader);
-        if layout.columns.windows(2).any(|pair| pair[0] >= pair[1])
-            || edit.node(reader)?.inputs().next().map(|p| p.operator) != Some(table)
-        {
-            return Err(Error::new("invalid input trimming layout"));
+    checked_trim_inputs(&circuit, layouts, next).map_err(|error| match error {
+        FieldRewriteError::InvalidIr(error) => error,
+        FieldRewriteError::Binding(BindingDiagnostic::Free { name, .. }) => {
+            Error::new(format!("unbound variable {name} in source reader"))
         }
-        trim_table(&mut edit, table, layout)?;
-        trim_reader(&mut edit, reader, &layout.columns)?;
+        FieldRewriteError::Binding(BindingDiagnostic::Conflict { variable, .. }) => {
+            Error::new(format!("shared variable {variable:?} refers to two declarations"))
+        }
+    })
+}
+
+/// Inspect the original readers in circuit order. Field discovery can accept
+/// a copied reader whose original variable refers to two different declarations.
+pub fn checked_trim_inputs<'a>(
+    circuit: &'a Circuit,
+    layouts: &BTreeMap<u64, InputLayout>,
+    next: &mut u64,
+) -> Result<Circuit, FieldRewriteError<'a>> {
+    if layouts.is_empty() {
+        return Ok(circuit.clone());
     }
-    rebuild_input_closures(edit.finish_with_rewrites()?, next)
+    let mut edit = CircuitEditor::new(circuit.clone());
+    let order = circuit.operator_order(BodyOrder::Postorder)?;
+    let mut trimmed = 0;
+    for (position, &reader) in order.iter().enumerate() {
+        let node = edit.node(reader)?;
+        let Some(NodeId::Outer(source)) = node.inputs().next().map(|port| port.operator) else {
+            continue;
+        };
+        let Some(layout) = layouts.get(&source).filter(|l| NodeId::Outer(l.reader) == reader) else {
+            continue;
+        };
+        if layout.columns.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(Error::new("invalid input trimming layout").into());
+        }
+        let function = node.edge("function")?;
+        if let Some(issue) = inspect_references(circuit, function, false)?.diagnostic {
+            // Earlier Noop and Deindex rebuilds consumed names before this diagnostic.
+            let earlier: HashSet<_> = order[..position].iter().copied().collect();
+            let mut prefix = edit.finish_with_rewrites()?;
+            prefix.rebuilt_inputs.retain(|id| earlier.contains(id));
+            rebuild_input_closures(prefix, next)?;
+            return Err(FieldRewriteError::Binding(issue));
+        }
+        trim_table(&mut edit, NodeId::Outer(source), layout)?;
+        trim_reader(&mut edit, reader, &layout.columns)?;
+        trimmed += 1;
+    }
+    if trimmed != layouts.len() {
+        return Err(Error::new("invalid input trimming layout").into());
+    }
+    Ok(rebuild_input_closures(edit.finish_with_rewrites()?, next)?)
 }
 
 #[cfg(test)]

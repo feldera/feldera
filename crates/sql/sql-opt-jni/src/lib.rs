@@ -2156,6 +2156,16 @@ fn transform(
         reply["circuit"] = graph.unwrap_or(Value::Null);
         reply
     };
+    if pass == "TrimInputs" {
+        let layouts = serde_json::from_slice(state)?;
+        return Ok(match feldera_sql_opt::checked_trim_inputs(&original, &layouts, &mut next) {
+            Ok(output) => publish(&output, json!({"next_generated_name":next, "unused_sources":[]})),
+            Err(feldera_sql_opt::FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
+            Err(feldera_sql_opt::FieldRewriteError::Binding(issue)) => {
+                json!({"binding_error":binding_diagnostic(issue), "next_generated_name":next})
+            }
+        });
+    }
     let circuit = original.clone();
     if pass == "RemoveUselessLeftJoinsVisitor" {
         let keyed: Vec<u64> = serde_json::from_slice(state)?;
@@ -2378,9 +2388,6 @@ fn transform(
         "DeferCarriedColumns" => feldera_sql_opt::defer_carried_columns(circuit, serde_json::from_slice(state)?, &mut next)?,
         "TrimFilters" => feldera_sql_opt::trim_filters(circuit, serde_json::from_slice(state)?, &mut next)?,
         "TrimWindows" => feldera_sql_opt::trim_windows(circuit, &mut next)?,
-        "TrimInputs" => {
-            feldera_sql_opt::trim_inputs(circuit, &serde_json::from_slice(state)?, &mut next)?
-        }
         "IndexedInputs" => feldera_sql_opt::expand_indexed_inputs(
             circuit,
             serde_json::from_slice(state)?,

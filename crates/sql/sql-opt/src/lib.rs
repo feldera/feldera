@@ -198,7 +198,7 @@ pub use trim_filters::{trim_filter_closures, trim_filter_readers, trim_filters};
 mod trim_windows;
 pub use trim_windows::trim_windows;
 mod trim_inputs;
-pub use trim_inputs::{trim_inputs, InputLayout};
+pub use trim_inputs::{checked_trim_inputs, trim_inputs, InputLayout};
 mod udf;
 mod validation;
 mod views;

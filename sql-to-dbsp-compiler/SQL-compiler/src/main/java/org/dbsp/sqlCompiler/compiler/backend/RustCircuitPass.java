@@ -3026,6 +3026,11 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     private DBSPCircuit applyResult(DBSPCircuit circuit, @Nullable ToJsonOuterVisitor writer, JsonNode result) throws IOException {
+        if (this.trimInputs != null && result.has("binding_error")) {
+            DBSPVariablePath.restoreGeneratedNames(result.required("next_generated_name").longValue());
+            checkBindingErrors(Objects.requireNonNull(writer).innerVisitor, result.required("binding_error"));
+            throw new IllegalStateException("Expected a source reader binding diagnostic");
+        }
         if (this.identityMaps != null) {
             var live = operatorsById(circuit);
             this.identityMaps.remove.clear();
