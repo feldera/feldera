@@ -885,7 +885,7 @@ public class JoinInputProjectionTests {
         compiler.throwIfErrorsOccurred();
         Assert.assertTrue(answered.contains("RemoveUnusedFields/TopKInput"));
         Assert.assertTrue(answered.contains("RemoveUnusedFields/TopKFields"));
-        Assert.assertTrue(answered.contains("RemoveUnusedFields/TopKComparators"));
+        Assert.assertTrue(answered.contains("RemoveUnusedFields/TopKOperators"));
     }
 
     @Test

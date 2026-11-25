@@ -396,40 +396,31 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression producer = operator.outputProducer
                 .ensureTree(this.compiler).to(DBSPClosureExpression.class);
         Utilities.enforce(producer.parameters.length == 2);
-        DBSPMapIndexOperator adjust;
-        DBSPClosureExpression newProducer;
-        Pair<DBSPComparatorExpression, DBSPComparatorExpression> orders;
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-            var plan = RustCircuitPass.trimTopKInput(this.compiler, producer,
-                    operator.input().getOutputIndexedZSetType().getKVRefType(), comparator, equality);
-            if (plan == null) {
+            var operators = RustCircuitPass.narrowedTopKOperators(this.compiler, operator,
+                    this.mapped(operator.input()), producer, comparator);
+            if (!this.applyInputProjection(operator, operators))
                 super.postorder(operator);
-                return;
-            }
-            newProducer = plan.reader();
-            adjust = this.projectValue(operator, plan.projection());
-            orders = RustCircuitPass.projectTopKComparators(this.compiler, comparator, equality,
-                    adjust.getOutputIndexedZSetType().elementType, plan.used());
-        } else {
-            ParameterFieldUse useMap = this.find.findUsedFields(producer);
-            useMap.get(producer.parameters[0]).setUsed();
-            var rowUse = useMap.get(producer.parameters[1]);
-            var rowFields = rowUse.deref();
-            if (!setComparedFieldsToUsed(comparator, rowFields)
-                    || !setComparedFieldsToUsed(equality, rowFields) || !rowUse.hasUnusedFields(1)) {
-                super.postorder(operator);
-                return;
-            }
-            newProducer = useMap.getFieldRewriter(this.compiler, 1).rewriteClosure(producer);
-            adjust = this.projectValue(operator, rowUse);
-            var rowType = adjust.getOutputIndexedZSetType().elementType;
-            orders = Pair.of(remapComparedFields(comparator, rowFields, rowType),
-                    remapComparedFields(equality, rowFields, rowType));
+            return;
         }
+        ParameterFieldUse useMap = this.find.findUsedFields(producer);
+        useMap.get(producer.parameters[0]).setUsed();
+        var rowUse = useMap.get(producer.parameters[1]);
+        var rowFields = rowUse.deref();
+        if (!setComparedFieldsToUsed(comparator, rowFields)
+                || !setComparedFieldsToUsed(equality, rowFields) || !rowUse.hasUnusedFields(1)) {
+            super.postorder(operator);
+            return;
+        }
+        var newProducer = useMap.getFieldRewriter(this.compiler, 1).rewriteClosure(producer);
+        var adjust = this.projectValue(operator, rowUse);
+        var rowType = adjust.getOutputIndexedZSetType().elementType;
+        var order = remapComparedFields(comparator, rowFields, rowType);
+        var ties = remapComparedFields(equality, rowFields, rowType);
         DBSPEqualityComparatorExpression newEquality = new DBSPEqualityComparatorExpression(
-                operator.equalityComparator.getNode(), orders.right);
+                operator.equalityComparator.getNode(), ties);
         DBSPSimpleOperator result = new DBSPIndexedTopKOperator(
-                operator.getRelNode(), operator.numbering, orders.left, operator.limit,
+                operator.getRelNode(), operator.numbering, order, operator.limit,
                 newEquality, newProducer, adjust.outputPort())
                 .copyAnnotations(operator);
         this.map(operator, result);

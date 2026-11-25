@@ -71,6 +71,8 @@ mod projected_reader;
 pub use projected_reader::{FieldRewriteError, TupleUsage, rebind_projected_aggregate, rebind_projected_reader, rebind_reader_with_layout};
 mod compressed_fields;
 pub use compressed_fields::compressed_field_type;
+mod topk_input;
+pub use topk_input::ProjectedTopK;
 mod map_input;
 pub use map_input::{MapOutput, append_input_projection, append_split_map, checked_split_map_input, split_map_input};
 mod join_input;

@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.ProvenanceCodec;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -1649,7 +1650,7 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public record IndexedReaderProjection(DBSPClosureExpression projection, DBSPClosureExpression reader,
+    private record IndexedReaderProjection(DBSPClosureExpression projection, DBSPClosureExpression reader,
                                           List<Boolean> used) {}
 
     public static List<DBSPSimpleOperator> trimLinearAggregateInput(DBSPCompiler compiler,
@@ -1700,8 +1701,36 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static List<DBSPSimpleOperator> narrowedTopKOperators(DBSPCompiler compiler,
+            DBSPIndexedTopKOperator operator, OutputPort input, DBSPClosureExpression producer, DBSPComparatorExpression rank) {
+        var plan = trimTopKInput(compiler, producer, operator.input().getOutputIndexedZSetType().getKVRefType(),
+                rank, operator.equalityComparator.comparator);
+        if (plan == null)
+            return List.of();
+        String pass = "RemoveUnusedFields/TopKOperators";
+        var request = expressionSite(operator.getRelNode());
+        request.put("port", input.outputNumber);
+        request.put("numbering", operator.numbering.name());
+        request.put("width", operator.getType().getToplevelFieldCount());
+        // Comparator type names include the debug spelling of the projected value type.
+        request.put("row", plan.projection.getResultType().to(DBSPTypeRawTuple.class).getFieldType(1).toString());
+        request.set("used", MAPPER.valueToTree(plan.used));
+        try {
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(request),
+                    plan.projection, plan.reader, rank, operator.equalityComparator, operator.limit);
+            if (compiler.stateObserver != null)
+                compiler.stateObserver.nativeDecision(pass, true);
+            var operators = decodeOperatorFragment(reply, op -> operator.getRelNode(), input.node());
+            Utilities.enforce(operators.size() == 2);
+            operators.getLast().copyAnnotations(operator);
+            return operators;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode TopK input", error);
+        }
+    }
+
     @Nullable
-    public static IndexedReaderProjection trimTopKInput(DBSPCompiler compiler, DBSPClosureExpression producer,
+    private static IndexedReaderProjection trimTopKInput(DBSPCompiler compiler, DBSPClosureExpression producer,
             DBSPType input, DBSPComparatorExpression rank, DBSPComparatorExpression ties) {
         var paths = requiredParameterFieldDependencies(compiler, producer).get(1);
         var columns = topKComparedFields(compiler, rank, ties);
