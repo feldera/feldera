@@ -5,6 +5,7 @@ import logging
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -816,6 +817,24 @@ def _fixture_build_lock(key: str) -> Iterator[None]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+DELTA_SPARK_IVY_SETTINGS = (
+    pathlib.Path(__file__).resolve().parent / "assets" / "delta_spark_ivysettings.xml"
+)
+
+
+def _spark_env() -> dict[str, str]:
+    """The environment for a Spark run: resolve packages from a Central mirror.
+
+    PySpark passes ``PYSPARK_SUBMIT_ARGS`` to ``spark-submit``, so this reaches
+    every session the script builds. A caller's own value is kept and extended.
+    """
+    env = dict(os.environ)
+    submit_args = env.get("PYSPARK_SUBMIT_ARGS", "pyspark-shell")
+    setting = shlex.quote(f"spark.jars.ivySettings={DELTA_SPARK_IVY_SETTINGS}")
+    env["PYSPARK_SUBMIT_ARGS"] = f"--conf {setting} {submit_args}"
+    return env
+
+
 def _run_spark_subprocess(
     command: Sequence[str], *, capture_output: bool, timeout_s: float
 ) -> subprocess.CompletedProcess:
@@ -830,7 +849,12 @@ def _run_spark_subprocess(
     """
     pipe = subprocess.PIPE if capture_output else None
     proc = subprocess.Popen(
-        command, stdout=pipe, stderr=pipe, text=True, start_new_session=True
+        command,
+        stdout=pipe,
+        stderr=pipe,
+        text=True,
+        start_new_session=True,
+        env=_spark_env(),
     )
     try:
         stdout, stderr = proc.communicate(timeout=timeout_s)

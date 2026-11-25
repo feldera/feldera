@@ -14,11 +14,13 @@ import json
 import multiprocessing
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
 import time
 import uuid
+from xml.etree import ElementTree
 
 import pytest
 
@@ -315,6 +317,40 @@ def test_timed_out_run_kills_the_whole_process_group(tmp_path):
         lambda: _process_state(grandchild) in ("", "Z", "Z+"),
         timeout_s=10,
         poll_interval_s=0.1,
+    )
+
+
+def test_spark_resolves_packages_from_mirror_before_central(monkeypatch):
+    """Spark runs must try a Central mirror before Maven Central itself.
+
+    Central answers a rate-limited IP with HTTP 429, which Ivy reads as "not
+    found", so with Central alone no Spark package resolves until the limit ends.
+    """
+    from tests import utils
+
+    monkeypatch.setenv("PYSPARK_SUBMIT_ARGS", "--driver-memory 1g pyspark-shell")
+    completed = utils._run_spark_subprocess(
+        [sys.executable, "-c", "import os; print(os.environ['PYSPARK_SUBMIT_ARGS'])"],
+        capture_output=True,
+        timeout_s=30,
+    )
+    args = shlex.split(completed.stdout)
+
+    assert args[-3:] == ["--driver-memory", "1g", "pyspark-shell"], (
+        f"the caller's own submit args must be kept: {args}"
+    )
+    prefix = "spark.jars.ivySettings="
+    settings = [a.removeprefix(prefix) for a in args if a.startswith(prefix)]
+    assert len(settings) == 1, f"Spark must be given the Ivy settings: {args}"
+
+    chain = ElementTree.parse(settings[0]).getroot().find("resolvers/chain")
+    roots = [r.get("root", "maven-central") for r in chain.iter("ibiblio")]
+    assert roots[0].startswith(
+        "https://maven-central.storage-download.googleapis.com/"
+    ), f"the mirror must be tried first: {roots}"
+    assert roots[-1] == "maven-central", f"Central must stay the fallback: {roots}"
+    assert chain.get("returnFirst") == "true", (
+        "a mirror hit must not go on to query Central"
     )
 
 

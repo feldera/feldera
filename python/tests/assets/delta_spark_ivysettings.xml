@@ -1,0 +1,18 @@
+<!--
+  Ivy settings for the Spark runs in tests.utils.run_delta_spark.
+
+  Resolves `spark.jars.packages` (delta-spark and its dependency tree) from
+  Google's Maven Central mirror first and Maven Central only as a fallback.
+  Maven Central rate-limits busy egress IPs with HTTP 429, which Ivy reports
+  as "not found", so a run that depends on Central alone can fail outright.
+-->
+<ivysettings>
+  <settings defaultResolver="mirror-then-central"/>
+  <resolvers>
+    <chain name="mirror-then-central" returnFirst="true">
+      <ibiblio name="central-gcs-mirror" m2compatible="true"
+               root="https://maven-central.storage-download.googleapis.com/maven2/"/>
+      <ibiblio name="central" m2compatible="true"/>
+    </chain>
+  </resolvers>
+</ivysettings>
