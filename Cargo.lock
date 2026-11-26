@@ -6908,7 +6908,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -7930,8 +7930,7 @@ dependencies = [
 [[package]]
 name = "marrow"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "789b43b5511b6037f7230829f87eac922fcfa13568362a5aa2eccb1bc0b07cb0"
+source = "git+https://github.com/feldera/serde_arrow.git?rev=ebe6918f26b0c21cd70e646834e423f989111333#ebe6918f26b0c21cd70e646834e423f989111333"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -11870,8 +11869,7 @@ dependencies = [
 [[package]]
 name = "serde_arrow"
 version = "0.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eef6f03bec0418bbde0fa9c070a5fee5b793c9cc4a392613d37c1de7ee211db5"
+source = "git+https://github.com/feldera/serde_arrow.git?rev=ebe6918f26b0c21cd70e646834e423f989111333#ebe6918f26b0c21cd70e646834e423f989111333"
 dependencies = [
  "arrow-array",
  "arrow-schema",
