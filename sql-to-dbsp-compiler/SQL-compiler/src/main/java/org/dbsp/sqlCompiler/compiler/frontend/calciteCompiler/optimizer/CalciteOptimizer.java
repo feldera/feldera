@@ -449,6 +449,10 @@ public class CalciteOptimizer implements IWritesLogs {
         };
         this.addStep(joinOrder);
 
+        // Must run right before decorrelation: a simplification would remove the COALESCE
+        // that the rule adds, since the argument of the COALESCE can be NOT NULL
+        this.addStep(new SimpleOptimizerStep("Collect to ARRAY_AGG", 0,
+                new CollectToArrayAggRule()));
         this.addStep(new SimpleOptimizerStep("Decorrelate UNNEST", 2,
                 CoreRules.UNNEST_DECORRELATE,
                 CoreRules.UNNEST_PROJECT_DECORRELATE));

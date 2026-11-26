@@ -631,8 +631,8 @@ comparisons and `UNIQUE`.  `IN` and quantified comparisons [reject
 `ROW` values](comparisons.md#comparing-row-values) on the left, such
 as `(a, b) IN (SELECT x, y FROM t)`.
 
-All these sub-queries may be correlated; that is, they may refer to
-tables in the `FROM` clause of an enclosing query.
+All these sub-queries and `ARRAY` sub-queries may be correlated; that
+is, they may refer to tables in the `FROM` clause of an enclosing query.
 
 `GROUP BY DISTINCT` removes duplicate grouping sets (for example,
 `GROUP BY DISTINCT GROUPING SETS ((a), (a, b), (a))` is equivalent to
