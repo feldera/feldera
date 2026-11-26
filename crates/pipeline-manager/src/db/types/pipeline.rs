@@ -90,6 +90,7 @@ pub fn runtime_desired_status_to_string(runtime_desired_status: RuntimeDesiredSt
 pub fn parse_string_as_runtime_desired_status(s: String) -> Result<RuntimeDesiredStatus, DBError> {
     match s.as_str() {
         "unavailable" => Ok(RuntimeDesiredStatus::Unavailable),
+        "coordination" => Ok(RuntimeDesiredStatus::Coordination),
         "standby" => Ok(RuntimeDesiredStatus::Standby),
         "paused" => Ok(RuntimeDesiredStatus::Paused),
         "running" => Ok(RuntimeDesiredStatus::Running),
@@ -557,7 +558,30 @@ pub struct ExtendedPipelineDescrEventInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::{ClientMetadata, PatchClientMetadata};
+    use super::{
+        ClientMetadata, PatchClientMetadata, parse_string_as_runtime_desired_status,
+        parse_string_as_runtime_status, runtime_desired_status_to_string, runtime_status_to_string,
+    };
+    use clap::ValueEnum;
+    use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
+    use proptest::prelude::*;
+
+    #[test]
+    fn runtime_desired_status_round_trips() {
+        for status in RuntimeDesiredStatus::value_variants() {
+            let s = runtime_desired_status_to_string(*status);
+            assert_eq!(parse_string_as_runtime_desired_status(s).unwrap(), *status);
+        }
+    }
+
+    proptest! {
+        // `RuntimeStatus` has no variant list, so sample all variants instead.
+        #[test]
+        fn runtime_status_round_trips(status in any::<RuntimeStatus>()) {
+            let s = runtime_status_to_string(status);
+            prop_assert_eq!(parse_string_as_runtime_status(s).unwrap(), status);
+        }
+    }
 
     /// Builds an always-present [`ClientMetadata`].
     fn meta(description: &str, tags: &[&str]) -> ClientMetadata {
