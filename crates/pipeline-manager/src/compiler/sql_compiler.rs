@@ -27,6 +27,7 @@ use futures_util::StreamExt;
 use indoc::formatdoc;
 use serde::{Deserialize, Serialize};
 use std::fs::Metadata;
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::time::Instant;
 use std::{process::Stdio, sync::Arc};
@@ -678,6 +679,7 @@ pub(crate) async fn perform_sql_compilation(
     program_code: &str,
     output: SqlCompilationOutput,
 ) -> Result<(serde_json::Value, Duration, SqlCompilationInfo), SqlCompilationError> {
+    let stored_pipeline = db.is_some() && output == SqlCompilationOutput::Full;
     let result = perform_sql_compilation_inner(SqlCompilationRequest {
         common_config,
         config,
@@ -690,11 +692,19 @@ pub(crate) async fn perform_sql_compilation(
         program_config,
         program_code,
         output,
-        shadow_package: None,
+        shadow: &mut Default::default(),
     })
     .await;
-    let _shadow =
-        super::shadow::launch(common_config, config, program_config, program_code, &result);
+    if stored_pipeline {
+        super::shadow::launch(
+            common_config,
+            config,
+            program_config,
+            pipeline_id,
+            program_code,
+            &result,
+        );
+    }
     result
 }
 
@@ -712,8 +722,7 @@ pub(super) struct SqlCompilationRequest<'a> {
     pub program_config: &'a serde_json::Value,
     pub program_code: &'a str,
     pub output: SqlCompilationOutput,
-    /// The Rust optimizer shadow can return the digest of its deployed compiler package.
-    pub shadow_package: Option<&'a mut String>,
+    pub shadow: &'a mut super::shadow::Attempt,
 }
 
 pub(super) type SqlCompilationResult =
@@ -735,8 +744,9 @@ pub(super) async fn perform_sql_compilation_inner(
         program_config,
         program_code,
         output,
-        shadow_package,
+        shadow: attempt,
     } = request;
+    attempt.cause.operation = "prepare compilation inputs";
     let start = Instant::now();
 
     // These must always be the same, the SQL compiler should never pick up
@@ -797,21 +807,27 @@ pub(super) async fn perform_sql_compilation_inner(
             ephemeral_compilation_dir(config).join(pipeline_id.to_string())
         }
     };
-    recreate_dir(&working_dir)
-        .await
-        .map_err(|e| SqlCompilationError::SystemError(e.to_string()))?;
+    if output != SqlCompilationOutput::Shadow {
+        recreate_dir(&working_dir).await?;
+    }
 
     // Write SQL code to file
     let input_sql_file_path = working_dir.join("program.sql");
-    create_new_file_with_content(&input_sql_file_path, program_code).await?;
+    create_new_file_with_content(&input_sql_file_path, program_code)
+        .await
+        .inspect_err(|e| attempt.cause.file_error("write compiler input", e))?;
 
     // Create file where stdout will be written to
     let output_stdout_file_path = working_dir.join("stdout.log");
-    let output_stdout_file = create_new_file(&output_stdout_file_path).await?;
+    let output_stdout_file = create_new_file(&output_stdout_file_path)
+        .await
+        .inspect_err(|e| attempt.cause.file_error("create compiler stdout", e))?;
 
     // Create file where stderr will be written to
     let output_stderr_file_path = working_dir.join("stderr.log");
-    let output_stderr_file = create_new_file(&output_stderr_file_path).await?;
+    let output_stderr_file = create_new_file(&output_stderr_file_path)
+        .await
+        .inspect_err(|e| attempt.cause.file_error("create compiler stderr", e))?;
 
     // Outputs
     let shadow_compiler = (output == SqlCompilationOutput::Shadow)
@@ -846,6 +862,7 @@ pub(super) async fn perform_sql_compilation_inner(
     // SQL compiler executable
     // When use_platform_compiler is set with a non-platform runtime version, use
     // the platform's SQL compiler JAR directly, bypassing the per-version download.
+    attempt.cause.operation = "locate the SQL compiler jar";
     let sql_compiler_executable_file_path = if use_platform_compiler {
         PathBuf::from(&config.sql_compiler_path)
     } else {
@@ -885,9 +902,11 @@ pub(super) async fn perform_sql_compilation_inner(
             request["rust_optimizer_passes"] = true.into();
         }
         let manifest = working_dir.join("hybrid-request.json");
-        create_new_file_with_content(&manifest, &request.to_string()).await?;
+        create_new_file_with_content(&manifest, &request.to_string())
+            .await
+            .inspect_err(|e| attempt.cause.file_error("write the hybrid request", e))?;
         let mut command = Command::new("sql2dbsp");
-        if rust_optimizer && shadow_package.is_some() {
+        if rust_optimizer {
             command.env("FELDERA_SHADOW_IDENTIFY_PACKAGE", "1");
         }
         command.arg("--hybrid").arg(manifest).arg(&hybrid_attempt);
@@ -953,16 +972,13 @@ pub(super) async fn perform_sql_compilation_inner(
 
     // Start process
     let mut process = command.spawn().map_err(|e| {
-        SqlCompilationError::SystemError(
-            CommonError::io_error(
-                format!(
-                    "running SQL compiler executable 'java -jar {}'",
-                    sql_compiler_executable_file_path.display()
-                ),
-                e,
-            )
-            .to_string(),
-        )
+        let program = command.as_std().get_program().to_string_lossy();
+        attempt.cause.program = program.to_string();
+        attempt.cause.operation = "start the compiler";
+        attempt.cause.io_error = Some(e.kind());
+        SqlCompilationError::SystemError(format!(
+            "Could not start SQL compiler '{program}': {e}. Check that '{program}' is executable and on PATH."
+        ))
     })?;
 
     // Retrieve process group ID and create a terminator
@@ -972,6 +988,15 @@ pub(super) async fn perform_sql_compilation_inner(
             "unable to retrieve pid".to_string(),
         ));
     };
+    if output == SqlCompilationOutput::Shadow {
+        attempt.group = Some(process_group);
+        attempt.cause.program = command
+            .as_std()
+            .get_program()
+            .to_string_lossy()
+            .into_owned();
+    }
+    attempt.cause.operation = "wait for the compiler";
     let mut terminator = ProcessGroupTerminator::new("SQL compilation", process_group);
 
     // Wait for process to exit while regularly checking if the pipeline still exists
@@ -1014,6 +1039,7 @@ pub(super) async fn perform_sql_compilation_inner(
                 Some(exit_status) => break exit_status,
             },
             Err(e) => {
+                attempt.cause.io_error = Some(e.kind());
                 return Err(SqlCompilationError::SystemError(
                     CommonError::io_error("waiting for SQL compilation process".to_string(), e)
                         .to_string(),
@@ -1028,15 +1054,20 @@ pub(super) async fn perform_sql_compilation_inner(
     terminator.cancel();
 
     // Check presence of exit status code
+    attempt.cause.exit_code = exit_status.code();
+    attempt.cause.signal = exit_status.signal();
     let Some(exit_code) = exit_status.code() else {
+        attempt.cause.operation = "compiler terminated by signal";
         // No exit status code present because the process was terminated by a signal
         return Err(SqlCompilationError::TerminatedBySignal);
     };
 
     // Extract the SQL compiler messages (includes warnings and errors)
+    attempt.cause.operation = "read compiler diagnostics";
     let stderr_str = fs::read_to_string(output_stderr_file_path.clone())
         .await
         .map_err(|e| {
+            attempt.cause.io_error = Some(e.kind());
             SqlCompilationError::SystemError(
                 CommonError::io_error(
                     format!(
@@ -1054,7 +1085,7 @@ pub(super) async fn perform_sql_compilation_inner(
             &runtime_selector,
             rust_optimizer,
             exit_status.success(),
-            shadow_package,
+            attempt,
         )
         .await?
     } else if stderr_str.is_empty() {
@@ -1066,6 +1097,7 @@ pub(super) async fn perform_sql_compilation_inner(
         match serde_json::from_str(&stderr_str[find_json_start.unwrap_or(0)..]) {
             Ok(messages) => messages,
             Err(_) if output == SqlCompilationOutput::Shadow => {
+                attempt.cause.operation = "invalid compiler diagnostics";
                 return Err(SqlCompilationError::SystemError(
                     "Cannot read shadow diagnostics as JSON. Check the SQL compiler version."
                         .to_owned(),
@@ -1096,8 +1128,11 @@ pub(super) async fn perform_sql_compilation_inner(
     // Compilation is successful if the return exit code is present and zero
     if exit_status.success() {
         // Read schema.json
-        let schema_str = read_file_content(&output_json_schema_file_path).await?;
+        let schema_str = read_file_content(&output_json_schema_file_path)
+            .await
+            .inspect_err(|e| attempt.cause.file_error("read compiler schema", e))?;
         let schema: serde_json::Value = serde_json::from_str(&schema_str).map_err(|e| {
+            attempt.cause.operation = "invalid compiler schema";
             SqlCompilationError::SystemError(
                 CommonError::json_deserialization_error(
                     "schema.json from SQL compiler".to_string(),
@@ -1108,8 +1143,11 @@ pub(super) async fn perform_sql_compilation_inner(
         })?;
 
         // Read dataflow.json
-        let dataflow_str = read_file_content(&output_dataflow_file_path).await?;
+        let dataflow_str = read_file_content(&output_dataflow_file_path)
+            .await
+            .inspect_err(|e| attempt.cause.file_error("read compiler dataflow", e))?;
         let dataflow: Dataflow = serde_json::from_str(&dataflow_str).map_err(|e| {
+            attempt.cause.operation = "invalid compiler dataflow";
             SqlCompilationError::SystemError(
                 CommonError::json_deserialization_error(
                     "dataflow.json from SQL compiler into struct Dataflow".to_string(),
@@ -1142,8 +1180,11 @@ pub(super) async fn perform_sql_compilation_inner(
         // For Gen-2, read back the JIT circuit IR the compiler emitted via
         // `--jit`.
         let circuit_ir = if runtime_selector.is_gen2() {
-            let jit_str = read_file_content(&output_jit_file_path).await?;
+            let jit_str = read_file_content(&output_jit_file_path)
+                .await
+                .inspect_err(|e| attempt.cause.file_error("read compiler circuit", e))?;
             let jit: serde_json::Value = serde_json::from_str(&jit_str).map_err(|e| {
+                attempt.cause.operation = "invalid compiler circuit";
                 SqlCompilationError::SystemError(
                     CommonError::json_deserialization_error(
                         "jit.json from SQL compiler".to_string(),
@@ -1158,6 +1199,7 @@ pub(super) async fn perform_sql_compilation_inner(
         };
 
         // Generate the program information
+        attempt.cause.operation = "serialize program information";
         match generate_program_info(schema, main_rust, stubs, Some(dataflow), circuit_ir) {
             Ok(program_info) => {
                 let program_info = match serde_json::to_value(program_info) {
@@ -1402,7 +1444,7 @@ mod test {
         crate::enable_test_unstable_features();
         let test = CompilerTest::new().await;
         let tenant_id = TenantRecord::default().id;
-        let gen2 = serde_json::json!({ "runtime_version": "gen2" });
+        let gen2 = serde_json::json!({ "runtime_version": "gen2", "compiler": "java" });
         let program_code = "CREATE TABLE t (x INT);";
         let create = |name: &'static str, udf_rust: &'static str, udf_toml: &'static str| {
             test.create_pipeline_with_program_config(

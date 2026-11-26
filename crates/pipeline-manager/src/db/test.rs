@@ -4693,6 +4693,95 @@ async fn sql_compilation_clear_recovers_every_stranded_program() {
     }
 }
 
+async fn check_stored_java_compiler(db: &impl Storage) -> ExtendedPipelineDescr {
+    use crate::api::endpoints::pipeline_management::{
+        PipelineInfoInternal, PipelineSelectedInfoInternal,
+    };
+    crate::enable_test_unstable_features();
+    let tenant = TenantRecord::default().id;
+    let mut pipeline = PipelineDescr::test_descr();
+    pipeline.program_config["compiler"] = json!("java");
+    let name = pipeline.name.clone();
+    let created = db
+        .new_pipeline(tenant, Uuid::now_v7(), "v0", pipeline)
+        .await
+        .unwrap();
+    let posted = serde_json::to_value(PipelineInfoInternal::new(created)).unwrap();
+    let stored = db.get_pipeline(tenant, &name).await.unwrap();
+    assert_eq!(stored.program_config["compiler"], "java");
+    let selection = validate_program_config(&stored.program_config, true)
+        .unwrap()
+        .compiler;
+    assert_eq!(
+        selection,
+        Some(crate::db::types::program::CompilerFamily::Java)
+    );
+    let get = serde_json::to_value(PipelineSelectedInfoInternal::new_all(stored.clone())).unwrap();
+    assert_eq!(posted["program_config"], get["program_config"]);
+    assert_eq!(get["program_config"]["compiler"], "java");
+    stored
+}
+
+#[tokio::test]
+async fn compiler_selection_stored_java() {
+    use crate::api::endpoints::pipeline_management::{
+        PatchPipelineInternal, PipelineSelectedInfoInternal,
+    };
+    const SAVED: &str = "FELDERA_TEST_STORED_JAVA_PIPELINE";
+    let db = Mutex::new(DbModel::default());
+    let Ok(saved) = std::env::var(SAVED) else {
+        let stored = check_stored_java_compiler(&db).await;
+        // A fresh manager process starts with a new feature set.
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "db::test::compiler_selection_stored_java"])
+            .env(SAVED, serde_json::to_string(&stored).unwrap())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    };
+
+    assert!(!crate::has_unstable_feature("compiler_selection"));
+    let tenant = TenantRecord::default().id;
+    let stored: ExtendedPipelineDescr = serde_json::from_str(&saved).unwrap();
+    let name = stored.name.clone();
+    db.lock()
+        .await
+        .pipelines
+        .insert((tenant, stored.id), stored);
+    let get = PipelineSelectedInfoInternal::new_all(db.get_pipeline(tenant, &name).await.unwrap());
+    let patch: PatchPipelineInternal =
+        serde_json::from_value(serde_json::to_value(get).unwrap()).unwrap();
+    let error = db
+        .update_pipeline(
+            tenant,
+            &name,
+            &patch.name,
+            &patch.client_metadata,
+            "v0",
+            false,
+            &patch.runtime_config,
+            &patch.program_code,
+            &patch.udf_rust,
+            &patch.udf_toml,
+            &patch.program_config,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, DBError::InvalidProgramConfig { .. }));
+    let message = error.to_string();
+    assert!(message.contains("compiler_selection"), "{message}");
+    assert!(
+        message.contains("omit `program_config.compiler`"),
+        "{message}"
+    );
+}
+
+#[tokio::test]
+async fn postgres_compiler_selection_stored_java() {
+    check_stored_java_compiler(&test_setup().await.db).await;
+}
+
 #[tokio::test]
 async fn artifact_retention_covers_both_compiling_statuses() {
     // `runtime_version` is an unstable feature; without it `program_config`'s selector is
@@ -7207,7 +7296,7 @@ struct UserRecord {
 }
 
 /// Model of the database to which its operations are compared.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct DbModel {
     pub tenants: BTreeMap<TenantId, TenantRecord>,
     pub api_keys: BTreeMap<(TenantId, String), (ApiKeyId, String, Role)>,

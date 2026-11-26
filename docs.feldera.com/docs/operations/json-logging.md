@@ -38,15 +38,26 @@ Each log entry is a JSON object whose members are:
 
 To compare SQL compiler results, start the compiler server with
 `--shadow-sql-compiler java`. Shadow compilation is off by default.
-Each server runs at most one shadow at a time. Allow up to about 700 MiB of
-additional resident memory (RSS) and one CPU per compiler server.
+Each server runs at most one shadow at a time, after a stored pipeline compilation.
+The Java heap limit is 512 MiB. In `rust-optimizer` mode, the Rust passes use
+native memory through JNI outside this heap limit. Without an explicit Java heap limit,
+the native side reached 2.3 GiB peak RSS for a 500 KB SQL program. On Linux,
+the supervised worker has a 1 GiB address-space limit.
 
-The server removes temporary compilation output and logs a count and an outcome or skip reason.
-It skips a sample if the worker is busy, the SQL exceeds 1 MiB, or the primary
-observation exceeds 4 MiB. The default deadline is 30 seconds. Set
-`--shadow-sql-compiler-timeout-secs` to change it.
+The server removes temporary output after the compiler process group exits.
+If cleanup fails, the next shadow retries it. The `skipped` counter includes
+`dropped_busy`, `skipped_sql_too_large` (over 1 MiB), and primary observations
+over 4 MiB. The `skipped_observation_too_large` counter includes both primary and
+shadow observations over 4 MiB. Completion events report `completed`, `compared`,
+`equal`, `different`, `timed_out`, and `failed_to_start`. The deadline defaults
+to 30 seconds. Set `--shadow-sql-compiler-timeout-secs` to a positive value to
+change it.
 
-Shadow mismatches are counted with bundle retention off, the default.
+Each mismatch event identifies the first difference in `difference_class`.
+A warning identifies each distinct system failure. These logs omit SQL text
+and compiler diagnostics. For each compiler package and UTC day, a stored
+pipeline and its SQL text can each qualify only once for `matched_distinct`.
+
 To keep local evidence for investigating a Rust optimizer mismatch, enable
 `--retain-sql-shadow-mismatches` alongside `--shadow-sql-compiler rust-optimizer`.
 Each difference then writes a private JSON file under

@@ -1948,9 +1948,11 @@ pub struct CompilerConfig {
     #[arg(long, default_value_t = default_sql_compiler_path())]
     pub sql_compiler_path: String,
 
-    /// Run a second SQL compiler to compare results. The server logs the outcome
-    /// and discards the output. Allow up to about 700 MiB of extra RSS and one
-    /// CPU per compiler server. Each server runs at most one shadow at a time.
+    /// Compare stored pipeline compilations with a second compiler. Each server
+    /// runs one shadow at a time. The Java heap limit is 512 MiB. In rust-optimizer
+    /// mode, JNI also uses native memory outside this limit. Without an explicit
+    /// Java heap limit, the native side reached 2.3 GiB peak RSS for a 500 KB SQL
+    /// program. On Linux, the supervised worker has a 1 GiB address-space limit.
     #[serde(default)]
     #[arg(long, value_enum)]
     pub shadow_sql_compiler: Option<ShadowCompiler>,
@@ -2084,6 +2086,18 @@ impl CompilerConfig {
 
     /// Convert all directory paths in the `self` to absolute paths.
     pub fn canonicalize(mut self) -> AnyResult<Self> {
+        if self.shadow_sql_compiler_timeout_secs == 0 {
+            return Err(AnyError::msg(
+                "The shadow deadline is zero. Set --shadow-sql-compiler-timeout-secs to at least 1.",
+            ));
+        }
+        if self.retain_sql_shadow_mismatches
+            && self.shadow_sql_compiler != Some(ShadowCompiler::RustOptimizer)
+        {
+            return Err(AnyError::msg(
+                "Only the Rust optimizer produces review bundles. Set --shadow-sql-compiler rust-optimizer or remove --retain-sql-shadow-mismatches.",
+            ));
+        }
         help_create_dir(&self.compiler_working_directory)?;
         self.compiler_working_directory = help_canonicalize_path(&self.compiler_working_directory)?;
         self.sql_compiler_path = help_canonicalize_path(&self.sql_compiler_path)?;
@@ -2601,6 +2615,59 @@ mod tests {
             config.api_base_url("localhost", "/feldera"),
             "http://localhost:8080/feldera"
         );
+    }
+
+    #[test]
+    fn shadow_options_require_positive_timeout_and_optimizer_bundles() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        let config = |args: &[&str]| {
+            let paths = [
+                "test",
+                "--compiler-working-directory",
+                path,
+                "--sql-compiler-path",
+                path,
+                "--compilation-cargo-lock-path",
+                path,
+            ];
+            CompilerConfig::parse_from(paths.into_iter().chain(args.iter().copied())).canonicalize()
+        };
+        let error = config(&["--shadow-sql-compiler-timeout-secs", "0"]).unwrap_err();
+        assert!(error.to_string().contains("at least 1"));
+        for mode in [None, Some("java"), Some("hybrid")] {
+            let mut args = vec!["--retain-sql-shadow-mismatches"];
+            if let Some(mode) = mode {
+                args.extend(["--shadow-sql-compiler", mode]);
+            }
+            let error = config(&args).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("--shadow-sql-compiler rust-optimizer"),
+                "{error}"
+            );
+        }
+        assert!(
+            config(&[
+                "--shadow-sql-compiler",
+                "rust-optimizer",
+                "--retain-sql-shadow-mismatches",
+            ])
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn shadow_memory_limits_in_help_and_operations_guide() {
+        use clap::CommandFactory;
+        let help = CompilerConfig::command().render_long_help().to_string();
+        let guide = include_str!("../../../docs.feldera.com/docs/operations/json-logging.md");
+        for text in [help.as_str(), guide] {
+            for detail in ["512 MiB", "native memory", "2.3 GiB", "500 KB", "1 GiB"] {
+                assert!(text.contains(detail), "missing {detail}");
+            }
+        }
     }
 
     /// The Gen-2 UDF SDK location is made absolute, and one that is not a crate stops startup.

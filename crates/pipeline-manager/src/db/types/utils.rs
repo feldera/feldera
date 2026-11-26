@@ -690,13 +690,6 @@ mod tests {
             validate_program_config(&value, true).unwrap()
         );
 
-        assert!(matches!(
-            super::validate_program_config_input(&json!({"compiler": "java"})),
-            Err(DBError::InvalidProgramConfig {
-                error: ValidationError::CompilerSelectionDisabled,
-                ..
-            })
-        ));
         assert!(super::validate_program_config_input(&json!({"compiler": null})).is_ok());
 
         // Invalid JSON for ProgramConfig

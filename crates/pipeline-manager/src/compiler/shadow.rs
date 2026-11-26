@@ -1,28 +1,33 @@
 //! Bounded, observational SQL compilation. This module has no database or
 //! artifact-delivery handle. Differences can produce a private local review bundle.
 
+mod cleanup;
 pub(super) mod hybrid;
 mod mismatch;
 mod sample;
+#[cfg(test)]
+mod telemetry_tests;
 
 use super::sql_compiler::{
     SqlCompilationError, SqlCompilationOutput, SqlCompilationRequest, SqlCompilationResult,
     ephemeral_compilation_dir, perform_sql_compilation_inner,
 };
-use super::util::ProcessGroupTerminator;
+use super::util::{ProcessGroupTerminator, UtilError};
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::types::{
     pipeline::PipelineId, program::SqlCompilationInfo, tenant::TenantId, version::Version,
 };
+use cleanup::Cleanup;
 use nix::libc;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::io::{self, Write};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 use tokio::{
     process::{Child, Command},
-    sync::Semaphore,
+    sync::Mutex as AsyncMutex,
     task::JoinHandle,
     time::{Duration, Instant, timeout_at},
 };
@@ -32,11 +37,119 @@ use uuid::Uuid;
 const MAX_SQL_BYTES: usize = 1024 * 1024;
 const MAX_OBSERVATION_BYTES: usize = 4 * 1024 * 1024;
 const MAX_OUTPUT_FILE_BYTES: libc::rlim_t = 16 * 1024 * 1024;
-static SLOT: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(1)));
-static SKIPPED: AtomicU64 = AtomicU64::new(0);
-static COMPLETED: AtomicU64 = AtomicU64::new(0);
-// Stop admission after cleanup failure so orphaned outputs cannot accumulate.
-static CLEANUP_HEALTHY: AtomicBool = AtomicBool::new(true);
+static SLOT: AsyncMutex<Option<Cleanup>> = AsyncMutex::const_new(None);
+
+#[derive(Default)]
+struct Counters {
+    skipped: AtomicU64,
+    completed: AtomicU64,
+    equal: AtomicU64,
+    different: AtomicU64,
+    dropped_busy: AtomicU64,
+    skipped_sql_too_large: AtomicU64,
+    skipped_observation_too_large: AtomicU64,
+    timed_out: AtomicU64,
+    failed_to_start: AtomicU64,
+}
+
+static COUNTERS: LazyLock<Counters> = LazyLock::new(Counters::default);
+
+impl Counters {
+    fn skipped(&self, reason: &'static str, counter: Option<&AtomicU64>) {
+        if let Some(counter) = counter {
+            counter.fetch_add(1, Ordering::Relaxed);
+        }
+        let skipped = self.skipped.fetch_add(1, Ordering::Relaxed) + 1;
+        info!(
+            reason,
+            skipped,
+            dropped_busy = self.dropped_busy.load(Ordering::Relaxed),
+            skipped_sql_too_large = self.skipped_sql_too_large.load(Ordering::Relaxed),
+            skipped_observation_too_large =
+                self.skipped_observation_too_large.load(Ordering::Relaxed),
+            "SQL shadow skipped"
+        );
+    }
+
+    fn record(&self, outcome: &Outcome, failed_to_start: bool) {
+        let counter = match outcome {
+            Outcome::Equal => &self.equal,
+            Outcome::Different => &self.different,
+            Outcome::TimedOut => &self.timed_out,
+            Outcome::Failed(Failure::ObservationTooLarge) => &self.skipped_observation_too_large,
+            Outcome::Failed(_) if failed_to_start => &self.failed_to_start,
+            _ => return,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn completed(&self, outcome: &Outcome) {
+        let equal = self.equal.load(Ordering::Relaxed);
+        let different = self.different.load(Ordering::Relaxed);
+        let completed = self.completed.fetch_add(1, Ordering::Relaxed) + 1;
+        let (outcome, failure_class) = match outcome {
+            Outcome::Equal => ("Equal", None),
+            Outcome::Different => ("Different", None),
+            Outcome::TimedOut => ("TimedOut", None),
+            Outcome::Failed(class) => ("Failed", Some(tracing::field::debug(class))),
+        };
+        info!(
+            outcome,
+            failure_class,
+            completed,
+            compared = equal + different,
+            equal,
+            different,
+            timed_out = self.timed_out.load(Ordering::Relaxed),
+            failed_to_start = self.failed_to_start.load(Ordering::Relaxed),
+            skipped_observation_too_large =
+                self.skipped_observation_too_large.load(Ordering::Relaxed),
+            "SQL shadow completed"
+        );
+    }
+}
+
+// Only fixed operation names and process metadata can reach the warning.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub(super) struct Cause {
+    pub program: String,
+    pub operation: &'static str,
+    pub io_error: Option<io::ErrorKind>,
+    pub exit_code: Option<i32>,
+    pub signal: Option<i32>,
+}
+
+impl Cause {
+    pub(super) fn file_error(&mut self, operation: &'static str, error: &UtilError) {
+        self.operation = operation;
+        if let UtilError::IoError(_, error) = error {
+            self.io_error = Some(error.kind());
+        }
+    }
+
+    fn warn_once(&self) {
+        static SEEN: LazyLock<Mutex<HashSet<Cause>>> = LazyLock::new(Mutex::default);
+        let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+        if seen.insert(self.clone()) {
+            warn!(
+                program = self.program,
+                cause = self.operation,
+                io_error = self.io_error.map(tracing::field::debug),
+                exit_code = self.exit_code,
+                signal = self.signal,
+                "SQL shadow compiler failed. Check the compiler installation and working directory."
+            );
+        }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct Attempt {
+    pub cause: Cause,
+    pub group: Option<u32>,
+    pub package: String,
+    pub timed_out: bool,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum Observation {
@@ -168,72 +281,98 @@ pub(super) fn launch(
     common: &CommonConfig,
     config: &CompilerConfig,
     program_config: &Value,
+    pipeline_id: PipelineId,
     sql: &str,
     primary: &SqlCompilationResult,
 ) -> Option<JoinHandle<Outcome>> {
     config.shadow_sql_compiler?;
-    let skipped = |reason: &str| {
-        let skipped = SKIPPED.fetch_add(1, Ordering::Relaxed) + 1;
-        info!(reason, skipped, "SQL shadow skipped");
+    let skipped = |reason, counter| {
+        COUNTERS.skipped(reason, counter);
         None
     };
     if sql.len() > MAX_SQL_BYTES {
-        return skipped("SQL exceeds 1 MiB");
+        return skipped("SQL exceeds 1 MiB", Some(&COUNTERS.skipped_sql_too_large));
     }
-    let Ok(permit) = SLOT.clone().try_acquire_owned() else {
-        return skipped("worker is busy");
+    let Ok(mut slot) = SLOT.try_lock() else {
+        return skipped("worker is busy", Some(&COUNTERS.dropped_busy));
     };
-    if !CLEANUP_HEALTHY.load(Ordering::Relaxed) {
-        return skipped("cleanup failed");
-    }
     let reference = match Observation::from_result(primary) {
         Ok(reference) => reference,
-        Err(Failure::ObservationTooLarge) => return skipped("primary observation exceeds 4 MiB"),
-        Err(_) => return skipped("primary result is unavailable"),
+        Err(Failure::ObservationTooLarge) => {
+            return skipped(
+                "primary observation exceeds 4 MiB",
+                Some(&COUNTERS.skipped_observation_too_large),
+            );
+        }
+        Err(_) => return skipped("primary result is unavailable", None),
     };
     let Ok(mut selected) = crate::db::types::program::ProgramConfig::deserialize(program_config)
     else {
-        return skipped("invalid program configuration");
+        return skipped("invalid program configuration", None);
     };
     selected.compiler = Some(crate::db::types::program::CompilerFamily::Java);
     let Ok(program_config) = serde_json::to_value(selected) else {
-        return skipped("cannot serialize program configuration");
+        return skipped("cannot serialize program configuration", None);
     };
     let deadline = Duration::from_secs(config.shadow_sql_compiler_timeout_secs);
     let common = common.clone();
     let config = config.clone();
     let sql = sql.to_owned();
     Some(tokio::spawn(async move {
-        let outcome = run(&common, &config, &program_config, &sql, reference, deadline).await;
-        drop(permit);
-        let completed = COMPLETED.fetch_add(1, Ordering::Release) + 1;
-        match &outcome {
-            Outcome::Failed(class) => {
-                info!(outcome = "Failed", failure_class = ?class, completed, "SQL shadow completed")
-            }
-            _ => info!(?outcome, completed, "SQL shadow completed"),
+        if !Cleanup::retry(&mut slot).await {
+            COUNTERS.skipped("cleanup failed", None);
+            return Outcome::Failed(Failure::Cleanup);
         }
+        let request = ShadowCompilation {
+            common: &common,
+            config: &config,
+            program_config: &program_config,
+            pipeline_id,
+            sql: &sql,
+        };
+        let outcome = run(request, reference, deadline, &mut slot).await;
+        COUNTERS.completed(&outcome);
         outcome
     }))
 }
 
+struct ShadowCompilation<'a> {
+    common: &'a CommonConfig,
+    config: &'a CompilerConfig,
+    program_config: &'a Value,
+    pipeline_id: PipelineId,
+    sql: &'a str,
+}
+
 async fn run(
-    common: &CommonConfig,
-    config: &CompilerConfig,
-    program_config: &Value,
-    sql: &str,
+    request: ShadowCompilation<'_>,
     reference: Observation,
     deadline: Duration,
+    stale: &mut Option<Cleanup>,
 ) -> Outcome {
+    let ShadowCompilation {
+        common,
+        config,
+        program_config,
+        pipeline_id,
+        sql,
+    } = request;
     let id = PipelineId(Uuid::now_v7());
     let directory = ephemeral_compilation_dir(config).join(id.to_string());
     let expires = Instant::now() + deadline;
     let optimizer =
         config.shadow_sql_compiler == Some(crate::config::ShadowCompiler::RustOptimizer);
     let accepted = matches!(reference, Observation::Success(..));
-    let mut package = String::new();
+    let mut attempt = Attempt::default();
+    let mut anonymizer_group = None;
     // Primary compiler logs can contain SQL and connector settings.
     let result = async {
+        // Finish directory creation before cancellation can start cleanup.
+        if let Err(e) = tokio::fs::create_dir_all(&directory).await {
+            attempt.cause.operation = "create shadow directory";
+            attempt.cause.io_error = Some(e.kind());
+            return Ok(Err(SqlCompilationError::SystemError(e.to_string())));
+        }
         timeout_at(
             expires,
             perform_sql_compilation_inner(SqlCompilationRequest {
@@ -248,20 +387,22 @@ async fn run(
                 program_config,
                 program_code: sql,
                 output: SqlCompilationOutput::Shadow,
-                shadow_package: optimizer.then_some(&mut package),
+                shadow: &mut attempt,
             }),
         )
         .await
     }
     .with_subscriber(Dispatch::none())
     .await;
-    let package = (!package.is_empty()).then_some(package.as_str());
+    let package = (!attempt.package.is_empty()).then_some(attempt.package.as_str());
     let outcome = match result {
         Err(_) => Outcome::TimedOut,
+        Ok(Err(_)) if attempt.timed_out => Outcome::TimedOut,
         Ok(result) => match Observation::from_result(&result) {
             Ok(actual) => match actual.compare(reference) {
                 Ok(()) => Outcome::Equal,
                 Err(difference) => {
+                    info!(difference_class = ?difference, "SQL shadow mismatch");
                     if optimizer
                         && config.retain_sql_shadow_mismatches
                         && let Err(error) = mismatch::retain(
@@ -272,6 +413,7 @@ async fn run(
                             difference,
                             package,
                             expires,
+                            &mut anonymizer_group,
                         )
                         .await
                     {
@@ -280,34 +422,22 @@ async fn run(
                     Outcome::Different
                 }
             },
-            Err(class) => Outcome::Failed(class),
+            Err(class) => {
+                if matches!(class, Failure::SystemError | Failure::TerminatedBySignal) {
+                    attempt.cause.warn_once();
+                }
+                Outcome::Failed(class)
+            }
         },
     };
-    // Timeout drops the attempt's ProcessGroupTerminator before cleanup. The
-    // semaphore remains held until cleanup finishes, including after a failure.
-    let outcome = finish(
-        outcome,
-        tokio::fs::remove_dir_all(&directory).await,
-        &CLEANUP_HEALTHY,
-    );
+    COUNTERS.record(&outcome, attempt.group.is_none());
+    let cleanup = Cleanup {
+        directory,
+        groups: [attempt.group, anonymizer_group],
+    };
+    let outcome = cleanup.finish(outcome, stale).await;
     if optimizer {
-        sample::record(package, sql, accepted, &outcome);
-    }
-    outcome
-}
-
-fn finish(outcome: Outcome, cleanup: io::Result<()>, healthy: &AtomicBool) -> Outcome {
-    if let Err(error) = cleanup
-        && error.kind() != io::ErrorKind::NotFound
-    {
-        healthy.store(false, Ordering::Relaxed);
-        warn!(
-            "SQL shadow cleanup failed. Check the compiler working directory and restart the compiler server to enable shadows."
-        );
-        // A known difference must still reset the field window.
-        if outcome != Outcome::Different {
-            return Outcome::Failed(Failure::Cleanup);
-        }
+        sample::record(package, pipeline_id, sql, accepted, &outcome);
     }
     outcome
 }
@@ -433,21 +563,6 @@ mod tests {
     use std::process::Stdio;
     use tokio::time::timeout;
 
-    #[test]
-    fn cleanup_failure_preserves_a_known_difference_and_stops_admission() {
-        let healthy = AtomicBool::new(true);
-        let failure = || Err(io::ErrorKind::PermissionDenied.into());
-        assert_eq!(
-            finish(Outcome::Different, failure(), &healthy),
-            Outcome::Different
-        );
-        assert!(!healthy.load(Ordering::Relaxed));
-        assert_eq!(
-            finish(Outcome::Equal, failure(), &healthy),
-            Outcome::Failed(Failure::Cleanup)
-        );
-    }
-
     #[tokio::test]
     async fn exited_shadow_leader_does_not_leave_group_members_running() {
         // Keep the leader alive until the second process joins its group. Both
@@ -462,19 +577,21 @@ mod tests {
             .unwrap();
         let group = leader.id().unwrap();
         let mut terminator = ProcessGroupTerminator::new("shadow regression", group);
-        let mut member = Command::new("sleep")
-            .arg("60")
+        let mut member = Command::new("cat")
+            .stdin(Stdio::piped())
             .process_group(i32::try_from(group).unwrap())
             .kill_on_drop(true)
             .spawn()
             .unwrap();
+        let mut exits =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::child()).unwrap();
         drop(leader.stdin.take());
         let status = timeout(Duration::from_secs(5), async {
             loop {
                 if let Some(status) = try_wait(&mut leader, &mut terminator).unwrap() {
                     break status;
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                exits.recv().await.unwrap();
             }
         })
         .await
@@ -561,6 +678,24 @@ mod tests {
             Observation::from_result(&result(program)),
             Err(Failure::ObservationTooLarge)
         );
+    }
+
+    async fn run(
+        common: &CommonConfig,
+        config: &CompilerConfig,
+        program_config: &Value,
+        sql: &str,
+        reference: Observation,
+        deadline: Duration,
+    ) -> Outcome {
+        let request = ShadowCompilation {
+            common,
+            config,
+            program_config,
+            pipeline_id: PipelineId(Uuid::nil()),
+            sql,
+        };
+        super::run(request, reference, deadline, &mut None).await
     }
 
     fn real_compiler_config(directory: &std::path::Path, extra: &[&str]) -> CompilerConfig {
@@ -677,7 +812,7 @@ mod tests {
             program_config,
             program_code: sql,
             output: SqlCompilationOutput::Full,
-            shadow_package: None,
+            shadow: &mut Default::default(),
         })
         .await;
         let program = &full.as_ref().unwrap().0;
@@ -730,7 +865,6 @@ mod tests {
         let common = CommonConfig::test_config();
         let sql = "CREATE TABLE t(i INT); CREATE VIEW v AS SELECT i + 1 AS j FROM t;";
         let id = PipelineId(Uuid::now_v7());
-        let completed = COMPLETED.load(Ordering::Acquire);
         let primary = super::super::sql_compiler::perform_sql_compilation(
             &common,
             &config,
@@ -746,22 +880,12 @@ mod tests {
         )
         .await;
         assert!(primary.is_ok(), "{primary:?}");
-        timeout(
-            Duration::from_secs(config.shadow_sql_compiler_timeout_secs + 5),
-            async {
-                while COMPLETED.load(Ordering::Acquire) == completed {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            },
-        )
-        .await
-        .expect("the primary entry point must launch and finish a shadow");
         let primary_schema = ephemeral_compilation_dir(&config)
             .join(id.to_string())
             .join("schema.json");
         let before = tokio::fs::read(&primary_schema).await.unwrap();
-        let handle = launch(&common, &config, &json!({}), sql, &primary).unwrap();
-        assert!(launch(&common, &config, &json!({}), sql, &primary).is_none());
+        let handle = launch(&common, &config, &json!({}), id, sql, &primary).unwrap();
+        assert!(launch(&common, &config, &json!({}), id, sql, &primary).is_none());
         assert_eq!(handle.await.unwrap(), Outcome::Equal);
         assert_eq!(tokio::fs::read(&primary_schema).await.unwrap(), before);
         let (program, elapsed, diagnostics) = primary.as_ref().unwrap();
@@ -769,7 +893,7 @@ mod tests {
         changed["extra_semantic_field"] = json!(true);
         let changed_reference = Ok((changed, *elapsed, diagnostics.clone()));
         assert_eq!(
-            launch(&common, &config, &json!({}), sql, &changed_reference)
+            launch(&common, &config, &json!({}), id, sql, &changed_reference)
                 .unwrap()
                 .await
                 .unwrap(),
@@ -782,7 +906,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(
-            launch(&common, &broken, &json!({}), sql, &primary)
+            launch(&common, &broken, &json!({}), id, sql, &primary)
                 .unwrap()
                 .await
                 .unwrap(),
@@ -793,6 +917,7 @@ mod tests {
                 &common,
                 &config,
                 &json!({}),
+                id,
                 &"x".repeat(MAX_SQL_BYTES + 1),
                 &primary
             )
@@ -811,89 +936,6 @@ mod tests {
             run(&common, &config, &json!({}), sql, reference, Duration::ZERO).await,
             Outcome::TimedOut
         );
-        assert_eq!(tokio::fs::read(&primary_schema).await.unwrap(), before);
-
-        // A zero-duration timeout can expire before spawn. Also prove that a
-        // timeout kills a child that has started and entered a blocking wait.
-        let source = directory.path().join("ShadowSleeper.java");
-        std::fs::write(
-            &source,
-            r#"import java.nio.file.*;
-public class ShadowSleeper {
-    public static void main(String[] args) throws Exception {
-        Path marker = Path.of(Files.readString(Path.of(args[0])));
-        Files.writeString(marker, Long.toString(ProcessHandle.current().pid()));
-        Thread.sleep(300000);
-    }
-}
-"#,
-        )
-        .unwrap();
-        assert!(
-            Command::new("javac")
-                .arg(&source)
-                .status()
-                .await
-                .unwrap()
-                .success()
-        );
-        let jar = directory.path().join("sleeper.jar");
-        assert!(
-            Command::new("jar")
-                .args(["--create", "--file"])
-                .arg(&jar)
-                .args(["--main-class", "ShadowSleeper", "-C"])
-                .arg(directory.path())
-                .arg("ShadowSleeper.class")
-                .status()
-                .await
-                .unwrap()
-                .success()
-        );
-        let marker = directory.path().join("started.pid");
-        let mut sleeping = config.clone();
-        sleeping.sql_compiler_path = jar.to_string_lossy().into_owned();
-        let deadline = Duration::from_secs(config.shadow_sql_compiler_timeout_secs);
-        let program_config = json!({});
-        let (outcome, pid) = tokio::join!(
-            run(
-                &common,
-                &sleeping,
-                &program_config,
-                marker.to_str().unwrap(),
-                Observation::from_result(&primary).unwrap(),
-                deadline
-            ),
-            async {
-                let pid = timeout(deadline, async {
-                    loop {
-                        if let Ok(text) = tokio::fs::read_to_string(&marker).await
-                            && let Ok(pid) = text.parse::<i32>()
-                        {
-                            break pid;
-                        }
-                        tokio::time::sleep(Duration::from_millis(10)).await;
-                    }
-                })
-                .await
-                .expect("the child must write its PID before the deadline");
-                // Advance the deadline after the JVM has started.
-                tokio::time::pause();
-                tokio::time::advance(deadline).await;
-                tokio::time::resume();
-                pid
-            }
-        );
-        assert_eq!(outcome, Outcome::TimedOut);
-        timeout(Duration::from_secs(5), async {
-            while nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
-                != Err(nix::errno::Errno::ESRCH)
-            {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("timed-out shadow child must be killed and reaped");
         assert_eq!(tokio::fs::read(&primary_schema).await.unwrap(), before);
     }
 }

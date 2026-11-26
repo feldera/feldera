@@ -16,7 +16,11 @@ use uuid::Uuid;
 
 const RETAINED_BUNDLES: usize = 32;
 
-async fn anonymize(jar: &Path, attempt: &Path) -> io::Result<Option<String>> {
+async fn anonymize(
+    jar: &Path,
+    attempt: &Path,
+    process_group: &mut Option<u32>,
+) -> io::Result<Option<String>> {
     let output = attempt.join("anonymized.sql");
     let mut command = Command::new("java");
     limit_jvm(&mut command);
@@ -37,6 +41,7 @@ async fn anonymize(jar: &Path, attempt: &Path) -> io::Result<Option<String>> {
     let pid = child
         .id()
         .ok_or_else(|| io::Error::other("missing anonymizer process ID"))?;
+    *process_group = Some(pid);
     let mut group = ProcessGroupTerminator::new("SQL shadow anonymizer", pid);
     loop {
         if let Some(status) = try_wait(&mut child, &mut group)? {
@@ -54,6 +59,7 @@ async fn anonymize(jar: &Path, attempt: &Path) -> io::Result<Option<String>> {
     Ok(Some(tokio::fs::read_to_string(output).await?))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn retain(
     config: &CompilerConfig,
     program: &Value,
@@ -62,6 +68,7 @@ pub(super) async fn retain(
     difference: Difference,
     package: Option<&str>,
     expires: Instant,
+    process_group: &mut Option<u32>,
 ) -> io::Result<()> {
     let program = ProgramConfig::deserialize(program).map_err(io::Error::other)?;
     let runtime = program.runtime_version();
@@ -76,7 +83,7 @@ pub(super) async fn retain(
     });
     let status = match timeout_at(
         expires,
-        anonymize(Path::new(&config.sql_compiler_path), attempt),
+        anonymize(Path::new(&config.sql_compiler_path), attempt, process_group),
     )
     .await
     {
@@ -169,6 +176,7 @@ mod tests {
             Difference::Schema,
             None,
             Instant::now() + Duration::from_secs(30),
+            &mut None,
         )
         .await
         .unwrap();

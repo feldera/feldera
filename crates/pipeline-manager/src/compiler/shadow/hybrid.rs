@@ -26,9 +26,12 @@ pub(in crate::compiler) async fn messages(
     runtime: &RuntimeSelector,
     rust_optimizer: bool,
     success: bool,
-    package: Option<&mut String>,
+    shadow: &mut super::Attempt,
 ) -> Result<Vec<SqlCompilerMessage>, SqlCompilationError> {
-    let raw = read_file_content(&directory.join("result.json")).await?;
+    let raw = read_file_content(&directory.join("result.json"))
+        .await
+        .inspect_err(|e| shadow.cause.file_error("read hybrid result", e))?;
+    shadow.cause.operation = "invalid hybrid result";
     let attempt: Attempt = serde_json::from_str(&raw).map_err(|error| {
         SqlCompilationError::SystemError(format!("Invalid hybrid result: {error}"))
     })?;
@@ -40,14 +43,26 @@ pub(in crate::compiler) async fn messages(
         || attempt.runtime_abi.as_bytes() != runtime.as_bytes()
         || attempt.engine != engine
     {
+        shadow.cause.operation = "hybrid result identity mismatch";
         return Err(SqlCompilationError::SystemError(
             "Hybrid result identity mismatch".into(),
         ));
     }
     match (attempt.status.as_str(), success) {
-        ("ok", true) => verify_artifacts(directory, runtime.is_gen2(), &attempt.artifacts).await?,
+        ("ok", true) => {
+            shadow.cause.operation = "verify hybrid artifacts";
+            verify_artifacts(directory, runtime.is_gen2(), &attempt.artifacts).await?;
+        }
         ("sql_error", false) if attempt.artifacts.is_empty() => (),
         _ => {
+            shadow.timed_out = attempt.status == "resource_limit"
+                && attempt.reason.as_deref() == Some("compilation deadline expired");
+            shadow.cause.operation = match attempt.status.as_str() {
+                "resource_limit" => "hybrid resource limit",
+                "cancelled" => "hybrid compilation cancelled",
+                "internal_error" => "hybrid internal error",
+                _ => "unexpected hybrid result status",
+            };
             return Err(SqlCompilationError::SystemError(format!(
                 "Hybrid compilation {}: {}",
                 attempt.status,
@@ -55,13 +70,13 @@ pub(in crate::compiler) async fn messages(
             )));
         }
     }
-    if let (Some(output), Some(digest)) = (package, attempt.package_sha256)
+    if let Some(digest) = attempt.package_sha256
         && digest.len() == 64
         && digest
             .bytes()
             .all(|c| c.is_ascii_digit() || matches!(c, b'a'..=b'f'))
     {
-        *output = digest;
+        shadow.package = digest;
     }
     Ok(attempt.messages)
 }

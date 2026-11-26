@@ -71,7 +71,11 @@ pub fn unstable_features() -> Option<&'static HashSet<&'static str>> {
 /// race would panic on the second `set`.
 #[cfg(test)]
 pub(crate) fn enable_test_unstable_features() {
-    let _ = UNSTABLE_FEATURES.set(HashSet::from_iter(["runtime_version", "testing"]));
+    let _ = UNSTABLE_FEATURES.set(HashSet::from_iter([
+        "compiler_selection",
+        "runtime_version",
+        "testing",
+    ]));
 }
 
 /// To query whether the platform enabled a certain unstable feature.
