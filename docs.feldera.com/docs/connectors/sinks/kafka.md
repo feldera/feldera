@@ -221,6 +221,58 @@ The exactly-once sink exports the same metrics, plus:
 | `kafka_output_commit_retries_total` | counter | Commits repeated after a retriable error or a timeout. |
 | `kafka_output_replay_spool_bytes` | gauge | Bytes of the open transaction kept for replay, in memory and on disk. |
 
+## Distributed connectors
+
+In a multihost pipeline, the connector normally runs on one host, which writes
+all of its output.  To spread the work of writing across the hosts, set the
+generic [`distributed`](/connectors#distributed) attribute to `true`.  Then
+the connector runs on every host, and each host writes the part of the output
+on its own workers.
+
+A distributed Kafka output connector must read an
+[index](/connectors/unique_keys) of its view.  The pipeline divides the
+output among the hosts by the index key, so all of the updates to one key
+come from one host, in order.  Without an index, two hosts could write
+updates to one key in the wrong order.
+
+```json
+{
+  "transport": {
+    "name": "kafka_output",
+    "config": {
+      "bootstrap.servers": "localhost:9092",
+      "topic": "big_view"
+    }
+  },
+  "format": {
+    "name": "json",
+    "config": {
+      "update_format": "debezium"
+    }
+  },
+  "index": "big_view_idx",
+  "distributed": true
+}
+```
+
+A distributed Kafka output connector has these limits:
+
+- It must have an `index`, and it must not have a `postprocessor`, which
+  could change the message key.  Otherwise, `distributed` has no effect, and
+  the connector runs on one host.
+- Each host has its own producer.  Messages from different hosts go into a
+  partition in no specific order.  Only the order of the updates to one key
+  is kept.
+- To keep the order of the messages from one host after the producer
+  retries a send, set `enable.idempotence` to `true`.  This also applies to a
+  connector that is not distributed.
+- Multihost pipelines do not support exactly-once fault tolerance, so a
+  distributed connector does not use Kafka transactions.
+- It needs a coordinator and pipeline hosts from the same Feldera release or
+  later.  If the coordinator or any host is older, the connector runs on one
+  host.
+- In a single-host pipeline, `distributed` has no effect.
+
 ## Example usage
 
 We will create a Kafka output connector named `total-sales`.

@@ -158,11 +158,12 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    config::{InputEndpointConfig, OutputEndpointConfig},
+    config::{ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, TransportConfig},
     program_schema::SqlIdentifier,
     runtime_status::{ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus},
     suspend::TemporarySuspendError,
     transaction::TransactionId,
+    transport::delta_table::{DeltaTableUpdateMode, DeltaTableWriteMode},
 };
 
 /// `/coordination/status` update, streamed by pipeline to coordinator.
@@ -176,6 +177,19 @@ pub struct CoordinationStatus {
     /// A pipeline that predates this field supports none of them.
     #[serde(default)]
     pub capabilities: CoordinationCapabilities,
+
+    /// The output connectors that this pipeline can run as distributed
+    /// connectors, by name: those that set
+    /// [ConnectorConfig::distributed](crate::config::ConnectorConfig::distributed)
+    /// and support it (see
+    /// [ConnectorConfig::supports_output_distribution](crate::config::ConnectorConfig::supports_output_distribution)).
+    /// The coordinator distributes a connector only if every host reports it
+    /// here, and then names it in [CoordinationActivate::distributed_outputs].
+    ///
+    /// A pipeline that predates this field sends `None`.  It can distribute
+    /// the output connectors that [legacy_output_distribution] accepts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distributable_outputs: Option<BTreeMap<String, DistributableOutput>>,
 }
 
 /// Coordination features that a pipeline supports.
@@ -290,7 +304,48 @@ pub struct CoordinationActivate {
     /// leader.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub host_urls: Vec<String>,
+
+    /// The output connectors that the coordinator gives to every host, as
+    /// distributed connectors.  Each one is in the
+    /// [CoordinationStatus::distributable_outputs] of every host.  The pipeline
+    /// runs each of these connectors as a distributed connector, and every
+    /// other connector as an ordinary one.
+    ///
+    /// A coordinator that predates this field sends `None`.  It distributes
+    /// the output connectors that [legacy_output_distribution] accepts, so then
+    /// the pipeline distributes the same ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distributed_outputs: Option<BTreeSet<String>>,
 }
+
+/// Returns true if a coordinator that predates
+/// [CoordinationActivate::distributed_outputs] runs output connector `config`
+/// on every host, and a pipeline that predates
+/// [CoordinationStatus::distributable_outputs] runs it as a distributed
+/// connector.
+///
+/// This rule is fixed.  Connectors that support distribution later go in
+/// [CoordinationStatus::distributable_outputs] instead.
+pub fn legacy_output_distribution(config: &ConnectorConfig) -> bool {
+    config.distributed
+        && match &config.transport {
+            TransportConfig::NullOutput => true,
+            TransportConfig::DeltaTableOutput(delta) => {
+                delta.mode == DeltaTableWriteMode::Append
+                    && delta.update_mode == DeltaTableUpdateMode::Cdc
+            }
+            _ => false,
+        }
+}
+
+/// What a pipeline reports about an output connector that it can run as a
+/// distributed connector (see [CoordinationStatus::distributable_outputs]).
+///
+/// This is empty for now.  Later versions can add what a connector needs from
+/// its distribution, such as how to divide its output among the hosts, with
+/// defaults that keep older coordinators and pipelines compatible.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DistributableOutput {}
 
 /// `/coordination/input/choices` reply.
 ///
@@ -953,6 +1008,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(activate.input_distribution, BTreeMap::new());
+        assert_eq!(activate.distributed_outputs, None);
 
         let status: CoordinationStatus = serde_json::from_value(serde_json::json!({
             "incarnation_uuid": "00000000-0000-0000-0000-000000000000",
@@ -963,6 +1019,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(status.capabilities, CoordinationCapabilities::default());
+        assert_eq!(status.distributable_outputs, None);
         assert!(!status.capabilities.distributed_inputs);
         assert!(CoordinationCapabilities::current().distributed_inputs);
     }
