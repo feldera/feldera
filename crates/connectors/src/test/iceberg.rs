@@ -1595,6 +1595,20 @@ fn spark_table(name: &str) -> SparkTable {
     spark_tables(&[name])
 }
 
+/// Maven Central can refuse CI with a 4xx, which Spark reports as "not found":
+/// resolve from Google's mirror of Central first, then from Central.
+/// Same as `SPARK_ENV` in `python/tests/utils.py`.
+const SPARK_ENV: [(&str, &str); 2] = [
+    (
+        "DEFAULT_ARTIFACT_REPOSITORY",
+        "https://maven-central.storage-download.googleapis.com/maven2/",
+    ),
+    (
+        "PYSPARK_SUBMIT_ARGS",
+        "--repositories https://repo1.maven.org/maven2/ pyspark-shell",
+    ),
+];
+
 /// Build `names` in order and return the last. A retry builds them all again,
 /// because each one starts from the table that the one before it left.
 fn spark_tables(names: &[&str]) -> SparkTable {
@@ -1616,6 +1630,7 @@ fn spark_tables(names: &[&str]) -> SparkTable {
                 &format!("pyspark=={pyspark}"),
                 "python",
             ])
+            .envs(SPARK_ENV)
             .arg(script)
             .arg(format!("--namespace={namespace}"))
             .arg(format!("--table={name}"))
