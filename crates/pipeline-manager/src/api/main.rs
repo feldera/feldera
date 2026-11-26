@@ -2099,4 +2099,117 @@ mod tests {
             }
         }
     }
+
+    /// A gzip body that expands to 256 MiB is rejected before it is fully decompressed
+    /// (GHSA-qph8-7859-gq2f, fixed in actix-web 4.18.2). Older versions decompress the
+    /// whole chunk first, and only then compare its size with the JSON limit.
+    #[actix_web::test]
+    async fn gzip_bomb_is_not_decompressed_past_the_json_limit() {
+        use crate::db::test::setup_pg;
+        use crate::test_alloc::peak_growth;
+        use flate2::{Compression, write::GzEncoder};
+        use std::io::Write;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        const MIB: usize = 1024 * 1024;
+
+        crate::ensure_default_crypto_provider();
+        let (db, _temp) = setup_pg().await;
+        let state = WebData::new(ServerState::test_state(Arc::new(Mutex::new(db))).await);
+        let mut cfg = ApiServerConfig::test_config();
+        cfg.max_json_body_bytes = 2 * MIB;
+        let app = test::init_service(build_app(&cfg, &None).app_data(state)).await;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::best());
+        let zeros = vec![0u8; MIB];
+        for _ in 0..256 {
+            encoder.write_all(&zeros).unwrap();
+        }
+        let bomb = encoder.finish().unwrap();
+        drop(zeros);
+        // Under the limit on the wire, else `Content-Length` rejects it before decompression.
+        assert!(bomb.len() < MIB, "gzip bomb is {} bytes", bomb.len());
+
+        let req = test::TestRequest::put()
+            .uri("/v0/pipelines/p")
+            .insert_header(header::ContentType::json())
+            .insert_header((header::CONTENT_ENCODING, "gzip"))
+            .set_payload(bomb)
+            .to_request();
+        let (status, growth) =
+            peak_growth(async { test::call_service(&app, req).await.status() }).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        // The limit is 2 MiB; the margin absorbs allocations of tests that run in parallel.
+        assert!(
+            growth < 64 * MIB,
+            "the request used {} MiB of heap to reject a gzip bomb",
+            growth / MIB
+        );
+    }
+
+    /// The `Compress` middleware answers in each encoding that a client asks for, and the
+    /// body decodes back to the original. The decoders are not the ones actix-http encodes
+    /// with, so a broken encoder after an actix-http upgrade fails this test.
+    #[actix_web::test]
+    async fn responses_round_trip_through_each_compression() {
+        use crate::db::test::setup_pg;
+        use std::io::Read;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        crate::ensure_default_crypto_provider();
+        let (db, _temp) = setup_pg().await;
+        let state = WebData::new(ServerState::test_state(Arc::new(Mutex::new(db))).await);
+        let cfg = ApiServerConfig::test_config();
+        let app = test::init_service(build_app(&cfg, &None).app_data(state)).await;
+
+        let program_code = "x".repeat(64 * 1024);
+        let req = test::TestRequest::put()
+            .uri("/v0/pipelines/p")
+            .set_json(serde_json::json!({"name": "p", "program_code": program_code}))
+            .to_request();
+        assert_eq!(
+            test::call_service(&app, req).await.status(),
+            StatusCode::CREATED
+        );
+
+        type Decode = fn(&[u8]) -> Vec<u8>;
+        let decoders: [(&str, Decode); 3] = [
+            ("gzip", |b| {
+                let mut out = Vec::new();
+                flate2::read::GzDecoder::new(b)
+                    .read_to_end(&mut out)
+                    .unwrap();
+                out
+            }),
+            ("br", |b| {
+                let mut out = Vec::new();
+                brotli_decompressor::Decompressor::new(b, 4096)
+                    .read_to_end(&mut out)
+                    .unwrap();
+                out
+            }),
+            ("zstd", |b| zstd::decode_all(b).unwrap()),
+        ];
+        for (encoding, decode) in decoders {
+            let req = test::TestRequest::get()
+                .uri("/v0/pipelines/p")
+                .insert_header((header::ACCEPT_ENCODING, encoding))
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), StatusCode::OK, "{encoding}");
+            assert_eq!(
+                resp.headers().get(header::CONTENT_ENCODING).unwrap(),
+                encoding
+            );
+            let body = test::read_body(resp).await;
+            assert!(
+                body.len() < program_code.len(),
+                "{encoding} did not compress"
+            );
+            let pipeline: serde_json::Value = serde_json::from_slice(&decode(&body)).unwrap();
+            assert_eq!(pipeline["program_code"], program_code, "{encoding}");
+        }
+    }
 }
