@@ -885,9 +885,10 @@ export type ConnectorConfig = OutputBufferConfig & {
    * For an output connector: when `false` (the default), the connector
    * runs on one host, which writes all of its output.  When `true`, the
    * connector runs on every host, and each host writes the part of the
-   * output on its own workers.  Only the null output transport, and the
+   * output on its own workers.  Only the null output transport, the
    * Delta Lake output transport with `mode: append` and
-   * `update_mode: cdc`, support this setting.  On other output transports,
+   * `update_mode: cdc`, and the Kafka output transport with `index` and no
+   * `postprocessor`, support this setting.  On other output connectors,
    * it has no effect.  A distributed Delta Lake output commits each
    * transaction once, through its part on one host, and it does not support
    * output buffering.

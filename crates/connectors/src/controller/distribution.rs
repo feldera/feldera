@@ -200,6 +200,7 @@ mod tests {
     use feldera_types::{
         config::{ConnectorConfig, TransportConfig},
         coordination::{InputDistribution, InputShard},
+        postprocess::PostprocessorConfig,
         transport::{datagen::DatagenInputConfig, kafka::KafkaInputConfig},
     };
 
@@ -335,6 +336,17 @@ mod tests {
         TransportConfig::DeltaTableOutput(serde_json::from_value(json).unwrap())
     }
 
+    /// A Kafka output connector config.
+    fn kafka_output() -> TransportConfig {
+        TransportConfig::KafkaOutput(
+            serde_json::from_value(serde_json::json!({
+                "topic": "t",
+                "bootstrap.servers": "localhost:9092",
+            }))
+            .unwrap(),
+        )
+    }
+
     /// Returns whether output connector `c`, with `config`, is distributed on multihost, with
     /// `list` as the coordinator's list of distributed connectors.
     fn distributed(config: &ConnectorConfig, list: Option<&[&str]>) -> bool {
@@ -342,12 +354,64 @@ mod tests {
         output_is_distributed("c", config, true, list.as_ref()).unwrap()
     }
 
-    /// The null output and the Delta Lake output that appends a change log support distribution.
-    /// The coordinator's list decides whether they are distributed.  Without a list, they are
+    /// A Kafka output connector supports distribution only if it reads an index, which shards
+    /// its stream by the message key, and has no postprocessor, which could change the key.
+    /// It is distributed only if the coordinator says so, because a coordinator that predates
+    /// the list of distributed connectors gives it to one host.
+    #[test]
+    fn kafka_output_distribution() {
+        let indexed = ConnectorConfig {
+            index: Some("v_idx".into()),
+            ..output(kafka_output())
+        };
+        assert_eq!(indexed.output_distribution_refusal(), None);
+        assert!(distributed(&indexed, Some(&["c"])));
+        assert!(!distributed(&indexed, Some(&[])));
+        assert!(!distributed(&indexed, None));
+        assert!(!output_is_distributed("c", &indexed, false, Some(&["c".into()].into())).unwrap());
+        validate_output_distribution("c", &indexed, true).unwrap();
+
+        // An empty list of postprocessors is the same as none.
+        let no_postprocessors = ConnectorConfig {
+            postprocessor: Some(Vec::new()),
+            ..indexed.clone()
+        };
+        assert!(no_postprocessors.supports_output_distribution());
+
+        let not_indexed = output(kafka_output());
+        let refusal = not_indexed.output_distribution_refusal().unwrap();
+        assert!(refusal.contains("requires 'index'"), "{refusal}");
+
+        let postprocessed = ConnectorConfig {
+            postprocessor: Some(vec![PostprocessorConfig {
+                name: "p".into(),
+                config: serde_json::Value::Null,
+            }]),
+            ..indexed.clone()
+        };
+        let refusal = postprocessed.output_distribution_refusal().unwrap();
+        assert!(refusal.contains("'postprocessor'"), "{refusal}");
+
+        // The coordinator distributes only connectors that every host reported, so one that
+        // this host cannot distribute means that the hosts disagree.
+        for config in [
+            not_indexed,
+            postprocessed,
+            ConnectorConfig {
+                distributed: false,
+                ..indexed
+            },
+        ] {
+            let list = BTreeSet::from(["c".to_string()]);
+            let error = output_is_distributed("c", &config, true, Some(&list)).unwrap_err();
+            assert!(error.to_string().contains("this host cannot"), "{error}");
+        }
+    }
+
+    /// The null output, the Delta Lake output that appends a change log, and the Kafka output of
+    /// an index support distribution.  Without a list from the coordinator, the first two are
     /// distributed, as they were before the list.  Elsewhere `distributed` has no effect and is
-    /// accepted, as it was before output connectors could be distributed.  The coordinator
-    /// distributes only connectors that every host can distribute, so one that this host cannot
-    /// means that the hosts disagree.
+    /// accepted, as it was before output connectors could be distributed.
     #[test]
     fn output_distribution_depends_on_the_transport() {
         let legacy = [
@@ -369,13 +433,7 @@ mod tests {
             delta(serde_json::json!({"mode": "truncate"})),
             delta(serde_json::json!({"mode": "error_if_exists"})),
             delta(serde_json::json!({"mode": "append", "update_mode": "merge"})),
-            TransportConfig::KafkaOutput(
-                serde_json::from_value(serde_json::json!({
-                    "topic": "t",
-                    "bootstrap.servers": "localhost:9092",
-                }))
-                .unwrap(),
-            ),
+            kafka_output(),
             TransportConfig::FileOutput(
                 serde_json::from_value(serde_json::json!({"path": "f"})).unwrap(),
             ),
@@ -385,9 +443,6 @@ mod tests {
             assert!(config.output_distribution_refusal().is_some());
             assert!(!distributed(&config, None));
             assert!(!distributed(&config, Some(&[])));
-            let list = BTreeSet::from(["c".to_string()]);
-            let error = output_is_distributed("c", &config, true, Some(&list)).unwrap_err();
-            assert!(error.to_string().contains("this host cannot"), "{error}");
             validate_output_distribution("c", &config, true).unwrap();
         }
 

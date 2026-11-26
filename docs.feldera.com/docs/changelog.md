@@ -10,6 +10,16 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Enterprise (multihost): the Kafka output connector supports
+  `distributed: true` when it has an `index` and no `postprocessor`.  Each
+  host writes the part of the output on its own workers, divided by the index
+  key, so all of the updates to one key come from one host.  See
+  [Distributed connectors](/connectors/sinks/kafka#distributed-connectors).
+  Before, `distributed` had no effect on a Kafka output connector.  A
+  connector that already sets it, with an `index`, now runs on every host,
+  and the first restart after the upgrade writes all of the index to the
+  topic again.
+
 ## v0.385.0
 
 - Security: pipeline diagnostics replace registered Secret values with their
