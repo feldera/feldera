@@ -370,7 +370,9 @@
   const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
 </script>
 
-<div class="relative flex h-full flex-1 flex-col rounded">
+<!-- Logs can quote connector configs and user data. PostHog session replays show the text
+     under `ph-mask` as asterisks. -->
+<div class="ph-mask relative flex h-full flex-1 flex-col rounded">
   {#if logSearchBar}
     <div class="shrink-0 border-b border-panel-line px-3 py-2">
       {@render logSearchBar()}
