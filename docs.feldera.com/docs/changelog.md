@@ -10,6 +10,16 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- The PostgreSQL output connector in materialized mode now writes an update
+  of a row that is not in the table. Before, the `UPDATE` did not change the
+  table, so a row that a dropped batch left out stayed out until its key was
+  deleted and inserted again. The connector still updates the rows that are
+  there with an `UPDATE`, and inserts the other rows with
+  `INSERT ... ON CONFLICT (key) DO UPDATE`. So an update of a missing row
+  fires `INSERT` triggers, and fails if the table has a `NOT NULL` column
+  with no default that the view does not write. With
+  `on_conflict_do_nothing`, updates do not change.
+
 ## v0.391.0
 
 - Security: with client certificates (`mtls.enabled`), a pipeline admits
