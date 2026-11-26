@@ -43,10 +43,6 @@ The legal dates are `0001-01-01` to `9999-12-31`.  A computation whose
 result is outside this range stops the pipeline with an error.  An input
 value outside this range is a parse error.
 
-A column declared with `DEFAULT CAST('0000-01-01' AS DATE)` compiles with
-a warning. Inserting a row that omits the column evaluates the cast and
-raises a runtime error. A row that supplies a valid date uses that date.
-
 ### Date literals
 
 `DATE` literals have the form `DATE 'YYYY-MM-DD'`.  Trailing spaces
