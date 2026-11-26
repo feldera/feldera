@@ -196,16 +196,29 @@ fn uuid_literal(s: &str) -> Option<uuid::Uuid> {
     uuid::Uuid::parse_str(&digits).ok()
 }
 
-/// Java BigDecimal uses half-even for strings and truncation for existing decimals.
-/// Bound intermediate powers of ten by the destination precision, including scientific input.
-fn decimal(s: &str, precision: u64, scale: u64, round_even: bool) -> Option<String> {
-    if precision == 0 || precision > 38 || scale > precision {
-        return None;
+// A BigInteger power of ten has at most floor(log10(2^Integer.MAX_VALUE)) trailing zeros.
+const MAX_BIG_INTEGER_POWER: i64 = 646_456_992;
+
+fn fits_big_integer(digits: &str, zeros: i64) -> bool {
+    let power = digits.len() as i64 - 1 + zeros;
+    if power != MAX_BIG_INTEGER_POWER {
+        return power < MAX_BIG_INTEGER_POWER;
     }
-    let negative = s.starts_with('-');
+    // Round the exclusive limit up to the coefficient's precision before comparing.
+    let context = bigdecimal::Context::new(
+        (digits.len() as u64).try_into().unwrap(),
+        bigdecimal::RoundingMode::Up,
+    );
+    let limit = bigdecimal::BigDecimal::from(2).powi_with_context(i64::from(i32::MAX), &context);
+    let coefficient = bigdecimal::BigDecimal::new(digits.parse().unwrap(), -zeros);
+    coefficient < limit
+}
+
+// BigDecimal needs an i32 input scale and, for nonzero values, a BigInteger for each rescale operand.
+pub(super) fn decimal_parts(s: &str, scale: u64) -> Option<(String, i64)> {
     let s = s.strip_prefix(['+', '-']).unwrap_or(s);
     let (mantissa, exponent) = match s.split_once(['e', 'E']) {
-        Some((m, e)) => (m, e.parse::<i32>().ok()?),
+        Some((m, e)) => (m, e.parse::<i64>().ok()?),
         None => (s, 0),
     };
     let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
@@ -214,7 +227,25 @@ fn decimal(s: &str, precision: u64, scale: u64, round_even: bool) -> Option<Stri
         return None;
     }
     let digits = all.trim_start_matches('0');
-    let places = scale as i64 + i64::from(exponent) - i64::try_from(fraction.len()).ok()?;
+    let input_scale = i64::try_from(fraction.len()).ok()?.checked_sub(exponent)?;
+    let input_scale = i32::try_from(input_scale).ok()?;
+    let places = i64::from(i32::try_from(scale).ok()?) - i64::from(input_scale);
+    if !digits.is_empty()
+        && (places < -MAX_BIG_INTEGER_POWER || !fits_big_integer(digits, places.max(0)))
+    {
+        return None;
+    }
+    Some((all, places))
+}
+
+/// Java BigDecimal uses half-even for strings and truncation for existing decimals.
+fn decimal(s: &str, precision: u64, scale: u64, round_even: bool) -> Option<String> {
+    if precision == 0 || precision > 38 || scale > precision {
+        return None;
+    }
+    let negative = s.starts_with('-');
+    let (all, places) = decimal_parts(s, scale)?;
+    let digits = all.trim_start_matches('0');
     let magnitude = if digits.is_empty() {
         0
     } else if places >= 0 {

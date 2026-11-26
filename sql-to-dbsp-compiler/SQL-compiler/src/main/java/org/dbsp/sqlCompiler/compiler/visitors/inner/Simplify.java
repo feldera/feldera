@@ -315,10 +315,37 @@ public class Simplify extends ExpressionTranslator {
                 } else if (type.is(DBSPTypeDecimal.class)) {
                     try {
                         DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
-                        // The runtime rounds excess digits half-to-even
-                        BigDecimal value = new BigDecimal(trimmed)
-                                .setScale(decType.scale, RoundingMode.HALF_EVEN);
-                        if (value.precision() > decType.precision) {
+                        BigDecimal value = new BigDecimal(trimmed);
+                        long places = (long) decType.scale - value.scale();
+                        long digits = value.precision() + places;
+                        // BigInteger magnitudes must be less than 2^Integer.MAX_VALUE.
+                        final int maxPower = 646_456_992;
+                        if (value.signum() != 0 && (places < -maxPower || digits > maxPower + 1))
+                            throw new ArithmeticException("BigInteger overflow");
+                        if (value.signum() != 0 && places > 0 && digits == maxPower + 1) {
+                            BigDecimal coefficient = value.abs().scaleByPowerOfTen(decType.scale);
+                            // Bound 2^Integer.MAX_VALUE using only the digits needed for the comparison.
+                            for (int width = 16; ; width *= 2) {
+                                var down = new java.math.MathContext(width, RoundingMode.DOWN);
+                                var up = new java.math.MathContext(width, RoundingMode.UP);
+                                BigDecimal lower = BigDecimal.ONE, upper = BigDecimal.ONE;
+                                for (int bit = 0; bit < Integer.SIZE - 1; bit++) {
+                                    lower = lower.multiply(lower).multiply(BigDecimal.TWO, down);
+                                    upper = upper.multiply(upper).multiply(BigDecimal.TWO, up);
+                                }
+                                if (coefficient.compareTo(lower) < 0)
+                                    break;
+                                if (coefficient.compareTo(upper) >= 0)
+                                    throw new ArithmeticException("BigInteger overflow");
+                            }
+                        }
+                        boolean tooWide = value.signum() != 0 && digits > decType.precision;
+                        if (!tooWide) {
+                            if (digits < 0)
+                                value = BigDecimal.ZERO;
+                            value = value.setScale(decType.scale, RoundingMode.HALF_EVEN);
+                        }
+                        if (tooWide || value.precision() > decType.precision) {
                             // The runtime cast fails; keep the cast so the error surfaces at runtime
                             this.compiler.reportWarning(expression.getSourcePosition(), "Invalid DECIMAL",
                                     "cannot represent " + Utilities.singleQuote(text) +
@@ -327,8 +354,7 @@ public class Simplify extends ExpressionTranslator {
                         } else {
                             result = new DBSPDecimalLiteral(type, value);
                         }
-                    } catch (NumberFormatException ex) {
-                        // Keep the cast; the runtime reports a parse error
+                    } catch (NumberFormatException | ArithmeticException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                 " String " + Utilities.singleQuote(text) +
                                         " cannot be interpreted as a DECIMAL");

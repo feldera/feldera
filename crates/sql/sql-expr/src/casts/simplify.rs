@@ -80,20 +80,24 @@ impl SimplifyDefault<'_> {
             return Ok(());
         };
         let warning = if target_kind == Ty::Decimal {
+            let target = editor.node(target.into())?;
+            let precision = target
+                .data("precision")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| Error::new("DECIMAL requires a precision"))?;
+            let scale = target
+                .data("scale")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| Error::new("DECIMAL requires a scale"))?;
             let input = match source_type {
                 Ty::String if editor.expr_kind(source)? == Expr::StringLiteral => {
                     let trimmed = text.trim_matches(|c: char| c <= ' ');
-                    if !trimmed.is_ascii()
-                        || trimmed.contains('_')
-                        || trimmed.parse::<bigdecimal::BigDecimal>().is_err()
-                    {
-                        let mut warning = SimplifyWarning {
-                            position: Default::default(),
+                    if literals::decimal_parts(trimmed, scale).is_none() {
+                        warnings.push(SimplifyWarning {
+                            position: cast_position(editor, cast)?,
                             kind: "Not a number",
                             message: format!(" String '{text}' cannot be interpreted as a DECIMAL"),
-                        };
-                        warning.position = cast_position(editor, cast)?;
-                        warnings.push(warning);
+                        });
                         return Ok(());
                     }
                     format!("'{text}'")
@@ -116,15 +120,6 @@ impl SimplifyDefault<'_> {
                 }
                 _ => return Ok(()),
             };
-            let target = editor.node(target.into())?;
-            let precision = target
-                .data("precision")
-                .and_then(|v| v.as_u64())
-                .ok_or_else(|| Error::new("DECIMAL requires a precision"))?;
-            let scale = target
-                .data("scale")
-                .and_then(|v| v.as_u64())
-                .ok_or_else(|| Error::new("DECIMAL requires a scale"))?;
             Some(SimplifyWarning {
                 position: Default::default(),
                 kind: "Invalid DECIMAL",
@@ -383,5 +378,86 @@ fn string_literal(
         editor.empty_origin_node(origin, kind, fields)
     } else {
         editor.inner_at(origin, kind, fields)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_sql_ir::Circuit;
+    use serde_json::json;
+
+    #[test]
+    fn decimal_text_casts() -> Result<(), Error> {
+        let graph = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]
+        }))?;
+        let (graph, types) = graph.with_inner_roots([
+            json!({"class":"DBSPTypeString", "id":1, "precision":-1, "fixed":false, "mayBeNull":false}),
+            json!({"class":"DBSPTypeDecimal", "id":2, "precision":5, "scale":2, "mayBeNull":false}),
+        ])?;
+        let mut editor = CircuitEditor::new(graph);
+        let string = editor.type_id(types[0])?;
+        let decimal = editor.type_id(types[1])?;
+        for (text, expected) in [
+            ("1e1000000000", Err("Not a number")),
+            ("1e-1000000000", Err("Not a number")),
+            ("0e99999999999", Err("Not a number")),
+            ("1e-2147483648", Err("Not a number")),
+            ("0e-2147483647", Ok("0.00")),
+            ("0e-2147483648", Err("Not a number")),
+            ("0e2147483648", Ok("0.00")),
+            ("0e2147483649", Err("Not a number")),
+            ("0.0e2147483649", Ok("0.00")),
+            ("0.0e-2147483647", Err("Not a number")),
+            ("1e-646456994", Ok("0.00")),
+            ("1e-646456995", Err("Not a number")),
+            ("8e646456990", Err("Invalid DECIMAL")),
+            ("9e646456990", Err("Not a number")),
+            ("8.8080652584198167660e646456990", Err("Invalid DECIMAL")),
+            ("8.8080652584198167661e646456990", Err("Not a number")),
+            (" +1.2450 ", Ok("1.24")),
+            ("-1.255", Ok("-1.26")),
+            ("+.25E+0000000000002", Ok("25.00")),
+            (" 999.995 ", Err("Invalid DECIMAL")),
+            (" 1_2 ", Err("Not a number")),
+            ("١", Err("Not a number")),
+        ] {
+            let source = editor.make_expr(
+                string.into(),
+                Expr::StringLiteral,
+                string,
+                [("value", Field::Data(text.into()))],
+            )?;
+            let cast = editor.cast(source.into(), source, decimal)?.into();
+            let mut warnings = Vec::new();
+            let mut simplify = SimplifyDefault {
+                warnings: Some(&mut warnings),
+            };
+            let result = simplify.postorder_rebuilt(&mut editor, cast, cast)?;
+            match expected {
+                Ok(value) => {
+                    assert!(warnings.is_empty(), "{text}: {warnings:?}");
+                    assert_eq!(editor.node(result)?.class(), "DBSPDecimalLiteral", "{text}");
+                    assert_eq!(
+                        editor.node(result)?.data("value"),
+                        Some(&json!(value)),
+                        "{text}"
+                    );
+                }
+                Err(kind) => {
+                    assert_eq!(result, cast, "{text}");
+                    assert_eq!(warnings.len(), 1, "{text}");
+                    assert_eq!(warnings[0].kind, kind, "{text}");
+                    let message = if kind == "Not a number" {
+                        format!(" String '{text}' cannot be interpreted as a DECIMAL")
+                    } else {
+                        format!("cannot represent '{text}' as DECIMAL(5, 2): precision of DECIMAL type too small to represent value")
+                    };
+                    assert_eq!(warnings[0].message, message);
+                }
+            }
+        }
+        Ok(())
     }
 }
