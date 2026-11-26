@@ -1,12 +1,12 @@
 //! Propagate the results of live closure analysis through the expanded graph.
-use crate::{BridgeError, MAX_BYTES, operator_number};
+use crate::{check_transport_size, operator_number, BridgeError};
 use feldera_sql_ir::Circuit;
-use feldera_sql_opt::{OutputWaterline, TransferOutcome, propagate_waterlines};
+use feldera_sql_opt::{propagate_waterlines, OutputWaterline, TransferOutcome};
 use jni::{
-    EnvUnowned, JValue,
     errors::ThrowRuntimeExAndDefault,
     jni_sig, jni_str,
     objects::{JByteArray, JClass, JObject},
+    EnvUnowned, JValue,
 };
 
 // SAFETY: the signature matches RustCircuitPass.propagateWaterlines. Each
@@ -22,11 +22,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     step: JObject<'local>,
 ) {
     env.with_env(|env| -> Result<(), BridgeError> {
-        if topology.len(env)? > MAX_BYTES {
-            return Err(BridgeError::Optimizer(
-                "Monotonicity topology exceeds 64 MiB".into(),
-            ));
-        }
+        check_transport_size(topology.len(env)?, "Monotonicity", "topology", env)?;
         let graph = Circuit::from_json_bytes(&env.convert_byte_array(&topology)?)?;
         propagate_waterlines(&graph, |id, transfer| {
             let bytes = serde_json::to_vec(&transfer)

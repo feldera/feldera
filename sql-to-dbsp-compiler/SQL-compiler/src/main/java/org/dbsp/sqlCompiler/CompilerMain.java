@@ -206,6 +206,9 @@ public class CompilerMain {
                         throw new IllegalArgumentException("The S3 output must differ from the S2 input");
                 }
                 circuit = CircuitReplay.read(compiler, input, stage);
+            } catch (CircuitReplay.ResourceLimit e) {
+                compiler.messages.reportError(e);
+                return compiler.messages;
             } catch (IOException | RuntimeException e) {
                 String reason = e.getMessage() == null ? e.getClass().getName() : e.getMessage();
                 compiler.reportError(SourcePositionRange.INVALID, stage + " replay failed",
@@ -229,6 +232,9 @@ public class CompilerMain {
             String file = stage == CircuitReplay.Stage.S2 ? this.options.ioOptions.writeS2 : this.options.ioOptions.writeS3;
             try {
                 CircuitReplay.write(compiler, circuit, Path.of(file), stage);
+            } catch (CircuitReplay.ResourceLimit e) {
+                compiler.messages.reportError(e);
+                return compiler.messages;
             } catch (IOException | RuntimeException e) {
                 compiler.reportError(SourcePositionRange.INVALID, stage + " export failed", e.getMessage());
                 return compiler.messages;

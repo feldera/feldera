@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
+import re
 import signal
 import subprocess
 import tempfile
@@ -38,6 +38,30 @@ def check_sql_error(compiler, classpath, directory, name, program, expected, *, 
             or result["attempts"] != 1 or result["compiler"] != "hybrid" or result["artifacts"]):
         raise ValueError(f"Hybrid {name} diagnostic or terminal outcome differs from direct Java")
     return messages
+
+
+def check_replay_limits(classpath, directory, source):
+    diagnostics = directory / "checkpoint-errors.json"
+    java = ["java", "-cp", classpath, "org.dbsp.sqlCompiler.CompilerMain", "-je", "--noRust",
+            "--dump-producer-commit", "test", "--dump-runtime-abi", "test", "--errors", diagnostics]
+    for stage in ("s2", "s3"):
+        checkpoint = directory / f"{stage}.json"
+        write = [f"--write-{stage}", checkpoint, source]
+        if stage == "s2":
+            write.insert(0, "--input_circuit")
+        subprocess.run([*java, *write], check=True, timeout=60)
+        size = checkpoint.stat().st_size
+        for operation, args in [("replay", [f"--read-{stage}", checkpoint]), ("export", write)]:
+            if operation == "export":
+                checkpoint.unlink()
+            limited = subprocess.run([java[0], "-Dfeldera.test.checkpointMaxBytes=16", *java[1:], *args],
+                                     timeout=60)
+            errors = [m for m in json.loads(diagnostics.read_bytes() or b"[]") if not m["warning"]]
+            assert limited.returncode and len(errors) == 1, (stage, operation, errors)
+            assert errors[0]["error_type"] == "Optimizer resource limit", errors
+            assert f"{stage.upper()} {operation} is {size} bytes" in errors[0]["message"], errors
+            assert "limit is 16 bytes" in errors[0]["message"], errors
+            assert "without --rust-optimizer-passes" in errors[0]["message"], errors
 
 
 def validate(compiler, comparator, classpath, directory, lateness=False, rust_optimizer_passes=False):
@@ -195,38 +219,41 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
                      "retry", "internal_error")
     assert retried["compiler"] == "java" and retried["attempts"] == 2
 
-    # Fail the checkpoint export alone. The fallback must publish a full direct-Java result.
-    with tempfile.TemporaryDirectory() as local:
-        real_java = shutil.which("java")
-        if real_java is None:
-            raise RuntimeError("Java is required for the stateless fallback test")
-        launcher = Path(local) / "java"
-        launcher.write_text(
-            '#!/bin/sh\nfor arg do\n  if [ "$arg" = "--write-s3" ]; then exit 1; fi\ndone\n'
-            'exec "$P2_TEST_JAVA" "$@"\n'
-        )
-        launcher.chmod(0o755)
-        env = dict(os.environ, PATH=local + os.pathsep + os.environ["PATH"], P2_TEST_JAVA=real_java)
-        ordinary_launcher = launcher.read_text()
-        bug = json.dumps([{"warning": False, "error_type": "Compiler error", "message": "invalid circuit"}])
-        launcher.write_text(ordinary_launcher.replace("then exit 1", f"then echo '{bug}' >&2; exit 1"))
-        internal = finish(start("compiler-bug", env=env), "compiler-bug", "internal_error")
-        assert internal["attempts"] == 1 and "invalid circuit" in internal["reason"]
-        launcher.write_text(ordinary_launcher)
-        for name, engine, ir_only, engine_files in [
-            ("recovered", "classic", False, ["circuit.rs", "stubs.rs"]),
-            ("recovered-ir", "classic", True, []),
-            ("recovered-gen2", "gen2", True, ["circuit.json"]),
-        ]:
-            recovered = finish(start(name, env=env, engine=engine, ir_only=ir_only,
-                                     allow_stateless_java_fallback=True), name, "ok")
-            assert recovered["compiler"] == "java" and recovered["attempts"] == 2
-            compare_files(name, recovered, directory / f"{engine}-java",
-                          {"schema.json", "dataflow.json", *engine_files})
-        retried_workspace = finish(start("recovered-workspace", env=env, workspace=workspace,
-                                         allow_stateless_java_fallback=True), "recovered-workspace", "ok")
-        assert retried_workspace["compiler"] == "java" and retried_workspace["attempts"] == 2
-        compare_files("recovered-workspace", retried_workspace, direct_workspace, workspace_files)
+    check_replay_limits(classpath, directory, source)
+    options = os.environ.get("JAVA_TOOL_OPTIONS", "")
+    env = dict(os.environ, JAVA_TOOL_OPTIONS=(options + " -Dfeldera.test.checkpointMaxBytes=16").strip())
+
+    def check_recovery(name, env, direct, files, stage, **changes):
+        recovered = finish(start(name, env=env, allow_stateless_java_fallback=True, **changes), name, "ok")
+        assert recovered["compiler"] == "java" and recovered["attempts"] == 2, recovered
+        reason = recovered["fallback_reason"]
+        assert reason["status"] == "resource_limit", reason
+        assert stage in reason["reason"] and "limit is 16 bytes" in reason["reason"], reason
+        assert "without --rust-optimizer-passes" in reason["reason"], reason
+        assert set(recovered["artifacts"]) == files, recovered
+        for filename in files:
+            actual = directory / name / "result" / filename
+            assert actual.read_bytes() == (direct / filename).read_bytes(), (name, filename)
+
+    for name, engine, ir_only, engine_files in [
+        ("recovered", "classic", False, ["circuit.rs", "stubs.rs"]),
+        ("recovered-ir", "classic", True, []),
+        ("recovered-gen2", "gen2", True, ["circuit.json"]),
+    ]:
+        check_recovery(name, env, directory / f"{engine}-java", {"schema.json", "dataflow.json", *engine_files},
+                       "S3 export", engine=engine, ir_only=ir_only)
+    check_recovery("recovered-workspace", env, direct_workspace, workspace_files, "S3 export", workspace=workspace)
+    if rust_optimizer_passes:
+        for payload, limit in [("input", 16), ("output", 64)]:
+            name = f"native-{payload}-limit"
+            env = dict(os.environ, FELDERA_TEST_OPTIMIZER_MAX_BYTES=str(limit))
+            native = finish(start(name, env=env), name, "resource_limit")
+            assert native["compiler"] == "hybrid" and native["attempts"] == 1, native
+            size = re.search(rf"OptimizerOrder {payload} is (\d+) bytes", native["reason"])
+            assert size and int(size.group(1)) > limit and f"limit is {limit} bytes" in native["reason"], native
+        env = dict(os.environ, FELDERA_TEST_OPTIMIZER_MAX_BYTES="16")
+        check_recovery("recovered-native", env, directory / "classic-java",
+                       {"schema.json", "dataflow.json", "circuit.rs", "stubs.rs"}, "OptimizerOrder input")
     return {"classic_workspace_bytes": True, "gen2_canonical_ir": True, "schema_and_dataflow": True,
             "sql_error_terminal": True, "deadline_terminal": True, "cancellation_terminal": True,
             "validated_artifact_digests": True, "stateful_fallback_refused": True,

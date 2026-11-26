@@ -122,9 +122,14 @@ fn deep_checkpoint_artifacts_preserve_definitions_and_exact_literals() {
     for _ in 0..150 {
         plan = serde_json::json!({"args": [plan]});
     }
-    let deep_plan = checkpoint(&graph, false).replace(r#""calcite_plan":{}"#, &format!(r#""calcite_plan":{plan}"#));
+    let deep_plan = checkpoint(&graph, false)
+        .replace(r#""calcite_plan":{}"#, &format!(r#""calcite_plan":{plan}"#));
     let result = invoke("--s3-to-artifacts", &deep_plan);
-    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     let artifacts = feldera_sql_ir::parse_circuit_json(&result.stdout).unwrap();
     assert_eq!(artifacts["checkpoint"]["calcite_plan"], plan);
     assert_eq!(artifacts["dataflow"]["calcite_plan"], plan);
@@ -165,4 +170,39 @@ fn binding_submissions_preserves_the_api_source_and_batch_boundary() {
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("one compilation batch"));
+}
+
+#[test]
+fn worker_publishes_resource_limits_without_artifacts() {
+    let dir = tempfile::tempdir().unwrap();
+    let checkpoint = dir.path().join("input.json");
+    let attempt = dir.path().join("attempt");
+    let diagnostic = serde_json::json!({
+        "range": feldera_sql_source::SourceRange::default(),
+        "type": "Optimizer resource limit", "message": "Optimizer input exceeds the limit", "warning": false
+    });
+    let input = serde_json::json!({
+        "schema_version":4, "stage":"S3-subset", "producer_commit":"test", "runtime_abi":"test",
+        "options":{"ioOptions":{"gen2":true}}, "sources":{"lines":[]}, "calcite_plan":{},
+        "diagnostics":{"messages":[diagnostic]},
+        "circuit":{"class":"DBSPCircuit","id":0,"metadata":{"inputs":[],"outputs":[]},
+                   "declarations":[],"allOperators":[]}
+    });
+    std::fs::write(&checkpoint, input.to_string()).unwrap();
+    let status = Command::new(env!("CARGO_BIN_EXE_sql2dbsp"))
+        .args(["--s3-worker", "test", "test"])
+        .arg(checkpoint)
+        .arg(&attempt)
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(1));
+    let result = attempt.join("result");
+    let record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(result.join("result.json")).unwrap()).unwrap();
+    assert_eq!(record["status"], "resource_limit", "{record}");
+    assert!(record["reason"]
+        .as_str()
+        .unwrap()
+        .contains("Optimizer input exceeds the limit"));
+    assert_eq!(std::fs::read_dir(result).unwrap().count(), 1);
 }

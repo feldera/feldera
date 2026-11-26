@@ -4,6 +4,7 @@ mod package;
 mod supervise;
 
 use self::supervise::Supervisor;
+use crate::worker::Failure;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -53,14 +54,6 @@ struct Request {
     allow_stateless_java_fallback: bool,
 }
 
-#[derive(Debug)]
-enum Failure {
-    Internal(String),
-    Limit(String),
-    Cancelled,
-    Sql(Value),
-}
-
 impl From<io::Error> for Failure {
     fn from(value: io::Error) -> Self {
         Self::Internal(value.to_string())
@@ -72,39 +65,31 @@ impl From<serde_json::Error> for Failure {
     }
 }
 
-impl Failure {
-    fn fields(self) -> (&'static str, Value, Value) {
-        match self {
-            Self::Internal(reason) => ("internal_error", reason.into(), json!([])),
-            Self::Limit(reason) => ("resource_limit", reason.into(), json!([])),
-            Self::Cancelled => ("cancelled", "compilation cancelled".into(), json!([])),
-            Self::Sql(messages) => ("sql_error", Value::Null, messages),
-        }
-    }
-}
-
 /// Java emits a JSON diagnostic array on stderr under -je. A JVM startup line
 /// may precede it. Accept only a complete array of structured messages.
 fn messages(file: &Path) -> Result<Value, Failure> {
     let bytes = fs::read(file)?;
-    if bytes.iter().all(u8::is_ascii_whitespace) {
+    let mut input = bytes.trim_ascii_start();
+    while input.starts_with(b"WARNING:") || input.starts_with(b"Picked up JAVA_TOOL_OPTIONS:") {
+        input = input
+            .splitn(2, |&b| b == b'\n')
+            .nth(1)
+            .unwrap_or_default()
+            .trim_ascii_start();
+    }
+    if input.is_empty() {
         return Ok(json!([]));
     }
-    for (i, ch) in bytes.iter().enumerate() {
-        if *ch != b'[' {
-            continue;
-        }
-        if let Ok(Value::Array(items)) = serde_json::from_slice::<Value>(&bytes[i..]) {
-            if items
-                .iter()
-                .all(|v| v["warning"].is_boolean() && v["message"].is_string())
-            {
-                return Ok(items.into());
-            }
+    if let Ok(Value::Array(items)) = serde_json::from_slice(input) {
+        if items
+            .iter()
+            .all(|v| v["warning"].is_boolean() && v["message"].is_string())
+        {
+            return Ok(items.into());
         }
     }
     Err(Failure::Internal(format!(
-        "compiler emitted malformed diagnostics in {}",
+        "compiler emitted malformed diagnostics in {}. Check the Java classpath and compiler version",
         file.display()
     )))
 }
@@ -122,6 +107,7 @@ impl Request {
             // Each optimizer JVM serves one request. Limit JIT compilation to C1
             // for both the classic printer session and the Gen-2 front end.
             command
+                .arg("--enable-native-access=ALL-UNNAMED")
                 .arg(library_path)
                 .arg("-Xss8m")
                 .arg("-XX:TieredStopAtLevel=1");
@@ -193,27 +179,7 @@ impl Request {
 
     fn java_result(exit: ExitStatus, log: &Path) -> Result<Value, Failure> {
         let diagnostics = messages(log)?;
-        let entries = diagnostics
-            .as_array()
-            .expect("messages validates the diagnostic array");
-        if let Some(bug) = entries.iter().find(|m| {
-            m["warning"] == false
-                && matches!(
-                    m["error_type"].as_str(),
-                    Some(
-                        "Compiler error"
-                            | "This is a bug in the compiler (please report it to the developers)"
-                    )
-                )
-        }) {
-            return Err(Failure::Internal(format!(
-                "Java compiler failure: {}",
-                bug["message"]
-            )));
-        }
-        if entries.iter().any(|m| m["warning"] == false) {
-            return Err(Failure::Sql(diagnostics));
-        }
+        Failure::check_messages(&diagnostics)?;
         if !exit.success() {
             return Err(Failure::Internal(format!(
                 "Java compiler exited with {exit}"
@@ -356,7 +322,17 @@ impl Request {
         }
         match record["status"].as_str() {
             Some("ok") if status.success() => (),
-            Some("sql_error") => return Err(Failure::Sql(record["messages"].clone())),
+            Some("resource_limit") => {
+                let reason = record["reason"].as_str().unwrap_or("Check the worker log");
+                return Err(Failure::Limit(format!("S3 worker: {reason}")));
+            }
+            Some("sql_error") => {
+                Failure::check_messages(&record["messages"])?;
+                return Err(Failure::Internal(
+                    "S3 worker reported an SQL error without a diagnostic. Check the worker log"
+                        .into(),
+                ));
+            }
             _ => {
                 return Err(Failure::Internal(format!(
                     "S3 worker failed with {status}: {}",
@@ -436,6 +412,7 @@ pub(super) fn run(manifest: &Path, attempt: &Path) -> io::Result<ExitCode> {
     let mut attempts = 0;
     let mut hashes = serde_json::Map::new();
     let mut package_sha256 = None;
+    let mut fallback_reason = None;
     let result = (|| -> Result<Value, Failure> {
         let supervisor =
             Supervisor::new(&request.slots, Duration::from_millis(request.deadline_ms))?;
@@ -452,12 +429,14 @@ pub(super) fn run(manifest: &Path, attempt: &Path) -> io::Result<ExitCode> {
         let first = request.attempt(&supervisor, scratch.path(), ready.path(), false);
         package_sha256 = package.and_then(package::Package::verified_digest);
         let messages = match first {
-            Err(Failure::Internal(_) | Failure::Limit(_))
+            Err(failure @ (Failure::Internal(_) | Failure::Limit(_)))
                 if request.allow_stateless_java_fallback =>
             {
                 supervisor.remaining()?;
                 ready = tempfile::tempdir_in(attempt)?;
                 let scratch = tempfile::tempdir_in(attempt)?;
+                let (status, reason, _) = failure.fields();
+                fallback_reason = Some(json!({"status": status, "reason": reason}));
                 family = "java";
                 attempts += 1;
                 request.attempt(&supervisor, scratch.path(), ready.path(), true)
@@ -480,6 +459,9 @@ pub(super) fn run(manifest: &Path, attempt: &Path) -> io::Result<ExitCode> {
         "producer_commit":request.producer_commit,"runtime_abi":request.runtime_abi,
         "rust_optimizer_passes":family == "hybrid" && request.rust_optimizer_passes,
         "engine":request.engine,"status":status,"reason":reason,"messages":messages,"attempts":attempts,"artifacts":hashes});
+    if let Some(reason) = fallback_reason {
+        record["fallback_reason"] = reason;
+    }
     if let Some(digest) = package_sha256.filter(|_| family == "hybrid") {
         record["package_sha256"] = digest.into();
     }
@@ -490,4 +472,86 @@ pub(super) fn run(manifest: &Path, attempt: &Path) -> io::Result<ExitCode> {
     } else {
         ExitCode::FAILURE
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    #[test]
+    fn jvm_startup_lines_can_precede_empty_or_structured_diagnostics() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("front.log");
+        let startup =
+            "Picked up JAVA_TOOL_OPTIONS: -Xmx512m\nWARNING: A restricted method was called\n";
+        let sql = json!([{"warning": false, "message": "Invalid SQL"}]);
+        fs::write(&log, format!("{startup}{sql}")).unwrap();
+        assert_eq!(messages(&log).unwrap(), sql);
+        fs::write(&log, startup).unwrap();
+        assert_eq!(messages(&log).unwrap(), json!([]));
+    }
+
+    #[test]
+    fn malformed_diagnostics_are_internal_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("front.log");
+        for stderr in [
+            "unexpected output\n[]",
+            "WARNING: startup\n[broken\n[]",
+            "WARNING: startup\n[{}]",
+            "[]\nWARNING: trailing output",
+        ] {
+            fs::write(&log, stderr).unwrap();
+            assert!(
+                matches!(messages(&log), Err(Failure::Internal(_))),
+                "{stderr}"
+            );
+        }
+    }
+
+    #[test]
+    fn java_failure_kind_controls_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("front.log");
+        for (kind, expected) in [
+            ("Optimizer resource limit", "resource_limit"),
+            ("S3 export failed", "resource_limit"),
+            ("S3 replay failed", "resource_limit"),
+            ("Error reading file", "internal_error"),
+            ("Compiler error", "internal_error"),
+            ("Error parsing SQL", "sql_error"),
+        ] {
+            let diagnostic = json!([{"warning":false,"error_type":kind,"message":"test failure"}]);
+            fs::write(&log, diagnostic.to_string()).unwrap();
+            let (status, reason, messages) = Request::java_result(ExitStatus::from_raw(256), &log)
+                .unwrap_err()
+                .fields();
+            assert_eq!(status, expected, "{kind}");
+            if status == "sql_error" {
+                assert_eq!(messages, diagnostic);
+            } else {
+                assert!(
+                    reason.as_str().unwrap().contains("test failure"),
+                    "{reason}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn optimizer_jvm_enables_native_access() {
+        let request: Request = serde_json::from_value(json!({
+            "java_classpath":"compiler.jar","producer_commit":"test","runtime_abi":"test",
+            "engine":"classic","sql":"test.sql","slots":"slots","deadline_ms":60000
+        }))
+        .unwrap();
+        for rust in [false, true] {
+            let command = request.jvm(rust).unwrap();
+            let native = command
+                .get_args()
+                .any(|arg| arg == "--enable-native-access=ALL-UNNAMED");
+            assert_eq!(native, rust);
+        }
+    }
 }

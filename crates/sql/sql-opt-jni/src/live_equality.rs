@@ -1,17 +1,18 @@
 //! Recover original operand metadata for a comparison of rewritten expressions.
-use crate::{BridgeError, MAX_BYTES, decode_live_circuit, pass_warnings};
+use crate::{check_transport_size, decode_live_circuit, pass_warnings, BridgeError};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{Circuit, Error, NodeId};
 use feldera_sql_opt::{ColumnRewriteError, KeyComparisonError};
 use jni::{
-    Env, EnvUnowned, JValue,
     errors::ThrowRuntimeExAndDefault,
     jni_sig, jni_str,
     objects::{JByteArray, JClass, JObject},
+    Env, EnvUnowned, JValue,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 pub(super) fn compare(
+    pass: &str,
     env: &mut Env,
     operands: &JObject,
     graph: &Circuit,
@@ -20,11 +21,9 @@ pub(super) fn compare(
 ) -> Result<bool, KeyComparisonError> {
     let roots = graph.live_inner_roots(input, fields)?;
     let bytes = serde_json::to_vec(&roots).map_err(|e| Error::new(e.to_string()))?;
-    if bytes.len() > MAX_BYTES {
-        return Err(Error::new("comparison operands exceed 64 MiB").into());
-    }
     let bytes = env
-        .with_local_frame(4, |env| -> jni::errors::Result<Option<Vec<u8>>> {
+        .with_local_frame(4, |env| -> jni::errors::Result<Vec<u8>> {
+            check_transport_size(bytes.len(), pass, "comparison request", env)?;
             let request = env.byte_array_from_slice(&bytes)?;
             let result = env
                 .call_method(
@@ -35,13 +34,10 @@ pub(super) fn compare(
                 )?
                 .l()?;
             let result = JByteArray::cast_local(env, result)?;
-            if result.len(env)? > MAX_BYTES {
-                return Ok(None);
-            }
-            env.convert_byte_array(&result).map(Some)
+            check_transport_size(result.len(env)?, pass, "comparison reply", env)?;
+            env.convert_byte_array(&result)
         })
-        .map_err(|e| Error::new(e.to_string()))?
-        .ok_or_else(|| Error::new("captured comparison operands exceed 64 MiB"))?;
+        .map_err(|e| Error::new(e.to_string()))?;
     let base = Circuit::from_json(
         json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}),
     )?;
@@ -96,9 +92,12 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     operands: JObject<'local>,
 ) -> JByteArray<'local> {
     env.with_env(|env| -> Result<_, BridgeError> {
-        if snapshot.len(env)?.saturating_add(clusters.len(env)?) > MAX_BYTES {
-            return Err(fusion_error("input exceeds 64 MiB"));
-        }
+        check_transport_size(
+            snapshot.len(env)? + clusters.len(env)?,
+            "Live/Fuse",
+            "input",
+            env,
+        )?;
         let circuit =
             decode_live_circuit(&env.convert_byte_array(&snapshot)?).map_err(fusion_error)?;
         let clusters =
@@ -113,6 +112,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             |site| {
                 let [left, right] = site.fields;
                 compare(
+                    "Live/Fuse",
                     env,
                     &operands,
                     site.graph,
@@ -124,9 +124,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         );
         let result = column_reply(output, &circuit, next, warnings).map_err(fusion_error)?;
         let bytes = serde_json::to_vec(&result).map_err(fusion_error)?;
-        if bytes.len() > MAX_BYTES {
-            return Err(fusion_error("output exceeds 64 MiB"));
-        }
+        check_transport_size(bytes.len(), "Live/Fuse", "output", env)?;
         Ok(env.byte_array_from_slice(&bytes)?)
     })
     .resolve::<ThrowRuntimeExAndDefault>()

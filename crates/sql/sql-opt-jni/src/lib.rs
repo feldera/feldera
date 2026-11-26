@@ -1,25 +1,25 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
-mod fragment;
 mod antijoin_reader;
-mod split_map;
-mod narrowed_unary;
-mod push_projection;
-mod filtered_join_projection;
-mod output_projection;
-mod narrowed_join;
-mod topk_input;
-mod trim_filter;
-mod trim_window;
-mod trim_output;
-mod repeat;
-mod waterlines;
 mod delta_expansion;
+mod filtered_join_projection;
+mod fragment;
+mod live_equality;
+mod narrowed_join;
+mod narrowed_unary;
+mod output_projection;
+mod push_projection;
+mod repeat;
 mod shared_indexes;
 mod shared_projection;
-mod live_equality;
+mod split_map;
 mod star_join;
 mod temporal;
+mod topk_input;
+mod trim_filter;
+mod trim_output;
+mod trim_window;
+mod waterlines;
 use feldera_sql_ir::{BodyOrder, Circuit, CircuitEditor, Field, NodeId, OutputPort};
 use jni::{
     errors::ThrowRuntimeExAndDefault,
@@ -69,7 +69,54 @@ thread_local! {
     static LIVE_COMPILATIONS: RefCell<Vec<LiveCompilation>> = const { RefCell::new(Vec::new()) };
 }
 
-const MAX_BYTES: usize = 64 * 1024 * 1024;
+// Tests can lower the transport limit for one compiler process.
+static MAX_BYTES: std::sync::LazyLock<usize> = std::sync::LazyLock::new(|| {
+    const LIMIT: usize = 64 * 1024 * 1024;
+    std::env::var("FELDERA_TEST_OPTIMIZER_MAX_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|size| (1..=LIMIT).contains(size))
+        .unwrap_or(LIMIT)
+});
+
+#[derive(Debug, thiserror::Error)]
+#[error("{pass} {payload} is {size} bytes. The transport limit is {limit} bytes")]
+struct TransportLimit<'a> {
+    pass: &'a str,
+    payload: &'a str,
+    size: usize,
+    limit: usize,
+}
+
+impl<'a> TransportLimit<'a> {
+    fn check(size: usize, pass: &'a str, payload: &'a str) -> Result<(), Self> {
+        let limit = *MAX_BYTES;
+        if size > limit {
+            return Err(Self {
+                pass,
+                payload,
+                size,
+                limit,
+            });
+        }
+        Ok(())
+    }
+}
+
+fn check_transport_size(
+    size: usize,
+    pass: &str,
+    payload: &str,
+    env: &mut jni::Env,
+) -> jni::errors::Result<()> {
+    TransportLimit::check(size, pass, payload).or_else(|error| {
+        // The pending exception keeps its type across optimizer callbacks.
+        env.throw_new(
+            jni::jni_str!("org/dbsp/sqlCompiler/compiler/backend/CircuitReplay$ResourceLimit"),
+            jni::strings::JNIString::new(error.to_string()),
+        )
+    })
+}
 
 fn annotations(circuit: &Circuit) -> Result<BTreeMap<u64, Value>, feldera_sql_ir::Error> {
     let mut values = BTreeMap::new();
@@ -111,7 +158,10 @@ fn waterline_input<T: serde::de::DeserializeOwned>(state: &[u8]) -> serde_json::
 
 fn map_chains(state: &[u8]) -> Result<Vec<Vec<NodeId>>, serde_json::Error> {
     let chains: Vec<Vec<u64>> = serde_json::from_slice(state)?;
-    Ok(chains.into_iter().map(|chain| chain.into_iter().map(NodeId::Outer).collect()).collect())
+    Ok(chains
+        .into_iter()
+        .map(|chain| chain.into_iter().map(NodeId::Outer).collect())
+        .collect())
 }
 
 fn ports(pairs: Vec<(u64, usize)>) -> BTreeSet<OutputPort> {
@@ -153,7 +203,11 @@ impl ExpressionSite {
         self.arena_with_operators(input, &[])
     }
 
-    fn arena_with_operators(self, input: &[u8], operators: &[Value]) -> Result<(Circuit, Vec<NodeId>), Box<dyn std::error::Error>> {
+    fn arena_with_operators(
+        self,
+        input: &[u8],
+        operators: &[Value],
+    ) -> Result<(Circuit, Vec<NodeId>), Box<dyn std::error::Error>> {
         let mut header = json!({
             "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":operators, "sourceEmpty":self.empty
         });
@@ -180,10 +234,17 @@ fn retained_linear_aggregate(
     }
 
     let request: Request = serde_json::from_slice(state)?;
-    let (fragment, roots) =
-        fragment::Fragment::with_ports(request.site, request.ports.into(), OperatorKind::Map, input)?;
+    let (fragment, roots) = fragment::Fragment::with_ports(
+        request.site,
+        request.ports.into(),
+        OperatorKind::Map,
+        input,
+    )?;
     let [output_type, aggregate, postprocess, predicate] = roots[..] else {
-        return Err("linear retention requires the output type, aggregate, postprocess and predicate".into());
+        return Err(
+            "linear retention requires the output type, aggregate, postprocess and predicate"
+                .into(),
+        );
     };
     let mut edit = CircuitEditor::new(fragment.base.clone());
     let body = fragment.base.root_id();
@@ -212,7 +273,10 @@ fn tuple_bound(input: &[u8], state: &[u8], next: u64) -> Result<Value, Box<dyn s
     let request: Request = serde_json::from_slice(state)?;
     let (arena, roots) = request.site.arena(input)?;
     let mut edit = CircuitEditor::new(arena.clone());
-    let fields = roots.into_iter().map(|id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;
+    let fields = roots
+        .into_iter()
+        .map(|id| edit.expression(id))
+        .collect::<Result<Vec<_>, _>>()?;
     let bound = feldera_sql_opt::tuple_waterline(&mut edit, arena.root_id(), request.raw, &fields)?;
     lowered_function_reply(&arena, &edit, Some(bound), next, vec![])
 }
@@ -239,18 +303,29 @@ fn binary_bound(input: &[u8], state: &[u8]) -> Result<Value, Box<dyn std::error:
         })
     };
     // Older callers supplied one root for every monotone operand.
-    let [left, right] = request.present.unwrap_or([request.operation.left.monotone, request.operation.right.monotone]);
+    let [left, right] = request.present.unwrap_or([
+        request.operation.left.monotone,
+        request.operation.right.monotone,
+    ]);
     let bounds = [bound(left)?, bound(right)?];
     if operands.next().is_some() {
         return Err("unexpected binary operand bound".into());
     }
     let result = edit.type_id(*result)?;
-    let (rule, value) = request.operation.lower(&mut edit, arena.root_id(), result, bounds)?;
-    let mut expressions = edit.circuit().additional_expressions(&arena, value.as_slice())?;
+    let (rule, value) = request
+        .operation
+        .lower(&mut edit, arena.root_id(), result, bounds)?;
+    let mut expressions = edit
+        .circuit()
+        .additional_expressions(&arena, value.as_slice())?;
     Ok(json!({"rule": rule, "bound": expressions.pop()}))
 }
 
-fn finality_functions(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+fn finality_functions(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
         #[serde(flatten)]
@@ -266,15 +341,24 @@ fn finality_functions(input: &[u8], state: &[u8], mut next: u64) -> Result<Value
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let row = edit.type_id(*row)?;
     let bound = edit.type_id(*bound)?;
-    let f = request.column.functions(&mut edit, arena.root_id(), row, bound, &mut next)?;
+    let f = request
+        .column
+        .functions(&mut edit, arena.root_id(), row, bound, &mut next)?;
     let slots = [Some(f.bounds), f.filter, Some(f.index), f.project_bound];
     let roots: Vec<_> = slots.into_iter().flatten().collect();
-    let mut encoded = edit.circuit().additional_expressions(&arena, &roots)?.into_iter();
+    let mut encoded = edit
+        .circuit()
+        .additional_expressions(&arena, &roots)?
+        .into_iter();
     let functions = slots.map(|slot| slot.and_then(|_| encoded.next()));
     Ok(json!({"functions": functions, "next_generated_name": next}))
 }
 
-fn declared_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+fn declared_waterline(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
         columns: Vec<usize>,
@@ -309,7 +393,11 @@ fn declared_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value
     Ok(json!({"expressions": expressions, "next_generated_name": next}))
 }
 
-fn project_join_input(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+fn project_join_input(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
         columns: Vec<usize>,
@@ -323,11 +411,21 @@ fn project_join_input(input: &[u8], state: &[u8], mut next: u64) -> Result<Value
     };
     let mut edit = CircuitEditor::new(arena.clone());
     let pair = edit.type_id(*pair)?;
-    let f = feldera_sql_opt::project_join_input(&mut edit, arena.root_id(), pair, &request.columns, &mut next)?;
+    let f = feldera_sql_opt::project_join_input(
+        &mut edit,
+        arena.root_id(),
+        pair,
+        &request.columns,
+        &mut next,
+    )?;
     lowered_function_reply(&arena, &edit, Some(f), next, vec![])
 }
 
-fn asof_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+fn asof_waterline(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
         timestamps: [usize; 2],
@@ -344,12 +442,22 @@ fn asof_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Bo
     let key = edit.type_id(key)?;
     let right = edit.type_id(right)?;
     let closure = feldera_sql_opt::asof_waterline(
-        &mut edit, arena.root_id(), function, key, right, request.timestamps, &mut next,
+        &mut edit,
+        arena.root_id(),
+        function,
+        key,
+        right,
+        request.timestamps,
+        &mut next,
     )?;
     lowered_function_reply(&arena, &edit, Some(closure), next, Vec::new())
 }
 
-fn hop_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+fn hop_waterline(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
         timestamp_index: usize,
@@ -364,14 +472,28 @@ fn hop_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let row = edit.type_id(row)?;
     let output = edit.type_id(output)?;
-    let intervals = [edit.expression(interval)?, edit.expression(size)?, edit.expression(offset)?];
+    let intervals = [
+        edit.expression(interval)?,
+        edit.expression(size)?,
+        edit.expression(offset)?,
+    ];
     let closure = feldera_sql_opt::hop_waterline(
-        &mut edit, arena.root_id(), row, output, request.timestamp_index, intervals, &mut next,
+        &mut edit,
+        arena.root_id(),
+        row,
+        output,
+        request.timestamp_index,
+        intervals,
+        &mut next,
     )?;
     lowered_function_reply(&arena, &edit, Some(closure), next, Vec::new())
 }
 
-fn expand_stream_aggregate(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+fn expand_stream_aggregate(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
         append_only: bool,
@@ -380,13 +502,22 @@ fn expand_stream_aggregate(input: &[u8], state: &[u8], mut next: u64) -> Result<
         site: ExpressionSite,
     }
     let request: Request = serde_json::from_slice(state)?;
-    let (fragment, roots) = fragment::Fragment::bind(request.site, [feldera_sql_ir::OperatorKind::MapIndex], input)?;
+    let (fragment, roots) = fragment::Fragment::bind(
+        request.site,
+        [feldera_sql_ir::OperatorKind::MapIndex],
+        input,
+    )?;
     let [input_type, output_type, list, weight] = roots.as_slice() else {
-        return Err("expected indexed input and output types, aggregate list and row weight".into());
+        return Err(
+            "expected indexed input and output types, aggregate list and row weight".into(),
+        );
     };
     let mut edit = CircuitEditor::new(fragment.base.clone());
     let aggregate = feldera_sql_opt::StreamAggregate {
-        input: OutputPort { number: request.input_port, ..fragment.inputs[0] },
+        input: OutputPort {
+            number: request.input_port,
+            ..fragment.inputs[0]
+        },
         input_type: edit.type_id(*input_type)?,
         output_type: edit.type_id(*output_type)?,
         list: *list,
@@ -402,7 +533,11 @@ fn expand_stream_aggregate(input: &[u8], state: &[u8], mut next: u64) -> Result<
     Ok(reply)
 }
 
-fn expand_hop(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+fn expand_hop(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     struct Request {
         timestamp_index: usize,
@@ -412,7 +547,9 @@ fn expand_hop(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dy
     }
     let request: Request = serde_json::from_slice(state)?;
     let (fragment, roots) = fragment::Fragment::bind(
-        request.site, [feldera_sql_ir::OperatorKind::SourceMultiset], input,
+        request.site,
+        [feldera_sql_ir::OperatorKind::SourceMultiset],
+        input,
     )?;
     let &[row, output, interval, size, offset] = roots.as_slice() else {
         return Err("expected HOP input and output rows, interval, size and offset".into());
@@ -420,10 +557,21 @@ fn expand_hop(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dy
     let mut edit = CircuitEditor::new(fragment.base.clone());
     let site = fragment.base.root_id();
     let hop = feldera_sql_opt::Hop::new(
-        &edit, site, edit.type_id(row)?, edit.type_id(output)?, request.timestamp_index,
-        [edit.expression(interval)?, edit.expression(size)?, edit.expression(offset)?],
+        &edit,
+        site,
+        edit.type_id(row)?,
+        edit.type_id(output)?,
+        request.timestamp_index,
+        [
+            edit.expression(interval)?,
+            edit.expression(size)?,
+            edit.expression(offset)?,
+        ],
     )?;
-    let source = OutputPort { number: request.input_port, ..fragment.inputs[0] };
+    let source = OutputPort {
+        number: request.input_port,
+        ..fragment.inputs[0]
+    };
     hop.append(&mut edit, site, source, &mut next)?;
     fragment.reply(&edit, next)
 }
@@ -439,7 +587,10 @@ fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
 
 /// The Java lowering writer can put deep subtrees after the arguments, where
 /// the arena resolves them by ID without nesting the entire body in one object.
-fn lowering_arguments(base: Circuit, input: &[u8]) -> Result<(Circuit, Vec<NodeId>), Box<dyn std::error::Error>> {
+fn lowering_arguments(
+    base: Circuit,
+    input: &[u8],
+) -> Result<(Circuit, Vec<NodeId>), Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Batch<'a> {
@@ -476,12 +627,17 @@ fn binding_diagnostic(diagnostic: feldera_sql_opt::BindingDiagnostic<'_>) -> Val
     use feldera_sql_opt::BindingDiagnostic;
     match diagnostic {
         BindingDiagnostic::Free { variable, .. } => json!({"free": inner_number(variable)}),
-        BindingDiagnostic::Conflict { variable, previous, current } => binding_conflict(variable, previous, current),
+        BindingDiagnostic::Conflict {
+            variable,
+            previous,
+            current,
+        } => binding_conflict(variable, previous, current),
     }
 }
 
 fn binding_ids(bindings: std::collections::HashMap<NodeId, NodeId>) -> Vec<(u64, u64)> {
-    let mut pairs: Vec<_> = bindings.into_iter()
+    let mut pairs: Vec<_> = bindings
+        .into_iter()
         .map(|(variable, declaration)| (inner_number(variable), inner_number(declaration)))
         .collect();
     pairs.sort_unstable();
@@ -504,15 +660,24 @@ fn expression_facts_reply(
             index
         })
     };
-    let facts = facts.into_iter().map(|fact| {
-        let id = inner_number(fact.expression.into());
-        match fact.origin {
-            FactType::Synthesized(closure) => json!({ "synthesized": add_bound(Some(closure)) }),
-            FactType::Alias(index) => json!({ "id": id, "alias": index }),
-            FactType::Parameter(index) => json!({ "id": id, "parameter": index, "bound": add_bound(fact.bound) }),
-            FactType::Computed(ty) => json!({ "id": id, "type": ty, "bound": add_bound(fact.bound) }),
-        }
-    }).collect::<Vec<_>>();
+    let facts = facts
+        .into_iter()
+        .map(|fact| {
+            let id = inner_number(fact.expression.into());
+            match fact.origin {
+                FactType::Synthesized(closure) => {
+                    json!({ "synthesized": add_bound(Some(closure)) })
+                }
+                FactType::Alias(index) => json!({ "id": id, "alias": index }),
+                FactType::Parameter(index) => {
+                    json!({ "id": id, "parameter": index, "bound": add_bound(fact.bound) })
+                }
+                FactType::Computed(ty) => {
+                    json!({ "id": id, "type": ty, "bound": add_bound(fact.bound) })
+                }
+            }
+        })
+        .collect::<Vec<_>>();
     let closure = add_bound(closure);
     let bounds = edit.circuit().live_inner_roots(arena, &roots)?;
     Ok(json!({ "facts": facts, "bounds": bounds, "closure": closure }))
@@ -521,12 +686,18 @@ fn expression_facts_reply(
 fn lineage_diagnostic(issue: feldera_sql_opt::LineageDiagnostic<'_>) -> Value {
     use feldera_sql_opt::LineageDiagnostic;
     match issue {
-        LineageDiagnostic::FieldIndex { index, size } => json!({"field_index": {"index": index, "size": size}}),
+        LineageDiagnostic::FieldIndex { index, size } => {
+            json!({"field_index": {"index": index, "size": size}})
+        }
         LineageDiagnostic::ShapeAssertion => json!({"shape_assertion": true}),
-        LineageDiagnostic::SourceCast { expected, values } => json!({"source_cast": expected, "values": values}),
+        LineageDiagnostic::SourceCast { expected, values } => {
+            json!({"source_cast": expected, "values": values})
+        }
         LineageDiagnostic::JoinParameterIndex(size) => json!({"join_parameter_count": size}),
         LineageDiagnostic::Binding(binding) => binding_diagnostic(binding),
-        LineageDiagnostic::UnsupportedExpression(node) => json!({"unsupported": inner_number(node)}),
+        LineageDiagnostic::UnsupportedExpression(node) => {
+            json!({"unsupported": inner_number(node)})
+        }
         LineageDiagnostic::Comparison(failure) => json!({"comparison": failure}),
         LineageDiagnostic::MissingInput(port) => {
             json!({"missing_input": [operator_number(port.operator), port.number]})
@@ -546,7 +717,9 @@ fn key_lineage_reply<T>(
         Ok(value) => finish(Some(value)),
         Err(LineageError::Reference(_)) => finish(None),
         Err(LineageError::InvalidIr(error)) => Err(error.into()),
-        Err(LineageError::Diagnostic(issue)) => Ok(json!({"diagnostic": lineage_diagnostic(issue)})),
+        Err(LineageError::Diagnostic(issue)) => {
+            Ok(json!({"diagnostic": lineage_diagnostic(issue)}))
+        }
     }
 }
 
@@ -554,43 +727,75 @@ fn waterline_inspection(inspection: feldera_sql_opt::WaterlineInspection) -> Val
     use feldera_sql_opt::WaterlineInspection;
     match inspection {
         WaterlineInspection::Free(variable) => json!({"free": inner_number(variable)}),
-        WaterlineInspection::Conflict { variable, previous, current } => binding_conflict(variable, previous, current),
-        WaterlineInspection::Bound { references, repeated } => {
+        WaterlineInspection::Conflict {
+            variable,
+            previous,
+            current,
+        } => binding_conflict(variable, previous, current),
+        WaterlineInspection::Bound {
+            references,
+            repeated,
+        } => {
             json!({"bindings": binding_ids(references), "repeated": repeated.into_iter().map(inner_number).collect::<Vec<_>>()})
         }
     }
 }
 
-fn composition_error(error: feldera_sql_opt::CompositionError) -> Result<Value, Box<dyn std::error::Error>> {
+fn composition_error(
+    error: feldera_sql_opt::CompositionError,
+) -> Result<Value, Box<dyn std::error::Error>> {
     match error {
-        feldera_sql_opt::CompositionError::BindingConflict { variable, previous, current } =>
-            Ok(json!({"binding_error": binding_conflict(variable, previous, current)})),
+        feldera_sql_opt::CompositionError::BindingConflict {
+            variable,
+            previous,
+            current,
+        } => Ok(json!({"binding_error": binding_conflict(variable, previous, current)})),
         feldera_sql_opt::CompositionError::Ir(error) => Err(error.into()),
     }
 }
 
-fn checked_projection(edit: &CircuitEditor, function: NodeId, mode: feldera_sql_opt::ProjectionMode)
-    -> Result<Value, feldera_sql_ir::Error>
-{
+fn checked_projection(
+    edit: &CircuitEditor,
+    function: NodeId,
+    mode: feldera_sql_opt::ProjectionMode,
+) -> Result<Value, feldera_sql_ir::Error> {
     use feldera_sql_opt::MapProjection;
-    if let Some(error) = feldera_sql_opt::inspect_references(edit.circuit(), function, false)?.diagnostic {
+    if let Some(error) =
+        feldera_sql_opt::inspect_references(edit.circuit(), function, false)?.diagnostic
+    {
         return Ok(binding_diagnostic(error));
     }
-    Ok(match feldera_sql_opt::map_projection(edit, function, mode)? {
-        MapProjection::Accepted => Value::Bool(true),
-        MapProjection::Rejected => Value::Bool(false),
-        MapProjection::InvalidFieldMap { fields } => json!({"invalid_field_count": fields}),
-    })
+    Ok(
+        match feldera_sql_opt::map_projection(edit, function, mode)? {
+            MapProjection::Accepted => Value::Bool(true),
+            MapProjection::Rejected => Value::Bool(false),
+            MapProjection::InvalidFieldMap { fields } => json!({"invalid_field_count": fields}),
+        },
+    )
 }
 
-fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+fn lower_function(
+    pass: &str,
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
     if pass == "Simplify/Root" {
-        let cached = LIVE_COMPILATIONS.with_borrow(|stack| stack.last()?.simplified.get(input).copied());
+        let cached =
+            LIVE_COMPILATIONS.with_borrow(|stack| stack.last()?.simplified.get(input).copied());
         if let Some(root) = cached {
-            return Ok(json!({"root": {"node": root}, "next_generated_name": next, "warnings": []}));
+            return Ok(
+                json!({"root": {"node": root}, "next_generated_name": next, "warnings": []}),
+            );
         }
     }
-    let (arena, roots) = if matches!(pass, "Monotonicity/Filter" | "Monotonicity/Minimum" | "Monotonicity/MinimumForOutput" | "Monotonicity/ChainMinimum") {
+    let (arena, roots) = if matches!(
+        pass,
+        "Monotonicity/Filter"
+            | "Monotonicity/Minimum"
+            | "Monotonicity/MinimumForOutput"
+            | "Monotonicity/ChainMinimum"
+    ) {
         serde_json::from_slice::<ExpressionSite>(state)?.arena(input)?
     } else {
         let header = json!({"class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]});
@@ -598,9 +803,20 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     };
     if pass == "RewriteNow/ClockSites" {
         let sites = feldera_sql_opt::temporal_clock_sites(&arena, &roots)?;
-        return Ok(json!(sites.into_iter().map(|(root, call)| [inner_number(root), inner_number(call)]).collect::<Vec<_>>()));
+        return Ok(json!(sites
+            .into_iter()
+            .map(|(root, call)| [inner_number(root), inner_number(call)])
+            .collect::<Vec<_>>()));
     }
-    if let ("KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys", [closure]) = (pass, roots.as_slice()) {
+    if let (
+        "KeyAnalysis/ColumnCopies"
+        | "KeyAnalysis/OutputColumns"
+        | "KeyAnalysis/JoinColumns"
+        | "KeyAnalysis/FixedColumns"
+        | "KeyAnalysis/FilterKeys",
+        [closure],
+    ) = (pass, roots.as_slice())
+    {
         #[derive(serde::Deserialize)]
         struct Request {
             #[serde(flatten)]
@@ -613,35 +829,69 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let request: Request = serde_json::from_slice(state)?;
         let edit = CircuitEditor::new(arena);
         if matches!(pass, "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys") {
-            let fixed = feldera_sql_opt::checked_fixed_columns(&edit, *closure, &request.shape, request.lossless);
+            let fixed = feldera_sql_opt::checked_fixed_columns(
+                &edit,
+                *closure,
+                &request.shape,
+                request.lossless,
+            );
             return key_lineage_reply(fixed, |fixed| {
                 if pass == "KeyAnalysis/FilterKeys" {
-                    let keys = request.keys.ok_or("filter key analysis requires input keys")?;
-                    return Ok(serde_json::to_value(fixed.map(|fixed| feldera_sql_opt::filter_keys(keys, &fixed)))?);
+                    let keys = request
+                        .keys
+                        .ok_or("filter key analysis requires input keys")?;
+                    return Ok(serde_json::to_value(
+                        fixed.map(|fixed| feldera_sql_opt::filter_keys(keys, &fixed)),
+                    )?);
                 }
                 Ok(serde_json::to_value(fixed)?)
             });
         }
-        let copies = feldera_sql_opt::checked_column_copies(&edit, *closure, &request.shape, request.lossless);
+        let copies = feldera_sql_opt::checked_column_copies(
+            &edit,
+            *closure,
+            &request.shape,
+            request.lossless,
+        );
         return key_lineage_reply(copies, |copies| {
-            if matches!(pass, "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns") {
+            if matches!(
+                pass,
+                "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns"
+            ) {
                 // Java evaluates provenance before grouping computations. If provenance
                 // needs live metadata, defer its successor's diagnostic until that retry.
-                let groups = match feldera_sql_opt::checked_equal_computations(&edit, *closure, &request.shape) {
+                let groups = match feldera_sql_opt::checked_equal_computations(
+                    &edit,
+                    *closure,
+                    &request.shape,
+                ) {
                     Ok(groups) => groups,
-                    Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => return Err(error.into()),
-                    Err(feldera_sql_opt::KeyComparisonError::Diagnostic(failure)) if copies.is_some() =>
-                        return Ok(json!({"diagnostic": {"comparison": failure}})),
+                    Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => {
+                        return Err(error.into())
+                    }
+                    Err(feldera_sql_opt::KeyComparisonError::Diagnostic(failure))
+                        if copies.is_some() =>
+                    {
+                        return Ok(json!({"diagnostic": {"comparison": failure}}))
+                    }
                     Err(feldera_sql_opt::KeyComparisonError::Diagnostic(_)) => None,
                 };
                 let keys = if pass == "KeyAnalysis/JoinColumns" {
-                    let inputs = request.join.ok_or("join column analysis requires input keys")?;
+                    let inputs = request
+                        .join
+                        .ok_or("join column analysis requires input keys")?;
                     copies.as_ref().map(|copies| inputs.derive(copies))
                 } else {
                     match (request.projection, request.keys) {
-                        (Some(projection), Some(keys)) => copies.as_ref().map(|copies| projection.keys(&keys, copies)),
+                        (Some(projection), Some(keys)) => {
+                            copies.as_ref().map(|copies| projection.keys(&keys, copies))
+                        }
                         (None, None) => None,
-                        _ => return Err("column projection requires a row layout and input keys".into()),
+                        _ => {
+                            return Err(
+                                "column projection requires a row layout and input keys".into()
+                            )
+                        }
                     }
                 };
                 return Ok(json!({"copies": copies, "groups": groups, "keys": keys}));
@@ -656,7 +906,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         return Ok(json!({"bindings": binding_ids(inspection.bindings),
             "has_free": inspection.has_free_variables, "diagnostic": diagnostic}));
     }
-    if let ("InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite", [root]) = (pass, roots.as_slice()) {
+    if let (
+        "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite",
+        [root],
+    ) = (pass, roots.as_slice())
+    {
         use feldera_sql_opt::LexicalResolution;
         return Ok(match feldera_sql_opt::lexical_references(&arena, *root)? {
             LexicalResolution::Bound(references) if pass != "InnerCSE/ResolveAndNumber" => {
@@ -682,8 +936,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 serde_json::to_value(request.number(&arena, &references)?)?
             }
             LexicalResolution::Free { variable, .. } => json!({"free": inner_number(variable)}),
-            LexicalResolution::Conflict { variable, previous, current } =>
-                binding_conflict(variable, previous, current),
+            LexicalResolution::Conflict {
+                variable,
+                previous,
+                current,
+            } => binding_conflict(variable, previous, current),
         });
     }
     if let ("CheckedParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
@@ -692,28 +949,47 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         if let Some(diagnostic) = inspection.diagnostic {
             return Ok(binding_diagnostic(diagnostic));
         }
-        return Ok(match feldera_sql_expr::checked_parameter_field_paths(&arena, *closure, &inspection.bindings) {
-            Ok(paths) => serde_json::to_value(paths)?,
-            Err(FieldUseError::InvalidIr(error)) => return Err(error.into()),
-            Err(FieldUseError::RequiresTree) => return Err("field-use analysis expected a materialized tree".into()),
-            Err(FieldUseError::MissingValue(id)) => json!({"missing_value": inner_number(id)}),
-            Err(FieldUseError::NoParameterValue) => json!({"no_parameter_value": true}),
-            Err(FieldUseError::ParameterPairIndex(index)) => json!({"pair_index": index}),
-            Err(FieldUseError::LetStatement) => json!({"let_statement": true}),
-            Err(FieldUseError::FieldIndex { index, width }) => json!({"index": index, "width": width}),
-            Err(FieldUseError::ChangedValue { target, conflict }) =>
-                json!({"target": inner_number(target), "changed_value": conflict}),
-        });
+        return Ok(
+            match feldera_sql_expr::checked_parameter_field_paths(
+                &arena,
+                *closure,
+                &inspection.bindings,
+            ) {
+                Ok(paths) => serde_json::to_value(paths)?,
+                Err(FieldUseError::InvalidIr(error)) => return Err(error.into()),
+                Err(FieldUseError::RequiresTree) => {
+                    return Err("field-use analysis expected a materialized tree".into())
+                }
+                Err(FieldUseError::MissingValue(id)) => json!({"missing_value": inner_number(id)}),
+                Err(FieldUseError::NoParameterValue) => json!({"no_parameter_value": true}),
+                Err(FieldUseError::ParameterPairIndex(index)) => json!({"pair_index": index}),
+                Err(FieldUseError::LetStatement) => json!({"let_statement": true}),
+                Err(FieldUseError::FieldIndex { index, width }) => {
+                    json!({"index": index, "width": width})
+                }
+                Err(FieldUseError::ChangedValue { target, conflict }) => {
+                    json!({"target": inner_number(target), "changed_value": conflict})
+                }
+            },
+        );
     }
     if let ("FindUnusedInputFields/CheckedColumns", [ty]) = (pass, roots.as_slice()) {
         let paths = serde_json::from_slice(state)?;
-        return Ok(serde_json::to_value(feldera_sql_opt::source_columns(&arena, *ty, &paths)?)?);
+        return Ok(serde_json::to_value(feldera_sql_opt::source_columns(
+            &arena, *ty, &paths,
+        )?)?);
     }
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
-        return Ok(serde_json::to_value(feldera_sql_opt::live_field_dependencies(&arena, *closure)?)?);
+        return Ok(serde_json::to_value(
+            feldera_sql_opt::live_field_dependencies(&arena, *closure)?,
+        )?);
     }
-    if let ("RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader", [closure, ..]) = (pass, roots.as_slice()) {
-        if let Some(issue) = feldera_sql_opt::inspect_references(&arena, *closure, false)?.diagnostic {
+    if let ("RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader", [closure, ..]) =
+        (pass, roots.as_slice())
+    {
+        if let Some(issue) =
+            feldera_sql_opt::inspect_references(&arena, *closure, false)?.diagnostic
+        {
             return Ok(binding_diagnostic(issue));
         }
     }
@@ -733,14 +1009,24 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         let [function] = roots.as_slice() else {
             return Err("expected one map function".into());
         };
-        return Ok(checked_projection(&CircuitEditor::new(arena), *function, mode)?);
+        return Ok(checked_projection(
+            &CircuitEditor::new(arena),
+            *function,
+            mode,
+        )?);
     }
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     // Both composition heuristics inspect the reader before deciding whether to inline it.
-    if let ("TryComposeProjection" | "TryIndexedProjection" | "ComposeIndexedProjection", [_, reader]) =
-        (pass, roots.as_slice())
+    if let (
+        "TryComposeProjection" | "TryIndexedProjection" | "ComposeIndexedProjection",
+        [_, reader],
+    ) = (pass, roots.as_slice())
     {
-        let mode = if pass == "TryComposeProjection" { ProjectionMode::NestedWithCasts } else { ProjectionMode::Strict };
+        let mode = if pass == "TryComposeProjection" {
+            ProjectionMode::NestedWithCasts
+        } else {
+            ProjectionMode::Strict
+        };
         let decision = checked_projection(&edit, *reader, mode)?;
         if !decision.is_boolean() {
             return Ok(json!({"projection_error": decision}));
@@ -753,16 +1039,31 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return Err(format!("{pass} requires one inner root").into());
         };
         let result = match name {
-            "Simplify" => feldera_sql_expr::simplify_closure_with_warnings(&mut edit, root, Some(&mut warnings))?,
-            "SimplifyWaterline" => feldera_sql_opt::simplify_waterline_root(&mut edit, root, &mut next, Some(&mut warnings))?,
+            "Simplify" => feldera_sql_expr::simplify_closure_with_warnings(
+                &mut edit,
+                root,
+                Some(&mut warnings),
+            )?,
+            "SimplifyWaterline" => feldera_sql_opt::simplify_waterline_root(
+                &mut edit,
+                root,
+                &mut next,
+                Some(&mut warnings),
+            )?,
             "SimplifyConditionals" => feldera_sql_opt::simplify_conditional_root(&mut edit, root)?,
             "AdjustSqlIndex" => feldera_sql_expr::adjust_index_root(&mut edit, root)?,
-            "ExpandSafeCasts" => feldera_sql_expr::expand_sql_casts(&mut edit, root, CastSafety::Safe, &mut next)?,
-            "ExpandUnsafeCasts" => feldera_sql_expr::expand_sql_casts(&mut edit, root, CastSafety::Unsafe, &mut next)?,
+            "ExpandSafeCasts" => {
+                feldera_sql_expr::expand_sql_casts(&mut edit, root, CastSafety::Safe, &mut next)?
+            }
+            "ExpandUnsafeCasts" => {
+                feldera_sql_expr::expand_sql_casts(&mut edit, root, CastSafety::Unsafe, &mut next)?
+            }
             _ => return Err(format!("unknown expression rewrite {name}").into()),
         };
         if name == "Simplify" && result == root && warnings.is_empty() {
-            let NodeId::Inner(id) = root else { return Err("expected an inner simplification root".into()) };
+            let NodeId::Inner(id) = root else {
+                return Err("expected an inner simplification root".into());
+            };
             LIVE_COMPILATIONS.with_borrow_mut(|stack| {
                 if let Some(compile) = stack.last_mut() {
                     compile.remember_simplified(input, id);
@@ -775,11 +1076,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     }
     let function = match (pass, roots.as_slice()) {
         ("Monotonicity/InspectBody", [root]) => {
-            return Ok(waterline_inspection(feldera_sql_opt::WaterlineInspection::for_root(&edit, *root)?));
+            return Ok(waterline_inspection(
+                feldera_sql_opt::WaterlineInspection::for_root(&edit, *root)?,
+            ));
         }
         ("FuseExpensiveMaps/Scan", functions) => {
             let ports: Vec<usize> = serde_json::from_slice(state)?;
-            let scan = feldera_sql_opt::scan_map_fusion(&mut edit, functions, &ports, &mut warnings)?;
+            let scan =
+                feldera_sql_opt::scan_map_fusion(&mut edit, functions, &ports, &mut warnings)?;
             let mut roots = Vec::new();
             let mut members = Vec::with_capacity(scan.candidates.len());
             for candidate in scan.candidates {
@@ -794,38 +1098,57 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 "warnings": pass_warnings(warnings)}));
         }
         ("FuseExpensiveMaps/Fragments", [closure]) => {
-            return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_fragments(&arena, *closure)?)?);
+            return Ok(serde_json::to_value(
+                feldera_sql_opt::map_fusion_fragments(&arena, *closure)?,
+            )?);
         }
         ("FuseExpensiveMaps/DuplicateField", [closure]) => {
             return match feldera_sql_opt::has_duplicate_expensive_field(&edit, *closure) {
                 Ok(result) => Ok(json!(result)),
-                Err(feldera_sql_opt::KeyComparisonError::Diagnostic(failure)) =>
-                    Ok(json!({"comparison_failure": failure})),
+                Err(feldera_sql_opt::KeyComparisonError::Diagnostic(failure)) => {
+                    Ok(json!({"comparison_failure": failure}))
+                }
                 Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => Err(error.into()),
             };
         }
         ("FuseExpensiveMaps/Siblings", roots) => {
             let counts: Vec<usize> = serde_json::from_slice(state)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::sibling_map_groups(&edit, roots, &counts)?)?);
+            return Ok(serde_json::to_value(feldera_sql_opt::sibling_map_groups(
+                &edit, roots, &counts,
+            )?)?);
         }
         ("ImplementStatics/Candidates", [closure]) => {
-            return Ok(serde_json::to_value(feldera_sql_opt::static_candidates(&arena, *closure)?)?);
+            return Ok(serde_json::to_value(feldera_sql_opt::static_candidates(
+                &arena, *closure,
+            )?)?);
         }
         ("ComparatorDeclarations/Functions", functions) => {
             let names = serde_json::from_slice(state)?;
-            let replacements = feldera_sql_opt::rewrite_index_functions(&mut edit, functions, names)?;
-            let items = edit.circuit().root().edges("declarations")?.into_iter()
+            let replacements =
+                feldera_sql_opt::rewrite_index_functions(&mut edit, functions, names)?;
+            let items = edit
+                .circuit()
+                .root()
+                .edges("declarations")?
+                .into_iter()
                 .map(|id| edit.node(id)?.edge("item"))
                 .collect::<Result<Vec<_>, feldera_sql_ir::Error>>()?;
             // Encode both lists in the same identity space. A declaration can refer
             // to an original comparator that also appears in an untouched closure.
-            let mut encoded = edit.circuit().additional_inner_nodes(&arena, replacements.into_iter().chain(items))?;
+            let mut encoded = edit
+                .circuit()
+                .additional_inner_nodes(&arena, replacements.into_iter().chain(items))?;
             let items = encoded.split_off(functions.len());
             return Ok(json!({"functions": encoded, "items": items}));
         }
         ("ExpandMetadataCasts/Initializer", [root]) => {
             let root = edit.expression(*root)?;
-            feldera_sql_expr::prepare_column_default_with_warnings(&mut edit, root, &mut next, Some(&mut warnings))?
+            feldera_sql_expr::prepare_column_default_with_warnings(
+                &mut edit,
+                root,
+                &mut next,
+                Some(&mut warnings),
+            )?
         }
         ("Monotonicity/RowClosure", [body, parameter]) => {
             let body = edit.expression(*body)?;
@@ -836,7 +1159,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             if names.len() != types.len() {
                 return Err("expected one name per waterline input type".into());
             }
-            let inputs = names.into_iter().zip(types)
+            let inputs = names
+                .into_iter()
+                .zip(types)
                 .map(|(name, &ty)| Ok((name, edit.type_id(ty)?)))
                 .collect::<Result<Vec<_>, feldera_sql_ir::Error>>()?;
             let bindings = feldera_sql_opt::waterline_bindings(&mut edit, &inputs)?;
@@ -847,12 +1172,17 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             use feldera_sql_opt::{KeyComparisonError, MinimumChainError};
             return match feldera_sql_opt::check_minimum_chain(&mut edit, *init, *update) {
                 Ok(result) => Ok(json!(result)),
-                Err(MinimumChainError::BindingConflict { variable, previous, current }) =>
-                    Ok(binding_conflict(variable, previous, current)),
-                Err(MinimumChainError::FirstField { value, error }) =>
-                    Ok(json!({"first_field": inner_number(value.into()), "error": error.to_string()})),
-                Err(MinimumChainError::Comparison(KeyComparisonError::Diagnostic(error))) =>
-                    Ok(json!({"comparison_failure": error})),
+                Err(MinimumChainError::BindingConflict {
+                    variable,
+                    previous,
+                    current,
+                }) => Ok(binding_conflict(variable, previous, current)),
+                Err(MinimumChainError::FirstField { value, error }) => Ok(
+                    json!({"first_field": inner_number(value.into()), "error": error.to_string()}),
+                ),
+                Err(MinimumChainError::Comparison(KeyComparisonError::Diagnostic(error))) => {
+                    Ok(json!({"comparison_failure": error}))
+                }
                 Err(error) => Err(error.into()),
             };
         }
@@ -860,16 +1190,32 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let columns: Vec<Vec<usize>> = serde_json::from_slice(state)?;
             let (pairs, rest) = bindings.as_chunks::<2>();
             if !rest.is_empty() || columns.len() != pairs.len() {
-                return Err("expected a declaration, wide variable and layout for each shared input".into());
+                return Err(
+                    "expected a declaration, wide variable and layout for each shared input".into(),
+                );
             }
-            let parameters: Vec<_> = pairs.iter().zip(columns).map(|(&[declaration, variable], columns)| {
-                feldera_sql_opt::IndexParameter { declaration, variable, columns }
-            }).collect();
+            let parameters: Vec<_> = pairs
+                .iter()
+                .zip(columns)
+                .map(
+                    |(&[declaration, variable], columns)| feldera_sql_opt::IndexParameter {
+                        declaration,
+                        variable,
+                        columns,
+                    },
+                )
+                .collect();
             let reader = feldera_sql_opt::rewrite_index_reader(&mut edit, *reader, &parameters)?;
             return Ok(edit.circuit().live_inner_node(&arena, reader)?);
         }
         ("TemporalGroups" | "MergeTemporalBounds", roots) => {
-            return temporal::groups(&arena, &mut edit, roots, state, pass == "MergeTemporalBounds");
+            return temporal::groups(
+                &arena,
+                &mut edit,
+                roots,
+                state,
+                pass == "MergeTemporalBounds",
+            );
         }
         ("WindowGroups/ComposeTimestamp", [timestamp, map]) => {
             let timestamp = edit.expression(*timestamp)?;
@@ -882,39 +1228,69 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let closure = edit.expression(*closure)?;
             return temporal::classify_filter(&arena, &mut edit, closure);
         }
-        ("TemporalComparisons", roots) => return temporal::classify(&arena, &mut edit, roots, state),
+        ("TemporalComparisons", roots) => {
+            return temporal::classify(&arena, &mut edit, roots, state)
+        }
         ("WindowGroups/Conjuncts", [parameter, body]) => {
             let body = edit.expression(*body)?;
             let mut generated_names = 0;
-            let Some(windows) = feldera_sql_opt::conjunct_windows(&mut edit, *parameter, body, &mut generated_names)? else {
+            let Some(windows) = feldera_sql_opt::conjunct_windows(
+                &mut edit,
+                *parameter,
+                body,
+                &mut generated_names,
+            )?
+            else {
                 return Ok(Value::Null);
             };
-            let windows = windows.into_iter().map(|window| window.map(|window| {
-                let NodeId::Inner(key) = window.key.into() else { unreachable!("expression has inner identity") };
-                json!({"key": key, "lower": window.lower})
-            })).collect::<Vec<_>>();
+            let windows = windows
+                .into_iter()
+                .map(|window| {
+                    window.map(|window| {
+                        let NodeId::Inner(key) = window.key.into() else {
+                            unreachable!("expression has inner identity")
+                        };
+                        json!({"key": key, "lower": window.lower})
+                    })
+                })
+                .collect::<Vec<_>>();
             return Ok(json!({"windows":windows,"generated_names":generated_names}));
         }
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;
             let filter = edit.expression(*filter)?;
-            feldera_sql_opt::merge_temporal_predicates(&mut edit, source, filter, &mut next, &mut warnings)?
+            feldera_sql_opt::merge_temporal_predicates(
+                &mut edit,
+                source,
+                filter,
+                &mut next,
+                &mut warnings,
+            )?
         }
         ("Limiters/Window", [bounds, input @ ..]) if input.len() <= 1 => {
             let bounds = edit.expression(*bounds)?;
             let input = input.first().map(|id| edit.type_id(*id)).transpose()?;
             let window = feldera_sql_opt::limiters::window_waterline(
-                &mut edit, bounds, input, waterline_input(state)?, &mut next,
+                &mut edit,
+                bounds,
+                input,
+                waterline_input(state)?,
+                &mut next,
             )?;
-            let roots = [Some(window.endpoint), window.combine].into_iter().flatten().collect::<Vec<_>>();
+            let roots = [Some(window.endpoint), window.combine]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
             let functions = edit.circuit().additional_expressions(&arena, &roots)?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
         ("Limiters/KeyFilter", [key, waterline]) => {
-            let (name, keys, declared): (String, Vec<usize>, Vec<usize>) = serde_json::from_slice(state)?;
+            let (name, keys, declared): (String, Vec<usize>, Vec<usize>) =
+                serde_json::from_slice(state)?;
             let key = edit.type_id(*key)?;
             let waterline = edit.type_id(*waterline)?;
-            let projection = feldera_sql_opt::limiters::KeyProjection::from_columns(&keys, &declared);
+            let projection =
+                feldera_sql_opt::limiters::KeyProjection::from_columns(&keys, &declared);
             let closures = projection.filter(&mut edit, &name, waterline, key, &mut next)?;
             let functions = edit.circuit().additional_expressions(&arena, &closures)?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
@@ -926,50 +1302,80 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let filter = feldera_sql_opt::limiters::row_filter(
                 &mut edit, &name, row, &columns, waterline, &mut next,
             )?;
-            let functions = edit.circuit().additional_expressions(&arena, &[filter.function, filter.error])?;
+            let functions = edit
+                .circuit()
+                .additional_expressions(&arena, &[filter.function, filter.error])?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
         ("Limiters/Join", inputs) => {
-            let shapes: [Option<feldera_sql_opt::limiters::Projection>; 2] = waterline_input(state)?;
+            let shapes: [Option<feldera_sql_opt::limiters::Projection>; 2] =
+                waterline_input(state)?;
             let mut types = inputs.iter();
             let mut side = |shape| -> Result<_, feldera_sql_ir::Error> {
-                let id = types.next().ok_or_else(|| feldera_sql_ir::Error::new("missing join waterline type"))?;
+                let id = types
+                    .next()
+                    .ok_or_else(|| feldera_sql_ir::Error::new("missing join waterline type"))?;
                 Ok((edit.type_id(*id)?, shape))
             };
             let [left, right] = shapes.each_ref().map(Option::as_ref);
-            let sides = [left.map(&mut side).transpose()?, right.map(side).transpose()?];
+            let sides = [
+                left.map(&mut side).transpose()?,
+                right.map(side).transpose()?,
+            ];
             if types.next().is_some() {
                 return Err("unexpected extra join waterline type".into());
             }
             feldera_sql_opt::limiters::join_waterline(&mut edit, sides, &mut next, &mut warnings)?
         }
         ("Limiters/MergeView", [left, right]) => {
-            let [inherited, declared]: [feldera_sql_opt::limiters::Projection; 2] = waterline_input(state)?;
+            let [inherited, declared]: [feldera_sql_opt::limiters::Projection; 2] =
+                waterline_input(state)?;
             let left = edit.type_id(*left)?;
             let right = edit.type_id(*right)?;
             inherited.merge_view_waterline(&mut edit, left, &declared, right, &mut next)?
         }
         ("Limiters/Project", [input, declared]) => {
-            let [source, destination]: [feldera_sql_opt::limiters::Projection; 2] = waterline_input(state)?;
+            let [source, destination]: [feldera_sql_opt::limiters::Projection; 2] =
+                waterline_input(state)?;
             let ty = edit.type_id(*input)?;
             let declared = edit.type_id(*declared)?;
             source.project_waterline(&mut edit, ty, &destination, Some(declared), &mut next)?
         }
         ("Limiters/Minimum", inputs) => {
-            let types = inputs.iter().map(|&id| edit.type_id(id)).collect::<Result<Vec<_>, _>>()?;
-            feldera_sql_opt::limiters::minimum_waterline(&mut edit, &types, &mut next, &mut warnings)?
+            let types = inputs
+                .iter()
+                .map(|&id| edit.type_id(id))
+                .collect::<Result<Vec<_>, _>>()?;
+            feldera_sql_opt::limiters::minimum_waterline(
+                &mut edit,
+                &types,
+                &mut next,
+                &mut warnings,
+            )?
         }
         ("Limiters/Apply", [function, inputs @ ..]) if !inputs.is_empty() => {
-            let types = inputs.iter().map(|&id| edit.type_id(id)).collect::<Result<Vec<_>, _>>()?;
-            feldera_sql_opt::limiters::apply_waterlines(&mut edit, *function, &types, &mut next, &mut warnings)?
+            let types = inputs
+                .iter()
+                .map(|&id| edit.type_id(id))
+                .collect::<Result<Vec<_>, _>>()?;
+            feldera_sql_opt::limiters::apply_waterlines(
+                &mut edit,
+                *function,
+                &types,
+                &mut next,
+                &mut warnings,
+            )?
         }
         ("Statics/FindLiteral", [literal, candidates @ ..]) => {
-            return Ok(json!(feldera_sql_opt::find_static_literal(&edit, *literal, candidates)?));
+            return Ok(json!(feldera_sql_opt::find_static_literal(
+                &edit, *literal, candidates
+            )?));
         }
         ("Statics/RenumberErrors", [initializer]) => {
             let first = serde_json::from_slice(state)?;
             let initializer = edit.expression(*initializer)?;
-            let (result, next) = feldera_sql_opt::renumber_static_errors(&mut edit, initializer, first)?;
+            let (result, next) =
+                feldera_sql_opt::renumber_static_errors(&mut edit, initializer, first)?;
             let value = edit.circuit().live_expression(&arena, result)?;
             return Ok(json!({"initializer": value, "next": next}));
         }
@@ -988,7 +1394,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 let (item, reference) = feldera_sql_opt::static_item(&mut edit, value)?;
                 vec![item, reference.into()]
             };
-            return Ok(serde_json::to_value(edit.circuit().additional_inner_nodes(&arena, nodes)?)?);
+            return Ok(serde_json::to_value(
+                edit.circuit().additional_inner_nodes(&arena, nodes)?,
+            )?);
         }
         ("EmptyRightJoin", [function, indexed]) => {
             let ty = edit.type_id(*indexed)?;
@@ -997,7 +1405,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("DeltaExpansion/UnmatchedRows", [function, indexed]) => {
             let ty = edit.type_id(*indexed)?;
             let projection = feldera_sql_opt::unmatched_row_projection(
-                &mut edit, *function, ty, &mut next, Some(&mut warnings),
+                &mut edit,
+                *function,
+                ty,
+                &mut next,
+                Some(&mut warnings),
             )?;
             let tree = feldera_sql_expr::ensure_expression_tree(&mut edit, projection.into())?;
             edit.expression(tree)?
@@ -1006,33 +1418,66 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let function = edit.expression(*function)?;
             let comparator = edit.expression(*comparator)?;
             let input = edit.type_id(*input)?;
-            feldera_sql_opt::lag_transfer(&mut edit, function, comparator, input,
-                serde_json::from_slice(state)?, &mut next, &mut warnings)?
+            feldera_sql_opt::lag_transfer(
+                &mut edit,
+                function,
+                comparator,
+                input,
+                serde_json::from_slice(state)?,
+                &mut next,
+                &mut warnings,
+            )?
         }
         ("Monotonicity/Group" | "Monotonicity/Rolling", [input, output]) => {
             use feldera_sql_opt::AggregateTransfer;
-            let kind = if pass == "Monotonicity/Group" { AggregateTransfer::Group } else { AggregateTransfer::Rolling };
+            let kind = if pass == "Monotonicity/Group" {
+                AggregateTransfer::Group
+            } else {
+                AggregateTransfer::Rolling
+            };
             let input = edit.type_id(*input)?;
             let output = edit.type_id(*output)?;
             feldera_sql_opt::aggregate_transfer(&mut edit, kind, input, output, &mut next)?
         }
         ("Monotonicity/Minimum", [input, postprocess @ ..]) if postprocess.len() <= 1 => {
             let pair = edit.type_id(*input)?;
-            feldera_sql_opt::minimum_transfer(&mut edit, arena.root_id(), pair,
-                postprocess.first().copied(), &mut next, &mut warnings)?
+            feldera_sql_opt::minimum_transfer(
+                &mut edit,
+                arena.root_id(),
+                pair,
+                postprocess.first().copied(),
+                &mut next,
+                &mut warnings,
+            )?
         }
-        ("Monotonicity/MinimumForOutput", [input, output, postprocess @ ..]) if postprocess.len() <= 1 => {
+        ("Monotonicity/MinimumForOutput", [input, output, postprocess @ ..])
+            if postprocess.len() <= 1 =>
+        {
             let pair = edit.type_id(*input)?;
             let output = edit.type_id(*output)?;
-            let transfer = feldera_sql_opt::minimum_transfer_for_output(&mut edit, arena.root_id(),
-                pair, output, postprocess.first().copied(), &mut next, &mut warnings)?;
+            let transfer = feldera_sql_opt::minimum_transfer_for_output(
+                &mut edit,
+                arena.root_id(),
+                pair,
+                output,
+                postprocess.first().copied(),
+                &mut next,
+                &mut warnings,
+            )?;
             return lowered_function_reply(&arena, &edit, transfer, next, warnings);
         }
         ("Monotonicity/ChainMinimum", [input, accumulators, update]) => {
             let input = edit.type_id(*input)?;
             let accumulators = edit.type_id(*accumulators)?;
-            let function = feldera_sql_opt::chain_minimum_transfer(&mut edit, arena.root_id(),
-                input, accumulators, *update, &mut next, &mut warnings)?;
+            let function = feldera_sql_opt::chain_minimum_transfer(
+                &mut edit,
+                arena.root_id(),
+                input,
+                accumulators,
+                *update,
+                &mut next,
+                &mut warnings,
+            )?;
             return lowered_function_reply(&arena, &edit, function, next, warnings);
         }
         ("Monotonicity/Literal", [id]) => {
@@ -1086,16 +1531,21 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("Monotonicity/Unary", [operator, bound]) => {
             let operator = edit.expression(*operator)?;
             let bound = edit.expression(*bound)?;
-            let Some(reduced) = feldera_sql_opt::unary_waterline(&mut edit, operator, bound)? else {
+            let Some(reduced) = feldera_sql_opt::unary_waterline(&mut edit, operator, bound)?
+            else {
                 return Ok(Value::Null);
             };
             reduced
         }
-        ("Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds", [row, projected]) => {
+        (
+            "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds",
+            [row, projected],
+        ) => {
             let row = edit.type_id(*row)?;
             let projected = edit.type_id(*projected)?;
             let indexed = pass == "Monotonicity/IndexedIdentityBounds";
-            let pair = feldera_sql_opt::identity_bounds(&mut edit, row, projected, indexed, &mut next)?;
+            let pair =
+                feldera_sql_opt::identity_bounds(&mut edit, row, projected, indexed, &mut next)?;
             let functions = edit.circuit().additional_expressions(&arena, &pair)?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
@@ -1111,18 +1561,35 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             if !remainder.is_empty() {
                 return Err("missing projected type for waterline parameter".into());
             }
-            let parameters = pairs.iter()
+            let parameters = pairs
+                .iter()
                 .map(|&[parameter, ty]| edit.type_id(ty).map(|ty| (parameter, ty)))
                 .collect::<Result<Vec<_>, _>>()?;
             let collect = pass == "Monotonicity/ExpressionFacts";
-            let analyze = if collect { feldera_sql_opt::expression_waterlines } else { feldera_sql_opt::project_closure };
-            let result = analyze(&mut edit, body, &parameters, &request.shapes, request.indexed, &mut next)?;
+            let analyze = if collect {
+                feldera_sql_opt::expression_waterlines
+            } else {
+                feldera_sql_opt::project_closure
+            };
+            let result = analyze(
+                &mut edit,
+                body,
+                &parameters,
+                &request.shapes,
+                request.indexed,
+                &mut next,
+            )?;
             let mut reply = match result {
-                feldera_sql_opt::ClosureAnalysis::Projected(result) if collect || !result.facts.is_empty() => {
+                feldera_sql_opt::ClosureAnalysis::Projected(result)
+                    if collect || !result.facts.is_empty() =>
+                {
                     expression_facts_reply(&arena, &edit, result.facts, result.closure)?
                 }
                 feldera_sql_opt::ClosureAnalysis::Projected(result) => {
-                    let closure = result.closure.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
+                    let closure = result
+                        .closure
+                        .map(|id| edit.circuit().live_expression(&arena, id))
+                        .transpose()?;
                     json!({"row_type": result.row_type, "closure": closure})
                 }
                 feldera_sql_opt::ClosureAnalysis::Visit { references } => {
@@ -1133,27 +1600,52 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                     let mut reply = expression_facts_reply(&arena, &edit, facts, None)?;
                     reply["failure"] = match error {
                         WaterlineError::FreeVariable(id) => json!({"free":inner_number(id)}),
-                        WaterlineError::ConflictingBinding { variable, previous, current } =>
-                            binding_conflict(variable, previous, current),
-                        WaterlineError::RepeatedExpression(path) =>
-                            json!({"repeated":path.into_iter().map(inner_number).collect::<Vec<_>>()}),
-                        WaterlineError::FlatmapInput(id) =>
-                            json!({"kind":"FlatmapInput", "expression":inner_number(id.into())}),
+                        WaterlineError::ConflictingBinding {
+                            variable,
+                            previous,
+                            current,
+                        } => binding_conflict(variable, previous, current),
+                        WaterlineError::RepeatedExpression(path) => {
+                            json!({"repeated":path.into_iter().map(inner_number).collect::<Vec<_>>()})
+                        }
+                        WaterlineError::FlatmapInput(id) => {
+                            json!({"kind":"FlatmapInput", "expression":inner_number(id.into())})
+                        }
                         WaterlineError::FlatmapResult { flatmap, computed } => {
-                            let types = edit.circuit().live_inner_roots(&arena, &[computed.into()])?;
+                            let types = edit
+                                .circuit()
+                                .live_inner_roots(&arena, &[computed.into()])?;
                             json!({"kind":"FlatmapResult", "expression":inner_number(flatmap.into()), "computed":types[0]})
                         }
-                        WaterlineError::VariableTypeMismatch(id) => json!({"kind":"VariableTypeMismatch", "expression":inner_number(id.into())}),
-                        WaterlineError::MissingReference(id) => json!({"kind":"MissingReference", "expression":inner_number(id.into())}),
-                        WaterlineError::MissingFact(id) | WaterlineError::MissingBound(id) => json!({"kind":"MissingOperand", "expression":inner_number(id.into())}),
-                        WaterlineError::FunctionArgument(id, error) => json!({"kind":"FunctionArgument",
-                            "expression":inner_number(id.into()), "argument":error}),
-                        WaterlineError::TargetMaximum(id) => json!({"kind":"TargetMaximum", "expression":inner_number(id.into())}),
-                        WaterlineError::InvalidBoundCast { operation, bound } => json!({"kind":"InvalidBoundCast",
-                            "expression":inner_number(operation.into()), "bound":edit.circuit().live_expression(&arena, bound)?}),
-                        WaterlineError::ExpectedScalarOperand(source) => json!({"kind":"ExpectedScalarOperand", "source":source}),
-                        WaterlineError::InvalidProjection(projection) => json!({"kind":"InvalidProjection", "projection":projection}),
-                        WaterlineError::Type(kind, id) => json!({"kind":kind, "type":inner_number(id.into())}),
+                        WaterlineError::VariableTypeMismatch(id) => {
+                            json!({"kind":"VariableTypeMismatch", "expression":inner_number(id.into())})
+                        }
+                        WaterlineError::MissingReference(id) => {
+                            json!({"kind":"MissingReference", "expression":inner_number(id.into())})
+                        }
+                        WaterlineError::MissingFact(id) | WaterlineError::MissingBound(id) => {
+                            json!({"kind":"MissingOperand", "expression":inner_number(id.into())})
+                        }
+                        WaterlineError::FunctionArgument(id, error) => {
+                            json!({"kind":"FunctionArgument",
+                            "expression":inner_number(id.into()), "argument":error})
+                        }
+                        WaterlineError::TargetMaximum(id) => {
+                            json!({"kind":"TargetMaximum", "expression":inner_number(id.into())})
+                        }
+                        WaterlineError::InvalidBoundCast { operation, bound } => {
+                            json!({"kind":"InvalidBoundCast",
+                            "expression":inner_number(operation.into()), "bound":edit.circuit().live_expression(&arena, bound)?})
+                        }
+                        WaterlineError::ExpectedScalarOperand(source) => {
+                            json!({"kind":"ExpectedScalarOperand", "source":source})
+                        }
+                        WaterlineError::InvalidProjection(projection) => {
+                            json!({"kind":"InvalidProjection", "projection":projection})
+                        }
+                        WaterlineError::Type(kind, id) => {
+                            json!({"kind":kind, "type":inner_number(id.into())})
+                        }
                     };
                     reply
                 }
@@ -1161,20 +1653,46 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             reply["next_generated_name"] = json!(next);
             return Ok(reply);
         }
-        ("Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow", [body, bounds @ ..]) => {
-            let bounds = bounds.iter().map(|&id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;
-            let projection = if matches!(pass, "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper") {
+        (
+            "Monotonicity/ProjectRead"
+            | "Monotonicity/ProjectWrapper"
+            | "Monotonicity/ProjectRow"
+            | "Monotonicity/ProjectIndexedRow"
+            | "Monotonicity/ProjectJoinRow",
+            [body, bounds @ ..],
+        ) => {
+            let bounds = bounds
+                .iter()
+                .map(|&id| edit.expression(id))
+                .collect::<Result<Vec<_>, _>>()?;
+            let projection = if matches!(
+                pass,
+                "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper"
+            ) {
                 if bounds.len() > 1 {
                     return Err("a row projection takes at most one operand bound".into());
                 }
-                let (read, source): (feldera_sql_opt::RowRead, feldera_sql_opt::limiters::Projection) = waterline_input(state)?;
-                let ty = if pass == "Monotonicity/ProjectWrapper" { edit.expression_type(edit.expression(*body)?)? } else { edit.type_id(*body)? };
+                let (read, source): (
+                    feldera_sql_opt::RowRead,
+                    feldera_sql_opt::limiters::Projection,
+                ) = waterline_input(state)?;
+                let ty = if pass == "Monotonicity/ProjectWrapper" {
+                    edit.expression_type(edit.expression(*body)?)?
+                } else {
+                    edit.type_id(*body)?
+                };
                 match read.project(&mut edit, *body, ty, &source, bounds.first().copied())? {
                     feldera_sql_opt::ProjectedRead::Value(value) => Some(value),
                     feldera_sql_opt::ProjectedRead::NeedsVisitor => None,
-                    feldera_sql_opt::ProjectedRead::InvalidProjection(ty) => return Ok(json!({"invalid_projection": ty})),
-                    feldera_sql_opt::ProjectedRead::TypeError(kind, ty) => return Ok(json!({"kind": kind, "type": inner_number(ty.into())})),
-                    feldera_sql_opt::ProjectedRead::MissingBound => return Ok(json!({"missing_bound": true})),
+                    feldera_sql_opt::ProjectedRead::InvalidProjection(ty) => {
+                        return Ok(json!({"invalid_projection": ty}))
+                    }
+                    feldera_sql_opt::ProjectedRead::TypeError(kind, ty) => {
+                        return Ok(json!({"kind": kind, "type": inner_number(ty.into())}))
+                    }
+                    feldera_sql_opt::ProjectedRead::MissingBound => {
+                        return Ok(json!({"missing_bound": true}))
+                    }
                 }
             } else {
                 let indexed = pass == "Monotonicity/ProjectIndexedRow";
@@ -1189,7 +1707,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let Some(value) = projection else {
                 return Ok(Value::Null);
             };
-            let reduced = value.reduced.map(|id| edit.circuit().live_expression(&arena, id)).transpose()?;
+            let reduced = value
+                .reduced
+                .map(|id| edit.circuit().live_expression(&arena, id))
+                .transpose()?;
             return Ok(json!({"row_type": value.row_type, "bound": reduced}));
         }
         ("Monotonicity/Filter", [closure, row]) => {
@@ -1203,7 +1724,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("InnerCSE/ReadLazy", [source]) => {
             let borrowed = serde_json::from_slice(state)?;
             let roots = feldera_sql_opt::read_lazy_value(&mut edit, *source, borrowed, &mut next)?;
-            let roots = edit.circuit().live_inner_roots(&arena, &roots.map(NodeId::from))?;
+            let roots = edit
+                .circuit()
+                .live_inner_roots(&arena, &roots.map(NodeId::from))?;
             return Ok(json!({"roots": roots, "next_generated_name": next}));
         }
         ("InnerCSE/Let", [body, pairs @ ..]) => {
@@ -1214,30 +1737,47 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("InnerCSE/Statements", pairs) => {
             let pairs = binding_pairs(pairs)?;
             let statements = feldera_sql_opt::lazy_statements(&mut edit, pairs)?;
-            return Ok(serde_json::to_value(edit.circuit().additional_inner_nodes(&arena, statements)?)?);
+            return Ok(serde_json::to_value(
+                edit.circuit().additional_inner_nodes(&arena, statements)?,
+            )?);
         }
         ("SplitRowMapInput" | "SplitIndexedMapInput" | "SplitInspectedMapInput", [reader]) => {
-            use feldera_sql_opt::{MapOutput, FieldRewriteError};
+            use feldera_sql_opt::{FieldRewriteError, MapOutput};
             let pair = if pass == "SplitInspectedMapInput" {
                 let (indexed, paths) = serde_json::from_slice(state)?;
-                let output = if indexed { MapOutput::Indexed } else { MapOutput::Row };
-                match feldera_sql_opt::checked_split_map_input(&arena, &mut edit, *reader, &paths, output, &mut next) {
+                let output = if indexed {
+                    MapOutput::Indexed
+                } else {
+                    MapOutput::Row
+                };
+                match feldera_sql_opt::checked_split_map_input(
+                    &arena, &mut edit, *reader, &paths, output, &mut next,
+                ) {
                     Ok(pair) => pair,
                     Err(FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
                     Err(FieldRewriteError::Binding(issue)) => {
-                        return Ok(json!({"diagnostic":binding_diagnostic(issue), "next_generated_name":next}));
+                        return Ok(
+                            json!({"diagnostic":binding_diagnostic(issue), "next_generated_name":next}),
+                        );
                     }
                 }
             } else {
-                let output = if pass == "SplitIndexedMapInput" { MapOutput::Indexed } else { MapOutput::Row };
+                let output = if pass == "SplitIndexedMapInput" {
+                    MapOutput::Indexed
+                } else {
+                    MapOutput::Row
+                };
                 let paths = serde_json::from_slice(state)?;
                 feldera_sql_opt::split_map_input(&mut edit, *reader, &paths, output, &mut next)?
             };
-            let functions = pair.map(|roots| edit.circuit().additional_expressions(&arena, &roots)).transpose()?;
+            let functions = pair
+                .map(|roots| edit.circuit().additional_expressions(&arena, &roots))
+                .transpose()?;
             return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
         ("ProjectUnnest", [flatmap, reader]) => {
-            let Some(function) = feldera_sql_opt::project_unnest(&mut edit, *flatmap, *reader)? else {
+            let Some(function) = feldera_sql_opt::project_unnest(&mut edit, *flatmap, *reader)?
+            else {
                 return Ok(Value::Null);
             };
             function
@@ -1255,7 +1795,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 OperatorKind::MapIndex
             };
             let function = feldera_sql_opt::pull_filter_through_map(
-                &mut edit, kind, *producer, *filter, &mut warnings,
+                &mut edit,
+                kind,
+                *producer,
+                *filter,
+                &mut warnings,
             )?;
             return lowered_function_reply(&arena, &edit, function, next, warnings);
         }
@@ -1263,12 +1807,23 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let input = edit.type_id(*input)?;
             let output = edit.type_id(*output)?;
             let function = feldera_sql_opt::pull_filter_through_aggregate(
-                &mut edit, input, output, *filter, &mut next, &mut warnings,
+                &mut edit,
+                input,
+                output,
+                *filter,
+                &mut next,
+                &mut warnings,
             )?;
             return lowered_function_reply(&arena, &edit, function, next, warnings);
         }
         ("ComposeProjection" | "TryComposeProjection", [before, after]) => {
-            match feldera_sql_opt::compose_projection(&mut edit, *before, *after, pass == "TryComposeProjection", &mut warnings) {
+            match feldera_sql_opt::compose_projection(
+                &mut edit,
+                *before,
+                *after,
+                pass == "TryComposeProjection",
+                &mut warnings,
+            ) {
                 Ok(Some(closure)) => closure,
                 Ok(None) => return Ok(Value::Null),
                 Err(error) => return composition_error(error),
@@ -1276,8 +1831,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         }
         ("ComposeIndexedProjection" | "TryIndexedProjection", [before, after]) => {
             let Some(closure) = feldera_sql_opt::compose_indexed_projection(
-                &mut edit, *before, *after, pass == "TryIndexedProjection", &mut next, &mut warnings,
-            )? else {
+                &mut edit,
+                *before,
+                *after,
+                pass == "TryIndexedProjection",
+                &mut next,
+                &mut warnings,
+            )?
+            else {
                 return Ok(Value::Null);
             };
             closure
@@ -1285,38 +1846,63 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("RemoveUnusedFields/TopKInput", [reader, input]) => {
             use feldera_sql_opt::{FieldRewriteError, IndexedValueUse};
             let (compared_columns, paths) = serde_json::from_slice(state)?;
-            let consumer = IndexedValueUse::TopK { compared_columns, paths };
+            let consumer = IndexedValueUse::TopK {
+                compared_columns,
+                paths,
+            };
             let input = edit.type_id(*input)?;
             let result = feldera_sql_opt::trim_indexed_reader(
-                &arena, &mut edit, *reader, input, consumer, &mut next, &mut warnings,
+                &arena,
+                &mut edit,
+                *reader,
+                input,
+                consumer,
+                &mut next,
+                &mut warnings,
             );
             let plan = match result {
                 Ok(Some(plan)) => plan,
                 Ok(None) => return Ok(Value::Null),
-                Err(FieldRewriteError::Binding(issue)) => return Ok(json!({"diagnostic": binding_diagnostic(issue)})),
+                Err(FieldRewriteError::Binding(issue)) => {
+                    return Ok(json!({"diagnostic": binding_diagnostic(issue)}))
+                }
                 Err(FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
             };
-            let functions = edit.circuit().live_inner_roots(&arena, &[plan.projection.into(), plan.reader.into()])?;
-            return Ok(json!({"functions": functions, "used": plan.used, "warnings": pass_warnings(warnings), "next_generated_name": next}));
+            let functions = edit
+                .circuit()
+                .live_inner_roots(&arena, &[plan.projection.into(), plan.reader.into()])?;
+            return Ok(
+                json!({"functions": functions, "used": plan.used, "warnings": pass_warnings(warnings), "next_generated_name": next}),
+            );
         }
         ("RemoveUnusedFields/FlatmapInput", [flatmap]) => {
             use feldera_sql_opt::FieldRewriteError;
             let paths = serde_json::from_slice(state)?;
-            let functions = match feldera_sql_opt::trim_flatmap_input(&arena, &mut edit, *flatmap, &paths, &mut next) {
+            let functions = match feldera_sql_opt::trim_flatmap_input(
+                &arena, &mut edit, *flatmap, &paths, &mut next,
+            ) {
                 Ok(Some(functions)) => functions,
                 Ok(None) => return Ok(Value::Null),
                 Err(FieldRewriteError::Binding(issue)) => {
-                    return Ok(json!({"diagnostic": binding_diagnostic(issue), "next_generated_name": next}));
+                    return Ok(
+                        json!({"diagnostic": binding_diagnostic(issue), "next_generated_name": next}),
+                    );
                 }
                 Err(FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
             };
-            return Ok(json!({"functions": edit.circuit().additional_expressions(&arena, &functions)?,
-                "next_generated_name": next}));
+            return Ok(
+                json!({"functions": edit.circuit().additional_expressions(&arena, &functions)?,
+                "next_generated_name": next}),
+            );
         }
         ("RemoveUnusedFields/AggregateReader", [aggregate, rows @ ..]) => {
             let used: Vec<bool> = serde_json::from_slice(state)?;
-            let aggregate = feldera_sql_opt::rebind_projected_aggregate(&mut edit, *aggregate, rows, &used)?;
-            return Ok(Value::Array(edit.circuit().additional_expressions(&arena, &[aggregate])?));
+            let aggregate =
+                feldera_sql_opt::rebind_projected_aggregate(&mut edit, *aggregate, rows, &used)?;
+            return Ok(Value::Array(
+                edit.circuit()
+                    .additional_expressions(&arena, &[aggregate])?,
+            ));
         }
         ("RemoveUnusedFields/Reader", [closure, parameters @ ..]) => {
             let used: Vec<Vec<bool>> = serde_json::from_slice(state)?;
@@ -1344,13 +1930,22 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let projection: Projection = serde_json::from_slice(state)?;
             let row = edit.type_id(*row)?;
             let orders = feldera_sql_opt::project_topk_comparators(
-                &mut edit, [*rank, *ties], row, &projection.row, &projection.used,
+                &mut edit,
+                [*rank, *ties],
+                row,
+                &projection.row,
+                &projection.used,
             )?;
-            return Ok(serde_json::to_value(edit.circuit().additional_expressions(&arena, &orders)?)?);
+            return Ok(serde_json::to_value(
+                edit.circuit().additional_expressions(&arena, &orders)?,
+            )?);
         }
         ("RemoveUnusedFields/ParameterTypes", types) => {
             #[derive(serde::Deserialize)]
-            struct Request { depth: usize, usage: Vec<Vec<bool>> }
+            struct Request {
+                depth: usize,
+                usage: Vec<Vec<bool>>,
+            }
             let request: Request = serde_json::from_slice(state)?;
             if types.len() != request.usage.len() {
                 return Err("parameter count differs from the number of field usage maps".into());
@@ -1358,50 +1953,83 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let mut outputs = Vec::with_capacity(types.len());
             for (&ty, used) in types.iter().zip(&request.usage) {
                 let ty = edit.type_id(ty)?;
-                outputs.push(NodeId::from(feldera_sql_opt::compressed_field_type(&mut edit, ty, request.depth, used)?));
+                outputs.push(NodeId::from(feldera_sql_opt::compressed_field_type(
+                    &mut edit,
+                    ty,
+                    request.depth,
+                    used,
+                )?));
             }
-            return Ok(serde_json::to_value(edit.circuit().additional_inner_nodes(&arena, outputs)?)?);
+            return Ok(serde_json::to_value(
+                edit.circuit().additional_inner_nodes(&arena, outputs)?,
+            )?);
         }
         ("RemoveUnusedFields/IndexedValue", [row, input]) => {
             let used = serde_json::from_slice(state)?;
             let row = edit.type_id(*row)?;
             let input = edit.type_id(*input)?;
             let projection = feldera_sql_opt::project_used_fields(&mut edit, row, used, &mut next)?;
-            feldera_sql_opt::project_indexed_value(&mut edit, input, projection, &mut next, &mut warnings)?
+            feldera_sql_opt::project_indexed_value(
+                &mut edit,
+                input,
+                projection,
+                &mut next,
+                &mut warnings,
+            )?
         }
         ("TrimTopKProjection", [producer, reader]) => {
-            let Some(pair) = feldera_sql_opt::trim_topk_projection(&mut edit, *producer, *reader)? else {
+            let Some(pair) = feldera_sql_opt::trim_topk_projection(&mut edit, *producer, *reader)?
+            else {
                 return Ok(Value::Null);
             };
-            return Ok(serde_json::to_value(edit.circuit().additional_expressions(&arena, &pair)?)?);
+            return Ok(serde_json::to_value(
+                edit.circuit().additional_expressions(&arena, &pair)?,
+            )?);
         }
         ("TrimAggregateProjection", [reader, empty_row, key]) => {
             let Some(projection) = feldera_sql_opt::trim_aggregate_projection(
                 &mut edit, *reader, *empty_row, *key, &mut next,
-            )? else {
+            )?
+            else {
                 return Ok(Value::Null);
             };
-            let expressions = edit.circuit().additional_expressions(
-                &arena, &[projection.empty_row, projection.filler],
-            )?;
-            return Ok(json!({"retained": projection.retained, "expressions": expressions, "next_generated_name": next}));
+            let expressions = edit
+                .circuit()
+                .additional_expressions(&arena, &[projection.empty_row, projection.filler])?;
+            return Ok(
+                json!({"retained": projection.retained, "expressions": expressions, "next_generated_name": next}),
+            );
         }
         ("SplitAntijoinProjection", [closure]) => {
-            let Some(pair) = feldera_sql_opt::split_antijoin_projection(&mut edit, *closure)? else {
+            let Some(pair) = feldera_sql_opt::split_antijoin_projection(&mut edit, *closure)?
+            else {
                 return Ok(Value::Null);
             };
-            return Ok(serde_json::to_value(edit.circuit().additional_expressions(&arena, &pair)?)?);
+            return Ok(serde_json::to_value(
+                edit.circuit().additional_expressions(&arena, &pair)?,
+            )?);
         }
         ("AntijoinProjection", [stream, projection @ ..]) if projection.len() <= 1 => {
-            feldera_sql_opt::antijoin_projection(&mut edit, *stream, projection.first().copied(),
-                &mut next, &mut warnings)?
+            feldera_sql_opt::antijoin_projection(
+                &mut edit,
+                *stream,
+                projection.first().copied(),
+                &mut next,
+                &mut warnings,
+            )?
         }
-        ("LowerAggregateFold", [list]) => feldera_sql_opt::lower_aggregate_fold(
-            &mut edit, *list, None, &mut next, &mut warnings,
-        )?,
+        ("LowerAggregateFold", [list]) => {
+            feldera_sql_opt::lower_aggregate_fold(&mut edit, *list, None, &mut next, &mut warnings)?
+        }
         ("LowerAggregateFold", [list, empty]) => {
             let ty = edit.type_id(*empty)?;
-            feldera_sql_opt::lower_aggregate_fold(&mut edit, *list, Some(ty), &mut next, &mut warnings)?
+            feldera_sql_opt::lower_aggregate_fold(
+                &mut edit,
+                *list,
+                Some(ty),
+                &mut next,
+                &mut warnings,
+            )?
         }
         ("Monotonicity/Flatmap", [flatmap]) => {
             feldera_sql_opt::flatmap_waterline(&mut edit, *flatmap, &mut next)?
@@ -1415,10 +2043,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     lowered_function_reply(&arena, &edit, Some(function), next, warnings)
 }
 
-fn lowered_function_reply(arena: &Circuit, edit: &feldera_sql_ir::CircuitEditor,
-    function: Option<feldera_sql_ir::ExpressionId>, next: u64, warnings: Vec<feldera_sql_expr::SimplifyWarning>,
+fn lowered_function_reply(
+    arena: &Circuit,
+    edit: &feldera_sql_ir::CircuitEditor,
+    function: Option<feldera_sql_ir::ExpressionId>,
+    next: u64,
+    warnings: Vec<feldera_sql_expr::SimplifyWarning>,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    let function = function.map(|root| edit.circuit().live_expression(arena, root)).transpose()?;
+    let function = function
+        .map(|root| edit.circuit().live_expression(arena, root))
+        .transpose()?;
     Ok(json!({
         "function": function,
         "next_generated_name": next,
@@ -1429,10 +2063,15 @@ fn lowered_function_reply(arena: &Circuit, edit: &feldera_sql_ir::CircuitEditor,
 }
 
 fn pass_warnings(warnings: Vec<feldera_sql_expr::SimplifyWarning>) -> Vec<Value> {
-    warnings.into_iter().map(|w| json!({
-        "range":w.position, "error_type":w.kind, "message":w.message,
-        "warning":true, "continuation":false
-    })).collect()
+    warnings
+        .into_iter()
+        .map(|w| {
+            json!({
+                "range":w.position, "error_type":w.kind, "message":w.message,
+                "warning":true, "continuation":false
+            })
+        })
+        .collect()
 }
 
 #[derive(serde::Serialize)]
@@ -1482,36 +2121,77 @@ fn transform(
     let pass = live.unwrap_or(pass);
     match pass {
         "ProjectOutputs/Fold" | "OptimizeProjections/JoinOutput" => {
-            return output_projection::operators(input, state, next, pass == "OptimizeProjections/JoinOutput");
+            return output_projection::operators(
+                input,
+                state,
+                next,
+                pass == "OptimizeProjections/JoinOutput",
+            );
         }
-        "OptimizeProjections/FilteredJoin" => return filtered_join_projection::operators(input, state, next),
+        "OptimizeProjections/FilteredJoin" => {
+            return filtered_join_projection::operators(input, state, next)
+        }
         "OptimizeProjections/Producer" => {
             let classes = serde_json::from_slice::<Vec<&str>>(input)?;
-            let rules = classes.into_iter().find_map(feldera_sql_ir::OperatorKind::from_wire)
-                .map(feldera_sql_opt::ProjectionRules::for_producer).unwrap_or_default();
+            let rules = classes
+                .into_iter()
+                .find_map(feldera_sql_ir::OperatorKind::from_wire)
+                .map(feldera_sql_opt::ProjectionRules::for_producer)
+                .unwrap_or_default();
             return Ok(serde_json::to_value(rules)?);
         }
-        "LinearPostprocessRetainKeys/Operator" => return retained_linear_aggregate(input, state, next),
+        "LinearPostprocessRetainKeys/Operator" => {
+            return retained_linear_aggregate(input, state, next)
+        }
         "SharedProjections/Operator" => return shared_projection::operator(input, state, next),
         "TrimWindows/Operators" => return trim_window::operators(input, state, next),
         "TrimFilters/Operators" => return trim_filter::operators(input, state, next),
-        "RemoveUnusedFields/NarrowJoinOperators" => return narrowed_join::operators(input, state, next),
+        "RemoveUnusedFields/NarrowJoinOperators" => {
+            return narrowed_join::operators(input, state, next)
+        }
         "RemoveUnusedFields/JoinInput" => return project_join_input(input, state, next),
         "OptimizerOrder" => {
             let options = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::optimizer_order(options).collect::<Vec<_>>())?);
+            return Ok(serde_json::to_value(
+                feldera_sql_opt::optimizer_order(options).collect::<Vec<_>>(),
+            )?);
         }
         "ExpandStreamAggregates/List" => return expand_stream_aggregate(input, state, next),
         "DeltaExpansion/BinaryJoin" => return delta_expansion::binary(input, state, next),
         "DeltaExpansion/StarJoin" => return star_join::delta(input, state, next),
-        "DeltaExpansion/Distinct" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Distinct, input, state, next),
-        "DeltaExpansion/Positive" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Positive, input, state, next),
-        "DeltaExpansion/Aggregate" => return delta_expansion::unary(feldera_sql_ir::OperatorKind::Aggregate, input, state, next),
+        "DeltaExpansion/Distinct" => {
+            return delta_expansion::unary(
+                feldera_sql_ir::OperatorKind::Distinct,
+                input,
+                state,
+                next,
+            )
+        }
+        "DeltaExpansion/Positive" => {
+            return delta_expansion::unary(
+                feldera_sql_ir::OperatorKind::Positive,
+                input,
+                state,
+                next,
+            )
+        }
+        "DeltaExpansion/Aggregate" => {
+            return delta_expansion::unary(
+                feldera_sql_ir::OperatorKind::Aggregate,
+                input,
+                state,
+                next,
+            )
+        }
         "RewriteNow/BuiltinClock" => return temporal::builtin_clock(input, next),
         "RewriteNow/TableClock" => return temporal::table_clock(input, next),
         "RewriteNow/Filter" => return temporal::filter(input, state, next),
-        "RewriteNow/JoinedMap" => return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Map),
-        "RewriteNow/JoinedFilter" => return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Filter),
+        "RewriteNow/JoinedMap" => {
+            return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Map)
+        }
+        "RewriteNow/JoinedFilter" => {
+            return temporal::clock_join(input, next, feldera_sql_opt::ClockConsumer::Filter)
+        }
         _ => {}
     }
     if pass == "RewriteNow/Window" {
@@ -1571,17 +2251,24 @@ fn transform(
         }
         "Incrementalize/Boundaries" => {
             let operators: Vec<feldera_sql_opt::OperatorInputs> = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::incremental_boundaries(&operators))?);
+            return Ok(serde_json::to_value(
+                feldera_sql_opt::incremental_boundaries(&operators),
+            )?);
         }
         "CSE/Candidates" => {
             let operators = serde_json::from_slice(input)?;
-            return Ok(json!(operator_numbers(feldera_sql_opt::projected_cse_payloads(operators))));
+            return Ok(json!(operator_numbers(
+                feldera_sql_opt::projected_cse_payloads(operators)
+            )));
         }
         "Prune/AllTables" | "Prune/UsedTables" => {
             let operators: Vec<feldera_sql_opt::OperatorInputs> = serde_json::from_slice(input)?;
-            let pruning = feldera_sql_opt::projected_pruning(&operators, pass == "Prune/AllTables")?;
-            return Ok(json!({"pruned_operators": operator_numbers(pruning.removed),
-                             "unused_sources": operator_numbers(pruning.unused_sources)}));
+            let pruning =
+                feldera_sql_opt::projected_pruning(&operators, pass == "Prune/AllTables")?;
+            return Ok(
+                json!({"pruned_operators": operator_numbers(pruning.removed),
+                             "unused_sources": operator_numbers(pruning.unused_sources)}),
+            );
         }
         "SharedProjections/Edits" => {
             #[derive(serde::Deserialize)]
@@ -1595,7 +2282,9 @@ fn transform(
             for site in serde_json::from_slice::<Vec<Site>>(input)? {
                 let kind = feldera_sql_ir::OperatorKind::from_wire(&site.kind)
                     .ok_or_else(|| format!("unknown projection operator {}", site.kind))?;
-                if let Some(edit) = feldera_sql_opt::projection_edits(kind, site.reader, site.indexed) {
+                if let Some(edit) =
+                    feldera_sql_opt::projection_edits(kind, site.reader, site.indexed)
+                {
                     edits.insert(site.id, edit);
                 }
             }
@@ -1638,7 +2327,11 @@ fn transform(
         }
         "Monotonicity/Union" | "Monotonicity/Intersection" => {
             use feldera_sql_opt::BoundCombination::{Intersection, Union};
-            let mode = if pass == "Monotonicity/Union" { Union } else { Intersection };
+            let mode = if pass == "Monotonicity/Union" {
+                Union
+            } else {
+                Intersection
+            };
             let inputs = serde_json::from_slice(input)?;
             let reply = feldera_sql_opt::combine_bounds(inputs, mode)
                 .map(|bound| BoundReply::encode(bound, state));
@@ -1649,7 +2342,8 @@ fn transform(
             return Ok(json!(feldera_sql_opt::unary_preserves_order(opcode)));
         }
         "Monotonicity/Function" | "Monotonicity/FunctionRule" => {
-            let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;
+            let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) =
+                serde_json::from_slice(input)?;
             let rule = feldera_sql_opt::function_rule(&name, &arguments);
             let registered = !matches!(rule, feldera_sql_opt::FunctionRule::Unknown);
             let argument_error = match rule {
@@ -1657,9 +2351,13 @@ fn transform(
                 _ => None,
             };
             let target = rule.target();
-            return Ok(if pass == "Monotonicity/Function" { json!(target) } else { json!({
-                "registered": registered, "target": target, "argumentError": argument_error
-            }) });
+            return Ok(if pass == "Monotonicity/Function" {
+                json!(target)
+            } else {
+                json!({
+                    "registered": registered, "target": target, "argumentError": argument_error
+                })
+            });
         }
         "Monotonicity/BinaryBound" => return binary_bound(input, state),
         "Monotonicity/TupleBound" => return tuple_bound(input, state, next),
@@ -1674,7 +2372,9 @@ fn transform(
         }
         "InnerCSE/Uses" => {
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
+            return Ok(serde_json::to_value(
+                feldera_sql_opt::shared_expression_uses(&graph),
+            )?);
         }
         "Monotonicity/Asof" => return asof_waterline(input, state, next),
         "Monotonicity/Hop" => return hop_waterline(input, state, next),
@@ -1682,39 +2382,142 @@ fn transform(
         "OptimizeProjections/PushThrough" => return push_projection::operators(input, state, next),
         "OptimizeProjections/Antijoin" => return antijoin_reader::operators(input, state, next),
         "OptimizeProjections/UnaryOutput" => return output_projection::unary(input, state, next),
-        "RemoveUnusedFields/UnaryOperators" => return narrowed_unary::operators(input, state, next),
+        "RemoveUnusedFields/UnaryOperators" => {
+            return narrowed_unary::operators(input, state, next)
+        }
         "RemoveUnusedFields/TopKOperators" => return topk_input::operators(input, state, next),
-        "OptimizeProjections/TopKOutput" | "OptimizeProjections/AggregateOutput" =>
-            return trim_output::operators(pass, input, state, next),
+        "OptimizeProjections/TopKOutput" | "OptimizeProjections/AggregateOutput" => {
+            return trim_output::operators(pass, input, state, next)
+        }
         "RemoveUnusedFields/SplitMap" => return split_map::operators(input, state, next),
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader"
-        | "TemporalComparisons" | "FilterTemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp" | "WindowGroups/Conjuncts"
-        | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/FindLiteral" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
-        | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows"
-        | "EnsureExpressionTree" | "Monotonicity/RowIdentityBounds" | "Monotonicity/IndexedIdentityBounds" | "Monotonicity/FunctionBound"
-        | "Monotonicity/Clock" | "Monotonicity/RowClosure" | "Monotonicity/InspectBody"
-        | "Monotonicity/ProjectRead" | "Monotonicity/ProjectWrapper" | "Monotonicity/ExpressionFacts" | "Monotonicity/ProjectClosure" | "Monotonicity/WaterlineBindings" | "Monotonicity/Flatmap" | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/MinimumForOutput" | "Monotonicity/IsMinimumChain" | "Monotonicity/ChainMinimum" | "Monotonicity/Unary" | "Monotonicity/Literal" | "Monotonicity/ProjectRow" | "Monotonicity/ProjectIndexedRow" | "Monotonicity/ProjectJoinRow" | "Monotonicity/Filter"
-        | "RewriteNow/ClockSites" | "ComparatorDeclarations/Functions" | "Simplify/Root" | "SimplifyWaterline/Root" | "SimplifyConditionals/Root" | "ExpandSafeCasts/Root" | "ExpandUnsafeCasts/Root" | "AdjustSqlIndex/Root"
-        | "KeyAnalysis/ColumnCopies" | "KeyAnalysis/OutputColumns" | "KeyAnalysis/JoinColumns" | "KeyAnalysis/FixedColumns" | "KeyAnalysis/FilterKeys" | "ExpandMetadataCasts/Initializer" | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "CheckedParameterFieldDependencies" | "SplitInspectedMapInput" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
-        | "PullFilters/Map" | "PullFilters/MapIndex" | "PullFilters/Aggregate"
-        | "ComposeIndexedProjection" | "TryIndexedProjection" | "AntijoinProjection"
-        | "SplitAntijoinProjection" | "IsNestedProjection" | "IsFlatProjectionWithCasts" | "IsStrictProjection" | "TrimTopKProjection"
-        | "FindUnusedInputFields/CheckedColumns" | "RemoveUnusedFields/Row" | "RemoveUnusedFields/IndexedValue" | "RemoveUnusedFields/ParameterTypes"
-        | "RemoveUnusedFields/Reader" | "RemoveUnusedFields/NestedReader" | "RemoveUnusedFields/AggregateReader" | "RemoveUnusedFields/TopKInput"
-        | "RemoveUnusedFields/FlatmapInput" | "RemoveUnusedFields/TopKFields" | "RemoveUnusedFields/TopKComparators"
-        | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection"
-        | "FuseExpensiveMaps/Scan" | "FuseExpensiveMaps/DuplicateField" | "FuseExpensiveMaps/Siblings" | "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "InnerCSE/ReadLazy" | "InnerCSE/BorrowedVariables" | "ResolveReferences" | "InnerCSE/ResolveAndNumber" | "InnerCSE/NumberGraph" | "InnerCSE/Plan" | "InnerCSE/Rewrite" => {
+        | "TemporalComparisons"
+        | "FilterTemporalComparisons"
+        | "TemporalGroups"
+        | "MergeTemporalBounds"
+        | "WindowGroups/ComposeTimestamp"
+        | "WindowGroups/Conjuncts"
+        | "MergeFilters/Predicate"
+        | "Monotonicity/Cast"
+        | "Limiters/Apply"
+        | "Limiters/Minimum"
+        | "Limiters/Join"
+        | "Limiters/RowFilter"
+        | "Limiters/Window"
+        | "Limiters/KeyFilter"
+        | "Limiters/MergeView"
+        | "Limiters/Project"
+        | "Statics/FindLiteral"
+        | "Statics/RenumberErrors"
+        | "Statics/Inline"
+        | "Statics/Define"
+        | "Statics/Declare"
+        | "EmptyRightJoin"
+        | "DeltaExpansion/UnmatchedRows"
+        | "EnsureExpressionTree"
+        | "Monotonicity/RowIdentityBounds"
+        | "Monotonicity/IndexedIdentityBounds"
+        | "Monotonicity/FunctionBound"
+        | "Monotonicity/Clock"
+        | "Monotonicity/RowClosure"
+        | "Monotonicity/InspectBody"
+        | "Monotonicity/ProjectRead"
+        | "Monotonicity/ProjectWrapper"
+        | "Monotonicity/ExpressionFacts"
+        | "Monotonicity/ProjectClosure"
+        | "Monotonicity/WaterlineBindings"
+        | "Monotonicity/Flatmap"
+        | "Monotonicity/Lag"
+        | "Monotonicity/Group"
+        | "Monotonicity/Rolling"
+        | "Monotonicity/Minimum"
+        | "Monotonicity/MinimumForOutput"
+        | "Monotonicity/IsMinimumChain"
+        | "Monotonicity/ChainMinimum"
+        | "Monotonicity/Unary"
+        | "Monotonicity/Literal"
+        | "Monotonicity/ProjectRow"
+        | "Monotonicity/ProjectIndexedRow"
+        | "Monotonicity/ProjectJoinRow"
+        | "Monotonicity/Filter"
+        | "RewriteNow/ClockSites"
+        | "ComparatorDeclarations/Functions"
+        | "Simplify/Root"
+        | "SimplifyWaterline/Root"
+        | "SimplifyConditionals/Root"
+        | "ExpandSafeCasts/Root"
+        | "ExpandUnsafeCasts/Root"
+        | "AdjustSqlIndex/Root"
+        | "KeyAnalysis/ColumnCopies"
+        | "KeyAnalysis/OutputColumns"
+        | "KeyAnalysis/JoinColumns"
+        | "KeyAnalysis/FixedColumns"
+        | "KeyAnalysis/FilterKeys"
+        | "ExpandMetadataCasts/Initializer"
+        | "InnerCSE/Let"
+        | "InnerCSE/Statements"
+        | "ParameterFieldDependencies"
+        | "CheckedParameterFieldDependencies"
+        | "SplitInspectedMapInput"
+        | "SplitRowMapInput"
+        | "SplitIndexedMapInput"
+        | "LowerAggregateFold"
+        | "LowerFlatmap"
+        | "ComposeProjection"
+        | "TryComposeProjection"
+        | "PullFilters/Map"
+        | "PullFilters/MapIndex"
+        | "PullFilters/Aggregate"
+        | "ComposeIndexedProjection"
+        | "TryIndexedProjection"
+        | "AntijoinProjection"
+        | "SplitAntijoinProjection"
+        | "IsNestedProjection"
+        | "IsFlatProjectionWithCasts"
+        | "IsStrictProjection"
+        | "TrimTopKProjection"
+        | "FindUnusedInputFields/CheckedColumns"
+        | "RemoveUnusedFields/Row"
+        | "RemoveUnusedFields/IndexedValue"
+        | "RemoveUnusedFields/ParameterTypes"
+        | "RemoveUnusedFields/Reader"
+        | "RemoveUnusedFields/NestedReader"
+        | "RemoveUnusedFields/AggregateReader"
+        | "RemoveUnusedFields/TopKInput"
+        | "RemoveUnusedFields/FlatmapInput"
+        | "RemoveUnusedFields/TopKFields"
+        | "RemoveUnusedFields/TopKComparators"
+        | "TrimAggregateProjection"
+        | "ProjectUnnest"
+        | "ProjectAggregateZero"
+        | "IsIdentityProjection"
+        | "FuseExpensiveMaps/Scan"
+        | "FuseExpensiveMaps/DuplicateField"
+        | "FuseExpensiveMaps/Siblings"
+        | "FuseExpensiveMaps/Fragments"
+        | "ImplementStatics/Candidates"
+        | "InnerCSE/ReadLazy"
+        | "InnerCSE/BorrowedVariables"
+        | "ResolveReferences"
+        | "InnerCSE/ResolveAndNumber"
+        | "InnerCSE/NumberGraph"
+        | "InnerCSE/Plan"
+        | "InnerCSE/Rewrite" => {
             return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Groups" => {
             let fingerprints: Vec<Vec<usize>> = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_groups(&fingerprints))?);
+            return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_groups(
+                &fingerprints,
+            ))?);
         }
         "Graph/Inputs" => {
             let bodies = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::projected_consumer_graphs(bodies)?)?);
+            return Ok(serde_json::to_value(
+                feldera_sql_opt::projected_consumer_graphs(bodies)?,
+            )?);
         }
         "AggregateGroups" => {
             let kinds: Vec<feldera_sql_opt::AggregateKind> = serde_json::from_slice(input)?;
@@ -1751,11 +2554,15 @@ fn transform(
         }
         "LeftJoinChains/Columns" => {
             let facts = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::carried_columns(facts)?)?);
+            return Ok(serde_json::to_value(feldera_sql_opt::carried_columns(
+                facts,
+            )?)?);
         }
         "LeftJoinChains/Key" => {
             let facts = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::choose_chain_key(&facts))?);
+            return Ok(serde_json::to_value(feldera_sql_opt::choose_chain_key(
+                &facts,
+            ))?);
         }
         _ => {}
     }
@@ -1771,9 +2578,12 @@ fn transform(
     }
     if pass == "Lineage" {
         let edit = feldera_sql_ir::CircuitEditor::new(circuit);
-        let report = feldera_sql_opt::checked_lineage_report(&edit).map_err(feldera_sql_ir::Error::from)?;
+        let report =
+            feldera_sql_opt::checked_lineage_report(&edit).map_err(feldera_sql_ir::Error::from)?;
         return Ok(match report.diagnostic {
-            Some(issue) => json!({"findings": report.findings, "diagnostic": lineage_diagnostic(issue)}),
+            Some(issue) => {
+                json!({"findings": report.findings, "diagnostic": lineage_diagnostic(issue)})
+            }
             None => serde_json::to_value(report.findings)?,
         });
     }
@@ -1789,27 +2599,45 @@ fn transform(
         });
     }
     if pass == "LowerJoinFilterMap" {
-        let [id] = circuit.root().edges("allOperators")?.try_into()
+        let [id] = circuit
+            .root()
+            .edges("allOperators")?
+            .try_into()
             .map_err(|_| "join lowering requires one operator")?;
         let operator = circuit.node(id).expect("validated circuit member");
         let mut edit = feldera_sql_ir::CircuitEditor::new(circuit.clone());
         let mut warnings = Vec::new();
         let closure = feldera_sql_opt::lower_join_filter_map(
-            &mut edit, operator.edge("function")?, operator.edge("filter")?,
-            operator.field("map").map(|_| operator.edge("map")).transpose()?, &mut warnings,
+            &mut edit,
+            operator.edge("function")?,
+            operator.edge("filter")?,
+            operator
+                .field("map")
+                .map(|_| operator.edge("map"))
+                .transpose()?,
+            &mut warnings,
         )?;
-        let mut functions = edit.circuit().additional_expressions(&circuit, &[closure])?;
-        let warnings: Vec<_> = warnings.into_iter().map(|w| {
-            json!({"range":w.position, "error_type":w.kind, "message":w.message})
-        }).collect();
-        return Ok(json!({"function": functions.pop().expect("one requested closure"), "warnings": warnings}));
+        let mut functions = edit
+            .circuit()
+            .additional_expressions(&circuit, &[closure])?;
+        let warnings: Vec<_> = warnings
+            .into_iter()
+            .map(|w| json!({"range":w.position, "error_type":w.kind, "message":w.message}))
+            .collect();
+        return Ok(
+            json!({"function": functions.pop().expect("one requested closure"), "warnings": warnings}),
+        );
     }
     if pass == "UDFInliner/Declarations" {
         let calls = serde_json::from_slice::<Vec<(String, usize)>>(state)?;
-        return Ok(json!({"needs_full_snapshot": feldera_sql_opt::may_inline_udfs(circuit, &calls)?}));
+        return Ok(
+            json!({"needs_full_snapshot": feldera_sql_opt::may_inline_udfs(circuit, &calls)?}),
+        );
     }
     if pass == "DecomposeExpensiveFilters/Predicates" {
-        return Ok(json!({"needs_full_snapshot": feldera_sql_opt::filters_need_decomposition(circuit)?}));
+        return Ok(
+            json!({"needs_full_snapshot": feldera_sql_opt::filters_need_decomposition(circuit)?}),
+        );
     }
     if pass == "MultisetAnalysis" {
         let facts = feldera_sql_opt::stream_multiplicities(&circuit)?;
@@ -1824,10 +2652,12 @@ fn transform(
         )?));
     }
     if pass == "Topology/FindJoinTrees" {
-        return Ok(match feldera_sql_opt::names_after_isolated_joins(&circuit, next)? {
-            Some(next) => json!({"join_trees": [], "next_generated_name": next}),
-            None => Value::Null,
-        });
+        return Ok(
+            match feldera_sql_opt::names_after_isolated_joins(&circuit, next)? {
+                Some(next) => json!({"join_trees": [], "next_generated_name": next}),
+                None => Value::Null,
+            },
+        );
     }
     if pass == "FindJoinTrees" {
         let trees = feldera_sql_opt::find_join_trees(&circuit, &mut next)?;
@@ -1860,15 +2690,17 @@ fn transform(
         )?)));
     }
     if pass == "MapFieldDependencies" {
-        return Ok(serde_json::to_value(feldera_sql_opt::map_field_dependencies(&circuit)?)?);
+        return Ok(serde_json::to_value(
+            feldera_sql_opt::map_field_dependencies(&circuit)?,
+        )?);
     }
     if pass == "FindUnusedInputFields/Columns" {
-        return Ok(serde_json::to_value(feldera_sql_opt::source_column_decisions(&circuit)?)?);
+        return Ok(serde_json::to_value(
+            feldera_sql_opt::source_column_decisions(&circuit)?,
+        )?);
     }
     if pass == "FindUnusedInputFields" {
-        return Ok(json!(feldera_sql_opt::input_field_uses(
-            &circuit
-        )?));
+        return Ok(json!(feldera_sql_opt::input_field_uses(&circuit)?));
     }
     if pass == "Topology/ValidateStreamKinds" {
         let violation = feldera_sql_ir::OutputClocks::new(&circuit)?.validate()?;
@@ -1883,7 +2715,10 @@ fn transform(
         }
         let steps: Vec<_> = feldera_sql_opt::monotonicity_transfers(&circuit)?
             .into_iter()
-            .map(|(id, transfer)| Step { operator: operator_number(id), transfer })
+            .map(|(id, transfer)| Step {
+                operator: operator_number(id),
+                transfer,
+            })
             .collect();
         return Ok(serde_json::to_value(steps)?);
     }
@@ -1916,14 +2751,10 @@ fn transform(
         return Ok(json!({"facts": facts}));
     }
     if pass == "Graph" {
-        return Ok(json!(feldera_sql_opt::consumer_graphs(
-            &circuit
-        )?));
+        return Ok(json!(feldera_sql_opt::consumer_graphs(&circuit)?));
     }
     if pass == "DetectStreamingOperations" {
-        return Ok(json!(feldera_sql_opt::detects_streaming(
-            &circuit
-        )?));
+        return Ok(json!(feldera_sql_opt::detects_streaming(&circuit)?));
     }
     if pass == "FindBounded" {
         #[derive(serde::Deserialize)]
@@ -1944,14 +2775,11 @@ fn transform(
     if pass == "CollectUnbounded" {
         let bounded = ports(serde_json::from_slice(state)?);
         return Ok(json!(feldera_sql_opt::unbounded_operators(
-            &circuit,
-            &bounded
+            &circuit, &bounded
         )?));
     }
     if pass == "FindGCedStreams" {
-        return Ok(wire_ports(feldera_sql_opt::pruned_streams(
-            &circuit,
-        )?));
+        return Ok(wire_ports(feldera_sql_opt::pruned_streams(&circuit)?));
     }
     if pass == "AppendOnly" {
         let streams = feldera_sql_opt::append_only_streams(&circuit)?;
@@ -1961,15 +2789,21 @@ fn transform(
         return temporal::scan(circuit, temporal::sharing_threshold(state)?);
     }
     if pass == "WindowGroups/FilterSources" {
-        return Ok(temporal::source_paths(feldera_sql_opt::temporal_filter_sources(circuit)?));
+        return Ok(temporal::source_paths(
+            feldera_sql_opt::temporal_filter_sources(circuit)?,
+        ));
     }
     if pass == "WindowGroups/Indexes" {
         use feldera_sql_opt::IndexedWindows;
         let threshold = temporal::sharing_threshold(state)?;
-        return Ok(match feldera_sql_opt::indexed_window_groups(circuit, threshold)? {
-            IndexedWindows::Groups(plans) => json!({"plans": plans}),
-            IndexedWindows::Candidates(windows) => json!({"candidates": operator_numbers(windows)}),
-        });
+        return Ok(
+            match feldera_sql_opt::indexed_window_groups(circuit, threshold)? {
+                IndexedWindows::Groups(plans) => json!({"plans": plans}),
+                IndexedWindows::Candidates(windows) => {
+                    json!({"candidates": operator_numbers(windows)})
+                }
+            },
+        );
     }
     if pass == "FindWindowGroups" {
         let candidates = feldera_sql_opt::window_candidates(&circuit)?;
@@ -1977,22 +2811,29 @@ fn transform(
     }
     if let Some(name) = pass.strip_prefix("Topology/") {
         if name == "WindowTrimReaders" {
-            return Ok(json!(operator_numbers(feldera_sql_opt::window_trim_readers(&circuit)?)));
+            return Ok(json!(operator_numbers(
+                feldera_sql_opt::window_trim_readers(&circuit)?
+            )));
         }
         if name == "OrderedIndexes" {
-            return Ok(json!(operator_numbers(feldera_sql_opt::ordered_indexes(&circuit)?)));
+            return Ok(json!(operator_numbers(feldera_sql_opt::ordered_indexes(
+                &circuit
+            )?)));
         }
         if name == "OptimizeIncrementalVisitor" {
             use feldera_sql_opt::IntegralEdit;
             if let Some(edits) = feldera_sql_opt::flat_integral_edits(&circuit)? {
-                let actions: BTreeMap<_, _> = edits.into_iter().map(|(id, edit)| {
-                    let action = match edit {
-                        IntegralEdit::Bypass => "Bypass",
-                        IntegralEdit::Push => "Push",
-                        IntegralEdit::ReplaceAndPush(kind) => kind.wire_name(),
-                    };
-                    (operator_number(id), action)
-                }).collect();
+                let actions: BTreeMap<_, _> = edits
+                    .into_iter()
+                    .map(|(id, edit)| {
+                        let action = match edit {
+                            IntegralEdit::Bypass => "Bypass",
+                            IntegralEdit::Push => "Push",
+                            IntegralEdit::ReplaceAndPush(kind) => kind.wire_name(),
+                        };
+                        (operator_number(id), action)
+                    })
+                    .collect();
                 return Ok(json!({"integral_edits": actions}));
             }
         }
@@ -2000,20 +2841,29 @@ fn transform(
             let Some(plan) = feldera_sql_opt::linear_retention_plan(&circuit)? else {
                 return Ok(Value::Null);
             };
-            let replacements: BTreeMap<_, _> = plan.replacements.into_iter()
-                .map(|(aggregate, retainer)| (operator_number(aggregate), operator_number(retainer)))
+            let replacements: BTreeMap<_, _> = plan
+                .replacements
+                .into_iter()
+                .map(|(aggregate, retainer)| {
+                    (operator_number(aggregate), operator_number(retainer))
+                })
                 .collect();
             return Ok(json!({"order": operator_numbers(plan.order), "retainers": replacements}));
         }
         if name == "ChainReaders" {
-            return Ok(json!(operator_numbers(feldera_sql_opt::chain_readers(&circuit)?)));
+            return Ok(json!(operator_numbers(feldera_sql_opt::chain_readers(
+                &circuit
+            )?)));
         }
         if name == "TrimFilters" {
-            let readers = feldera_sql_opt::trim_filter_readers(&circuit, serde_json::from_slice(state)?)?;
+            let readers =
+                feldera_sql_opt::trim_filter_readers(&circuit, serde_json::from_slice(state)?)?;
             return Ok(json!(operator_numbers(readers)));
         }
         if name == "BypassNoops" {
-            return Ok(json!(operator_numbers(feldera_sql_opt::bypassed_noops(&circuit)?)));
+            return Ok(json!(operator_numbers(feldera_sql_opt::bypassed_noops(
+                &circuit
+            )?)));
         }
         if name == "MergeNoops" {
             let inputs: feldera_sql_opt::SharedTraceInputs = serde_json::from_slice(state)?;
@@ -2040,7 +2890,9 @@ fn transform(
             return Ok(serde_json::to_value(edits)?);
         }
         if name == "FanoutProducers" {
-            return Ok(json!(operator_numbers(feldera_sql_opt::fanout_producers(&circuit)?)));
+            return Ok(json!(operator_numbers(feldera_sql_opt::fanout_producers(
+                &circuit
+            )?)));
         }
         if name == "CSE" {
             return Ok(
@@ -2057,10 +2909,14 @@ fn transform(
                 let action = match edit {
                     Constant(StreamKind::Delta) => json!({"kind":"Delta"}),
                     Constant(StreamKind::Collection) => json!({"kind":"Collection"}),
-                    Constant(StreamKind::Waterline) => return Err("empty multiset has a waterline clock".into()),
+                    Constant(StreamKind::Waterline) => {
+                        return Err("empty multiset has a waterline clock".into())
+                    }
                     Forward(p) => json!({"kind":"Forward","inputs":[port(p)]}),
                     LeftJoin(p) => json!({"kind":"LeftJoin","inputs":[port(p)]}),
-                    Sum(ports) => json!({"kind":"Sum","inputs":ports.into_iter().map(port).collect::<Vec<_>>()}),
+                    Sum(ports) => {
+                        json!({"kind":"Sum","inputs":ports.into_iter().map(port).collect::<Vec<_>>()})
+                    }
                 };
                 actions.insert(operator_number(id), action);
             }
@@ -2091,7 +2947,9 @@ fn transform(
         return Ok(json!({ "needs_full_snapshot": needs_full_snapshot }));
     }
     if pass == "FanoutReaders" {
-        return Ok(json!(operator_numbers(feldera_sql_opt::fanout_readers(&circuit)?)));
+        return Ok(json!(operator_numbers(feldera_sql_opt::fanout_readers(
+            &circuit
+        )?)));
     }
     if matches!(pass, "NoIntegralVisitor" | "ValidateRecursiveOperators") {
         let violation = if pass == "NoIntegralVisitor" {
@@ -2116,7 +2974,9 @@ fn transform(
     }
     if pass == "OrderGcDependencies" {
         let edges: Vec<(u64, u64)> = serde_json::from_slice(state)?;
-        let edges = edges.into_iter().map(|(a, b)| (NodeId::Outer(a), NodeId::Outer(b)));
+        let edges = edges
+            .into_iter()
+            .map(|(a, b)| (NodeId::Outer(a), NodeId::Outer(b)));
         let order = feldera_sql_opt::dependency_order(&circuit, edges)?;
         return Ok(json!(operator_numbers(order)));
     }
@@ -2132,27 +2992,25 @@ fn transform(
         return Ok(json!({"duplicate_retention":duplicate,"next_generated_name":next}));
     }
     if pass == "FixupViewReferences" {
-        return Ok(
-            match feldera_sql_opt::resolve_view_references(&circuit)? {
-                feldera_sql_opt::ViewResolution::UndeclaredRecursion { operator, message } => {
-                    json!({"violation":{"operator":operator_number(operator), "internal":false, "message":message}})
-                }
-                feldera_sql_opt::ViewResolution::Valid(plan) => {
-                    let redirects: BTreeMap<_, _> = plan
-                        .redirects
-                        .into_iter()
-                        .map(|(id, slots)| {
-                            let inputs: BTreeMap<_, _> = slots
-                                .into_iter()
-                                .map(|(slot, source)| (slot, operator_number(source)))
-                                .collect();
-                            (operator_number(id), inputs)
-                        })
-                        .collect();
-                    json!({"order":operator_numbers(plan.order), "redirects":redirects})
-                }
-            },
-        );
+        return Ok(match feldera_sql_opt::resolve_view_references(&circuit)? {
+            feldera_sql_opt::ViewResolution::UndeclaredRecursion { operator, message } => {
+                json!({"violation":{"operator":operator_number(operator), "internal":false, "message":message}})
+            }
+            feldera_sql_opt::ViewResolution::Valid(plan) => {
+                let redirects: BTreeMap<_, _> = plan
+                    .redirects
+                    .into_iter()
+                    .map(|(id, slots)| {
+                        let inputs: BTreeMap<_, _> = slots
+                            .into_iter()
+                            .map(|(slot, source)| (slot, operator_number(source)))
+                            .collect();
+                        (operator_number(id), inputs)
+                    })
+                    .collect();
+                json!({"order":operator_numbers(plan.order), "redirects":redirects})
+            }
+        });
     }
     if pass == "RemoveTable" {
         let name: String = serde_json::from_slice(state)?;
@@ -2189,7 +3047,9 @@ fn transform(
         return Ok(json!({"prefixes":prefixes}));
     }
     if pass == "FindFusable" {
-        return Ok(serde_json::to_value(feldera_sql_opt::ArrayFusions::find(&CircuitEditor::new(circuit))?)?);
+        return Ok(serde_json::to_value(feldera_sql_opt::ArrayFusions::find(
+            &CircuitEditor::new(circuit),
+        )?)?);
     }
     if pass == "DetectConflicts" {
         return Ok(json!(feldera_sql_opt::conflicting_regions(&circuit)?));
@@ -2197,7 +3057,9 @@ fn transform(
     if pass == "IdentityDecisions" {
         let mut editor = CircuitEditor::new(circuit);
         let actions: BTreeMap<_, _> = feldera_sql_opt::identity_decisions(&mut editor, &mut next)?
-            .into_iter().map(|(id, remove)| (operator_number(id), remove)).collect();
+            .into_iter()
+            .map(|(id, remove)| (operator_number(id), remove))
+            .collect();
         return Ok(json!({"identity_actions":actions, "next_generated_name":next}));
     }
     if matches!(pass, "CompactNames" | "TagRegions" | "SetOperatorHashes") {
@@ -2236,13 +3098,20 @@ fn transform(
     };
     if pass == "TrimInputs" {
         let layouts = serde_json::from_slice(state)?;
-        return Ok(match feldera_sql_opt::checked_trim_inputs(&original, &layouts, &mut next) {
-            Ok(output) => publish(&output, json!({"next_generated_name":next, "unused_sources":[]})),
-            Err(feldera_sql_opt::FieldRewriteError::InvalidIr(error)) => return Err(error.into()),
-            Err(feldera_sql_opt::FieldRewriteError::Binding(issue)) => {
-                json!({"binding_error":binding_diagnostic(issue), "next_generated_name":next})
-            }
-        });
+        return Ok(
+            match feldera_sql_opt::checked_trim_inputs(&original, &layouts, &mut next) {
+                Ok(output) => publish(
+                    &output,
+                    json!({"next_generated_name":next, "unused_sources":[]}),
+                ),
+                Err(feldera_sql_opt::FieldRewriteError::InvalidIr(error)) => {
+                    return Err(error.into())
+                }
+                Err(feldera_sql_opt::FieldRewriteError::Binding(issue)) => {
+                    json!({"binding_error":binding_diagnostic(issue), "next_generated_name":next})
+                }
+            },
+        );
     }
     let circuit = original.clone();
     if pass == "RemoveUselessLeftJoinsVisitor" {
@@ -2250,10 +3119,13 @@ fn transform(
         let keyed = keyed.into_iter().map(NodeId::Outer).collect();
         let (result, removed) =
             feldera_sql_opt::remove_useless_left_joins(circuit, &keyed, &mut next)?;
-        return Ok(publish(&result, json!({
-            "removed_left_joins": operator_numbers(removed), "unused_sources": [],
-            "next_generated_name": next
-        })));
+        return Ok(publish(
+            &result,
+            json!({
+                "removed_left_joins": operator_numbers(removed), "unused_sources": [],
+                "next_generated_name": next
+            }),
+        ));
     }
     if pass == "BuildNestedOperators" {
         let result = feldera_sql_opt::build_nested_operators(circuit, &mut next)?;
@@ -2261,10 +3133,13 @@ fn transform(
             .diagnostics
             .late_column
             .map(|(id, column)| json!({"operator":operator_number(id), "column":column}));
-        return Ok(publish(&result.circuit, json!({
-            "next_generated_name":next, "unused_sources":[],
-            "unused_declarations":operator_numbers(result.diagnostics.unused_declarations), "late_column":late
-        })));
+        return Ok(publish(
+            &result.circuit,
+            json!({
+                "next_generated_name":next, "unused_sources":[],
+                "unused_declarations":operator_numbers(result.diagnostics.unused_declarations), "late_column":late
+            }),
+        ));
     }
     let mut unused_sources = Vec::new();
     let result = match pass {
@@ -2276,7 +3151,9 @@ fn transform(
             let groups = serde_json::from_slice::<Vec<_>>(state)?;
             feldera_sql_opt::implement_window_groups(circuit, &groups, &mut next)?
         }
-        "CollapseSharedChains" => feldera_sql_opt::collapse_shared_chains(circuit, &map_chains(state)?, &mut next)?,
+        "CollapseSharedChains" => {
+            feldera_sql_opt::collapse_shared_chains(circuit, &map_chains(state)?, &mut next)?
+        }
         "DuplicateSharedIndexes" => feldera_sql_opt::duplicate_shared_indexes(circuit, &mut next)?,
         "ImplementChains" => feldera_sql_opt::implement_chains(circuit, &mut next)?,
         "EnsureExpressionTrees" => feldera_sql_opt::ensure_expression_trees(circuit, &mut next)?,
@@ -2323,9 +3200,12 @@ fn transform(
                 .collect();
             let aliases = match cse.checked_aliases(&circuit, &shuffles) {
                 Ok(aliases) => aliases,
-                Err(feldera_sql_opt::KeyComparisonError::Diagnostic(failure)) =>
-                    return Ok(json!({"comparison_failure": failure})),
-                Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => return Err(error.into()),
+                Err(feldera_sql_opt::KeyComparisonError::Diagnostic(failure)) => {
+                    return Ok(json!({"comparison_failure": failure}))
+                }
+                Err(feldera_sql_opt::KeyComparisonError::InvalidIr(error)) => {
+                    return Err(error.into())
+                }
             };
             let aliases: Vec<_> = aliases
                 .into_iter()
@@ -2352,13 +3232,23 @@ fn transform(
                 Ok(output) => output,
                 Err(ReorderError::Unsupported) => return Ok(Value::Null),
                 Err(ReorderError::InvalidIr(error)) => return Err(error.into()),
-                Err(ReorderError::Diagnostic { graph, diagnostic, next_name }) => return Ok(json!({
-                    "failure": temporal::temporal_failure(&graph, &original, diagnostic)?,
-                    "next_generated_name": next_name,
-                })),
+                Err(ReorderError::Diagnostic {
+                    graph,
+                    diagnostic,
+                    next_name,
+                }) => {
+                    return Ok(json!({
+                        "failure": temporal::temporal_failure(&graph, &original, diagnostic)?,
+                        "next_generated_name": next_name,
+                    }))
+                }
             }
         }
-        "Reorder" => feldera_sql_opt::reorder_temporal_filters(circuit, serde_json::from_slice(state)?, &mut next)?,
+        "Reorder" => feldera_sql_opt::reorder_temporal_filters(
+            circuit,
+            serde_json::from_slice(state)?,
+            &mut next,
+        )?,
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(circuit, &mut next)?,
         "LowerCircuitVisitor"
         | "LowerAsofInner"
@@ -2374,43 +3264,67 @@ fn transform(
         | "Simplify"
         | "DecomposeExpensiveFilters"
         | "ReplaceSharedIndexes"
-        | "MergeFilters" | "BreakFilters" => {
+        | "MergeFilters"
+        | "BreakFilters" => {
             let mut weight = None;
             let mut retention = None;
             let (output, warnings) = match pass {
                 "InsertLimiters" => {
                     let mut warnings = Vec::new();
                     use feldera_sql_opt::limiters::LimiterError;
-                    let (output, counter) = match feldera_sql_opt::limiters::insert_limiters_with_warnings(
-                        circuit, waterline_input(state)?, &mut warnings,
-                    ) {
-                        Ok(result) => result,
-                        Err(error) => {
-                            let message = error.to_string();
-                            let (finding, counter) = match error {
-                                LimiterError::Gen2KeyLateness { operator, next, .. } =>
-                                    (json!({"kind":"gen2_key_lateness", "operator":operator}), next),
-                                LimiterError::MissingWaterline { operator, row, next, .. } =>
-                                    (json!({"kind":"missing_waterline", "operator":operator, "column":row}), next),
-                                LimiterError::InvalidCircuit(error) => return Err(error.into()),
-                            };
-                            return Ok(json!({"limiter_refusal":finding, "message":message,
+                    let (output, counter) =
+                        match feldera_sql_opt::limiters::insert_limiters_with_warnings(
+                            circuit,
+                            waterline_input(state)?,
+                            &mut warnings,
+                        ) {
+                            Ok(result) => result,
+                            Err(error) => {
+                                let message = error.to_string();
+                                let (finding, counter) = match error {
+                                    LimiterError::Gen2KeyLateness { operator, next, .. } => (
+                                        json!({"kind":"gen2_key_lateness", "operator":operator}),
+                                        next,
+                                    ),
+                                    LimiterError::MissingWaterline {
+                                        operator,
+                                        row,
+                                        next,
+                                        ..
+                                    } => (
+                                        json!({"kind":"missing_waterline", "operator":operator, "column":row}),
+                                        next,
+                                    ),
+                                    LimiterError::InvalidCircuit(error) => return Err(error.into()),
+                                };
+                                return Ok(json!({"limiter_refusal":finding, "message":message,
                                 "next_generated_name":counter, "diagnostics":pass_warnings(warnings)}));
-                        }
-                    };
+                            }
+                        };
                     next = counter;
                     (output, warnings)
                 }
                 "ReplaceSharedIndexes" => {
-                    let groups = serde_json::from_slice::<Vec<Vec<feldera_sql_opt::IndexReader>>>(state)?;
+                    let groups =
+                        serde_json::from_slice::<Vec<Vec<feldera_sql_opt::IndexReader>>>(state)?;
                     let mut warnings = Vec::new();
-                    let Some(output) = feldera_sql_opt::replace_shared_indexes(circuit, &groups, &mut next, &mut warnings)? else {
+                    let Some(output) = feldera_sql_opt::replace_shared_indexes(
+                        circuit,
+                        &groups,
+                        &mut next,
+                        &mut warnings,
+                    )?
+                    else {
                         return Ok(Value::Null);
                     };
                     (output, warnings)
                 }
                 "LowerAsofInner" => {
-                    let lowered = feldera_sql_opt::lower_asof(circuit, serde_json::from_slice(state)?, &mut next)?;
+                    let lowered = feldera_sql_opt::lower_asof(
+                        circuit,
+                        serde_json::from_slice(state)?,
+                        &mut next,
+                    )?;
                     retention = Some(lowered.retention.into_iter().map(|binding| json!({
                         "retainer":operator_number(binding.retainer), "join":operator_number(binding.join),
                         "rebuilt":binding.rebuilt,
@@ -2418,7 +3332,9 @@ fn transform(
                     (lowered.circuit, lowered.warnings)
                 }
                 "LowerCircuitVisitor" => feldera_sql_opt::lower_circuit(
-                    circuit, lowering.as_ref().expect("bound lowering types"), &mut next,
+                    circuit,
+                    lowering.as_ref().expect("bound lowering types"),
+                    &mut next,
                 )?,
                 "ExpandStreamAggregates" => {
                     let context = serde_json::from_slice(state)?;
@@ -2429,14 +3345,21 @@ fn transform(
                 }
                 "RemoveStarJoinsPass" => {
                     let mut warnings = Vec::new();
-                    let result = feldera_sql_opt::expand_star_join_layer(circuit, &mut next, &mut warnings)?;
+                    let result =
+                        feldera_sql_opt::expand_star_join_layer(circuit, &mut next, &mut warnings)?;
                     (result, warnings)
                 }
                 "RemoveStarJoins" => feldera_sql_opt::remove_star_joins(circuit, &mut next)?,
                 "Fuse" => {
                     let mut warnings = Vec::new();
                     let clusters = serde_json::from_slice(state)?;
-                    let Some(output) = feldera_sql_opt::fuse_expensive_maps(circuit, clusters, &mut next, &mut warnings)? else {
+                    let Some(output) = feldera_sql_opt::fuse_expensive_maps(
+                        circuit,
+                        clusters,
+                        &mut next,
+                        &mut warnings,
+                    )?
+                    else {
                         return Ok(Value::Null);
                     };
                     (output, warnings)
@@ -2447,10 +3370,14 @@ fn transform(
                 "PullFilterVisitor" => feldera_sql_opt::pull_filters(circuit, &mut next)?,
                 "PropagateConstants" => feldera_sql_opt::propagate_constants(circuit, &mut next)?,
                 "Simplify" => feldera_sql_opt::simplify_expressions(circuit, &mut next)?,
-                "ExpandMetadataCasts" => feldera_sql_opt::expand_metadata_casts_with_warnings(circuit, &mut next)?,
+                "ExpandMetadataCasts" => {
+                    feldera_sql_opt::expand_metadata_casts_with_warnings(circuit, &mut next)?
+                }
                 "MergeFilters" => {
                     let mut warnings = Vec::new();
-                    let Some(output) = feldera_sql_opt::merge_temporal_filters(circuit, &mut next, &mut warnings)? else {
+                    let Some(output) =
+                        feldera_sql_opt::merge_temporal_filters(circuit, &mut next, &mut warnings)?
+                    else {
                         return Ok(Value::Null);
                     };
                     (output, warnings)
@@ -2469,15 +3396,28 @@ fn transform(
         "RemoveIdentityOperators" => {
             feldera_sql_opt::remove_identity_operators(circuit, &mut next)?
         }
-        "MoveGC" => feldera_sql_opt::move_asof_retention(circuit, serde_json::from_slice(state)?, &mut next)?,
-        "CanonicalForm" => feldera_sql_opt::canonicalize_names(circuit, &mut next)?,
-        "ReplaceStarJoins" => feldera_sql_opt::replace_star_joins(
-            circuit, serde_json::from_slice(state)?, &mut next,
+        "MoveGC" => feldera_sql_opt::move_asof_retention(
+            circuit,
+            serde_json::from_slice(state)?,
+            &mut next,
         )?,
+        "CanonicalForm" => feldera_sql_opt::canonicalize_names(circuit, &mut next)?,
+        "ReplaceStarJoins" => {
+            feldera_sql_opt::replace_star_joins(circuit, serde_json::from_slice(state)?, &mut next)?
+        }
         "ReplaceCommonProjections" => feldera_sql_opt::replace_common_projections(
-            circuit, serde_json::from_slice(state)?, &mut next)?,
-        "DeferCarriedColumns" => feldera_sql_opt::defer_carried_columns(circuit, serde_json::from_slice(state)?, &mut next)?,
-        "TrimFilters" => feldera_sql_opt::trim_filters(circuit, serde_json::from_slice(state)?, &mut next)?,
+            circuit,
+            serde_json::from_slice(state)?,
+            &mut next,
+        )?,
+        "DeferCarriedColumns" => feldera_sql_opt::defer_carried_columns(
+            circuit,
+            serde_json::from_slice(state)?,
+            &mut next,
+        )?,
+        "TrimFilters" => {
+            feldera_sql_opt::trim_filters(circuit, serde_json::from_slice(state)?, &mut next)?
+        }
         "TrimWindows" => feldera_sql_opt::trim_windows(circuit, &mut next)?,
         "IndexedInputs" => feldera_sql_opt::expand_indexed_inputs(
             circuit,
@@ -2539,9 +3479,12 @@ fn transform(
         "RemoveDeindexOperators" => feldera_sql_opt::remove_deindex_operators(circuit, &mut next)?,
         other => return Err(format!("unknown optimizer pass {other}").into()),
     };
-    Ok(publish(&result, json!({
-        "next_generated_name": next, "unused_sources": unused_sources
-    })))
+    Ok(publish(
+        &result,
+        json!({
+            "next_generated_name": next, "unused_sources": unused_sources
+        }),
+    ))
 }
 
 // SAFETY: these export names and signatures match the static methods of RustCircuitPass.
@@ -2565,7 +3508,8 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     _class: JClass<'_>,
 ) {
     env.with_env(|_| -> Result<(), BridgeError> {
-        LIVE_COMPILATIONS.with_borrow_mut(|stack| stack.pop())
+        LIVE_COMPILATIONS
+            .with_borrow_mut(|stack| stack.pop())
             .ok_or_else(|| BridgeError::Optimizer("no active optimizer snapshot scope".into()))?;
         Ok(())
     })
@@ -2587,24 +3531,16 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     state: JByteArray<'local>,
 ) -> JByteArray<'local> {
     env.with_env(|env| -> Result<_, BridgeError> {
-        if circuit.len(env)?.saturating_add(state.len(env)?) > MAX_BYTES {
-            return Err(BridgeError::Optimizer(
-                "optimizer input exceeds 64 MiB".into(),
-            ));
-        }
+        let pass = pass.to_string();
+        check_transport_size(circuit.len(env)? + state.len(env)?, &pass, "input", env)?;
         let bytes = env.convert_byte_array(&circuit)?;
         let next = u64::try_from(next).map_err(|e| BridgeError::Optimizer(e.to_string()))?;
         let state = env.convert_byte_array(&state)?;
-        let pass = pass.to_string();
         let result = transform(&pass, &error_view.to_string(), &bytes, &state, next)
             .map_err(|err| BridgeError::Optimizer(format!("{pass}: {err}")))?;
         let bytes =
             serde_json::to_vec(&result).map_err(|e| BridgeError::Optimizer(e.to_string()))?;
-        if bytes.len() > MAX_BYTES {
-            return Err(BridgeError::Optimizer(
-                "optimizer output exceeds 64 MiB".into(),
-            ));
-        }
+        check_transport_size(bytes.len(), &pass, "output", env)?;
         Ok(env.byte_array_from_slice(&bytes)?)
     })
     .resolve::<ThrowRuntimeExAndDefault>()
@@ -2615,11 +3551,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn transport_limit_accepts_the_last_byte() {
+        let limit = *MAX_BYTES;
+        for payload in ["input", "output"] {
+            TransportLimit::check(limit, "OptimizerOrder", payload).unwrap();
+            let error = TransportLimit::check(limit + 1, "OptimizerOrder", payload).unwrap_err();
+            assert_eq!((error.size, error.limit), (limit + 1, limit));
+            assert_eq!((error.pass, error.payload), ("OptimizerOrder", payload));
+        }
+    }
+
+    #[test]
     fn repeated_simplification_preserves_names_and_reports_each_warning() {
         let int = json!({"class":"DBSPTypeInteger","id":2,"code":"INT32","width":32,"signed":true,"mayBeNull":false});
         let literal = serde_json::to_vec(&json!([{
             "class":"DBSPI32Literal","id":1,"type":int,"value":"3"
-        }])).unwrap();
+        }]))
+        .unwrap();
         let invalid_cast = serde_json::to_vec(&json!([{
             "class":"DBSPCastExpression","id":1,"safe":"SqlUnsafe","type":int,
             "source":{"class":"DBSPStringLiteral","id":3,"value":"oops","charset":"UTF-8",
@@ -2628,7 +3576,10 @@ mod tests {
         LIVE_COMPILATIONS.with_borrow_mut(|stack| stack.push(Default::default()));
         for next in [0, 27] {
             let same = lower_function("Simplify/Root", &literal, &[], next).unwrap();
-            assert_eq!(same, json!({"root":{"node":1},"warnings":[],"next_generated_name":next}));
+            assert_eq!(
+                same,
+                json!({"root":{"node":1},"warnings":[],"next_generated_name":next})
+            );
             // Both roots have ID 1. The serialized graph distinguishes them.
             let warning = lower_function("Simplify/Root", &invalid_cast, &[], next).unwrap();
             assert_eq!(warning["warnings"][0]["error_type"], "Not a number");

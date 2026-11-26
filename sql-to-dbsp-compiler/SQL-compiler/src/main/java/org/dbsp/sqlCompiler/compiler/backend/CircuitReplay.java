@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.util.RawValue;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ValidateStreamKinds;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -17,6 +18,8 @@ import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
 
 import java.io.IOException;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -34,7 +37,30 @@ public final class CircuitReplay {
 
         String wireName() { return this.name() + "-subset"; }
     }
-    private static final long MAX_BYTES = 64L * 1024 * 1024;
+
+    public static final class ResourceLimit extends BaseCompilerException {
+        public ResourceLimit(String message) {
+            super(message + ". Compile the original SQL directly with the Java optimizer without --rust-optimizer-passes.",
+                    SourcePositionRange.INVALID);
+        }
+
+        @Override
+        public String getErrorKind() {
+            return "Optimizer resource limit";
+        }
+    }
+
+    private static final int DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
+    // Tests can lower the checkpoint limit for one compiler process.
+    private static final int MAX_BYTES = Math.max(1, Math.min(DEFAULT_MAX_BYTES,
+            Integer.getInteger("feldera.test.checkpointMaxBytes", DEFAULT_MAX_BYTES)));
+
+    private static void checkSize(Stage stage, String operation, long size) {
+        if (size > MAX_BYTES)
+            throw new ResourceLimit(stage + " " + operation + " is " + size +
+                    " bytes. The transport limit is " + MAX_BYTES + " bytes");
+    }
+
     private static final Set<String> OPERATORS = Set.of(
             "DBSPSourceMultisetOperator", "DBSPSourceMapOperator", "DBSPViewOperator",
             "DBSPSinkOperator", "DBSPMapOperator", "DBSPFilterOperator", "DBSPConstantOperator",
@@ -132,8 +158,7 @@ public final class CircuitReplay {
             weight.put("node", compiler.weightVar.getId());
         result.putRawValue("circuit", new RawValue(writer.getJsonString()));
         byte[] bytes = mapper().writeValueAsBytes(result);
-        if (bytes.length > MAX_BYTES)
-            throw new IllegalArgumentException("Circuit replay file exceeds the 64 MiB spike limit");
+        checkSize(stage, "export", bytes.length);
         Files.write(path, bytes, StandardOpenOption.CREATE_NEW);
     }
 
@@ -148,11 +173,12 @@ public final class CircuitReplay {
         identities(compiler.options);
 
         byte[] bytes;
-        try (var input = Files.newInputStream(path)) {
-            bytes = input.readNBytes((int) MAX_BYTES + 1);
+        try (var file = FileChannel.open(path)) {
+            checkSize(stage, "replay", file.size());
+            // The checkpoint can grow after the size check.
+            bytes = Channels.newInputStream(file).readNBytes(MAX_BYTES + 1);
+            checkSize(stage, "replay", bytes.length);
         }
-        if (bytes.length > MAX_BYTES)
-            throw new IllegalArgumentException("Circuit replay file exceeds the 64 MiB spike limit");
         JsonNode saved = mapper().readTree(bytes);
         if (!saved.path("schema_version").isIntegralNumber() || !saved.path("schema_version").canConvertToInt()
                 || saved.path("schema_version").asInt() != 4

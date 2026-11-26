@@ -3,7 +3,7 @@ use super::Failure;
 use signal_hook::{low_level, SigId};
 use std::{
     fs::{self, File},
-    io::{self, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     os::fd::AsRawFd,
     os::unix::{
         net::UnixStream,
@@ -16,6 +16,7 @@ use std::{
 
 const POLL: Duration = Duration::from_millis(5);
 const FILE_LIMIT: libc::rlim_t = 128 * 1024 * 1024;
+#[cfg(not(target_os = "macos"))]
 const WORKER_MEMORY: libc::rlim_t = 1024 * 1024 * 1024;
 
 pub(super) struct Supervisor {
@@ -168,7 +169,7 @@ impl Supervisor {
             .stderr(File::create_new(stderr)?);
         // Children inherit the service's process group so cancellation of a program
         // revision also reaches the JVM and the worker while the supervisor is running.
-        // SAFETY: the post-fork hook only calls getrlimit and setrlimit and reads errno.
+        // SAFETY: the post-fork hook only reads errno and calls getrlimit, setrlimit, and write.
         unsafe {
             command.pre_exec(move || {
                 let limit = |resource, value| {
@@ -186,15 +187,31 @@ impl Supervisor {
                     }
                     Ok(())
                 };
-                limit(libc::RLIMIT_CORE, 0)?;
-                limit(libc::RLIMIT_FSIZE, FILE_LIMIT)?;
+                // spawn returns only errno. Send the limit name through the stage log.
+                let set_limit = |resource, value, name: &[u8]| {
+                    limit(resource, value).inspect_err(|_| {
+                        libc::write(libc::STDERR_FILENO, name.as_ptr().cast(), name.len());
+                    })
+                };
+                set_limit(libc::RLIMIT_CORE, 0, b"RLIMIT_CORE")?;
+                set_limit(libc::RLIMIT_FSIZE, FILE_LIMIT, b"RLIMIT_FSIZE")?;
+                // Darwin aliases RLIMIT_AS to RLIMIT_RSS and rejects this limit.
+                #[cfg(not(target_os = "macos"))]
                 if rust_worker {
-                    limit(libc::RLIMIT_AS, WORKER_MEMORY)?;
+                    set_limit(libc::RLIMIT_AS, WORKER_MEMORY, b"RLIMIT_AS")?;
                 }
                 Ok(())
             });
         }
-        let mut child = command.spawn()?;
+        let mut child = command.spawn().map_err(|error| {
+            let stage = stderr.file_stem().unwrap_or_default().to_string_lossy();
+            let limit = fs::read_to_string(stderr).unwrap_or_default();
+            if limit.is_empty() {
+                Failure::Internal(format!("Could not start the {stage} stage: {error}. Check the compiler executable"))
+            } else {
+                Failure::Internal(format!("Could not set {limit} for the {stage} stage: {error}. Check the process limits"))
+            }
+        })?;
         let mut interval = Duration::ZERO;
         loop {
             if let Err(stop) = self
@@ -211,6 +228,12 @@ impl Supervisor {
                     Some(libc::SIGXFSZ | libc::SIGKILL) => {
                         Err(Failure::Limit(format!("compiler terminated by {status}")))
                     }
+                    Some(libc::SIGABRT) if rust_worker && allocation_failed(stderr)? => {
+                        Err(Failure::Limit(
+                            "S3 worker memory allocation failed. Compile with the Java optimizer"
+                                .into(),
+                        ))
+                    }
                     Some(_) => Err(Failure::Internal(format!(
                         "compiler terminated by {status}"
                     ))),
@@ -220,6 +243,20 @@ impl Supervisor {
             interval = POLL;
         }
     }
+}
+
+// The Rust allocator prints the failed allocation size before it aborts.
+fn allocation_failed(stderr: &Path) -> io::Result<bool> {
+    let mut log = File::open(stderr)?;
+    let tail = log.metadata()?.len().min(1024) as i64;
+    log.seek(SeekFrom::End(-tail))?;
+    let mut bytes = Vec::new();
+    log.read_to_end(&mut bytes)?;
+    Ok(String::from_utf8_lossy(&bytes).lines().any(|line| {
+        line.strip_prefix("memory allocation of ")
+            .and_then(|size| size.strip_suffix(" bytes failed"))
+            .is_some_and(|size| size.parse::<usize>().is_ok())
+    }))
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -263,5 +300,77 @@ mod tests {
                 assert!(field.parse::<u64>().unwrap() <= ceiling, "{name}: {field}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod child_tests {
+    use super::*;
+
+    #[test]
+    fn supervised_worker_starts_with_platform_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let supervisor = Supervisor::new(dir.path(), Duration::from_secs(60)).unwrap();
+        let mut child = Command::new("sh");
+        child.args(["-c", "ulimit -c >&2; ulimit -f >&2"]);
+        let log = dir.path().join("worker.log");
+        assert!(supervisor.run(&mut child, &log, true).unwrap().success());
+        let output = fs::read_to_string(log).unwrap();
+        let mut limits = output.lines();
+        assert_eq!(limits.next(), Some("0"));
+        assert!(limits.next().unwrap().parse::<u64>().unwrap() <= FILE_LIMIT / 512);
+    }
+
+    #[test]
+    fn only_worker_allocation_aborts_are_resource_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let supervisor = Supervisor::new(dir.path(), Duration::from_secs(60)).unwrap();
+        for (name, worker, message, kind) in [
+            (
+                "allocation",
+                true,
+                "memory allocation of 123 bytes failed",
+                "resource_limit",
+            ),
+            ("abort", true, "assertion failed", "internal_error"),
+            (
+                "jvm",
+                false,
+                "memory allocation of 123 bytes failed",
+                "internal_error",
+            ),
+        ] {
+            let mut child = Command::new("sh");
+            child.args(["-c", "echo \"$1\" >&2; kill -ABRT $$", "sh", message]);
+            let failure = supervisor
+                .run(&mut child, &dir.path().join(name), worker)
+                .unwrap_err();
+            assert_eq!(failure.fields().0, kind, "{name}");
+        }
+    }
+
+    #[test]
+    fn worker_allocation_failure_is_a_resource_limit() {
+        const CHILD: &str = "SQL2DBSP_TEST_WORKER_ALLOCATION";
+        if std::env::var_os(CHILD).is_some() {
+            #[cfg(not(target_os = "macos"))]
+            let size = WORKER_MEMORY as usize + 1;
+            #[cfg(target_os = "macos")]
+            let size = isize::MAX as usize;
+            std::hint::black_box(Vec::<u8>::with_capacity(size));
+            panic!("Worker allocation exceeded the address-space limit");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let supervisor = Supervisor::new(dir.path(), Duration::from_secs(60)).unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap());
+        child
+            .args([
+                "--exact",
+                "hybrid::supervise::child_tests::worker_allocation_failure_is_a_resource_limit",
+                "--nocapture",
+            ])
+            .env(CHILD, "1");
+        let result = supervisor.run(&mut child, &dir.path().join("worker.log"), true);
+        assert!(matches!(result, Err(Failure::Limit(_))), "{result:?}");
     }
 }

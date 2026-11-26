@@ -10,6 +10,54 @@ use std::{
     process::ExitCode,
 };
 
+#[derive(Debug)]
+pub(super) enum Failure {
+    Internal(String),
+    Limit(String),
+    Cancelled,
+    Sql(Value),
+}
+
+impl Failure {
+    pub(super) fn check_messages(messages: &Value) -> Result<(), Self> {
+        let entries = messages.as_array().ok_or_else(|| {
+            Self::Internal(
+                "Expected an array of compiler diagnostics. Check the compiler log".into(),
+            )
+        })?;
+        let mut sql_error = false;
+        for diagnostic in entries.iter().filter(|m| m["warning"] == false) {
+            let kind = diagnostic["error_type"].as_str().unwrap_or_default();
+            let message = diagnostic["message"].as_str().unwrap_or_default();
+            match kind {
+                "Optimizer resource limit" | "S3 export failed" | "S3 replay failed" => {
+                    return Err(Self::Limit(format!("{kind}: {message}")));
+                }
+                "Error reading file"
+                | "Compiler error"
+                | "This is a bug in the compiler (please report it to the developers)" => {
+                    return Err(Self::Internal(format!("{kind}: {message}")));
+                }
+                _ => sql_error = true,
+            }
+        }
+        if sql_error {
+            Err(Self::Sql(messages.clone()))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(super) fn fields(self) -> (&'static str, Value, Value) {
+        match self {
+            Self::Internal(reason) => ("internal_error", reason.into(), json!([])),
+            Self::Limit(reason) => ("resource_limit", reason.into(), json!([])),
+            Self::Cancelled => ("cancelled", "compilation cancelled".into(), json!([])),
+            Self::Sql(messages) => ("sql_error", Value::Null, messages),
+        }
+    }
+}
+
 fn write_file(dir: &Path, name: &str, document: &Value) -> io::Result<()> {
     let mut writer = BufWriter::new(File::create_new(dir.join(name))?);
     write_json(&mut writer, document)?;
@@ -45,13 +93,13 @@ pub(super) fn run(
     let status = match emit(input, producer, runtime) {
         Ok(mut artifacts) => {
             result["messages"] = artifacts["diagnostics"].take();
-            if result["messages"]
-                .as_array()
-                .expect("rendered diagnostics")
-                .iter()
-                .any(|m| m["warning"] == false)
-            {
-                result["status"] = "sql_error".into();
+            if let Err(failure) = Failure::check_messages(&result["messages"]) {
+                let (status, reason, messages) = failure.fields();
+                result["status"] = status.into();
+                result["messages"] = messages;
+                if !reason.is_null() {
+                    result["reason"] = reason;
+                }
                 ExitCode::FAILURE
             } else {
                 let executable_input = if artifacts.get("checkpoint").is_some() {

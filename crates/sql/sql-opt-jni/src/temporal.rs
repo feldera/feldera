@@ -1,9 +1,9 @@
 use super::fragment::Fragment;
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, NodeId, OperatorKind, OutputPort};
+use feldera_sql_opt::limiters::{Stream, StreamKind};
 use feldera_sql_opt::TemporalFilterLowering;
 use feldera_sql_opt::TemporalPredicate;
-use feldera_sql_opt::limiters::{Stream, StreamKind};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashSet;
 
 pub(super) fn temporal_failure(
@@ -19,7 +19,11 @@ pub(super) fn temporal_failure(
             json!({"predicate": roots})
         }
         Diagnostic::Comparison(error) => json!({"comparison_failure": error}),
-        Diagnostic::ConflictingDeclarations { variable, previous, current } => json!({
+        Diagnostic::ConflictingDeclarations {
+            variable,
+            previous,
+            current,
+        } => json!({
             "conflicting_declarations": graph.live_inner_roots(input, &[variable, previous, current])?,
         }),
         Diagnostic::MissingBound => json!({"missing_clock_bound": true}),
@@ -52,9 +56,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     use jni::errors::ThrowRuntimeExAndDefault;
     let error = |message: String| BridgeError::Optimizer(format!("Live/MergeFilters: {message}"));
     env.with_env(|env| -> Result<_, BridgeError> {
-        if snapshot.len(env)? > super::MAX_BYTES {
-            return Err(error("input exceeds 64 MiB".into()));
-        }
+        super::check_transport_size(snapshot.len(env)?, "Live/MergeFilters", "input", env)?;
         let input = super::decode_live_circuit(&env.convert_byte_array(&snapshot)?)
             .map_err(|e| error(e.to_string()))?;
         let mut next = u64::try_from(next).map_err(|e| error(e.to_string()))?;
@@ -64,7 +66,15 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             &mut next,
             &mut warnings,
             |graph, fields| {
-                super::live_equality::compare(env, &operands, graph, &input, &fields).map(Some)
+                super::live_equality::compare(
+                    "Live/MergeFilters",
+                    env,
+                    &operands,
+                    graph,
+                    &input,
+                    &fields,
+                )
+                .map(Some)
             },
         )
         .map_err(|e| error(e.to_string()))?
@@ -75,7 +85,12 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
                 "next_generated_name": next, "unused_sources": [],
                 "circuit": circuit.changed_live_graph(&input),
             }),
-            feldera_sql_opt::TemporalMerge::Failed { graph, diagnostic, next_name, warnings } => {
+            feldera_sql_opt::TemporalMerge::Failed {
+                graph,
+                diagnostic,
+                next_name,
+                warnings,
+            } => {
                 let failure = temporal_failure(&graph, &input, diagnostic)
                     .map_err(|e| error(e.to_string()))?;
                 json!({
@@ -86,9 +101,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             }
         };
         let bytes = serde_json::to_vec(&result).map_err(|e| error(e.to_string()))?;
-        if bytes.len() > super::MAX_BYTES {
-            return Err(error("output exceeds 64 MiB".into()));
-        }
+        super::check_transport_size(bytes.len(), "Live/MergeFilters", "output", env)?;
         Ok(env.byte_array_from_slice(&bytes)?)
     })
     .resolve::<ThrowRuntimeExAndDefault>()
@@ -140,7 +153,12 @@ pub(super) fn scan(
                     .collect();
                 json!({ "groups": groups, "warnings": super::pass_warnings(warnings), "generated_names": generated_names })
             }
-            TemporalScan::Failed { graph, diagnostic, warnings, generated_names } => json!({
+            TemporalScan::Failed {
+                graph,
+                diagnostic,
+                warnings,
+                generated_names,
+            } => json!({
                 "failure": temporal_failure(&graph, &circuit, diagnostic)?,
                 "warnings": super::pass_warnings(warnings),
                 "generated_names": generated_names,
@@ -299,18 +317,8 @@ pub(super) fn window(
         [OperatorKind::SourceMultiset, OperatorKind::Now],
         input,
     )?;
-    let [
-        collection,
-        clock,
-        raw_key,
-        timestamp,
-        parameter,
-        common,
-        key,
-        lower,
-        upper,
-        operands @ ..,
-    ] = roots.as_slice()
+    let [collection, clock, raw_key, timestamp, parameter, common, key, lower, upper, operands @ ..] =
+        roots.as_slice()
     else {
         return Err("missing temporal window input".into());
     };

@@ -1,13 +1,13 @@
 //! Compare shared-index expressions and return the completed visitor state.
-use crate::{BridgeError, MAX_BYTES, decode_live_circuit, live_equality, pass_warnings};
+use crate::{check_transport_size, decode_live_circuit, live_equality, pass_warnings, BridgeError};
 use feldera_sql_ir::{Circuit, CircuitEditor};
 use feldera_sql_opt::{IndexComparison, IndexDiscoveryError, KeyComparisonError, SharedIndexes};
 use jni::{
-    EnvUnowned,
     errors::ThrowRuntimeExAndDefault,
     objects::{JByteArray, JClass, JObject},
+    EnvUnowned,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
 fn optimizer_error(error: impl std::fmt::Display) -> BridgeError {
@@ -37,9 +37,8 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     operands: JObject<'local>,
 ) -> JByteArray<'local> {
     env.with_env(|env| -> Result<_, BridgeError> {
-        if snapshot.len(env)?.saturating_add(visited.len(env)?) > MAX_BYTES {
-            return Err(optimizer_error("input exceeds 64 MiB"));
-        }
+        let size = snapshot.len(env)? + visited.len(env)?;
+        check_transport_size(size, "FindSharedIndexes", "input", env)?;
         let input = Circuit::from_json_bytes(&env.convert_byte_array(&snapshot)?)
             .map_err(optimizer_error)?;
         let visited =
@@ -49,6 +48,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         let mut state = SharedIndexes::new(BTreeSet::clone(&visited));
         let discovery = state.discover(&mut edit, &mut next, |edit, keys| {
             live_equality::compare(
+                "FindSharedIndexes",
                 env,
                 &operands,
                 edit.circuit(),
@@ -75,9 +75,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             Err(error) => return Err(optimizer_error(error)),
         }
         let bytes = serde_json::to_vec(&reply).map_err(optimizer_error)?;
-        if bytes.len() > MAX_BYTES {
-            return Err(optimizer_error("output exceeds 64 MiB"));
-        }
+        check_transport_size(bytes.len(), "FindSharedIndexes", "output", env)?;
         Ok(env.byte_array_from_slice(&bytes)?)
     })
     .resolve::<ThrowRuntimeExAndDefault>()
@@ -133,9 +131,13 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     env.with_env(|env| -> Result<_, BridgeError> {
         let error =
             |message: String| BridgeError::Optimizer(format!("shared-index layout: {message}"));
-        if functions.len(env)?.saturating_add(fixed.len(env)?) > MAX_BYTES {
-            return Err(error("input exceeds 64 MiB".into()));
-        }
+        let fixed_size = fixed.len(env)?;
+        let pass = if fixed_size == b"null".len() && env.convert_byte_array(&fixed)? == b"null" {
+            "SharedIndexes/WideFields"
+        } else {
+            "SharedIndexes/Split"
+        };
+        check_transport_size(functions.len(env)? + fixed_size, pass, "input", env)?;
         let input = Circuit::from_json(
             json!({"class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[]}),
         )
@@ -154,6 +156,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             &mut warnings,
             &mut |site: IndexComparison| {
                 live_equality::compare(
+                    pass,
                     env,
                     &operands,
                     site.graph,
@@ -173,9 +176,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         reply["warnings"] = json!(pass_warnings(warnings));
         reply["next_generated_name"] = next.into();
         let bytes = serde_json::to_vec(&reply).map_err(|e| error(e.to_string()))?;
-        if bytes.len() > MAX_BYTES {
-            return Err(error("output exceeds 64 MiB".into()));
-        }
+        check_transport_size(bytes.len(), pass, "output", env)?;
         Ok(env.byte_array_from_slice(&bytes)?)
     })
     .resolve::<ThrowRuntimeExAndDefault>()
@@ -199,9 +200,8 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
     operands: JObject<'local>,
 ) -> JByteArray<'local> {
     env.with_env(|env| -> Result<_, BridgeError> {
-        if snapshot.len(env)?.saturating_add(candidates.len(env)?) > MAX_BYTES {
-            return Err(replacement_error("input exceeds 64 MiB"));
-        }
+        let size = snapshot.len(env)? + candidates.len(env)?;
+        check_transport_size(size, "ReplaceSharedIndexes", "input", env)?;
         let input =
             decode_live_circuit(&env.convert_byte_array(&snapshot)?).map_err(replacement_error)?;
         let groups: Vec<_> = serde_json::from_slice(&env.convert_byte_array(&candidates)?)
@@ -215,6 +215,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
             &mut warnings,
             |site| {
                 live_equality::compare(
+                    "ReplaceSharedIndexes",
                     env,
                     &operands,
                     site.graph,
@@ -227,9 +228,7 @@ pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPas
         let reply = live_equality::column_reply(output, &input, next, warnings)
             .map_err(replacement_error)?;
         let bytes = serde_json::to_vec(&reply).map_err(replacement_error)?;
-        if bytes.len() > MAX_BYTES {
-            return Err(replacement_error("output exceeds 64 MiB"));
-        }
+        check_transport_size(bytes.len(), "ReplaceSharedIndexes", "output", env)?;
         Ok(env.byte_array_from_slice(&bytes)?)
     })
     .resolve::<ThrowRuntimeExAndDefault>()
