@@ -2271,9 +2271,9 @@ pub mod tests {
                 .collect()
         }
 
-        /// An update of a row that is not in the table writes the row. A
-        /// batch that the connector dropped can leave such a row out, and the
-        /// next update of its key must bring it back. The batch also updates
+        /// An update of a row that is not in the table writes the row. An
+        /// earlier batch that failed to write can leave such a row out, and
+        /// the next update of its key must bring it back. The batch also updates
         /// rows that are there.
         #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
         pub fn update_of_a_missing_row_writes_it(engine: &dyn ConnectorTestEngine) {
