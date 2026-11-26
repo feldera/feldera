@@ -3,10 +3,10 @@
 mod chains;
 mod keys;
 pub use chains::{carried_columns, chain_steps};
-pub use keys::{ChainKeyChoice, ChainKeys, choose_chain_key};
+pub use keys::{choose_chain_key, ChainKeyChoice, ChainKeys};
 
 use crate::lineage::{Column, Part};
-use crate::rebuild::{ProjectionNames, input_type};
+use crate::rebuild::{input_type, ProjectionNames};
 use crate::stream_rewrites::{append_map, body_members};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,

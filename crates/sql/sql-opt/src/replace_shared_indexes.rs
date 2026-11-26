@@ -1,11 +1,11 @@
 //! Replace narrow indexes with a common index at the first consumer that needs it.
 use crate::index_key_equivalence::{ColumnRewriteError, KeyComparisonError};
-use crate::index_reader::{IndexParameter, rewrite_index_reader};
+use crate::index_reader::{rewrite_index_reader, IndexParameter};
 use crate::rebuild::ProjectionNames;
 use crate::shared_index_candidates::IndexReader;
 use crate::shared_indexes::is_indexed_join;
 use crate::stream_rewrites::{append_map, body_members};
-use crate::wide_index::{CompareColumn, IndexComparison, project_index, split_with};
+use crate::wide_index::{project_index, split_with, CompareColumn, IndexComparison};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, Node, NodeId,

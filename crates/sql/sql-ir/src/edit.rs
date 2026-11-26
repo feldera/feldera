@@ -274,8 +274,12 @@ impl CircuitEditor {
         input: crate::OutputPort,
     ) -> Result<NodeId, Error> {
         let source = self.node(original)?;
-        let Some(kind @ (crate::OperatorKind::Aggregate | crate::OperatorKind::StreamAggregate
-                | crate::OperatorKind::PartitionedRollingAggregate | crate::OperatorKind::MapIndex)) = source.operator_kind()
+        let Some(
+            kind @ (crate::OperatorKind::Aggregate
+            | crate::OperatorKind::StreamAggregate
+            | crate::OperatorKind::PartitionedRollingAggregate
+            | crate::OperatorKind::MapIndex),
+        ) = source.operator_kind()
         else {
             return Err(Error::new("expected an aggregate or its window index"));
         };
@@ -388,7 +392,10 @@ impl CircuitEditor {
         if !matches!(
             (name, kind),
             ("outputType", Some(InnerKind::Type(_)))
-                | ("function" | "partitioningFunction", Some(InnerKind::Expression(_)))
+                | (
+                    "function" | "partitioningFunction",
+                    Some(InnerKind::Expression(_))
+                )
                 | ("aggregate", Some(InnerKind::AggregateList))
         ) {
             return Err(Error(format!("invalid {name} edge to {target:?}")));
@@ -582,10 +589,14 @@ impl CircuitEditor {
         let kind = self.node(id)?.operator_kind();
         match kind {
             Some(
-                Op::Aggregate | Op::StreamAggregate | Op::PartitionedRollingAggregate
+                Op::Aggregate
+                | Op::StreamAggregate
+                | Op::PartitionedRollingAggregate
                 | Op::PartitionedRollingAggregateWithWaterline,
             ) => self.clear_annotations(id)?,
-            Some(Op::FlatMap | Op::JoinFilterMap | Op::LeftJoinFilterMap | Op::StarJoinFilterMap) => {}
+            Some(
+                Op::FlatMap | Op::JoinFilterMap | Op::LeftJoinFilterMap | Op::StarJoinFilterMap,
+            ) => {}
             _ => return Err(Error::new("operator has no function to lower")),
         }
         self.set_operator_field(id, "function", Field::Reference(function.into()))?;
@@ -593,10 +604,16 @@ impl CircuitEditor {
         for key in ["aggregate", "aggregateList", "filter", "map"] {
             node.fields.shift_remove(key);
         }
-        let function = node.fields.shift_remove("function").expect("installed function");
-        let output = node.fields.get_index_of("outputType")
+        let function = node
+            .fields
+            .shift_remove("function")
+            .expect("installed function");
+        let output = node
+            .fields
+            .get_index_of("outputType")
             .ok_or_else(|| Error::new("operator lacks output type"))?;
-        node.fields.shift_insert(output + 1, "function".into(), function);
+        node.fields
+            .shift_insert(output + 1, "function".into(), function);
         Ok(())
     }
 
@@ -1118,7 +1135,10 @@ impl CircuitEditor {
         output: crate::TypeId,
     ) -> Result<(), Error> {
         let op = self.node(id)?;
-        if !op.operator_kind().is_some_and(crate::OperatorKind::supports_stream_input_replacement) {
+        if !op
+            .operator_kind()
+            .is_some_and(crate::OperatorKind::supports_stream_input_replacement)
+        {
             return Err(Error::new("expected a stream-preserving input replacement"));
         }
         if inputs.is_empty()

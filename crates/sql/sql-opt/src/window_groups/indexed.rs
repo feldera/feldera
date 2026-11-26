@@ -1,6 +1,6 @@
 //! Plan shared indexes after temporal predicates have become window operators.
-use crate::projection_key::{row_parameter, SourceRows, ProjectionKey};
 use super::{qualifying_window_groups, shared_window_fields, window_candidates, WindowFields};
+use crate::projection_key::{row_parameter, ProjectionKey, SourceRows};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, NodeId, OperatorKind, OutputPort};
 
 pub(super) struct WindowIndex {

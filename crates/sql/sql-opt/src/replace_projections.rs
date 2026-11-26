@@ -6,7 +6,7 @@ use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, Field, NodeId, OperatorKind as Op, OutputPort, TypeId, TypeKind,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 
 #[derive(Deserialize)]
@@ -50,7 +50,11 @@ impl ProjectionMap {
     }
 
     fn producer(indexed: bool) -> Self {
-        if indexed { Self::MapIndex } else { Self::Map }
+        if indexed {
+            Self::MapIndex
+        } else {
+            Self::Map
+        }
     }
 
     fn operator(self) -> Op {

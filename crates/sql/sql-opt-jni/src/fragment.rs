@@ -1,6 +1,6 @@
 use super::ExpressionSite;
 use feldera_sql_ir::{Circuit, CircuitEditor, NodeId, OperatorKind, OutputPort};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 /// A local operator sequence has one external port per live input, in call order.
 pub(super) struct Fragment<I> {

@@ -168,7 +168,11 @@ impl CircuitEditor {
         id: NodeId,
         aggregate_origin: Option<NodeId>,
     ) -> Result<(), Error> {
-        let Some(kind) = self.node(id)?.operator_kind().and_then(Op::incremental_form) else {
+        let Some(kind) = self
+            .node(id)?
+            .operator_kind()
+            .and_then(Op::incremental_form)
+        else {
             return Ok(());
         };
         let origin = if let Some(source) = aggregate_origin {

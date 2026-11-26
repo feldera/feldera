@@ -1,5 +1,5 @@
 //! Bind a projected filtered join to its live function, predicate and indexed inputs.
-use crate::{ExpressionSite, fragment::Fragment};
+use crate::{fragment::Fragment, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, OperatorKind};
 use feldera_sql_opt::FilteredJoinProjection;
 use serde::Deserialize;

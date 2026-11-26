@@ -1,10 +1,10 @@
 //! Replace a repeated Boolean test with its known value inside a guarded branch.
 use crate::{
-    expression_visitor::{Context, rewrite_expressions},
+    expression_visitor::{rewrite_expressions, Context},
     lexical_scope::expression_children,
     terms::Terms,
 };
-use feldera_sql_expr::{Rewrite, Transformation, Visit, ensure_expression_tree};
+use feldera_sql_expr::{ensure_expression_tree, Rewrite, Transformation, Visit};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId, TypeKind,
 };

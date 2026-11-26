@@ -164,7 +164,10 @@ fn resolves_dense_and_sparse_ids_in_their_own_namespace() {
             let mut invalid = graph.clone();
             invalid["allOperators"][0]["outputType"]["tupFields"][0]["node"] = json!(missing);
             let error = Circuit::from_json(invalid).unwrap_err();
-            assert_eq!(error.to_string(), format!("undefined node Inner({missing})"));
+            assert_eq!(
+                error.to_string(),
+                format!("undefined node Inner({missing})")
+            );
         }
     }
 }
@@ -237,7 +240,10 @@ fn provenance_uses_separate_identities_for_origins_and_relations() {
     retained["allOperators"][0]["provenance"]["children"][0]["relation"] =
         json!({"id":0, "retained":17, "planId":9});
     let wire = serde_json::to_vec(&retained).unwrap();
-    assert!(Circuit::from_json_bytes(&wire).unwrap().provenance().is_err());
+    assert!(Circuit::from_json_bytes(&wire)
+        .unwrap()
+        .provenance()
+        .is_err());
     let live = Circuit::from_live_json_bytes(&wire).unwrap();
     assert_eq!(live.to_json(), retained);
     assert!(live.provenance().unwrap().relation(relation).is_none());
@@ -509,7 +515,11 @@ fn generated_expression_has_a_readable_position_before_finishing_the_edit() {
     let mut editor = CircuitEditor::new(graph);
     editor.remember_position(operator, range).unwrap();
     let expr = editor
-        .inner_at(operator, InnerKind::Expression(ExpressionKind::NullLiteral), [])
+        .inner_at(
+            operator,
+            InnerKind::Expression(ExpressionKind::NullLiteral),
+            [],
+        )
         .unwrap();
     let position = editor.node(expr).unwrap().field("position").unwrap();
     assert_eq!(position.source_range().unwrap(), range);

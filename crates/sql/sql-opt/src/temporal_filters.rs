@@ -1,14 +1,14 @@
 //! Split temporal predicates and merge bounds that share a NOW window.
 use crate::{
-    KeyComparisonError, TemporalPredicate, WindowTerm,
     filters::rewrite_filters,
     function_calls::contains_now,
     temporal_comparisons::{
-        ClockError, ClockInput, TemporalDiagnostic, checked_temporal_predicates,
+        checked_temporal_predicates, ClockError, ClockInput, TemporalDiagnostic,
     },
     temporal_groups::check_temporal_bound_with,
+    KeyComparisonError, TemporalPredicate, WindowTerm,
 };
-use feldera_sql_expr::{SimplifyWarning, ensure_expression_tree, simplify_closure_with_warnings};
+use feldera_sql_expr::{ensure_expression_tree, simplify_closure_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
     BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
     OperatorKind as Op, OutputPort, TypeKind,
@@ -102,7 +102,8 @@ pub fn merge_temporal_filters_with_operands(
             .inputs()
             .next()
             .ok_or_else(|| Error::new("upstream filter requires an input"))?;
-        match can_merge_temporal_filters(&mut edit, upstream, downstream, &mut names, &mut capture) {
+        match can_merge_temporal_filters(&mut edit, upstream, downstream, &mut names, &mut capture)
+        {
             Ok(Some(true)) => {}
             Ok(Some(false)) => continue,
             Ok(None) => return Ok(None),
@@ -169,11 +170,15 @@ pub fn checked_filter_closure(
     }
     // Copying RETURN preserves its argument. If two copies still share an
     // expression, the waterline visitor rejects the body before evaluating it.
-    if tree != closure.into() && feldera_sql_expr::first_repeated_expression(edit, body.into())?.is_some() {
+    if tree != closure.into()
+        && feldera_sql_expr::first_repeated_expression(edit, body.into())?.is_some()
+    {
         return Err(TemporalDiagnostic::Predicate { parameter, body }.into());
     }
-    Ok(checked_temporal_predicates(edit, parameter, body, next, ClockInput::Filter)?
-        .map(|predicates| (parameter, predicates)))
+    Ok(
+        checked_temporal_predicates(edit, parameter, body, next, ClockInput::Filter)?
+            .map(|predicates| (parameter, predicates)),
+    )
 }
 
 /// Combine two compatible temporal bounds on a single row. Both calls use the

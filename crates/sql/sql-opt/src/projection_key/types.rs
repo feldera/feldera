@@ -1,5 +1,5 @@
 //! Compare the spelling of types in printed closures and generic call paths.
-use super::{Term, string};
+use super::{string, Term};
 use feldera_sql_ir::{CircuitEditor, Error, Node, NodeId, TypeId, TypeKind as Ty};
 
 type TypeTerm = (Term, Vec<NodeId>);

@@ -1,7 +1,7 @@
 //! Follow values through a projection to identify the fields of its input row.
 //! A tuple preserves the dependency of each component. Computing a scalar
 //! consumes the dependencies of every operand, even if the result is projected.
-use crate::lexical_scope::{References, Resolution, lexical_references};
+use crate::lexical_scope::{lexical_references, References, Resolution};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId, TypeKind,
 };

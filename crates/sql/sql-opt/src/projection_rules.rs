@@ -1,5 +1,5 @@
 //! Candidate rewrites for a Map or MapIndex following a live producer.
-use feldera_sql_expr::{SimplifyWarning, apply_closure};
+use feldera_sql_expr::{apply_closure, SimplifyWarning};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort, TypeId, TypeKind,
 };
@@ -98,9 +98,12 @@ impl FilteredJoinProjection {
         warnings: &mut Vec<SimplifyWarning>,
     ) -> Result<(), crate::CompositionError> {
         let map = match self.map {
-            Some(before) => {
-                crate::projection_composition::inline_projection(edit, before.into(), self.reader.into(), warnings)?
-            }
+            Some(before) => crate::projection_composition::inline_projection(
+                edit,
+                before.into(),
+                self.reader.into(),
+                warnings,
+            )?,
             None => self.reader,
         };
         let mut fields = vec![

@@ -1,6 +1,6 @@
 //! Compute temporal window bounds from the clock stream and the SQL key domain.
 use crate::function_calls::{function_name, is_clock_call};
-use feldera_sql_expr::{Rewrite, Transformation, Visit, copy_expression};
+use feldera_sql_expr::{copy_expression, Rewrite, Transformation, Visit};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,
     TypeId,
@@ -40,8 +40,7 @@ impl WindowEndpoint {
         key_type: TypeId,
     ) -> Result<ExpressionId, Error> {
         let bound = if let Some(expression) = self.expression {
-            let value = Rewrite::new(ReplaceClock(clock))
-                .apply(edit, expression.into())?;
+            let value = Rewrite::new(ReplaceClock(clock)).apply(edit, expression.into())?;
             let value = edit.cast(value, edit.expression(value)?, key_type)?;
             edit.make_expr(
                 site,

@@ -3,11 +3,11 @@
 //! relational origin. Emit those definitions at their first surviving use.
 
 use super::{
-    BodyOrder, Circuit, CircuitEditor, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort,
-    wire,
+    wire, BodyOrder, Circuit, CircuitEditor, Error, Field, Node, NodeId, OperatorKind as Op,
+    OutputPort,
 };
 use indexmap::IndexMap;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// Surviving operators whose input changed, in constructor order. Some

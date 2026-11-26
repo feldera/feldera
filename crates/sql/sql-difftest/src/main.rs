@@ -12,7 +12,7 @@ mod optimizer_trace;
 mod pass_observations;
 mod probe_files;
 mod roundtrip;
-use files::{Error, read};
+use files::{read, Error};
 use probe_files::DiagnosticPolicy;
 
 fn main() -> ExitCode {

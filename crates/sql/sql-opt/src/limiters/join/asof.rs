@@ -1,7 +1,7 @@
 //! A preceding ASOF match becomes final once the right waterline passes it.
 //! Right-side deletions can still expose the last match below both waterlines.
 use super::{
-    Bound, JoinInputs, JoinTerm, Projection, apply_bound, apply_bound_pair, apply_waterlines,
+    apply_bound, apply_bound_pair, apply_waterlines, Bound, JoinInputs, JoinTerm, Projection,
 };
 use crate::limiters::{filter::arg, minimum_pair, retention::ValueRetention};
 use crate::rebuild::input_type;

@@ -1,12 +1,13 @@
 //! Drop unused aggregate components while preserving the following map's input layout.
 use crate::{
-    FieldRewriteError, compressed_field_type, inspect_references, project_used_fields,
+    compressed_field_type, inspect_references, project_used_fields,
     projected_reader::rebind_parameters,
     row_fields::RowFields,
-    row_projection::{RowProjection, tuple_of_fields},
+    row_projection::{tuple_of_fields, RowProjection},
     terms::Terms,
+    FieldRewriteError,
 };
-use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
+use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, TypeId, TypeKind,
 };

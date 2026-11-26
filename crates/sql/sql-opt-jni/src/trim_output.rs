@@ -1,8 +1,8 @@
 //! Rebuild a narrowed stream aggregate or TopK with its downstream indexed map.
-use crate::{ExpressionSite, fragment::Fragment};
+use crate::{fragment::Fragment, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, Field, OperatorKind as Op, OutputPort};
 use feldera_sql_opt::{
-    TopK, append_input_projection, trim_aggregate_projection, trim_topk_projection,
+    append_input_projection, trim_aggregate_projection, trim_topk_projection, TopK,
 };
 use serde::Deserialize;
 use serde_json::Value;

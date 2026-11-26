@@ -1,9 +1,12 @@
 //! Trim unused columns from a non-materialized input and rebind its sole reader.
 //! The preceding field-use analysis supplies the ordered columns. The struct's
 //! generated name comes from the compiler that owns the SQL type printer.
-use crate::{BindingDiagnostic, FieldRewriteError, inspect_references, rebuild::rebuild_input_closures};
+use crate::{
+    inspect_references, rebuild::rebuild_input_closures, BindingDiagnostic, FieldRewriteError,
+};
 use feldera_sql_ir::{
-    BodyOrder, Circuit, CircuitEditor, Error, Field, InnerKind, NodeId, OperatorKind as Op, TypeKind,
+    BodyOrder, Circuit, CircuitEditor, Error, Field, InnerKind, NodeId, OperatorKind as Op,
+    TypeKind,
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
@@ -108,9 +111,9 @@ pub fn trim_inputs(
         FieldRewriteError::Binding(BindingDiagnostic::Free { name, .. }) => {
             Error::new(format!("unbound variable {name} in source reader"))
         }
-        FieldRewriteError::Binding(BindingDiagnostic::Conflict { variable, .. }) => {
-            Error::new(format!("shared variable {variable:?} refers to two declarations"))
-        }
+        FieldRewriteError::Binding(BindingDiagnostic::Conflict { variable, .. }) => Error::new(
+            format!("shared variable {variable:?} refers to two declarations"),
+        ),
     })
 }
 
@@ -132,7 +135,10 @@ pub fn checked_trim_inputs<'a>(
         let Some(NodeId::Outer(source)) = node.inputs().next().map(|port| port.operator) else {
             continue;
         };
-        let Some(layout) = layouts.get(&source).filter(|l| NodeId::Outer(l.reader) == reader) else {
+        let Some(layout) = layouts
+            .get(&source)
+            .filter(|l| NodeId::Outer(l.reader) == reader)
+        else {
             continue;
         };
         if layout.columns.windows(2).any(|pair| pair[0] >= pair[1]) {

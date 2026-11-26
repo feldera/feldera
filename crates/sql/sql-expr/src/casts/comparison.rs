@@ -1,5 +1,5 @@
 //! Comparisons between scalar literals in the optimizer's Simplify pass.
-use super::zoned_timestamp::{TimestampComparison, compare_timestamp_literals};
+use super::zoned_timestamp::{compare_timestamp_literals, TimestampComparison};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,
     NodeId, TypeKind,

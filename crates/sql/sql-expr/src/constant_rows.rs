@@ -1,6 +1,6 @@
 //! Weighted constants consolidate rows by value. Arrays, maps and geographic
 //! points compare their elements using Java expression-object equality.
-use crate::{ValueComparisonError, compare_literal_values};
+use crate::{compare_literal_values, ValueComparisonError};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
 };
@@ -366,7 +366,7 @@ fn compare(
 mod tests {
     use super::*;
     use feldera_sql_ir::{Circuit, InnerKind, TypeKind};
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
 
     fn editor() -> CircuitEditor {
         CircuitEditor::new(

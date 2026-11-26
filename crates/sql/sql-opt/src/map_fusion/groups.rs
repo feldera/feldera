@@ -139,7 +139,10 @@ pub fn scan_map_fusion(
         }
     }
     let clusters = select_clusters(edit, &candidates, siblings.into_values())?;
-    Ok(FusionScan { candidates, clusters })
+    Ok(FusionScan {
+        candidates,
+        clusters,
+    })
 }
 
 fn select_clusters(

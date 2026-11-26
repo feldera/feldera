@@ -124,7 +124,11 @@ impl Terms {
                     .filter(|(name, _)| {
                         !matches!(
                             *name,
-                            "position" | "sourceEmpty" | "singleton" | "originalStruct" | "runtimeMicros"
+                            "position"
+                                | "sourceEmpty"
+                                | "singleton"
+                                | "originalStruct"
+                                | "runtimeMicros"
                         )
                     })
                     .map(|(k, v)| (k.to_owned(), self.field(circuit, v, scope)))

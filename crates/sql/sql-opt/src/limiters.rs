@@ -8,7 +8,7 @@ pub use finality::{FinalityColumn, FinalityFunctions};
 mod join;
 mod keyed;
 mod pass;
-pub use filter::{RowFilter, row_filter};
+pub use filter::{row_filter, RowFilter};
 pub use join::join_waterline;
 pub use keyed::KeyProjection;
 pub use pass::{insert_limiters, insert_limiters_with_warnings, LimiterError, LimiterInputs};
@@ -19,14 +19,14 @@ mod source;
 pub(crate) use source::timestamp_max;
 mod streams;
 mod window;
-pub use window::{window_waterline, WindowWaterline};
 pub use projection::Projection;
 pub use source::{declared_waterline, DeclaredWaterline};
 pub use streams::{connect_error_view, window, Stream, StreamKind, WindowBounds};
+pub use window::{window_waterline, WindowWaterline};
 
 use feldera_sql_ir::{
-    BinaryOp, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort,
-    TypeId, TypeKind,
+    BinaryOp, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort, TypeId,
+    TypeKind,
 };
 
 /// An operator in the circuit being transformed and its scalar bound type.
@@ -58,7 +58,10 @@ impl Bound {
             ],
         )?;
         Ok(Self {
-            port: OutputPort { operator, number: 0 },
+            port: OutputPort {
+                operator,
+                number: 0,
+            },
             ty,
         })
     }

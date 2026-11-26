@@ -14,8 +14,7 @@ use self::{
 use crate::limiters::Projection;
 use crate::temporal_comparisons::ClockInput;
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
-    TypeId,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId, TypeId,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -146,7 +145,9 @@ fn unbounded_type(
 ) -> Result<Evaluation, Error> {
     Ok(match UnorderedRow::from_type(edit, ty)? {
         UnorderedType::Row(row) => Evaluation::Value(row.unbounded_value(ty, constant)),
-        UnorderedType::Invalid(kind, field) => Evaluation::Failed(WaterlineError::Type(kind, field)),
+        UnorderedType::Invalid(kind, field) => {
+            Evaluation::Failed(WaterlineError::Type(kind, field))
+        }
     })
 }
 
@@ -187,7 +188,12 @@ fn project_wrapper(
         Expr::Unwrap => RowRead::Unwrap,
         _ => unreachable!("expected an expression wrapper"),
     };
-    let result = read.apply(edit, expression.into(), edit.expression_type(expression)?, value)?;
+    let result = read.apply(
+        edit,
+        expression.into(),
+        edit.expression_type(expression)?,
+        value,
+    )?;
     Ok(match result {
         ProjectedRead::Value(value) => Evaluation::Value(value),
         ProjectedRead::NeedsVisitor => Evaluation::IncompleteInput,
@@ -277,7 +283,9 @@ pub(crate) fn clock_facts(
     };
     let UnorderedRow { shape, projected } = match UnorderedRow::from_type(edit, ty)? {
         UnorderedType::Row(row) => row,
-        UnorderedType::Invalid(kind, field) => return Err(TemporalDiagnostic::Type(kind, field).into()),
+        UnorderedType::Invalid(kind, field) => {
+            return Err(TemporalDiagnostic::Type(kind, field).into())
+        }
     };
     // Rebuild a diagnostic that needs prior facts from this predicate alone.
     // The live projector accepts a projected row type for this ZSet parameter.
@@ -296,7 +304,11 @@ pub(crate) fn clock_facts(
     }
     let references = crate::lexical_scope::resolve_body(edit.circuit(), [parameter], body.into())?;
     if !matches!(references, crate::LexicalResolution::Bound(_)) {
-        return if live_row { Err(predicate_failure()) } else { Ok(None) };
+        return if live_row {
+            Err(predicate_failure())
+        } else {
+            Ok(None)
+        };
     }
     let variable = edit.named_variable(projected.unwrap_or(ty), &name)?;
     let mut row = Row {
@@ -318,7 +330,9 @@ pub(crate) fn clock_facts(
         Evaluation::Failed(WaterlineError::MissingFact(id)) => {
             return Err(TemporalDiagnostic::Missing(MissingClockKey::Fact(id)).into());
         }
-        Evaluation::Failed(WaterlineError::MissingBound(_)) => return Err(TemporalDiagnostic::MissingBound.into()),
+        Evaluation::Failed(WaterlineError::MissingBound(_)) => {
+            return Err(TemporalDiagnostic::MissingBound.into())
+        }
         Evaluation::Failed(WaterlineError::Type(kind, ty)) => {
             return Err(TemporalDiagnostic::Type(kind, ty).into());
         }
@@ -533,7 +547,10 @@ pub enum WaterlineError {
     },
     RepeatedExpression(Vec<NodeId>),
     FlatmapInput(ExpressionId),
-    FlatmapResult { flatmap: ExpressionId, computed: TypeId },
+    FlatmapResult {
+        flatmap: ExpressionId,
+        computed: TypeId,
+    },
     VariableTypeMismatch(ExpressionId),
     MissingReference(ExpressionId),
     MissingFact(ExpressionId),
@@ -545,7 +562,10 @@ pub enum WaterlineError {
     /// publishing all the facts that precede it.
     InvalidProjection(RowType),
     ExpectedScalarOperand(RowType),
-    InvalidBoundCast { operation: ExpressionId, bound: ExpressionId },
+    InvalidBoundCast {
+        operation: ExpressionId,
+        bound: ExpressionId,
+    },
 }
 
 pub enum ClosureAnalysis {
@@ -756,11 +776,9 @@ mod tests {
         let dropped = edit.tuple_field(pair, 0)?;
         let bounds = clock_operands(&mut edit, parameter, kept)?.unwrap();
         assert!(bounds.contains(&kept));
-        assert!(
-            !clock_operands(&mut edit, parameter, dropped)?
-                .unwrap()
-                .contains(&dropped)
-        );
+        assert!(!clock_operands(&mut edit, parameter, dropped)?
+            .unwrap()
+            .contains(&dropped));
         let UnorderedType::Row(shape) = UnorderedRow::from_type(&mut edit, row)? else {
             panic!("expected a projected row");
         };

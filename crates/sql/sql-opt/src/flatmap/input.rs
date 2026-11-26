@@ -1,9 +1,9 @@
 //! Narrow the collection reader and the columns UNNEST copies from its input row.
 use crate::{
-    FieldRewriteError, compressed_field_type, inspect_references, project_used_fields,
-    rebind_projected_reader, row_fields::RowFields,
+    compressed_field_type, inspect_references, project_used_fields, rebind_projected_reader,
+    row_fields::RowFields, FieldRewriteError,
 };
-use feldera_sql_expr::{FlatmapColumns, replace_flatmap_input};
+use feldera_sql_expr::{replace_flatmap_input, FlatmapColumns};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId};
 use std::collections::BTreeSet;
 

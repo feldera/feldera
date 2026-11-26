@@ -5,7 +5,7 @@ use crate::row_projection::RowProjection;
 use crate::stream_rewrites::{append_map, body_members, reader_counts};
 use feldera_sql_expr::{
     input_field_paths,
-    lexical_scope::{BindingDiagnostic, inspect_references},
+    lexical_scope::{inspect_references, BindingDiagnostic},
 };
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,

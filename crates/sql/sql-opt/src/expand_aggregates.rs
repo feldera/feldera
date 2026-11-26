@@ -4,11 +4,12 @@ mod linear;
 mod min_max;
 
 use crate::{
-    AggregateKind, aggregate_groups,
-    rebuild::{ProjectionNames, input_type},
+    aggregate_groups,
+    rebuild::{input_type, ProjectionNames},
     stream_rewrites::body_members,
+    AggregateKind,
 };
-use feldera_sql_expr::{SimplifyWarning, apply_closure, copy_expression, flatten_tuple_fields};
+use feldera_sql_expr::{apply_closure, copy_expression, flatten_tuple_fields, SimplifyWarning};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
     OperatorSite, OutputPort, TypeId, TypeKind as Ty,

@@ -1,6 +1,6 @@
 //! UNNEST preserves waterlines only on columns copied from its input row.
 use super::unknown;
-use feldera_sql_expr::{FlatmapColumns, copy_expression, flatmap_generated_types};
+use feldera_sql_expr::{copy_expression, flatmap_generated_types, FlatmapColumns};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId};
 
 pub fn flatmap_waterline(

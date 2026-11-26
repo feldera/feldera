@@ -1,5 +1,5 @@
 //! Preserve the source value that the live compiler prints in a failed lineage cast.
-use super::{AnalysisError, LineageDiagnostic, Source, report::TableColumn};
+use super::{report::TableColumn, AnalysisError, LineageDiagnostic, Source};
 use feldera_sql_ir::{Error, NodeId};
 use serde::Serialize;
 use std::{collections::HashMap, ptr};

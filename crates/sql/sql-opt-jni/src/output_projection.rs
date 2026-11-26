@@ -1,9 +1,9 @@
 //! Fold a live Map or MapIndex into the producer chosen by the projection pass.
-use crate::{ExpressionSite, fragment::Fragment};
+use crate::{fragment::Fragment, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, ExpressionKind, Field, OperatorKind};
 use feldera_sql_opt::{OutputProjection, ProjectionMode};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::error::Error;
 
 #[derive(Deserialize)]

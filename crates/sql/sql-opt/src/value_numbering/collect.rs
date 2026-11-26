@@ -1,7 +1,7 @@
 //! Collect value-numbering events in the order the CSE visitor observes the live graph.
 use super::key::{Form, Operator};
-use super::{Definition, Event, LiveNumbering, NumberingInput, ResolvedNumbers, UseSite, inner};
-use crate::lexical_scope::{References, expression_children};
+use super::{inner, Definition, Event, LiveNumbering, NumberingInput, ResolvedNumbers, UseSite};
+use crate::lexical_scope::{expression_children, References};
 use feldera_sql_ir::{Circuit, Error, ExpressionKind as Expr, InnerKind, Node, NodeId, TypeKind};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};

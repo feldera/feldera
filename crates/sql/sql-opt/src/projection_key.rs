@@ -4,14 +4,14 @@
 mod comparators;
 mod numbers;
 mod types;
-use numbers::{decimal_text, floating_text};
-use types::{scalar_spelling, type_term};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, Node, NodeId,
     OutputPort, TypeId,
 };
 use indexmap::IndexSet;
+use numbers::{decimal_text, floating_text};
 use std::collections::{HashMap, HashSet};
+use types::{scalar_spelling, type_term};
 
 /// Postorder value numbers preserve operand order and ignore incidental sharing
 /// in the input graph. Repeated subexpressions occupy one slot.
@@ -42,7 +42,9 @@ enum Term {
         nullable: bool,
     },
     Field(u64),
-    Borrow { mutable: bool },
+    Borrow {
+        mutable: bool,
+    },
     Deref,
     Clone,
     IsNull,
@@ -59,9 +61,14 @@ enum Term {
     Cast,
     ScalarType(String),
     RawTupleType,
-    TupleType { nullable: bool },
+    TupleType {
+        nullable: bool,
+    },
     FunctionType,
-    NamedType { name: String, nullable: bool },
+    NamedType {
+        name: String,
+        nullable: bool,
+    },
     Number(String),
     Bool(bool),
     String(String),
@@ -81,7 +88,10 @@ enum Term {
     Sort,
     UnwrapCustomOrd,
     CustomOrdField(u64),
-    Compare { field: Option<u64>, ascending: bool },
+    Compare {
+        field: Option<u64>,
+        ascending: bool,
+    },
     AsymmetricComparator(Vec<comparators::Collation>),
     Unary {
         opcode: String,
@@ -99,7 +109,11 @@ enum Term {
 enum BlockStatement {
     Expression,
     Comment(Option<String>),
-    Let { name: Option<String>, mutable: bool, initialized: bool },
+    Let {
+        name: Option<String>,
+        mutable: bool,
+        initialized: bool,
+    },
 }
 
 /// A binding's position within the active parameter list identifies its uses
@@ -200,16 +214,19 @@ impl ProjectionKey {
                             // initializer has additional canonicalization checks.
                             let is_static = *kind == Expr::Static;
                             let value = ScopedNode {
-                                id: node.edge(if is_static { "initializer" } else { "comparator" })?,
+                                id: node.edge(if is_static {
+                                    "initializer"
+                                } else {
+                                    "comparator"
+                                })?,
                                 in_static: at.in_static || is_static,
                                 ..at
                             };
                             work.extend([Visit::Alias(at, value), Visit::Read(value)]);
                             continue;
                         }
-                        let simplifies = feldera_sql_expr::canonical_constructor_simplifies(
-                            edit, at.id, *kind,
-                        )?;
+                        let simplifies =
+                            feldera_sql_expr::canonical_constructor_simplifies(edit, at.id, *kind)?;
                         if at.in_static && (simplifies || !preserves_static_children(*kind)) {
                             return Ok(None);
                         }
@@ -218,20 +235,26 @@ impl ProjectionKey {
                             // The printer omits the comparator. Its declarations
                             // still consume names before later operands are visited.
                             let comparator = edit.expression(node.edge("comparator")?)?;
-                            needs_canonical_form |= !comparators::is_ordering_chain(edit, comparator)?;
+                            needs_canonical_form |=
+                                !comparators::is_ordering_chain(edit, comparator)?;
                         }
                         if *kind == Expr::Fail {
                             let message = string(node, "message")
                                 .ok_or_else(|| Error::new("missing failure message"))?;
                             // Fail prints a panic! call. Its printer escapes non-ASCII
                             // and control characters as UTF-16 rather than Rust's \u{...}.
-                            let text = if message.chars().all(|c| matches!(c, ' '..='~' | '\t' | '\n' | '\r')) {
+                            let text = if message
+                                .chars()
+                                .all(|c| matches!(c, ' '..='~' | '\t' | '\n' | '\r'))
+                            {
                                 Term::String(message.to_owned())
                             } else {
                                 Term::Utf16EscapedString(message.to_owned())
                             };
                             let arg = terms.insert_full((text, vec![])).0;
-                            let call = terms.insert_full((Term::Call("panic!".into()), vec![arg])).0;
+                            let call = terms
+                                .insert_full((Term::Call("panic!".into()), vec![arg]))
+                                .0;
                             numbers.insert(at, call);
                             active.remove(&at.id);
                             continue;
@@ -239,15 +262,28 @@ impl ProjectionKey {
                         if matches!(kind, Expr::UnsignedWrap | Expr::UnsignedUnwrap) {
                             let source = edit.expression(node.edge("source")?)?;
                             let Some(method) = comparators::unsigned_method(
-                                edit, edit.expression(at.id)?, source, *kind == Expr::UnsignedWrap,
-                            )? else {
+                                edit,
+                                edit.expression(at.id)?,
+                                source,
+                                *kind == Expr::UnsignedWrap,
+                            )?
+                            else {
                                 return Ok(None);
                             };
-                            let flag = |field| node.data(field).and_then(|v| v.as_bool())
-                                .ok_or_else(|| Error::new(format!("missing ordered conversion flag {field}")));
+                            let flag = |field| {
+                                node.data(field).and_then(|v| v.as_bool()).ok_or_else(|| {
+                                    Error::new(format!("missing ordered conversion flag {field}"))
+                                })
+                            };
                             let flags = [flag("ascending")?, flag("nullsLast")?];
-                            let source = ScopedNode { id: source.into(), ..at };
-                            work.extend([Visit::OrderedCall(at, method, source, flags), Visit::Read(source)]);
+                            let source = ScopedNode {
+                                id: source.into(),
+                                ..at
+                            };
+                            work.extend([
+                                Visit::OrderedCall(at, method, source, flags),
+                                Visit::Read(source),
+                            ]);
                             continue;
                         }
                     }
@@ -265,14 +301,16 @@ impl ProjectionKey {
                     // Intern the implicit arguments in print order so an explicit
                     // conversion call receives the same value number.
                     let mut operands = vec![numbers[&source]];
-                    operands.extend(flags.map(|flag| terms.insert_full((Term::Bool(flag), vec![])).0));
+                    operands
+                        .extend(flags.map(|flag| terms.insert_full((Term::Bool(flag), vec![])).0));
                     let call = Term::Call(format!("UnsignedWrappers::{method}"));
                     numbers.insert(at, terms.insert_full((call, operands)).0);
                     active.remove(&at.id);
                 }
                 Visit::Intern(at, term, children) => {
                     let id = at.id;
-                    let operands: Vec<_> = children.into_iter().map(|child| numbers[&child]).collect();
+                    let operands: Vec<_> =
+                        children.into_iter().map(|child| numbers[&child]).collect();
                     // The literal printer and an explicit Some use the same spelling.
                     let wrap = matches!(
                         term,
@@ -313,7 +351,9 @@ impl ProjectionKey {
             let body = scratch.expression(root)?;
             let row = scratch.named_variable(parameter.ty, parameter.name)?;
             let closure = scratch.closure_from_variables(body, &[row])?;
-            let Some(closure) = feldera_sql_expr::canonicalize_projection(&mut scratch, closure.into())? else {
+            let Some(closure) =
+                feldera_sql_expr::canonicalize_projection(&mut scratch, closure.into())?
+            else {
                 return Ok(None);
             };
             let node = scratch.node(closure)?;
@@ -414,17 +454,47 @@ fn preserves_static_children(kind: Expr) -> bool {
     kind.wire_name().ends_with("Literal")
         || matches!(
             kind,
-            Expr::Apply | Expr::ApplyMethod | Expr::Constructor | Expr::Block
-                | Expr::Tuple | Expr::RawTuple | Expr::Array | Expr::Map
-                | Expr::Some | Expr::Variant | Expr::GeoPointConstructor
-                | Expr::If | Expr::Binary | Expr::TimeAddSub | Expr::Unary
-                | Expr::Cast | Expr::HandleError | Expr::Unwrap | Expr::IsNull | Expr::Field
-                | Expr::Borrow | Expr::Deref | Expr::Clone | Expr::Question
-                | Expr::WindowBound | Expr::ConditionalIncrement | Expr::Lazy | Expr::Return
-                | Expr::NoComparator | Expr::FieldComparator | Expr::DirectComparator
-                | Expr::AsymmetricFieldComparator | Expr::UnsignedWrap | Expr::UnsignedUnwrap
-                | Expr::For | Expr::Assignment | Expr::Fail | Expr::Sort | Expr::CustomOrd
-                | Expr::CustomOrdField | Expr::UnwrapCustomOrd
+            Expr::Apply
+                | Expr::ApplyMethod
+                | Expr::Constructor
+                | Expr::Block
+                | Expr::Tuple
+                | Expr::RawTuple
+                | Expr::Array
+                | Expr::Map
+                | Expr::Some
+                | Expr::Variant
+                | Expr::GeoPointConstructor
+                | Expr::If
+                | Expr::Binary
+                | Expr::TimeAddSub
+                | Expr::Unary
+                | Expr::Cast
+                | Expr::HandleError
+                | Expr::Unwrap
+                | Expr::IsNull
+                | Expr::Field
+                | Expr::Borrow
+                | Expr::Deref
+                | Expr::Clone
+                | Expr::Question
+                | Expr::WindowBound
+                | Expr::ConditionalIncrement
+                | Expr::Lazy
+                | Expr::Return
+                | Expr::NoComparator
+                | Expr::FieldComparator
+                | Expr::DirectComparator
+                | Expr::AsymmetricFieldComparator
+                | Expr::UnsignedWrap
+                | Expr::UnsignedUnwrap
+                | Expr::For
+                | Expr::Assignment
+                | Expr::Fail
+                | Expr::Sort
+                | Expr::CustomOrd
+                | Expr::CustomOrdField
+                | Expr::UnwrapCustomOrd
         )
 }
 
@@ -510,25 +580,36 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         Expr::For => {
             // CanonicalForm renames closure and LET declarations, but the
             // iterator's written name appears verbatim in the printed loop.
-            let variable = string(node, "variable").ok_or_else(|| Error::new("missing loop variable"))?;
-            (Term::For(variable.to_owned()), vec![child("iterated")?, child("block")?])
+            let variable =
+                string(node, "variable").ok_or_else(|| Error::new("missing loop variable"))?;
+            (
+                Term::For(variable.to_owned()),
+                vec![child("iterated")?, child("block")?],
+            )
         }
         Expr::Assignment => {
             let left = edit.expression(node.edge("left")?)?;
             // The printer inserts no parentheses around an assignment. Keep the
             // left-hand side an lvalue so the printed boundary is unambiguous.
-            if !matches!(edit.expr_kind(left)?, Expr::VariablePath | Expr::Field | Expr::Deref) {
+            if !matches!(
+                edit.expr_kind(left)?,
+                Expr::VariablePath | Expr::Field | Expr::Deref
+            ) {
                 return Ok(None);
             }
             (Term::Assignment, vec![left.into(), child("right")?])
         }
-        Expr::NoComparator | Expr::DirectComparator | Expr::FieldComparator
+        Expr::NoComparator
+        | Expr::DirectComparator
+        | Expr::FieldComparator
         | Expr::AsymmetricFieldComparator => comparators::printed(node, kind)?,
         Expr::Sort => (Term::Sort, vec![child("comparator")?]),
         Expr::CustomOrd => (Term::Call("WithCustomOrd".into()), vec![child("source")?]),
         Expr::UnwrapCustomOrd => (Term::UnwrapCustomOrd, vec![child("expression")?]),
         Expr::CustomOrdField => {
-            let column = node.data("fieldNo").and_then(|v| v.as_u64())
+            let column = node
+                .data("fieldNo")
+                .and_then(|v| v.as_u64())
                 .ok_or_else(|| Error::new("invalid custom-ordered field number"))?;
             (Term::CustomOrdField(column), vec![child("expression")?])
         }
@@ -611,7 +692,9 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         // the element type of an array and both type arguments of a map.
         Expr::Array | Expr::Map => (Term::NullCollection, vec![edit.expression_type(id)?.into()]),
         Expr::Borrow => {
-            let mutable = node.data("mut").and_then(|value| value.as_bool())
+            let mutable = node
+                .data("mut")
+                .and_then(|value| value.as_bool())
                 .ok_or_else(|| Error::new("missing borrow mutability"))?;
             (Term::Borrow { mutable }, vec![child("expression")?])
         }
@@ -622,9 +705,15 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
         Expr::Question => (Term::Question, vec![child("source")?]),
         Expr::Return => (Term::Return, vec![child("argument")?]),
         Expr::WindowBound => {
-            let preceding = node.data("isPreceding").and_then(|value| value.as_bool())
+            let preceding = node
+                .data("isPreceding")
+                .and_then(|value| value.as_bool())
                 .ok_or_else(|| Error::new("missing window bound direction"))?;
-            let name = if preceding { "RelOffset::Before" } else { "RelOffset::After" };
+            let name = if preceding {
+                "RelOffset::Before"
+            } else {
+                "RelOffset::After"
+            };
             (Term::Call(name.into()), vec![child("representation")?])
         }
         Expr::ConditionalIncrement => {
@@ -694,8 +783,8 @@ fn key_term(edit: &CircuitEditor, id: ExpressionId) -> Result<Option<(Term, Vec<
                 "BINARY_TO_U128" => Term::Call("bytes_to_u128".into()),
                 "INTEGER_TO_BOOL" => Term::Call("i8_to_bool".into()),
                 "BOOL_TO_INTEGER" => Term::Call("bool_to_i8".into()),
-                "WRAP_BOOL" | "IS_TRUE" | "IS_FALSE" | "IS_NOT_TRUE" | "IS_NOT_FALSE"
-                | "NOT" | "NEG" | "UNARY_PLUS" | "INDICATOR" | "TYPEDBOX" => Term::Unary {
+                "WRAP_BOOL" | "IS_TRUE" | "IS_FALSE" | "IS_NOT_TRUE" | "IS_NOT_FALSE" | "NOT"
+                | "NEG" | "UNARY_PLUS" | "INDICATOR" | "TYPEDBOX" => Term::Unary {
                     opcode: opcode.to_owned(),
                     nullable: edit.nullable(edit.expression_type(edit.expression(source)?)?)?,
                 },
@@ -941,9 +1030,11 @@ fn call_path(
         let Some(identifier) = string(segment, "identifier") else {
             return Ok(None);
         };
-        if identifier != "panic!" && !identifier.split("::").all(|part| {
-            !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
-        }) {
+        if identifier != "panic!"
+            && !identifier.split("::").all(|part| {
+                !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            })
+        {
             return Ok(None);
         }
         if !name.is_empty() {
@@ -1051,18 +1142,26 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn source_rows_compare_printed_signatures_including_nested_type_arguments() -> Result<(), Error> {
+    fn source_rows_compare_printed_signatures_including_nested_type_arguments() -> Result<(), Error>
+    {
         let circuit = Circuit::from_json(json!({
             "class":"DBSPCircuit", "id":0, "allOperators":[], "declarations":[]
         }))?;
-        let binary = |id, fixed, precision| json!({
-            "class":"DBSPTypeBinary", "code":"BYTES", "id":id, "mayBeNull":false,
-            "fixed":fixed, "precision":precision,
-        });
+        let binary = |id, fixed, precision| {
+            json!({
+                "class":"DBSPTypeBinary", "code":"BYTES", "id":id, "mayBeNull":false,
+                "fixed":fixed, "precision":precision,
+            })
+        };
         let (circuit, leaves) = circuit.with_inner_roots([
-            binary(1, true, 4), binary(2, false, 4), binary(3, false, 8),
+            binary(1, true, 4),
+            binary(2, false, 4),
+            binary(3, false, 8),
         ])?;
-        let port = OutputPort { operator: circuit.root_id(), number: 0 };
+        let port = OutputPort {
+            operator: circuit.root_id(),
+            number: 0,
+        };
         let mut edit = CircuitEditor::new(circuit);
         let row = |edit: &mut CircuitEditor, leaf| -> Result<_, Error> {
             let tuple = edit.tuple_type(port.operator, false, [leaf, leaf])?;
@@ -1172,11 +1271,21 @@ mod tests {
         let row = RowParameter { name: "row", ty };
         let outer = edit.named_variable(ty, row.name)?;
         let inner = edit.named_variable(ty, "item")?;
-        let literal = edit.make_expr(site, Expr::BoolLiteral, ty, [("value", Field::Data(true.into()))])?;
-        let cast = edit.make_expr(site, Expr::Cast, ty, [
-            ("source", Field::Reference(outer.into())),
-            ("safe", Field::Data("SqlUnsafe".into())),
-        ])?;
+        let literal = edit.make_expr(
+            site,
+            Expr::BoolLiteral,
+            ty,
+            [("value", Field::Data(true.into()))],
+        )?;
+        let cast = edit.make_expr(
+            site,
+            Expr::Cast,
+            ty,
+            [
+                ("source", Field::Reference(outer.into())),
+                ("safe", Field::Data("SqlUnsafe".into())),
+            ],
+        )?;
         let mut projection = |value| -> Result<ExpressionId, Error> {
             let body = edit.tuple_expr(site, false, &[value, outer, literal, literal])?;
             edit.closure_from_variables(body, &[inner])
@@ -1205,18 +1314,28 @@ mod tests {
         let outer = edit.named_variable(ty, row.name)?;
         let inner = edit.named_variable(ty, "inner")?;
         let mut plain = outer;
-        let mut folded = edit.make_expr(site, Expr::Cast, ty, [
-            ("source", Field::Reference(outer.into())),
-            ("safe", Field::Data("SqlUnsafe".into())),
-        ])?;
+        let mut folded = edit.make_expr(
+            site,
+            Expr::Cast,
+            ty,
+            [
+                ("source", Field::Reference(outer.into())),
+                ("safe", Field::Data("SqlUnsafe".into())),
+            ],
+        )?;
         let function = edit.function_path(site, "combine")?;
         for _ in 0..128 {
             for operand in [&mut plain, &mut folded] {
                 let child = Field::Reference((*operand).into());
-                *operand = edit.make_expr(site, Expr::Apply, ty, [
-                    ("function", Field::Reference(function.into())),
-                    ("arguments", Field::Array(vec![child.clone(), child])),
-                ])?;
+                *operand = edit.make_expr(
+                    site,
+                    Expr::Apply,
+                    ty,
+                    [
+                        ("function", Field::Reference(function.into())),
+                        ("arguments", Field::Array(vec![child.clone(), child])),
+                    ],
+                )?;
             }
         }
         let folded_closure = edit.closure_from_variables(folded, &[inner])?;

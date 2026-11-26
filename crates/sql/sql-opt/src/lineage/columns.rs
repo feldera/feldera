@@ -1,5 +1,5 @@
 //! Interpret a closure result using the row layout of its collection.
-use super::{AnalysisError, Column, ColumnCopy, Interpreter, Part, Source, text};
+use super::{text, AnalysisError, Column, ColumnCopy, Interpreter, Part, Source};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, NodeId, TypeKind as Ty};
 use serde::Deserialize;
 use std::collections::BTreeSet;

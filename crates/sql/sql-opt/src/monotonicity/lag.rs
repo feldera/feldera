@@ -1,7 +1,7 @@
 //! Transfer waterlines through LAG and LEAD in partition order.
 use super::{indexed_parameter, unknown};
 use feldera_sql_expr::{
-    SimplifyWarning, ensure_expression_tree, reduce_closure_body_with_warnings,
+    ensure_expression_tree, reduce_closure_body_with_warnings, SimplifyWarning,
 };
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId, TypeId};
 use std::collections::HashSet;

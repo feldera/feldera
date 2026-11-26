@@ -1,8 +1,8 @@
 //! Inspect named function calls in the executable part of a circuit. Table
 //! column defaults live in source metadata and have separate validation rules.
 use feldera_sql_ir::{
-    BodyOrder, Circuit, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
-    OperatorKind, provenance::SourceRange,
+    provenance::SourceRange, BodyOrder, Circuit, Error, ExpressionKind as Expr, Field, InnerKind,
+    Node, NodeId, OperatorKind,
 };
 use serde::Serialize;
 use std::{
@@ -286,7 +286,7 @@ pub fn nondeterministic_initializers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
 
     #[test]
     fn the_last_zero_argument_clock_call_supplies_each_rewrite_site() -> Result<(), Error> {

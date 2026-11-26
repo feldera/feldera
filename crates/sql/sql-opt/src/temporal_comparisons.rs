@@ -1,9 +1,9 @@
 //! Split a filter into a prefix of window bounds and the predicates evaluated after it.
 #[cfg(test)]
 mod clock_bounds;
-use crate::monotonicity::row_projection::WaterlineTypeError;
 use crate::monotonicity::functions::FunctionArgumentError;
-use crate::{WindowComparison, function_calls::contains_now};
+use crate::monotonicity::row_projection::WaterlineTypeError;
+use crate::{function_calls::contains_now, WindowComparison};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, NodeId, TypeId,
 };
@@ -28,12 +28,18 @@ pub struct ConjunctWindow {
 
 impl ConjunctWindow {
     pub(super) fn from_predicates(parts: &[TemporalPredicate]) -> Option<Self> {
-        let [TemporalPredicate::Bound { key, comparison, .. }] = parts else {
+        let [TemporalPredicate::Bound {
+            key, comparison, ..
+        }] = parts
+        else {
             return None;
         };
         Some(Self {
             key: *key,
-            lower: matches!(comparison, WindowComparison::Greater | WindowComparison::GreaterEqual),
+            lower: matches!(
+                comparison,
+                WindowComparison::Greater | WindowComparison::GreaterEqual
+            ),
         })
     }
 }
@@ -56,7 +62,8 @@ pub fn conjunct_windows(
         let Some(parts) = infer_temporal_predicates(edit, parameter, term, &mut cost)? else {
             return Ok(None);
         };
-        names = names.checked_add(cost)
+        names = names
+            .checked_add(cost)
             .ok_or_else(|| Error::new("generated names exhausted classifying conjuncts"))?;
         windows.push(ConjunctWindow::from_predicates(&parts));
     }
@@ -85,9 +92,16 @@ pub enum TemporalDiagnostic {
     Type(WaterlineTypeError, TypeId),
     FunctionArgument(ExpressionId, FunctionArgumentError),
     Comparison(crate::ComparisonDiagnostic),
-    ConflictingDeclarations { variable: NodeId, previous: NodeId, current: NodeId },
+    ConflictingDeclarations {
+        variable: NodeId,
+        previous: NodeId,
+        current: NodeId,
+    },
     /// The diagnostic needs the live types of earlier expressions in this predicate.
-    Predicate { parameter: NodeId, body: ExpressionId },
+    Predicate {
+        parameter: NodeId,
+        body: ExpressionId,
+    },
 }
 
 pub enum ClockError {
@@ -113,7 +127,9 @@ impl From<crate::KeyComparisonError> for ClockError {
     fn from(error: crate::KeyComparisonError) -> Self {
         match error {
             crate::KeyComparisonError::InvalidIr(error) => Self::InvalidIr(error),
-            crate::KeyComparisonError::Diagnostic(error) => TemporalDiagnostic::Comparison(error).into(),
+            crate::KeyComparisonError::Diagnostic(error) => {
+                TemporalDiagnostic::Comparison(error).into()
+            }
         }
     }
 }
@@ -165,7 +181,9 @@ pub(super) fn checked_temporal_predicates(
         return Ok(None);
     };
     let predicate = crate::filters::strip_wrap_bool(edit, body)?;
-    Ok(Some(classify_temporal_predicates(edit, predicate, &operands)?))
+    Ok(Some(classify_temporal_predicates(
+        edit, predicate, &operands,
+    )?))
 }
 
 fn comparison(opcode: &str, clock_on_left: bool) -> Option<WindowComparison> {

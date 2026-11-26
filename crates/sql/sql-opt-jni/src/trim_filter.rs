@@ -1,10 +1,10 @@
 //! Exchange the filter's live input port and closures with the field-trimming pass.
-use crate::{ExpressionSite, binding_diagnostic, fragment::Fragment};
+use crate::{binding_diagnostic, fragment::Fragment, ExpressionSite};
 use feldera_sql_expr::live_parameter_field_paths;
 use feldera_sql_ir::{CircuitEditor, Error as IrError, OperatorKind};
-use feldera_sql_opt::{FilterTrim, trim_filter_fields};
+use feldera_sql_opt::{trim_filter_fields, FilterTrim};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::BTreeSet, error::Error};
 
 #[derive(Deserialize)]

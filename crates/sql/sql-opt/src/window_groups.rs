@@ -11,14 +11,15 @@ use feldera_sql_ir::{
 pub use implement::{implement_window_groups, WindowProjection};
 pub use indexed::{indexed_window_groups, IndexedWindows};
 pub use reorder::{
-    reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate, TemporalOrder, ReorderError,
+    reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate, ReorderError,
+    TemporalOrder,
 };
 pub use scan::{scan_temporal_windows, TemporalScan};
-pub use source::{compose_timestamp, temporal_filter_sources, TemporalFilterSource};
-pub use temporal::{shared_temporal_inputs, TemporalBound, TemporalCandidate};
 use serde::Serialize;
+pub use source::{compose_timestamp, temporal_filter_sources, TemporalFilterSource};
 use std::collections::HashMap;
 use std::hash::Hash;
+pub use temporal::{shared_temporal_inputs, TemporalBound, TemporalCandidate};
 
 /// Classify the copied conjunct as a unary filter, including the row projection.
 fn checked_conjunct(
@@ -162,11 +163,7 @@ mod tests {
             [vec![0, 2], vec![1, 4]]
         );
         assert!(qualifying_window_groups(&inputs, 0).is_empty());
-        let fields = [
-            vec!["y", "x", "y"],
-            vec![],
-            vec!["z", "x"],
-        ];
+        let fields = [vec!["y", "x", "y"], vec![], vec!["z", "x"]];
         assert_eq!(
             shared_window_fields(&fields),
             WindowFields {

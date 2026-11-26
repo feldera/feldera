@@ -3,7 +3,7 @@
 use crate::rebuild::ProjectionNames;
 use crate::row_projection::RowProjection;
 use crate::stream_rewrites::{append_map, body_members, reader_counts};
-use crate::{FieldRewriteError, limiters::WindowBounds};
+use crate::{limiters::WindowBounds, FieldRewriteError};
 use feldera_sql_expr::{
     ensure_expression_tree, input_field_paths, lexical_scope::inspect_references,
 };
@@ -299,17 +299,15 @@ mod tests {
             BTreeSet::from([vec![0], vec![1, 1]])
         );
         let original_for_post = edit.circuit().clone();
-        assert!(
-            trim_window_fields(
-                &original_for_post,
-                &mut edit,
-                post.into(),
-                input_field_paths(&original_for_post, post.into()).unwrap(),
-                &mut next
-            )
-            .unwrap()
-            .is_none()
-        );
+        assert!(trim_window_fields(
+            &original_for_post,
+            &mut edit,
+            post.into(),
+            input_field_paths(&original_for_post, post.into()).unwrap(),
+            &mut next
+        )
+        .unwrap()
+        .is_none());
         assert_eq!(next, 2);
     }
 }

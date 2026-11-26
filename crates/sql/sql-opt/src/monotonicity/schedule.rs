@@ -534,8 +534,8 @@ mod tests {
     }
 
     #[test]
-    fn primitive_waterlines_distinguish_minimums_absent_functions_and_missing_details()
-    -> Result<(), Error> {
+    fn primitive_waterlines_distinguish_minimums_absent_functions_and_missing_details(
+    ) -> Result<(), Error> {
         use MonotonicityTransfer::{AggregateKey, Analyze, PrimitiveMinimumOrKey};
         let input = json!({"operator":{"node":1},"outputNumber":0});
         let mut operators = vec![

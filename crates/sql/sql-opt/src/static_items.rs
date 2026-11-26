@@ -1,6 +1,6 @@
 //! Name static initializers and construct the declarations referenced by generated code.
 use crate::lexical_scope::expression_children;
-use feldera_sql_expr::{Rewrite, Transformation, Visit, error_source_reports_position};
+use feldera_sql_expr::{error_source_reports_position, Rewrite, Transformation, Visit};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind, Field, InnerKind, NodeId,
 };

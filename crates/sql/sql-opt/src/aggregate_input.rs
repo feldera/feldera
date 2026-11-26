@@ -1,7 +1,8 @@
 //! Project one indexed input for all components of a stream aggregate.
 use crate::{
-    FieldRewriteError, aggregate_groups::row_parameters, compressed_field_type, inspect_references,
+    aggregate_groups::row_parameters, compressed_field_type, inspect_references,
     project_indexed_value, project_used_fields, rebind_projected_aggregate, row_fields::RowFields,
+    FieldRewriteError,
 };
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{

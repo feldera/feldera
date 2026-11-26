@@ -1,10 +1,10 @@
-use crate::{ExpressionSite, binding_diagnostic, fragment::Fragment};
+use crate::{binding_diagnostic, fragment::Fragment, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, OperatorKind, OutputPort, TypeKind};
 use feldera_sql_opt::{
-    FieldRewriteError, MapOutput, append_split_map, checked_split_map_input, split_map_input,
+    append_split_map, checked_split_map_input, split_map_input, FieldRewriteError, MapOutput,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::BTreeSet, error::Error};
 
 #[derive(Deserialize)]

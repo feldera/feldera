@@ -1,7 +1,7 @@
 //! Find the input on which temporal filters can share a window index.
 use crate::{
     function_calls::contains_now,
-    projection_composition::{CompositionError, compose_projection},
+    projection_composition::{compose_projection, CompositionError},
     stream_rewrites::{body_members, reader_counts},
 };
 use feldera_sql_expr::SimplifyWarning;

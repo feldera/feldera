@@ -7,7 +7,10 @@ use std::collections::HashSet;
 
 /// A lowered comparator is either a path or an ordering chain over type operands.
 /// Neither form introduces declarations during canonicalization.
-pub(super) fn is_ordering_chain(edit: &CircuitEditor, mut value: ExpressionId) -> Result<bool, Error> {
+pub(super) fn is_ordering_chain(
+    edit: &CircuitEditor,
+    mut value: ExpressionId,
+) -> Result<bool, Error> {
     let mut seen = HashSet::new();
     loop {
         if !seen.insert(value) {

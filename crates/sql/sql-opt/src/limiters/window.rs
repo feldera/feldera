@@ -1,6 +1,6 @@
 //! Derive a temporal window's output waterline from its endpoints and input.
 use super::pass::InsertionSite;
-use super::{Bound, Projection, filter::arg, minimum_pair};
+use super::{filter::arg, minimum_pair, Bound, Projection};
 use feldera_sql_expr::copy_expression;
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, OperatorKind as Op, OutputPort,

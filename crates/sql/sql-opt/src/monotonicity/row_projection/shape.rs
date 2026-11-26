@@ -115,7 +115,10 @@ impl UnorderedRow {
             let node = edit.node(id)?;
             if !structured(kind) {
                 let Some(shape) = scalar(kind) else {
-                    return Ok(UnorderedType::Invalid(WaterlineTypeError::UnsupportedType, ty));
+                    return Ok(UnorderedType::Invalid(
+                        WaterlineTypeError::UnsupportedType,
+                        ty,
+                    ));
                 };
                 completed.insert(id, shape);
                 continue;
@@ -156,7 +159,10 @@ impl UnorderedRow {
                 let raw = kind == TypeKind::RawTuple;
                 let nullable = edit.nullable(ty)?;
                 if raw && nullable {
-                    return Ok(UnorderedType::Invalid(WaterlineTypeError::NullableRawTuple, ty));
+                    return Ok(UnorderedType::Invalid(
+                        WaterlineTypeError::NullableRawTuple,
+                        ty,
+                    ));
                 }
                 let shape = Shape::tuple(fields, raw, nullable);
                 let projected = if shape.monotone() {
@@ -208,10 +214,8 @@ mod tests {
             let Shape::Tuple { fields, .. } = row else {
                 panic!("expected row");
             };
-            let [
-                Shape::Tuple { fields: left, .. },
-                Shape::Tuple { fields: right, .. },
-            ] = fields.as_ref()
+            let [Shape::Tuple { fields: left, .. }, Shape::Tuple { fields: right, .. }] =
+                fields.as_ref()
             else {
                 panic!("expected two nested rows");
             };

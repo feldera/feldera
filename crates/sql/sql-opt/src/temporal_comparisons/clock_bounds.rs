@@ -1,5 +1,5 @@
 use crate::monotonicity::row_projection::clock_operands;
-use crate::{TemporalPredicate, WindowComparison, infer_temporal_predicates};
+use crate::{infer_temporal_predicates, TemporalPredicate, WindowComparison};
 use feldera_sql_ir::{BinaryOp, Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field};
 use serde_json::json;
 
@@ -35,11 +35,9 @@ fn scalar_clock_bounds_follow_cast_and_function_rules() -> Result<(), Error> {
         [("value", Field::Data(86400.into()))],
     )?;
     let sum = edit.binary_expression(site, bigint, BinaryOp::Add, epoch, offset)?;
-    assert!(
-        clock_operands(&mut edit, parameter, sum)?
-            .unwrap()
-            .contains(&sum)
-    );
+    assert!(clock_operands(&mut edit, parameter, sum)?
+        .unwrap()
+        .contains(&sum));
     for factor in [-1, 0, 3] {
         let scale = edit.make_expr(
             site,
@@ -381,11 +379,9 @@ fn clock_minus_interval_needs_a_constant_nonnull_offset() -> Result<(), Error> {
         ],
     )?;
     let expr = edit.let_expression(local, interval, difference)?;
-    assert!(
-        !clock_operands(&mut edit, parameter, expr)?
-            .unwrap()
-            .contains(&expr)
-    );
+    assert!(!clock_operands(&mut edit, parameter, expr)?
+        .unwrap()
+        .contains(&expr));
     // A reference outside the filter's binding needs lexical resolution.
     let other = edit.named_variable(reference, "other")?;
     let other_parameter = edit.parameter_at(roots[0], other)?;

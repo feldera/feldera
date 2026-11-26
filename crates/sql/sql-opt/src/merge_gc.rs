@@ -11,7 +11,9 @@ use crate::{
     trace_integrators::integrates_input,
     trace_retention::{retention_slot, Retained},
 };
-use feldera_sql_ir::{BodyOrder, Circuit, CircuitRewrite, Error, Node, NodeId, OperatorKind as Op, OutputPort};
+use feldera_sql_ir::{
+    BodyOrder, Circuit, CircuitRewrite, Error, Node, NodeId, OperatorKind as Op, OutputPort,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 

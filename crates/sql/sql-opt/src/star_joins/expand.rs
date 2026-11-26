@@ -1,7 +1,7 @@
 //! Expand a multiway join into a balanced tree of binary indexed joins.
 use super::output;
 use crate::{
-    rebuild::{ProjectionNames, input_type},
+    rebuild::{input_type, ProjectionNames},
     stream_rewrites::body_members,
 };
 use feldera_sql_expr::SimplifyWarning;

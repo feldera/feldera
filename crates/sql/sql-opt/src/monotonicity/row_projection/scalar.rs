@@ -1,12 +1,12 @@
 //! Scalar literals and arithmetic inside a projected waterline closure.
 use super::{
-    ProjectedValue, RowType, Shape, WaterlineError, WaterlineTypeError, evaluate::Evaluation,
-    type_number,
+    evaluate::Evaluation, type_number, ProjectedValue, RowType, Shape, WaterlineError,
+    WaterlineTypeError,
 };
 use crate::monotonicity::binary::{
-    BinaryOperation, BinaryWaterline, Domain, Operand, binary_waterline,
+    binary_waterline, BinaryOperation, BinaryWaterline, Domain, Operand,
 };
-use crate::monotonicity::literal::{LiteralWaterline, literal_waterline, ordered_literal};
+use crate::monotonicity::literal::{literal_waterline, ordered_literal, LiteralWaterline};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, TypeId, TypeKind as Ty,
 };
@@ -298,8 +298,8 @@ mod tests {
     }
 
     #[test]
-    fn deep_arithmetic_and_unary_clock_bounds_include_each_intermediate_expression()
-    -> Result<(), Error> {
+    fn deep_arithmetic_and_unary_clock_bounds_include_each_intermediate_expression(
+    ) -> Result<(), Error> {
         let arena = Circuit::from_json(json!({
             "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
         }))?;

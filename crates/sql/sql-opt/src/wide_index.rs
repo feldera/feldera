@@ -1,6 +1,6 @@
 //! Project the common key and every narrow value onto one shared row variable.
-use crate::index_key_equivalence::{KeyComparisonError, check_bodies, speculative};
-use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
+use crate::index_key_equivalence::{check_bodies, speculative, KeyComparisonError};
+use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId,
     TypeKind as Ty,
@@ -185,20 +185,14 @@ pub fn project_index(
     compare: &mut CompareColumn,
 ) -> Result<Option<ProjectedIndex>, KeyComparisonError> {
     let mut columns = Vec::new();
-    let fields = project_fields(
-        edit,
-        functions,
-        next,
-        warnings,
-        |edit, field| {
-            column_position(edit, &mut columns, field, |fields| {
-                compare(IndexComparison {
-                    graph: edit.circuit(),
-                    fields,
-                })
+    let fields = project_fields(edit, functions, next, warnings, |edit, field| {
+        column_position(edit, &mut columns, field, |fields| {
+            compare(IndexComparison {
+                graph: edit.circuit(),
+                fields,
             })
-        },
-    )?;
+        })
+    })?;
     Ok(fields.map(|fields| ProjectedIndex {
         variable: fields.variable,
         key: fields.key,
@@ -311,8 +305,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn fixed_consumers_keep_their_column_order_when_a_wider_seed_is_tried_first()
-    -> Result<(), Error> {
+    fn fixed_consumers_keep_their_column_order_when_a_wider_seed_is_tried_first(
+    ) -> Result<(), Error> {
         let circuit = Circuit::from_json(json!({
             "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
         }))?;

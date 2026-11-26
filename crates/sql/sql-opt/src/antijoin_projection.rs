@@ -2,7 +2,7 @@
 use crate::row_projection::tuple_of_fields;
 use crate::{identity_closure, rebuild::deindex_function, stream_rewrites::append_map};
 use feldera_sql_expr::{
-    Rewrite, SimplifyWarning, Transformation, Visit, apply_closure, parameter_paths,
+    apply_closure, parameter_paths, Rewrite, SimplifyWarning, Transformation, Visit,
 };
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,

@@ -5,9 +5,9 @@ mod star;
 pub(super) use star::StarJoinExpansion;
 
 use super::pass::{
-    InsertionSite, apply_bound, apply_bound_pair, projected_bound, projected_minimum,
+    apply_bound, apply_bound_pair, projected_bound, projected_minimum, InsertionSite,
 };
-use super::{Bound, Projection, apply_waterlines, retention::retain_keys};
+use super::{apply_waterlines, retention::retain_keys, Bound, Projection};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
 use serde::Deserialize;

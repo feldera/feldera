@@ -1,5 +1,5 @@
 use super::link;
-use feldera_sql_expr::{SimplifyWarning, apply_closure, copy_expression};
+use feldera_sql_expr::{apply_closure, copy_expression, SimplifyWarning};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId, TypeId,
     TypeKind as Ty,

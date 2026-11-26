@@ -1,8 +1,8 @@
 //! Lower a computation chain to a map or flat-map over its original input.
 use super::{chain_output, chain_prefix, Computation};
 use crate::{
-    collapse_shared_chains::compose, fanout::expensive, projection_composition::should_inline, rebuild::ProjectionNames,
-    stream_rewrites::body_members,
+    collapse_shared_chains::compose, fanout::expensive, projection_composition::should_inline,
+    rebuild::ProjectionNames, stream_rewrites::body_members,
 };
 use feldera_sql_expr::{reduce_closure_body, simplify_closure_expression};
 use feldera_sql_ir::{

@@ -1,10 +1,10 @@
 //! Select shared temporal windows by tracing their keys to a common input.
-use crate::projection_key::{row_parameter, SourceRows, ProjectionKey};
+use super::checked_conjunct;
 use super::source::{compose_timestamp, filter_sources, TemporalFilterSource};
 use super::temporal::{shared_temporal_inputs, TemporalCandidate};
 use crate::filters::conjuncts;
 use crate::projection_composition::CompositionError;
-use super::checked_conjunct;
+use crate::projection_key::{row_parameter, ProjectionKey, SourceRows};
 use crate::{ClockError, ConjunctWindow, TemporalDiagnostic};
 use feldera_sql_expr::{ensure_expression_tree, SimplifyWarning};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, NodeId, OutputPort, TypeId};
@@ -98,7 +98,9 @@ fn source_candidates(
         let Some((row, predicates)) = checked_conjunct(edit, parameter, conjunct, next)? else {
             return Ok(None);
         };
-        let Some(window) = ConjunctWindow::from_predicates(&predicates) else { continue };
+        let Some(window) = ConjunctWindow::from_predicates(&predicates) else {
+            continue;
+        };
         let Some((input, key)) = source_key(edit, row, window.key, &maps, warnings)? else {
             return Ok(None);
         };
@@ -122,11 +124,19 @@ fn source_key(
 ) -> Result<Option<(TypeId, ProjectionKey)>, ClockError> {
     if !maps.is_empty() {
         let closure = edit.closure_with_parameters(key, &[parameter])?;
-        let timestamp = compose_timestamp(edit, closure, maps, warnings).map_err(|error| match error {
-            CompositionError::BindingConflict { variable, previous, current } =>
-                ClockError::Diagnostic(TemporalDiagnostic::ConflictingDeclarations { variable, previous, current }),
-            CompositionError::Ir(error) => ClockError::InvalidIr(error),
-        })?;
+        let timestamp =
+            compose_timestamp(edit, closure, maps, warnings).map_err(|error| match error {
+                CompositionError::BindingConflict {
+                    variable,
+                    previous,
+                    current,
+                } => ClockError::Diagnostic(TemporalDiagnostic::ConflictingDeclarations {
+                    variable,
+                    previous,
+                    current,
+                }),
+                CompositionError::Ir(error) => ClockError::InvalidIr(error),
+            })?;
         let closure = edit.node(timestamp.into())?;
         let [input] = closure.edges("parameters")?[..] else {
             return Ok(None);

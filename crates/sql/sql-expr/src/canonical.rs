@@ -345,8 +345,13 @@ pub fn canonicalize_projection(
             }
             if matches!(
                 node.inner_kind(),
-                Some(InnerKind::Parameter | InnerKind::Expression(Expr::Let) | InnerKind::AggregateList)
-            ) || node.class() == "DBSPLetStatement" {
+                Some(
+                    InnerKind::Parameter
+                        | InnerKind::Expression(Expr::Let)
+                        | InnerKind::AggregateList
+                )
+            ) || node.class() == "DBSPLetStatement"
+            {
                 return Ok(None);
             }
         }
@@ -354,7 +359,10 @@ pub fn canonicalize_projection(
         // a shared compound expression. Each input edge is examined at most twice.
         push_expression_children(node, &mut pending);
     }
-    if !matches!(lexical_references(edit.circuit(), closure)?, Resolution::Bound(_)) {
+    if !matches!(
+        lexical_references(edit.circuit(), closure)?,
+        Resolution::Bound(_)
+    ) {
         return Ok(None);
     }
     let mut names = Names::default();
@@ -378,14 +386,27 @@ mod tests {
         let mut edit = CircuitEditor::new(circuit);
         let ty = edit.bool_type(site, false)?;
         let row = edit.named_variable(ty, "row")?;
-        let literal = edit.make_expr(site, Expr::BoolLiteral, ty, [("value", Field::Data(true.into()))])?;
+        let literal = edit.make_expr(
+            site,
+            Expr::BoolLiteral,
+            ty,
+            [("value", Field::Data(true.into()))],
+        )?;
         for (initializer, allowed) in [(row, false), (literal, true)] {
-            let value = edit.make_expr(site, Expr::Static, ty, [
-                ("initializer", Field::Reference(initializer.into())),
-                ("name", Field::Data("named_static".into())),
-            ])?;
+            let value = edit.make_expr(
+                site,
+                Expr::Static,
+                ty,
+                [
+                    ("initializer", Field::Reference(initializer.into())),
+                    ("name", Field::Data("named_static".into())),
+                ],
+            )?;
             let closure = edit.closure_from_variables(value, &[row])?;
-            assert_eq!(canonicalize_projection(&mut edit, closure.into())?.is_some(), allowed);
+            assert_eq!(
+                canonicalize_projection(&mut edit, closure.into())?.is_some(),
+                allowed
+            );
         }
         Ok(())
     }

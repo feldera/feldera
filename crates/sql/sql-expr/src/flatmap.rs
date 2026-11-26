@@ -90,11 +90,17 @@ pub fn replace_flatmap_input(
     collection: NodeId,
     passthrough: Vec<usize>,
 ) -> Result<NodeId, Error> {
-    let columns = passthrough.into_iter().map(|i| Field::Data(i.into())).collect();
-    let narrowed = edit.derive_inner(flatmap, [
-        ("collectionExpression", Field::Reference(collection)),
-        ("passthroughIndexes", Field::Array(columns)),
-    ])?;
+    let columns = passthrough
+        .into_iter()
+        .map(|i| Field::Data(i.into()))
+        .collect();
+    let narrowed = edit.derive_inner(
+        flatmap,
+        [
+            ("collectionExpression", Field::Reference(collection)),
+            ("passthroughIndexes", Field::Array(columns)),
+        ],
+    )?;
     rebuild_from_row(edit, narrowed, row)
 }
 

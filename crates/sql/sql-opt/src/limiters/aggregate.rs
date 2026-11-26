@@ -2,7 +2,7 @@
 use super::filter::{arg, bool_type, tuple_compare};
 use super::retention::{delay, retain_keys};
 use super::source::link;
-use super::{Bound, Projection, apply_waterlines, pass::apply_bound};
+use super::{apply_waterlines, pass::apply_bound, Bound, Projection};
 use crate::rebuild::input_type;
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{

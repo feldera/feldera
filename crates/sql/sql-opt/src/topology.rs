@@ -32,8 +32,17 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
 
     Ok(match pass {
         "LowerCircuitVisitor" => has(&[
-            Op::Apply, Op::Apply2, Op::ApplyN, Op::Noop, Op::FlatMap, Op::JoinFilterMap, Op::LeftJoinFilterMap, Op::StarJoinFilterMap,
-            Op::Aggregate, Op::StreamAggregate, Op::PartitionedRollingAggregate,
+            Op::Apply,
+            Op::Apply2,
+            Op::ApplyN,
+            Op::Noop,
+            Op::FlatMap,
+            Op::JoinFilterMap,
+            Op::LeftJoinFilterMap,
+            Op::StarJoinFilterMap,
+            Op::Aggregate,
+            Op::StreamAggregate,
+            Op::PartitionedRollingAggregate,
             Op::PartitionedRollingAggregateWithWaterline,
         ]),
         "ExpandStreamAggregates" => has(&[Op::StreamAggregate]),
@@ -91,7 +100,9 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
         "SeparateIntegrators" => {
             has(&[Op::StreamAggregate]) || crate::trace_integrators::needs_separation(circuit)?
         }
-        "ChainVisitor" => !crate::chains::chain_readers(circuit)?.is_empty() || has_dead_code(true)?,
+        "ChainVisitor" => {
+            !crate::chains::chain_readers(circuit)?.is_empty() || has_dead_code(true)?
+        }
         "ImplementChains" => has(&[Op::Chain]),
         "CloneOperatorsWithFanout" => {
             crate::fanout::has_candidates(circuit)? || has_dead_code(true)?
@@ -121,8 +132,10 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
             !crate::balanced_joins::eligible_joins(circuit)?.is_empty() || has_dead_code(true)?
         }
         "RemoveDeindexOperators" => has(&[Op::Deindex]),
-        "OptimizeDistinctVisitor" => has(&[Op::Distinct, Op::StreamDistinct, Op::Positive])
-            && crate::optimize_distinct::needs_snapshot(circuit, &order)?,
+        "OptimizeDistinctVisitor" => {
+            has(&[Op::Distinct, Op::StreamDistinct, Op::Positive])
+                && crate::optimize_distinct::needs_snapshot(circuit, &order)?
+        }
         "RemoveIAfterD" => reads(Op::Integrate, &[Op::Differentiate, Op::IncrementalConstant]),
         "ExpandMetadataCasts" => order.iter().any(|&id| {
             let n = node(id);

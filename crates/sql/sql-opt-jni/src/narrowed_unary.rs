@@ -1,13 +1,13 @@
 //! Marshal a narrowed unary reader together with its input projection.
-use crate::{ExpressionSite, binding_diagnostic, fragment::Fragment, pass_warnings};
+use crate::{binding_diagnostic, fragment::Fragment, pass_warnings, ExpressionSite};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op};
 use feldera_sql_opt::{
-    AggregateInput, FieldRewriteError, IndexedValueUse, append_input_projection,
-    trim_aggregate_input, trim_flatmap_input, trim_indexed_reader,
+    append_input_projection, trim_aggregate_input, trim_flatmap_input, trim_indexed_reader,
+    AggregateInput, FieldRewriteError, IndexedValueUse,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::BTreeSet, error::Error as StdError};
 
 type Paths = BTreeSet<Vec<usize>>;

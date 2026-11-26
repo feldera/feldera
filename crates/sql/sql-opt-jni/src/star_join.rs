@@ -1,7 +1,7 @@
-use super::{ExpressionSite, fragment::Fragment, operator_number};
+use super::{fragment::Fragment, operator_number, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, NodeId, OperatorKind, OutputPort};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::error::Error;
 
 #[derive(Deserialize)]
@@ -62,23 +62,19 @@ pub(super) fn delta(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, 
         &mut warnings,
     )?;
     let mut reply = fragment.reply(&edit, next)?;
-    reply["integrals"] = json!(
-        graph
-            .integrals
-            .into_iter()
-            .map(operator_number)
-            .collect::<Vec<_>>()
-    );
-    reply["terms"] = json!(
-        graph
-            .terms
-            .into_iter()
-            .map(|term| json!({
-                "joins": term.joins.into_iter().map(operator_number).collect::<Vec<_>>(),
-                "projection": operator_number(term.projection)
-            }))
-            .collect::<Vec<_>>()
-    );
+    reply["integrals"] = json!(graph
+        .integrals
+        .into_iter()
+        .map(operator_number)
+        .collect::<Vec<_>>());
+    reply["terms"] = json!(graph
+        .terms
+        .into_iter()
+        .map(|term| json!({
+            "joins": term.joins.into_iter().map(operator_number).collect::<Vec<_>>(),
+            "projection": operator_number(term.projection)
+        }))
+        .collect::<Vec<_>>());
     reply["sum"] = operator_number(graph.sum).into();
     if let Some(filter) = graph.filter {
         reply["filter"] = operator_number(filter).into();

@@ -166,20 +166,40 @@ impl LiveNumbering {
     ) -> Result<ResolvedNumbers, Error> {
         let declaration = |read| match references.get(&NodeId::Inner(read)) {
             Some(&NodeId::Inner(id)) => Ok(id),
-            _ => Err(Error::new(format!("missing declaration for CSE variable {read}"))),
+            _ => Err(Error::new(format!(
+                "missing declaration for CSE variable {read}"
+            ))),
         };
         for event in &mut self.numbers.events {
-            if let Event::Define { expression, key: Definition::Typed { form: form @ Form::Read }, .. } = event {
-                *form = Form::Variable { declaration: declaration(*expression)? };
+            if let Event::Define {
+                expression,
+                key:
+                    Definition::Typed {
+                        form: form @ Form::Read,
+                    },
+                ..
+            } = event
+            {
+                *form = Form::Variable {
+                    declaration: declaration(*expression)?,
+                };
             }
         }
         let places: Vec<_> = self.mutable_places.into_iter().map(NodeId::Inner).collect();
         let borrows = borrowed_variables(circuit, &places)?;
         let unknown_write = borrows.iter().any(Option::is_none);
-        let mutable = self.mutable_reads.into_iter().chain(borrows.into_iter().flatten())
-            .map(declaration).collect::<Result<BTreeSet<_>, _>>()?;
+        let mutable = self
+            .mutable_reads
+            .into_iter()
+            .chain(borrows.into_iter().flatten())
+            .map(declaration)
+            .collect::<Result<BTreeSet<_>, _>>()?;
         self.numbers.mutable.extend(&mutable);
-        Ok(ResolvedNumbers { groups: self.numbers.number()?, mutable, unknown_write })
+        Ok(ResolvedNumbers {
+            groups: self.numbers.number()?,
+            mutable,
+            unknown_write,
+        })
     }
 }
 

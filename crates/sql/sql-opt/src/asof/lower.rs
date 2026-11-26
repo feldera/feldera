@@ -3,7 +3,7 @@ use super::{asof_index, asof_projection, asof_timestamps};
 use crate::{
     asof_retention::asof_retainers,
     field_comparator::{empty_comparator, field_comparator},
-    rebuild::{ProjectionNames, input_type},
+    rebuild::{input_type, ProjectionNames},
     stream_rewrites::body_members,
 };
 use feldera_sql_expr::SimplifyWarning;

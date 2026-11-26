@@ -123,10 +123,7 @@ impl CircuitEditor {
         )?;
         if self.node(output)?.field("position").is_none() {
             if let Some(range) = site.position.filter(|range| range.is_valid()) {
-                output = self.derive_inner(
-                    output,
-                    [("position", range.into())],
-                )?;
+                output = self.derive_inner(output, [("position", range.into())])?;
             }
         }
         let port = |operator| OutputPort {

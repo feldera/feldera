@@ -1,5 +1,5 @@
 //! Pair local declarations while comparing expressions under alpha-renaming.
-use super::{ComparisonDiagnostic, KeyComparisonError, optional_child, same_type};
+use super::{optional_child, same_type, ComparisonDiagnostic, KeyComparisonError};
 use feldera_sql_ir::{CircuitEditor, Error, Node, NodeId};
 
 /// Each pending comparison sees the bindings in scope at that expression.

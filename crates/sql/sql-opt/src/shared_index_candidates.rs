@@ -1,8 +1,8 @@
 //! Select indexes whose sole reader can share the integral of a common input.
 use crate::consumer_graph::consumer_graphs;
-use crate::index_key_equivalence::{KeyComparisonError, check_closures, equivalent};
-use crate::lexical_scope::{Resolution, lexical_references};
-use crate::projection::{ProjectionMode, is_map_projection, simple_tuple};
+use crate::index_key_equivalence::{check_closures, equivalent, KeyComparisonError};
+use crate::lexical_scope::{lexical_references, Resolution};
+use crate::projection::{is_map_projection, simple_tuple, ProjectionMode};
 use crate::shared_indexes::shares_input_integral;
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{
@@ -258,13 +258,16 @@ impl SharedIndexes {
         &mut self,
         edit: &mut CircuitEditor,
         next: &mut u64,
-        mut unresolved: impl FnMut(&CircuitEditor, [ExpressionId; 2]) -> Result<bool, KeyComparisonError>,
+        mut unresolved: impl FnMut(
+            &CircuitEditor,
+            [ExpressionId; 2],
+        ) -> Result<bool, KeyComparisonError>,
     ) -> Result<(), IndexDiscoveryError> {
-        self.scan(edit, next, |edit, keys| match check_closures(
-            edit, keys[0], keys[1],
-        )? {
-            Some(equal) => Ok(equal),
-            None => Ok(unresolved(edit, keys)?),
+        self.scan(edit, next, |edit, keys| {
+            match check_closures(edit, keys[0], keys[1])? {
+                Some(equal) => Ok(equal),
+                None => Ok(unresolved(edit, keys)?),
+            }
         })
     }
 

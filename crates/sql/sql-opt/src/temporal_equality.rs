@@ -76,39 +76,41 @@ impl Transformation for ClockEquality {
 }
 
 pub fn desugar_now_equality(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
-    Ok(rewrite_filters::<Error>(circuit, next, |edit, body, id, _, _| {
-        let node = edit.node(id)?;
-        let closure = node.edge("function")?;
-        if !contains_now(edit.circuit(), &[closure])? {
-            return Ok(None);
-        }
-        let output = node.edge("outputType")?;
-        let input = node
-            .inputs()
-            .next()
-            .ok_or_else(|| Error::new("filter requires an input"))?;
-        let tree = ensure_expression_tree(edit, closure)?;
-        let rewritten = Rewrite::new(ClockEquality).apply(edit, tree)?;
-        if rewritten == closure {
-            return Ok(None);
-        }
-        let filter = edit.append_operator(
-            body,
-            id,
-            OperatorKind::Filter,
-            &[input],
-            [
-                ("function", Field::Reference(rewritten)),
-                ("outputType", Field::Reference(output)),
-            ],
-        )?;
-        Ok(Some((
-            filter,
-            OutputPort {
-                operator: filter,
-                number: 0,
-            },
-        )))
-    })?
-    .0)
+    Ok(
+        rewrite_filters::<Error>(circuit, next, |edit, body, id, _, _| {
+            let node = edit.node(id)?;
+            let closure = node.edge("function")?;
+            if !contains_now(edit.circuit(), &[closure])? {
+                return Ok(None);
+            }
+            let output = node.edge("outputType")?;
+            let input = node
+                .inputs()
+                .next()
+                .ok_or_else(|| Error::new("filter requires an input"))?;
+            let tree = ensure_expression_tree(edit, closure)?;
+            let rewritten = Rewrite::new(ClockEquality).apply(edit, tree)?;
+            if rewritten == closure {
+                return Ok(None);
+            }
+            let filter = edit.append_operator(
+                body,
+                id,
+                OperatorKind::Filter,
+                &[input],
+                [
+                    ("function", Field::Reference(rewritten)),
+                    ("outputType", Field::Reference(output)),
+                ],
+            )?;
+            Ok(Some((
+                filter,
+                OutputPort {
+                    operator: filter,
+                    number: 0,
+                },
+            )))
+        })?
+        .0,
+    )
 }

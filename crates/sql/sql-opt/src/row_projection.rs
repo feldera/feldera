@@ -1,6 +1,6 @@
 //! Build a projection of a borrowed stream element and rebind its consumers.
 use crate::row_fields::RowFields;
-use feldera_sql_expr::{Rewrite, Transformation, Visit, input_field_paths, parameter_paths};
+use feldera_sql_expr::{input_field_paths, parameter_paths, Rewrite, Transformation, Visit};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
     TypeKind as Ty,

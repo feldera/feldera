@@ -2,14 +2,14 @@
 //! Other JSON producers can order object keys differently. The general decoder
 //! resolves their node headers and port namespaces after reading the whole object.
 
-use super::{Arena, insert_node, validated};
+use super::{insert_node, validated, Arena};
 use crate::{
+    json::{check_document_depth, CheckedValue},
     Circuit, Error, Field, Node, NodeClass, NodeId,
-    json::{CheckedValue, check_document_depth},
 };
 use indexmap::IndexMap;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
-use serde_json::{Value, value::RawValue};
+use serde_json::{value::RawValue, Value};
 use std::{borrow::Cow, cell::Cell, collections::HashMap, fmt};
 
 /// Headers can usually borrow their text directly from the input buffer.
@@ -437,20 +437,16 @@ mod tests {
 
         let mut duplicate = batch.clone();
         duplicate[2]["id"] = 1.into();
-        assert!(
-            attach(duplicate)
-                .unwrap_err()
-                .to_string()
-                .contains("invalid additional inner node Inner(1)")
-        );
+        assert!(attach(duplicate)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid additional inner node Inner(1)"));
         let mut missing = batch;
         missing[0]["type"]["node"] = 0.into();
-        assert!(
-            attach(missing)
-                .unwrap_err()
-                .to_string()
-                .contains("undefined node Inner(0)")
-        );
+        assert!(attach(missing)
+            .unwrap_err()
+            .to_string()
+            .contains("undefined node Inner(0)"));
     }
 
     #[test]
@@ -522,11 +518,9 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .shift_remove("outputType");
-        assert!(
-            decoder
-                .decode(&serde_json::to_vec(&graph).unwrap())
-                .is_err()
-        );
+        assert!(decoder
+            .decode(&serde_json::to_vec(&graph).unwrap())
+            .is_err());
         assert!(decoder.previous.is_empty());
     }
 }

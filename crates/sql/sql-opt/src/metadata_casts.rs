@@ -1,6 +1,6 @@
 use crate::rebuild::rebuild_input_closures;
 use feldera_sql_expr::{
-    CastSafety, SimplifyWarning, expand_sql_casts, prepare_column_default_with_warnings,
+    expand_sql_casts, prepare_column_default_with_warnings, CastSafety, SimplifyWarning,
 };
 use feldera_sql_ir::{BodyOrder, Circuit, CircuitEditor, Error, OperatorKind as Op};
 

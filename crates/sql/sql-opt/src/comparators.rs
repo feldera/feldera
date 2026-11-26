@@ -1,4 +1,4 @@
-use feldera_sql_expr::{Rewrite, Transformation, Visit, contains_type};
+use feldera_sql_expr::{contains_type, Rewrite, Transformation, Visit};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, NodeId,
     OperatorKind, TypeKind,

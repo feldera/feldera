@@ -3,10 +3,10 @@ use crate::{
     fanout::expensive,
     left_joins::uses_missing_value,
     propagate_constants::evaluate_constant_input,
-    rebuild::{ProjectionNames, input_type, noop_function},
+    rebuild::{input_type, noop_function, ProjectionNames},
     stream_rewrites::{body_members, reader_counts},
 };
-use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
+use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field,
     InnerKind, NodeId, OperatorKind as Op, OutputPort, TypeId,

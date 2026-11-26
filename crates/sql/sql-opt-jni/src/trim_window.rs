@@ -1,9 +1,9 @@
 //! Bind the live window inputs while Rust narrows its single indexed reader.
-use crate::{ExpressionSite, binding_diagnostic, fragment::Fragment};
+use crate::{binding_diagnostic, fragment::Fragment, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, OperatorKind};
-use feldera_sql_opt::{FieldRewriteError, limiters::WindowBounds, trim_window_fields};
+use feldera_sql_opt::{limiters::WindowBounds, trim_window_fields, FieldRewriteError};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::BTreeSet, error::Error};
 
 #[derive(Deserialize)]

@@ -1,9 +1,9 @@
 //! Select the smallest expensive expressions that can move between sibling map closures.
 use crate::fanout::expensive;
 use crate::function_calls::contains_now;
-use crate::index_key_equivalence::{KeyComparisonError, check_bodies};
+use crate::index_key_equivalence::{check_bodies, KeyComparisonError};
 use crate::lexical_scope::{closed_over, expression_children, resolve};
-use feldera_sql_expr::{SimplifyWarning, simplify_closure_with_warnings};
+use feldera_sql_expr::{simplify_closure_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionKind as Expr, InnerKind, Node, NodeId,
 };

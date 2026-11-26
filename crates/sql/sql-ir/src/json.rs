@@ -1,7 +1,7 @@
 //! Decode a compiler artifact while enforcing unique keys at every nesting level.
 
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
-use serde_json::{Map, Value, map::Entry};
+use serde_json::{map::Entry, Map, Value};
 use std::{cell::Cell, fmt};
 
 #[derive(Clone, Copy)]
@@ -269,12 +269,16 @@ pub fn parse_circuit_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_CIRCUIT_DEPTH, parse_circuit_json, parse_json};
+    use super::{parse_circuit_json, parse_json, MAX_CIRCUIT_DEPTH};
 
     #[test]
     fn circuit_reader_counts_containers_instead_of_brackets_in_string_values() {
         fn document(depth: usize) -> String {
-            format!(r#"{}"text with [ and \"{{"{}"#, "[".repeat(depth), "]".repeat(depth))
+            format!(
+                r#"{}"text with [ and \"{{"{}"#,
+                "[".repeat(depth),
+                "]".repeat(depth)
+            )
         }
         let mut value = parse_circuit_json(document(MAX_CIRCUIT_DEPTH).as_bytes()).unwrap();
         for _ in 0..MAX_CIRCUIT_DEPTH {
@@ -291,12 +295,10 @@ mod tests {
             r#"{"type": {"id": 1}, "type": {"node": 1}}"#,
             r#"[{"x": 1, "\u0078": 2}]"#,
         ] {
-            assert!(
-                parse_json(input.as_bytes())
-                    .unwrap_err()
-                    .to_string()
-                    .contains("duplicate")
-            );
+            assert!(parse_json(input.as_bytes())
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate"));
         }
     }
 

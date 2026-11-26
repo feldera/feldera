@@ -1,5 +1,5 @@
 //! Rebind a closure to parameters whose unused columns have been removed.
-use feldera_sql_expr::{Rewrite, Transformation, Visit, parameter_bindings};
+use feldera_sql_expr::{parameter_bindings, Rewrite, Transformation, Visit};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
     TypeKind,

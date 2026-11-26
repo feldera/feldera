@@ -1,12 +1,12 @@
 //! Lower a clock predicate into ordinary filters, temporal windows and a residual join.
 use crate::limiters::Stream;
-use crate::temporal_comparisons::{ClockError, speculative_clock};
+use crate::temporal_comparisons::{speculative_clock, ClockError};
 use crate::temporal_filters::checked_filter_closure;
 use crate::{
-    ClockConsumer, ClockJoinInputs, ClockProjection, ClockRewrite, InitialBounds,
-    TemporalPredicate, TemporalStreams, WindowComparison, WindowKey, WindowTerm, append_clock_join,
-    append_temporal_window, apply_joined_clock, check_temporal_groups, scalar_clock_operators,
-    temporal_window,
+    append_clock_join, append_temporal_window, apply_joined_clock, check_temporal_groups,
+    scalar_clock_operators, temporal_window, ClockConsumer, ClockJoinInputs, ClockProjection,
+    ClockRewrite, InitialBounds, TemporalPredicate, TemporalStreams, WindowComparison, WindowKey,
+    WindowTerm,
 };
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort, TypeId, TypeKind,
@@ -82,7 +82,9 @@ impl TemporalFilterLowering {
         filter: ClockFilter,
         next: &mut u64,
     ) -> Result<Option<LoweredClockFilter>, Error> {
-        speculative_clock(next, |names| self.lower_checked_filter(edit, rows, filter, names))
+        speculative_clock(next, |names| {
+            self.lower_checked_filter(edit, rows, filter, names)
+        })
     }
 
     /// A live caller can render a diagnostic using the operands of the failed
@@ -94,7 +96,8 @@ impl TemporalFilterLowering {
         filter: ClockFilter,
         next: &mut u64,
     ) -> Result<Option<LoweredClockFilter>, ClockError> {
-        let Some((parameter, predicates)) = checked_filter_closure(edit, filter.function, next)? else {
+        let Some((parameter, predicates)) = checked_filter_closure(edit, filter.function, next)?
+        else {
             return Ok(None);
         };
         let terms: Vec<_> = predicates

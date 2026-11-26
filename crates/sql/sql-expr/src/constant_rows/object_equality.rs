@@ -1,5 +1,5 @@
 //! Expression equality used by collection elements and keys in a LinkedHashMap.
-use crate::{ValueComparisonError, compare_literal_values};
+use crate::{compare_literal_values, ValueComparisonError};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId};
 use std::collections::{HashMap, HashSet};
 

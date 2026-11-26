@@ -1,4 +1,4 @@
-use crate::{ExpressionSite, fragment::Fragment};
+use crate::{fragment::Fragment, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, OperatorKind};
 use feldera_sql_opt::{AntijoinReader, AntijoinRewrite};
 use serde::Deserialize;

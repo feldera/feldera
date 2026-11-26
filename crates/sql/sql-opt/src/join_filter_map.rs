@@ -1,5 +1,5 @@
 //! Lower a join, predicate and optional projection to a single closure returning a nullable row.
-use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
+use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind, Field, InnerKind, NodeId,
 };

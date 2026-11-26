@@ -1,8 +1,8 @@
 //! Transfer a group key or a rolling timestamp through an aggregate.
 use super::{indexed_parameter, unknown};
 use feldera_sql_expr::{
-    SimplifyWarning, apply_closure, copy_expression, ensure_expression_tree,
-    reduce_closure_body_with_warnings,
+    apply_closure, copy_expression, ensure_expression_tree, reduce_closure_body_with_warnings,
+    SimplifyWarning,
 };
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, TypeId, TypeKind};
 

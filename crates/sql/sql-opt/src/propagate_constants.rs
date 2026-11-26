@@ -10,8 +10,8 @@ use feldera_sql_expr::{
     reduce_closure_body_with_warnings, simplify_closure_with_warnings, SimplifyWarning,
 };
 use feldera_sql_ir::{
-    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field,
-    NodeId, OperatorKind as Op, OutputPort,
+    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
+    OperatorKind as Op, OutputPort,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 

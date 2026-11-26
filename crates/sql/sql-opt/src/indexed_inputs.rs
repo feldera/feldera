@@ -83,8 +83,10 @@ impl Transformation for IndexProjection<'_> {
         }
         if matches!(n.inner_kind(), Some(InnerKind::Expression(Expr::Field))) {
             let source = edit.node(n.edge("expression")?)?;
-            if matches!(source.inner_kind(), Some(InnerKind::Expression(Expr::Deref)))
-                && self.bindings.contains(&source.edge("expression")?)
+            if matches!(
+                source.inner_kind(),
+                Some(InnerKind::Expression(Expr::Deref))
+            ) && self.bindings.contains(&source.edge("expression")?)
             {
                 let index = n
                     .data("fieldNo")

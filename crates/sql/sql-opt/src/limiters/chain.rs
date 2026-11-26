@@ -1,7 +1,7 @@
 //! A chain aggregate annotated AlwaysMonotone produces its own indexed waterline.
-use super::Bound;
 use super::filter::arg;
 use super::source::{link, timestamp_max, waterline_value};
+use super::Bound;
 use crate::rebuild::deindex_function;
 use feldera_sql_ir::{
     CircuitEditor, Error, NodeId, OperatorKind as Op, OutputPort, TypeKind as Ty,

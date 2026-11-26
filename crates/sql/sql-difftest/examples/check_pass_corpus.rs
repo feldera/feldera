@@ -36,7 +36,10 @@ fn check_window_groups(circuit: &Circuit, invocation: &Value) -> Result<(), Box<
             .map(|&i| candidates[i].fields.clone())
             .collect::<Vec<_>>();
         let plan = feldera_sql_opt::shared_window_fields(&fields);
-        let windows: Vec<_> = group.iter().map(|&index| candidates[index].window).collect();
+        let windows: Vec<_> = group
+            .iter()
+            .map(|&index| candidates[index].window)
+            .collect();
         plans.push(json!({ "windows": windows, "fields": plan }));
         let expressions = plan
             .sources
@@ -54,7 +57,9 @@ fn check_window_groups(circuit: &Circuit, invocation: &Value) -> Result<(), Box<
         feldera_sql_opt::indexed_window_groups(circuit.clone(), threshold)?
     {
         if serde_json::to_value(native)? != json!(plans) {
-            return Err("native index selection differs from the canonical closure fingerprints".into());
+            return Err(
+                "native index selection differs from the canonical closure fingerprints".into(),
+            );
         }
     }
     if json!(groups) != invocation["window_groups"] {
@@ -136,13 +141,17 @@ fn compare_invocation(
             serde_json::from_value(invocation["asof_joins"].clone())?,
             &mut next,
         )?,
-        "RemoveStarJoinsPass" => feldera_sql_opt::expand_star_join_layer(input, &mut next, &mut Vec::new())?,
+        "RemoveStarJoinsPass" => {
+            feldera_sql_opt::expand_star_join_layer(input, &mut next, &mut Vec::new())?
+        }
         "CanonicalForm" => feldera_sql_opt::canonicalize_names(input, &mut next)?,
         "FindJoinTrees" => {
             let isolated = feldera_sql_opt::names_after_isolated_joins(&input, next)?;
             let trees = feldera_sql_opt::find_join_trees(&input, &mut next)?;
             if isolated.is_some_and(|after| after != next || !trees.is_empty()) {
-                return Err("isolated join analysis disagrees with the full join tree analysis".into());
+                return Err(
+                    "isolated join analysis disagrees with the full join tree analysis".into(),
+                );
             }
             if !trees.is_empty() || invocation["join_trees"] != json!([]) {
                 // The closures share definitions with their circuit and with one another.
@@ -155,12 +164,25 @@ fn compare_invocation(
             input
         }
         "ReplaceStarJoins" => feldera_sql_opt::replace_star_joins(
-            input, serde_json::from_value(invocation["join_trees"].clone())?, &mut next,
+            input,
+            serde_json::from_value(invocation["join_trees"].clone())?,
+            &mut next,
         )?,
         "ReplaceCommonProjections" => feldera_sql_opt::replace_common_projections(
-            input, serde_json::from_value(invocation["projection_closures"].clone())?, &mut next)?,
-        "DeferCarriedColumns" => feldera_sql_opt::defer_carried_columns(input, serde_json::from_value(invocation["carried_columns"].clone())?, &mut next)?,
-        "TrimFilters" => feldera_sql_opt::trim_filters(input, serde_json::from_value(invocation["filter_readers"].clone())?, &mut next)?,
+            input,
+            serde_json::from_value(invocation["projection_closures"].clone())?,
+            &mut next,
+        )?,
+        "DeferCarriedColumns" => feldera_sql_opt::defer_carried_columns(
+            input,
+            serde_json::from_value(invocation["carried_columns"].clone())?,
+            &mut next,
+        )?,
+        "TrimFilters" => feldera_sql_opt::trim_filters(
+            input,
+            serde_json::from_value(invocation["filter_readers"].clone())?,
+            &mut next,
+        )?,
         "TrimWindows" => feldera_sql_opt::trim_windows(input, &mut next)?,
         "TrimInputs" => feldera_sql_opt::trim_inputs(
             input,
@@ -236,11 +258,18 @@ fn compare_invocation(
                 "Fuse" => {
                     let mut warnings = Vec::new();
                     let clusters = serde_json::from_value(invocation["map_clusters"].clone())?;
-                    let circuit = feldera_sql_opt::fuse_expensive_maps(input, clusters, &mut next, &mut warnings)?
-                        .ok_or("Cannot compare fused map columns from this snapshot")?;
+                    let circuit = feldera_sql_opt::fuse_expensive_maps(
+                        input,
+                        clusters,
+                        &mut next,
+                        &mut warnings,
+                    )?
+                    .ok_or("Cannot compare fused map columns from this snapshot")?;
                     (circuit, warnings)
                 }
-                "ExpandMetadataCasts" => feldera_sql_opt::expand_metadata_casts_with_warnings(input, &mut next)?,
+                "ExpandMetadataCasts" => {
+                    feldera_sql_opt::expand_metadata_casts_with_warnings(input, &mut next)?
+                }
                 "Simplify" => feldera_sql_opt::simplify_expressions(input, &mut next)?,
                 "OptimizeProjectionVisitor" => feldera_sql_opt::project_outputs(input, &mut next)?,
                 "PullFilterVisitor" => feldera_sql_opt::pull_filters(input, &mut next)?,
@@ -471,40 +500,79 @@ fn compare_invocation(
                     else {
                         return Err("expected an outer operator".into());
                     };
-                    members.push(feldera_sql_opt::IndexReader { index, consumer, slot });
+                    members.push(feldera_sql_opt::IndexReader {
+                        index,
+                        consumer,
+                        slot,
+                    });
                 }
                 groups.push(members);
             }
             let mut diagnostics = Vec::new();
-            let graph = feldera_sql_opt::replace_shared_indexes(input, &groups, &mut next, &mut diagnostics)?
-                .ok_or("index replacement required a Java comparison")?;
-            let messages: Vec<_> = diagnostics.into_iter().map(|w| json!({
-                "range":w.position, "error_type":w.kind, "message":w.message,
-                "warning":true, "continuation":false,
-            })).collect();
+            let graph = feldera_sql_opt::replace_shared_indexes(
+                input,
+                &groups,
+                &mut next,
+                &mut diagnostics,
+            )?
+            .ok_or("index replacement required a Java comparison")?;
+            let messages: Vec<_> = diagnostics
+                .into_iter()
+                .map(|w| {
+                    json!({
+                        "range":w.position, "error_type":w.kind, "message":w.message,
+                        "warning":true, "continuation":false,
+                    })
+                })
+                .collect();
             if json!(messages) != invocation["diagnostics"] {
                 return Err("shared-index diagnostics differ".into());
             }
             graph
         }
         "FindSharedIndexes" => {
-            let previous = serde_json::from_value(invocation["previously_visited_indexes"].clone())?;
+            let previous =
+                serde_json::from_value(invocation["previously_visited_indexes"].clone())?;
             let mut edit = feldera_sql_ir::CircuitEditor::new(input.clone());
-            let found = feldera_sql_opt::find_shared_indexes(&mut edit, &previous, &mut next, |edit, keys| {
-                let kinds = keys.map(|key| {
-                    edit.node(key.into()).and_then(|node| node.edge("body"))
-                        .and_then(|id| Ok(edit.node(id)?.class()))
-                });
-                Err(feldera_sql_ir::Error::new(format!("key equivalence needs Java for {kinds:?}")))
-            })?;
-            let groups: Vec<Vec<_>> = found.groups.into_iter().map(|group| group.into_iter()
-                .map(|r| json!([r.index, r.consumer, r.slot])).collect()).collect();
-            let warnings: Vec<_> = found.warnings.into_iter().map(|w| json!({
-                "range":w.position, "error_type":w.kind, "message":w.message,
-                "warning":true, "continuation":false,
-            })).collect();
-            if json!(groups) != invocation["candidate_indexes"] || json!(found.visited) != invocation["visited_indexes"]
-                || json!(warnings) != invocation["diagnostics"] {
+            let found = feldera_sql_opt::find_shared_indexes(
+                &mut edit,
+                &previous,
+                &mut next,
+                |edit, keys| {
+                    let kinds = keys.map(|key| {
+                        edit.node(key.into())
+                            .and_then(|node| node.edge("body"))
+                            .and_then(|id| Ok(edit.node(id)?.class()))
+                    });
+                    Err(feldera_sql_ir::Error::new(format!(
+                        "key equivalence needs Java for {kinds:?}"
+                    )))
+                },
+            )?;
+            let groups: Vec<Vec<_>> = found
+                .groups
+                .into_iter()
+                .map(|group| {
+                    group
+                        .into_iter()
+                        .map(|r| json!([r.index, r.consumer, r.slot]))
+                        .collect()
+                })
+                .collect();
+            let warnings: Vec<_> = found
+                .warnings
+                .into_iter()
+                .map(|w| {
+                    json!({
+                        "range":w.position, "error_type":w.kind, "message":w.message,
+                        "warning":true, "continuation":false,
+                    })
+                })
+                .collect();
+            if json!(groups) != invocation["candidate_indexes"]
+                || json!(found.visited) != invocation["visited_indexes"]
+                || json!(warnings) != invocation["diagnostics"]
+            {
                 return Err(format!("shared-index groups, visited indexes or diagnostics differ at invocation {index}").into());
             }
             input
@@ -522,10 +590,16 @@ fn compare_invocation(
         }
         "OrderGcDependencies" => {
             let edges: Vec<(u64, u64)> = serde_json::from_value(invocation["extra_edges"].clone())?;
-            let edges = edges.into_iter().map(|(a, b)| (NodeId::Outer(a), NodeId::Outer(b)));
+            let edges = edges
+                .into_iter()
+                .map(|(a, b)| (NodeId::Outer(a), NodeId::Outer(b)));
             let order = feldera_sql_opt::dependency_order(&input, edges)?;
             let expected = Circuit::from_json(invocation["after"].clone())?;
-            if !expected.operators().map(|(id, _)| id).eq(order.iter().copied()) {
+            if !expected
+                .operators()
+                .map(|(id, _)| id)
+                .eq(order.iter().copied())
+            {
                 return Err("ASOF dependency order differs from Java".into());
             }
             let mut edit = feldera_sql_ir::CircuitEditor::new(input);
@@ -694,7 +768,11 @@ fn compare_invocation(
         _ => return Err(format!("no Rust implementation selected for {pass}").into()),
     };
     if Some(next) != invocation["names_after"].as_u64() {
-        return Err(format!("{pass} invocation {index} generated-name counter is {next}, expected {}", invocation["names_after"]).into());
+        return Err(format!(
+            "{pass} invocation {index} generated-name counter is {next}, expected {}",
+            invocation["names_after"]
+        )
+        .into());
     }
     compare_circuits(&invocation["after"], &actual.to_json())
         .map_err(|e| format!("{pass} invocation {index}: {e}"))?;

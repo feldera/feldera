@@ -10,11 +10,14 @@ mod arithmetic;
 mod collections;
 mod comparison;
 mod zoned_timestamp;
-pub use zoned_timestamp::{TimestampComparison, compare_timestamp_literals};
-pub use comparison::{ValueComparisonError, compare_literal_values, decimal_literal_parts, literal_is_positive, numeric_value_is_positive, same_literal_value};
+pub use comparison::{
+    compare_literal_values, decimal_literal_parts, literal_is_positive, numeric_value_is_positive,
+    same_literal_value, ValueComparisonError,
+};
+pub use zoned_timestamp::{compare_timestamp_literals, TimestampComparison};
 mod literals;
-mod temporal;
 mod simplify;
+mod temporal;
 pub(crate) use simplify::SimplifyDefault;
 pub use simplify::SimplifyWarning;
 

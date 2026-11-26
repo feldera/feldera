@@ -1,5 +1,5 @@
 //! Group consecutive SQL predicates into windows without moving residual filters.
-use crate::index_key_equivalence::{KeyComparisonError, check_bodies, speculative};
+use crate::index_key_equivalence::{check_bodies, speculative, KeyComparisonError};
 use crate::temporal_comparisons::conjoin;
 use crate::{TemporalPredicate, WindowComparison};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, ExpressionId, NodeId};
@@ -90,7 +90,12 @@ pub(super) fn check_temporal_bound_with(
             Some(equal) => Some(equal),
             None => capture(
                 edit.circuit(),
-                [bound.parameter, bound.key.into(), next.parameter, next.key.into()],
+                [
+                    bound.parameter,
+                    bound.key.into(),
+                    next.parameter,
+                    next.key.into(),
+                ],
             )?,
         };
         if equal != Some(true) {

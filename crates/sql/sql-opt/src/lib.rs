@@ -2,55 +2,84 @@
 
 mod aggregate_groups;
 mod aggregate_input;
-pub use aggregate_input::{AggregateInput, ProjectedAggregateInput, trim_aggregate_input};
+pub use aggregate_input::{trim_aggregate_input, AggregateInput, ProjectedAggregateInput};
 mod aggregate_projection;
-pub use aggregate_projection::{project_indexed_value, trim_aggregate_projection, trim_indexed_reader, AggregateProjection, IndexedValueUse, IndexedReaderProjection};
+pub use aggregate_projection::{
+    project_indexed_value, trim_aggregate_projection, trim_indexed_reader, AggregateProjection,
+    IndexedReaderProjection, IndexedValueUse,
+};
 mod aggregate_fold;
 pub use aggregate_fold::lower_aggregate_fold;
 mod aggregate_zero;
 mod antijoin_projection;
-pub use antijoin_projection::{AntijoinReader, AntijoinRewrite, antijoin_projection, split_antijoin_projection};
+pub use antijoin_projection::{
+    antijoin_projection, split_antijoin_projection, AntijoinReader, AntijoinRewrite,
+};
 mod append_only;
 mod pipeline;
 pub use pipeline::{optimizer_order, OptimizerStep, PipelineOptions};
 mod repeat;
-pub use repeat::{repeat, RepeatResult};
 use feldera_sql_expr::lexical_scope;
-pub use lexical_scope::{BindingDiagnostic, Resolution as LexicalResolution, inspect_references, lexical_references};
+pub use lexical_scope::{
+    inspect_references, lexical_references, BindingDiagnostic, Resolution as LexicalResolution,
+};
+pub use repeat::{repeat, RepeatResult};
 mod map_fusion;
-mod projection_key;
 mod monotonicity;
-pub use monotonicity::aggregate::{aggregate_transfer, chain_minimum_transfer, minimum_transfer, minimum_transfer_for_output, AggregateTransfer};
+mod projection_key;
+pub use monotonicity::aggregate::{
+    aggregate_transfer, chain_minimum_transfer, minimum_transfer, minimum_transfer_for_output,
+    AggregateTransfer,
+};
 pub use monotonicity::asof::asof_waterline;
+pub use monotonicity::binary::{
+    binary_waterline, BinaryOperation, BinaryWaterline, Domain as BinaryDomain,
+    Operand as WaterlineOperand,
+};
 pub use monotonicity::bindings::{waterline_bindings, WaterlineBindings};
+pub use monotonicity::casts::{cast_bound, cast_waterline, CastWaterline};
 pub use monotonicity::chain_minimum::{check_minimum_chain, is_minimum_chain, MinimumChainError};
 pub use monotonicity::combine::{
-    antijoin_waterline, combine_bounds, join_arguments, BoundCombination, BoundError, BoundSelection, BoundType,
+    antijoin_waterline, combine_bounds, join_arguments, BoundCombination, BoundError,
+    BoundSelection, BoundType,
 };
 pub use monotonicity::flatmap::flatmap_waterline;
-pub use monotonicity::lag::lag_transfer;
-pub use monotonicity::literal::{literal_waterline, LiteralWaterline};
-pub use monotonicity::schedule::{monotonicity_transfers, propagate_waterlines, MonotonicityTransfer, OutputWaterline, TransferOutcome};
-pub use monotonicity::casts::{cast_bound, cast_waterline, CastWaterline};
 pub use monotonicity::functions::{
-    build_function_waterline, clock_waterline, function_rule, function_waterline, Argument as WaterlineArgument, FunctionRule,
-};
-pub use monotonicity::binary::{
-    binary_waterline, BinaryOperation, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
+    build_function_waterline, clock_waterline, function_rule, function_waterline,
+    Argument as WaterlineArgument, FunctionRule,
 };
 pub use monotonicity::identity::identity_bounds;
-pub use monotonicity::row_projection::{expression_waterlines, project_closure, project_row, project_rows, tuple_waterline, ClosureAnalysis, ExpressionWaterline, FactType, ProjectedClosure, ProjectedRead, RowRead, WaterlineError, WaterlineInspection};
-pub use monotonicity::{filter_lower_bounds, filter_transfer, unary_preserves_order, unary_waterline, FilterBound};
+pub use monotonicity::lag::lag_transfer;
+pub use monotonicity::literal::{literal_waterline, LiteralWaterline};
+pub use monotonicity::row_projection::{
+    expression_waterlines, project_closure, project_row, project_rows, tuple_waterline,
+    ClosureAnalysis, ExpressionWaterline, FactType, ProjectedClosure, ProjectedRead, RowRead,
+    WaterlineError, WaterlineInspection,
+};
+pub use monotonicity::schedule::{
+    monotonicity_transfers, propagate_waterlines, MonotonicityTransfer, OutputWaterline,
+    TransferOutcome,
+};
+pub use monotonicity::{
+    filter_lower_bounds, filter_transfer, unary_preserves_order, unary_waterline, FilterBound,
+};
 mod static_candidates;
 mod static_items;
-pub use static_items::{find_static_literal, renumber_static_errors, static_initializer, static_item};
-pub use static_candidates::{static_candidates, StaticCandidates};
 pub use map_fusion::{
-    fuse_expensive_maps, fuse_expensive_maps_with, FusionComparison, has_duplicate_expensive_field, map_fusion_candidate, map_fusion_fragments,
-    map_fusion_groups, scan_map_fusion, sibling_map_groups, FusionCandidate, FusionMember, FusionScan,
+    fuse_expensive_maps, fuse_expensive_maps_with, has_duplicate_expensive_field,
+    map_fusion_candidate, map_fusion_fragments, map_fusion_groups, scan_map_fusion,
+    sibling_map_groups, FusionCandidate, FusionComparison, FusionMember, FusionScan,
+};
+pub use static_candidates::{static_candidates, StaticCandidates};
+pub use static_items::{
+    find_static_literal, renumber_static_errors, static_initializer, static_item,
 };
 mod star_joins;
-pub use star_joins::{expand_star_delta, DeltaStarJoin, expand_star_term, BinaryJoin, StarJoinExpansion, expand_star_join_layer, find_join_trees, names_after_isolated_joins, remove_star_joins, replace_star_joins, StarJoinTree};
+pub use star_joins::{
+    expand_star_delta, expand_star_join_layer, expand_star_term, find_join_trees,
+    names_after_isolated_joins, remove_star_joins, replace_star_joins, BinaryJoin, DeltaStarJoin,
+    StarJoinExpansion, StarJoinTree,
+};
 mod asof;
 pub use asof::{lower_asof, AsofRetention, LoweredAsof};
 mod asof_retention;
@@ -63,22 +92,32 @@ mod comparators;
 mod field_comparator;
 pub use field_comparator::{project_topk_comparators, topk_compared_fields};
 mod replace_projections;
-pub use replace_projections::{projection_edits, replace_common_projections, ProjectionClosures, SharedProjection};
+pub use replace_projections::{
+    projection_edits, replace_common_projections, ProjectionClosures, SharedProjection,
+};
 mod row_fields;
 mod row_projection;
 pub use row_projection::project_used_fields;
 mod projected_reader;
-pub use projected_reader::{FieldRewriteError, TupleUsage, rebind_projected_aggregate, rebind_projected_reader, rebind_reader_with_layout};
+pub use projected_reader::{
+    rebind_projected_aggregate, rebind_projected_reader, rebind_reader_with_layout,
+    FieldRewriteError, TupleUsage,
+};
 mod compressed_fields;
 pub use compressed_fields::compressed_field_type;
 mod topk_input;
 pub use topk_input::{ProjectedTopK, TopK};
 mod map_input;
-pub use map_input::{MapOutput, append_input_projection, append_split_map, checked_split_map_input, split_map_input};
+pub use map_input::{
+    append_input_projection, append_split_map, checked_split_map_input, split_map_input, MapOutput,
+};
 mod join_input;
 pub use join_input::{narrow_join_inputs, project_join_input, JoinInputRewrite};
 mod common_projections;
-pub use common_projections::{common_projection_payloads, common_projections, shared_projection_closures, CommonProjection, SharedProjectionClosure};
+pub use common_projections::{
+    common_projection_payloads, common_projections, shared_projection_closures, CommonProjection,
+    SharedProjectionClosure,
+};
 mod conditionals;
 mod constant_filters;
 mod consumer_graph;
@@ -92,15 +131,17 @@ mod delta_aggregate;
 pub use delta_aggregate::UnaryDelta;
 mod dependency_order;
 pub use dependency_order::dependency_order;
+mod binding_placement;
 mod distinct_outputs;
 mod empty_sources;
 mod error_consumers;
 mod error_wrappers;
 mod expand_aggregates;
-mod binding_placement;
-pub use binding_placement::{BindingScope, PendingBinding, bind_lazy_expression, lazy_statements, read_lazy_value};
+pub use binding_placement::{
+    bind_lazy_expression, lazy_statements, read_lazy_value, BindingScope, PendingBinding,
+};
 mod value_numbering;
-pub use value_numbering::{LiveNumbering, NumberingInput, NumberingSpellings, borrowed_variables};
+pub use value_numbering::{borrowed_variables, LiveNumbering, NumberingInput, NumberingSpellings};
 mod expression_uses;
 pub use expression_uses::{shared_expression_uses, NumberedExpression};
 mod expression_visitor;
@@ -126,14 +167,20 @@ pub use input_fields::{
 };
 mod integrate;
 mod lineage;
-pub use lineage::{AnalysisError as LineageError, LineageDiagnostic, checked_column_copies, checked_fixed_columns, checked_equal_computations, checked_lineage_report, correlated_columns, lineage_report, column_copies, equal_computations, fixed_columns, Column, OutputShape};
+pub use lineage::{
+    checked_column_copies, checked_equal_computations, checked_fixed_columns,
+    checked_lineage_report, column_copies, correlated_columns, equal_computations, fixed_columns,
+    lineage_report, AnalysisError as LineageError, Column, LineageDiagnostic, OutputShape,
+};
 mod collection_keys;
-pub use collection_keys::{JoinInputs, JoinKeys, KeyColumns, KeyProjection, circuit_keys, filter_keys};
+pub use collection_keys::{
+    circuit_keys, filter_keys, JoinInputs, JoinKeys, KeyColumns, KeyProjection,
+};
 mod join_filter_map;
 pub use join_filter_map::lower_join_filter_map;
 mod left_joins;
 mod lower_circuit;
-pub use lower_circuit::{LoweringTypes, lower_circuit};
+pub use lower_circuit::{lower_circuit, LoweringTypes};
 pub mod limiters;
 mod linear_retention;
 mod merge_gc;
@@ -145,13 +192,20 @@ mod optimize_distinct;
 mod output_integrators;
 mod project_outputs;
 mod projection;
-pub use projection::{MapProjection, ProjectionMode, is_map_projection, map_projection};
+pub use projection::{is_map_projection, map_projection, MapProjection, ProjectionMode};
 mod projection_rules;
-pub use projection_rules::{FilteredJoinProjection, ProjectionPushdown, ProjectionRules, project_empty_result};
+pub use projection_rules::{
+    project_empty_result, FilteredJoinProjection, ProjectionPushdown, ProjectionRules,
+};
 mod projection_composition;
-pub use projection_composition::{CompositionError, compose_indexed_projection, compose_projection};
+pub use projection_composition::{
+    compose_indexed_projection, compose_projection, CompositionError,
+};
 mod propagate_constants;
 pub use project_outputs::{project_outputs, project_unnest, OutputProjection};
+mod clock_source;
+mod index_key_equivalence;
+mod index_reader;
 mod pull_filters;
 mod push_integrals;
 mod rebuild;
@@ -159,42 +213,50 @@ mod recursive_views;
 mod regions;
 mod remove_noops;
 mod remove_table;
-mod index_key_equivalence;
-mod index_reader;
+mod replace_shared_indexes;
 mod shared_index_candidates;
 mod shared_indexes;
-mod wide_index;
-mod replace_shared_indexes;
 mod state_bounds;
 mod statistics;
 mod stream_rewrites;
 mod sums;
 mod temporal_comparisons;
-mod temporal_groups;
 mod temporal_equality;
-mod clock_source;
-pub use clock_source::{ClockStreams, builtin_clock, scalar_clock, scalar_clock_operators, table_clock};
+mod temporal_groups;
+mod wide_index;
+pub use clock_source::{
+    builtin_clock, scalar_clock, scalar_clock_operators, table_clock, ClockStreams,
+};
 mod clock_join;
-pub use clock_join::{ClockConsumer, ClockJoinInputs, ClockProjection, ClockRewrite, append_clock_join, apply_joined_clock};
+pub use clock_join::{
+    append_clock_join, apply_joined_clock, ClockConsumer, ClockJoinInputs, ClockProjection,
+    ClockRewrite,
+};
 mod temporal_window;
-pub use temporal_window::{InitialBounds, TemporalStreams, WindowComparison, WindowFunctions, WindowKey, append_temporal_window, temporal_window};
+pub use temporal_window::{
+    append_temporal_window, temporal_window, InitialBounds, TemporalStreams, WindowComparison,
+    WindowFunctions, WindowKey,
+};
 mod window_bounds;
 pub use window_bounds::{temporal_window_bounds, WindowEndpoint};
 mod window_projection;
 pub use window_projection::{window_projection, TemporalWindowProjection};
-mod temporal_filters;
 mod temporal_filter_lowering;
+mod temporal_filters;
 pub use temporal_filter_lowering::{ClockFilter, LoweredClockFilter, TemporalFilterLowering};
 mod terms;
 mod topk_projection;
 pub use topk_projection::trim_topk_projection;
+mod defer_carried;
 mod topology;
 mod trace_integrators;
 mod trace_retention;
-mod defer_carried;
-pub use defer_carried::{carried_columns, chain_steps, choose_chain_key, ChainKeyChoice, ChainKeys, defer_carried_columns, ChainLayout};
+pub use defer_carried::{
+    carried_columns, chain_steps, choose_chain_key, defer_carried_columns, ChainKeyChoice,
+    ChainKeys, ChainLayout,
+};
 mod trim_filters;
-pub use trim_filters::{FilterTrim, trim_filter_fields, trim_filter_readers, trim_filters};
+pub use trim_filters::{trim_filter_fields, trim_filter_readers, trim_filters, FilterTrim};
 mod trim_windows;
 pub use trim_windows::{trim_window_fields, trim_windows, window_trim_readers};
 mod trim_inputs;
@@ -209,8 +271,8 @@ pub use window_groups::{
     compose_timestamp, implement_window_groups, indexed_window_groups, qualifying_window_groups,
     reorder_shared_windows, reorder_temporal_filters, reorder_temporal_predicate,
     scan_temporal_windows, shared_temporal_inputs, shared_window_fields, temporal_filter_sources,
-    window_candidates, IndexedWindows, TemporalBound, TemporalCandidate, TemporalFilterSource,
-    ReorderError, TemporalOrder, TemporalScan, WindowFields, WindowProjection,
+    window_candidates, IndexedWindows, ReorderError, TemporalBound, TemporalCandidate,
+    TemporalFilterSource, TemporalOrder, TemporalScan, WindowFields, WindowProjection,
 };
 
 pub use aggregate_groups::{aggregate_groups, AggregateKind};
@@ -224,13 +286,20 @@ pub use comparators::{declare_comparators, ordered_indexes, rewrite_index_functi
 pub use conditionals::{simplify_conditional_root, simplify_conditionals};
 pub use constant_filters::remove_constant_filters;
 pub use consumer_graph::{consumer_graphs, projected_consumer_graphs, ConsumerBody, Successors};
-pub use cse::{common_subexpressions, common_subexpressions_with_names, cse_payloads, projected_cse_payloads, CseState};
-pub use dead_code::{eliminate_dead_code, projected_pruning, pruning, remove_dead_operators, DeadCodeResult, Pruning};
+pub use cse::{
+    common_subexpressions, common_subexpressions_with_names, cse_payloads, projected_cse_payloads,
+    CseState,
+};
+pub use dead_code::{
+    eliminate_dead_code, projected_pruning, pruning, remove_dead_operators, DeadCodeResult, Pruning,
+};
 pub use distinct_outputs::ensure_distinct_outputs;
 pub use empty_sources::{empty_stream_edits, propagate_empty_sources, EmptyStreamEdit};
 pub use error_consumers::{error_consumers, ErrorConsumerOrder};
 pub use error_wrappers::create_runtime_error_wrappers;
-pub use expand_aggregates::{expand_stream_aggregates, AggregateContext, ExpandedAggregates, StreamAggregate};
+pub use expand_aggregates::{
+    expand_stream_aggregates, AggregateContext, ExpandedAggregates, StreamAggregate,
+};
 pub use expression_visitor::{ensure_expression_trees, simplify_expressions};
 pub use fanout::{clone_operators_with_fanout, fanout_producers, fanout_readers, optimize_fanout};
 pub use feldera_sql_expr::adjust_sql_index;
@@ -247,18 +316,27 @@ pub use hoist_filters::{decompose_expensive_filters, filters_need_decomposition}
 pub use hop::{expand_hop, hop_waterline, Hop};
 pub use identity::{identity_closure, identity_decisions, remove_identity_operators};
 pub use incrementalize::{incremental_boundaries, incrementalize};
+pub use index_key_equivalence::{
+    compare_live_operands, ColumnRewriteError, ComparisonDiagnostic, KeyComparisonError,
+};
+pub use index_reader::{rewrite_index_reader, IndexParameter};
 pub use indexed_inputs::{expand_indexed_inputs, IndexOptions};
 pub use integrate::remove_redundant_integrates;
 pub use left_joins::{
-    empty_right_join_closure, remove_useless_left_joins, substitute_left_joins, unmatched_row_projection,
+    empty_right_join_closure, remove_useless_left_joins, substitute_left_joins,
+    unmatched_row_projection,
 };
 pub use linear_retention::{
-    linear_postprocess_retain_keys, linear_retention_order, linear_retention_plan, LinearRetentionPlan,
+    linear_postprocess_retain_keys, linear_retention_order, linear_retention_plan,
+    LinearRetentionPlan,
 };
 pub use merge_gc::{
-    merge_retention_policies, retention_groups, share_trace_inputs, RetentionGroup, SharedTraceInputs,
+    merge_retention_policies, retention_groups, share_trace_inputs, RetentionGroup,
+    SharedTraceInputs,
 };
-pub use metadata_casts::{expand_circuit_casts, expand_metadata_casts, expand_metadata_casts_with_warnings};
+pub use metadata_casts::{
+    expand_circuit_casts, expand_metadata_casts, expand_metadata_casts_with_warnings,
+};
 pub use multiset::{plan_multiplicities, stream_multiplicities, Multiplicities, MultiplicityPlan};
 pub use nested::{build_nested_operators, NestedDiagnostics, NestedResult};
 pub use operator_hashes::{
@@ -267,17 +345,18 @@ pub use operator_hashes::{
 pub use optimize_distinct::optimize_distinct;
 pub use output_integrators::share_output_integrators;
 pub use propagate_constants::propagate_constants;
-pub use pull_filters::{pull_filter_sites, pull_filter_through_aggregate, pull_filter_through_map, pull_filters};
+pub use pull_filters::{
+    pull_filter_sites, pull_filter_through_aggregate, pull_filter_through_map, pull_filters,
+};
 pub use push_integrals::{flat_integral_edits, push_integrals, IntegralEdit};
 pub use recursive_views::{resolve_view_references, ViewReferences, ViewResolution};
 pub use regions::{conflicting_regions, tag_regions};
 pub use remove_noops::{bypassed_noops, optimize_noops, remove_noops};
 pub use remove_table::{remove_table, unreferenced_table_sources, TableRemoval};
-pub use shared_index_candidates::{find_shared_indexes, shared_index_payloads, IndexDiscoveryError, IndexReader, SharedIndexes};
-pub use index_reader::{rewrite_index_reader, IndexParameter};
 pub use replace_shared_indexes::{replace_shared_indexes, replace_shared_indexes_with};
-pub use wide_index::{project_index as project_shared_index, split_with as split_shared_indexes_with,
-    split_shared_indexes, wide_index_fields, CompareColumn, IndexComparison, ProjectedIndex, WideIndexFields, WideIndexLayout};
+pub use shared_index_candidates::{
+    find_shared_indexes, shared_index_payloads, IndexDiscoveryError, IndexReader, SharedIndexes,
+};
 pub use shared_indexes::{duplicate_shared_indexes, find_map_chains};
 pub use state_bounds::{
     detects_streaming, propagate_bounds, pruned_streams, unbounded_operators, UnboundedOperator,
@@ -287,13 +366,18 @@ pub use stream_rewrites::{
     implement_joins, insert_weight_validation, optimize_differentials, push_differentials_up,
 };
 pub use sums::merge_sums;
-pub use index_key_equivalence::{compare_live_operands, ColumnRewriteError, ComparisonDiagnostic, KeyComparisonError};
-pub use temporal_groups::{accepts_temporal_bound, check_temporal_bound, check_temporal_groups, group_temporal_filters, TemporalBoundKey, TemporalGroup, WindowTerm};
-pub use temporal_comparisons::{ClockError, TemporalDiagnostic, MissingClockKey, classify_temporal_predicates, conjunct_windows, infer_temporal_predicates, ConjunctWindow, TemporalPredicate};
+pub use temporal_comparisons::{
+    classify_temporal_predicates, conjunct_windows, infer_temporal_predicates, ClockError,
+    ConjunctWindow, MissingClockKey, TemporalDiagnostic, TemporalPredicate,
+};
 pub use temporal_equality::desugar_now_equality;
 pub use temporal_filters::{
-    TemporalMerge, break_temporal_filters, checked_filter_closure, merge_temporal_filters, merge_temporal_filters_with_operands,
-    merge_temporal_predicates,
+    break_temporal_filters, checked_filter_closure, merge_temporal_filters,
+    merge_temporal_filters_with_operands, merge_temporal_predicates, TemporalMerge,
+};
+pub use temporal_groups::{
+    accepts_temporal_bound, check_temporal_bound, check_temporal_groups, group_temporal_filters,
+    TemporalBoundKey, TemporalGroup, WindowTerm,
 };
 pub use topology::needs_full_snapshot;
 pub use trace_integrators::{separate_integrators, separate_trace_inputs, snapshot_aggregate};
@@ -305,6 +389,11 @@ pub use udf::{inline_udfs, may_inline_udfs};
 pub use validation::{first_integral, recursive_violation, RecursiveViolation};
 pub use views::{constant_views, remove_views, ViewRemoval};
 pub use waterline::{simplify_waterline_root, simplify_waterlines};
+pub use wide_index::{
+    project_index as project_shared_index, split_shared_indexes,
+    split_with as split_shared_indexes_with, wide_index_fields, CompareColumn, IndexComparison,
+    ProjectedIndex, WideIndexFields, WideIndexLayout,
+};
 
 use feldera_sql_ir::{BodyOrder, Circuit, CircuitEditor, Error, NodeId, OperatorKind};
 use serde_json::json;

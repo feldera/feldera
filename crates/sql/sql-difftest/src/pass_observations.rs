@@ -1,7 +1,7 @@
 //! Compare two PassCorpusOracle streams against the population that produced them.
 use crate::files::Error;
 use feldera_sql_difftest::compare_circuits;
-use feldera_sql_ir::{BodyOrder, Circuit, NodeId, parse_circuit_json};
+use feldera_sql_ir::{parse_circuit_json, BodyOrder, Circuit, NodeId};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -44,7 +44,9 @@ impl<'a> Records<'a> {
         {
             return Ok(None);
         }
-        parse_circuit_json(&self.line).map(Some).map_err(|e| invalid(&e))
+        parse_circuit_json(&self.line)
+            .map(Some)
+            .map_err(|e| invalid(&e))
     }
 }
 
@@ -145,7 +147,8 @@ impl Invocation {
         }
         let mut selected = Vec::with_capacity(choices.len());
         if !choices.is_empty() {
-            let graph = Circuit::from_checkpoint_json(self.after.clone()).map_err(|e| e.to_string())?;
+            let graph =
+                Circuit::from_checkpoint_json(self.after.clone()).map_err(|e| e.to_string())?;
             let mut seen = HashSet::new();
             for (filter, conjunct) in choices {
                 if !seen.insert(filter) {
@@ -261,7 +264,8 @@ impl Invocation {
         if state.inputs.is_empty() && state.outputs.is_empty() {
             return Ok(());
         }
-        let graph = Circuit::from_checkpoint_json(self.before.clone()).map_err(|e| e.to_string())?;
+        let graph =
+            Circuit::from_checkpoint_json(self.before.clone()).map_err(|e| e.to_string())?;
         let order = graph
             .operator_order(BodyOrder::Preorder)
             .map_err(|e| e.to_string())?;
@@ -533,30 +537,26 @@ mod tests {
 
     #[test]
     fn projection_state_preserves_sharing_with_its_circuit_after_renumbering() {
-        assert!(
-            compare_invocation(
-                "ReplaceCommonProjections",
-                0,
-                shared_projection(9, 2, 1),
-                shared_projection(19, 12, 11)
-            )
-            .is_ok()
-        );
+        assert!(compare_invocation(
+            "ReplaceCommonProjections",
+            0,
+            shared_projection(9, 2, 1),
+            shared_projection(19, 12, 11)
+        )
+        .is_ok());
         let mut copied = shared_projection(19, 12, 11);
         copied
             .placement
             .state
             .get_mut("projection_closures")
             .unwrap()["outputs"]["19"]["type"] = json!({"class":"DBSPTypeBool","id":13});
-        assert!(
-            compare_invocation(
-                "ReplaceCommonProjections",
-                0,
-                shared_projection(9, 2, 1),
-                copied
-            )
-            .is_err()
-        );
+        assert!(compare_invocation(
+            "ReplaceCommonProjections",
+            0,
+            shared_projection(9, 2, 1),
+            copied
+        )
+        .is_err());
     }
 
     #[test]

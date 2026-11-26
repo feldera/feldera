@@ -1,9 +1,9 @@
 //! Inline SQL function calls in operator expressions. Function declarations are
 //! the source of the bodies and retain their original definitions.
-use crate::expression_visitor::{Context, rewrite_expressions};
+use crate::expression_visitor::{rewrite_expressions, Context};
 use crate::fanout::expensive;
 use crate::function_calls::{contains_now, function_name};
-use feldera_sql_expr::{Rewrite, Transformation, Visit, reduce_closure_body};
+use feldera_sql_expr::{reduce_closure_body, Rewrite, Transformation, Visit};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, Field, InnerKind, NodeId};
 use std::collections::{HashMap, HashSet};
 

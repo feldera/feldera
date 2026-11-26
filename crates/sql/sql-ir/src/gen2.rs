@@ -3,7 +3,7 @@
 //! inner node, so resolve each edge against the arena as the writer visits it.
 
 use super::{Circuit, Error, Field, NodeId};
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 
 impl Circuit {
@@ -115,7 +115,11 @@ fn public_field(id: NodeId, name: &str, field: &Field) -> bool {
         NodeId::Inner(_) => {
             !matches!(
                 name,
-                "sourceEmpty" | "singleton" | "cachedEmptySetResult" | "originalStruct" | "runtimeMicros"
+                "sourceEmpty"
+                    | "singleton"
+                    | "cachedEmptySetResult"
+                    | "originalStruct"
+                    | "runtimeMicros"
             ) && (name != "position" || valid_position(field))
         }
     }

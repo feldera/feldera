@@ -1,6 +1,6 @@
 //! Append the clock to a row for NOW expressions that require a stream join.
 use crate::function_calls::{contains_now, function_name, is_clock_call};
-use feldera_sql_expr::{Rewrite, Transformation, Visit, flatten_tuple_fields, parameter_paths};
+use feldera_sql_expr::{flatten_tuple_fields, parameter_paths, Rewrite, Transformation, Visit};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,
     OperatorKind, OutputPort, TypeId,

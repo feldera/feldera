@@ -1,9 +1,9 @@
 //! Evaluate children before their parent and bind locals between successive statements.
 use super::{
-    ExpressionWaterline, Observations, ProjectedValue, Row, RowType, WaterlineError, function,
-    project_tuple, project_wrapper, scalar, unbounded,
+    function, project_tuple, project_wrapper, scalar, unbounded, ExpressionWaterline, Observations,
+    ProjectedValue, Row, RowType, WaterlineError,
 };
-use super::{FactType, scope::VariableRead};
+use super::{scope::VariableRead, FactType};
 use crate::function_calls::function_name;
 use crate::monotonicity::literal::ordered_literal;
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind};
@@ -95,7 +95,8 @@ impl Operation {
             let ty = edit.expression_type(id)?;
             if edit.expr_kind(id)? == Expr::RawTuple && edit.nullable(ty)? {
                 return Ok(Evaluation::Failed(WaterlineError::Type(
-                    super::WaterlineTypeError::NullableRawTuple, ty,
+                    super::WaterlineTypeError::NullableRawTuple,
+                    ty,
                 )));
             }
             if let Some(child) = children
@@ -197,7 +198,11 @@ fn schedule(
                         work.extend([Step::Read(edit.expression(child)?), Step::Discard]);
                     }
                     Some(InnerKind::Type(_) | InnerKind::Parameter) => {}
-                    _ => pending.extend(crate::lexical_scope::expression_children(node).into_iter().rev()),
+                    _ => pending.extend(
+                        crate::lexical_scope::expression_children(node)
+                            .into_iter()
+                            .rev(),
+                    ),
                 }
             }
             match kind {
@@ -312,7 +317,9 @@ impl Row {
                             let names = match &mut input {
                                 FlatmapInput::ZSet(names) => &mut **names,
                                 FlatmapInput::JoinOrIndex => {
-                                    return Ok(Evaluation::Failed(WaterlineError::FlatmapInput(id)));
+                                    return Ok(Evaluation::Failed(WaterlineError::FlatmapInput(
+                                        id,
+                                    )));
                                 }
                                 FlatmapInput::Detached => return Ok(Evaluation::IncompleteInput),
                             };
@@ -331,7 +338,9 @@ impl Row {
                                 // The visitor records the declaration's fact at the read
                                 // before checking the path's annotated type.
                                 self.observe(edit, id, &mut declaration)?;
-                                return Ok(Evaluation::Failed(WaterlineError::VariableTypeMismatch(id)));
+                                return Ok(Evaluation::Failed(
+                                    WaterlineError::VariableTypeMismatch(id),
+                                ));
                             }
                             VariableRead::Uninitialized => {
                                 work.push(Step::NoFact(id));

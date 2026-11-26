@@ -1,7 +1,7 @@
 //! Adapt the versioned S3 checkpoint to the public Gen-2 and profiler contracts.
 
 use feldera_sql_ir::{Circuit, Field};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{error::Error, ffi::OsStr};
 
 pub enum Output {

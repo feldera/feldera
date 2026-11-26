@@ -1,5 +1,5 @@
 //! Resolve block locals in statement order. Only a block's final expression contributes its result.
-use super::{Observations, ProjectedValue, Row, RowType, Shape, evaluate::Step};
+use super::{evaluate::Step, Observations, ProjectedValue, Row, RowType, Shape};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, TypeId,
 };
@@ -60,7 +60,12 @@ fn schedule_statement(
                 initializer,
             });
         }
-        _ => return Err(Error::new(format!("unknown waterline statement {}", statement.class()))),
+        _ => {
+            return Err(Error::new(format!(
+                "unknown waterline statement {}",
+                statement.class()
+            )))
+        }
     }
     Ok(())
 }
@@ -166,7 +171,9 @@ impl Row {
         expression: ExpressionId,
     ) -> Result<VariableRead, Error> {
         let node = edit.node(expression.into())?;
-        let name = node.data("variable").and_then(|v| v.as_str())
+        let name = node
+            .data("variable")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| Error::new("waterline variable has no name"))?;
         let (shape, row_type, reduced, declared) = if let Some((index, local)) = self
             .locals

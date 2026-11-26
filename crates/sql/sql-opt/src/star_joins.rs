@@ -2,19 +2,19 @@
 mod analysis;
 mod expand;
 mod tree;
-pub use tree::{expand_star_term, BinaryJoin, StarJoinExpansion};
-pub use expand::{expand_star_delta, DeltaStarJoin, expand_star_join_layer, remove_star_joins};
 use crate::{
     rebuild::{input_type, rebuild_input_closures},
     stream_rewrites::body_members,
 };
 pub use analysis::{find_join_trees, names_after_isolated_joins};
+pub use expand::{expand_star_delta, expand_star_join_layer, remove_star_joins, DeltaStarJoin};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, Field, NodeId, OperatorKind as Op, OutputPort,
 };
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
+pub use tree::{expand_star_term, BinaryJoin, StarJoinExpansion};
 
 /// The preceding analysis supplies the ordered leaves and a closure over their shared key.
 #[derive(Deserialize, serde::Serialize)]

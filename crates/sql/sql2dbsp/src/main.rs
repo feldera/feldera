@@ -167,11 +167,13 @@ impl<'a> Command<'a> {
                 if !warnings.is_empty() {
                     record["warnings"] = warnings
                         .into_iter()
-                        .map(|warning| serde_json::json!({
-                            "range": warning.position,
-                            "error_type": warning.kind,
-                            "message": warning.message
-                        }))
+                        .map(|warning| {
+                            serde_json::json!({
+                                "range": warning.position,
+                                "error_type": warning.kind,
+                                "message": warning.message
+                            })
+                        })
                         .collect();
                 }
                 write_json(&mut output, &record)?;

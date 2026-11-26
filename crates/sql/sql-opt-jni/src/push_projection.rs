@@ -1,5 +1,5 @@
 //! Bind the inputs of a linear projection rewrite to live ports.
-use crate::{ExpressionSite, fragment::Fragment};
+use crate::{fragment::Fragment, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, OperatorKind as Op};
 use feldera_sql_opt::ProjectionPushdown;
 use serde::Deserialize;

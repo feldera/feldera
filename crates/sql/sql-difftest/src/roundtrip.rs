@@ -13,8 +13,8 @@ pub(crate) fn verify(document: &mut serde_json::Value) -> Result<(), Error> {
         Some(payload) => payload,
         None => document,
     };
-    let decoded =
-        Circuit::from_checkpoint_json(circuit.clone()).map_err(|e| Error::Difference(e.to_string()))?;
+    let decoded = Circuit::from_checkpoint_json(circuit.clone())
+        .map_err(|e| Error::Difference(e.to_string()))?;
     decoded
         .provenance()
         .map_err(|e| Error::Difference(e.to_string()))?;

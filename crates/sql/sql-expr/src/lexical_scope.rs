@@ -42,16 +42,30 @@ pub struct ReferenceInspection<'a> {
 
 #[derive(Debug)]
 pub enum BindingDiagnostic<'a> {
-    Free { variable: NodeId, name: &'a str },
-    Conflict { variable: NodeId, previous: NodeId, current: NodeId },
+    Free {
+        variable: NodeId,
+        name: &'a str,
+    },
+    Conflict {
+        variable: NodeId,
+        previous: NodeId,
+        current: NodeId,
+    },
 }
 
 impl<'a> ReferenceInspection<'a> {
     fn resolution(self) -> Resolution<'a> {
         match self.diagnostic {
             Some(BindingDiagnostic::Free { variable, name }) => Resolution::Free { variable, name },
-            Some(BindingDiagnostic::Conflict { variable, previous, current }) =>
-                Resolution::Conflict { variable, previous, current },
+            Some(BindingDiagnostic::Conflict {
+                variable,
+                previous,
+                current,
+            }) => Resolution::Conflict {
+                variable,
+                previous,
+                current,
+            },
             None => Resolution::Bound(self.bindings),
         }
     }
@@ -111,7 +125,9 @@ pub fn inspect_composition(
     before: NodeId,
     after: NodeId,
 ) -> Result<Option<BindingDiagnostic<'_>>, Error> {
-    let before = circuit.node(before).ok_or_else(|| Error::new("missing producer closure"))?;
+    let before = circuit
+        .node(before)
+        .ok_or_else(|| Error::new("missing producer closure"))?;
     let mut parameters = Vec::new();
     for id in before.edges("parameters")? {
         let parameter = circuit.node(id).expect("validated parameter");
@@ -155,7 +171,11 @@ fn resolve_variables<'a>(
             Visit::Record(variable, current) => {
                 let previous = *result.bindings.entry(variable).or_insert(current);
                 if previous != current {
-                    result.diagnostic = Some(BindingDiagnostic::Conflict { variable, previous, current });
+                    result.diagnostic = Some(BindingDiagnostic::Conflict {
+                        variable,
+                        previous,
+                        current,
+                    });
                     break;
                 }
                 continue;
@@ -186,7 +206,10 @@ fn resolve_variables<'a>(
                         result.has_free_variables = true;
                         continue;
                     }
-                    result.diagnostic = Some(BindingDiagnostic::Free { variable: id, name: variable });
+                    result.diagnostic = Some(BindingDiagnostic::Free {
+                        variable: id,
+                        name: variable,
+                    });
                     break;
                 };
                 pending.push(Visit::Record(id, declaration));

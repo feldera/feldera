@@ -1,13 +1,12 @@
 //! Derive lower bounds for named scalar calls from the bounds of their arguments.
 use super::evaluate::{Evaluation, Visited};
 use super::{
-    WaterlineError,
     scalar::{required_type_error, scalar_type},
-    unbounded,
+    unbounded, WaterlineError,
 };
 use crate::monotonicity::functions::{
-    Argument, FunctionRule, build_function_waterline, clock_waterline, double_literal_above_one,
-    function_rule,
+    build_function_waterline, clock_waterline, double_literal_above_one, function_rule, Argument,
+    FunctionRule,
 };
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId};
 
@@ -60,7 +59,9 @@ pub(super) fn call_bound(
         }
     }
     if let FunctionRule::Invalid(error) = rule {
-        return Ok(Evaluation::Failed(WaterlineError::FunctionArgument(expression, error)));
+        return Ok(Evaluation::Failed(WaterlineError::FunctionArgument(
+            expression, error,
+        )));
     }
     let Some(target) = rule.target() else {
         result.constant = constant;

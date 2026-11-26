@@ -265,8 +265,7 @@ impl<T: Transformation> Rewrite<T> {
                 ],
             )
         } else if expr == Some(ExpressionKind::Field) {
-            self.rule
-                .rebuild_field(arena, id, transformed, translating)
+            self.rule.rebuild_field(arena, id, transformed, translating)
         } else if expr == Some(ExpressionKind::IsNull) {
             self.rule.rebuild_null_test(arena, transformed)
         } else {

@@ -1,5 +1,5 @@
 //! Lower a classic aggregate list to the DBSP fold over its tuple of accumulators.
-use feldera_sql_expr::{SimplifyWarning, apply_closure};
+use feldera_sql_expr::{apply_closure, SimplifyWarning};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
     TypeKind as Ty,

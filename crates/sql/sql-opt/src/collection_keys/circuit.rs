@@ -1,11 +1,11 @@
 //! Derive keys in circuit order so every operator sees the keys and equalities
 //! of its original input ports. A nested circuit boundary carries no key facts.
 use super::{
-    Copies, JoinInputs, KeyColumns, KeyProjection, copies_by_source,
-    equivalence::ColumnEquivalence, filter_keys, minimal,
+    copies_by_source, equivalence::ColumnEquivalence, filter_keys, minimal, Copies, JoinInputs,
+    KeyColumns, KeyProjection,
 };
 use crate::lineage::{
-    Column, ColumnCopy, OutputShape, Part, column_copies, equal_computations, fixed_columns,
+    column_copies, equal_computations, fixed_columns, Column, ColumnCopy, OutputShape, Part,
 };
 use feldera_sql_ir::{
     BodyOrder, CircuitEditor, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort,

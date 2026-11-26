@@ -4,21 +4,21 @@ mod groups;
 
 pub use fragments::{has_duplicate_expensive_field, map_fusion_candidate, map_fusion_fragments};
 pub use groups::{
-    FusionCandidate, FusionScan, map_fusion_groups, scan_map_fusion, sibling_map_groups,
+    map_fusion_groups, scan_map_fusion, sibling_map_groups, FusionCandidate, FusionScan,
 };
 
 use crate::{
-    index_key_equivalence::{ColumnRewriteError, KeyComparisonError, compare_keys},
+    index_key_equivalence::{compare_keys, ColumnRewriteError, KeyComparisonError},
     rebuild::ProjectionNames,
     stream_rewrites::body_members,
 };
-use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
+use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind, Field, InnerKind,
     NodeId, OperatorKind, OutputPort,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 
 /// The analysis simplifies each member's closure before deciding which siblings to fuse.

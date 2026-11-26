@@ -59,7 +59,11 @@ pub enum CompositionError {
     #[error(transparent)]
     Ir(#[from] Error),
     #[error("shared variable {variable:?} refers to both {previous:?} and {current:?}")]
-    BindingConflict { variable: NodeId, previous: NodeId, current: NodeId },
+    BindingConflict {
+        variable: NodeId,
+        previous: NodeId,
+        current: NodeId,
+    },
 }
 
 /// Inline a projection after its producer. During map fusion, a consumer that
@@ -83,13 +87,26 @@ pub(super) fn inline_projection(
     after: NodeId,
     warnings: &mut Vec<SimplifyWarning>,
 ) -> Result<ExpressionId, CompositionError> {
-    if let Some(feldera_sql_expr::lexical_scope::BindingDiagnostic::Conflict { variable, previous, current }) =
-        feldera_sql_expr::lexical_scope::inspect_composition(edit.circuit(), before, after)?
+    if let Some(feldera_sql_expr::lexical_scope::BindingDiagnostic::Conflict {
+        variable,
+        previous,
+        current,
+    }) = feldera_sql_expr::lexical_scope::inspect_composition(edit.circuit(), before, after)?
     {
-        return Err(CompositionError::BindingConflict { variable, previous, current });
+        return Err(CompositionError::BindingConflict {
+            variable,
+            previous,
+            current,
+        });
     }
     let before = edit.expression(before)?;
-    Ok(compose_closures(edit, before, false, after, Some(warnings))?)
+    Ok(compose_closures(
+        edit,
+        before,
+        false,
+        after,
+        Some(warnings),
+    )?)
 }
 
 /// Fuse two indexed maps. Expensive producers must run once per input even

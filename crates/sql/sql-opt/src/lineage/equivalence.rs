@@ -1,6 +1,6 @@
 //! Group output columns whose expressions compute the same value in a closure.
-use super::{Column, OutputShape, text};
-use crate::index_key_equivalence::{KeyComparisonError, compare_keys, speculative};
+use super::{text, Column, OutputShape};
+use crate::index_key_equivalence::{compare_keys, speculative, KeyComparisonError};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, Field, NodeId};
 
 fn tuple_fields(

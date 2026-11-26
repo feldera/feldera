@@ -1,29 +1,41 @@
 //! Shared transformations of circuit expressions and types.
 
-pub mod constant_rows;
 mod canonical;
-pub use canonical::{canonical_constructor_simplifies, canonicalize_names, canonicalize_projection};
+pub mod constant_rows;
+pub use canonical::{
+    canonical_constructor_simplifies, canonicalize_names, canonicalize_projection,
+};
 mod tree;
-pub use tree::{copy_expression, ensure_expression_tree, first_repeated_expression, flatten_tuple_fields, is_expression_tree};
+pub use tree::{
+    copy_expression, ensure_expression_tree, first_repeated_expression, flatten_tuple_fields,
+    is_expression_tree,
+};
 mod beta;
 pub use beta::{
-    apply_closure, compose_closures, parameter_bindings, parameter_paths, parameter_references, reduce_closure_body, reduce_closure_body_with_warnings,
-    simplify_closure_expression, simplify_closure_with_warnings,
+    apply_closure, compose_closures, parameter_bindings, parameter_paths, parameter_references,
+    reduce_closure_body, reduce_closure_body_with_warnings, simplify_closure_expression,
+    simplify_closure_with_warnings,
 };
 mod casts;
 mod error_sites;
-pub mod lexical_scope;
 mod field_use;
 mod flatmap;
-pub use field_use::{FieldUseError, checked_parameter_field_paths, input_field_paths, live_field_dependencies, live_parameter_field_paths, parameter_field_paths};
+pub mod lexical_scope;
 pub use error_sites::{error_source_reports_position, ErrorSites};
-pub use flatmap::{flatmap_generated_types, project_flatmap, rebuild_flatmap, replace_flatmap_input, FlatmapColumns};
+pub use field_use::{
+    checked_parameter_field_paths, input_field_paths, live_field_dependencies,
+    live_parameter_field_paths, parameter_field_paths, FieldUseError,
+};
+pub use flatmap::{
+    flatmap_generated_types, project_flatmap, rebuild_flatmap, replace_flatmap_input,
+    FlatmapColumns,
+};
 mod sql_index;
 pub use casts::{
-    ValueComparisonError, compare_literal_values,
-    compare_timestamp_literals, decimal_literal_parts, expand_sql_casts, literal_is_positive,
-    numeric_value_is_positive, prepare_column_default, prepare_column_default_with_warnings,
-    same_literal_value, CastSafety, SimplifyWarning, TimestampComparison,
+    compare_literal_values, compare_timestamp_literals, decimal_literal_parts, expand_sql_casts,
+    literal_is_positive, numeric_value_is_positive, prepare_column_default,
+    prepare_column_default_with_warnings, same_literal_value, CastSafety, SimplifyWarning,
+    TimestampComparison, ValueComparisonError,
 };
 pub use sql_index::{adjust_index_root, adjust_sql_index};
 
@@ -181,7 +193,9 @@ fn rebuild_result_type(
         Some(ExpressionKind::CustomOrd) => {
             let source = arena.node(value.edge("source")?)?.edge("type")?;
             let comparator = arena.node(value.edge("comparator")?)?.edge("type")?;
-            arena.custom_order_type(node, arena.type_id(source)?, arena.type_id(comparator)?)?.into()
+            arena
+                .custom_order_type(node, arena.type_id(source)?, arena.type_id(comparator)?)?
+                .into()
         }
         _ => return Ok(node),
     };

@@ -120,7 +120,10 @@ fn resolve<'a>(
             Some(InnerKind::Expression(Expr::Let)) => {
                 pending.push(Step::Restore(hidden.len()));
                 pending.push(Step::Enter(node.edge("consumer")?));
-                pending.push(Step::Hide(name(edit.node(node.edge("variable")?)?, "variable")?));
+                pending.push(Step::Hide(name(
+                    edit.node(node.edge("variable")?)?,
+                    "variable",
+                )?));
                 pending.push(Step::Enter(node.edge("initializer")?));
             }
             Some(InnerKind::Expression(Expr::Block)) => {
@@ -249,7 +252,9 @@ pub fn parameter_paths(
     body: NodeId,
     parameter: NodeId,
 ) -> Result<HashSet<NodeId>, Error> {
-    Ok(parameter_bindings(edit, body, &[parameter])?.into_keys().collect())
+    Ok(parameter_bindings(edit, body, &[parameter])?
+        .into_keys()
+        .collect())
 }
 
 /// Resolve variable occurrences to their parameter positions in one traversal.

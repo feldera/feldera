@@ -1,6 +1,6 @@
 //! Binary join expansions used to analyze monotonicity on the delta circuit.
 
-use feldera_sql_expr::{SimplifyWarning, ensure_expression_tree};
+use feldera_sql_expr::{ensure_expression_tree, SimplifyWarning};
 use feldera_sql_ir::{
     CircuitEditor, Error, Field, NodeId, OperatorKind as Op, OutputPort, TypeId, TypeKind,
 };

@@ -1,7 +1,7 @@
 //! Split a map that reads a subset of its input into a projection and a narrower reader.
 use crate::{
-    FieldRewriteError, inspect_references, row_fields::RowFields, row_projection::RowProjection,
-    terms::Terms,
+    inspect_references, row_fields::RowFields, row_projection::RowProjection, terms::Terms,
+    FieldRewriteError,
 };
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort, TypeId,

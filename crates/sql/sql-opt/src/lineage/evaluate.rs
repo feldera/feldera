@@ -1,9 +1,9 @@
 //! Evaluate children before their parents, with lexical bindings in effect at each read.
 use super::{
-    AnalysisError, DeclarationValues, Interpreter, LineageDiagnostic, Merge, Source,
-    UnsupportedExpressions, preserves_cast, report::Finding, text,
+    preserves_cast, report::Finding, text, AnalysisError, DeclarationValues, Interpreter,
+    LineageDiagnostic, Merge, Source, UnsupportedExpressions,
 };
-use crate::lexical_scope::{References, expression_children, inspect_references};
+use crate::lexical_scope::{expression_children, inspect_references, References};
 use feldera_sql_ir::{Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId};
 use std::collections::HashSet;
 use std::rc::Rc;

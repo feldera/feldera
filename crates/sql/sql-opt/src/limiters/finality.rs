@@ -1,8 +1,8 @@
 //! Buffer an EMIT FINAL view until its waterline passes the selected column.
 use super::{
-    Bound, LimiterError, Projection, Stream, WindowBounds,
     filter::{arg, bool_type},
     source::link,
+    Bound, LimiterError, Projection, Stream, WindowBounds,
 };
 use crate::rebuild::deindex_function;
 use feldera_sql_ir::{

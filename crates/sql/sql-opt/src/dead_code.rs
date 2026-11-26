@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // The original permission notice is retained in LICENSE-VMWARE.
 
-use crate::operator_inputs::{OperatorInputs, output_port};
+use crate::operator_inputs::{output_port, OperatorInputs};
 use feldera_sql_ir::{BodyOrder, Circuit, Error, Field, NodeId, OperatorKind as Op, OutputPort};
 use std::collections::{BTreeSet, HashMap};
 

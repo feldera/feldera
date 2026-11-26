@@ -5,7 +5,7 @@ mod equivalence;
 mod evaluate;
 mod report;
 pub use columns::{
-    OutputShape, checked_column_copies, checked_fixed_columns, column_copies, fixed_columns,
+    checked_column_copies, checked_fixed_columns, column_copies, fixed_columns, OutputShape,
 };
 pub use equivalence::{checked_equal_computations, equal_computations};
 pub use report::{checked_lineage_report, correlated_columns, lineage_report};

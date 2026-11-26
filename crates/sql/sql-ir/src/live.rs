@@ -345,17 +345,30 @@ mod tests {
         }))?;
         let mut edit = CircuitEditor::new(base.clone());
         let clock = NodeId::Outer(1);
-        let mut append = |kind, producer| edit.append_operator(
-            base.root_id(), clock, kind, &[OutputPort { operator: producer, number: 0 }], [],
-        );
+        let mut append = |kind, producer| {
+            edit.append_operator(
+                base.root_id(),
+                clock,
+                kind,
+                &[OutputPort {
+                    operator: producer,
+                    number: 0,
+                }],
+                [],
+            )
+        };
         let changes = append(OperatorKind::Differentiate, clock)?;
         let values = append(OperatorKind::Integrate, changes)?;
         let graph = edit.circuit();
         let wire = graph.additional_operators(&base, &[changes, values])?;
         assert_eq!(wire[0]["inputs"][0]["operator"], json!({"node":1}));
         assert_eq!(wire[1]["inputs"][0]["operator"]["node"], wire[0]["id"]);
-        assert!(graph.additional_operators(&base, &[values, changes]).is_err());
-        assert!(graph.additional_operators(&base, &[changes, changes]).is_err());
+        assert!(graph
+            .additional_operators(&base, &[values, changes])
+            .is_err());
+        assert!(graph
+            .additional_operators(&base, &[changes, changes])
+            .is_err());
         assert!(graph.additional_operators(&base, &[clock]).is_err());
         Ok(())
     }

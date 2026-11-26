@@ -1,8 +1,8 @@
-use super::{ExpressionSite, fragment::Fragment, operator_number};
+use super::{fragment::Fragment, operator_number, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, OperatorKind, OutputPort};
 use feldera_sql_opt::UnaryDelta;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::error::Error;
 
@@ -101,12 +101,10 @@ pub(super) fn binary(input: &[u8], state: &[u8], mut next: u64) -> Result<Value,
         &mut warnings,
     )?;
     let mut reply = fragment.reply(&edit, next)?;
-    reply["terms"] = json!(
-        graph
-            .into_iter()
-            .map(|(term, node)| (term, operator_number(node)))
-            .collect::<BTreeMap<_, _>>()
-    );
+    reply["terms"] = json!(graph
+        .into_iter()
+        .map(|(term, node)| (term, operator_number(node)))
+        .collect::<BTreeMap<_, _>>());
     reply["warnings"] = json!(super::pass_warnings(warnings));
     Ok(reply)
 }

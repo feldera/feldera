@@ -1,11 +1,11 @@
 //! Apply the source, view and bound-combination portion of InsertLimiters to
 //! the original circuit, using the analysis from its matching expansion.
 
-use super::source::{Columns, LatenessSite, source_bounds};
-use super::{Bound, Projection, Stream, StreamKind, connect_error_view, minimum_bound};
+use super::source::{source_bounds, Columns, LatenessSite};
+use super::{connect_error_view, minimum_bound, Bound, Projection, Stream, StreamKind};
 use crate::rebuild::ProjectionNames;
+use feldera_sql_ir::{provenance::SourceRange, OutputClocks, OutputPort, StreamKind as Clock};
 use feldera_sql_ir::{Circuit, CircuitEditor, Error, Field, Node, NodeId, OperatorKind as Op};
-use feldera_sql_ir::{OutputClocks, OutputPort, StreamKind as Clock, provenance::SourceRange};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -895,11 +895,9 @@ mod tests {
         assert_eq!(clocks[&NodeId::Outer(3)], StreamKind::Collection);
 
         facts.get_mut(&3).unwrap().input_kinds = Some(vec![Clock::Delta]);
-        assert!(
-            relation_clocks(&circuit, &facts, &order)
-                .unwrap_err()
-                .to_string()
-                .contains("recorded limiter clock differs")
-        );
+        assert!(relation_clocks(&circuit, &facts, &order)
+            .unwrap_err()
+            .to_string()
+            .contains("recorded limiter clock differs"));
     }
 }

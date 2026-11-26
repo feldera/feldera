@@ -1,6 +1,6 @@
 //! Walk left inputs of left joins. A shared port belongs to the first chain
 //! that claims it. A new chain begins at the collection feeding a differentiator.
-use super::keys::{ChainKeyChoice, select_key};
+use super::keys::{select_key, ChainKeyChoice};
 use super::{Column, Part};
 use feldera_sql_ir::Error;
 use serde::{Deserialize, Serialize};

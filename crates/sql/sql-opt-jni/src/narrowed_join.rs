@@ -1,9 +1,9 @@
 //! Rebuild a join and each projected input in the order of its live ports.
-use crate::{ExpressionSite, binding_diagnostic, fragment::Fragment};
+use crate::{binding_diagnostic, fragment::Fragment, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, Field, NodeId, OperatorKind as Op, OutputPort};
-use feldera_sql_opt::{JoinInputRewrite, append_input_projection, narrow_join_inputs};
+use feldera_sql_opt::{append_input_projection, narrow_join_inputs, JoinInputRewrite};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::BTreeSet, error::Error};
 
 #[derive(Deserialize)]

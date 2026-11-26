@@ -27,7 +27,10 @@ impl BindingScope {
         self.positions(bindings.iter())
     }
 
-    pub(crate) fn positions<'a>(&self, bindings: impl Iterator<Item = &'a PendingBinding>) -> Vec<Option<usize>> {
+    pub(crate) fn positions<'a>(
+        &self,
+        bindings: impl Iterator<Item = &'a PendingBinding>,
+    ) -> Vec<Option<usize>> {
         let positions: HashMap<_, _> = self.declarations.iter().copied().zip(0..).collect();
         bindings
             .map(|binding| {

@@ -2,7 +2,7 @@
 mod lower;
 pub use lower::{lower_asof, AsofRetention, LoweredAsof};
 
-use feldera_sql_expr::{SimplifyWarning, apply_closure, flatten_tuple_fields};
+use feldera_sql_expr::{apply_closure, flatten_tuple_fields, SimplifyWarning};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId, TypeKind,
 };

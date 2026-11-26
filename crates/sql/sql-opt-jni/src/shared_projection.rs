@@ -1,5 +1,5 @@
 //! Install a shared projection or rebind a reader to a changed input type.
-use crate::{ExpressionSite, fragment::Fragment};
+use crate::{fragment::Fragment, ExpressionSite};
 use feldera_sql_ir::{CircuitEditor, OperatorKind};
 use feldera_sql_opt::SharedProjection;
 use serde::Deserialize;

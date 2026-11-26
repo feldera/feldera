@@ -1,7 +1,7 @@
 //! Expand a left join into matched and null-extended rows inside a recursive body.
 use crate::rebuild::{input_type, rebuild_input_closures};
 use crate::stream_rewrites::body_members;
-use feldera_sql_expr::{SimplifyWarning, reduce_closure_body, reduce_closure_body_with_warnings};
+use feldera_sql_expr::{reduce_closure_body, reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,
     OperatorKind as Op, OutputPort, TypeId,
@@ -128,7 +128,12 @@ pub fn substitute_left_joins(circuit: Circuit, next: &mut u64) -> Result<Circuit
         let projection =
             unmatched_row_projection(&mut edit, function, left_type, &mut counter, None)?;
         let (map, _) = crate::stream_rewrites::append_map(
-            &mut edit, body, id, Op::Map, port(anti), projection,
+            &mut edit,
+            body,
+            id,
+            Op::Map,
+            port(anti),
+            projection,
         )?;
         let sum = edit.append_operator(
             body,

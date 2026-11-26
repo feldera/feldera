@@ -1,8 +1,8 @@
 //! Rebuild a filter's conjunction in the order chosen for its temporal windows.
-use super::temporal::{TemporalBound, temporal_filter_order};
+use super::temporal::{temporal_filter_order, TemporalBound};
 use crate::filters::{conjuncts, is_boolean_wrapper, rewrite_filters};
-use crate::projection_key::{ProjectionKey, row_parameter};
-use crate::{ClockError, ConjunctWindow, TemporalDiagnostic, function_calls::contains_now};
+use crate::projection_key::{row_parameter, ProjectionKey};
+use crate::{function_calls::contains_now, ClockError, ConjunctWindow, TemporalDiagnostic};
 use feldera_sql_expr::ensure_expression_tree;
 use feldera_sql_ir::{
     BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field,

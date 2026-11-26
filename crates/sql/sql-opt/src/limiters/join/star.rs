@@ -1,6 +1,6 @@
 //! Each delta of a star join traverses a tree of binary joins and a row projection.
 //! The minimum over the trees bounds the sum before the optional filter and map.
-use super::{Bound, InsertionSite, JoinTerm, Projection, UnaryTerm, projected_minimum};
+use super::{projected_minimum, Bound, InsertionSite, JoinTerm, Projection, UnaryTerm};
 use feldera_sql_expr::SimplifyWarning;
 use feldera_sql_ir::{CircuitEditor, Error, NodeId};
 use serde::Deserialize;
