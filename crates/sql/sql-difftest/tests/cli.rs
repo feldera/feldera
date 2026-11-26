@@ -281,9 +281,42 @@ fn paired_pass_replay_requires_the_same_checkpoint_state_and_population() {
     ] {
         let mut changed = chunk.clone();
         *changed.pointer_mut(field).unwrap() = value;
-        assert_eq!(compare(&format!("{changed}\n{summary}")), Some(1), "{field}");
+        assert_eq!(
+            compare(&format!("{changed}\n{summary}")),
+            Some(1),
+            "{field}"
+        );
     }
     summary["streamed_invocations"] = json!(2);
     assert_eq!(compare(&format!("{chunk}\n{summary}")), Some(1));
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn comparison_and_roundtrip_reject_invalid_body_membership() {
+    let path = std::env::temp_dir().join(format!("sql-difftest-body-{}.json", std::process::id()));
+    let nested = |id, body| {
+        json!({"class":"DBSPNestedOperator","id":id,"allOperators":body,
+                                   "inputs":[], "internalOutputs":[], "outputViews":[]})
+    };
+    for body in [
+        json!([nested(5, json!([{"node":5}]))]),
+        json!([nested(5, json!([nested(6, json!([{"node":5}]))]))]),
+        json!([nested(5, json!([])), nested(6, json!([{"node":5}]))]),
+    ] {
+        let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":body});
+        fs::write(&path, graph.to_string()).unwrap();
+        let run = |first: &std::ffi::OsStr| {
+            Command::new(env!("CARGO_BIN_EXE_sql-difftest"))
+                .arg(first)
+                .arg(&path)
+                .output()
+                .unwrap()
+                .status
+                .code()
+        };
+        let codes = [run(path.as_os_str()), run("--roundtrip-circuit".as_ref())];
+        fs::remove_file(&path).unwrap();
+        assert_eq!(codes, [Some(1), Some(1)]);
+    }
 }

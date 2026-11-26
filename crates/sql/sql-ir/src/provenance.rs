@@ -49,7 +49,7 @@ impl Field {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OriginId(u32);
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -258,31 +258,36 @@ impl<'a> Provenance<'a> {
         }
     }
 
-    fn visit_node(&mut self, circuit: &'a Circuit, id: NodeId) -> Result<(), Error> {
-        for (key, field) in circuit.nodes[&id].fields.iter() {
-            if key == "provenance" {
+    fn visit_node(&mut self, circuit: &'a Circuit, root: NodeId) -> Result<(), Error> {
+        // Provenance references follow wire definition order, including definitions in ports.
+        let fields = |id| {
+            circuit.nodes[&id]
+                .fields
+                .iter()
+                .rev()
+                .map(move |(key, field)| (id, key == "provenance", field))
+        };
+        let mut pending: Vec<_> = fields(root).collect();
+        while let Some((id, is_origin, field)) = pending.pop() {
+            if is_origin {
                 if let Field::Data(value) = field {
                     let origin = self.read_origin(value, 0)?;
                     self.operators.insert(id, origin);
                 }
-            } else {
-                self.visit_field(circuit, field)?;
+                continue;
+            }
+            match field {
+                Field::Definition(child @ NodeId::Outer(_)) => pending.extend(fields(*child)),
+                Field::Array(items) => {
+                    pending.extend(items.iter().rev().map(|field| (id, false, field)));
+                }
+                Field::Object(fields) => {
+                    pending.extend(fields.values().rev().map(|field| (id, false, field)));
+                }
+                _ => {}
             }
         }
         Ok(())
-    }
-
-    fn visit_field(&mut self, circuit: &'a Circuit, field: &'a Field) -> Result<(), Error> {
-        match field {
-            Field::Definition(id @ NodeId::Outer(_)) => self.visit_node(circuit, *id),
-            Field::Array(items) => items
-                .iter()
-                .try_for_each(|item| self.visit_field(circuit, item)),
-            Field::Object(fields) => fields
-                .values()
-                .try_for_each(|field| self.visit_field(circuit, field)),
-            _ => Ok(()),
-        }
     }
 
     fn read_relation(&mut self, value: &'a Value) -> Result<RelationId, Error> {
@@ -297,7 +302,9 @@ impl<'a> Provenance<'a> {
         let id = RelationId(number(&value["id"])?);
         let relation = if let Some(slot) = value.get("retained") {
             if !self.live_relations {
-                return Err(Error::new("a detached circuit cannot use a retained relation"));
+                return Err(Error::new(
+                    "a detached circuit cannot use a retained relation",
+                ));
             }
             number(slot)?;
             let plan_id = i32::deserialize(&value["planId"]).map_err(invalid)?;

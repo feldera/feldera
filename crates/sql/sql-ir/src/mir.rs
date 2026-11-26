@@ -3,20 +3,48 @@
 
 use crate::{
     provenance::{OriginId, OriginKind, Provenance, SourceRange},
-    Circuit, Error, Field, InnerKind, Node, NodeId, OperatorKind, OutputPort,
+    BodyOrder, Circuit, Error, Field, InnerKind, Node, NodeId, OperatorKind, OutputPort,
 };
 use serde_json::{json, Map, Value};
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
 };
 
 impl Circuit {
     /// Emit the MIR section of a dataflow report for the supported operators.
     /// The plan and SQL source lines live in the checkpoint envelope.
     pub fn mir(&self) -> Result<Value, Error> {
+        // Valid programs use about 3 links per node; the budget grows with the circuit
+        // so that large programs pass and a small hostile input cannot amplify.
+        self.mir_with_link_limit(65_536.max(16 * self.nodes.len()))
+    }
+
+    fn mir_with_link_limit(&self, limit: usize) -> Result<Value, Error> {
         let origins = self.provenance()?;
-        self.mir_body(self.root_id(), &origins, &mut 1_000_000)
+        let order = self.operator_order(BodyOrder::Postorder)?;
+        let mut links = PlanLinks::default();
+        let mut remaining = limit;
+        for &id in &order {
+            if self.nodes[&id].operator_kind() == Some(OperatorKind::Nested) {
+                continue;
+            }
+            if let Some(origin) = origins.operator_origin(id) {
+                let count = links.measure(&origins, origin, 0, limit)?;
+                remaining = remaining
+                    .checked_sub(count)
+                    .ok_or_else(|| link_limit(limit))?;
+            }
+        }
+
+        let mut nested = HashMap::new();
+        for id in order {
+            if self.nodes[&id].operator_kind() == Some(OperatorKind::Nested) {
+                let report = self.mir_body(id, &origins, &links, &mut nested)?;
+                nested.insert(id, report);
+            }
+        }
+        self.mir_body(self.root_id(), &origins, &links, &mut nested)
     }
 
     fn mir_port(&self, port: OutputPort) -> Result<Value, Error> {
@@ -27,7 +55,8 @@ impl Circuit {
         &self,
         parent: NodeId,
         origins: &Provenance<'_>,
-        remaining_links: &mut usize,
+        links: &PlanLinks<'_>,
+        nested: &mut HashMap<NodeId, Value>,
     ) -> Result<Value, Error> {
         let body = &self.nodes[&parent];
         let operators = body.edges("allOperators")?;
@@ -79,9 +108,11 @@ impl Circuit {
                 .operator_kind()
                 .ok_or_else(|| Error::new("expected operator in circuit body"))?;
             let entry = if kind == OperatorKind::Nested {
-                self.mir_body(id, origins, remaining_links)?
+                nested
+                    .remove(&id)
+                    .expect("postorder visits nested bodies first")
             } else {
-                self.mir_operator(id, node, kind, origins, remaining_links, &views)?
+                self.mir_operator(id, node, kind, origins, links, &views)?
             };
             if graph.insert(name.into(), entry).is_some() {
                 return Err(Error(format!("duplicate compact operator name {name}")));
@@ -96,7 +127,7 @@ impl Circuit {
         node: &Node,
         kind: OperatorKind,
         origins: &Provenance<'_>,
-        remaining_links: &mut usize,
+        links: &PlanLinks<'_>,
         views: &BTreeMap<&str, OutputPort>,
     ) -> Result<Value, Error> {
         let name = compact_name(node)?;
@@ -192,9 +223,7 @@ impl Circuit {
             };
             positions.push(range.unwrap_or(origin_node.position));
         }
-        // A shared origin may occur in several sequence branches. Bound the
-        // expanded report even when a small input DAG denotes a large tree.
-        entry["calcite"] = plan_link(origins, origin, remaining_links, 0)?;
+        entry["calcite"] = links.render(origin, 0)?;
         entry["positions"] = json!(merge_positions(positions));
         if let Some(hash) = node.operator_hash(true)? {
             entry["persistent_id"] = hash.into();
@@ -387,42 +416,92 @@ fn operation(kind: OperatorKind, node: &Node) -> Result<Cow<'static, str>, Error
     .into())
 }
 
-fn plan_link(
-    origins: &Provenance<'_>,
-    id: OriginId,
-    remaining: &mut usize,
-    depth: usize,
-) -> Result<Value, Error> {
-    if *remaining == 0 || depth > 128 {
-        return Err(Error("expanded MIR origin exceeds report limits".into()));
+fn link_limit(limit: usize) -> Error {
+    Error(format!(
+        "MIR exceeds the resource limit of {limit} expanded origin links. Reduce repeated relational origins."
+    ))
+}
+
+fn check_link_depth(depth: usize) -> Result<(), Error> {
+    if depth > 128 {
+        return Err(Error::new(
+            "MIR exceeds 128 nested origin links. Reduce origin nesting.",
+        ));
     }
-    *remaining -= 1;
-    let origin = origins.origin(id).expect("validated origin");
-    Ok(match &origin.kind {
-        OriginKind::Empty | OriginKind::PositionOnly { .. } => Value::Null,
-        OriginKind::Final(id) => {
-            json!({"final": origins.plan_id(*id)})
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum Link<'a> {
+    Empty,
+    Leaf(&'static str, i32),
+    Children(&'static str, &'a [OriginId]),
+}
+
+#[derive(Default)]
+struct PlanLinks<'a> {
+    measured: HashMap<OriginId, (usize, Link<'a>)>,
+}
+
+impl<'a> PlanLinks<'a> {
+    // Count shared subtrees before allocating any part of the expanded report.
+    fn measure(
+        &mut self,
+        origins: &'a Provenance<'_>,
+        id: OriginId,
+        depth: usize,
+        limit: usize,
+    ) -> Result<usize, Error> {
+        #[cfg(test)]
+        LINK_VISITS.with(|visits| visits.set(visits.get() + 1));
+        check_link_depth(depth)?;
+        if let Some(&(count, _)) = self.measured.get(&id) {
+            return Ok(count);
         }
-        OriginKind::Intermediate(id) => {
-            json!({"partial": origins.plan_id(*id)})
-        }
-        OriginKind::Intersection(children) if children.len() == 1 => {
-            plan_link(origins, children[0], remaining, depth + 1)?
-        }
-        OriginKind::Sequence(children) | OriginKind::Intersection(children) => {
-            // The checkpoint encoder visits RelAnd children in relation-id order.
-            let key = if matches!(origin.kind, OriginKind::Sequence(_)) {
-                "seq"
-            } else {
-                "and"
-            };
-            let links = children
-                .iter()
-                .map(|child| plan_link(origins, *child, remaining, depth + 1))
-                .collect::<Result<Vec<_>, _>>()?;
-            json!({key: links})
-        }
-    })
+        let kind = &origins.origin(id).expect("validated origin").kind;
+        let mut count: usize = 1;
+        let link = match kind {
+            OriginKind::Empty | OriginKind::PositionOnly { .. } => Link::Empty,
+            OriginKind::Final(rel) => Link::Leaf("final", origins.plan_id(*rel)),
+            OriginKind::Intermediate(rel) => Link::Leaf("partial", origins.plan_id(*rel)),
+            OriginKind::Sequence(children) | OriginKind::Intersection(children) => {
+                for &child in children {
+                    let size = self.measure(origins, child, depth + 1, limit)?;
+                    count = count
+                        .checked_add(size)
+                        .filter(|&n| n <= limit)
+                        .ok_or_else(|| link_limit(limit))?;
+                }
+                match kind {
+                    OriginKind::Sequence(_) => Link::Children("seq", children),
+                    // A singleton RelAnd contains a final relation and emits only that leaf.
+                    OriginKind::Intersection(_) if children.len() == 1 => {
+                        self.measured[&children[0]].1
+                    }
+                    _ => Link::Children("and", children),
+                }
+            }
+        };
+        self.measured.insert(id, (count, link));
+        Ok(count)
+    }
+
+    fn render(&self, id: OriginId, depth: usize) -> Result<Value, Error> {
+        #[cfg(test)]
+        LINK_VISITS.with(|visits| visits.set(visits.get() + 1));
+        check_link_depth(depth)?;
+        Ok(match self.measured[&id].1 {
+            Link::Empty => Value::Null,
+            Link::Leaf(key, plan) => json!({key: plan}),
+            Link::Children(key, children) => {
+                let mut links = Vec::with_capacity(children.len());
+                for &child in children {
+                    links.push(self.render(child, depth + 1)?);
+                }
+                Value::Object([(key.into(), Value::Array(links))].into_iter().collect())
+            }
+        })
+    }
 }
 
 fn position(field: Option<&Field>) -> Result<Option<SourceRange>, Error> {
@@ -449,8 +528,53 @@ fn merge_positions(mut positions: Vec<SourceRange>) -> Vec<SourceRange> {
 }
 
 #[cfg(test)]
+thread_local! {
+    static LINK_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_origin_cost_is_checked_before_expansion() {
+        let position = json!(SourceRange::default());
+        let mut origin =
+            json!({"kind":"CalciteEmptyRel","id":0,"position":position,"positions":[]});
+        for id in 1..=8 {
+            origin = json!({"kind":"RelSequence","id":id,"children":[origin, {"ref":id - 1}],
+                            "position":position,"positions":[]});
+        }
+        let mut wire = json!({"class":"DBSPCircuit","id":0,"declarations":[],
+            "allOperators":[{"class":"DBSPConstantOperator","id":1,"inputs":[],"provenance":origin,
+                             "annotations":[{"class":"CompactName","name":"s"}]}]
+        });
+        let graph = Circuit::from_json(wire.clone()).unwrap();
+        LINK_VISITS.set(0);
+        assert!(graph.mir_with_link_limit(510).is_err());
+        let visits = LINK_VISITS.get();
+        assert_eq!(visits, 17, "9 origins with 16 child references");
+        LINK_VISITS.set(0);
+        let mir = graph.mir_with_link_limit(511).unwrap();
+        assert_eq!(LINK_VISITS.get(), 17 + 511);
+        let mut sequence = &mir["s"]["calcite"];
+        for _ in 0..8 {
+            assert_eq!(sequence["seq"][0], sequence["seq"][1]);
+            sequence = &sequence["seq"][0];
+        }
+        assert!(sequence.is_null());
+
+        wire["allOperators"].as_array_mut().unwrap().push(json!({
+            "class":"DBSPConstantOperator","id":2,"inputs":[],"provenance":{"ref":8},
+            "annotations":[{"class":"CompactName","name":"t"}]
+        }));
+        let graph = Circuit::from_json(wire).unwrap();
+        LINK_VISITS.set(0);
+        assert!(graph.mir_with_link_limit(1021).is_err());
+        assert_eq!(LINK_VISITS.get(), 18);
+        let mir = graph.mir_with_link_limit(1022).unwrap();
+        assert_eq!(mir["s"]["calcite"], mir["t"]["calcite"]);
+    }
 
     #[test]
     fn merges_contained_adjacent_and_multiline_spans() {

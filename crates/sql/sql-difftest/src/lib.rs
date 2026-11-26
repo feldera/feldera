@@ -5,7 +5,7 @@
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 
 mod dump;
@@ -280,7 +280,55 @@ impl<'a> Graph<'a> {
                 ));
             }
         }
+        if namespace == Namespace::Outer {
+            graph.check_body_tree(root)?;
+        }
         Ok(graph)
+    }
+
+    fn check_body_tree(&self, root: &Value) -> Result<()> {
+        let mut stack = vec![root];
+        let mut members = HashSet::new();
+        while let Some(body) = stack.pop() {
+            let slots = body["allOperators"].as_array().ok_or_else(|| {
+                ComparisonError::new(
+                    "/allOperators",
+                    "missing circuit body. Supply an operator list.",
+                )
+            })?;
+            for slot in slots {
+                let id = node_id(slot, Namespace::Outer, "")?.expect("validated body slot");
+                if !members.insert(id) {
+                    return Err(ComparisonError::new("/allOperators", format!(
+                        "operator {} occurs in multiple body slots. Keep one slot per operator under the circuit root.",
+                        id.id
+                    )));
+                }
+                let member = self.definitions[&id];
+                if member["class"] == "DBSPNestedOperator" {
+                    stack.push(member);
+                }
+            }
+        }
+        let missing = self
+            .definitions
+            .iter()
+            .filter(|(id, node)| {
+                id.namespace == Namespace::Outer
+                    && node["class"]
+                        .as_str()
+                        .is_some_and(|class| class.ends_with("Operator"))
+                    && !members.contains(*id)
+            })
+            .map(|(id, _)| id.id)
+            .min();
+        if let Some(id) = missing {
+            return Err(ComparisonError::new(
+                "/allOperators",
+                format!("operator {id} has no body reachable from the circuit root. Add it to a reachable body."),
+            ));
+        }
+        Ok(())
     }
 }
 

@@ -6,8 +6,8 @@ pub use streaming::LiveCircuitDecoder;
 
 use super::{Circuit, Error, Field, Node, NodeClass, NodeId, OperatorKind, OutputPort};
 use indexmap::IndexMap;
-use serde_json::{Map, Value, json};
-use std::collections::BTreeMap;
+use serde_json::{json, Map, Value};
+use std::collections::{BTreeMap, HashSet};
 
 type Arena = BTreeMap<NodeId, Node>;
 
@@ -75,6 +75,7 @@ pub(super) fn validated(root: NodeId, nodes: Arena) -> Result<Circuit, Error> {
             validate_outer(id, node, &nodes)?;
         }
     }
+    validate_bodies(root, &nodes)?;
     Ok(Circuit {
         live_relations: false,
         root,
@@ -352,6 +353,51 @@ pub(super) fn has_output(source: &Node, number: usize) -> Result<bool, Error> {
     })
 }
 
+fn validate_bodies(root: NodeId, nodes: &Arena) -> Result<(), Error> {
+    // Each body adds an array and an object to the nested wire form.
+    const MAX_NESTED_BODIES: usize = 64;
+    let mut stack = vec![(root, array(&nodes[&root], "allOperators")?.iter())];
+    let mut members = HashSet::new();
+    while let Some((body, slots)) = stack.last_mut() {
+        let Some(slot) = slots.next() else {
+            stack.pop();
+            continue;
+        };
+        let id = slot.node_id().expect("validated body slot");
+        if !members.insert(id) {
+            let parent = body.number();
+            let reason = if parent == id.number() {
+                format!("nested operator {parent} contains itself")
+            } else if stack.iter().any(|(ancestor, _)| *ancestor == id) {
+                format!("nested operator {parent} contains ancestor {}", id.number())
+            } else {
+                format!("operator {} occurs in multiple body slots", id.number())
+            };
+            return Err(Error(format!(
+                "{reason}. Keep one body slot per operator under the circuit root."
+            )));
+        }
+        if nodes[&id].operator_kind() == Some(OperatorKind::Nested) {
+            if stack.len() > MAX_NESTED_BODIES {
+                return Err(Error(format!(
+                    "operator {} exceeds {MAX_NESTED_BODIES} nested circuit bodies. Reduce body nesting.",
+                    id.number()
+                )));
+            }
+            stack.push((id, array(&nodes[&id], "allOperators")?.iter()));
+        }
+    }
+    for (&id, node) in nodes.range(NodeId::Outer(0)..=NodeId::Outer(u64::MAX)) {
+        if node.operator_kind().is_some() && !members.contains(&id) {
+            return Err(Error(format!(
+                "operator {} has no body reachable from the circuit root. Add it to a reachable body.",
+                id.number()
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn validate_outer(id: NodeId, node: &Node, nodes: &Arena) -> Result<(), Error> {
     for (field, required) in [
         (
@@ -360,6 +406,12 @@ fn validate_outer(id: NodeId, node: &Node, nodes: &Arena) -> Result<(), Error> {
         ),
         ("declarations", node.class() == "DBSPCircuit"),
     ] {
+        if field == "allOperators" && !required && node.field(field).is_some() {
+            return Err(Error(format!(
+                "{} {} cannot own a circuit body. Move its operators to a circuit or nested operator.",
+                node.class(), id.number()
+            )));
+        }
         if required || node.field(field).is_some() {
             for item in array(node, field)? {
                 let Some(dep @ NodeId::Outer(_)) = item.node_id() else {
@@ -477,5 +529,120 @@ fn encode(field: &Field, nodes: &Arena, retain: &mut impl FnMut(NodeId) -> bool)
                 .map(|(key, field)| (key.clone(), encode(field, nodes, retain)))
                 .collect(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn nested(id: u64, members: Value) -> Value {
+        json!({"class":"DBSPNestedOperator", "id":id, "inputs":[], "allOperators":members,
+               "internalOutputs":[], "outputViews":[]})
+    }
+
+    fn check_decoders(graph: Value, reason: &str) {
+        let bytes = serde_json::to_vec(&graph).unwrap();
+        for result in [
+            Circuit::from_json(graph.clone()),
+            Circuit::from_checkpoint_json(graph),
+            Circuit::from_json_bytes(&bytes),
+            Circuit::from_live_json_bytes(&bytes),
+            LiveCircuitDecoder::default().decode(&bytes),
+        ] {
+            let error = result
+                .expect_err("accepted invalid body membership")
+                .to_string();
+            assert!(error.contains(reason), "{error}");
+        }
+    }
+
+    #[test]
+    fn all_decoders_require_a_rooted_body_tree() {
+        let leaf = json!({"class":"DBSPMapOperator","id":8,"inputs":[]});
+        for (body, reason) in [
+            (
+                json!([nested(5, json!([{"node":5}]))]),
+                "operator 5 contains itself",
+            ),
+            (
+                json!([nested(5, json!([nested(6, json!([{"node":5}]))]))]),
+                "ancestor 5",
+            ),
+            (
+                json!([nested(5, json!([leaf])), nested(6, json!([{"node":8}]))]),
+                "operator 8 occurs",
+            ),
+            (json!([leaf, {"node":8}]), "operator 8 occurs"),
+            (
+                json!([{"class":"DBSPMapOperator","id":1,"inputs":[{"operator":leaf,"outputNumber":0}]}]),
+                "operator 8 has no body",
+            ),
+        ] {
+            let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":body});
+            check_decoders(graph, reason);
+        }
+    }
+
+    #[test]
+    fn nested_view_can_read_its_own_declaration() {
+        let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[{
+            "class":"DBSPNestedOperator","id":1,"inputs":[],
+            "annotations":[{"class":"CompactName","name":"body"}],
+            "outputViews":[{"name":"v"}],"internalOutputs":[{"operator":{"node":3},"outputNumber":0}],
+            "allOperators":[
+                {"class":"DBSPViewDeclarationOperator","id":2,"inputs":[],"tableName":{"name":"v-decl"},
+                 "annotations":[{"class":"CompactName","name":"decl"}],
+                 "provenance":{"kind":"CalciteEmptyRel","id":0,
+                               "position":crate::provenance::SourceRange::default(),"positions":[]}},
+                {"class":"DBSPViewOperator","id":3,"viewName":{"name":"v"},
+                 "inputs":[{"operator":{"node":2},"outputNumber":0}],
+                 "annotations":[{"class":"CompactName","name":"view"}],"provenance":{"ref":0}}
+            ]
+        }]});
+        let mir = Circuit::from_checkpoint_json(graph).unwrap().mir().unwrap();
+        assert_eq!(
+            mir["body"]["decl"]["backedges"],
+            json!([{"node":"view","output":0}])
+        );
+        assert_eq!(
+            mir["body"]["view"]["inputs"],
+            json!([{"node":"decl","output":0}])
+        );
+    }
+
+    #[test]
+    fn body_depth_is_bounded_when_definitions_are_flat() {
+        let graph = |depth| {
+            let ports: Vec<_> = (1..=depth)
+                .map(|id| {
+                    let members = if id < depth {
+                        json!([{"node":id + 1}])
+                    } else {
+                        json!([])
+                    };
+                    let mut op = nested(id, members);
+                    op["annotations"] = json!([{"class":"CompactName","name":"n"}]);
+                    op["internalOutputs"] = json!([{"operator":{"node":100},"outputNumber":0}]);
+                    op["outputViews"] = json!([{"name":"v"}]);
+                    json!({"operator":op,"outputNumber":0})
+                })
+                .collect();
+            json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+                {"node":1},{"class":"DBSPSumOperator","id":100,"inputs":ports,
+                 "annotations":[{"class":"CompactName","name":"sum"}],
+                 "provenance":{"kind":"CalciteEmptyRel","id":0,
+                               "position":crate::provenance::SourceRange::default(),"positions":[]}}
+            ]})
+        };
+        check_decoders(graph(65), "operator 65 exceeds 64 nested circuit bodies");
+        let circuit = Circuit::from_checkpoint_json(graph(64)).unwrap();
+        let mir = circuit.mir().unwrap();
+        let mut body = &mir;
+        for _ in 0..64 {
+            body = &body["n"];
+            assert_eq!(body["outputs"], json!([{"node":"sum","output":0}]));
+        }
+        assert!(body.get("n").is_none());
     }
 }

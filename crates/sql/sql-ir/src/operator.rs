@@ -6,6 +6,8 @@ macro_rules! operator_kinds {
         pub enum OperatorKind { $($kind),+ }
 
         impl OperatorKind {
+            pub const ALL: &'static [Self] = &[$(Self::$kind),+];
+
             pub fn wire_name(self) -> &'static str {
                 match self { $(Self::$kind => concat!("DBSP", stringify!($kind), "Operator")),+ }
             }
@@ -114,8 +116,15 @@ impl OperatorKind {
     pub fn supports_stream_input_replacement(self) -> bool {
         matches!(
             self,
-            Self::View | Self::Filter | Self::Sink | Self::Sum | Self::AtomicSum
-                | Self::Subtract | Self::Window | Self::Differentiate | Self::Integrate
+            Self::View
+                | Self::Filter
+                | Self::Sink
+                | Self::Sum
+                | Self::AtomicSum
+                | Self::Subtract
+                | Self::Window
+                | Self::Differentiate
+                | Self::Integrate
                 | Self::StreamDistinct
         )
     }
