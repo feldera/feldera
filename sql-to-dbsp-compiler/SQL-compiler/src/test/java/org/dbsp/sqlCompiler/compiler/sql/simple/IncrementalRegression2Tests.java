@@ -931,4 +931,49 @@ public class IncrementalRegression2Tests extends SqlIoTest {
         this.runtimeFail(compiler, "REMOVE FROM T VALUES (1);",
                 "Table t: negative weight found");
     }
+
+    @Test
+    public void issue2555b() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(id INT NOT NULL PRIMARY KEY, grp INT, v VARCHAR);
+                CREATE VIEW V AS SELECT t.id,
+                  ARRAY(SELECT u.v FROM T u WHERE u.grp = t.id) AS children,
+                  ARRAY(SELECT u.id, u.v FROM T u WHERE u.grp = t.id) AS pairs
+                FROM T t;""").withStringTrim();
+        // Validated on Postgres, with ROW(u.id, u.v) for pairs and ORDER BY u.v NULLS FIRST, u.id
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES (1, NULL, 'a'), (2, 1, 'b'), (3, 1, 'c'), (4, 1, NULL), (5, 2, 'd'), (6, 3, 'e');""", """
+                 id | children      | pairs
+                -------------------------------------------------
+                 1  | {NULL, b, c}  | { {2, b}, {3, c}, {4,NULL} }
+                 2  | { d}          | { {5, d} }
+                 3  | { e}          | { {6, e} }
+                 4  | {}            | {}
+                 5  | {}            | {}
+                 6  | {}            | {}""");
+        ccs.step("REMOVE FROM T VALUES (5, 2, 'd');", """
+                 id | children      | pairs      | weight
+                ---------------------------------------------
+                 2  | { d}          | { {5, d} } | -1
+                 2  | {}            | {}         | 1
+                 5  | {}            | {}         | -1""");
+    }
+
+    @Test
+    public void issue2555OrderBy() {
+        // Postgres accepts these queries
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(id INT NOT NULL PRIMARY KEY, grp INT, v VARCHAR);
+                CREATE VIEW V AS SELECT t.id,
+                  ARRAY(SELECT u.v FROM T u WHERE u.grp = t.id ORDER BY u.v) AS c
+                FROM T t;""",
+                "Not yet implemented: It looks like the compiler could not decorrelate this query.");
+        // The ORDER BY column is not selected
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(id INT NOT NULL PRIMARY KEY, grp INT, v VARCHAR);
+                CREATE VIEW V AS SELECT t.id,
+                  ARRAY(SELECT u.v FROM T u WHERE u.grp = t.id ORDER BY u.id) AS c
+                FROM T t;""",
+                "Not yet implemented: It looks like the compiler could not decorrelate this query.");
+    }
 }
