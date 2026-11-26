@@ -1114,7 +1114,13 @@ class TestPipeline(SharedTestPipeline):
         except json.JSONDecodeError:
             self.fail("circuit_json_profile (identity) did not return valid JSON")
 
-        # Both should return the same profile data
+        # Both should return the same profile data, except each host's
+        # `memory_used_bytes`, which is live cgroup memory use and can
+        # legitimately change between the two requests.
+        for data in (data_gzip, data_plain):
+            if isinstance(data, dict):
+                for host in data.get("hosts", []):
+                    host.pop("memory_used_bytes", None)
         assert data_gzip == data_plain, (
             "Compressed and uncompressed responses returned different data"
         )
