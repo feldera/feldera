@@ -1,6 +1,7 @@
 <script lang="ts" module>
   import type { ConnectorMetrics, ConnectorStatus } from 'common-ui/connectorMetrics'
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
+  import type { JsonHostProfile } from 'profiler-lib'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../../functions/globalMetrics'
   import type { LookupCoordinator } from '../../functions/lookup'
@@ -18,6 +19,9 @@
     /** Cumulative pipeline-wide metrics from `stats.json`, shown as a tile in the overview.
      *  `undefined` when the bundle carried no stats. */
     globalMetrics: GlobalMetrics | undefined
+    /** The hosts that ran the workers, from the profile, listed in the overview. `undefined`
+     *  for profiles from older pipelines. */
+    hosts: ReadonlyArray<JsonHostProfile> | undefined
     /** Input and output connector statistics from `stats.json`, grouped by table and view, shown
      *  in the Connectors tab. `undefined` when the bundle has no connector statistics. */
     connectorMetrics: ConnectorMetrics | undefined
@@ -54,6 +58,7 @@
     tooltipData,
     rootNodeId,
     globalMetrics,
+    hosts,
     showAdvancedMetrics,
     lookup,
     onSearchNode
@@ -65,6 +70,7 @@
   {tooltipData}
   {rootNodeId}
   {globalMetrics}
+  {hosts}
   showAdvanced={showAdvancedMetrics}
   {lookup}
   {onSearchNode}

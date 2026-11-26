@@ -1,5 +1,6 @@
 <script lang="ts">
   import { isCollapsed, toggleCollapsed } from '../collapsedBlocks.svelte'
+  import type { WorkerDescription } from 'profiler-lib'
   import type { RenderableMetric } from '../dispatch'
   import BarChartMetric from '../parts/BarChartMetric.svelte'
   import BlockTitle from '../parts/BlockTitle.svelte'
@@ -8,8 +9,10 @@
     id: string
     title?: string
     entries: RenderableMetric[]
+    /** The worker, and the host that ran it, of each cell of the rows. */
+    workers?: WorkerDescription[] | undefined
   }
-  const { id, title, entries }: Props = $props()
+  const { id, title, entries, workers }: Props = $props()
 
   // The block holding the current metric stays open whatever the user chose for its category:
   // that metric's value is what the panel leads with. The choice itself is kept, so the block
@@ -80,6 +83,7 @@
           label={entry.label}
           metricId={entry.row.metric}
           cells={entry.row.cells}
+          {workers}
           total={entry.row.total}
           current={entry.row.isCurrentMetric}
           expanded={isExpanded(entry)}

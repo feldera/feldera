@@ -368,6 +368,7 @@
     tooltipData,
     rootNodeId: diagramRootNodeId,
     globalMetrics,
+    hosts: profileData?.hosts,
     connectorMetrics,
     connectorStatus,
     runtimeConfig,

@@ -41,7 +41,9 @@
 </script>
 
 <script lang="ts">
+  import type { JsonHostProfile } from 'profiler-lib'
   import type { TooltipData } from './ProfilerTooltip.svelte'
+  import HostsBlock from './metrics/blocks/HostsBlock.svelte'
   import KeyValueBlock from './metrics/blocks/KeyValueBlock.svelte'
   import MetricsDistributionBlock from './metrics/blocks/MetricsDistributionBlock.svelte'
   import { setCollapsed } from './metrics/collapsedBlocks.svelte'
@@ -59,6 +61,9 @@
     rootNodeId: string | undefined
     /** Pipeline-wide metrics from `stats.json`. The overview shows them in a tile at the top. */
     globalMetrics?: GlobalMetrics
+    /** The hosts that ran the workers, from the profile. The overview lists them in a tile;
+     *  absent or empty for profiles from older pipelines. */
+    hosts?: ReadonlyArray<JsonHostProfile> | undefined
     /** When false, only the basic metrics are shown. */
     showAdvanced: boolean
     /** Lookup coordinator; the view registers an imperative handler so each Enter on the
@@ -74,10 +79,15 @@
     tooltipData,
     rootNodeId,
     globalMetrics,
+    hosts,
     showAdvanced,
     lookup,
     onSearchNode
   }: Props = $props()
+
+  // Rows of the "Hosts" tile in the overview; empty in the other views and for profiles without
+  // hosts, which hides the tile.
+  const hostEntries = $derived(mode === 'overview' ? (hosts ?? []) : [])
 
   // Rows of the "Global stats" tile in the overview. The list is empty in the other views and when
   // the bundle has no stats, which hides the tile.
@@ -187,7 +197,7 @@
 </script>
 
 {#snippet attributesView()}
-  {#if !nodeAttributes && globalMetricEntries.length === 0}
+  {#if !nodeAttributes && globalMetricEntries.length === 0 && hostEntries.length === 0}
     <div class="flex flex-1 items-center justify-center text-sm text-surface-600-400">
       {#if mode === 'node'}
         Click a node in the graph to see its metrics.
@@ -226,9 +236,19 @@
           <KeyValueBlock id="global-metrics" title="Global stats" entries={globalMetricEntries} />
         </div>
       {/if}
+      {#if hostEntries.length > 0}
+        <div class="mb-2 break-inside-avoid">
+          <HostsBlock id="hosts" title="Hosts" hosts={hostEntries} />
+        </div>
+      {/if}
       {#each blocks as b (b.id)}
         <div class="mb-2 break-inside-avoid">
-          <MetricsDistributionBlock id={b.id} title={b.title} entries={b.entries} />
+          <MetricsDistributionBlock
+            id={b.id}
+            title={b.title}
+            entries={b.entries}
+            workers={nodeAttributes?.workers}
+          />
         </div>
       {/each}
     </div>

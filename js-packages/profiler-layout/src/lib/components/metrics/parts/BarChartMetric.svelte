@@ -1,6 +1,11 @@
 <script lang="ts">
   import { Popover, Tooltip } from 'common-ui'
-  import { MissingValue, type PropertyValue, type TooltipCell } from 'profiler-lib'
+  import {
+    MissingValue,
+    workerText,
+    type TooltipCell,
+    type WorkerDescription
+  } from 'profiler-lib'
   import { barColor, heatColor, heatTextColor, logScale01, skewTextColor } from '../colors'
 
   interface Props {
@@ -10,6 +15,8 @@
      * statistics). `percentile` (0-100) is normalized against the metric's range across all nodes,
      * so bar height and color express magnitude relative to the whole circuit. */
     cells: TooltipCell[]
+    /** The worker, and the host that ran it, of each cell. Without it, cell `i` is worker `i`. */
+    workers?: WorkerDescription[] | undefined
     /** The cells added up, for metrics that add up. Absent for rates, reported minima and
      * maxima, flags and settings, whose column stays blank. `percentile` is where the total
      * stands, which `profiler-lib` computes; it drives the cell's heat-map background. */
@@ -19,7 +26,8 @@
     expanded: boolean
     onToggle: () => void
   }
-  const { label, metricId, cells, total, current = false, expanded, onToggle }: Props = $props()
+  const { label, metricId, cells, workers, total, current = false, expanded, onToggle }: Props =
+    $props()
 
   // The cells of a row are placed by the block's grid. To paint one unbroken band behind
   // them, gaps included, they sit in a subgrid row that borrows the block's columns and
@@ -173,7 +181,7 @@
 
 <!-- Bar chart row spans full block width; container height + each bar height animate.
      NOTE: keep the column span in step with the header in MetricsDistributionBlock.
-     Each bar gets a hover tooltip showing the worker index and the formatted reading. -->
+     Each bar gets a hover tooltip showing the worker, where it ran, and the formatted reading. -->
 <div
   class="bar-chart col-span-6 flex items-end gap-0.5 mb-2"
   style:min-height="{chartHeight}px"
@@ -186,7 +194,9 @@
       style:height="{b.height}px"
       style:background-color={barColor(b.t)}
     ></div>
-    <Tooltip class="whitespace-nowrap" placement="top">Worker {i}: {c.value.toString()}</Tooltip>
+    <Tooltip class="whitespace-nowrap" placement="top"
+      >{workerText(workers?.[i] ?? { worker: i })}: {c.value.toString()}</Tooltip
+    >
   {/each}
 </div>
 

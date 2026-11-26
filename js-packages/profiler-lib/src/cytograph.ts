@@ -3,7 +3,7 @@
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeCollection, type NodeDefinition, type NodeSingular } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
-import { CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, type DisplayScales, type NodeId } from './profile.js';
+import { CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, type DisplayScales, type NodeId, type WorkerDescription } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
@@ -41,7 +41,9 @@ class MeasurementMatrix {
         // Keys are measurement names, arrays contain one element per column name.
         readonly attributes: Map<string, Array<SerializedMeasurement>>,
         // Values added up over the columns, for the metrics that add up.
-        readonly totals: Map<string, SerializedMeasurement> = new Map()) {
+        readonly totals: Map<string, SerializedMeasurement> = new Map(),
+        // The worker of each column.
+        readonly columnWorkers: ReadonlyArray<WorkerDescription> = []) {
         for (const a of attributes.entries()) {
             assert(columnNames.length == a[1].length,
                 "Measurement count mismatch for '" + a[0] + "':" + columnNames.length + " vs " + a.length);
@@ -580,10 +582,11 @@ export class CytographRendering {
     /** Compute the attributes for all cytograph nodes based on the circuit profile and current selection. */
     computeAttributes(profile: CircuitProfile, selection: MetadataSelection,
         scales: DisplayScales) {
-        let workers = selection.workersVisible.getSelectedElements(profile.getWorkerNames());
-        // One column per visible worker. Aggregates such as min/max are not produced here:
-        // consumers that want them compute them from the per-worker values themselves.
-        let columnNames = workers.map(w => w.toString());
+        let workers = selection.workersVisible.getSelectedElements([...profile.getWorkers()]);
+        // One column per visible worker, named by its global worker number. Aggregates such as
+        // min/max are not produced here: consumers that want them compute them from the
+        // per-worker values themselves.
+        let columnNames = workers.map(w => w.worker.toString());
         for (const node of this.currentGraph!.nodes) {
             let profileNode = profile.getNode(node.getId()).unwrap();
             let data = new Map<string, Array<SerializedMeasurement>>();
@@ -635,7 +638,7 @@ export class CytographRendering {
                 kv.set("parent", p);
             }
             let matrix = new MeasurementMatrix(
-                columnNames, [...profileNode.measurements.getMetrics()], data, totals);
+                columnNames, [...profileNode.measurements.getMetrics()], data, totals, workers);
             let attributes = new Attributes(matrix, kv);
             let rendered = this.getRenderedNode(node.getId());
             rendered.data("expanded", node.expanded);
@@ -998,6 +1001,7 @@ export class CytographRendering {
             title: "",
             isRegion: false,
             columns: [],
+            workers: [],
             rows: [],
             attributes: new Map()
         };
@@ -1010,6 +1014,10 @@ export class CytographRendering {
             const colCount = attributes.matrix.getColumnCount();
             for (let i = 0; i < colCount; i++) {
                 tooltipData.columns.push(attributes.matrix.columnNames[i]!);
+                const worker = attributes.matrix.columnWorkers[i];
+                if (worker !== undefined) {
+                    tooltipData.workers!.push(worker);
+                }
             }
 
             // Add rows (metrics)

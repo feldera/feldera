@@ -185,6 +185,30 @@ export interface JsonHostProfile {
     readonly memory_used_bytes?: number;
 }
 
+/** The worker whose profile is at one index of `worker_profiles`, and the host that ran it. */
+export interface WorkerDescription {
+    /** Global worker number. It differs from the index in `worker_profiles` when a host that
+     * runs lower-numbered workers did not answer the coordinator. */
+    readonly worker: number;
+    /** Absent in profiles without `hosts`. */
+    readonly host?: JsonHostProfile | undefined;
+}
+
+/** Where a worker ran, for tooltips: "pod-0 on node-a", "host 1", or "" when unknown. */
+export function hostText(host: JsonHostProfile | undefined): string {
+    if (host === undefined) {
+        return "";
+    }
+    const pod = host.pod_name ?? `host ${host.ordinal}`;
+    return host.node_name === undefined ? pod : `${pod} on ${host.node_name}`;
+}
+
+/** "Worker 12", followed by where it ran when that is known: "Worker 12 (pod-1 on node-b)". */
+export function workerText(description: WorkerDescription): string {
+    const host = hostText(description.host);
+    return host === "" ? `Worker ${description.worker}` : `Worker ${description.worker} (${host})`;
+}
+
 // Serialized JSON representation for the
 // profiles received from the Feldera pipeline manager.
 export type JsonProfiles = {
@@ -1494,8 +1518,10 @@ export class CircuitProfile {
     public readonly complexNodes: OMap<NodeId, ComplexNode> = new OMap();
     // Maps each node id to it's immediate parent id.
     public readonly parents: OMap<NodeId, NodeId> = new OMap();
-    // Names of all worker threads
-    private workerNames: Array<number> = new Array();
+    // The worker and host of each index of `worker_profiles`
+    private workers: Array<WorkerDescription> = new Array();
+    // The hosts that ran the workers, in order; empty in profiles from older pipelines
+    private hosts: ReadonlyArray<JsonHostProfile> = [];
     // For each node, how many consumers it feeds; see `computeConsumers`.
     private readonly consumers: Map<NodeId, number> = new Map();
     // Index nodes by their persistent IDs
@@ -1812,8 +1838,41 @@ export class CircuitProfile {
         this.edges.push(new ProfileEdge(from, to, back));
     }
 
+    /** The global worker number of each index of `worker_profiles`. */
     getWorkerNames(): Array<number> {
-        return this.workerNames;
+        return this.workers.map(w => w.worker);
+    }
+
+    /** The worker and host of each index of `worker_profiles`. */
+    getWorkers(): ReadonlyArray<WorkerDescription> {
+        return this.workers;
+    }
+
+    /** The hosts that ran the workers; empty in profiles from older pipelines. */
+    getHosts(): ReadonlyArray<JsonHostProfile> {
+        return this.hosts;
+    }
+
+    /** The worker and host of each of `count` worker profiles. `hosts` lists, in order, the hosts
+     * whose workers are in the profiles, so walking it maps each index to a worker. Without
+     * `hosts`, or if its worker ranges do not add up to `count`, index `i` is worker `i`, with
+     * no host. */
+    static describeWorkers(count: number, hosts: ReadonlyArray<JsonHostProfile> | undefined):
+        Array<WorkerDescription> {
+        const described: Array<WorkerDescription> = [];
+        for (const host of hosts ?? []) {
+            for (let worker = host.workers.start; worker < host.workers.end; worker++) {
+                described.push({ worker, host });
+            }
+        }
+        if (described.length !== count) {
+            if (hosts !== undefined) {
+                console.warn(`The profile's hosts run ${described.length} workers, ` +
+                    `but it has ${count} worker profiles; ignoring the hosts of the workers.`);
+            }
+            return Array.from({ length: count }, (_, worker) => ({ worker }));
+        }
+        return described;
     }
 
     getNode(id: NodeId): Option<SimpleNode> {
@@ -1978,7 +2037,8 @@ export class CircuitProfile {
             }
         }
 
-        result.workerNames = Array.from({ length: json.worker_profiles.length }, (_, i) => i);
+        result.hosts = json.hosts ?? [];
+        result.workers = CircuitProfile.describeWorkers(json.worker_profiles.length, json.hosts);
         // Merge Z1 (trace) nodes; they are artificially split in the profile into two halves each.
         result.fixZ1Nodes();
         // After fixZ1Nodes, which rewrites edges and deletes the nodes it merges.

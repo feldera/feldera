@@ -1,7 +1,7 @@
 // Core profiler visualization library
 // This module provides the main API for rendering circuit profiles
 
-import { CircuitProfile, NodeAndMetric, PropertyValue } from "./profile.js";
+import { CircuitProfile, NodeAndMetric, PropertyValue, type WorkerDescription } from "./profile.js";
 import { Cytograph, CytographRendering } from "./cytograph.js";
 import { CircuitSelection, CircuitSelector } from "./selection.js";
 import { MetadataSelector } from './metadataSelection.js';
@@ -52,8 +52,11 @@ export interface NodeAttributes {
      *  what is inside it rather than one operator. */
     isRegion: boolean;
     title: string;
-    /** Column headers */
+    /** Column headers: the global number of each column's worker */
     columns: string[];
+    /** The worker, and the host that ran it, of each column; parallel to `columns`. Absent
+     *  from attributes not built from a profile. */
+    workers?: WorkerDescription[];
     /** Rows of metrics with values */
     rows: TooltipRow[];
     /** Source code information */

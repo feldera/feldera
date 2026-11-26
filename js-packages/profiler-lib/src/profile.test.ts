@@ -16,7 +16,10 @@ import {
     SimpleNode,
     StringValue,
     TimeValue,
-    type JsonProfiles
+    type JsonProfiles,
+    type JsonHostProfile,
+    hostText,
+    workerText
 } from './profile.js'
 import type { Dataflow } from './dataflow.js'
 import { SourcePositionRange, SourcePositionRanges } from './dataflow.js'
@@ -1772,5 +1775,60 @@ describe('CircuitProfile.getSourceRanges', () => {
     it('is empty for a node compiled from no SQL, and for one it does not know', () => {
         expect(profile.getSourceRanges('a')).toEqual([])
         expect(profile.getSourceRanges('absent')).toEqual([])
+    })
+})
+
+// Issue 8051: `hosts` maps each index of `worker_profiles` to a global worker number and the
+// host that ran it. A host that did not answer the coordinator is in neither list.
+describe('CircuitProfile workers and hosts', () => {
+    const host = (ordinal: number, start: number, end: number, extra: Partial<JsonHostProfile> = {}):
+        JsonHostProfile => ({ ordinal, workers: { start, end }, ...extra })
+
+    const profileWith = (workerCount: number, hosts?: JsonHostProfile[]) => CircuitProfile.fromJson({
+        metrics: [],
+        worker_profiles: Array.from({ length: workerCount }, () => ({ metadata: {} })),
+        ...(hosts === undefined ? {} : { hosts }),
+        graph: { nodes: { id: 'n', label: 'root', nodes: [] }, edges: [] }
+    } as JsonProfiles).profile
+
+    it('numbers the workers by their index without hosts', () => {
+        const profile = profileWith(3)
+        expect(profile.getWorkerNames()).toEqual([0, 1, 2])
+        expect(profile.getWorkers().every(w => w.host === undefined)).toBe(true)
+        expect(profile.getHosts()).toEqual([])
+    })
+
+    it('maps each index to its host', () => {
+        const h0 = host(0, 0, 2, { pod_name: 'p-0' })
+        const h1 = host(1, 2, 4, { pod_name: 'p-1' })
+        const profile = profileWith(4, [h0, h1])
+        expect(profile.getWorkerNames()).toEqual([0, 1, 2, 3])
+        expect(profile.getWorkers().map(w => w.host?.pod_name)).toEqual(['p-0', 'p-0', 'p-1', 'p-1'])
+        expect(profile.getHosts()).toEqual([h0, h1])
+    })
+
+    it('skips the workers of a host that did not answer', () => {
+        // Host 0 (workers 0 and 1) is missing, so index 0 is worker 2.
+        const profile = profileWith(4, [host(1, 2, 4), host(2, 4, 6)])
+        expect(profile.getWorkerNames()).toEqual([2, 3, 4, 5])
+        expect(profile.getWorkers().map(w => w.host?.ordinal)).toEqual([1, 1, 2, 2])
+    })
+
+    it('ignores hosts whose workers do not match the worker profiles', () => {
+        const profile = profileWith(3, [host(0, 0, 2)])
+        expect(profile.getWorkerNames()).toEqual([0, 1, 2])
+        expect(profile.getWorkers().every(w => w.host === undefined)).toBe(true)
+        // The hosts themselves are still reported.
+        expect(profile.getHosts()).toHaveLength(1)
+    })
+
+    it('describes a worker and its host', () => {
+        expect(workerText({ worker: 3 })).toBe('Worker 3')
+        expect(workerText({ worker: 3, host: host(1, 2, 4) })).toBe('Worker 3 (host 1)')
+        expect(workerText({ worker: 3, host: host(1, 2, 4, { pod_name: 'p-1' }) }))
+            .toBe('Worker 3 (p-1)')
+        expect(hostText(host(1, 2, 4, { pod_name: 'p-1', node_name: 'node-a' })))
+            .toBe('p-1 on node-a')
+        expect(hostText(undefined)).toBe('')
     })
 })

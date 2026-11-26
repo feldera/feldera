@@ -26,7 +26,11 @@ export {
     StringValue,
     PercentValue,
     RatioValue,
-    type JsonProfiles
+    type JsonProfiles,
+    type JsonHostProfile,
+    type WorkerDescription,
+    hostText,
+    workerText
 } from './profile.js';
 export { type Dataflow, SourcePositionRange } from './dataflow.js';
 export { type Option } from './util.js';

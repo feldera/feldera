@@ -1,7 +1,7 @@
 // Selector tool to decide which circuit metadata to use for visualizations
 
 import { SubList } from "./util.js";
-import { CircuitProfile, MetricDescriptions } from "./profile.js";
+import { CircuitProfile, MetricDescriptions, workerText } from "./profile.js";
 import type { ProfilerCallbacks, MetricOption, WorkerOption } from "./profiler.js";
 
 /** Describes which metadata from a circuit to display. */
@@ -83,9 +83,9 @@ export class MetadataSelector {
         if (!this.callbacks.onWorkersChanged) {
             return
         }
-        const workers: WorkerOption[] = this.circuit.getWorkerNames().map((_name, index) => ({
+        const workers: WorkerOption[] = this.circuit.getWorkers().map((description, index) => ({
             id: String(index),
-            label: `Worker ${index}`,
+            label: workerText(description),
             checked: this.workersVisible[index] ?? true
         }));
         this.callbacks.onWorkersChanged(workers);
