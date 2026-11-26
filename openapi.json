@@ -14974,6 +14974,13 @@
                 "nullable": true,
                 "minimum": 0
               },
+              "max_retries": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Maximum number of times a worker thread writes a batch again after a\nfailure that can go away, such as a lost connection or a server that\nis read-only after a failover.\n\nWhen not specified, the connector writes the batch again until it\nsucceeds. When set to 0, the connector does not write a batch again,\nand drops it at the first failure. The wait for a server that is not\navailable has no limit in each case.\n\nA failure that cannot go away, such as a constraint violation, drops\nthe batch at once, whatever this setting.",
+                "nullable": true,
+                "minimum": 0
+              },
               "mode": {
                 "allOf": [
                   {

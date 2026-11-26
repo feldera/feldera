@@ -23,6 +23,7 @@ use feldera_adapterlib::transport::{
     CommandHandler, OutputBatchType, OutputEndpointCallbacks, Step,
 };
 use feldera_types::{
+    adapter_stats::ConnectorHealth,
     format::json::JsonFlavor,
     program_schema::{Relation, SqlIdentifier},
     transport::postgres::{PostgresWriteMode, PostgresWriterConfig},
@@ -48,17 +49,6 @@ enum WorkerResult {
     Ok { num_bytes: usize, num_rows: usize },
     Err(anyhow::Error),
 }
-
-/// Maximum number of times a worker writes one batch.
-///
-/// This bounds repeated failures once a connection has come back; waiting for
-/// postgres to return happens inside each attempt, in
-/// [`PostgresWorker::retry_connecting_with_backoff`], and is not bounded.
-///
-/// The second attempt starts at once. Each later attempt waits one second
-/// longer than the one before it, so the waits add up to 36 seconds. See
-/// [`PostgresWorker::write_attempt_wait`].
-const MAX_BATCH_WRITE_ATTEMPTS: usize = 10;
 
 /// Maximum length of the cause of a lost transaction in an error message.
 const MAX_LOST_CAUSE_LEN: usize = 1024;
@@ -539,6 +529,7 @@ These statements were successfully prepared before reconnecting. Does the table 
                     if !retry {
                         return Reconnect::GaveUp;
                     }
+                    self.report_unhealthy(&error);
                     // The server is there and did not prepare a statement,
                     // for example because of a lock on the table. A wait here
                     // for the server to come back has no end, so the failure
@@ -568,8 +559,31 @@ These statements were successfully prepared before reconnecting. Does the table 
     /// The first new attempt does not wait: a lost connection or a deadlock is
     /// usually gone at once. A failure on a session that stays open, such as a
     /// server that is read-only after a failover, needs time to go away.
-    fn write_attempt_wait(attempt: usize) -> Duration {
-        Self::backoff_after(attempt.saturating_sub(1) as u32)
+    fn write_attempt_wait(attempt: u64) -> Duration {
+        Self::backoff_after(attempt.saturating_sub(1).min(u32::MAX.into()) as u32)
+    }
+
+    /// Names attempt number `attempt` in a log line, where 0 is the first.
+    fn attempt_label(&self, attempt: u64) -> String {
+        match self.config.max_write_attempts() {
+            u64::MAX => format!("attempt {}", attempt + 1),
+            max => format!("attempt {} of {max}", attempt + 1),
+        }
+    }
+
+    /// Reports the connector as unhealthy while it cannot write. The endpoint
+    /// reports it as healthy again when a batch commits, and replaces this
+    /// message when it drops the batch.
+    fn report_unhealthy(&self, error: &anyhow::Error) {
+        if let Some(controller) = self.controller.upgrade() {
+            controller.update_output_connector_health(
+                self.endpoint_id,
+                ConnectorHealth::unhealthy(&format!(
+                    "worker-thread-{} cannot write to PostgreSQL and tries again: {error}",
+                    self.worker_idx
+                )),
+            );
+        }
     }
 
     /// Whether the pipeline has been asked to stop.
@@ -780,7 +794,10 @@ These statements were successfully prepared before reconnecting. Does the table 
 
         let mut last_error = None;
 
-        for attempt in 0..MAX_BATCH_WRITE_ATTEMPTS {
+        // The waits are in `write_attempt_wait` and, for a server that is not
+        // available, in `retry_connecting_with_backoff`, which has no limit.
+        let max_attempts = self.config.max_write_attempts();
+        for attempt in 0..max_attempts {
             if attempt > 0 {
                 let reconnect = if self.backoff_unless_shutdown(Self::write_attempt_wait(attempt)) {
                     self.retry_connecting_with_backoff()
@@ -791,6 +808,7 @@ These statements were successfully prepared before reconnecting. Does the table 
                 match reconnect {
                     Reconnect::Connected => (),
                     Reconnect::Failed(error) => {
+                        self.report_unhealthy(&error);
                         last_error = Some(error);
                         continue;
                     }
@@ -824,10 +842,11 @@ These statements were successfully prepared before reconnecting. Does the table 
                         let error = e.inner();
                         tracing::error!(
                             "postgres: worker-thread-{} could not start a batch again \
-                             (attempt {} of {MAX_BATCH_WRITE_ATTEMPTS}): {error}",
+                             ({}): {error}",
                             self.worker_idx,
-                            attempt + 1,
+                            self.attempt_label(attempt),
                         );
+                        self.report_unhealthy(&error);
                         last_error = Some(error);
                         continue;
                     }
@@ -841,19 +860,25 @@ These statements were successfully prepared before reconnecting. Does the table 
                     let error = e.inner();
                     tracing::error!(
                         "postgres: worker-thread-{} lost its transaction while writing a batch \
-                         (attempt {} of {MAX_BATCH_WRITE_ATTEMPTS}), writing it again: {error}",
+                         ({}): {error}",
                         self.worker_idx,
-                        attempt + 1,
+                        self.attempt_label(attempt),
                     );
+                    self.report_unhealthy(&error);
                     last_error = Some(error);
                 }
                 Err(e) => return Err(e.inner()),
             }
         }
 
+        let attempts = match max_attempts {
+            1 => "1 attempt".to_owned(),
+            n => format!("{n} attempts"),
+        };
         Err(anyhow!(
-            "gave up writing to table {:?} after {MAX_BATCH_WRITE_ATTEMPTS} attempts, so \
-             these rows were dropped; the last failure was: {}",
+            "gave up writing to table {:?} after {attempts}, so these rows \
+             were dropped; set `max_retries` higher, or remove it to write a batch again \
+             until it succeeds; the last failure was: {}",
             self.table,
             last_error.expect("the loop records a failure before it gives up")
         ))
@@ -1473,6 +1498,8 @@ impl OutputConsumer for PostgresOutputEndpoint {
                 tracing::debug!(
                     "postgres: flushed {num_rows} rows and {num_bytes} bytes in {elapsed:?}",
                 );
+                controller
+                    .update_output_connector_health(self.endpoint_id, ConnectorHealth::healthy());
             }
             // A stop of the pipeline ends the wait of a worker that writes a
             // batch again. That is not a fault of the endpoint.
@@ -1482,6 +1509,13 @@ impl OutputConsumer for PostgresOutputEndpoint {
                 );
             }
             Err(err) => {
+                // A worker that retried left a message that it tries again.
+                controller.update_output_connector_health(
+                    self.endpoint_id,
+                    ConnectorHealth::unhealthy(&format!(
+                        "dropped a batch, and writes the next one: {err:#}"
+                    )),
+                );
                 controller.output_transport_error(
                     self.endpoint_id,
                     &self.endpoint_name,
@@ -1770,6 +1804,7 @@ pub mod tests {
             max_records_in_buffer: None,
             max_buffer_size: ConfigSize::from_mib(1),
             on_conflict_do_nothing: false,
+            max_retries: None,
             mode: PostgresWriteMode::Materialized,
             cdc_op_column: "__feldera_op".to_owned(),
             cdc_ts_column: "__feldera_ts".to_owned(),
@@ -2013,6 +2048,7 @@ pub mod tests {
                 max_records_in_buffer: None,
                 max_buffer_size: ConfigSize::from_mib(1),
                 on_conflict_do_nothing: false,
+                max_retries: None,
                 mode: PostgresWriteMode::Materialized,
                 cdc_op_column: "__feldera_op".to_owned(),
                 cdc_ts_column: "__feldera_ts".to_owned(),
@@ -2132,13 +2168,31 @@ pub mod tests {
         /// attempt waits one second longer than the one before it.
         #[test]
         fn write_attempts_wait_longer_each_time() {
-            use crate::integrated::postgres::output::{MAX_BATCH_WRITE_ATTEMPTS, PostgresWorker};
+            use crate::integrated::postgres::output::PostgresWorker;
 
-            let waits: Vec<u64> = (0..MAX_BATCH_WRITE_ATTEMPTS)
+            let waits: Vec<u64> = (0..10)
                 .map(|attempt| PostgresWorker::write_attempt_wait(attempt).as_secs())
                 .collect();
             assert_eq!(waits, [0, 0, 1, 2, 3, 4, 5, 6, 7, 8]);
             assert_eq!(waits.iter().sum::<u64>(), 36);
+            // With no limit on the attempts, the wait stops growing.
+            assert_eq!(PostgresWorker::write_attempt_wait(u64::MAX).as_secs(), 60);
+        }
+
+        /// `max_retries` counts the attempts after the first one, and its
+        /// absence means no limit.
+        #[test]
+        fn max_retries_sets_the_write_attempts() {
+            let attempts = |max_retries: Option<u32>| {
+                let mut config: PostgresWriterConfig =
+                    serde_json::from_value(json!({"uri": "postgres://h", "table": "t"})).unwrap();
+                config.max_retries = max_retries;
+                config.max_write_attempts()
+            };
+            assert_eq!(attempts(None), u64::MAX);
+            assert_eq!(attempts(Some(0)), 1);
+            assert_eq!(attempts(Some(9)), 10);
+            assert_eq!(attempts(Some(u32::MAX)), u64::from(u32::MAX) + 1);
         }
 
         /// A worker that cannot open a transaction while the pipeline is

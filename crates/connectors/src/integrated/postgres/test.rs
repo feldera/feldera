@@ -11,6 +11,7 @@ use crate::{
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, SubsecRound};
 use feldera_adapterlib::test::{ZSet, wait};
 use feldera_types::{
+    adapter_stats::ConnectorHealthStatus,
     config::PipelineConfig,
     program_schema::{ColumnType, Field, Relation},
     transport::postgres::{PostgresTlsConfig, PostgresWriteMode},
@@ -2189,7 +2190,18 @@ impl PoolerTest {
         records: usize,
         threads: usize,
     ) -> Self {
-        Self::build(engine, name, records, threads, None)
+        Self::build(engine, name, records, threads, None, None)
+    }
+
+    /// Builds the pipeline and does not start it. The connector has one
+    /// writer thread and the given `max_retries`.
+    fn with_max_retries(
+        engine: &dyn PipelineTestEngine,
+        name: &str,
+        records: usize,
+        max_retries: u32,
+    ) -> Self {
+        Self::build(engine, name, records, 1, None, Some(max_retries))
     }
 
     /// Builds the pipeline and does not start it. With a `role`, the
@@ -2200,6 +2212,7 @@ impl PoolerTest {
         records: usize,
         threads: usize,
         role: Option<&OneConnectionRole>,
+        max_retries: Option<u32>,
     ) -> Self {
         let url = postgres_url();
         let mut pooler = FaultyPooler::start(&url);
@@ -2218,13 +2231,19 @@ impl PoolerTest {
                 .unwrap();
             pooler.url = pooler_url.to_string();
         }
-        let config = pg_output_test_config(
+        let mut config = pg_output_test_config(
             input.path(),
             &pooler.url,
             &table_name,
             threads,
             Some(records),
         );
+        if let Some(max_retries) = max_retries {
+            let mut json = serde_json::to_value(&config).unwrap();
+            json["outputs"]["test_output1"]["transport"]["config"]["max_retries"] =
+                json!(max_retries);
+            config = serde_json::from_value(json).unwrap();
+        }
 
         let mut table = TempPgTable::new(&table_name, url.clone(), true, &None);
         if let Some(role) = role {
@@ -2253,6 +2272,22 @@ impl PoolerTest {
     /// processed whether or not it wrote it.
     fn batch_processed(&self) -> bool {
         pg_total_processed_input_records(&self.controller) >= self.records as u64
+    }
+
+    /// Whether the endpoint reports itself as unhealthy.
+    fn unhealthy(&self) -> bool {
+        self.unhealthy_because().is_some()
+    }
+
+    /// The description of the health of the endpoint, if it reports itself
+    /// as unhealthy.
+    fn unhealthy_because(&self) -> Option<String> {
+        let status = self.controller.status();
+        let outputs = status.output_status();
+        let endpoint = outputs.values().next().expect("output endpoint");
+        let health = endpoint.health.lock().unwrap().clone()?;
+        matches!(health.status, ConnectorHealthStatus::Unhealthy)
+            .then(|| health.description.unwrap_or_default())
     }
 
     /// Whether the endpoint reported an error that contains `text`, such as
@@ -2476,7 +2511,14 @@ pub fn read_only_session_does_not_lose_the_batch(engine: &dyn PipelineTestEngine
 #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn reconnect_needs_no_second_connection_slot(engine: &dyn PipelineTestEngine) {
     let role = OneConnectionRole::new(&postgres_url());
-    let test = PoolerTest::build(engine, "test_pg_pooler_one_slot", 3000, 1, Some(&role));
+    let test = PoolerTest::build(
+        engine,
+        "test_pg_pooler_one_slot",
+        3000,
+        1,
+        Some(&role),
+        None,
+    );
 
     test.pooler.set_fault(PoolerFault::ReadOnlySession);
     test.controller.start();
@@ -2487,32 +2529,69 @@ pub fn reconnect_needs_no_second_connection_slot(engine: &dyn PipelineTestEngine
     test.assert_batch_arrived("E25006");
 }
 
-/// A server that stays read-only must be waited out.
+/// A server that stays read-only must be waited out, with no limit on the
+/// attempts when `max_retries` is not set.
 ///
 /// Each new session is read-only too, so a new connection alone does not
-/// help. Without a wait between the attempts, the connector uses its 10
-/// attempts in a few seconds, which is less than a failover takes.
+/// help. The connector must wait between the attempts, and must not stop at
+/// 10 attempts, the limit before `max_retries`.
 #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn read_only_server_is_waited_out(engine: &dyn PipelineTestEngine) {
-    /// The first attempt and three new attempts.
-    const REJECTED_ATTEMPTS: usize = 4;
+    read_only_server_is_waited_out_with_threads(engine, 1);
+}
 
-    let test = PoolerTest::new(engine, "test_pg_pooler_read_only_wait", 3000);
+/// As [`read_only_server_is_waited_out`], with two writer threads. A thread
+/// that commits its part must not report the connector as healthy while the
+/// other thread retries, and the connector is healthy at the end.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+pub fn read_only_server_is_waited_out_by_two_threads(engine: &dyn PipelineTestEngine) {
+    read_only_server_is_waited_out_with_threads(engine, 2);
+}
+
+fn read_only_server_is_waited_out_with_threads(engine: &dyn PipelineTestEngine, threads: usize) {
+    /// The first attempt and 10 new attempts: one more than the limit of
+    /// before.
+    const REJECTED_ATTEMPTS: usize = 11;
+
+    let test = PoolerTest::with_threads(
+        engine,
+        &format!("test_pg_pooler_read_only_wait_{threads}"),
+        3000,
+        threads,
+    );
 
     test.pooler
         .set_fault(PoolerFault::ReadOnlyServer(REJECTED_ATTEMPTS));
     test.controller.start();
 
-    wait(|| test.batch_processed(), 180_000)
-        .expect("timeout: connector did not finish handling the input");
+    let mut was_unhealthy = false;
+    wait(
+        || {
+            was_unhealthy |= test.unhealthy();
+            test.batch_processed()
+        },
+        180_000,
+    )
+    .expect("timeout: connector did not finish handling the input");
+    assert!(
+        was_unhealthy,
+        "the connector did not report itself as unhealthy while it could not write"
+    );
+    assert!(
+        !test.unhealthy(),
+        "the connector wrote the batch, yet it still reports itself as unhealthy"
+    );
 
-    // An attempt stops at the first statement that the server rejects. The
-    // connector waits 0, 1 and 2 seconds before the three new attempts.
+    // An attempt stops at the first statement that the server rejects. With
+    // one thread, the connector waits 0, 0, 1, 2 ... 8 seconds before the 10
+    // new attempts. With two, the threads share the rejections, so check
+    // only that the rejections were not all at once.
     let rejected = test.pooler.counts.rejected_writes.lock().unwrap().clone();
     assert_eq!(rejected.len(), REJECTED_ATTEMPTS);
     let waited = rejected[REJECTED_ATTEMPTS - 1] - rejected[0];
+    let min_wait = if threads == 1 { 36 } else { 3 };
     assert!(
-        waited >= Duration::from_secs(3),
+        waited >= Duration::from_secs(min_wait),
         "the connector made {REJECTED_ATTEMPTS} attempts in {waited:?}, so it did not \
          wait between them"
     );
@@ -2521,7 +2600,8 @@ pub fn read_only_server_is_waited_out(engine: &dyn PipelineTestEngine) {
 }
 
 /// A server that answers and does not prepare the statements uses the attempts
-/// to write the batch, so the worker gives up at the limit.
+/// to write the batch, so the worker gives up at the limit that `max_retries`
+/// sets.
 ///
 /// The worker waits with no limit for a server or a pooler that is not
 /// available. A server that cancels each statement is available, so a wait
@@ -2529,7 +2609,7 @@ pub fn read_only_server_is_waited_out(engine: &dyn PipelineTestEngine) {
 /// cause stays, for example a lock that is never released.
 #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn prepare_failure_on_an_open_session_uses_the_attempts(engine: &dyn PipelineTestEngine) {
-    let test = PoolerTest::new(engine, "test_pg_pooler_locked", 100);
+    let test = PoolerTest::with_max_retries(engine, "test_pg_pooler_locked", 100, 9);
 
     test.pooler.set_fault(PoolerFault::LockedTable);
     test.controller.start();
@@ -2547,7 +2627,13 @@ pub fn prepare_failure_on_an_open_session_uses_the_attempts(engine: &dyn Pipelin
             .expect("output endpoint")
             .fatal_error()
     };
+    let health = test.unhealthy_because();
     let _ = test.controller.stop();
+    let health = health.expect("the connector dropped a batch, yet it reports itself as healthy");
+    assert!(
+        health.contains("dropped a batch") && !health.contains("tries again"),
+        "the health must say that the batch was dropped: {health}"
+    );
 
     // The first attempt runs one statement. Each of the 9 new attempts stops
     // at the first statement that the server does not prepare.
@@ -2567,24 +2653,54 @@ pub fn prepare_failure_on_an_open_session_uses_the_attempts(engine: &dyn Pipelin
     assert_eq!(pg_row_count(&test.url, &test.table.name), 0);
 }
 
+/// With `max_retries` set to 0, the first failure drops the batch, with no
+/// new attempt and no wait.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+pub fn zero_max_retries_drops_the_batch_at_the_first_failure(engine: &dyn PipelineTestEngine) {
+    let test = PoolerTest::with_max_retries(engine, "test_pg_pooler_no_retry", 100, 0);
+
+    test.pooler.set_fault(PoolerFault::ReadOnlyServer(5));
+    test.controller.start();
+
+    wait(|| test.batch_processed(), 10_000)
+        .expect("timeout: the connector did not drop the batch at once");
+
+    let fatal_error = {
+        let status = test.controller.status();
+        let outputs = status.output_status();
+        outputs
+            .values()
+            .next()
+            .expect("output endpoint")
+            .fatal_error()
+    };
+    let _ = test.controller.stop();
+
+    assert_eq!(test.pooler.counts.rejected_writes.lock().unwrap().len(), 1);
+    let fatal_error = fatal_error.expect("the connector must report the batch that it dropped");
+    assert!(
+        fatal_error.contains("after 1 attempt,") && fatal_error.contains("E25006"),
+        "{fatal_error}"
+    );
+    assert_eq!(pg_row_count(&test.url, &test.table.name), 0);
+}
+
 /// A pooler that sends its errors with severity ERROR, and then closes the
 /// session, must be waited out as one that sends FATAL.
 ///
 /// PgBouncer did this before 1.16. The error is a connection error (class
-/// 08), so the session did not stay open, and the failed statements to
-/// prepare must not use the attempts to write the batch. The fault fails
-/// more of them than the attempts that are left.
+/// 08), so the session did not stay open, and the failed statement to
+/// prepare must not use the only new attempt that `max_retries` allows.
 #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn old_pooler_without_a_server_does_not_lose_the_batch(engine: &dyn PipelineTestEngine) {
-    let test = PoolerTest::new(engine, "test_pg_pooler_old", 100);
+    let test = PoolerTest::with_max_retries(engine, "test_pg_pooler_old", 100, 1);
 
-    test.pooler.set_fault(PoolerFault::OldPoolerServerDown(9));
+    test.pooler.set_fault(PoolerFault::OldPoolerServerDown(1));
     test.controller.start();
 
-    // The waits for a connection add up to 45 seconds.
-    wait(|| test.batch_processed(), 120_000)
+    wait(|| test.batch_processed(), 60_000)
         .expect("timeout: connector did not finish handling the input");
-    assert_eq!(test.pooler.counts.prepares.load(Ordering::Relaxed), 9);
+    assert_eq!(test.pooler.counts.prepares.load(Ordering::Relaxed), 1);
 
     test.assert_batch_arrived("E08P01");
 }
@@ -2592,20 +2708,19 @@ pub fn old_pooler_without_a_server_does_not_lose_the_batch(engine: &dyn Pipeline
 /// A failed login must be waited out, whatever the severity of the error. It
 /// has no session that can stay open.
 ///
-/// The pooler refuses more logins than the attempts that are left, with an
-/// error that is not a connection error.
+/// The pooler refuses the login of the only new attempt that `max_retries`
+/// allows, with an error that is not a connection error.
 #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn refused_login_does_not_use_the_attempts(engine: &dyn PipelineTestEngine) {
-    let test = PoolerTest::new(engine, "test_pg_pooler_login", 3000);
+    let test = PoolerTest::with_max_retries(engine, "test_pg_pooler_login", 3000, 1);
 
     test.pooler
-        .set_fault(PoolerFault::ServerCrashThenLoginsRefused(9));
+        .set_fault(PoolerFault::ServerCrashThenLoginsRefused(1));
     test.controller.start();
 
-    // The waits for a connection add up to 45 seconds.
-    wait(|| test.batch_processed(), 120_000)
+    wait(|| test.batch_processed(), 60_000)
         .expect("timeout: connector did not finish handling the input");
-    assert_eq!(test.pooler.counts.refused_logins.load(Ordering::Relaxed), 9);
+    assert_eq!(test.pooler.counts.refused_logins.load(Ordering::Relaxed), 1);
 
     // The error of a failed login has the message, not the SQLSTATE.
     test.assert_batch_arrived("too many clients");

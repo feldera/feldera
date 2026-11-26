@@ -462,6 +462,20 @@ pub struct PostgresWriterConfig {
     #[schema(default = default_writer_threads)]
     pub threads: usize,
 
+    /// Maximum number of times a worker thread writes a batch again after a
+    /// failure that can go away, such as a lost connection or a server that
+    /// is read-only after a failover.
+    ///
+    /// When not specified, the connector writes the batch again until it
+    /// succeeds. When set to 0, the connector does not write a batch again,
+    /// and drops it at the first failure. The wait for a server that is not
+    /// available has no limit in each case.
+    ///
+    /// A failure that cannot go away, such as a constraint violation, drops
+    /// the batch at once, whatever this setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
+
     /// The names of the extra columns in the Postgres table that are not part of the view schema.
     ///
     /// These connector can write user-defined values, configured using the `set_extra_columns` connector command,
@@ -495,6 +509,13 @@ fn default_cdc_ts_column() -> String {
 }
 
 impl PostgresWriterConfig {
+    /// The number of times a worker thread writes a batch, the first time
+    /// included, from [`Self::max_retries`]. `u64::MAX` stands for no limit.
+    pub fn max_write_attempts(&self) -> u64 {
+        self.max_retries
+            .map_or(u64::MAX, |retries| u64::from(retries) + 1)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         match self.mode {
             PostgresWriteMode::Cdc => {
