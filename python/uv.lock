@@ -350,11 +350,9 @@ dependencies = [
     { name = "numpy", version = "2.4.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pretty-errors" },
     { name = "pyarrow" },
     { name = "pyjwt" },
     { name = "requests" },
-    { name = "ruff" },
     { name = "tenacity" },
     { name = "typing-extensions" },
 ]
@@ -369,6 +367,7 @@ dev = [
     { name = "pytest-rerunfailures" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
+    { name = "ruff" },
     { name = "simplejson" },
     { name = "sphinx" },
     { name = "sphinx-rtd-theme" },
@@ -378,11 +377,9 @@ dev = [
 requires-dist = [
     { name = "numpy", specifier = ">=2.2.4" },
     { name = "pandas", specifier = ">=2.1.2" },
-    { name = "pretty-errors" },
     { name = "pyarrow", specifier = ">=24.0" },
     { name = "pyjwt", specifier = ">=2.13.0" },
     { name = "requests" },
-    { name = "ruff", specifier = ">=0.6.9" },
     { name = "tenacity", specifier = ">=9.1.4" },
     { name = "typing-extensions" },
 ]
@@ -397,6 +394,7 @@ dev = [
     { name = "pytest-rerunfailures", specifier = ">=15" },
     { name = "pytest-timeout", specifier = ">=2.3.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "ruff", specifier = ">=0.6.9" },
     { name = "simplejson", specifier = "==3.20.1" },
     { name = "sphinx", specifier = "==7.3.7" },
     { name = "sphinx-rtd-theme", specifier = "==2.0.0" },
@@ -894,18 +892,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
-]
-
-[[package]]
-name = "pretty-errors"
-version = "1.2.25"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c8/a7/823f451d48726729b4983072aad7c442f4c02fbaec04b71c1f4c03993964/pretty_errors-1.2.25.tar.gz", hash = "sha256:a16ba5c752c87c263bf92f8b4b58624e3b1e29271a9391f564f12b86e93c6755", size = 20332, upload-time = "2021-11-24T14:32:10.529Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6d/8e/2df7467a15eae40e26c476683962fdb810cd1b36676603e2f139b4abbeaf/pretty_errors-1.2.25-py3-none-any.whl", hash = "sha256:8ce68ccd99e0f2a099265c8c1f1c23b7c60a15d69bb08816cb336e237d5dc983", size = 17195, upload-time = "2021-11-24T14:32:07.762Z" },
 ]
 
 [[package]]
