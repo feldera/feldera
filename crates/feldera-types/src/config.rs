@@ -3030,20 +3030,23 @@ mod test {
                 "d": {"stream": "d", "distributed": true,
                     "transport": {"name": "delta_table_output", "config": {
                         "uri": "memory://", "mode": "truncate"}}},
+                "e": {"stream": "e", "distributed": true, "index": "E_Idx",
+                    "transport": {"name": "kafka_output", "config": {
+                        "topic": "e", "bootstrap.servers": "localhost:9092"}}},
+                "f": {"stream": "f", "distributed": true,
+                    "transport": {"name": "kafka_output", "config": {
+                        "topic": "f", "bootstrap.servers": "localhost:9092"}}},
             },
         }))
         .unwrap();
         assert_eq!(
             config.distributed_output_streams(),
-            std::collections::BTreeSet::from(["a".into(), "b_idx".into()])
+            std::collections::BTreeSet::from(["a".into(), "b_idx".into(), "e_idx".into()])
         );
         // A host reports the connectors themselves to the coordinator.
         assert_eq!(
-            config
-                .distributable_outputs()
-                .into_keys()
-                .collect::<Vec<_>>(),
-            ["a", "b"]
+            config.distributable_outputs().into_keys().collect::<Vec<_>>(),
+            ["a", "b", "e"]
         );
     }
 
@@ -3996,9 +3999,10 @@ pub struct ConnectorConfig {
     /// For an output connector: when `false` (the default), the connector
     /// runs on one host, which writes all of its output.  When `true`, the
     /// connector runs on every host, and each host writes the part of the
-    /// output on its own workers.  Only the null output transport, and the
+    /// output on its own workers.  Only the null output transport, the
     /// Delta Lake output transport with `mode: append` and
-    /// `update_mode: cdc`, support this setting.  On other output transports,
+    /// `update_mode: cdc`, and the Kafka output transport with `index` and no
+    /// `postprocessor`, support this setting.  On other output connectors,
     /// it has no effect.  A distributed Delta Lake output commits each
     /// transaction once, through its part on one host, and it does not support
     /// output buffering.
@@ -4031,6 +4035,20 @@ impl ConnectorConfig {
             TransportConfig::DeltaTableOutput(_) => Some(
                 "a distributed 'delta_table_output' connector requires 'mode: append' and 'update_mode: cdc'".into(),
             ),
+            // Each host writes the part of the stream on its own workers.  The stream of an index
+            // is sharded by the index key, which is also the message key, so that all of the
+            // updates to one key come from one host, in order.  Other streams are sharded by
+            // the whole row, and two hosts could race to write updates to one message key.
+            TransportConfig::KafkaOutput(_) if self.index.is_none() => Some(
+                "a distributed 'kafka_output' connector requires 'index', so that all of the updates to one message key come from one host".into(),
+            ),
+            // A postprocessor can change the message key.
+            TransportConfig::KafkaOutput(_)
+                if self.postprocessor.as_ref().is_some_and(|p| !p.is_empty()) =>
+            {
+                Some("a distributed 'kafka_output' connector does not support 'postprocessor'".into())
+            }
+            TransportConfig::KafkaOutput(_) => None,
             transport => Some(format!(
                 "the '{}' output transport does not support 'distributed'",
                 transport.name()

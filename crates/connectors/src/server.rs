@@ -3014,6 +3014,28 @@ pub mod test_http_helpers {
             output_assignment: &[(&str, usize)],
             storage_dirs: &[std::path::PathBuf],
         ) -> MultihostTestHosts {
+            Self::serve_circuit(
+                engine,
+                n_hosts,
+                workers_per_host,
+                config,
+                output_assignment,
+                storage_dirs,
+                None,
+            )
+        }
+
+        /// Like [Self::serve], but each host runs `circuit`, if it is given, instead of the
+        /// identity circuit over [relation].
+        pub(crate) fn serve_circuit(
+            engine: &dyn PipelineTestEngine,
+            n_hosts: usize,
+            workers_per_host: usize,
+            config: &serde_json::Value,
+            output_assignment: &[(&str, usize)],
+            storage_dirs: &[std::path::PathBuf],
+            circuit: Option<TestCircuit>,
+        ) -> MultihostTestHosts {
             let mut config = config.clone();
             let view_persistent_id = config
                 .pointer("/program_ir/mir/1/persistent_id")
@@ -3066,7 +3088,7 @@ pub mod test_http_helpers {
                 let _ = state
                     .distributable_outputs
                     .set(config.distributable_outputs());
-                let circuit = TestCircuit::Identity {
+                let circuit = circuit.clone().unwrap_or_else(|| TestCircuit::Identity {
                     relation: relation(),
                     persistent_output_ids: vec![Some(view_persistent_id.clone())],
                     input_properties: Vec::new(),
@@ -3074,7 +3096,7 @@ pub mod test_http_helpers {
                     persistent_ids: true,
                     table_version: 0,
                     attribute_defaults: BTreeMap::new(),
-                };
+                });
                 let factory = engine.circuit_factory(&circuit, None).unwrap();
                 let factory: crate::engine::CircuitFactory = Box::new(move |mut params| {
                     params.exchange_listener = Some(listener);
@@ -7568,6 +7590,202 @@ pub mod test_http {
             let shares = output_shares(&pipeline, "spread", 300).await;
             assert!(shares.iter().all(|&share| share > 0), "{shares:?}");
             assert_eq!(shares.iter().sum::<u64>(), 300, "{shares:?}");
+        });
+    }
+
+    /// The configuration of a pipeline with distributed Kafka output `spread`, which writes
+    /// index `idx1` of `test_output1` to `topic` as Debezium JSON.
+    #[cfg(feature = "with-kafka")]
+    fn distributed_kafka_config(topic: &str) -> serde_json::Value {
+        json!({
+            "name": "test",
+            "inputs": {},
+            "outputs": {
+                "spread": {
+                    "stream": "test_output1",
+                    "index": "idx1",
+                    "distributed": true,
+                    "transport": {"name": "kafka_output", "config": {
+                        "topic": topic,
+                        "bootstrap.servers": feldera_types::transport::kafka::default_redpanda_server(),
+                    }},
+                    "format": {"name": "json", "config": {"update_format": "debezium"}},
+                },
+            },
+        })
+    }
+
+    /// The circuit of the distributed Kafka output tests: a view `test_output1` of the rows of
+    /// [relation], with index `idx1` on its key.
+    #[cfg(feature = "with-kafka")]
+    fn indexed_circuit() -> TestCircuit {
+        TestCircuit::IndexedView {
+            key: crate::test::suites::controller::key_relation(),
+            relation: relation(),
+            index: "idx1".into(),
+        }
+    }
+
+    /// Waits until `topic`, with `n_partitions` partitions, has `total` messages, and checks that
+    /// it gets no more and that their keys are all different.
+    #[cfg(feature = "with-kafka")]
+    async fn wait_for_messages(
+        kafka: &crate::test::kafka::KafkaResources,
+        topic: &str,
+        n_partitions: usize,
+        total: i64,
+    ) {
+        let count = || {
+            kafka
+                .watermarks(topic, n_partitions)
+                .into_iter()
+                .map(|watermarks| {
+                    let (low, high) = watermarks.unwrap();
+                    high - low
+                })
+                .sum::<i64>()
+        };
+        timeout(Duration::from_secs(30), async {
+            while count() < total {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the topic did not get all of the output");
+        // Give a host that writes too much a moment to show it.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(count(), total);
+
+        let topic = topic.to_string();
+        let keys = tokio::task::spawn_blocking(move || topic_keys(&topic, n_partitions))
+            .await
+            .unwrap();
+        assert_eq!(keys.len() as i64, total);
+        let distinct: std::collections::BTreeSet<_> = keys.iter().collect();
+        assert_eq!(distinct.len(), keys.len(), "a key appears more than once");
+    }
+
+    /// Returns the key of each message in `topic`, which has `n_partitions` partitions, in no
+    /// specific order.
+    #[cfg(feature = "with-kafka")]
+    fn topic_keys(topic: &str, n_partitions: usize) -> Vec<Vec<u8>> {
+        use rdkafka::{
+            ClientConfig, Message, Offset, TopicPartitionList,
+            consumer::{BaseConsumer, Consumer},
+        };
+
+        let consumer: BaseConsumer = ClientConfig::new()
+            .set(
+                "bootstrap.servers",
+                feldera_types::transport::kafka::default_redpanda_server(),
+            )
+            .set("group.id", format!("{topic}_keys"))
+            .set("enable.auto.commit", "false")
+            .create()
+            .unwrap();
+        let mut assignment = TopicPartitionList::new();
+        let mut remaining = 0;
+        for partition in 0..n_partitions as i32 {
+            let (low, high) = consumer
+                .fetch_watermarks(topic, partition, Duration::from_secs(10))
+                .unwrap();
+            remaining += high - low;
+            assignment
+                .add_partition_offset(topic, partition, Offset::Offset(low))
+                .unwrap();
+        }
+        consumer.assign(&assignment).unwrap();
+        let mut keys = Vec::new();
+        while remaining > 0 {
+            let message = consumer
+                .poll(Duration::from_secs(10))
+                .expect("the topic has fewer messages than its watermarks say")
+                .unwrap();
+            keys.push(message.key().unwrap_or_default().to_vec());
+            remaining -= 1;
+        }
+        keys
+    }
+
+    /// A distributed Kafka output of an index on 3 hosts runs on every host, and each host
+    /// writes its own share of the index, one message per key: every host writes some
+    /// messages, and the topic gets each of them once.
+    #[cfg(feature = "with-kafka")]
+    #[engine_test(requires(Multihost), services(Kafka))]
+    pub fn multihost_distributed_kafka_output(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let topic = "multihost_distributed_kafka_output";
+            let kafka = crate::test::kafka::KafkaResources::create_topics(&[(topic, 3)]);
+            let config = distributed_kafka_config(topic);
+            let mut pipeline = MultihostTestPipeline::serve_circuit(
+                engine,
+                3,
+                2,
+                &config,
+                &[("test_output1", 0)],
+                &[],
+                Some(indexed_circuit()),
+            )
+            .activate(None)
+            .await
+            .unwrap();
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+
+            let shares = output_shares(&pipeline, "spread", 300).await;
+            assert!(shares.iter().all(|&share| share > 0), "{shares:?}");
+            assert_eq!(shares.iter().sum::<u64>(), 300, "{shares:?}");
+            wait_for_messages(&kafka, topic, 3, 300).await;
+        });
+    }
+
+    /// A coordinator that predates distributed Kafka output connectors gives one to one host
+    /// only.  That host runs it as a connector that is not distributed, and writes all of the
+    /// output.
+    #[cfg(feature = "with-kafka")]
+    #[engine_test(requires(Multihost), services(Kafka))]
+    pub fn multihost_distributed_kafka_output_old_coordinator(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let topic = "multihost_distributed_kafka_output_old_coordinator";
+            let kafka = crate::test::kafka::KafkaResources::create_topics(&[(topic, 3)]);
+            let config = distributed_kafka_config(topic);
+            let mut hosts = MultihostTestPipeline::serve_circuit(
+                engine,
+                3,
+                2,
+                &config,
+                &[("test_output1", 1)],
+                &[],
+                Some(indexed_circuit()),
+            );
+            hosts.send_distributed_outputs = false;
+            let mut pipeline = hosts.activate(None).await.unwrap();
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+
+            wait_for_messages(&kafka, topic, 3, 300).await;
+            for (host, server) in pipeline.servers.iter().enumerate() {
+                let stats = get_stats(server).await;
+                let output = stats
+                    .outputs
+                    .iter()
+                    .find(|output| output.endpoint_name == "spread");
+                if host == 1 {
+                    assert_eq!(output.unwrap().metrics.transmitted_records, 300);
+                } else {
+                    assert!(output.is_none(), "host {host} runs the connector");
+                }
+            }
         });
     }
 

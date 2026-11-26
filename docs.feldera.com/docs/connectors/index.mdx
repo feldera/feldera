@@ -201,10 +201,12 @@ The following attributes are common to all connectors:
   For an output connector, the connector runs on every host and each host
   writes the part of the output on its own workers.  When `false`, the
   connector runs on one host, which writes all of its output.  Only the null
-  output connector, and the
+  output connector, the
   [Delta Lake](/connectors/sinks/delta#distributed-connectors) output
-  connector with `mode` set to `append` and `update_mode` set to `cdc`,
-  support this setting.  On other output connectors, it has no effect.
+  connector with `mode` set to `append` and `update_mode` set to `cdc`, and
+  the [Kafka](/connectors/sinks/kafka#distributed-connectors) output
+  connector with an `index` and no `postprocessor`, support this setting.
+  On other output connectors, it has no effect.
 
   For other input connectors, a pipeline with `distributed` set to `true`
   fails to start.
