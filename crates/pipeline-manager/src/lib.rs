@@ -20,6 +20,8 @@ pub mod logging;
 pub mod oidc;
 pub mod pipeline_env;
 pub mod runner;
+#[cfg(test)]
+mod test_alloc;
 
 /// Edition reported by `/config` and the startup banner.
 pub fn edition() -> &'static str {

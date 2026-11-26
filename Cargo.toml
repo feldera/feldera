@@ -48,10 +48,13 @@ actix = "0.13.1"
 actix-codec = "0.5.0"
 actix-cors = "0.7.1"
 actix-files = "0.7.3"
-actix-http = "3.12.1"
+# 3.20.1 adds the decoder limit for CVE-2026-128242; actix-web below applies it.
+actix-http = "3.20.1"
 actix-tls = { version = "3.4.0", default-features = false, features = ["accept", "rustls-0_23"] }
 actix-test = "0.1.1"
-actix-web = "4.12.0"
+# 4.18.2 bounds decompressed request bodies by the extractor limits (CVE-2026-128242).
+# Test: `gzip_bomb_is_not_decompressed_past_the_json_limit`.
+actix-web = "4.18.2"
 actix-web-httpauth = "0.8.0"
 actix-web-static-files = "4.0.1"
 actix-ws = "0.3.0"
@@ -120,6 +123,7 @@ base58 = "0.2.0"
 binrw = "0.15.2"
 blake3 = "1.8.2"
 bstr = "0.2.1"
+brotli-decompressor = "5.0.0"
 bytemuck = { version = "1.16.3", features = ["derive"] }
 bytes = "1.11.1"
 bytestring = "1.4.0"
@@ -275,7 +279,8 @@ ouroboros = "0.18.4"
 # supports from 59.3.2 on.
 # Tests: `masked_reader_skips_rows_inside_wide_miniblocks` and
 # `masked_reader_skips_rows_inside_bit_packed_wide_miniblocks`.
-parquet = "59.3.2"
+# 59.3.3 fixes CVE-2026-125651.
+parquet = "59.3.3"
 # The Parquet variant binary encoding, used to read and write Delta and
 # Iceberg VARIANT columns. Released from arrow-rs alongside `parquet`, and
 # sharing `arrow` with it, so keep the three on one point release.

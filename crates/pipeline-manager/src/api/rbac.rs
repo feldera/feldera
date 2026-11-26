@@ -241,7 +241,8 @@ fn not_found(method: &str, path: &str) -> HttpResponse<BoxBody> {
 
 /// Decide whether the principal may proceed, returning the pattern the request
 /// resolved to for the audit line. `Ok` allows; `Err(resp)` is the response
-/// to return instead of calling the handler.
+/// to return instead of calling the handler, boxed because `HttpResponse` is
+/// large.
 ///
 /// The handler is reachable only through `Ok`, which requires a table entry
 /// for the request and a role that meets it. There is no pass-through: a path
@@ -268,7 +269,7 @@ fn authorize(
     routed: bool,
     path: &str,
     principal: Option<&AuthenticatedPrincipal>,
-) -> Result<&'static str, HttpResponse<BoxBody>> {
+) -> Result<&'static str, Box<HttpResponse<BoxBody>>> {
     let Some((pattern, required)) = classify(method, path) else {
         // No table entry for this method on this path. A path the table
         // describes under other methods is a wrong-method request (`routed` is
@@ -278,23 +279,25 @@ fn authorize(
         // error. Only a path actix would dispatch yet the table classifies
         // under no method is the registered-route bug.
         if !routed || path_matches_any_route(path) {
-            return Err(not_found(method, path));
+            return Err(Box::new(not_found(method, path)));
         }
         error!("RBAC: route {method} {path} has no access-control entry; denying");
-        return Err(forbidden(
+        return Err(Box::new(forbidden(
             "This endpoint has no access-control classification and is denied",
-        ));
+        )));
     };
     match principal {
         Some(p) if p.role.satisfies(required) => Ok(pattern),
-        Some(p) => Err(DBError::InsufficientPermissions {
-            required,
-            actual: p.role,
-        }
-        .error_response()),
+        Some(p) => Err(Box::new(
+            DBError::InsufficientPermissions {
+                required,
+                actual: p.role,
+            }
+            .error_response(),
+        )),
         None => {
             error!("RBAC: no authenticated principal for {method} {pattern}; denying");
-            Err(forbidden("No authenticated principal"))
+            Err(Box::new(forbidden("No authenticated principal")))
         }
     }
 }
@@ -338,7 +341,7 @@ pub(crate) async fn rbac_middleware(
             audit(&method, pattern, principal.as_ref());
             Ok(next.call(req).await?.map_into_boxed_body())
         }
-        Err(resp) => Ok(req.into_response(resp)),
+        Err(resp) => Ok(req.into_response(*resp)),
     }
 }
 

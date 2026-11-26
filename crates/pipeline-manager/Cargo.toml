@@ -164,6 +164,9 @@ feldera-types = { workspace = true, features = ["testing"] }
 itertools = { workspace = true }
 tokio = { workspace = true, features = ["sync", "test-util"] }
 libc = { workspace = true }  # For: asserting errno-to-ErrorKind mapping
+# Decoders independent of the actix-http encoders, for the compressed-response test.
+brotli-decompressor = { workspace = true }
+zstd = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["static-files", "compare", "tikv-jemallocator"]
