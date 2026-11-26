@@ -137,8 +137,10 @@ impl CombinedDesiredStatus {
             ResourcesDesiredStatus::Provisioned => {
                 if let Some(runtime_desired_status) = runtime_desired_status {
                     match runtime_desired_status {
-                        RuntimeDesiredStatus::Unavailable => Self::Unavailable,
-                        RuntimeDesiredStatus::Coordination => todo!(),
+                        // A host in coordination takes its target from the coordinator.
+                        RuntimeDesiredStatus::Unavailable | RuntimeDesiredStatus::Coordination => {
+                            Self::Unavailable
+                        }
                         RuntimeDesiredStatus::Standby => Self::Standby,
                         RuntimeDesiredStatus::Paused => Self::Paused,
                         RuntimeDesiredStatus::Running => Self::Running,
@@ -146,8 +148,10 @@ impl CombinedDesiredStatus {
                     }
                 } else if let Some(initial) = initial {
                     match initial {
-                        RuntimeDesiredStatus::Unavailable => Self::Unavailable,
-                        RuntimeDesiredStatus::Coordination => todo!(),
+                        // A host in coordination takes its target from the coordinator.
+                        RuntimeDesiredStatus::Unavailable | RuntimeDesiredStatus::Coordination => {
+                            Self::Unavailable
+                        }
                         RuntimeDesiredStatus::Standby => Self::Standby,
                         RuntimeDesiredStatus::Paused => Self::Paused,
                         RuntimeDesiredStatus::Running => Self::Running,
@@ -179,8 +183,20 @@ pub fn combine_since(
 
 #[cfg(test)]
 mod test {
-    use super::CombinedStatus;
+    use super::{CombinedDesiredStatus, CombinedStatus};
+    use crate::db::types::resources_status::ResourcesDesiredStatus;
+    use clap::ValueEnum;
+    use feldera_types::runtime_status::RuntimeDesiredStatus;
     use utoipa::ToSchema;
+
+    #[test]
+    fn combined_desired_status_accepts_every_runtime_desired_status() {
+        for &status in RuntimeDesiredStatus::value_variants() {
+            let p = ResourcesDesiredStatus::Provisioned;
+            let expected = CombinedDesiredStatus::new(p, None, Some(status));
+            assert_eq!(CombinedDesiredStatus::new(p, Some(status), None), expected);
+        }
+    }
 
     /// Returns the variant names that the OpenAPI schema declares for `T`.
     fn schema_variants<'a, T: ToSchema<'a>>() -> Vec<String> {
