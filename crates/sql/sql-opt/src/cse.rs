@@ -1,26 +1,26 @@
 //! Eliminate equivalent operators within each circuit body. A trace can be
 //! shared only when the collectors attached to each output agree as well.
 
-use crate::index_key_equivalence::{KeyComparisonError, check_bodies};
-use crate::operator_inputs::{OperatorInputs, output_port};
+use crate::index_key_equivalence::{check_bodies, KeyComparisonError};
+use crate::operator_inputs::{output_port, OperatorInputs};
 use crate::terms::Terms;
 use feldera_sql_expr::constant_rows::entries;
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionKind, Field, Node, NodeId,
     OperatorKind as Op, OutputPort,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap, hash_map::Entry};
+use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap};
 
 #[derive(Hash, Eq, Ord, PartialEq, PartialOrd)]
 struct Payload(Vec<(&'static str, usize)>);
 
-fn payload(circuit: &Circuit, node: &Node, terms: &mut Terms) -> Payload {
-    let kind = node.operator_kind().expect("CSE compares operators");
-    let extra: &[&str] = match kind {
-        Op::Aggregate | Op::StreamAggregate | Op::PrimitiveAggregate => &["aggregate"],
+fn payload_fields(kind: Op) -> &'static [&'static str] {
+    match kind {
+        Op::Aggregate | Op::StreamAggregate => &["aggregate"],
         Op::AggregateLinearPostprocess => &["postProcess"],
         Op::AggregateLinearPostprocessRetainKeys => &["postProcess", "retainKeysFunction"],
         Op::AsofJoin => &[
+            "balanced",
             "comparator",
             "isLeft",
             "leftTimestampIndex",
@@ -50,8 +50,9 @@ fn payload(circuit: &Circuit, node: &Node, terms: &mut Terms) -> Payload {
         Op::JoinFilterMap | Op::LeftJoinFilterMap => &["filter", "map", "balanced"],
         Op::StarJoinFilterMap => &["filter", "map"],
         Op::Lag => &["comparator", "projection", "offset"],
-        Op::PartitionedRollingAggregate | Op::PartitionedRollingAggregateWithWaterline => {
-            &["aggregate", "partitioningFunction", "lower", "upper"]
+        Op::PartitionedRollingAggregate => &["aggregate", "partitioningFunction", "lower", "upper"],
+        Op::PartitionedRollingAggregateWithWaterline => {
+            &["aggregateList", "partitioningFunction", "lower", "upper"]
         }
         Op::Rank => &[
             "numbering",
@@ -64,7 +65,11 @@ fn payload(circuit: &Circuit, node: &Node, terms: &mut Terms) -> Payload {
         Op::Window => &["lowerInclusive", "upperInclusive", "lowerUnbounded"],
         Op::Constant | Op::IncrementalConstant => &["outputType"],
         _ => &[],
-    };
+    }
+}
+
+fn payload(circuit: &Circuit, node: &Node, terms: &mut Terms) -> Payload {
+    let extra = payload_fields(node.operator_kind().expect("CSE compares operators"));
     let fields = std::iter::once("function")
         .chain(extra.iter().copied())
         .filter_map(|name| Some((name, terms.field(circuit, node.field(name)?, &[]))))
@@ -482,7 +487,7 @@ impl CseState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
 
     fn operator(kind: Op, id: u64, inputs: &[u64]) -> Value {
         let inputs: Vec<_> = inputs
@@ -490,6 +495,224 @@ mod tests {
             .map(|n| json!({"operator":{"node":n}, "outputNumber":0}))
             .collect();
         json!({"class":kind.wire_name(),"id":id,"inputs":inputs,"annotations":[]})
+    }
+
+    fn keep_siblings(kind: Op, inputs: &[u64], field: &str, values: [Value; 2]) {
+        let mut ops = vec![
+            operator(Op::SourceMultiset, 1, &[]),
+            operator(Op::Waterline, 2, &[1]),
+        ];
+        for (id, value) in [3, 4].into_iter().zip(values) {
+            let mut op = operator(kind, id, inputs);
+            op[field] = value;
+            ops.push(op);
+        }
+        let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":ops});
+        let result = common_subexpressions(Circuit::from_json(graph).unwrap()).unwrap();
+        assert_eq!(result.operators().count(), 4, "{kind:?}.{field}");
+    }
+
+    #[test]
+    fn rolling_aggregates_compare_their_aggregate_lists() {
+        let lists = [3, 4].map(|id| json!({
+            "class":"DBSPAggregateList", "id":id, "rowVar":{
+                "class":"DBSPVariablePath", "id":id + 2, "variable":"row"
+            }, "aggregates":[{
+                "class":"MinMaxAggregate", "id":id + 4, "operation":if id == 3 { "Min" } else { "Max" }
+            }]
+        }));
+        keep_siblings(
+            Op::PartitionedRollingAggregate,
+            &[1],
+            "aggregate",
+            lists.clone(),
+        );
+        keep_siblings(
+            Op::PartitionedRollingAggregateWithWaterline,
+            &[1, 2],
+            "aggregateList",
+            lists,
+        );
+    }
+
+    #[test]
+    fn asof_joins_compare_the_inherited_balance_flag() {
+        keep_siblings(
+            Op::AsofJoin,
+            &[1, 1],
+            "balanced",
+            [json!(false), json!(true)],
+        );
+    }
+
+    #[test]
+    fn payload_fields_exist_in_serialized_operators() {
+        fn check(circuit: &Circuit, node: &Node, expected: &[&str]) {
+            let kind = node.operator_kind().unwrap();
+            let payload = payload(circuit, node, &mut Terms::default());
+            let names: BTreeSet<_> = payload.0.iter().map(|(name, _)| *name).collect();
+            for field in payload_fields(kind) {
+                assert!(names.contains(field), "{kind:?} has no {field} field");
+            }
+            for field in expected {
+                assert!(names.contains(field), "{kind:?} payload omits {field}");
+            }
+        }
+
+        let mut checked = std::collections::HashSet::new();
+        for (fixture, key, examples) in [
+            (
+                include_str!("../../sql-difftest/tests/fixtures/limiter_window.json"),
+                "delta",
+                &[
+                    (Op::IncrementalConstant, &["function", "outputType"][..]),
+                    (Op::Waterline, &["function", "init", "extractTs"]),
+                    (
+                        Op::Window,
+                        &["lowerInclusive", "upperInclusive", "lowerUnbounded"],
+                    ),
+                ][..],
+            ),
+            (
+                include_str!("../../sql-difftest/tests/fixtures/combine_aggregates.json"),
+                "2/observation",
+                &[
+                    (Op::Constant, &["function", "outputType"][..]),
+                    (Op::StreamJoinIndex, &["balanced"]),
+                ],
+            ),
+        ] {
+            let mut fixture: Value = serde_json::from_str(fixture).unwrap();
+            let circuit = Circuit::from_json(fixture[key]["after"].take()).unwrap();
+            for (kind, fields) in examples {
+                let (_, node) = circuit
+                    .operators()
+                    .find(|(_, n)| n.operator_kind() == Some(*kind))
+                    .unwrap();
+                checked.insert(*kind);
+                check(&circuit, node, fields);
+            }
+        }
+
+        // Use projected wire definitions for the kinds absent from the stored fixtures.
+        let inner = |class, id| json!({"class":class,"id":id});
+        let closure = |id| inner("DBSPClosureExpression", id);
+        let cmp = inner("DBSPFieldComparatorExpression", 10);
+        let list = inner("DBSPAggregateList", 11);
+        let lower = inner("DBSPWindowBoundExpression", 12);
+        let upper = inner("DBSPWindowBoundExpression", 13);
+        let examples: &[(&[Op], Value)] = &[
+            (
+                &[Op::Aggregate, Op::StreamAggregate],
+                json!({"aggregate":list}),
+            ),
+            (&[Op::PrimitiveAggregate], json!({"function":closure(1)})),
+            (
+                &[Op::AggregateLinearPostprocess],
+                json!({"postProcess":closure(1)}),
+            ),
+            (
+                &[Op::AggregateLinearPostprocessRetainKeys],
+                json!({"postProcess":closure(1),"retainKeysFunction":closure(2)}),
+            ),
+            (
+                &[Op::AsofJoin],
+                json!({"balanced":false,"isLeft":true,"comparator":cmp,
+                                     "leftTimestampIndex":0,"rightTimestampIndex":1}),
+            ),
+            (
+                &[Op::ConcreteAsofJoin],
+                json!({"balanced":false,"isLeft":true,"comparator":cmp,
+                                             "leftTimestamp":closure(1),"rightTimestamp":closure(2)}),
+            ),
+            (&[Op::BinaryDistinct], json!({"positive":true})),
+            (&[Op::ChainAggregate], json!({"init":closure(1)})),
+            (
+                &[Op::Chain],
+                json!({"kinds":["Filter","Map"],"chain":[closure(1),closure(2)]}),
+            ),
+            (
+                &[Op::ControlledKeyFilter],
+                json!({"outputType":inner("DBSPTypeZSet",1),
+                                                "error":closure(2),"errorType":inner("DBSPTypeZSet",3)}),
+            ),
+            (
+                &[Op::Hop],
+                json!({"timestampIndex":0,"start":inner("DBSPShortIntervalLiteral",1),
+                                "interval":inner("DBSPShortIntervalLiteral",2),"size":inner("DBSPShortIntervalLiteral",3)}),
+            ),
+            (
+                &[Op::IndexedTopK],
+                json!({"equalityComparator":inner("DBSPEqualityComparatorExpression",1),
+                                        "outputProducer":closure(2),"limit":inner("DBSPUSizeLiteral",3),"numbering":"RANK"}),
+            ),
+            (&[Op::IntegrateTraceRetainKeys], json!({"accumulate":true})),
+            (
+                &[Op::IntegrateTraceRetainNValues],
+                json!({"which":"LastN","n":2}),
+            ),
+            (
+                &[
+                    Op::Join,
+                    Op::JoinIndex,
+                    Op::LeftJoin,
+                    Op::LeftJoinIndex,
+                    Op::StreamJoin,
+                ],
+                json!({"balanced":false}),
+            ),
+            (
+                &[Op::JoinFilterMap, Op::LeftJoinFilterMap],
+                json!({"balanced":true,"filter":closure(1),"map":closure(2)}),
+            ),
+            (
+                &[Op::StarJoinFilterMap],
+                json!({"filter":closure(1),"map":closure(2)}),
+            ),
+            (
+                &[Op::Lag],
+                json!({"offset":1,"comparator":cmp,"projection":closure(1)}),
+            ),
+            (
+                &[Op::PartitionedRollingAggregate],
+                json!({
+                    "lower":lower,"upper":upper,"partitioningFunction":closure(1),"aggregate":list
+                }),
+            ),
+            (
+                &[Op::PartitionedRollingAggregateWithWaterline],
+                json!({
+                    "lower":lower,"upper":upper,"partitioningFunction":closure(1),"aggregateList":list
+                }),
+            ),
+            (
+                &[Op::Rank],
+                json!({"numbering":"RANK","outputProducer":closure(1),
+                                 "rankCmpFunc":inner("DBSPAsymmetricFieldComparatorExpression",2),
+                                 "projectionFunc":closure(3)}),
+            ),
+            (&[Op::RowNumber], json!({"outputProducer":closure(1)})),
+        ];
+        for (kinds, fields) in examples {
+            let fields = fields.as_object().unwrap();
+            let expected: Vec<_> = fields.keys().map(String::as_str).collect();
+            for &kind in *kinds {
+                let mut op = operator(kind, 1, &[]);
+                op.as_object_mut().unwrap().extend(fields.clone());
+                let circuit = Circuit::from_json(json!({
+                    "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[op]
+                }))
+                .unwrap();
+                check(&circuit, circuit.node(NodeId::Outer(1)).unwrap(), &expected);
+                checked.insert(kind);
+            }
+        }
+        for &kind in Op::ALL {
+            assert!(
+                payload_fields(kind).is_empty() || checked.contains(&kind),
+                "missing {kind:?} fixture"
+            );
+        }
     }
 
     #[test]

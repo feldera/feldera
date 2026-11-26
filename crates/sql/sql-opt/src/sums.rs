@@ -41,11 +41,15 @@ fn cancel_terms(
 }
 
 pub fn merge_sums(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
+    merge_sums_with_limit(circuit, next, 1_000_000)
+}
+
+fn merge_sums_with_limit(circuit: Circuit, next: &mut u64, limit: usize) -> Result<Circuit, Error> {
     let order = circuit.operator_order(BodyOrder::Postorder)?;
     let mut edit = CircuitEditor::new(circuit);
     let mut forwarded = BTreeMap::new();
     let mut negations = BTreeMap::new();
-    let mut remaining_edges = 1_000_000usize;
+    let mut remaining_edges = limit;
     for id in order {
         let op = edit.node(id)?;
         let kind = op.operator_kind();
@@ -79,18 +83,25 @@ pub fn merge_sums(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
                 forwarded.insert(id, *only);
             }
             terms => {
+                let exceeded = || {
+                    let feldera_sql_ir::NodeId::Outer(number) = id else {
+                        unreachable!("sum operator has an outer id");
+                    };
+                    Error::new(format!(
+                        "MergeSums exceeds the resource limit of {limit} flattened input edges at operator {number}. \
+                         Reduce repeated UNION ALL inputs or compile with the Java optimizer."
+                    ))
+                };
                 let mut flattened = Vec::new();
                 for &term in terms {
                     let producer = edit.node(term.operator)?;
                     if producer.operator_kind() == Some(Op::Sum) {
                         remaining_edges = remaining_edges
                             .checked_sub(producer.inputs().count())
-                            .ok_or_else(|| Error::new("merge-sums output edge budget exceeded"))?;
+                            .ok_or_else(exceeded)?;
                         flattened.extend(producer.inputs());
                     } else {
-                        remaining_edges = remaining_edges
-                            .checked_sub(1)
-                            .ok_or_else(|| Error::new("merge-sums output edge budget exceeded"))?;
+                        remaining_edges = remaining_edges.checked_sub(1).ok_or_else(exceeded)?;
                         flattened.push(term);
                     }
                 }
@@ -110,6 +121,26 @@ mod tests {
     use super::*;
     use feldera_sql_ir::NodeId;
     use serde_json::json;
+
+    #[test]
+    fn repeated_sum_reports_the_flattened_input_limit() {
+        let port = |id| json!({"operator":{"node":id}, "outputNumber":0});
+        let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+            {"class":"DBSPConstantOperator","id":1,"inputs":[],
+             "outputType":{"class":"DBSPTypeZSet","id":1}},
+            {"class":"DBSPSumOperator","id":2,"inputs":[port(1),port(1)],"outputType":{"node":1}},
+            {"class":"DBSPSumOperator","id":3,"inputs":[port(2),port(2)],"outputType":{"node":1}}
+        ]});
+        let circuit = Circuit::from_json(graph).unwrap();
+        let error = merge_sums_with_limit(circuit.clone(), &mut 0, 5).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "MergeSums exceeds the resource limit of 5 flattened input edges at operator 3. \
+             Reduce repeated UNION ALL inputs or compile with the Java optimizer."
+        );
+        let result = merge_sums_with_limit(circuit, &mut 0, 6).unwrap();
+        assert_eq!(result.node(NodeId::Outer(3)).unwrap().inputs().count(), 4);
+    }
 
     #[test]
     fn complements_remove_the_earliest_positive_and_append_unmatched_negations() {
