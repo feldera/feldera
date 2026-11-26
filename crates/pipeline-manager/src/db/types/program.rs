@@ -937,6 +937,7 @@ pub fn generate_program_info(
                 | TransportConfig::PostgresOutput(_)
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_)
+                | TransportConfig::IcebergOutput(_)
                 | TransportConfig::DynamoDBOutput(_)
                 | TransportConfig::NatsOutput(_)
                 | TransportConfig::RedisOutput(_)

@@ -167,6 +167,7 @@ where any string key is valid and should not be reported as an error.
 | `dynamodb_output`    | `DynamoDBWriterConfig`   |
 | `file_output`        | `FileOutputConfig`       |
 | `http_output`        | `HttpOutputConfig`       |
+| `iceberg_output`     | `IcebergWriterConfig`    |
 | `kafka_output`       | `KafkaOutputConfig`      |
 | `nats_output`        | `NatsOutputConfig`       |
 | `postgres_output`    | `PostgresWriterConfig`   |

@@ -122,6 +122,33 @@ record! {
     }
 }
 
+record! {
+    /// [`EveryType`] with every column but `bigint` nullable.
+    NullableEveryType["iceberg_output_nullable"] {
+        bigint: i64 = "bigint", |_| None,
+        binary: Option<ByteArray> = "binary", |_| Some(None),
+        boolean: Option<bool> = "boolean", |_| Some(None),
+        date: Option<Date> = "date", |_| Some(None),
+        decimal_10_3: Option<SqlDecimal<10, 3>> = "decimal_10_3", |_| Some(None),
+        double: Option<F64> = "double", |_| Some(None),
+        float: Option<F32> = "float", |_| Some(None),
+        int: Option<i32> = "int", |_| Some(None),
+        smallint: Option<i16> = "smallint", |_| Some(None),
+        string: Option<String> = "string", |_| Some(None),
+        unused: Option<String> = "unused", |_| Some(None),
+        timestamp_ntz: Option<Timestamp> = "timestamp_ntz", |_| Some(None),
+        timestamp_tz: Option<TimestampTz> = "timestamp_tz", |_| Some(None),
+        tinyint: Option<i8> = "tinyint", |_| Some(None),
+        string_array: Option<Vec<String>> = "string_array", |_| Some(None),
+        struct1: Option<Basic> = "struct1", |_| Some(None),
+        struct_array: Option<Vec<Basic>> = "struct_array", |_| Some(None),
+        string_string_map: Option<BTreeMap<String, String>> = "string_string_map", |_| Some(None),
+        string_struct_map: Option<BTreeMap<String, Basic>> = "string_struct_map", |_| Some(None),
+        variant: Option<Variant> = "variant", |_| Some(None),
+        uuid: Option<Uuid> = "uuid", |_| Some(None),
+    }
+}
+
 /// Returns the connector attribute `name`, as `CONNECTOR_METADATA()[name]` reads it.
 fn attribute(metadata: &Option<SqlVariant>, name: &str) -> Option<SqlVariant> {
     indexFVN_(metadata, SqlString::from_ref(name))

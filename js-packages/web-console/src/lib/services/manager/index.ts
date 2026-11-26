@@ -406,6 +406,8 @@ export type {
   IcebergIngestMode,
   IcebergReaderConfig,
   IcebergTransactionMode,
+  IcebergWriteMode,
+  IcebergWriterConfig,
   InputEndpointConfig,
   InputEndpointMetrics,
   InputEndpointStatus,

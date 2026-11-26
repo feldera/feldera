@@ -58,6 +58,7 @@ with-nats = []
 # The connector suites, for an engine's crate to run against its fixture.
 testing = [
     "feldera-adapterlib/testing",
+    "feldera-iceberg?/testing",
     "proptest",
     "dep:parquet-variant",
     "dep:parquet-variant-compute",
@@ -303,6 +304,7 @@ dbsp = { workspace = true }
 feldera-sqllib = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 feldera-adapterlib = { workspace = true, features = ["testing"] }
+feldera-iceberg = { workspace = true, features = ["testing"] }
 # Test key generation only; runtime signing goes through aws-lc-rs.
 nkeys = { workspace = true }
 actix-test = { workspace = true }

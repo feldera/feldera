@@ -10,10 +10,14 @@ use feldera_types::program_schema::Relation;
 use std::sync::{Arc, Weak};
 use tokio_util::sync::CancellationToken;
 
+#[cfg(any(feature = "with-deltalake", feature = "with-iceberg"))]
+mod change_log;
 #[cfg(feature = "with-deltalake")]
 pub mod delta_table;
 #[cfg(feature = "with-dynamodb")]
 pub(crate) mod dynamodb;
+#[cfg(feature = "with-iceberg")]
+pub mod iceberg;
 pub(crate) mod postgres;
 
 #[cfg(feature = "with-dynamodb")]
@@ -73,6 +77,19 @@ pub fn create_integrated_output_endpoint(
             is_index,
             connector_config.output_buffer_config.enable_output_buffer,
             part,
+        )?),
+        #[cfg(feature = "with-iceberg")]
+        TransportConfig::IcebergOutput(config) => Box::new(iceberg::IcebergOutputEndpoint::new(
+            endpoint_id,
+            endpoint_name,
+            config,
+            key_schema,
+            schema,
+            controller,
+            shutdown,
+            continue_previous_state,
+            is_index,
+            connector_config.output_buffer_config.enable_output_buffer,
         )?),
         TransportConfig::PostgresOutput(config) => Box::new(PostgresOutputEndpoint::new(
             endpoint_id,

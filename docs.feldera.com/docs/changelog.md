@@ -21,6 +21,9 @@ Source edition can be found on github.
   fires `INSERT` triggers, and fails if the table has a `NOT NULL` column
   with no default that the view does not write. With
   `on_conflict_do_nothing`, updates do not change.
+- Added the [Iceberg output connector](/connectors/sinks/iceberg), in preview.
+  It appends the changes of a view to an Iceberg table as CDC rows, through
+  a REST, AWS Glue, or Amazon S3 Tables catalog.
 
 ## v0.391.0
 

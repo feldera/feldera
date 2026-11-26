@@ -1,0 +1,137 @@
+package org.dbsp.sqlCompiler.compiler.frontend.connectors.config;
+
+import org.dbsp.sqlCompiler.compiler.frontend.connectors.ConfigReporter;
+import org.dbsp.sqlCompiler.compiler.frontend.connectors.IValidateConfig;
+
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import javax.annotation.Nullable;
+
+/** The catalog settings that the Iceberg input and output connectors share. */
+@SuppressWarnings("unused")
+public abstract class IcebergCatalogConfig implements IValidateConfig {
+    @Nullable
+    @JsonProperty("catalog_type")
+    public IcebergCatalogType catalogType = null;
+
+    // Glue catalog fields (inlined from GlueCatalogConfig)
+    @Nullable @JsonProperty("glue.warehouse")        public String glueWarehouse = null;
+    @Nullable @JsonProperty("glue.endpoint")         public String glueEndpoint = null;
+    @Nullable @JsonProperty("glue.access-key-id")    public String glueAccessKeyId = null;
+    @Nullable @JsonProperty("glue.secret-access-key") public String glueSecretAccessKey = null;
+    @Nullable @JsonProperty("glue.profile-name")     public String glueProfileName = null;
+    @Nullable @JsonProperty("glue.region")           public String glueRegion = null;
+    @Nullable @JsonProperty("glue.session-token")    public String glueSessionToken = null;
+    @Nullable @JsonProperty("glue.id")               public String glueId = null;
+
+    // REST catalog fields (inlined from RestCatalogConfig)
+    @Nullable @JsonProperty("rest.uri")              public String restUri = null;
+    @Nullable @JsonProperty("rest.warehouse")        public String restWarehouse = null;
+    @Nullable @JsonProperty("rest.oauth2-server-uri") public String restOauth2ServerUri = null;
+    @Nullable @JsonProperty("rest.credential")       public String restCredential = null;
+    @Nullable @JsonProperty("rest.token")            public String restToken = null;
+    @Nullable @JsonProperty("rest.scope")            public String restScope = null;
+    @Nullable @JsonProperty("rest.prefix")           public String restPrefix = null;
+    @Nullable @JsonProperty("rest.headers")          public Object restHeaders = null;
+    @Nullable @JsonProperty("rest.audience")         public String restAudience = null;
+    @Nullable @JsonProperty("rest.resource")         public String restResource = null;
+
+    // S3 Tables catalog fields (inlined from S3TablesCatalogConfig)
+    @Nullable @JsonProperty("s3tables.table-bucket-arn") public String s3tablesTableBucketArn = null;
+    @Nullable @JsonProperty("s3tables.endpoint")          public String s3tablesEndpoint = null;
+    @Nullable @JsonProperty("s3tables.access-key-id")     public String s3tablesAccessKeyId = null;
+    @Nullable @JsonProperty("s3tables.secret-access-key") public String s3tablesSecretAccessKey = null;
+    @Nullable @JsonProperty("s3tables.session-token")     public String s3tablesSessionToken = null;
+    @Nullable @JsonProperty("s3tables.profile-name")      public String s3tablesProfileName = null;
+    @Nullable @JsonProperty("s3tables.region")            public String s3tablesRegion = null;
+
+    /** Absorbs flattened {@code fileio_config} keys so they are not rejected as unknown. */
+    @JsonAnySetter
+    public void setFileioOption(String key, Object value) {}
+
+    /** Checks the properties of each catalog against {@code catalog_type}. */
+    protected boolean validateCatalog(ConfigReporter reporter) {
+        boolean ok = true;
+        if (catalogType == IcebergCatalogType.Glue) {
+            if (glueWarehouse == null) {
+                reporter.warn("Invalid configuration",
+                        "missing Iceberg warehouse location—set \"glue.warehouse\" when using"
+                                + " \"catalog_type\": \"glue\"");
+                ok = false;
+            }
+        } else {
+            ok &= checkGluePropAbsent(reporter, glueWarehouse, "warehouse");
+            ok &= checkGluePropAbsent(reporter, glueEndpoint, "endpoint");
+            ok &= checkGluePropAbsent(reporter, glueAccessKeyId, "access-key-id");
+            ok &= checkGluePropAbsent(reporter, glueSecretAccessKey, "secret-access-key");
+            ok &= checkGluePropAbsent(reporter, glueProfileName, "profile-name");
+            ok &= checkGluePropAbsent(reporter, glueRegion, "region");
+            ok &= checkGluePropAbsent(reporter, glueSessionToken, "session-token");
+            ok &= checkGluePropAbsent(reporter, glueId, "id");
+        }
+        if (catalogType == IcebergCatalogType.Rest) {
+            if (restUri == null) {
+                reporter.warn("Invalid configuration",
+                        "missing Iceberg REST catalog URI—set \"rest.uri\" when using"
+                                + " \"catalog_type\": \"rest\"");
+                ok = false;
+            }
+        } else {
+            ok &= checkRestPropAbsent(reporter, restUri, "uri");
+            ok &= checkRestPropAbsent(reporter, restWarehouse, "warehouse");
+            ok &= checkRestPropAbsent(reporter, restOauth2ServerUri, "oauth2-server-uri");
+            ok &= checkRestPropAbsent(reporter, restCredential, "credential");
+            ok &= checkRestPropAbsent(reporter, restToken, "token");
+            ok &= checkRestPropAbsent(reporter, restScope, "scope");
+            ok &= checkRestPropAbsent(reporter, restPrefix, "prefix");
+            ok &= checkRestPropAbsent(reporter, restHeaders, "headers");
+            ok &= checkRestPropAbsent(reporter, restAudience, "audience");
+            ok &= checkRestPropAbsent(reporter, restResource, "resource");
+        }
+        if (catalogType == IcebergCatalogType.S3Tables) {
+            if (s3tablesTableBucketArn == null) {
+                reporter.warn("Invalid configuration",
+                        "missing S3 table bucket ARN—set \"s3tables.table-bucket-arn\" when using"
+                                + " \"catalog_type\": \"s3tables\"");
+                ok = false;
+            }
+        } else {
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesTableBucketArn, "table-bucket-arn");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesEndpoint, "endpoint");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesAccessKeyId, "access-key-id");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesSecretAccessKey, "secret-access-key");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesSessionToken, "session-token");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesProfileName, "profile-name");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesRegion, "region");
+        }
+        return ok;
+    }
+
+    private boolean checkGluePropAbsent(ConfigReporter reporter, Object value, String name) {
+        if (value != null) {
+            reporter.warnPath("glue." + name, "Invalid configuration",
+                    "\"glue." + name + "\" is only valid when \"catalog_type\": \"glue\"");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean checkRestPropAbsent(ConfigReporter reporter, Object value, String name) {
+        if (value != null) {
+            reporter.warnPath("rest." + name, "Invalid configuration",
+                    "\"rest." + name + "\" is only valid when \"catalog_type\": \"rest\"");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean checkS3tablesPropAbsent(ConfigReporter reporter, Object value, String name) {
+        if (value != null) {
+            reporter.warnPath("s3tables." + name, "Invalid configuration",
+                    "\"s3tables." + name + "\" is only valid when \"catalog_type\": \"s3tables\"");
+            return false;
+        }
+        return true;
+    }
+}

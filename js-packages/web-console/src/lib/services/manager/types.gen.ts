@@ -3248,6 +3248,54 @@ export type IcebergReaderConfig = GlueCatalogConfig &
 export type IcebergTransactionMode = 'none' | 'snapshot' | 'catchup' | 'always'
 
 /**
+ * Behavior of the Iceberg output connector when its table already exists.
+ */
+export type IcebergWriteMode = 'append' | 'error_if_exists'
+
+/**
+ * Iceberg output connector configuration.
+ *
+ * The connector appends view changes to an Iceberg table as a change log. Each row holds
+ * the view columns, `__feldera_op` (`i` insert, `d` delete, `u` update), and the batch
+ * time `__feldera_ts`. Each output batch is one Iceberg snapshot.
+ */
+export type IcebergWriterConfig = GlueCatalogConfig &
+  RestCatalogConfig &
+  S3TablesCatalogConfig & {
+    catalog_type: IcebergCatalogType
+    /**
+     * Maximum retries of a failed write or commit, with backoff of up to 10 seconds. Writing
+     * a batch again after the table changed also counts. The connector reports itself
+     * unhealthy while it retries.
+     *
+     * Defaults to unlimited, except when the table is opened at pipeline start, which is
+     * retried at most 10 times, for at most 5 minutes. Set to 0 to disable retries.
+     */
+    max_retries?: number | null
+    mode?: IcebergWriteMode
+    /**
+     * Table name in the "namespace.table" format.
+     */
+    table_name: string
+    /**
+     * Number of threads that encode and upload a batch in parallel. Defaults to 1.
+     *
+     * More than 1 requires an `index` on the connector, so that all changes of a key go to
+     * one thread.
+     */
+    threads?: number | null
+    [key: string]:
+      | string
+      | IcebergCatalogType
+      | number
+      | null
+      | IcebergWriteMode
+      | number
+      | null
+      | undefined
+  }
+
+/**
  * Describes an input connector configuration
  */
 export type InputEndpointConfig = ConnectorConfig & {
@@ -7290,6 +7338,10 @@ export type TransportConfig =
   | {
       config: IcebergReaderConfig
       name: 'iceberg_input'
+    }
+  | {
+      config: IcebergWriterConfig
+      name: 'iceberg_output'
     }
   | {
       config: PostgresReaderConfig

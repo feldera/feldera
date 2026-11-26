@@ -5737,8 +5737,10 @@ dependencies = [
  "serde",
  "serde_arrow",
  "serde_json",
+ "tempfile",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]

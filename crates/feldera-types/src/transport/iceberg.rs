@@ -374,84 +374,17 @@ impl IcebergReaderConfig {
 
     /// Reject Glue catalog config properties when 'catalog_type' isn't set to 'glue'.
     pub fn validate_glue_catalog_config(&self) -> Result<(), String> {
-        if self.catalog_type == Some(IcebergCatalogType::Glue) {
-            if self.glue_catalog_config.warehouse.is_none() {
-                return Err(r#"missing Iceberg warehouse location—set the 'glue.warehouse' property to the location of the Iceberg tables managed by the catalog (e.g., 's3://my-data-warehouse/tables/') when using "catalog_type" = "glue""#.to_string());
-            }
-        } else {
-            ensure_glue_property_not_set(&self.glue_catalog_config.warehouse, "warehouse")?;
-            ensure_glue_property_not_set(&self.glue_catalog_config.endpoint, "uri")?;
-            ensure_glue_property_not_set(&self.glue_catalog_config.access_key_id, "access-key-id")?;
-            ensure_glue_property_not_set(
-                &self.glue_catalog_config.secret_access_key,
-                "secret-access-key",
-            )?;
-            ensure_glue_property_not_set(&self.glue_catalog_config.profile_name, "profile-name")?;
-            ensure_glue_property_not_set(&self.glue_catalog_config.region, "region")?;
-            ensure_glue_property_not_set(&self.glue_catalog_config.session_token, "session-token")?;
-            ensure_glue_property_not_set(&self.glue_catalog_config.id, "id")?;
-        }
-
-        Ok(())
+        validate_glue_catalog_config(self.catalog_type.as_ref(), &self.glue_catalog_config)
     }
 
     /// Reject Rest catalog config when 'catalog_type' isn't set to 'rest'.
     pub fn validate_rest_catalog_config(&self) -> Result<(), String> {
-        if self.catalog_type == Some(IcebergCatalogType::Rest) {
-            if self.rest_catalog_config.uri.is_none() {
-                return Err(r#"missing Iceberg Rest catalog URI—set the 'rest.uri' property when using "catalog_type" = "rest""#.to_string());
-            }
-        } else {
-            ensure_rest_property_not_set(&self.rest_catalog_config.uri, "uri")?;
-            ensure_rest_property_not_set(&self.rest_catalog_config.warehouse, "warehouse")?;
-            ensure_rest_property_not_set(
-                &self.rest_catalog_config.oauth2_server_uri,
-                "oauth2_server_uri",
-            )?;
-            ensure_rest_property_not_set(&self.rest_catalog_config.credential, "credential")?;
-            ensure_rest_property_not_set(&self.rest_catalog_config.token, "token")?;
-            ensure_rest_property_not_set(&self.rest_catalog_config.scope, "scope")?;
-            ensure_rest_property_not_set(&self.rest_catalog_config.prefix, "prefix")?;
-            ensure_rest_property_not_set(&self.rest_catalog_config.headers, "headers")?;
-            ensure_rest_property_not_set(&self.rest_catalog_config.audience, "audience")?;
-            ensure_rest_property_not_set(&self.rest_catalog_config.resource, "resource")?;
-        }
-
-        Ok(())
+        validate_rest_catalog_config(self.catalog_type.as_ref(), &self.rest_catalog_config)
     }
 
     /// Reject S3 Tables catalog config when 'catalog_type' isn't set to 's3tables'.
     pub fn validate_s3tables_catalog_config(&self) -> Result<(), String> {
-        if self.catalog_type == Some(IcebergCatalogType::S3Tables) {
-            if self.s3tables_catalog_config.table_bucket_arn.is_none() {
-                return Err(r#"missing S3 table bucket ARN; set the 's3tables.table-bucket-arn' property to the ARN of the S3 table bucket (e.g., 'arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket') when using "catalog_type" = "s3tables""#.to_string());
-            }
-        } else {
-            ensure_s3tables_property_not_set(
-                &self.s3tables_catalog_config.table_bucket_arn,
-                "table-bucket-arn",
-            )?;
-            ensure_s3tables_property_not_set(&self.s3tables_catalog_config.endpoint, "endpoint")?;
-            ensure_s3tables_property_not_set(
-                &self.s3tables_catalog_config.access_key_id,
-                "access-key-id",
-            )?;
-            ensure_s3tables_property_not_set(
-                &self.s3tables_catalog_config.secret_access_key,
-                "secret-access-key",
-            )?;
-            ensure_s3tables_property_not_set(
-                &self.s3tables_catalog_config.session_token,
-                "session-token",
-            )?;
-            ensure_s3tables_property_not_set(
-                &self.s3tables_catalog_config.profile_name,
-                "profile-name",
-            )?;
-            ensure_s3tables_property_not_set(&self.s3tables_catalog_config.region, "region")?;
-        }
-
-        Ok(())
+        validate_s3tables_catalog_config(self.catalog_type.as_ref(), &self.s3tables_catalog_config)
     }
 
     /// Table name must be configured iff 'catalog_type' is set.
@@ -475,6 +408,76 @@ impl IcebergReaderConfig {
             Ok(())
         }
     }
+}
+
+/// Reject Glue catalog properties unless `catalog_type` is `glue`, which needs a warehouse.
+fn validate_glue_catalog_config(
+    catalog_type: Option<&IcebergCatalogType>,
+    config: &GlueCatalogConfig,
+) -> Result<(), String> {
+    if catalog_type == Some(&IcebergCatalogType::Glue) {
+        if config.warehouse.is_none() {
+            return Err(r#"missing Iceberg warehouse location—set the 'glue.warehouse' property to the location of the Iceberg tables managed by the catalog (e.g., 's3://my-data-warehouse/tables/') when using "catalog_type" = "glue""#.to_string());
+        }
+    } else {
+        ensure_glue_property_not_set(&config.warehouse, "warehouse")?;
+        ensure_glue_property_not_set(&config.endpoint, "uri")?;
+        ensure_glue_property_not_set(&config.access_key_id, "access-key-id")?;
+        ensure_glue_property_not_set(&config.secret_access_key, "secret-access-key")?;
+        ensure_glue_property_not_set(&config.profile_name, "profile-name")?;
+        ensure_glue_property_not_set(&config.region, "region")?;
+        ensure_glue_property_not_set(&config.session_token, "session-token")?;
+        ensure_glue_property_not_set(&config.id, "id")?;
+    }
+
+    Ok(())
+}
+
+/// Reject Rest catalog properties unless `catalog_type` is `rest`, which needs a URI.
+fn validate_rest_catalog_config(
+    catalog_type: Option<&IcebergCatalogType>,
+    config: &RestCatalogConfig,
+) -> Result<(), String> {
+    if catalog_type == Some(&IcebergCatalogType::Rest) {
+        if config.uri.is_none() {
+            return Err(r#"missing Iceberg Rest catalog URI—set the 'rest.uri' property when using "catalog_type" = "rest""#.to_string());
+        }
+    } else {
+        ensure_rest_property_not_set(&config.uri, "uri")?;
+        ensure_rest_property_not_set(&config.warehouse, "warehouse")?;
+        ensure_rest_property_not_set(&config.oauth2_server_uri, "oauth2_server_uri")?;
+        ensure_rest_property_not_set(&config.credential, "credential")?;
+        ensure_rest_property_not_set(&config.token, "token")?;
+        ensure_rest_property_not_set(&config.scope, "scope")?;
+        ensure_rest_property_not_set(&config.prefix, "prefix")?;
+        ensure_rest_property_not_set(&config.headers, "headers")?;
+        ensure_rest_property_not_set(&config.audience, "audience")?;
+        ensure_rest_property_not_set(&config.resource, "resource")?;
+    }
+
+    Ok(())
+}
+
+/// Reject S3 Tables catalog properties unless `catalog_type` is `s3tables`, which needs a bucket ARN.
+fn validate_s3tables_catalog_config(
+    catalog_type: Option<&IcebergCatalogType>,
+    config: &S3TablesCatalogConfig,
+) -> Result<(), String> {
+    if catalog_type == Some(&IcebergCatalogType::S3Tables) {
+        if config.table_bucket_arn.is_none() {
+            return Err(r#"missing S3 table bucket ARN; set the 's3tables.table-bucket-arn' property to the ARN of the S3 table bucket (e.g., 'arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket') when using "catalog_type" = "s3tables""#.to_string());
+        }
+    } else {
+        ensure_s3tables_property_not_set(&config.table_bucket_arn, "table-bucket-arn")?;
+        ensure_s3tables_property_not_set(&config.endpoint, "endpoint")?;
+        ensure_s3tables_property_not_set(&config.access_key_id, "access-key-id")?;
+        ensure_s3tables_property_not_set(&config.secret_access_key, "secret-access-key")?;
+        ensure_s3tables_property_not_set(&config.session_token, "session-token")?;
+        ensure_s3tables_property_not_set(&config.profile_name, "profile-name")?;
+        ensure_s3tables_property_not_set(&config.region, "region")?;
+    }
+
+    Ok(())
 }
 
 fn ensure_glue_property_not_set<T>(property: &Option<T>, name: &str) -> Result<(), String> {
@@ -546,73 +549,178 @@ impl IcebergReaderConfig {
     }
 }
 
+/// Behavior of the Iceberg output connector when its table already exists.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
+pub enum IcebergWriteMode {
+    /// Append to the table. Create it if it does not exist.
+    #[default]
+    #[serde(rename = "append")]
+    Append,
+
+    /// Create the table, and fail if it already exists. A pipeline that resumes from a
+    /// checkpoint reopens the table that it created.
+    #[serde(rename = "error_if_exists")]
+    ErrorIfExists,
+}
+
+/// Iceberg output connector configuration.
+///
+/// The connector appends view changes to an Iceberg table as a change log. Each row holds
+/// the view columns, `__feldera_op` (`i` insert, `d` delete, `u` update), and the batch
+/// time `__feldera_ts`. Each output batch is one Iceberg snapshot.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct IcebergWriterConfig {
+    /// Table name in the "namespace.table" format.
+    pub table_name: String,
+
+    /// Catalog that holds the table: "rest", "glue", or "s3tables".
+    pub catalog_type: IcebergCatalogType,
+
+    /// What to do if the table already exists.
+    #[serde(default)]
+    pub mode: IcebergWriteMode,
+
+    /// Maximum retries of a failed write or commit, with backoff of up to 10 seconds. Writing
+    /// a batch again after the table changed also counts. The connector reports itself
+    /// unhealthy while it retries.
+    ///
+    /// Defaults to unlimited, except when the table is opened at pipeline start, which is
+    /// retried at most 10 times, for at most 5 minutes. Set to 0 to disable retries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
+
+    /// Number of threads that encode and upload a batch in parallel. Defaults to 1.
+    ///
+    /// More than 1 requires an `index` on the connector, so that all changes of a key go to
+    /// one thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(minimum = 1)]
+    pub threads: Option<usize>,
+
+    #[serde(flatten)]
+    pub glue_catalog_config: GlueCatalogConfig,
+
+    #[serde(flatten)]
+    pub rest_catalog_config: RestCatalogConfig,
+
+    #[serde(flatten)]
+    pub s3tables_catalog_config: S3TablesCatalogConfig,
+
+    /// Storage options for configuring backend object store.
+    ///
+    /// See the [list of available options in PyIceberg documentation](https://py.iceberg.apache.org/configuration/#fileio).
+    #[serde(flatten)]
+    pub fileio_config: HashMap<String, String>,
+}
+
+impl IcebergWriterConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.threads == Some(0) {
+            return Err("'threads' must be at least 1".to_string());
+        }
+        if !self.table_name.contains('.') {
+            return Err(format!(
+                "invalid 'table_name' '{}': expected the \"namespace.table\" format",
+                self.table_name
+            ));
+        }
+        if self.table_name.split('.').any(str::is_empty) {
+            return Err(format!(
+                "invalid 'table_name' '{}': the namespace and the table must not be empty",
+                self.table_name
+            ));
+        }
+        let catalog_type = Some(&self.catalog_type);
+        validate_glue_catalog_config(catalog_type, &self.glue_catalog_config)?;
+        validate_rest_catalog_config(catalog_type, &self.rest_catalog_config)?;
+        validate_s3tables_catalog_config(catalog_type, &self.s3tables_catalog_config)
+    }
+}
+
 impl crate::sensitive::SensitiveValues for IcebergReaderConfig {
     fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
-        use crate::sensitive::{credential_header, visit_optional, visit_url};
-        visit_optional(
-            "glue.secret-access-key",
-            self.glue_catalog_config.secret_access_key.as_deref(),
+        visit_catalog_sensitive_values(
+            &self.glue_catalog_config,
+            &self.rest_catalog_config,
+            &self.s3tables_catalog_config,
+            &self.fileio_config,
             visit,
         );
-        visit_optional(
-            "glue.session-token",
-            self.glue_catalog_config.session_token.as_deref(),
+    }
+}
+
+impl crate::sensitive::SensitiveValues for IcebergWriterConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        visit_catalog_sensitive_values(
+            &self.glue_catalog_config,
+            &self.rest_catalog_config,
+            &self.s3tables_catalog_config,
+            &self.fileio_config,
             visit,
         );
-        visit_optional(
-            "s3tables.secret-access-key",
-            self.s3tables_catalog_config.secret_access_key.as_deref(),
-            visit,
-        );
-        visit_optional(
-            "s3tables.session-token",
-            self.s3tables_catalog_config.session_token.as_deref(),
-            visit,
-        );
-        visit_optional(
-            "rest.credential",
-            self.rest_catalog_config.credential.as_deref(),
-            visit,
-        );
-        visit_optional(
-            "rest.token",
-            self.rest_catalog_config.token.as_deref(),
-            visit,
-        );
-        if let Some(uri) = &self.rest_catalog_config.uri {
-            visit_url("rest.uri", uri, visit);
-        }
-        if let Some(headers) = &self.rest_catalog_config.headers {
-            for (name, value) in headers {
-                if credential_header(name) {
-                    visit(
-                        &format!("rest.headers.{}", name.to_ascii_lowercase()),
-                        value,
-                    );
-                }
+    }
+}
+
+/// Visits the secrets in the catalog and FileIO settings of an Iceberg connector.
+fn visit_catalog_sensitive_values(
+    glue: &GlueCatalogConfig,
+    rest: &RestCatalogConfig,
+    s3tables: &S3TablesCatalogConfig,
+    fileio: &HashMap<String, String>,
+    visit: &mut dyn FnMut(&str, &str),
+) {
+    use crate::sensitive::{credential_header, visit_optional, visit_url};
+    visit_optional(
+        "glue.secret-access-key",
+        glue.secret_access_key.as_deref(),
+        visit,
+    );
+    visit_optional("glue.session-token", glue.session_token.as_deref(), visit);
+    visit_optional(
+        "s3tables.secret-access-key",
+        s3tables.secret_access_key.as_deref(),
+        visit,
+    );
+    visit_optional(
+        "s3tables.session-token",
+        s3tables.session_token.as_deref(),
+        visit,
+    );
+    visit_optional("rest.credential", rest.credential.as_deref(), visit);
+    visit_optional("rest.token", rest.token.as_deref(), visit);
+    if let Some(uri) = &rest.uri {
+        visit_url("rest.uri", uri, visit);
+    }
+    if let Some(headers) = &rest.headers {
+        for (name, value) in headers {
+            if credential_header(name) {
+                visit(
+                    &format!("rest.headers.{}", name.to_ascii_lowercase()),
+                    value,
+                );
             }
         }
-        // Iceberg FileIO uses dotted keys, independently of object_store's
-        // keys. These are the keys of the PyIceberg FileIO list (see
-        // `fileio_config`) that hold a secret key, a token or a connection
-        // string. A key that is not here is not registered; connector errors
-        // still leave its value out.
-        for (key, value) in &self.fileio_config {
-            if matches!(
-                key.as_str(),
-                "s3.secret-access-key"
-                    | "s3.session-token"
-                    | "s3.sse.key"
-                    | "gcs.credentials-json"
-                    | "gcs.oauth2.token"
-                    | "oss.access-key-secret"
-                    | "adls.connection-string"
-                    | "adls.account-key"
-                    | "adls.sas-token"
-                    | "adls.client-secret"
-            ) {
-                visit(key, value);
-            }
+    }
+    // Iceberg FileIO uses dotted keys, independently of object_store's
+    // keys. These are the keys of the PyIceberg FileIO list (see
+    // `fileio_config`) that hold a secret key, a token or a connection
+    // string. A key that is not here is not registered; connector errors
+    // still leave its value out.
+    for (key, value) in fileio {
+        if matches!(
+            key.as_str(),
+            "s3.secret-access-key"
+                | "s3.session-token"
+                | "s3.sse.key"
+                | "gcs.credentials-json"
+                | "gcs.oauth2.token"
+                | "oss.access-key-secret"
+                | "adls.connection-string"
+                | "adls.account-key"
+                | "adls.sas-token"
+                | "adls.client-secret"
+        ) {
+            visit(key, value);
         }
     }
 }
@@ -757,5 +865,82 @@ mod test {
         let reparsed: IcebergReaderConfig = serde_json::from_str(&serialized).unwrap();
         assert_eq!(config, reparsed);
         assert_eq!(reparsed.num_parsers(), 2);
+    }
+
+    fn writer_config(value: serde_json::Value) -> IcebergWriterConfig {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn writer_config_defaults_and_roundtrips() {
+        let config = writer_config(json!({
+            "catalog_type": "rest",
+            "table_name": "ns.t",
+            "rest.uri": "http://localhost:8181",
+            "s3.region": "us-east-1",
+        }));
+        config.validate().unwrap();
+        assert_eq!(config.mode, IcebergWriteMode::Append);
+        assert_eq!(config.max_retries, None);
+        assert_eq!(config.threads, None);
+        // A key no catalog struct owns is a FileIO option.
+        assert_eq!(config.fileio_config.len(), 1);
+        let reparsed: IcebergWriterConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(config, reparsed);
+    }
+
+    #[test]
+    fn writer_config_rejects_what_it_cannot_use() {
+        let invalid = |value: serde_json::Value| writer_config(value).validate().unwrap_err();
+
+        let err = invalid(json!({"catalog_type": "rest", "table_name": "ns.t"}));
+        assert!(err.contains("rest.uri"), "{err}");
+
+        let err = invalid(json!({
+            "catalog_type": "rest", "table_name": "t", "rest.uri": "http://localhost:8181",
+        }));
+        assert!(err.contains("namespace.table"), "{err}");
+
+        // An empty level of a nested namespace.
+        let err = invalid(json!({
+            "catalog_type": "rest", "table_name": "db..t", "rest.uri": "http://localhost:8181",
+        }));
+        assert!(err.contains("must not be empty"), "{err}");
+
+        let err = invalid(json!({
+            "catalog_type": "rest", "table_name": "ns.t", "rest.uri": "http://localhost:8181",
+            "glue.region": "us-east-1",
+        }));
+        assert!(err.contains("glue.region"), "{err}");
+
+        let err = invalid(json!({
+            "catalog_type": "rest", "table_name": "ns.t", "rest.uri": "http://localhost:8181",
+            "threads": 0,
+        }));
+        assert!(err.contains("threads"), "{err}");
+
+        // No truncate mode: iceberg-rust has no overwrite or delete action.
+        serde_json::from_value::<IcebergWriterConfig>(json!({
+            "catalog_type": "rest", "table_name": "ns.t", "rest.uri": "http://localhost:8181",
+            "mode": "truncate",
+        }))
+        .unwrap_err();
+    }
+
+    #[test]
+    fn writer_config_names_its_secrets() {
+        use crate::sensitive::SensitiveValues;
+        let config = writer_config(json!({
+            "catalog_type": "rest",
+            "table_name": "ns.t",
+            "rest.uri": "http://localhost:8181",
+            "rest.token": "catalog-token",
+            "s3.secret-access-key": "store-secret",
+        }));
+        let mut seen = Vec::new();
+        config.visit_sensitive_values(&mut |key, _| seen.push(key.to_string()));
+        seen.sort();
+        assert_eq!(seen, ["rest.token", "s3.secret-access-key"]);
     }
 }

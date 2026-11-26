@@ -1,3 +1,4 @@
+use crate::catalog::{apply_fileio_defaults, storage_factory, CatalogConfig};
 use crate::iceberg_input_serde_config;
 use crate::share::{IcebergShareTableProvider, ShareReporter};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
@@ -43,11 +44,10 @@ use feldera_types::{
     },
 };
 use futures_util::{stream, StreamExt, TryStreamExt};
-use iceberg::CatalogBuilder;
 use iceberg::{
     arrow::ArrowReaderBuilder,
     delete_vector::DeleteVector,
-    io::{FileIO, FileIOBuilder, FileRead as _, StorageFactory},
+    io::{FileIO, FileIOBuilder, FileRead as _},
     metadata_columns::{RESERVED_FIELD_ID_FILE, RESERVED_FIELD_ID_POS},
     scan::{FileScanTask, FileScanTaskDeleteFile, FileScanTaskStream},
     spec::{
@@ -56,22 +56,9 @@ use iceberg::{
         SchemaRef as IcebergSchemaRef, SnapshotRef, Struct, TableMetadata,
     },
     table::{StaticTable, Table as IcebergTable},
-    Catalog, Runtime, TableIdent,
-};
-use iceberg_catalog_glue::{
-    GlueCatalogBuilder, AWS_ACCESS_KEY_ID, AWS_PROFILE_NAME, AWS_REGION_NAME,
-    AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, GLUE_CATALOG_PROP_CATALOG_ID, GLUE_CATALOG_PROP_URI,
-    GLUE_CATALOG_PROP_WAREHOUSE,
-};
-use iceberg_catalog_rest::{
-    RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
-};
-use iceberg_catalog_s3tables::{
-    S3TablesCatalogBuilder, S3TABLES_CATALOG_PROP_ENDPOINT_URL,
-    S3TABLES_CATALOG_PROP_TABLE_BUCKET_ARN,
+    Runtime, TableIdent,
 };
 use iceberg_datafusion::IcebergStaticTableProvider;
-use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use log::{debug, info, trace, warn};
 use roaring::RoaringTreemap;
 use serde::{Deserialize, Serialize};
@@ -94,22 +81,6 @@ use tokio::{
     time::sleep,
 };
 use url::Url;
-
-/// Storage backend for object stores, picked per path from its scheme
-/// (`s3`/`s3a`/`gs`/`memory`/...). Used for catalogs and remote tables.
-fn storage_factory() -> Arc<dyn StorageFactory> {
-    Arc::new(OpenDalResolvingStorageFactory::new())
-}
-
-// `iceberg-catalog-s3tables` reads AWS credentials for its S3 Tables API client
-// from these property keys but does not re-export them (they live in the crate's
-// private `utils` module). Mirror them here. See
-// crates/catalog/s3tables/src/utils.rs in the iceberg-rust fork.
-const S3TABLES_PROP_ACCESS_KEY_ID: &str = "aws_access_key_id";
-const S3TABLES_PROP_SECRET_ACCESS_KEY: &str = "aws_secret_access_key";
-const S3TABLES_PROP_SESSION_TOKEN: &str = "aws_session_token";
-const S3TABLES_PROP_PROFILE_NAME: &str = "profile_name";
-const S3TABLES_PROP_REGION_NAME: &str = "region_name";
 
 /// SQL columns named by the connector's own `snapshot_filter` expression,
 /// case-folded for matching. These are kept even when marked unused, so the
@@ -1065,21 +1036,6 @@ fn table_name_mapping(table: &IcebergTable) -> Result<Option<Arc<NameMapping>>, 
 /// Integrated input connector that reads from an Iceberg table.
 pub struct IcebergInputEndpoint {
     inner: Arc<IcebergInputEndpointInner>,
-}
-
-/// Fills in FileIO properties the user did not set.
-fn apply_fileio_defaults(props: &mut std::collections::HashMap<String, String>) {
-    // iceberg-rust renamed `gcs.service.path` to `gcs.service.host`; keep the old key working.
-    if let Some(endpoint) = props.remove("gcs.service.path") {
-        props
-            .entry(iceberg::io::GCS_SERVICE_HOST.to_string())
-            .or_insert(endpoint);
-    }
-    // OpenDAL's 10 s per-call timeout can fire on a read the connector stopped polling under
-    // backpressure; 60 s still catches a dead connection.
-    props
-        .entry(iceberg_storage_opendal::OPENDAL_IO_TIMEOUT_MS.to_string())
-        .or_insert_with(|| "60000".to_string());
 }
 
 impl IcebergInputEndpoint {
@@ -3010,11 +2966,9 @@ impl IcebergInputEndpointInner {
     async fn open_table(&self) -> Result<IcebergTable, ControllerError> {
         debug!("iceberg {}: opening iceberg table", self.endpoint_name);
 
-        match self.config.catalog_type {
+        match &self.config.catalog_type {
             None => self.open_table_no_catalog().await,
-            Some(IcebergCatalogType::Glue) => self.open_table_glue().await,
-            Some(IcebergCatalogType::Rest) => self.open_table_rest().await,
-            Some(IcebergCatalogType::S3Tables) => self.open_table_s3tables().await,
+            Some(catalog_type) => self.open_table_catalog(catalog_type).await,
         }
 
         // // TODO: Validate that table schema matches relation schema
@@ -3055,274 +3009,30 @@ impl IcebergInputEndpointInner {
         Ok(table.into_table())
     }
 
-    async fn open_table_glue(&self) -> Result<IcebergTable, ControllerError> {
-        let mut props = self.config.fileio_config.clone();
-
-        props.insert(
-            GLUE_CATALOG_PROP_WAREHOUSE.to_string(),
-            self.config
-                .glue_catalog_config
-                .warehouse
-                .as_ref()
-                .unwrap()
-                .clone(),
-        );
-
-        if let Some(id) = self.config.glue_catalog_config.id.as_ref() {
-            props.insert(GLUE_CATALOG_PROP_CATALOG_ID.to_string(), id.clone());
+    /// Loads the table from the configured catalog.
+    async fn open_table_catalog(
+        &self,
+        catalog_type: &IcebergCatalogType,
+    ) -> Result<IcebergTable, ControllerError> {
+        let transport_error =
+            |e| ControllerError::input_transport_error(&self.endpoint_name, true, e);
+        let catalog = CatalogConfig {
+            catalog_type,
+            glue: &self.config.glue_catalog_config,
+            rest: &self.config.rest_catalog_config,
+            s3tables: &self.config.s3tables_catalog_config,
+            fileio: &self.config.fileio_config,
         }
-
-        if let Some(endpoint) = self.config.glue_catalog_config.endpoint.as_ref() {
-            props.insert(GLUE_CATALOG_PROP_URI.to_string(), endpoint.clone());
-        }
-
-        self.config
-            .glue_catalog_config
-            .access_key_id
-            .as_ref()
-            .map(|aws_access_key_id| {
-                props.insert(AWS_ACCESS_KEY_ID.to_string(), aws_access_key_id.clone())
-            });
-
-        self.config
-            .glue_catalog_config
-            .secret_access_key
-            .as_ref()
-            .map(|aws_secret_access_key| {
-                props.insert(
-                    AWS_SECRET_ACCESS_KEY.to_string(),
-                    aws_secret_access_key.clone(),
-                )
-            });
-
-        self.config
-            .glue_catalog_config
-            .session_token
-            .as_ref()
-            .map(|session_token| {
-                props.insert(AWS_SESSION_TOKEN.to_string(), session_token.clone())
-            });
-
-        self.config
-            .glue_catalog_config
-            .profile_name
-            .as_ref()
-            .map(|profile_name| props.insert(AWS_PROFILE_NAME.to_string(), profile_name.clone()));
-
-        self.config
-            .glue_catalog_config
-            .region
-            .as_ref()
-            .map(|region_name| props.insert(AWS_REGION_NAME.to_string(), region_name.clone()));
-
-        let catalog = GlueCatalogBuilder::default()
-            .with_storage_factory(storage_factory())
-            .load("glue".to_string(), props)
-            .await
-            .map_err(|e| {
-                ControllerError::input_transport_error(
-                    &self.endpoint_name,
-                    true,
-                    anyhow!("error creating Glue catalog client: {e}"),
-                )
-            })?;
+        .load()
+        .await
+        .map_err(transport_error)?;
 
         let table_ident = self.table_ident().unwrap()?;
 
-        catalog.load_table(&table_ident).await.map_err(|e| {
-            ControllerError::input_transport_error(
-                &self.endpoint_name,
-                true,
-                anyhow!("error loading Iceberg table: {e}"),
-            )
-        })
-    }
-
-    async fn open_table_rest(&self) -> Result<IcebergTable, ControllerError> {
-        let mut props = self.config.fileio_config.clone();
-
-        props.insert(
-            REST_CATALOG_PROP_URI.to_string(),
-            self.config
-                .rest_catalog_config
-                .uri
-                .as_ref()
-                .unwrap()
-                .clone(),
-        );
-
-        if let Some(warehouse) = self.config.rest_catalog_config.warehouse.as_ref() {
-            props.insert(REST_CATALOG_PROP_WAREHOUSE.to_string(), warehouse.clone());
-        }
-
-        self.config
-            .rest_catalog_config
-            .audience
-            .as_ref()
-            .map(|audience| props.insert("audience".to_string(), audience.clone()));
-
-        self.config
-            .rest_catalog_config
-            .resource
-            .as_ref()
-            .map(|resource| props.insert("resource".to_string(), resource.clone()));
-
-        self.config
-            .rest_catalog_config
-            .credential
-            .as_ref()
-            .map(|credential| props.insert("credential".to_string(), credential.clone()));
-
-        self.config
-            .rest_catalog_config
-            .oauth2_server_uri
-            .as_ref()
-            .map(|oauth2_server_uri| {
-                props.insert("oauth2-server-uri".to_string(), oauth2_server_uri.clone())
-            });
-
-        self.config
-            .rest_catalog_config
-            .prefix
-            .as_ref()
-            .map(|prefix| props.insert("prefix".to_string(), prefix.clone()));
-
-        self.config
-            .rest_catalog_config
-            .scope
-            .as_ref()
-            .map(|scope| props.insert("scope".to_string(), scope.clone()));
-
-        self.config
-            .rest_catalog_config
-            .token
-            .as_ref()
-            .map(|token| props.insert("token".to_string(), token.clone()));
-
-        if let Some(headers) = &self.config.rest_catalog_config.headers {
-            for (header, val) in headers.iter() {
-                props.insert(format!("header.{header}"), val.clone());
-            }
-        };
-
-        let catalog = RestCatalogBuilder::default()
-            .with_storage_factory(storage_factory())
-            .load("rest".to_string(), props)
+        catalog
+            .load_table(&table_ident)
             .await
-            .map_err(|e| {
-                ControllerError::input_transport_error(
-                    &self.endpoint_name,
-                    true,
-                    anyhow!("error creating Rest catalog client: {e}"),
-                )
-            })?;
-
-        let table_ident = self.table_ident().unwrap()?;
-
-        catalog.load_table(&table_ident).await.map_err(|e| {
-            ControllerError::input_transport_error(
-                &self.endpoint_name,
-                true,
-                anyhow!("error loading Iceberg table: {e}"),
-            )
-        })
-    }
-
-    async fn open_table_s3tables(&self) -> Result<IcebergTable, ControllerError> {
-        let mut props = self.config.fileio_config.clone();
-
-        // Safe due to checks in 'validate_catalog_config'.
-        props.insert(
-            S3TABLES_CATALOG_PROP_TABLE_BUCKET_ARN.to_string(),
-            self.config
-                .s3tables_catalog_config
-                .table_bucket_arn
-                .as_ref()
-                .unwrap()
-                .clone(),
-        );
-
-        if let Some(endpoint) = self.config.s3tables_catalog_config.endpoint.as_ref() {
-            props.insert(
-                S3TABLES_CATALOG_PROP_ENDPOINT_URL.to_string(),
-                endpoint.clone(),
-            );
-        }
-
-        // Credentials for the S3 Tables API client. These use a different key
-        // namespace than the `s3.*` `fileio_config` keys that authenticate the
-        // FileIO used to read the table's data files, so both can coexist in the
-        // same property map (each consumer ignores the other's keys).
-        self.config
-            .s3tables_catalog_config
-            .access_key_id
-            .as_ref()
-            .map(|aws_access_key_id| {
-                props.insert(
-                    S3TABLES_PROP_ACCESS_KEY_ID.to_string(),
-                    aws_access_key_id.clone(),
-                )
-            });
-
-        self.config
-            .s3tables_catalog_config
-            .secret_access_key
-            .as_ref()
-            .map(|aws_secret_access_key| {
-                props.insert(
-                    S3TABLES_PROP_SECRET_ACCESS_KEY.to_string(),
-                    aws_secret_access_key.clone(),
-                )
-            });
-
-        self.config
-            .s3tables_catalog_config
-            .session_token
-            .as_ref()
-            .map(|session_token| {
-                props.insert(
-                    S3TABLES_PROP_SESSION_TOKEN.to_string(),
-                    session_token.clone(),
-                )
-            });
-
-        self.config
-            .s3tables_catalog_config
-            .profile_name
-            .as_ref()
-            .map(|profile_name| {
-                props.insert(S3TABLES_PROP_PROFILE_NAME.to_string(), profile_name.clone())
-            });
-
-        self.config
-            .s3tables_catalog_config
-            .region
-            .as_ref()
-            .map(|region_name| {
-                props.insert(S3TABLES_PROP_REGION_NAME.to_string(), region_name.clone())
-            });
-
-        let catalog = S3TablesCatalogBuilder::default()
-            .with_storage_factory(storage_factory())
-            .load("s3tables".to_string(), props)
-            .await
-            .map_err(|e| {
-                ControllerError::input_transport_error(
-                    &self.endpoint_name,
-                    true,
-                    anyhow!("error creating S3 Tables catalog client: {e}"),
-                )
-            })?;
-
-        let table_ident = self.table_ident().unwrap()?;
-
-        catalog.load_table(&table_ident).await.map_err(|e| {
-            ControllerError::input_transport_error(
-                &self.endpoint_name,
-                true,
-                anyhow!("error loading Iceberg table: {e}"),
-            )
-        })
+            .map_err(|e| transport_error(anyhow!("error loading Iceberg table: {e}")))
     }
 
     /// Validate the filter expression specified in the 'snapshot_filter' parameter.

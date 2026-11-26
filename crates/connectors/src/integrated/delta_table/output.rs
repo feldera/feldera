@@ -1,8 +1,8 @@
-use crate::catalog::{ArrowRowSink, CursorWithPolarity, SerBatchReader, SerKeyRange};
+use crate::catalog::{ArrowRowSink, SerBatchReader, SerKeyRange};
 use crate::controller::output_leader::{OutputPart, OutputPartRole};
 use crate::controller::{ControllerInner, EndpointId};
-use crate::format::MAX_DUPLICATES;
 use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
+use crate::integrated::change_log::{ChangeLog, FillError};
 use crate::integrated::delta_table::merge::compact::Compactor;
 use crate::integrated::delta_table::merge::flush::MergeWriter;
 use crate::integrated::delta_table::merge::metrics::MergeMetrics;
@@ -11,10 +11,8 @@ use crate::integrated::delta_table::merge::transient;
 use crate::integrated::delta_table::merge::{PostCommitHook, checkpoint_due};
 use crate::integrated::delta_table::{WriteError, register_storage_handlers, table_error_text};
 use crate::transport::Step;
-use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{
-    ControllerError, Encoder, OutputConsumer, OutputEndpoint, OutputEndpointCallbacks,
-    RecordFormat, SerCursor,
+    ControllerError, Encoder, OutputConsumer, OutputEndpoint, OutputEndpointCallbacks, RecordFormat,
 };
 use anyhow::{Result as AnyResult, anyhow, bail};
 use arrow::array::{Int64Array, RecordBatch, StringArray};
@@ -38,7 +36,6 @@ use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{ArrowWriterOptions, DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::{DeltaTable, DeltaTableError};
-use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::program_schema::{ColumnType, SqlType};
 use feldera_types::serde_with_context::serde_config::{
@@ -1431,148 +1428,46 @@ async fn stream_encode_and_write(
     let mut rows = cursor
         .arrow_sink(inner.row_schema.clone())
         .map_err(WriteError::Deterministic)?;
+    let mut change_log = ChangeLog::new(
+        cursor,
+        &inner.value_schema.name,
+        inner.key_schema.as_ref(),
+        inner.is_index,
+    );
+    let mut report_violation = |e| {
+        if let Some(controller) = inner.controller.upgrade() {
+            controller.output_transport_error(
+                inner.endpoint_id,
+                &inner.endpoint_name,
+                false,
+                e,
+                Some("delta_uniqueness_violation"),
+            );
+        }
+    };
     let mut ops = Vec::new();
-    let mut num_records = 0;
-    let index_name = inner.key_schema.as_ref().map(|s| &s.name);
 
-    if let Some(index_name) = index_name
-        && inner.is_index
-    {
-        let mut cursor = cursor;
-
-        while cursor.key_valid() {
-            let op =
-                match indexed_operation_type(&inner.value_schema.name, index_name, cursor.as_mut())
-                {
-                    Ok(op) => op,
-                    Err(e) => {
-                        if let Some(controller) = inner.controller.upgrade() {
-                            controller.output_transport_error(
-                                inner.endpoint_id,
-                                &inner.endpoint_name,
-                                false,
-                                e,
-                                Some("delta_uniqueness_violation"),
-                            );
-                        }
-                        None
-                    }
-                };
-
-            if let Some(op) = op {
-                cursor.rewind_vals();
-
-                match op {
-                    IndexedOperationType::Insert => {
-                        cursor
-                            .append_val_to_arrow(rows.as_mut())
-                            .map_err(WriteError::Deterministic)?;
-                        ops.push("i");
-                    }
-                    IndexedOperationType::Delete => {
-                        cursor
-                            .append_val_to_arrow(rows.as_mut())
-                            .map_err(WriteError::Deterministic)?;
-                        ops.push("d");
-                    }
-                    IndexedOperationType::Upsert => {
-                        assert!(cursor.val_valid());
-
-                        if cursor.weight() < 0 {
-                            cursor.step_val();
-                        }
-                        assert!(cursor.val_valid());
-
-                        cursor
-                            .append_val_to_arrow(rows.as_mut())
-                            .map_err(WriteError::Deterministic)?;
-                        ops.push("u");
-                    }
-                };
-
-                num_records += 1;
-
-                if num_records >= CHUNK_SIZE {
-                    flush_chunk(
-                        rows.as_mut(),
-                        &mut ops,
-                        micros,
-                        &mut writer,
-                        inner,
-                        rows_written,
-                    )
-                    .await?;
-                    num_records = 0;
-                }
-            };
-
-            cursor.step_key().map_err(WriteError::Transient)?;
+    loop {
+        let more = change_log
+            .fill(rows.as_mut(), &mut ops, CHUNK_SIZE, &mut report_violation)
+            .map_err(|e| match e {
+                FillError::Rows(e) => WriteError::Deterministic(e),
+                FillError::Read(e) => WriteError::Transient(e),
+            })?;
+        if !ops.is_empty() {
+            flush_chunk(
+                rows.as_mut(),
+                &mut ops,
+                micros,
+                &mut writer,
+                inner,
+                rows_written,
+            )
+            .await?;
         }
-    } else {
-        let mut cursor = if inner.key_schema.is_some() {
-            CursorWithPolarity::new(Box::new(SerCursorFlattened::new(cursor)))
-        } else {
-            CursorWithPolarity::new(cursor)
-        };
-
-        while cursor.key_valid() {
-            if !cursor.val_valid() {
-                cursor.step_key().map_err(WriteError::Transient)?;
-                continue;
-            }
-
-            let mut w = cursor.weight();
-            if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
-                return Err(WriteError::Deterministic(anyhow!(
-                    "Unable to output record with very large weight {w}. \
-                     Consider adjusting your SQL queries to avoid duplicate output records, \
-                     e.g., using 'SELECT DISTINCT'."
-                )));
-            }
-
-            while w != 0 {
-                if w > 0 {
-                    cursor
-                        .append_key_to_arrow(rows.as_mut())
-                        .map_err(WriteError::Deterministic)?;
-                    ops.push("i");
-                    w -= 1;
-                } else {
-                    cursor
-                        .append_key_to_arrow(rows.as_mut())
-                        .map_err(WriteError::Deterministic)?;
-                    ops.push("d");
-                    w += 1;
-                }
-                num_records += 1;
-
-                if num_records >= CHUNK_SIZE {
-                    flush_chunk(
-                        rows.as_mut(),
-                        &mut ops,
-                        micros,
-                        &mut writer,
-                        inner,
-                        rows_written,
-                    )
-                    .await?;
-                    num_records = 0;
-                }
-            }
-            cursor.step_key().map_err(WriteError::Transient)?;
+        if !more {
+            break;
         }
-    }
-
-    if num_records > 0 {
-        flush_chunk(
-            rows.as_mut(),
-            &mut ops,
-            micros,
-            &mut writer,
-            inner,
-            rows_written,
-        )
-        .await?;
     }
 
     let actions = writer
