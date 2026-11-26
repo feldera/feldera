@@ -3045,7 +3045,10 @@ mod test {
         );
         // A host reports the connectors themselves to the coordinator.
         assert_eq!(
-            config.distributable_outputs().into_keys().collect::<Vec<_>>(),
+            config
+                .distributable_outputs()
+                .into_keys()
+                .collect::<Vec<_>>(),
             ["a", "b", "e"]
         );
     }
