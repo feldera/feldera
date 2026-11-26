@@ -22,11 +22,21 @@ Source edition can be found on github.
   with no default that the view does not write. With
   `on_conflict_do_nothing`, updates do not change.
 
+- The PostgreSQL output connector has a new option, `max_retries`. By
+  default, the connector now writes a batch again until it succeeds, for each
+  failure that can go away, and reports itself as unhealthy in the meantime.
+  Before, it dropped the batch after 10 attempts. A failure that comes back
+  each time, such as a role that is configured as read-only, now stops the
+  output of the connector until the cause is corrected. Its output buffer
+  then fills, and the whole pipeline stops taking input, so its other output
+  connectors stop too. Set `max_retries` to `9` for the behavior of before.
+  See [connection loss and connection
+  poolers](/connectors/sinks/postgresql#connection-loss-and-connection-poolers).
+
 - The PostgreSQL output connector now connects again and writes the batch
   again when a connection pooler, such as PgBouncer, ends the session with
-  an error of its own (SQLSTATE `08P01`). Before, it dropped the batch. It
-  still drops a batch that fails in 10 attempts. See [connection loss and
-  connection
+  an error of its own (SQLSTATE `08P01`). Before, it dropped the batch.
+  See [connection loss and connection
   poolers](/connectors/sinks/postgresql#connection-loss-and-connection-poolers)
   and [issue 8014](https://github.com/feldera/feldera/issues/8014).
 
@@ -36,8 +46,7 @@ Source edition can be found on github.
   fails for a cause on the server side: a cancelled statement, a lock that
   is not available, a deadlock, a serialization failure, a shortage of disk
   space or memory, a system error or an internal error. Each new attempt
-  uses a new connection. The connector makes at most 10 attempts, the first
-  one included, and then drops the batch. See [connection loss and
+  uses a new connection. See [connection loss and
   connection
   poolers](/connectors/sinks/postgresql#connection-loss-and-connection-poolers).
 
