@@ -12,8 +12,10 @@ Source edition can be found on github.
 
 - The PostgreSQL output connector in materialized mode now writes an update
   of a row that is not in the table. Before, the `UPDATE` did not change the
-  table, so a row that a dropped batch left out stayed out until its key was
-  deleted and inserted again. The connector still updates the rows that are
+  table, so a row that is missing because an earlier batch failed to write
+  stayed missing until its key was deleted and inserted again. This repairs
+  a missing row only when its key gets an update. It does not make the table
+  complete. The connector still updates the rows that are
   there with an `UPDATE`, and inserts the other rows with
   `INSERT ... ON CONFLICT (key) DO UPDATE`. So an update of a missing row
   fires `INSERT` triggers, and fails if the table has a `NOT NULL` column

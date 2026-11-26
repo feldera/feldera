@@ -142,8 +142,8 @@ impl RawQueries {
                     )
                 } else {
                     // UPDATE the rows that are there, then INSERT only the rows
-                    // that are not, for example a row that a dropped batch left
-                    // out. An INSERT of a row that is there would check NOT
+                    // that are not, for example a row that an earlier batch
+                    // failed to write. An INSERT of a row that is there would check NOT
                     // NULL on columns the view does not write, and use a value
                     // of each sequence.
                     let updated_alias = "u";

@@ -80,8 +80,9 @@ In materialized mode (`"mode": "materialized"`), the connector performs direct `
 
 The connector writes an update in one statement: an `UPDATE` of the rows
 that are in the table, and an `INSERT ... ON CONFLICT (key) DO UPDATE` of
-the rows that are not, for example a row that a batch that the connector
-dropped did not insert. An update of a row that is there changes only the
+the rows that are not, for example a row that is missing because an earlier
+batch failed to write. This repairs a missing row only when its key gets an
+update: other missing rows stay missing. An update of a row that is there changes only the
 columns of the view: it does not check the other columns and does not use a
 value of a sequence. An update of a missing row is an insert: it fires
 `INSERT` triggers, and fails if the table has a `NOT NULL` column with no
