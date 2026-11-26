@@ -196,6 +196,12 @@ mod test {
             let expected = CombinedDesiredStatus::new(p, None, Some(status));
             assert_eq!(CombinedDesiredStatus::new(p, Some(status), None), expected);
         }
+        let p = ResourcesDesiredStatus::Provisioned;
+        let coordination = Some(RuntimeDesiredStatus::Coordination);
+        assert_eq!(
+            CombinedDesiredStatus::new(p, None, coordination),
+            CombinedDesiredStatus::Unavailable
+        );
     }
 
     /// Returns the variant names that the OpenAPI schema declares for `T`.
