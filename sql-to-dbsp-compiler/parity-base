@@ -1,0 +1,3 @@
+# A pull request that changes compiler output on purpose must update this
+# commit or parity-expected-differences in the same change.
+c6ede756d398e09ba241f1cd5f57154ef2021234

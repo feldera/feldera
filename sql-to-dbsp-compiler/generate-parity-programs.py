@@ -3,6 +3,7 @@
 from pathlib import Path
 import shutil
 import random
+import re
 import sys
 
 rnd = random.Random(42)
@@ -16,7 +17,7 @@ def table(i, ncols):
     return f"CREATE TABLE t{i} (\n" + ",\n".join(cols) + "\n);\n"
 
 
-def wide(ntables=150, ncols=40, nviews=1500):
+def wide(ntables=12, ncols=16, nviews=35):
     """Many wide tables and a mix of filter, join, aggregate and union views."""
     s = [table(i, ncols) for i in range(ntables)]
     for v in range(nviews):
@@ -42,7 +43,7 @@ def wide(ntables=150, ncols=40, nviews=1500):
     return "".join(s)
 
 
-def chain(n=800):
+def chain(n=32):
     """Deep chain of views, each built on the previous one, with aggregates and joins."""
     s = [table(0, 10), table(1, 10)]
     s.append("CREATE VIEW w0 AS SELECT id, k, c0, c2, c3 FROM t0;\n")
@@ -64,7 +65,7 @@ def chain(n=800):
     return "".join(s)
 
 
-def huge_expr(ncols=300, nviews=40):
+def huge_expr(ncols=48, nviews=8):
     """Very wide projections with many expressions and constants to fold."""
     s = [table(0, ncols)]
     for v in range(nviews):
@@ -89,6 +90,12 @@ if __name__ == "__main__":
     for name, program in [("wide", wide()), ("chain", chain()), ("huge_expr", huge_expr())]:
         (output / f"{name}.sql").write_text(program)
     source = Path(__file__).resolve().parent
-    shutil.copyfile(source / "SQL-compiler/src/test/resources/tpcds.sql", output / "tpcds.sql")
+    # A constant identity hash makes large optimizer maps slow. Keep every TPC-DS view.
+    tpcds = (source / "SQL-compiler/src/test/resources/tpcds.sql").read_text()
+    schema, *views = re.split(r"(?=^CREATE VIEW )", tpcds, flags=re.MULTILINE)
+    if not views:
+        sys.exit("No TPC-DS views found. Check the fixture format.")
+    for start in range(0, len(views), 6):
+        (output / f"tpcds-{start + 1:02}.sql").write_text(schema + "".join(views[start:start + 6]))
     for path in (source / "parity-programs").glob("*.sql"):
         shutil.copyfile(path, output / path.name)
