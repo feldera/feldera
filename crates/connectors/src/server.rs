@@ -1433,7 +1433,7 @@ fn parse_config_with_deferred_logging(
     // position, not the value.
     let mut config: PipelineConfig = serde_json::from_str(&string).map_err(|e| {
         ControllerError::pipeline_config_parse_error(&format!(
-            "configuration file '{}' must be JSON (YAML is no longer read): {} (line {}, column {})",
+            "configuration file '{}' must be JSON: {} (line {}, column {})",
             path.display(),
             feldera_types::config_diagnostics::deserialization_error(&e),
             e.line(),
@@ -6204,9 +6204,8 @@ mod test_status {
     use tracing::{Level, subscriber::NoSubscriber};
     use uuid::Uuid;
 
-    /// The configuration file is read as JSON whatever its name: the YAML
-    /// fallback for older launchers is gone, and the error says so and
-    /// names the file.
+    /// The configuration file is read as JSON whatever its name, and the
+    /// error names the file.
     #[test]
     fn parse_config_reads_json_only() {
         let mut yaml_file = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
