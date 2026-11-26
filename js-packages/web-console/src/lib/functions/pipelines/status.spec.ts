@@ -7,7 +7,11 @@
 import { describe, expect, it } from 'vitest'
 import type { StorageStatus } from '#lib/services/manager/index.ts'
 import type { PipelineStatus } from '#lib/services/pipelineManager.ts'
-import { deletePipelineDisabledReason, editSettingsDisabledReason } from './status'
+import {
+  deletePipelineDisabledReason,
+  editSettingsDisabledReason,
+  isPipelineCompiling
+} from './status'
 
 describe('deletePipelineDisabledReason', () => {
   it('allows deletion once the pipeline is stopped and storage is cleared', () => {
@@ -88,5 +92,26 @@ describe('editSettingsDisabledReason', () => {
     expect(editSettingsDisabledReason(status)).toBe(
       'Update the runtime or clear storage to edit settings'
     )
+  })
+})
+
+describe('isPipelineCompiling', () => {
+  it.each([
+    { Queued: { cause: 'compile' } },
+    { CompilingSql: { cause: 'start' } },
+    { SqlCompiled: { cause: 'compile' } },
+    { CompilingRust: { cause: 'start' } }
+  ] as const)('is true for %o', (status) => {
+    expect(isPipelineCompiling(status)).toBe(true)
+  })
+
+  it.each([
+    'Stopped',
+    'Running',
+    'SqlError',
+    'Unavailable',
+    undefined
+  ] as const)('is false for %s', (status) => {
+    expect(isPipelineCompiling(status)).toBe(false)
   })
 })

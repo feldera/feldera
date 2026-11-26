@@ -480,7 +480,6 @@
           runtimeVersion={pipelineThumb.platformVersion}
           baseRuntimeVersion={page.data.feldera!.version}
           configuredRuntimeVersion={pipelineThumb.programConfig?.runtime_version}
-          {programStatus}
         ></PipelineVersion>
       </div>
     </div>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import RBAC from '#lib/components/auth/RBAC.svelte'
-  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import UpdateRuntimeButton from '#lib/components/pipelines/UpdateRuntimeButton.svelte'
   import { page } from '$app/state'
 
   const {
@@ -10,12 +10,6 @@
     pipelineName: string
     runtimeVersion: { version: string; status: 'latest' | 'update_available' | 'custom' }
   } = $props()
-
-  const api = usePipelineManager()
-
-  async function handleUpgrade() {
-    api.postUpdateRuntime(pipelineName)
-  }
 </script>
 
 <div class="flex h-fit min-h-10 items-center gap-2 preset-tonal-tertiary px-4">
@@ -26,12 +20,7 @@
       pipeline.
     </span>
     <RBAC require="exec:runtime_upgrade">
-      <button
-        class="btn h-7 border-0 preset-filled-primary-500 py-0 text-sm"
-        onclick={handleUpgrade}
-      >
-        Update
-      </button>
+      <UpdateRuntimeButton {pipelineName} class="h-7 py-0 text-sm" />
     </RBAC>
   {:else}
     <span>

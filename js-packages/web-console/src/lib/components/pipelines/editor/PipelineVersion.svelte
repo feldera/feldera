@@ -2,21 +2,18 @@
   import { ClipboardCopyButton } from 'common-ui'
   import PipelineVersionTooltip from '#lib/components/pipelines/table/PipelineVersionTooltip.svelte'
   import { getRuntimeVersion } from '#lib/functions/pipelines/runtimeVersion.ts'
-  import type { ProgramStatus } from '#lib/services/pipelineManager.ts'
   import { page } from '$app/state'
 
   const {
     pipelineName,
     runtimeVersion,
     baseRuntimeVersion,
-    configuredRuntimeVersion,
-    programStatus
+    configuredRuntimeVersion
   }: {
     pipelineName: string
     runtimeVersion: string
     baseRuntimeVersion: string
     configuredRuntimeVersion: string | null | undefined
-    programStatus: ProgramStatus | undefined
   } = $props()
 
   const { version, status } = $derived(
@@ -31,16 +28,20 @@
   )
 </script>
 
-{#if programStatus === 'Success' || programStatus === 'SystemError' || programStatus === 'SqlError' || programStatus === 'SqlCompiled' || programStatus === 'RustError'}
-  {#if version.length < 11}
-    {version}
-  {:else}
-    <div class="flex flex-nowrap items-center">
-      {version.slice(0, 7)}
-      <span class="select-none">...</span>
-      <ClipboardCopyButton value={version}></ClipboardCopyButton>
-    </div>
-  {/if}
+<!-- The pipeline manager sets the runtime version before the compilation starts. Thus, the
+  version shows during a compilation too, and it is the version the program compiles for. -->
+{#if version.length < 11}
+  {version}
+{:else}
+  <div class="flex flex-nowrap items-center">
+    {version.slice(0, 7)}
+    <span class="select-none">...</span>
+    <ClipboardCopyButton value={version}></ClipboardCopyButton>
+  </div>
+{/if}
+<!-- The tooltip anchors to its previous sibling, this wrapper. The wrapper keeps the open popover
+  in place when a click on Update replaces the chip. -->
+<span class="flex">
   {#if status === 'custom'}
     <span
       class="relative chip h-5 rounded-md preset-outlined-surface-200-800 text-sm text-surface-700-300"
@@ -57,5 +58,5 @@
   {:else}
     <span class="chip h-5 rounded-md preset-outlined-success-600-400 text-sm"> Latest </span>
   {/if}
-{/if}
+</span>
 <PipelineVersionTooltip {pipelineName} {status} {baseRuntimeVersion} />
