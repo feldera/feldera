@@ -727,7 +727,7 @@ regressions failed before the correction and all seven field-use tests passed
 after it. On `2c483386e`, all 24 frozen field-trimming and carried-column
 cases per engine matched Java, through 15,255 classic and 15,229 Gen-2
 observations and emission. The build also passed 227 Rust tests and 273
-nightly optimizer tests. The focused upstream PR is assigned to Mihai Budiu.
+nightly optimizer tests. The focused upstream PR is assigned to the compiler maintainer.
 [Field trimming and checkpoint restores](evidence/p3-discarded-statement-reads.json) ·
 [Upstream compiler fix](https://github.com/feldera/feldera/pull/8065)
 

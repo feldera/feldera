@@ -1,11 +1,48 @@
 import json
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from benchmark_live_optimizer import artifact_json, compare
+from benchmark_live_optimizer import artifact_json, compare, direct_java, jvm_options, summarize, trial
 from run_determinism import file_digest
+
+
+class DirectProfiles(unittest.TestCase):
+    def test_matched_jvm_tracks_the_driver_options(self):
+        compiler = Path("/package/sql2dbsp")
+        hybrid = (Path(__file__).resolve().parents[1] / "sql2dbsp/src/hybrid.rs").read_text()
+        jvm = hybrid.split("fn jvm(", 1)[1].split("Ok(command)", 1)[0]
+        # The driver builds the library path from its own executable.
+        prefix = re.search(r'OsString::from\("([^"]+)"\)', jvm)
+        arguments = jvm.replace(prefix[0], "")
+        options = re.findall(r'"(-[^"]+)"|\.arg\((library_path)\)', arguments)
+        expected = [literal or prefix[1] + str(compiler.parent) for literal, _ in options]
+        self.assertEqual(jvm_options(compiler) + ["-cp"], expected)
+
+    def test_production_uses_the_packaged_jar_and_both_ratios_name_the_profile(self):
+        self.assertEqual(direct_java("production", Path("/package/worker"), "compiler.jar"),
+                         ["java", "-jar", "compiler.jar"])
+        matched = direct_java("matched", Path("/package/worker"), "compiler.jar")
+        self.assertIn("-XX:TieredStopAtLevel=1", matched)
+        self.assertIn("-XX:ActiveProcessorCount=1", matched)
+        self.assertEqual(matched[-3:], ["-cp", "compiler.jar", "org.dbsp.sqlCompiler.CompilerMain"])
+        measurements = {p: {"hybrid": [6] * 20, "direct": [d] * 20}
+                        for p, d in [("matched", 2), ("production", 3)]}
+        result = summarize(measurements)
+        self.assertEqual(result["matched"]["p95_ratio"], 3)
+        self.assertEqual(result["production"]["p95_ratio"], 2)
+
+    def test_demo_validator_can_call_trial_with_the_default_profile(self):
+        args = SimpleNamespace(classpath="compiler.jar", engine="classic", compiler=Path("/package/worker"),
+                               producer="test", workspace_runtime=None)
+        with TemporaryDirectory() as scratch, patch("benchmark_live_optimizer.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=1, stderr=b"compiler diagnostic")
+            trial(args, Path("example.sql"), ["direct", "hybrid"], Path(scratch))
+            command = run.call_args_list[0].args[0]
+            self.assertEqual(command[:command.index("-i")], direct_java("matched", args.compiler, args.classpath))
 
 
 class MeasuredArtifacts(unittest.TestCase):

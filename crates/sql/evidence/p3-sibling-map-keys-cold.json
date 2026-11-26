@@ -2,7 +2,7 @@
   "parent_commit": "e524d773891a61e7d3fc93f86d9e2769abd51cc2",
   "source_manifest_sha256": "fa7c82054f01203ac4d33888f386bda2f41925a6a5f839a1b79d607d42e57d33",
   "changes_patch_sha256": "6fb9c4601d4810159cf866a32b35481afb0e32d8090757308d892548206df72e",
-  "archive": "/Users/xav/Dev/feldera-new-compiler/.bench-results/p1-p5/p3-cold-compilation/2026-23-11-01-51-e524d",
+  "archive": ".bench-results/p1-p5/p3-cold-compilation/2026-23-11-01-51-e524d",
   "profile": "Cold SQL-to-classic artifact emission. Each invocation starts a fresh compiler process pinned to CPU 15. Detached replay and compiler verification ran on other logical CPUs in the same devcontainer.",
   "matched_pairs": 69,
   "warmup_pairs_per_workload": 2,

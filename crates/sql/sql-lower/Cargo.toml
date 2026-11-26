@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
+publish = false
 
 [dependencies]
 feldera-sql-ir = { path = "../sql-ir" }
