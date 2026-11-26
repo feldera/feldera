@@ -7813,6 +7813,18 @@ impl OutputBuffer {
         }
     }
 
+    /// Records the counts of output that went to the connector without passing
+    /// through the buffer, such as an initial snapshot.
+    ///
+    /// The endpoint status already holds these counts.  The buffer must hold
+    /// them too, or the next report of the buffer as flushed would move the
+    /// endpoint's counts back to the older value it last saw.
+    fn output_unbuffered(&mut self, processed_records: Option<ProcessedRecords>) {
+        if let Some(records) = processed_records {
+            self.buffered_processed_records = records;
+        }
+    }
+
     /// Returns `true` when it is time to flush the buffer either because it's full or
     /// because the max buffering timeout has expired.
     fn flush_needed(&self, config: &OutputBufferConfig) -> bool {
@@ -10184,6 +10196,10 @@ impl ControllerInner {
                             .consumer()
                             .steps_processed(processed.total_processed_steps);
                     }
+
+                    // Keep the buffer's counts level with the ones that
+                    // `output_batch` stores below (#8028).
+                    output_buffer.output_unbuffered(processed_records);
 
                     // `num_records` output records have been transmitted --
                     // update output stats, wake up the circuit thread if the
@@ -12706,5 +12722,58 @@ mod credential_registration_tests {
                 format!("mode on slot 1 topic {reference}")
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod output_buffer_tests {
+    use super::OutputBuffer;
+    use crate::controller::stats::ProcessedRecords;
+
+    fn counts(records: u64, steps: u64) -> ProcessedRecords {
+        ProcessedRecords {
+            total_processed_input_records: records,
+            total_processed_steps: steps,
+        }
+    }
+
+    /// The sequence from #8028: output that skips the buffer (an initial
+    /// snapshot), then an empty batch of an open transaction, which carries no
+    /// counts.  The buffer is empty, so the output thread reports it as flushed
+    /// with its counts; they must be the snapshot's, not the buffer's initial
+    /// zero.
+    #[test]
+    fn empty_transaction_batch_after_unbuffered_output_keeps_counts() {
+        let mut buffer = OutputBuffer::new("endpoint");
+
+        buffer.output_unbuffered(Some(counts(100, 3)));
+        buffer.insert(None, 4, 1, None);
+
+        assert!(buffer.is_empty());
+        assert_eq!(
+            buffer
+                .buffered_processed_records
+                .total_processed_input_records,
+            100
+        );
+        assert_eq!(buffer.buffered_processed_records.total_processed_steps, 3);
+    }
+
+    /// Output that skips the buffer during an open transaction carries no
+    /// counts, and leaves the buffer's counts alone.
+    #[test]
+    fn unbuffered_output_without_counts_keeps_counts() {
+        let mut buffer = OutputBuffer::new("endpoint");
+
+        buffer.insert(None, 2, 0, Some(counts(50, 2)));
+        buffer.output_unbuffered(None);
+
+        assert_eq!(
+            buffer
+                .buffered_processed_records
+                .total_processed_input_records,
+            50
+        );
+        assert_eq!(buffer.buffered_processed_records.total_processed_steps, 2);
     }
 }
