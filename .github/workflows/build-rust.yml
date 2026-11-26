@@ -1,6 +1,15 @@
 name: Build Rust Sources
 
 on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.cargo/**'
+      - '.github/workflows/build-rust.yml'
+      - '.github/workflows/test-unit.yml'
   workflow_call:
 
 # The build jobs hand GITHUB_TOKEN to every build script in the tree, so keep
@@ -30,6 +39,7 @@ env:
 
 jobs:
   build-rust:
+    if: github.event_name != 'pull_request'
     name: Build Rust Binaries
     # Backstop for the whole job (all steps): a stalled network call (e.g.
     # sccache's GCS backend, which exposes no client-side timeout) can hang
@@ -184,7 +194,43 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-sql-unit-pr:
+    if: github.event_name == 'pull_request'
+    name: Build Rust SQL compiler tests
+    runs-on: [gke-runners-amd64]
+    timeout-minutes: 30
+    container:
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-4c59cc4f717bdd391dd0b00c65b65af61f35aee2
+    env:
+      RUSTC_WRAPPER: ""
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Stage SQL test binaries
+        shell: bash
+        run: |
+          mkdir -p build
+          cargo build --locked --release --tests --bins --target=x86_64-unknown-linux-gnu \
+            -p feldera-sql-ir -p feldera-sql-expr -p feldera-sql-opt -p feldera-sql-opt-jni \
+            -p sql2dbsp -p feldera-sql-difftest -p feldera-sql-parser -p feldera-sql-binder \
+            -p feldera-sql-lower -p feldera-sql-source --message-format=json |
+            jq -r 'select(.executable) | .executable' |
+            while IFS= read -r binary; do cp "$binary" build/; done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sql-unit-binaries
+          path: build/
+          if-no-files-found: error
+          retention-days: 1
+
+  test-sql-unit-pr:
+    needs: build-sql-unit-pr
+    uses: ./.github/workflows/test-unit.yml
+    permissions:
+      actions: read
+      contents: read
+
   build-fda-native:
+    if: github.event_name != 'pull_request'
     name: Build fda (native)
 
     # Builds fda for Windows and macOS using native runners.

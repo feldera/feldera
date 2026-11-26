@@ -1,6 +1,9 @@
 name: Nightly P0 SQL compiler checks
 
 on:
+  pull_request:
+    paths:
+      - 'sql-to-dbsp-compiler/**'
   schedule:
     - cron: "17 8 * * *"
   workflow_dispatch:
@@ -33,6 +36,8 @@ env:
 
 jobs:
   probes:
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 300
     name: Compiler probes and corpus replay
     strategy:
       matrix:
@@ -46,6 +51,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check workflow test names
+        run: python3 crates/sql/scripts/check_workflow_test_names.py
 
       - name: Cache Cargo registry
         uses: ./.github/actions/feldera-gcs-cache
@@ -457,6 +465,69 @@ jobs:
           python3 ../crates/sql/scripts/verify_optimizer_junit.py SQL-compiler/target/surefire-reports \
             --suffix "$report_suffix" "${tests[@]}"
 
+          # These comparison properties select standalone oracles.
+          work=$(mktemp -d "$RUNNER_TEMP/optimizer-oracles.XXXXXXXX")
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          jvm=(java -ea --enable-native-access=ALL-UNNAMED "-Djava.library.path=$target_dir/release"
+               -cp "$java_target/test-classes:$java_target/sql2dbsp-jar-with-dependencies.jar")
+          tools=org.dbsp.sqlCompiler.compiler.sql.tools
+          comparator="$target_dir/release/sql-difftest"
+          cd "$work"
+          for name in asof let; do
+            sql="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/parity-programs/$name.sql"
+            jq -cn --arg id "$name" --rawfile sql "$sql" --arg digest "$(sha256sum "$sql" | cut -d' ' -f1)" \
+              '{id:$id,input_sha256:$digest,options:{languageOptions:{incrementalize:true},ioOptions:{gen2:false}},
+                submissions:[{batch:0,many:true,sql:$sql}]}' >> passes.jsonl
+          done
+          "${jvm[@]}" "$tools.PassCorpusOracle" --capture-s2 passes.jsonl passes-s2
+          compare_pass() {
+            local property=$1 pass=$2 value=${3:-true}
+            "${jvm[@]}" "$tools.PassCorpusOracle" passes.jsonl "$pass" passes-s2 > control.jsonl
+            "${jvm[@]}" "-Dfeldera.optimizer.compareRust$property=$value" \
+              "$tools.PassCorpusOracle" passes.jsonl "$pass" passes-s2 > candidate.jsonl
+            "$comparator" --compare-pass "$pass" passes.jsonl control.jsonl candidate.jsonl
+          }
+          compare_pass AggregateLists ExpandStreamAggregates
+          compare_pass AsofRetainers LowerAsof
+          compare_pass ChainKeys LeftJoinChainsVisitor
+          compare_pass GraphPass RemoveNoops RemoveNoops
+          compare_pass JoinFilterMap LowerCircuitVisitor
+          compare_pass LinearRetention LinearPostprocessRetainKeys
+          compare_pass LowerCircuit LowerCircuitVisitor
+          compare_pass MergeNoops MergeNoops
+          compare_pass Monotonicity MonotoneAnalyzer
+          compare_pass NoopBypasses RemoveNoops
+          compare_pass ProjectionEdits ReplaceCommonProjections
+          compare_pass SharedProjections ReplaceCommonProjections
+          compare_pass TemporalPolicy RewriteNow
+          compare_pass TopLevelPass RemoveDeindexOperators RemoveDeindexOperators
+          compare_pass TrimFilters TrimFilters
+          compare_pass WideIndexes ReplaceSharedIndexes
+          compare_pass WindowGroups FindWindowGroups
+
+          jq -ce 'select(.id == "org.dbsp.sqlCompiler.compiler.sql.simple.OuterJoinTests#testMix/0")' \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" > join.jsonl
+          "${jvm[@]}" "$tools.PassCorpusOracle" --capture-s2 join.jsonl join-s2
+          for rust in false true; do
+            "${jvm[@]}" "-Dfeldera.optimizer.compareRustEmptySources=$rust" \
+              "$tools.EmptyRightJoinOracle" join.jsonl join-s2 > "$rust.join"
+            "${jvm[@]}" "-Dfeldera.optimizer.compareRustWaterline=$rust" \
+              "$tools.WaterlineClosureOracle" > "$rust.waterlines"
+            jq -se 'length == 4 and all(.[]; (.invocations | length) == 1)' "$rust.waterlines"
+            jq -S 'del(.invocations[].before, .invocations[].after)' "$rust.waterlines" > "$rust.counters"
+          done
+          "$comparator" --compare-pass PropagateEmptySources join.jsonl false.join true.join
+          diff -u false.counters true.counters
+          for row in 0 1 2 3; do
+            for graph in before after; do
+              for rust in false true; do
+                jq -s --argjson row "$row" --arg graph "$graph" \
+                  '.[$row].invocations[0][$graph]' "$rust.waterlines" > "$rust.json"
+              done
+              "$comparator" false.json true.json
+            done
+          done
+
       - name: Audit optimizer option and metadata activation paths
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         shell: bash
@@ -808,7 +879,8 @@ jobs:
           if-no-files-found: error
 
   compare-with-base:
-    name: Compare compiler output with the merge base
+    timeout-minutes: 60
+    name: Compare compiler output with the reference commit
     runs-on: [gke-runners-amd64]
     container:
       image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-4c59cc4f717bdd391dd0b00c65b65af61f35aee2
@@ -829,6 +901,8 @@ jobs:
         run: sql-to-dbsp-compiler/compare-with-base.sh
 
   shadow:
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 90
     name: SQL compiler shadow integration
     strategy:
       matrix:
@@ -872,4 +946,4 @@ jobs:
             exit 1
           fi
           grep -Eq '^test .*::full_primary_matches_rust_optimizer_shadow_in_both_engines \.\.\. ok$' "$RUNNER_TEMP/shadow.log"
-          grep -Eq '^test .*::optimizer_difference_retains_only_the_anonymized_review_bundle \.\.\. ok$' "$RUNNER_TEMP/shadow.log"
+          grep -Eq '^test .*::optimizer_difference_retains_a_review_bundle_only_with_opt_in \.\.\. ok$' "$RUNNER_TEMP/shadow.log"

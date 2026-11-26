@@ -16,7 +16,10 @@ permissions:
 
 jobs:
   rust-unit-tests:
+    if: github.event_name != 'pull_request'
     name: Rust Unit Tests
+    env:
+      SQL_TEST_TARGET: ${{ matrix.target }}
     strategy:
       matrix:
         include:
@@ -123,6 +126,28 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_ir-*
 
+      - &sql-unit-tests
+        name: Rust SQL compiler unit tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: |
+          # Cargo records these helper paths in the integration test executables.
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          release="$target_dir/$SQL_TEST_TARGET/release"
+          mkdir -p "$release"
+          for helper in sql-difftest sql2dbsp; do
+            ln -sf "$GITHUB_WORKSPACE/build/$helper" "$release/$helper"
+          done
+          for test in ./build/feldera_sql_ir-* ./build/feldera_sql_expr-* ./build/feldera_sql_opt-* \
+            ./build/feldera_sql_opt_jni-* ./build/sql2dbsp-* ./build/feldera_sql_difftest-* \
+            ./build/sql_difftest-* ./build/sql_type_probes-* ./build/feldera_sql_parser-* \
+            ./build/feldera_sql_binder-* ./build/feldera_sql_lower-* ./build/feldera_sql_source-* \
+            ./build/graph-* ./build/sql_index-* ./build/error_wrappers-* ./build/create_type-* \
+            ./build/predicates-* ./build/query_qualifiers-* ./build/builders-* ./build/circuits-* \
+            ./build/defaults-* ./build/dumps-* ./build/gen2_passes-* ./build/limiters-* \
+            ./build/cli-* ./build/corpus-* ./build/probe_comparison-* ./build/syntax-*; do
+            "$test"
+          done
+
       - name: fda
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/fda-*
@@ -173,3 +198,25 @@ jobs:
           done
         working-directory: crates/pipeline-manager
 
+  sql-unit-pr:
+    if: github.event_name == 'pull_request'
+    name: Rust SQL compiler pull request tests
+    env:
+      SQL_TEST_TARGET: x86_64-unknown-linux-gnu
+    runs-on: [gke-runners-amd64]
+    timeout-minutes: 30
+    container:
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-4c59cc4f717bdd391dd0b00c65b65af61f35aee2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Download SQL test binaries
+        uses: ./.github/actions/download-artifact-retry
+        with:
+          name: sql-unit-binaries
+          path: build
+          run-id: ${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: chmod +x ./build/*
+      - *sql-unit-tests
