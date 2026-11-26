@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.391.0
+
 - Security: with client certificates (`mtls.enabled`), a pipeline admits
   only its own coordinator and hosts to the `/coordination/*` routes.  Before,
   the control plane and the clients of `mtls.extraClientUris` could also call
