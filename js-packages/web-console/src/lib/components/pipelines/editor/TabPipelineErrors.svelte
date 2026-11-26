@@ -35,7 +35,9 @@
   </div>
 {/snippet}
 
-<div class="scrollbar h-full w-full overflow-y-auto">
+<!-- Errors can quote the pipeline code, which can contain connector credentials. PostHog session
+     replays show the text under `ph-mask` as asterisks. -->
+<div class="ph-mask scrollbar h-full w-full overflow-y-auto">
   <div
     class="flex min-h-full w-fit min-w-full flex-col gap-4 rounded pt-2"
     use:selectScope
