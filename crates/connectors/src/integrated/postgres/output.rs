@@ -2259,6 +2259,151 @@ pub mod tests {
             upsert_test(engine, 4);
         }
 
+        /// Returns updates that change `s` of `records`.
+        fn updates_of(records: &[Value]) -> Vec<(Value, Value)> {
+            records
+                .iter()
+                .map(|r| {
+                    let mut new = r.clone();
+                    new["s"] = Value::from(format!("updated_{}", id(r)));
+                    (r.clone(), new)
+                })
+                .collect()
+        }
+
+        /// An update of a row that is not in the table writes the row. A
+        /// batch that the connector dropped can leave such a row out, and the
+        /// next update of its key must bring it back. The batch also updates
+        /// rows that are there.
+        #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+        pub fn update_of_a_missing_row_writes_it(engine: &dyn ConnectorTestEngine) {
+            let mut client = pg_client();
+            setup_table(&mut client);
+
+            let records = make_records(10);
+            let mut endpoint = make_endpoint(1);
+            // Only the even rows are in the table.
+            let present: Vec<_> = records.iter().step_by(2).cloned().collect();
+            encode_batch(&mut endpoint, &build_insert_batch(engine, &present));
+
+            let updates = updates_of(&records);
+            encode_batch(&mut endpoint, &build_upsert_batch(engine, &updates));
+
+            let expected: Vec<_> = updates.into_iter().map(|(_old, new)| new).collect();
+            assert_eq!(query_all(&mut client), expected);
+        }
+
+        /// An update of a row that is there changes only the columns of the
+        /// view. Another writer fills a NOT NULL column with no default, and a
+        /// serial column: the update must not check the NOT NULL column, nor
+        /// take a value of the sequence, as an INSERT would.
+        #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+        pub fn update_keeps_the_columns_of_another_writer(engine: &dyn ConnectorTestEngine) {
+            let mut client = pg_client();
+            client
+                .batch_execute(&format!(
+                    r#"DROP TABLE IF EXISTS "{TEST_TABLE}";
+                    CREATE TABLE "{TEST_TABLE}" (
+                        id int PRIMARY KEY,
+                        b bool NOT NULL,
+                        i int8,
+                        s varchar NOT NULL,
+                        owner varchar NOT NULL,
+                        seq bigserial
+                    )"#
+                ))
+                .expect("failed to create test table");
+            let records = make_records(3);
+            for r in &records {
+                client
+                    .execute(
+                        &format!(
+                            r#"INSERT INTO "{TEST_TABLE}" (id, b, i, s, owner) VALUES ($1, $2, $3, $4, 'other')"#
+                        ),
+                        &[
+                            &id(r),
+                            &r["b"].as_bool().unwrap(),
+                            &r["i"].as_i64(),
+                            &r["s"].as_str().unwrap(),
+                        ],
+                    )
+                    .expect("failed to seed a row");
+            }
+
+            let mut endpoint = make_endpoint(1);
+            let updates = updates_of(&records);
+            encode_batch(&mut endpoint, &build_upsert_batch(engine, &updates));
+            drop(endpoint);
+
+            let expected: Vec<_> = updates.into_iter().map(|(_old, new)| new).collect();
+            assert_eq!(query_all(&mut client), expected);
+            let owners: Vec<String> = client
+                .query(&format!(r#"SELECT owner FROM "{TEST_TABLE}""#), &[])
+                .unwrap()
+                .iter()
+                .map(|row| row.get(0))
+                .collect();
+            assert_eq!(owners, vec!["other"; 3]);
+            let next: i64 = client
+                .query_one(
+                    &format!(r#"SELECT nextval(pg_get_serial_sequence('"{TEST_TABLE}"', 'seq'))"#),
+                    &[],
+                )
+                .unwrap()
+                .get(0);
+            assert_eq!(next, 4, "the updates took values of the sequence");
+
+            // Leave the table that the other cases create with `IF NOT EXISTS`.
+            client
+                .execute(&format!(r#"DROP TABLE "{TEST_TABLE}""#), &[])
+                .unwrap();
+        }
+
+        /// With `on_conflict_do_nothing`, the table can have no unique index
+        /// on the key: the statements must still prepare, and an update must
+        /// change the row.
+        #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+        pub fn update_without_a_unique_key(engine: &dyn ConnectorTestEngine) {
+            let mut client = pg_client();
+            client
+                .batch_execute(&format!(
+                    r#"DROP TABLE IF EXISTS "{TEST_TABLE}";
+                    CREATE TABLE "{TEST_TABLE}" (
+                        id int,
+                        b bool NOT NULL,
+                        i int8,
+                        s varchar NOT NULL
+                    )"#
+                ))
+                .expect("failed to create test table");
+
+            let mut config = make_config_with_extra_columns(1, Vec::new());
+            config.on_conflict_do_nothing = true;
+            let mut endpoint = PostgresOutputEndpoint::new(
+                EndpointId::default(),
+                "test_endpoint",
+                &config,
+                &Some(key_relation()),
+                &value_relation(),
+                Weak::new(),
+                true,
+            )
+            .expect("failed to create endpoint");
+
+            let records = make_records(4);
+            encode_batch(&mut endpoint, &build_insert_batch(engine, &records));
+            let updates = updates_of(&records);
+            encode_batch(&mut endpoint, &build_upsert_batch(engine, &updates));
+            drop(endpoint);
+
+            let expected: Vec<_> = updates.into_iter().map(|(_old, new)| new).collect();
+            assert_eq!(query_all(&mut client), expected);
+
+            client
+                .execute(&format!(r#"DROP TABLE "{TEST_TABLE}""#), &[])
+                .unwrap();
+        }
+
         fn delete_test(engine: &dyn ConnectorTestEngine, threads: usize) {
             let mut client = pg_client();
             setup_table(&mut client);

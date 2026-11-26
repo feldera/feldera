@@ -78,6 +78,17 @@ In materialized mode (`"mode": "materialized"`), the connector performs direct `
 - Maintains the target table as a materialized snapshot of the view
 - Updates existing records in-place and removes deleted records
 
+The connector writes an update in one statement: an `UPDATE` of the rows
+that are in the table, and an `INSERT ... ON CONFLICT (key) DO UPDATE` of
+the rows that are not, for example a row that a batch that the connector
+dropped did not insert. An update of a row that is there changes only the
+columns of the view: it does not check the other columns and does not use a
+value of a sequence. An update of a missing row is an insert: it fires
+`INSERT` triggers, and fails if the table has a `NOT NULL` column with no
+default that the view does not write. With `on_conflict_do_nothing`, the
+connector writes an update as an `UPDATE` only, which does not change the
+table when the row is not there.
+
 #### CDC mode
 
 In CDC mode (`"mode": "cdc"`), the connector writes all operations as `INSERT` operations into an append-only event log. This mode:

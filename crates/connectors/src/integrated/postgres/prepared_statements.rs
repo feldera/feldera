@@ -47,6 +47,30 @@ impl RawQueries {
 
         let mut raw_queries = RawQueries::default();
 
+        // The conflict clause of a materialized INSERT. Unused in CDC mode.
+        let on_conflict = if config.on_conflict_do_nothing {
+            " DO NOTHING".to_owned()
+        } else {
+            let keys = keys.join(", ");
+
+            let columns: String = value_schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let f = f.name.sql_name();
+                    format!(r#" {f} = EXCLUDED.{f} "#)
+                })
+                .chain(
+                    config
+                        .extra_columns
+                        .iter()
+                        .map(|k| format!(r#" "{k}" = EXCLUDED."{k}" "#)),
+                )
+                .join(", ");
+
+            format!(" ({keys}) DO UPDATE SET {columns}")
+        };
+
         match config.mode {
             PostgresWriteMode::Cdc => {
                 // In CDC mode, everything is an INSERT into the event log
@@ -58,29 +82,6 @@ impl RawQueries {
                 raw_queries.delete = raw_queries.insert.clone();
             }
             PostgresWriteMode::Materialized => {
-                let on_conflict = if config.on_conflict_do_nothing {
-                    " DO NOTHING".to_owned()
-                } else {
-                    let keys = keys.join(", ");
-
-                    let columns: String = value_schema
-                        .fields
-                        .iter()
-                        .map(|f| {
-                            let f = f.name.sql_name();
-                            format!(r#" {f} = EXCLUDED.{f} "#)
-                        })
-                        .chain(
-                            config
-                                .extra_columns
-                                .iter()
-                                .map(|k| format!(r#" "{k}" = EXCLUDED."{k}" "#)),
-                        )
-                        .join(", ");
-
-                    format!(" ({keys}) DO UPDATE SET {columns}")
-                };
-
                 raw_queries.insert = format!(
                     r#"INSERT INTO "{table}" ({insert_columns}) SELECT {insert_columns} FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb) ON CONFLICT {on_conflict}"#,
                 );
@@ -130,11 +131,30 @@ impl RawQueries {
                     .map(|f| (format!("{table_alias}.{f}"), format!("{new_alias}.{f}")))
                     .unzip();
 
-                raw_queries.upsert = format!(
-                    r#"UPDATE "{table}" AS {table_alias} SET {columns} FROM (SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) AS {new_alias} WHERE ({}) = ({})"#,
-                    table_fields.join(", "),
-                    new_fields.join(", ")
-                );
+                let table_fields = table_fields.join(", ");
+                let new_fields = new_fields.join(", ");
+
+                raw_queries.upsert = if config.on_conflict_do_nothing {
+                    // The table can have no unique index on the key, and
+                    // `ON CONFLICT (key)` needs one: a plain UPDATE.
+                    format!(
+                        r#"UPDATE "{table}" AS {table_alias} SET {columns} FROM (SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) AS {new_alias} WHERE ({table_fields}) = ({new_fields})"#,
+                    )
+                } else {
+                    // UPDATE the rows that are there, then INSERT only the rows
+                    // that are not, for example a row that a dropped batch left
+                    // out. An INSERT of a row that is there would check NOT
+                    // NULL on columns the view does not write, and use a value
+                    // of each sequence.
+                    let updated_alias = "u";
+                    let updated_fields = keys
+                        .iter()
+                        .map(|f| format!("{updated_alias}.{f}"))
+                        .join(", ");
+                    format!(
+                        r#"WITH {new_alias} AS (SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)), {updated_alias} AS (UPDATE "{table}" AS {table_alias} SET {columns} FROM {new_alias} WHERE ({table_fields}) = ({new_fields}) RETURNING {table_fields}) INSERT INTO "{table}" ({insert_columns}) SELECT {insert_columns} FROM {new_alias} WHERE NOT EXISTS (SELECT 1 FROM {updated_alias} WHERE ({updated_fields}) = ({new_fields})) ON CONFLICT {on_conflict}"#,
+                    )
+                };
             }
         }
 
@@ -272,5 +292,32 @@ mod tests {
         );
         assert_eq!(queries.insert, queries.upsert);
         assert_eq!(queries.insert, queries.delete);
+    }
+
+    #[test]
+    fn materialized_update_writes_the_whole_row() {
+        let key = relation("k", &["id"]);
+        let value = relation("v", &["id", "name"]);
+        let queries = RawQueries::new(
+            &key,
+            &value,
+            &writer_config(PostgresWriteMode::Materialized, &[]),
+        );
+        // The rows that are there get an UPDATE, the others an INSERT.
+        assert!(
+            queries.upsert.starts_with("WITH n AS ")
+                && queries.upsert.contains("u AS (UPDATE ")
+                && queries
+                    .upsert
+                    .contains("WHERE NOT EXISTS (SELECT 1 FROM u ")
+                && queries.upsert.contains("ON CONFLICT  (id) DO UPDATE SET"),
+            "{}",
+            queries.upsert
+        );
+
+        let mut config = writer_config(PostgresWriteMode::Materialized, &[]);
+        config.on_conflict_do_nothing = true;
+        let queries = RawQueries::new(&key, &value, &config);
+        assert!(queries.upsert.starts_with("UPDATE "), "{}", queries.upsert);
     }
 }
