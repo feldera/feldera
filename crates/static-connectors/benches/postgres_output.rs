@@ -71,6 +71,7 @@ fn make_config(threads: usize) -> PostgresWriterConfig {
         max_records_in_buffer: None,
         max_buffer_size: ConfigSize::from_mib(1),
         on_conflict_do_nothing: false,
+        max_retries: None,
         threads,
     }
 }

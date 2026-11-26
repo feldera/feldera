@@ -5256,6 +5256,20 @@ export type PostgresWriterConfig = {
    * The maximum number of records in a single buffer.
    */
   max_records_in_buffer?: number | null
+  /**
+   * Maximum number of times a worker thread writes a batch again after a
+   * failure that can go away, such as a lost connection or a server that
+   * is read-only after a failover.
+   *
+   * When not specified, the connector writes the batch again until it
+   * succeeds. When set to 0, the connector does not write a batch again,
+   * and drops it at the first failure. The wait for a server that is not
+   * available has no limit in each case.
+   *
+   * A failure that cannot go away, such as a constraint violation, drops
+   * the batch at once, whatever this setting.
+   */
+  max_retries?: number | null
   mode?: PostgresWriteMode
   /**
    * Specifies how the connector handles conflicts when executing an `INSERT`

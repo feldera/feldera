@@ -32,6 +32,7 @@ in the PostgreSQL table.
 | `max_buffer_size`                | string  | `"1Mi"`        | The maximum buffer size for a single operation, such as `"1Mi"`. `max_buffer_size_bytes`, a number of bytes, is a deprecated alias. Buffers for `INSERT`, `UPDATE`, and `DELETE` queries are maintained separately. Default is 1 MiB (`1048576` bytes).                                                                                                                                                                                                                                                                                                                                                                                              |
 | `on_conflict_do_nothing`         | bool    | `false`        | Specifies how the connector handles conflicts when executing an `INSERT` into a table with a primary key. By default, an existing row with the same key is overwritten. Setting this flag to `true` preserves the existing row and ignores the new insert. <p> This setting does not affect `UPDATE` statements, which always replace the value associated with the key.</p><p>**This setting has no effect when `mode = "cdc"`, since all operations are performed as append-only `INSERT`s into the target table. Any conflict in CDC mode will result in an error.**</p> |
 | `threads`                        | integer | `1`            | Number of parallel worker threads used to write to PostgreSQL. Each worker opens its own connection and handles a disjoint partition of the data. Increasing this value can improve throughput for large batches. Must be at least 1.                                                                                                                                                                                                                                                                                                                                       |
+| `max_retries`                    | integer | no limit       | The number of times a worker thread writes a batch again after a failure that can go away, such as a lost connection or a read-only server. When not set, the connector writes the batch again until it succeeds. When `0`, it drops the batch at the first failure. See [connection loss and connection poolers](#connection-loss-and-connection-poolers).                                                                                                                                                                                                                 |
 | `extra_columns`                  | array of strings |        | The list of PostgreSQL columns that the Feldera view does not write. The connector writes the value last set by the `set_extra_columns` command into each of them; see [Extra columns](#extra-columns).                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 [*]: Required fields
@@ -142,23 +143,31 @@ or its rows.
 |---|---|
 | The connection drops, or the server restarts or is not reachable. | Connects again. The wait between attempts grows to a maximum of 60 seconds. Then writes the batch again. |
 | A connection pooler, such as PgBouncer, reports an error and ends the session. An example is a pooler that cannot log in to the server. | The same. |
-| The server cannot write through this session. An example is a session that a pooler holds on the old primary after a failover (SQLSTATE `25006`). | Opens a new connection and writes the batch again. From the third attempt, waits before each attempt: 1 second, then 1 second more each time. |
+| The server cannot write through this session. An example is a session that a pooler holds on the old primary after a failover (SQLSTATE `25006`). | Opens a new connection and writes the batch again. From the third attempt, waits before each attempt: 1 second, then 1 second more each time, to a maximum of 60 seconds. |
 | The server cancels a statement, cannot get a lock in time, has a deadlock or a serialization failure, has no disk space or memory, or reports a system error or an internal error (SQLSTATE `55P03` and classes `40`, `53`, `57`, `58`, `XX`). | The same. This also applies when the server answers and does not prepare the statements of the connector after a new connection. |
-| The same batch fails in 10 attempts, the first one included, for one of the causes above. | Reports an error and drops the batch. |
+| `max_retries` is set, and the same batch fails `max_retries` + 1 times for one of the causes above. | Reports an error and drops the batch. Without `max_retries`, the connector writes the batch again until it succeeds. |
 | The server rejects the credentials, or the database does not exist. | Reports an error and drops the batch. |
 | The server rejects a statement, for example because of a constraint. | Reports an error and drops the batch. A new connection cannot correct this failure. |
 
 The wait for a connection has no limit: the thread waits for as long as the
-server or the pooler is not available. The limit of 10 is for the attempts to
-write a batch through a connection that opens.
+server or the pooler is not available. `max_retries` limits only the attempts
+to write a batch through a connection that opens.
+
+While a thread cannot write, the connector reports itself as unhealthy in its
+[status](/api/get-output-status), with the cause. When it drops a batch, it
+stays unhealthy and gives the error. It reports itself as healthy again when
+a batch commits.
 
 This section applies to a pipeline that runs. A pipeline that starts while the
 server or the pooler is not available fails at start.
 
 Some of the server-side errors come back each time. Examples are a statement
 that is always slower than the statement timeout of the server, and a role
-that is configured as read-only. The connector then uses its 10 attempts,
-which can take 10 times the statement timeout, and drops the batch.
+that is configured as read-only. Without `max_retries`, the connector then
+writes the batch again until the cause is corrected, and it writes no later
+batch in the meantime. Its output buffer then fills, and the pipeline stops
+taking input, so all the other output connectors of the pipeline stop too.
+Set `max_retries` to drop such a batch instead.
 
 With more than one thread, a failure drops the part of the batch that the
 failed thread had. The other threads commit their parts.
