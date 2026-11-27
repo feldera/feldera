@@ -2,6 +2,7 @@
 
 mod aggregate;
 mod compute;
+mod declarations;
 mod filter;
 mod types;
 
@@ -81,13 +82,22 @@ pub(super) fn bind_parsed_table(
         ));
     }
     set_source(&mut program, id, sql, many);
+    let aliases = declarations::register(&mut program, parsed, &declarations)?;
     for (parsed_statement, tokens) in parsed.iter().zip(&declarations) {
+        if let ParsedStatement::CreateType(declaration) = parsed_statement {
+            if let feldera_sql_parser::TypeDefinition::Alias(ty) = &declaration.definition
+                && types::warns_on_unspecified_precision(ty)
+            {
+                types::warn_decimal(&mut program, tokens.alias_type_position()?);
+            }
+            continue;
+        }
         let ParsedStatement::Upstream(statement) = parsed_statement else {
             return Err(unsupported("expected CREATE TABLE or CREATE VIEW"));
         };
         match statement.as_ref() {
             Upstream::CreateTable(table) => {
-                declare_table(&mut program, table, tokens)?;
+                declare_table(&mut program, table, tokens, &aliases)?;
             }
             Upstream::CreateView(view)
                 if view
@@ -124,6 +134,7 @@ fn declare_table(
     program: &mut Program,
     table: &sqlparser_064::ast::CreateTable,
     tokens: &DeclarationTokens,
+    aliases: &declarations::Aliases,
 ) -> Result<(), Failure> {
     let table_ident = local_name(&table.name)?;
     let table_name = name(&table_ident.value);
@@ -168,6 +179,7 @@ fn declare_table(
         }
         let (ty, spelling) = declare_type(
             &mut program.table.type_table,
+            aliases,
             &column.data_type,
             nullable,
             ValidationLimits::default().depth,
@@ -176,15 +188,7 @@ fn declare_table(
             // Calcite checks top-level column type specs for the whole batch
             // before lowering the first compiler-owned statement.
             let position = tokens.column_type_position(column.name.span)?;
-            program.diagnostics.before[0].messages.push(
-                feldera_sql_rel_model::diagnostics::FrontendWarning {
-                    context: feldera_sql_rel_model::source::Origin::Absent {},
-                    range: super::source_origin(&position),
-                    continuation: false,
-                    category: "DECIMAL precision and scale unspecified".into(),
-                    message: "DECIMAL/NUMERIC type used without specifying precision and scale.\nThis is interpreted as DECIMAL(38, 0)".into(),
-                }
-            );
+            types::warn_decimal(program, position);
         }
         let column_name = name(&column.name.value);
         let inline_key = column

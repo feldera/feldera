@@ -228,6 +228,16 @@ impl DeclarationTokens {
             .ok_or_else(|| unsupported("missing column type after its name"))
     }
 
+    pub(super) fn alias_type_position(&self) -> Result<Coordinates, Failure> {
+        self.0
+            .windows(2)
+            .find_map(|pair| {
+                matches!(&pair[0].token, Token::Word(w) if w.keyword == Keyword::AS)
+                    .then(|| coordinates(pair[1].span))
+            })
+            .ok_or_else(|| unsupported("missing type after AS"))
+    }
+
     /// Find the table constraint between columns. An inline PRIMARY KEY
     /// follows the column's type or nullability marker.
     pub(super) fn primary_key_position(&self) -> Option<sqlparser_064::tokenizer::Location> {

@@ -38,6 +38,7 @@ impl TypeSpelling {
 
 pub(super) fn declare_type(
     types: &mut TypeTable,
+    aliases: &super::declarations::Aliases,
     data_type: &DataType,
     nullable: bool,
     depth: usize,
@@ -47,7 +48,7 @@ pub(super) fn declare_type(
         .ok_or_else(|| unsupported("table type nesting exceeds the validation limit"))?;
     let (kind, spelling) = match data_type {
         DataType::Array(ArrayElemTypeDef::Qualified(element, None)) => {
-            let (element, spelling) = declare_type(types, element, true, child_depth)?;
+            let (element, spelling) = declare_type(types, aliases, element, true, child_depth)?;
             (
                 TypeKind::Array {
                     element,
@@ -57,11 +58,11 @@ pub(super) fn declare_type(
             )
         }
         DataType::Map(key, value, MapBracketKind::AngleBrackets) => {
-            let (key, key_spelling) = declare_type(types, key, false, child_depth)?;
+            let (key, key_spelling) = declare_type(types, aliases, key, false, child_depth)?;
             if !types.types[key.0 as usize].kind.can_be_map_key() {
                 return Err(unsupported("MAP keys cannot have type MAP or NULL"));
             }
-            let (value, value_spelling) = declare_type(types, value, true, child_depth)?;
+            let (value, value_spelling) = declare_type(types, aliases, value, true, child_depth)?;
             (
                 TypeKind::Map { key, value },
                 TypeSpelling::render(|quoted| {
@@ -82,6 +83,14 @@ pub(super) fn declare_type(
                         diagnostic: alias,
                     },
                 )
+            } else if let DataType::Custom(name, modifiers) = data_type
+                && modifiers.is_empty()
+            {
+                let (_, name, spelling) = super::declarations::type_name(name)?;
+                let id = aliases
+                    .get(&name.name)
+                    .ok_or_else(|| unsupported(format!("unknown type {}", spelling.diagnostic)))?;
+                (types.types[id.0 as usize].kind.clone(), spelling)
             } else {
                 let (kind, spelling) = scalar_type(data_type, nullable)?;
                 (
@@ -103,6 +112,19 @@ pub(super) fn declare_type(
         },
     );
     Ok((ty, spelling))
+}
+
+pub(super) fn warn_decimal(
+    program: &mut feldera_sql_rel_model::program::Program,
+    position: feldera_sql_rel_model::relation_metadata::Coordinates,
+) {
+    program.diagnostics.before[0].messages.push(feldera_sql_rel_model::diagnostics::FrontendWarning {
+        context: Origin::Absent {},
+        range: super::super::source_origin(&position),
+        continuation: false,
+        category: "DECIMAL precision and scale unspecified".into(),
+        message: "DECIMAL/NUMERIC type used without specifying precision and scale.\nThis is interpreted as DECIMAL(38, 0)".into(),
+    });
 }
 
 pub(super) fn warns_on_unspecified_precision(ty: &DataType) -> bool {

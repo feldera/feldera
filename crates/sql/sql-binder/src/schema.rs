@@ -90,7 +90,7 @@ fn bound_schema(program: &Program) -> Result<Value, Failure> {
                 view["materialized"] = (*view_kind == ViewKind::Materialized).into();
                 outputs.push(view);
             }
-            Statement::ModifyTable { .. } => continue,
+            Statement::ModifyTable { .. } | Statement::CreateType { .. } => continue,
             _ => return Err(unsupported("schema preview for this statement")),
         }
     }

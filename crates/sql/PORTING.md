@@ -169,12 +169,20 @@ Java and Rust accept that permutation. This discrepancy remains open for P5.
 The Rust schema preview and S2 preserve primary keys in column declaration order.
 [Binding comparison](scripts/validate_bound_programs.py) · [Lowering comparison](scripts/validate_s1_lowering.py)
 
+The DECIMAL and temporal literal comparisons also cover exact coefficients,
+VALUES coercion, integer and fractional precision caps, negative epoch
+timestamps and the order of warnings. Six further programs exercise user-defined
+type aliases, including forward use by a table, chained and quoted aliases,
+collection elements, and a batch containing only type declarations. Their
+schema previews, plans, S2 checkpoints, diagnostics and emitted Gen-2 artifacts
+matched the Java reference.
+
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 136 of 8,571 programs. All 136 matched Java compilation
+Gen-2 options. The temporal-literal checkpoint bound 153 of 8,571 programs. All 153 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 55 of
-the 136 to S2. All 55 matched independent Java lowering and the Java optimizer
-resumed every checkpoint. The remaining 8,435 programs still need whole-program
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 68 of
+the 153 to S2. All 68 matched independent Java lowering and the Java optimizer
+resumed every checkpoint. The remaining 8,418 programs still need whole-program
 binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
 

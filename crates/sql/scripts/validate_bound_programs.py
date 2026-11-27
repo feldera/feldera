@@ -13,6 +13,16 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "alias_forward_use": "CREATE TABLE t(a scores); CREATE TYPE scores AS INTEGER;"
+                         " CREATE VIEW v AS SELECT * FROM t;",
+    "alias_chain": "CREATE TYPE weights AS DECIMAL(12,3); CREATE TYPE rate AS weights;"
+                   " CREATE TABLE t(a rate, b rate NOT NULL); CREATE VIEW v AS SELECT b FROM t;",
+    "alias_collections": "CREATE TYPE a AS INT2; CREATE TYPE m AS MAP<STRING, a ARRAY>;"
+                         " CREATE TABLE t(c m); CREATE VIEW v AS SELECT * FROM t;",
+    "alias_warnings": "CREATE TABLE t(a NUMERIC); CREATE TYPE deca AS DECIMAL; CREATE TYPE nums AS INT ARRAY;"
+                      " CREATE TABLE s(b DEC, c nums, d deca);",
+    "alias_quoted": 'CREATE TYPE "MyTy" AS BIGINT; CREATE TABLE t(c "MyTy");',
+    "alias_only": "CREATE TYPE a AS BOOLEAN; CREATE TYPE tm AS TIMESTAMP(2);",
     "temporal_fraction": "CREATE VIEW v AS SELECT TIME '23:59:59.123456789' AS t,"
                          " TIMESTAMP '1969-12-31 23:59:59.125000' AS ts, TIME '12:34:56.120' AS u;",
     "temporal_calendar": "CREATE VIEW v AS SELECT TIMESTAMP '1-1-1 0:0:0.000001' AS a,"

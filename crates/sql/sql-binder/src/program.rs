@@ -104,6 +104,9 @@ fn bind_statements(
         {
             table::bind_parsed_table(id, prelude, statements, starts, sql, many)
         }
+        [ParsedStatement::CreateType(_), ..] => {
+            table::bind_parsed_table(id, prelude, statements, starts, sql, many)
+        }
         _ => Err(unsupported(
             "expected a constant view or a table followed by a view",
         )),

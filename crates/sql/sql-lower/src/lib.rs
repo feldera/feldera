@@ -106,6 +106,24 @@ pub fn lower_program(
         if !statement.source().visible {
             continue;
         }
+        // Scalar and collection aliases have already been resolved at each
+        // use site. Only struct declarations create a DBSP item.
+        if let Statement::CreateType {
+            ty,
+            attributes: None,
+            ..
+        } = statement
+        {
+            if matches!(
+                program.table.type_table.types[ty.0 as usize].kind,
+                feldera_sql_rel_model::types::TypeKind::Row { .. }
+            ) {
+                return Err(Error(
+                    "a ROW type declaration requires named attributes".into(),
+                ));
+            }
+            continue;
+        }
         let context = diagnostics["context"].clone();
         if let Statement::ModifyTable {
             source,
