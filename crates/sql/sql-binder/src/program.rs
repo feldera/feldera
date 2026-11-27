@@ -8,7 +8,7 @@ mod table;
 pub use table::bind_table_program;
 
 use super::{
-    Failure, SelectItem, Statement as ParsedStatement, Submission, Upstream, bind_projection,
+    Failure, SelectItem, Statement as ParsedStatement, Submission, Upstream, bind_query_projection,
     parse_failure, plain_select, unsupported,
 };
 use feldera_sql_rel_model::{
@@ -140,7 +140,7 @@ fn append_constant_view(
     if !select.from.is_empty() {
         return Err(unsupported("expected a view over one constant row"));
     }
-    let bound = bind_projection(sql, parsed, false)?;
+    let bound = bind_query_projection(sql, parsed, false)?;
     if !bound.compiler_diagnostics.is_empty() {
         return Err(unsupported(
             "constant program has unsupported frontend diagnostics",
@@ -159,17 +159,14 @@ fn append_constant_view(
         display.pretty.push_str(&format!(" AS `{alias}`"));
         display.diagnostic.push_str(&format!(" AS {alias}"));
     }
-    let kind = view_kind(view);
-    let create = kind.create_sql();
+    let declaration = ViewDeclaration::new(view)?;
     let statement = StatementText {
         position,
-        pretty: format!(
-            "{create} `{}` AS\nSELECT {}",
-            bound.view_name, display.pretty
-        ),
+        pretty: format!("{} AS\nSELECT {}", declaration.sql(true), display.pretty),
         diagnostic: format!(
-            "{create} {} AS\nSELECT {}",
-            bound.view_name, display.diagnostic
+            "{} AS\nSELECT {}",
+            declaration.sql(false),
+            display.diagnostic
         ),
     };
 
@@ -192,15 +189,10 @@ fn append_constant_view(
         append_project(program, row, expression)?;
     }
 
-    let view_name = Name {
-        name: bound.view_name,
-        quoted: false,
-    };
     append_view(
         program,
         statement,
-        view_name,
-        kind,
+        declaration,
         vec![(field_name, scalar)],
         row,
         relation,
@@ -328,25 +320,90 @@ fn column(name: Name, index: usize, ty: TypeId, diagnostic: DiagnosticSource) ->
     }
 }
 
-fn view_kind(view: &sqlparser_064::ast::CreateView) -> ViewKind {
-    if view.local.is_some() {
-        ViewKind::Local
-    } else if view.materialized {
-        ViewKind::Materialized
-    } else {
-        ViewKind::Standard
+struct ViewDeclaration {
+    name: Name,
+    kind: ViewKind,
+    columns: Vec<Name>,
+}
+
+impl ViewDeclaration {
+    fn new(view: &sqlparser_064::ast::CreateView) -> Result<Self, Failure> {
+        let kind = if view.local.is_some() {
+            ViewKind::Local
+        } else if view.materialized {
+            ViewKind::Materialized
+        } else {
+            ViewKind::Standard
+        };
+        let ident = super::local_name(&view.name)?;
+        let name = Name {
+            name: ident.value.to_ascii_lowercase(),
+            quoted: false,
+        };
+        let mut columns = Vec::with_capacity(view.columns.len());
+        let mut seen = std::collections::HashSet::new();
+        for col in &view.columns {
+            if col.name.quote_style.is_some()
+                || !col.name.value.is_ascii()
+                || col.data_type.is_some()
+                || col.options.is_some()
+            {
+                return Err(unsupported("expected an unquoted view column name"));
+            }
+            let name = col.name.value.to_ascii_lowercase();
+            if !seen.insert(name.clone()) {
+                return Err(unsupported("duplicate declared view column"));
+            }
+            columns.push(Name {
+                name,
+                quoted: false,
+            });
+        }
+        Ok(Self {
+            name,
+            kind,
+            columns,
+        })
+    }
+
+    fn sql(&self, quoted: bool) -> String {
+        let render = |name: &Name| {
+            if quoted {
+                format!("`{}`", name.name)
+            } else {
+                name.name.clone()
+            }
+        };
+        let mut header = format!("{} {}", self.kind.create_sql(), render(&self.name));
+        if !self.columns.is_empty() {
+            let columns = self
+                .columns
+                .iter()
+                .map(render)
+                .collect::<Vec<_>>()
+                .join(", ");
+            header.push_str(&format!(" ({columns})"));
+        }
+        header
     }
 }
 
 fn append_view(
     program: &mut Program,
     statement: StatementText,
-    name: Name,
-    view_kind: ViewKind,
+    declaration: ViewDeclaration,
     fields: Vec<(Name, TypeId)>,
     row: TypeId,
     relation: u32,
 ) -> Result<(), Failure> {
+    let ViewDeclaration {
+        name,
+        kind: view_kind,
+        columns,
+    } = declaration;
+    if !columns.is_empty() && columns.len() != fields.len() {
+        return Err(unsupported("view column count differs from SELECT output"));
+    }
     let diagnostic = statement.description();
     let schema = append_schema(
         program,
@@ -355,7 +412,14 @@ fn append_view(
         fields
             .iter()
             .enumerate()
-            .map(|(index, (field, ty))| column(field.clone(), index, *ty, diagnostic.clone()))
+            .map(|(index, (field, ty))| {
+                column(
+                    columns.get(index).unwrap_or(field).clone(),
+                    index,
+                    *ty,
+                    diagnostic.clone(),
+                )
+            })
             .collect(),
     )?;
     program.producers.roots.push(relation);

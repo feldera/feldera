@@ -48,7 +48,7 @@ enum DiagnosticSpan {
 }
 
 #[derive(Debug, Serialize)]
-struct CompilerDiagnostic {
+pub struct CompilerDiagnostic {
     warning: bool,
     error_type: &'static str,
     start_line_number: usize,
@@ -72,6 +72,15 @@ impl std::fmt::Display for Failure {
 impl std::error::Error for Failure {}
 
 impl Failure {
+    pub fn is_parse_error(&self) -> bool {
+        self.category == "parse_error"
+    }
+
+    /// A located SQL error, when the binder can diagnose this input.
+    pub fn compiler_diagnostic(&self) -> Option<&CompilerDiagnostic> {
+        self.compiler_diagnostic.as_deref()
+    }
+
     fn with_compiler_diagnostic(mut self, sql: &str, projection: Option<Span>) -> Self {
         let range = match self.diagnostic_span {
             Some(DiagnosticSpan::Projection) => projection,
@@ -827,11 +836,6 @@ fn system_relation(name: &str) -> bool {
 }
 
 fn validate_plain_view(view: &sqlparser_064::ast::CreateView) -> Result<(), Failure> {
-    if !view.columns.is_empty() {
-        return Err(unsupported(
-            "view column declarations are outside the scalar projection",
-        ));
-    }
     if view.or_alter
         || view.or_replace
         || view.secure
@@ -856,6 +860,19 @@ fn bind_projection(
     statements: &[Statement],
     generated: bool,
 ) -> Result<BoundProjection, Failure> {
+    if let Some(Statement::Upstream(last)) = statements.last()
+        && matches!(last.as_ref(), Upstream::CreateView(view) if !view.columns.is_empty())
+    {
+        return Err(unsupported("explicit view columns require catalog binding"));
+    }
+    bind_query_projection(sql, statements, generated)
+}
+
+fn bind_query_projection(
+    sql: &str,
+    statements: &[Statement],
+    generated: bool,
+) -> Result<BoundProjection, Failure> {
     let [declarations @ .., Statement::Upstream(view)] = statements else {
         return Err(unsupported(
             "expected one table declaration followed by one view declaration",
@@ -874,11 +891,6 @@ fn bind_projection(
         return Err(unsupported("view name conflicts with a system relation"));
     }
     if generated {
-        if !view.columns.is_empty() {
-            return Err(unsupported(
-                "view column declarations are outside the scalar projection",
-            ));
-        }
         if view.name.to_string() != "v" {
             return Err(unsupported("outside the generated table/view declarations"));
         }
@@ -1022,6 +1034,15 @@ fn bind_table_columns(
     table: &sqlparser_064::ast::CreateTable,
     generated: bool,
 ) -> Result<Vec<Column>, Failure> {
+    if !table.constraints.is_empty()
+        || table.columns.iter().any(|col| {
+            col.options
+                .iter()
+                .any(|opt| matches!(opt.option, ColumnOption::PrimaryKey(_)))
+        })
+    {
+        return Err(unsupported("key constraints require catalog binding"));
+    }
     map_table_columns(table, generated, |column, nullable| {
         Ok(Column {
             name: column.name.value.clone(),
@@ -1036,7 +1057,7 @@ fn map_table_columns<T>(
     generated: bool,
     mut bind_column: impl FnMut(&sqlparser_064::ast::ColumnDef, bool) -> Result<T, Failure>,
 ) -> Result<Vec<T>, Failure> {
-    if table.columns.is_empty() || !table.constraints.is_empty() || table.query.is_some() {
+    if table.columns.is_empty() || table.query.is_some() {
         return Err(unsupported("expected a table with explicit scalar columns"));
     }
     if generated {
@@ -1046,6 +1067,7 @@ fn map_table_columns<T>(
     } else {
         let plain = CreateTableBuilder::new(table.name.clone())
             .columns(table.columns.clone())
+            .constraints(table.constraints.clone())
             .build();
         if table != &plain {
             return Err(unsupported("expected a plain table declaration"));
@@ -1060,6 +1082,13 @@ fn map_table_columns<T>(
                 [] => true,
                 [option] if matches!(option.option, ColumnOption::NotNull) => false,
                 [option] if !generated && matches!(option.option, ColumnOption::Null) => true,
+                [nullability, key]
+                    if !generated
+                        && matches!(nullability.option, ColumnOption::NotNull)
+                        && matches!(key.option, ColumnOption::PrimaryKey(_)) =>
+                {
+                    false
+                }
                 _ => {
                     return Err(unsupported(
                         "column option outside the scalar table declaration",

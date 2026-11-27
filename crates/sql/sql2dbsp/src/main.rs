@@ -16,7 +16,7 @@ use std::{
 };
 
 const USAGE: &str =
-    "Usage: sql2dbsp (--check-syntax | --syntax-diagnostics | --format | --schema | --emit-s1 | --emit-plan) FILE
+    "Usage: sql2dbsp (--check-syntax | --syntax-diagnostics | --format | --preview | --schema | --emit-s1 | --emit-plan) FILE
        sql2dbsp --bind-submissions FILE.json
        sql2dbsp (--emit-s2 | --lower-s1) PRODUCER RUNTIME_ABI FILE
        sql2dbsp --hybrid REQUEST.json NEW_ATTEMPT_DIR
@@ -62,6 +62,7 @@ enum Command<'a> {
     Optimizer(OptimizerPass, u64),
     Limiters(&'a OsStr),
     Format,
+    Preview,
     Schema,
     Bind,
     Submissions,
@@ -118,6 +119,7 @@ impl<'a> Command<'a> {
                     "--gen2-passes" => Self::Gen2Passes,
                     "--compact-names" => Self::CompactNames,
                     "--syntax-diagnostics" => Self::SyntaxDiagnostics,
+                    "--preview" => Self::Preview,
                     "--check-syntax" => Self::Syntax,
                     "--format" => Self::Format,
                     "--schema" => Self::Schema,
@@ -141,6 +143,7 @@ impl<'a> Command<'a> {
         let name = || filename.map_or_else(|| "<stdin>".into(), |f| f.display().to_string());
         let mut status = ExitCode::SUCCESS;
         match self {
+            Self::Preview => write_json(&mut output, &diagnostics::preview(source)?)?,
             Self::SyntaxDiagnostics => {
                 let diagnostic = diagnostics::syntax(source)?;
                 if diagnostic.is_some() {

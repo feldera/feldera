@@ -413,6 +413,12 @@ pub enum DataType {
         ///
         /// [PostgreSQL]: https://www.postgresql.org/docs/17/datatype-datetime.html
         fields: Option<IntervalFields>,
+        /// Number of digits in the leading field, as in `DAY(2) TO SECOND`.
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        leading_precision: Option<u64>,
         /// [PostgreSQL] subsecond precision like `INTERVAL HOUR TO SECOND(3)`
         ///
         /// [PostgreSQL]: https://www.postgresql.org/docs/17/datatype-datetime.html
@@ -726,10 +732,26 @@ impl fmt::Display for DataType {
                     timezone,
                 )
             }
-            DataType::Interval { fields, precision } => {
+            DataType::Interval {
+                fields,
+                leading_precision,
+                precision,
+            } => {
                 write!(f, "INTERVAL")?;
                 if let Some(fields) = fields {
-                    write!(f, " {fields}")?;
+                    let (start, end) = fields.units();
+                    write!(f, " {start}")?;
+                    if let Some(leading) = leading_precision {
+                        if *fields == IntervalFields::Second {
+                            if let Some(fractional) = precision {
+                                return write!(f, "({leading}, {fractional})");
+                            }
+                        }
+                        write!(f, "({leading})")?;
+                    }
+                    if let Some(end) = end {
+                        write!(f, " TO {end}")?;
+                    }
                 }
                 if let Some(precision) = precision {
                     write!(f, "({precision})")?;
@@ -1031,6 +1053,10 @@ impl fmt::Display for TimezoneInfo {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum IntervalFields {
+    /// `QUARTER` field
+    Quarter,
+    /// `WEEK` field
+    Week,
     /// `YEAR` field
     Year,
     /// `MONTH` field
@@ -1059,23 +1085,36 @@ pub enum IntervalFields {
     MinuteToSecond,
 }
 
+impl IntervalFields {
+    fn units(self) -> (&'static str, Option<&'static str>) {
+        match self {
+            Self::Year => ("YEAR", None),
+            Self::Quarter => ("QUARTER", None),
+            Self::Month => ("MONTH", None),
+            Self::Week => ("WEEK", None),
+            Self::Day => ("DAY", None),
+            Self::Hour => ("HOUR", None),
+            Self::Minute => ("MINUTE", None),
+            Self::Second => ("SECOND", None),
+            Self::YearToMonth => ("YEAR", Some("MONTH")),
+            Self::DayToHour => ("DAY", Some("HOUR")),
+            Self::DayToMinute => ("DAY", Some("MINUTE")),
+            Self::DayToSecond => ("DAY", Some("SECOND")),
+            Self::HourToMinute => ("HOUR", Some("MINUTE")),
+            Self::HourToSecond => ("HOUR", Some("SECOND")),
+            Self::MinuteToSecond => ("MINUTE", Some("SECOND")),
+        }
+    }
+}
+
 impl fmt::Display for IntervalFields {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IntervalFields::Year => write!(f, "YEAR"),
-            IntervalFields::Month => write!(f, "MONTH"),
-            IntervalFields::Day => write!(f, "DAY"),
-            IntervalFields::Hour => write!(f, "HOUR"),
-            IntervalFields::Minute => write!(f, "MINUTE"),
-            IntervalFields::Second => write!(f, "SECOND"),
-            IntervalFields::YearToMonth => write!(f, "YEAR TO MONTH"),
-            IntervalFields::DayToHour => write!(f, "DAY TO HOUR"),
-            IntervalFields::DayToMinute => write!(f, "DAY TO MINUTE"),
-            IntervalFields::DayToSecond => write!(f, "DAY TO SECOND"),
-            IntervalFields::HourToMinute => write!(f, "HOUR TO MINUTE"),
-            IntervalFields::HourToSecond => write!(f, "HOUR TO SECOND"),
-            IntervalFields::MinuteToSecond => write!(f, "MINUTE TO SECOND"),
+        let (start, end) = self.units();
+        f.write_str(start)?;
+        if let Some(end) = end {
+            write!(f, " TO {end}")?;
         }
+        Ok(())
     }
 }
 

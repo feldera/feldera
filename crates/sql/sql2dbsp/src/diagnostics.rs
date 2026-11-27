@@ -52,3 +52,29 @@ pub fn syntax(sql: &str) -> Result<Option<Value>, Box<dyn Error>> {
     message["snippet"] = range.snippet(&lines)?.into();
     Ok(Some(message))
 }
+
+/// Advisory front-end result for editors. A valid SQL construct outside the
+/// binder's coverage needs a different verdict from a located compiler error.
+pub fn preview(sql: &str) -> Result<Value, Box<dyn Error>> {
+    match feldera_sql_binder::preview_schema(sql) {
+        Ok(schema) => {
+            Ok(json!({"advisory":true, "status":"bound", "schema":schema, "messages":[]}))
+        }
+        Err(failure) => {
+            let diagnostic = if failure.is_parse_error() {
+                syntax(sql)?
+            } else {
+                failure
+                    .compiler_diagnostic()
+                    .map(serde_json::to_value)
+                    .transpose()?
+            };
+            Ok(match diagnostic {
+                Some(message) => json!({"advisory":true, "status":"error", "messages":[message]}),
+                None => {
+                    json!({"advisory":true, "status":"unsupported", "reason":failure.to_string(), "messages":[]})
+                }
+            })
+        }
+    }
+}

@@ -155,7 +155,7 @@ impl Projection<'_> {
             let column = &self.input.columns[index];
             let value = if matches!(
                 types.types[column.ty.0 as usize].kind,
-                TypeKind::Character { .. }
+                TypeKind::Character { .. } | TypeKind::Binary { .. }
             ) {
                 let mut clone = ids.generated("DBSPCloneExpression");
                 clone["type"] = field["type"].clone();

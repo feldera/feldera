@@ -22,6 +22,7 @@ pub(super) struct Ids {
     relation: usize,
     origin: u64,
     doubles: [Option<u64>; 2],
+    reals: [Option<u64>; 2],
     bools: [Option<u64>; 2],
 }
 
@@ -43,6 +44,7 @@ impl Ids {
             inner: next(graph),
             relation: scan_count,
             doubles: [None; 2],
+            reals: [None; 2],
             bools: [None; 2],
             operator: ops
                 .iter()
@@ -151,6 +153,10 @@ impl Scalar {
                 )
             }
             TypeKind::Date {} => (CircuitType::Date, "DATE".into(), "Date".into(), json!({})),
+            TypeKind::Time {
+                precision: Precision::Specified(_),
+                zone: TimeZone::None,
+            } => (CircuitType::Time, "TIME".into(), "Time".into(), json!({})),
             TypeKind::Boolean {} => (CircuitType::Bool, "BOOL".into(), "b".into(), json!({})),
             TypeKind::Decimal {
                 precision, scale, ..
@@ -161,7 +167,7 @@ impl Scalar {
                 json!({"precision":precision, "scale":scale}),
             ),
             TypeKind::Timestamp {
-                precision: Precision::Specified(6),
+                precision: Precision::Specified(_),
                 zone: TimeZone::None,
             } => (
                 CircuitType::Timestamp,
@@ -172,6 +178,26 @@ impl Scalar {
             TypeKind::Float {
                 flavor: FloatFlavor::Double,
             } => (CircuitType::Double, "DOUBLE".into(), "d".into(), json!({})),
+            TypeKind::Float {
+                flavor: FloatFlavor::Real,
+            } => (CircuitType::Real, "REAL".into(), "f".into(), json!({})),
+            TypeKind::Binary { fixed, length } => {
+                let precision = match length {
+                    Precision::Unspecified => -1,
+                    Precision::Specified(n) => i64::from(n),
+                };
+                let short = if precision < 0 {
+                    "bytes".into()
+                } else {
+                    format!("bytes({precision})")
+                };
+                (
+                    CircuitType::Binary,
+                    "BYTES".into(),
+                    short,
+                    json!({"precision":precision,"fixed":fixed}),
+                )
+            }
             TypeKind::Character { fixed, length, .. } => {
                 let precision = match length {
                     Precision::Unspecified => -1,
@@ -193,7 +219,7 @@ impl Scalar {
                 return Err(Error(format!(
                     "unsupported table column type {:?}",
                     ty.kind
-                )))
+                )));
             }
         };
         if ty.nullable {
@@ -213,8 +239,13 @@ impl Scalar {
     }
 
     fn node(&self, ids: &mut Ids) -> Value {
-        let mut node = if self.class == CircuitType::Double {
-            let slot = &mut ids.doubles[usize::from(self.nullable)];
+        let singletons = match self.class {
+            CircuitType::Double => Some(&mut ids.doubles),
+            CircuitType::Real => Some(&mut ids.reals),
+            _ => None,
+        };
+        let mut node = if let Some(singletons) = singletons {
+            let slot = &mut singletons[usize::from(self.nullable)];
             if let Some(id) = slot {
                 return json!({"node":id});
             }
@@ -334,6 +365,39 @@ pub(super) fn statement_position(source: &StatementSource) -> Value {
     )
 }
 
+/// The public schema retains the requested precision. DBSP represents all
+/// TIME and TIMESTAMP values at the runtime's fixed precision.
+pub(super) fn precision_warnings(
+    schema: &CatalogSchema,
+    types: &TypeTable,
+    source: &StatementSource,
+    seen: &mut std::collections::HashSet<(&'static str, u32)>,
+    messages: &mut Vec<Value>,
+) {
+    for column in &schema.columns {
+        use TypeKind::{Time, Timestamp};
+        let (name, requested, runtime) = match types.types[column.ty.0 as usize].kind {
+            Time {
+                precision: Precision::Specified(n),
+                zone: TimeZone::None,
+            } => ("TIME", n, 9),
+            Timestamp {
+                precision: Precision::Specified(n),
+                zone: TimeZone::None,
+            } => ("TIMESTAMP", n, 6),
+            _ => continue,
+        };
+        if requested != runtime && seen.insert((name, requested)) {
+            let position = statement_position(source);
+            messages.push(json!({
+                "context":position, "range":position, "warning":true, "continuation":false,
+                "type":format!("{name} precision ignored"),
+                "message":format!("{name} precision is always {name}({runtime}); specified precision {requested} is ignored")
+            }));
+        }
+    }
+}
+
 pub(super) fn lower(
     schema: &CatalogSchema,
     types: &TypeTable,
@@ -360,14 +424,18 @@ pub(super) fn lower(
             "name": name(&col.name),
             "position": location(&col.diagnostic.origin),
             "type": scalar.node(ids),
-            "isPrimaryKey": false,
+            "isPrimaryKey": col.primary_key,
             "interned": false,
         }));
     }
-    let metadata = json!({
+    let mut metadata = json!({
         "name": schema.name.name, "case_sensitive": schema.name.quoted,
         "fields": fields, "materialized": false, "foreign_keys": [],
     });
+    let key = schema.primary_key();
+    if !key.is_empty() {
+        metadata["primary_key"] = json!(key);
+    }
     let operator = json!({
         "class": "DBSPSourceMultisetOperator", "id": ids.operator,
         "provenance": {

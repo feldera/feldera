@@ -41,6 +41,64 @@ fn checks_full_submissions_and_reports_the_original_error_line() {
 }
 
 #[test]
+fn advisory_preview_distinguishes_sql_errors_from_unsupported_programs() {
+    let preview = |sql| {
+        let output = invoke("--preview", sql);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["advisory"], true);
+        result
+    };
+    let valid = preview("CREATE MATERIALIZED VIEW v AS SELECT 3 AS x;");
+    assert_eq!(valid["status"], "bound");
+    assert_eq!(valid["schema"]["outputs"][1]["materialized"], true);
+    for (sql, class) in [
+        ("CREATE TABLE t(x INT(10))", "Error parsing SQL"),
+        ("CREATE TABLE sqrt(x INT);", "Reserved name"),
+    ] {
+        let error = preview(sql);
+        assert_eq!(error["status"], "error");
+        assert_eq!(error["messages"][0]["error_type"], class);
+        assert!(error["messages"][0]["snippet"]
+            .as_str()
+            .unwrap()
+            .contains('^'));
+    }
+    let unsupported = preview("CREATE VIEW v AS SELECT * FROM a JOIN b ON a.x = b.x;");
+    assert_eq!(unsupported["status"], "unsupported");
+    assert!(unsupported["reason"].is_string());
+    assert_eq!(unsupported["messages"], serde_json::json!([]));
+}
+
+#[test]
+fn preview_preserves_public_column_names_and_primary_key_order() {
+    let sql = "CREATE TABLE t(a INT NOT NULL, PRIMARY KEY (b, a), b INT NOT NULL);
+               CREATE LOCAL VIEW swapped(left_col, right_col) AS SELECT b, a FROM t;
+               CREATE VIEW result AS SELECT right_col FROM swapped;";
+    let output = invoke("--preview", sql);
+    let preview: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(preview["status"], "bound");
+    let table = &preview["schema"]["inputs"][0];
+    assert_eq!(table["primary_key"], serde_json::json!(["a", "b"]));
+    let public = &preview["schema"]["outputs"][1];
+    assert_eq!(public["fields"][0]["name"], "right_col");
+    for invalid in [
+        "CREATE TABLE t(a INT, PRIMARY KEY (a));",
+        "CREATE TABLE t(a INT NOT NULL, PRIMARY KEY (missing));",
+        "CREATE TABLE t(a INT NOT NULL PRIMARY KEY, PRIMARY KEY (a));",
+        "CREATE TABLE t(a INT NOT NULL, PRIMARY KEY (a, a));",
+        "CREATE VIEW v(a, b) AS SELECT 1;",
+        "CREATE TABLE t(x INT, y INT); CREATE VIEW v(a, a) AS SELECT x, y FROM t;",
+    ] {
+        assert!(!invoke("--schema", invalid).status.success(), "{invalid}");
+    }
+}
+
+#[test]
 fn refuses_the_wrong_stage_version_and_engine_before_emission() {
     let checkpoint = serde_json::json!({
         "schema_version":4, "stage":"S3-subset", "options":{"ioOptions":{"gen2":true}},

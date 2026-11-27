@@ -9,6 +9,41 @@ use sqlparser_064::ast::{
     ArrayElemTypeDef, BinaryLength, CharacterLength, DataType, ExactNumberInfo, MapBracketKind,
     StructBracketKind, TimezoneInfo,
 };
+use sqlparser_064::{
+    keywords::Keyword,
+    parser::{Parser, ParserError},
+    tokenizer::Token,
+};
+
+/// Calcite stops at the opening parenthesis when the type admits no parameters.
+/// Check before sqlparser consumes the contents as a dialect-specific width.
+pub(super) fn invalid_parameters(parser: &Parser) -> Option<ParserError> {
+    let Token::Word(word) = &parser.peek_token_ref().token else {
+        return None;
+    };
+    if word.quote_style.is_some() {
+        return None;
+    }
+    let open = parser.peek_nth_token(1);
+    if open.token != Token::LParen {
+        return None;
+    }
+    use Keyword::*;
+    let reason = match word.keyword {
+        INT | INTEGER | TINYINT | SMALLINT | BIGINT | INT2 | INT4 | INT8 | MEDIUMINT | BIT
+        | VARBIT | STRING | BYTES | BLOB | CLOB | NVARCHAR | TIMESTAMPTZ | TIMETZ
+        | TIMESTAMP_NTZ | FLOAT | DOUBLE | BIGNUMERIC | BIGDECIMAL => {
+            "type does not accept parameters"
+        }
+        BINARY | VARBINARY | CHAR | CHARACTER | VARCHAR
+            if !matches!(parser.peek_nth_token(2).token, Token::Number(..)) =>
+        {
+            "type length must be an unsigned integer"
+        }
+        _ => return None,
+    };
+    Some(super::diagnostic::at(reason, open.span.start))
+}
 
 fn precision(value: u64) -> bool {
     i32::try_from(value).is_ok()
@@ -61,7 +96,7 @@ pub(super) fn allows(data_type: &DataType) -> bool {
             // TIMETZ/TIMESTAMPTZ are identifiers, not parameterized builtins.
             TimezoneInfo::Tz => p.is_none(),
         },
-        Interval { fields, precision } => fields.is_some() && precision.is_none(),
+        Interval { fields, leading_precision, precision: fractional } => fields.is_some() && leading_precision.is_none_or(precision) && fractional.is_none_or(precision),
         Array(element) => match element {
             ArrayElemTypeDef::Qualified(_, size) => size.is_none(),
             ArrayElemTypeDef::None | ArrayElemTypeDef::AngleBracket(_)

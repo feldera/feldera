@@ -104,6 +104,8 @@ mod tests {
             ("SELECT CAST(NULL AS DECIMA(5,2))", 1, 27),
             ("CREATE TABLE t(\n  x VARCHAR(2147483648))", 2, 13),
             ("CREATE TABLE t(x INT(2147483648))", 1, 21),
+            ("CREATE TABLE t(x ROW(y VARBIT(10 OCTETS)))", 1, 30),
+            ("SELECT CAST(NULL AS BINARY(MAX))", 1, 27),
         ] {
             let error = parse(source).unwrap_err().to_string();
             assert!(

@@ -275,6 +275,9 @@ impl Dialect for FelderaDialect {
     }
 
     fn parse_data_type(&self, parser: &mut Parser) -> Option<Result<DataType, ParserError>> {
+        if let Some(error) = type_policy::invalid_parameters(parser) {
+            return Some(Err(error));
+        }
         let start = parser.peek_token().span.start;
         if parser.parse_keyword(Keyword::INTERVAL) {
             return Some(Err(diagnostic::at(

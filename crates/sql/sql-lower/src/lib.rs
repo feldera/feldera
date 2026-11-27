@@ -104,7 +104,21 @@ pub fn lower_program(
         view::restore_system_scan(&mut checkpoint, program)?;
     }
     let mut ids = source_table::Ids::after(&checkpoint["circuit"], program.table_scan_order.len());
+    let mut precision_warnings = std::collections::HashSet::new();
     for statement in program.statements.iter().filter(|s| s.source().visible) {
+        if let Statement::CreateTable { source, schema, .. }
+        | Statement::CreateView { source, schema, .. } = statement
+        {
+            source_table::precision_warnings(
+                &program.catalog.schemas[*schema as usize],
+                &program.table.type_table,
+                source,
+                &mut precision_warnings,
+                checkpoint["diagnostics"]["messages"]
+                    .as_array_mut()
+                    .expect("system diagnostics"),
+            );
+        }
         if let Statement::CreateView {
             source,
             schema,
@@ -139,9 +153,10 @@ pub fn lower_program(
         let schema = &program.catalog.schemas[*schema as usize];
         if !foreign_keys.is_empty()
             || schema.properties.is_some()
-            || schema.columns.iter().any(|c| {
-                c.primary_key || c.lateness.is_some() || c.default_value.is_some() || c.unused
-            })
+            || schema
+                .columns
+                .iter()
+                .any(|c| c.lateness.is_some() || c.default_value.is_some() || c.unused)
         {
             return Err(Error(format!(
                 "unsupported metadata on table {}",

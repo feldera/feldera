@@ -27,7 +27,7 @@ fn unit(token: &Token) -> Option<DateTimeField> {
     }
 }
 
-fn precision(parser: &mut Parser) -> Result<u64, ParserError> {
+pub(super) fn precision(parser: &mut Parser) -> Result<u64, ParserError> {
     let start = parser.peek_token().span.start;
     let value = parser.parse_literal_uint()?;
     if value > i32::MAX as u64 {

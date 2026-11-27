@@ -259,6 +259,17 @@ impl Display for OutputFormat {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// EXPERIMENTAL. Use the local Rust SQL front end.
+    Sql {
+        #[arg(value_enum)]
+        action: LocalSqlAction,
+        /// SQL file to read, or - for stdin.
+        #[arg(default_value = "-", value_hint = ValueHint::FilePath)]
+        file: PathBuf,
+        /// Rust sql2dbsp executable.
+        #[arg(long, env = "FELDERA_SQL2DBSP", default_value = "sql2dbsp", value_hint = ValueHint::ExecutablePath)]
+        compiler: PathBuf,
+    },
     /// List the available pipelines.
     #[command(next_help_heading = "Pipeline Commands")]
     Pipelines,
@@ -328,6 +339,14 @@ pub enum Commands {
         #[command(subcommand)]
         action: DebugActions,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum LocalSqlAction {
+    /// Print an advisory binding verdict, schema and available front-end diagnostics as JSON.
+    Preview,
+    /// Format SQL and write it to stdout.
+    Format,
 }
 
 #[derive(Subcommand)]

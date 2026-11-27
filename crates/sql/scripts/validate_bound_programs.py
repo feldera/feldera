@@ -13,11 +13,34 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "explicit_view_columns": "CREATE TABLE readings(x INT, y INT);\n"
+                             "CREATE LOCAL VIEW swapped(a, b) AS SELECT y, x FROM readings;\n"
+                             "CREATE MATERIALIZED VIEW stored AS SELECT b FROM swapped;",
+    "named_constant": "CREATE VIEW v(answer) AS SELECT 42;",
+    "inline_key": "CREATE TABLE readings(id BIGINT NOT NULL PRIMARY KEY, v INT);\n"
+                  "CREATE VIEW output_rows AS SELECT * FROM readings;",
+    "composite_key": "CREATE TABLE readings(a INT NOT NULL, b BIGINT NOT NULL, PRIMARY KEY (b, a));",
+    "interleaved_key": "CREATE TABLE readings(a INT NOT NULL, PRIMARY KEY (a, b), b BIGINT NOT NULL);",
     "local_constant": "CREATE LOCAL VIEW one AS SELECT 5 AS five;",
     "materialized_constant": "CREATE MATERIALIZED VIEW one AS SELECT 5 AS five;",
     "view_kinds": "CREATE TABLE readings(x INT, y BIGINT);\n"
                   "CREATE LOCAL VIEW selected AS SELECT y FROM readings WHERE x > 2;\n"
                   "CREATE MATERIALIZED VIEW stored AS SELECT x, y FROM readings;",
+    "view_chain": "CREATE TABLE readings(x INT NULL, y INT);\n"
+                  "CREATE LOCAL VIEW selected AS SELECT * FROM readings;\n"
+                  "CREATE MATERIALIZED VIEW stored AS SELECT * FROM selected;\n"
+                  "CREATE VIEW reordered AS SELECT y, x FROM selected WHERE y > 5;\n"
+                  "CREATE VIEW public_copy AS SELECT * FROM stored;",
+    "constant_view_input": "CREATE LOCAL VIEW seed AS SELECT 1 AS n;\n"
+                           "CREATE VIEW result AS SELECT n FROM seed;",
+    "scalar_widths": "CREATE TABLE readings(t TIME, ts TIMESTAMP(6), f REAL NOT NULL, g REAL, "
+                     "i TINYINT UNSIGNED, j SMALLINT UNSIGNED, k BIGINT UNSIGNED, "
+                     "a BINARY, b VARBINARY, c BINARY(4), d VARBINARY(10));\n"
+                     "CREATE VIEW samples AS SELECT d, c, b, a, k, j, i, g, f, ts, t FROM readings;",
+    "temporal_precision": "CREATE TABLE times(t TIME(2), ts TIMESTAMP(3), full_time TIME(12), "
+                          "full_timestamp TIMESTAMP(9));\n"
+                          "CREATE TABLE more_times(t TIME(2) NOT NULL, ts TIMESTAMP(0));\n"
+                          "CREATE VIEW repeated AS SELECT t, ts FROM times;",
     "character_date": "CREATE TABLE records(id INT NOT NULL, day DATE, label VARCHAR(24), tag CHAR(3));\n"
                       "CREATE VIEW result AS SELECT label, day, tag FROM records WHERE id > 2;",
     "string_projection": "CREATE TABLE names(id INT, name VARCHAR, prefix CHAR);\n"

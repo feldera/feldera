@@ -4141,6 +4141,20 @@ fn main() {
             };
 
             match cli.command {
+                Commands::Sql { action, file, compiler } => {
+                    let mode = match action {
+                        LocalSqlAction::Preview => "--preview",
+                        LocalSqlAction::Format => "--format",
+                    };
+                    match Command::new(&compiler).arg(mode).arg(file).status().await {
+                        Ok(status) if status.success() => (),
+                        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+                        Err(error) => {
+                            eprintln!("Could not run {}: {error}. Use --compiler to select the Rust sql2dbsp executable.", compiler.display());
+                            std::process::exit(2);
+                        }
+                    }
+                }
                 Commands::Apikey { action } => api_key_commands(cli.format, action, client()).await,
                 Commands::OidcTrust { action } => {
                     oidc_trust_commands(cli.format, action, client()).await

@@ -191,6 +191,27 @@ mkdir -Force (Split-Path $PROFILE)
   </TabItem>
 </Tabs>
 
+## Preview SQL locally
+
+`fda sql preview` checks syntax and, for queries the experimental Rust binder
+supports, prints a schema preview. It reads a SQL file or standard input. The
+JSON result includes `advisory: true` and a `status` of `bound`, `error`, or
+`unsupported`. An unsupported result includes the reason. Use
+`fda validate-program` for the verdict from your deployment's compiler.
+
+The local commands require the Rust `sql2dbsp` executable on your path.
+From a Feldera checkout, build it with `cargo build --release --locked -p sql2dbsp`
+and select the build with `--compiler` or the `FELDERA_SQL2DBSP` environment variable.
+
+```sh
+export FELDERA_SQL2DBSP="$PWD/target/release/sql2dbsp"
+fda sql preview pipeline.sql
+fda sql format pipeline.sql > formatted.sql
+```
+
+The preview command exits successfully when it produces a verdict. File and
+compiler invocation failures produce a nonzero exit status.
+
 ## Connecting & Authentication
 
 To connect to the Feldera manager, you need to provide the URL of the manager. You can either provide the URL as an

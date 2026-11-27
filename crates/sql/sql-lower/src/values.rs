@@ -125,7 +125,7 @@ pub(super) fn lower(
     Ok(Stream {
         operator: operator.into(),
         output_type,
-        relation,
+        relation: json!({"ref":relation}),
     })
 }
 

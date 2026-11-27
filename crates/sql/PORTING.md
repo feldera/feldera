@@ -31,7 +31,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P3 | Build `d325a41b8` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `10a4d9029` passed all 8,256 executable classic cases. Build `084caac1d` matched 216 selected compilations, passed 352 nightly optimizer tests, and restored COUNT and LATENESS in both directions. [Full replay](evidence/p3-asof-window-keys.json) · [Runtime](evidence/p3-constant-views-and-static-windows.json) · [Selected replay and restores](evidence/p3-static-value-constructors.json) · [DATE defaults](evidence/p3-date-default-year-range.json) | Finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build, including the three latency modes. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
-| P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
+| P4 | Rust S1-to-S2 lowering for keyed and unkeyed tables, view chains, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
 The P2 checkpoint test compiled the same grouped COUNT through Java and the hybrid driver,
@@ -136,12 +136,10 @@ SQL. In the full semantic run the current Java build failed on the *original*
 comparisons passed. All 8,571 cases passed both semantic comparison and strict typed S1 comparison
 in a separate run that placed the P0 archived `FelderaTypeCoercion` class first on the same classpath.
 That class overrides inferred column nullability. The current build omits the
-override. The run retains both original failures. Among 2,136 adversarial grammar cases the two parsers accepted 1,029 with equivalent Java ASTs.
-Rust rejected all 1,061 Java rejections and refused 46 additional Java acceptances.
-Of the shared rejections, 672 had equal start coordinates, 382 had different
-coordinates, and seven lacked one parser's position. Against the product compiler,
-659 matched severity, error class, start and snippet together. The remaining
-402 are open P5a differences. [Diagnostic comparison](scripts/validate_syntax_diagnostics.py)
+override. The run retains both original failures. Among 2,136 adversarial grammar cases the two parsers accepted 1,035 with equivalent Java ASTs.
+Rust rejected all 1,061 Java rejections and refused 40 additional Java acceptances.
+Against the product compiler, 719 of the shared rejections matched severity,
+error class, start and snippet together. The remaining 342 are open P5a differences. [Diagnostic comparison](scripts/validate_syntax_diagnostics.py)
 
 Seventeen focused programs matched direct Java on the downstream observations, schema preview,
 relational plan, public Gen-2 circuit, dataflow, and diagnostic payloads. The pinned
@@ -149,22 +147,20 @@ Forge reader loaded all seventeen circuits with their profiler reports. The case
 COUNT(*), a filtered COUNT(*), COUNT(DISTINCT), a global SUM, a grouped SUM, and a multiline
 constant view. [Executable comparison](scripts/validate_bound_programs.py) · [Measured evidence](evidence/local-compiler-20261119.json)
 
-On 2026-11-27, all 20 directed binding cases and all 25 directed Rust lowering
-cases matched direct Gen-2 compilation with the Java reference built at
-`1222fd75f`. The added cases exercise local and materialized constant views
-and a table shared by a local filtered projection and a materialized output.
-Local views have a final provenance record on the view operator. Public views
-have a separate sink. The lowerer preserves both shapes across S2 replay.
+On 2026-11-27, 29 directed binding cases and 34 directed lowering cases
+matched direct Gen-2 compilation with the Java reference built at
+`1222fd75f`. They include explicit view column lists, references to local
+views, inline and composite primary keys, and temporal precision warnings.
+The Rust schema preview and S2 preserve primary keys in column declaration order.
 [Binding comparison](scripts/validate_bound_programs.py) · [Lowering comparison](scripts/validate_s1_lowering.py)
 
-The full-corpus binding audit preserves the original submission calls and uses
-default nonincremental Gen-2 options. Rust bound 75 of 8,571 programs. Java
-compilation of all 75 matched Java continuation from Rust S1 at every captured
-optimizer observation, the persistent-ID inputs, schema, diagnostics and final
-Gen-2 bytes in the Linux devcontainer. Rust also lowered 23 of those programs to S2. All 23 matched an independent
-Java lowering of the same bound program, and the Java optimizer resumed every
-checkpoint. The other 8,496 programs remain outside
-the verified path. The parser's 8,571 successes measure a different boundary.
+The frozen audit used the original submission calls and default nonincremental
+Gen-2 options. Rust bound 82 of 8,571 programs. All 82 matched Java compilation
+at every captured optimizer observation, persistent-ID inputs, schema,
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 29 of
+the 82 to S2. All 29 matched independent Java lowering and the Java optimizer
+resumed every checkpoint. The remaining 8,489 programs still need whole-program
+binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
 
 Ten additional incremental workloads used Java to compile raw SQL through S3.

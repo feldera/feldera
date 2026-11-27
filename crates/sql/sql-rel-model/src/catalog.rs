@@ -66,6 +66,15 @@ pub struct Property {
 }
 
 impl CatalogSchema {
+    /// The public schema lists key columns in declaration order.
+    pub fn primary_key(&self) -> Vec<&str> {
+        self.columns
+            .iter()
+            .filter(|c| c.primary_key)
+            .map(|c| c.name.name.as_str())
+            .collect()
+    }
+
     /// Check this schema's metadata and ownership of value slots. The enclosing
     /// program must also validate the shared type and expression graphs.
     pub fn validate(

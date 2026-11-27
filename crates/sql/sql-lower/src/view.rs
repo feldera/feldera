@@ -126,17 +126,19 @@ fn resolve_scan<'a>(
         .iter()
         .position(|id| *id == scan_id)
         .ok_or_else(|| Error("missing table scan allocation".into()))?;
-    let input =
-        program
-            .statements
-            .iter()
-            .find_map(|s| match s {
-                feldera_sql_rel_model::statements::Statement::CreateTable {
-                    name, schema, ..
-                } if name.name == *table_name => Some(&program.catalog.schemas[*schema as usize]),
-                _ => None,
-            })
-            .ok_or_else(|| Error(format!("missing source table {table_name}")))?;
+    let input = program
+        .statements
+        .iter()
+        .find_map(|s| match s {
+            feldera_sql_rel_model::statements::Statement::CreateTable { name, schema, .. }
+            | feldera_sql_rel_model::statements::Statement::CreateView { name, schema, .. }
+                if name.name == *table_name =>
+            {
+                Some(&program.catalog.schemas[*schema as usize])
+            }
+            _ => None,
+        })
+        .ok_or_else(|| Error(format!("missing source table {table_name}")))?;
     if root.fields.len() != columns.as_ref().map_or(input.columns.len(), Vec::len)
         || root.fields.len() != schema.columns.len()
         || root
@@ -167,14 +169,7 @@ fn resolve_scan<'a>(
 }
 
 impl Scan<'_> {
-    fn attach(
-        &self,
-        table: &mut Value,
-        schema: &CatalogSchema,
-        position: &Value,
-        user_plan_id: u64,
-        ids: &mut Ids,
-    ) -> Value {
+    fn relation(&self, schema: &CatalogSchema, position: &Value, user_plan_id: u64) -> Value {
         let Scan {
             namespace,
             table: table_name,
@@ -182,29 +177,20 @@ impl Scan<'_> {
             physical_id,
             ..
         } = self;
-        let origin_position = table["sourceNamePosition"].clone();
-        let scan = json!({
+        json!({
             "id":physical_id, "relId":physical_id, "planId":user_plan_id, "tableScan":true,
             "digest":format!("LogicalTableScan.(table=[{namespace}, {table_name}],hints=[[alias inheritPath:[] options:[{alias}]]])"),
             "text":format!("LogicalTableScan(table=[[{namespace}, {table_name}]], hints=[[[alias inheritPath:[] options:[{alias}]]]])"),
             "sql":format!("SELECT *\nFROM `{namespace}`.`{table_name}`\n/*+ `alias`('{alias}') */"),
             "statefulSqlName":null, "origin":{"name":schema.name.name,"caseSensitive":schema.name.quoted,"position":position}
-        });
-        let children = table["provenance"]["children"]
-            .as_array_mut()
-            .expect("source origins");
-        children.push(json!({
-            "id":ids.next_origin(), "kind":"LastRel", "position":origin_position,
-            "positions":[origin_position], "relation":scan
-        }));
-        scan
+        })
     }
 }
 
 pub(super) struct Stream {
     pub operator: Value,
     pub output_type: Value,
-    pub relation: usize,
+    pub relation: Value,
 }
 
 fn scan_stream(
@@ -238,19 +224,36 @@ fn scan_stream(
         .as_array_mut()
         .expect("system operators");
     let table_name = scan.table;
-    let table = operators
+    let input = operators
         .iter_mut()
-        .find(|op| {
-            op["class"] == "DBSPSourceMultisetOperator" && op["tableName"]["name"] == table_name
+        .find(|op| match op["class"].as_str() {
+            Some("DBSPSourceMultisetOperator") => op["tableName"]["name"] == table_name,
+            Some("DBSPViewOperator") => op["viewName"]["name"] == table_name,
+            _ => false,
         })
-        .ok_or_else(|| Error(format!("missing source table {table_name}")))?;
+        .ok_or_else(|| Error(format!("missing input relation {table_name}")))?;
     let position = statement_position(source);
-    let mut input_origin = scan.attach(table, schema, &position, scan_plan_id, ids);
-    let mut relation_id = scan.physical_id;
-    let mut output_type = reference(&table["outputType"])?;
-    let mut source_id = table["id"].clone();
+    let mut input_origin = scan.relation(schema, &position, scan_plan_id);
+    let mut relation = if input["class"] == "DBSPSourceMultisetOperator" {
+        let position = input["sourceNamePosition"].clone();
+        input["provenance"]["children"]
+            .as_array_mut()
+            .expect("source origins")
+            .push(json!({
+                "id":ids.next_origin(), "kind":"LastRel", "position":position,
+                "positions":[position], "relation":input_origin
+            }));
+        json!({"ref": scan.physical_id})
+    } else {
+        // Reading a previously declared view reuses its operator. Its first
+        // consumer owns the scan origin when the scan itself is the view root.
+        input_origin.clone()
+    };
+    let mut output_type = reference(&input["outputType"])?;
+    let mut source_id = input["id"].clone();
     if let Some(predicate) = &scan.predicate {
-        relation_id = ids.next_relation();
+        let relation_id = ids.next_relation();
+        relation = json!({"ref":relation_id});
         let layout = RowLayout::new(scan.input, &program.table.type_table)?;
         input_origin = predicate.relation(
             scan.input,
@@ -273,7 +276,8 @@ fn scan_stream(
             output: schema,
             columns,
         };
-        relation_id = ids.next_relation();
+        let relation_id = ids.next_relation();
+        relation = json!({"ref":relation_id});
         let relation = projection.relation(&input_origin, relation_id, user_plan_id)?;
         let map = projection.map(program, ids, &source_id, relation, generated)?;
         generated += 1;
@@ -285,7 +289,7 @@ fn scan_stream(
     Ok(Stream {
         operator: source_id,
         output_type,
-        relation: relation_id,
+        relation,
     })
 }
 
@@ -309,16 +313,29 @@ pub(super) fn lower(
     {
         return Err(Error("unsupported view metadata".into()));
     }
+    // A declared view column list renames the public row. Calcite keeps the
+    // SELECT names in the stream feeding that view, including generated EXPR$n names.
+    if root.fields.len() != schema.columns.len() {
+        return Err(Error("view column count differs from SELECT output".into()));
+    }
+    let mut query_schema = std::borrow::Cow::Borrowed(schema);
+    for (index, field) in root.fields.iter().enumerate() {
+        if query_schema.columns[index].name.name != field.name {
+            let name = &mut query_schema.to_mut().columns[index].name;
+            name.quoted = field.name.to_lowercase() != field.name;
+            name.name.clone_from(&field.name);
+        }
+    }
     let stream = match program.properties.relations[root.relation as usize].fields {
         Properties::Values { .. } => {
-            super::values::lower(checkpoint, program, ids, schema, root, source)?
+            super::values::lower(checkpoint, program, ids, &query_schema, root, source)?
         }
-        _ => scan_stream(checkpoint, program, ids, schema, root, source)?,
+        _ => scan_stream(checkpoint, program, ids, &query_schema, root, source)?,
     };
     let Stream {
         operator: source_id,
         output_type,
-        relation: relation_id,
+        relation,
     } = stream;
     let layout = RowLayout::new(schema, &program.table.type_table)?;
     let position = statement_position(source);
@@ -350,7 +367,8 @@ pub(super) fn lower(
         "emitFinalColumn":-1,"recursive":false,"system":false,"columns":columns})
     };
     let view_id = ids.next_operator();
-    let origin = |id: u64, kind: &str| json!({"id":id,"kind":kind,"position":position,"positions":[position],"relation":{"ref":relation_id}});
+    let origin = |id: u64, kind: &str, relation: &Value| json!({"id":id,"kind":kind,"position":position,"positions":[position],"relation":relation});
+    let relation_ref = json!({"ref":relation.get("ref").unwrap_or(&relation["id"])});
     let row_ref = reference(&structure)?;
     let view_origin = if kind == ViewKind::Local {
         "LastRel"
@@ -358,7 +376,7 @@ pub(super) fn lower(
         "IntermediateRel"
     };
     operators.push(json!({"class":"DBSPViewOperator","id":view_id,"annotations":[],
-        "provenance":origin(ids.next_origin(),view_origin),"inputs":[{"outputNumber":0,"operator":{"node":source_id}}],
+        "provenance":origin(ids.next_origin(),view_origin,&relation),"inputs":[{"outputNumber":0,"operator":{"node":source_id}}],
         "originalRowType":structure,"outputType":output_type,"function":identity(ids,&any),
         "viewName":name(&schema.name),"query":source.statement_text,"metadata":metadata(&columns)}));
     if kind == ViewKind::Local {
@@ -368,7 +386,7 @@ pub(super) fn lower(
         column["type"] = reference(&column["type"])?;
     }
     operators.push(json!({"class":"DBSPSinkOperator","id":ids.next_operator(),"annotations":[],
-        "provenance":origin(ids.next_origin(),"LastRel"),"inputs":[{"outputNumber":0,"operator":{"node":view_id}}],
+        "provenance":origin(ids.next_origin(),"LastRel",&relation_ref),"inputs":[{"outputNumber":0,"operator":{"node":view_id}}],
         "originalRowType":row_ref,"outputType":output_type,"viewName":name(&schema.name),
         "query":source.statement_text,"metadata":metadata(&columns)}));
     graph["metadata"]["outputs"]

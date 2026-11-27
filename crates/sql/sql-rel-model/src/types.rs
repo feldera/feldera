@@ -76,6 +76,13 @@ impl SqlType {
                 }
             }
             TypeKind::Date {} => "DATE",
+            TypeKind::Time {
+                precision: Precision::Specified(n),
+                zone: TimeZone::None,
+            } => {
+                result["precision"] = n.into();
+                "TIME"
+            }
             TypeKind::Timestamp {
                 precision: Precision::Specified(n),
                 zone: TimeZone::None,

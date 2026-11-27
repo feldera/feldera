@@ -28,7 +28,12 @@ pub fn preview_schema(sql: &str) -> Result<Value, Failure> {
                 if !foreign_keys.is_empty() {
                     return Err(unsupported("schema preview for foreign keys"));
                 }
-                let mut table = relation(&program.catalog.schemas[*schema as usize], types)?;
+                let schema = &program.catalog.schemas[*schema as usize];
+                let mut table = relation(schema, types)?;
+                let key = schema.primary_key();
+                if !key.is_empty() {
+                    table["primary_key"] = json!(key);
+                }
                 table["foreign_keys"] = json!([]);
                 inputs.push(table);
             }
@@ -50,10 +55,8 @@ pub fn preview_schema(sql: &str) -> Result<Value, Failure> {
 }
 
 fn relation(schema: &CatalogSchema, types: &TypeTable) -> Result<Value, Failure> {
-    if schema.properties.is_some() || schema.columns.iter().any(|c| c.primary_key) {
-        return Err(unsupported(
-            "schema preview for relation properties or primary keys",
-        ));
+    if schema.properties.is_some() {
+        return Err(unsupported("schema preview for relation properties"));
     }
     let fields = schema.columns.iter().map(|col| {
         let ty = &types.types[col.ty.0 as usize];

@@ -13866,10 +13866,15 @@ impl<'a> Parser<'a> {
                     if self.dialect.supports_interval_options() {
                         let fields = self.maybe_parse_optional_interval_fields()?;
                         let precision = self.parse_optional_precision()?;
-                        Ok(DataType::Interval { fields, precision })
+                        Ok(DataType::Interval {
+                            fields,
+                            leading_precision: None,
+                            precision,
+                        })
                     } else {
                         Ok(DataType::Interval {
                             fields: None,
+                            leading_precision: None,
                             precision: None,
                         })
                     }

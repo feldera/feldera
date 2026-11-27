@@ -219,6 +219,16 @@ impl DeclarationTokens {
         token_range(&self.0)
     }
 
+    /// Find the table constraint between columns. An inline PRIMARY KEY
+    /// follows the column's type or nullability marker.
+    pub(super) fn primary_key_position(&self) -> Option<sqlparser_064::tokenizer::Location> {
+        self.0.windows(2).find_map(|tokens| {
+            (matches!(tokens[0].token, Token::Comma | Token::LParen)
+                && matches!(&tokens[1].token, Token::Word(w) if w.keyword == Keyword::PRIMARY))
+            .then_some(tokens[1].span.start)
+        })
+    }
+
     pub(super) fn column_ranges(
         &self,
         column_spans: impl IntoIterator<Item = Span>,
@@ -245,7 +255,17 @@ impl DeclarationTokens {
                 Some(_) => return Err(unsupported("missing column separator")),
                 None => columns.len(),
             };
-            ranges.push(token_range(&columns[start..end])?);
+            // The diagnostic origin covers the column name, type and
+            // nullability. PRIMARY KEY contributes to the printed text only.
+            let column = &columns[start..end];
+            let key = column
+                .iter()
+                .position(|t| matches!(&t.token, Token::Word(w) if w.keyword == Keyword::PRIMARY));
+            let mut end = key.unwrap_or(column.len());
+            if end > 0 && column[end - 1].token == Token::Comma {
+                end -= 1;
+            }
+            ranges.push(token_range(&column[..end])?);
         }
         Ok(ranges)
     }

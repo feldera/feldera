@@ -1,4 +1,4 @@
-//! Interval type qualifiers that the upstream AST can represent without loss.
+//! CAST interval targets, including leading and fractional-second precision.
 
 use sqlparser_064::{
     ast::{CastKind, DataType, Expr, IntervalFields},
@@ -7,51 +7,28 @@ use sqlparser_064::{
     tokenizer::Token,
 };
 
-#[derive(Clone, Copy)]
-enum Unit {
-    Year,
-    Month,
-    Day,
-    Hour,
-    Minute,
-    Second,
-}
-
-fn unit(parser: &mut Parser) -> Result<Unit, ParserError> {
+fn unit(parser: &mut Parser) -> Result<IntervalFields, ParserError> {
     let token = parser.next_token();
     if let Token::Word(word) = &token.token {
         if word.quote_style.is_none() {
-            let unit = match word.value.to_ascii_uppercase().as_str() {
-                "YEAR" | "YEARS" => Some(Unit::Year),
-                "MONTH" | "MONTHS" => Some(Unit::Month),
-                "DAY" | "DAYS" => Some(Unit::Day),
-                "HOUR" | "HOURS" => Some(Unit::Hour),
-                "MINUTE" | "MINUTES" => Some(Unit::Minute),
-                "SECOND" | "SECONDS" => Some(Unit::Second),
-                _ => None,
-            };
-            if let Some(unit) = unit {
-                return Ok(unit);
+            let spelling = word.value.to_ascii_uppercase();
+            match spelling.strip_suffix('S').unwrap_or(&spelling) {
+                "YEAR" => return Ok(IntervalFields::Year),
+                "QUARTER" => return Ok(IntervalFields::Quarter),
+                "MONTH" => return Ok(IntervalFields::Month),
+                "WEEK" => return Ok(IntervalFields::Week),
+                "DAY" => return Ok(IntervalFields::Day),
+                "HOUR" => return Ok(IntervalFields::Hour),
+                "MINUTE" => return Ok(IntervalFields::Minute),
+                "SECOND" => return Ok(IntervalFields::Second),
+                _ => (),
             }
         }
     }
     Err(super::diagnostic::at(
-        format!("unsupported interval type unit: {token}"),
+        "expected an interval unit",
         token.span.start,
     ))
-}
-
-fn reject_precision(parser: &Parser) -> Result<(), ParserError> {
-    if parser.peek_token().token == Token::LParen {
-        // Calcite distinguishes leading-field precision from fractional-second
-        // precision. The upstream DataType holds only the latter. Refuse both
-        // here until an extended type model can preserve their separate roles.
-        return Err(super::diagnostic::at(
-            "interval type precision requires an extended AST",
-            parser.peek_token().span.start,
-        ));
-    }
-    Ok(())
 }
 
 pub(super) fn parse_cast(parser: &mut Parser) -> Result<Expr, ParserError> {
@@ -85,41 +62,47 @@ pub(super) fn parse_cast(parser: &mut Parser) -> Result<Expr, ParserError> {
 }
 
 fn parse_interval(parser: &mut Parser) -> Result<DataType, ParserError> {
-    use IntervalFields as Fields;
-    use Unit::*;
-    let location = parser.peek_token().span.start;
-    let start = unit(parser)?;
-    reject_precision(parser)?;
-    let end = if parser.parse_keyword(Keyword::TO) {
-        Some(unit(parser)?)
-    } else {
-        None
-    };
-    reject_precision(parser)?;
-    let fields = match (start, end) {
-        (Year, None) => Fields::Year,
-        (Month, None) => Fields::Month,
-        (Day, None) => Fields::Day,
-        (Hour, None) => Fields::Hour,
-        (Minute, None) => Fields::Minute,
-        (Second, None) => Fields::Second,
-        (Year, Some(Month)) => Fields::YearToMonth,
-        (Day, Some(Hour)) => Fields::DayToHour,
-        (Day, Some(Minute)) => Fields::DayToMinute,
-        (Day, Some(Second)) => Fields::DayToSecond,
-        (Hour, Some(Minute)) => Fields::HourToMinute,
-        (Hour, Some(Second)) => Fields::HourToSecond,
-        (Minute, Some(Second)) => Fields::MinuteToSecond,
-        _ => {
-            return Err(super::diagnostic::at(
-                "invalid interval type unit range",
-                location,
-            ));
+    use IntervalFields::*;
+    let first = unit(parser)?;
+    let mut leading_precision = None;
+    let mut fractional_precision = None;
+    if parser.consume_token(&Token::LParen) {
+        leading_precision = Some(super::datetime_difference::precision(parser)?);
+        if first == Second && parser.consume_token(&Token::Comma) {
+            fractional_precision = Some(super::datetime_difference::precision(parser)?);
         }
+        parser.expect_token(&Token::RParen)?;
+    }
+    let to = parser.peek_token().span.start;
+    let fields = if parser.parse_keyword(Keyword::TO) {
+        let last = unit(parser)?;
+        let fields = match (first, last) {
+            (Year, Month) => YearToMonth,
+            (Day, Hour) => DayToHour,
+            (Day, Minute) => DayToMinute,
+            (Day, Second) => DayToSecond,
+            (Hour, Minute) => HourToMinute,
+            (Hour, Second) => HourToSecond,
+            (Minute, Second) => MinuteToSecond,
+            _ => {
+                return Err(super::diagnostic::at(
+                    "invalid interval type unit range",
+                    to,
+                ));
+            }
+        };
+        if last == Second && parser.consume_token(&Token::LParen) {
+            fractional_precision = Some(super::datetime_difference::precision(parser)?);
+            parser.expect_token(&Token::RParen)?;
+        }
+        fields
+    } else {
+        first
     };
     Ok(DataType::Interval {
         fields: Some(fields),
-        precision: None,
+        leading_precision,
+        precision: fractional_precision,
     })
 }
 
@@ -149,6 +132,8 @@ mod tests {
         for (text, fields) in [
             ("YEAR", Year),
             ("MONTH", Month),
+            ("WEEK", Week),
+            ("QUARTER", Quarter),
             ("DAY", Day),
             ("HOUR", Hour),
             ("MINUTE", Minute),
@@ -178,6 +163,7 @@ mod tests {
                     cast_type(&sql),
                     DataType::Interval {
                         fields: Some(fields),
+                        leading_precision: None,
                         precision: None
                     }
                 );
@@ -200,6 +186,7 @@ mod tests {
             cast_type("SELECT TRY_CAST(1 AS INTERVAL DAY)"),
             DataType::Interval {
                 fields: Some(IntervalFields::Day),
+                leading_precision: None,
                 precision: None
             }
         );
@@ -210,17 +197,32 @@ mod tests {
     }
 
     #[test]
-    fn interval_precisions_and_unrepresentable_units_are_explicit_refusals() {
+    fn formatting_preserves_both_interval_precisions() {
         for qualifier in [
-            "",
             "YEAR(2)",
+            "SECOND(2)",
             "SECOND(2, 3)",
             "DAY TO SECOND(3)",
+            "DAY(4) TO SECOND(6)",
+            "YEAR(2) TO MONTH",
+            "WEEK(1)",
+        ] {
+            let sql = format!("SELECT CAST('1' AS INTERVAL {qualifier})");
+            assert_eq!(cast_type(&sql).to_string(), format!("INTERVAL {qualifier}"));
+        }
+    }
+
+    #[test]
+    fn invalid_interval_targets_are_rejected() {
+        for qualifier in [
+            "",
+            "YEAR(2, 3)",
+            "SECOND(2, 3, 4)",
+            "DAY TO MINUTE(3)",
+            "YEAR(2147483648)",
             "YEAR TO DAY",
             "SECOND TO DAY",
             "DAY TO DAY",
-            "WEEK",
-            "QUARTER",
             "\"DAY\"",
         ] {
             let sql = format!("SELECT CAST('1' AS INTERVAL {qualifier})");

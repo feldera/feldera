@@ -5,8 +5,8 @@ mod compute;
 mod filter;
 
 use super::{
-    StatementText, append_boundary, append_schema, append_view, check_prelude, column,
-    diagnostic_source, finish,
+    StatementText, ViewDeclaration, append_boundary, append_schema, append_view, check_prelude,
+    column, diagnostic_source, finish,
     graph::{
         ProjectInput, ProjectValue, TableOperand, append_table_filter, append_table_project,
         append_table_scan, append_values, insert_row_fields, insert_type,
@@ -26,19 +26,22 @@ use feldera_sql_rel_model::{
     program::Program,
     relation_metadata::{Coordinates, Hint},
     source::Origin,
-    statements::{Statement, ViewKind},
+    statements::Statement,
     types::{
         CharacterMetadata, Coercibility, CollationIdentity, FloatFlavor, IntegerWidth, Precision,
         SqlType, TimeZone, TypeKind,
     },
 };
-use sqlparser_064::ast::{GroupByExpr, Ident, WildcardAdditionalOptions};
-use std::collections::{HashMap, HashSet};
+use sqlparser_064::ast::{
+    ColumnOption, GroupByExpr, Ident, TableConstraint, WildcardAdditionalOptions,
+};
+use std::collections::HashSet;
 
-struct TableColumn {
+struct DeclaredColumn {
     name: Name,
     ty: TypeId,
     declaration: String,
+    primary_key: bool,
 }
 
 struct Projection {
@@ -78,15 +81,13 @@ pub(super) fn bind_parsed_table(
         ));
     }
     set_source(&mut program, id, sql, many);
-    let mut tables = HashMap::new();
     for (parsed_statement, tokens) in parsed.iter().zip(&declarations) {
         let ParsedStatement::Upstream(statement) = parsed_statement else {
             return Err(unsupported("expected CREATE TABLE or CREATE VIEW"));
         };
         match statement.as_ref() {
             Upstream::CreateTable(table) => {
-                let bound = declare_table(&mut program, table, tokens)?;
-                tables.insert(bound.name.name.clone(), bound);
+                declare_table(&mut program, table, tokens)?;
             }
             Upstream::CreateView(view)
                 if view
@@ -102,26 +103,23 @@ pub(super) fn bind_parsed_table(
                     tokens.range()?,
                 )?;
             }
-            Upstream::CreateView(view) => {
-                bind_view(&mut program, &tables, view, tokens.range()?, sql)?
-            }
+            Upstream::CreateView(view) => bind_view(&mut program, view, tokens.range()?, sql)?,
             _ => return Err(unsupported("expected CREATE TABLE or CREATE VIEW")),
         }
     }
     finish(program)
 }
 
-struct BoundTable {
+struct TableColumn {
     name: Name,
-    columns: Vec<TableColumn>,
-    schema: u32,
+    ty: TypeId,
 }
 
 fn declare_table(
     program: &mut Program,
     table: &sqlparser_064::ast::CreateTable,
     tokens: &DeclarationTokens,
-) -> Result<BoundTable, Failure> {
+) -> Result<(), Failure> {
     let table_ident = local_name(&table.name)?;
     let table_name = name(&table_ident.value);
     // Generated from the same operator table as SqlToRelCompiler.functionExists.
@@ -155,10 +153,9 @@ fn declare_table(
     {
         return Err(unsupported("table name already exists"));
     }
+    let key = table_key(table)?;
+    let mut unbound_key: HashSet<_> = key.iter().map(String::as_str).collect();
     let columns = map_table_columns(table, false, |column, nullable| {
-        if nullable && !column.options.is_empty() {
-            return Err(unsupported("explicit NULL is outside the table slice"));
-        }
         if column.options.iter().any(|option| option.name.is_some()) {
             return Err(unsupported(
                 "named column constraints are outside the table slice",
@@ -173,27 +170,63 @@ fn declare_table(
                 kind,
             },
         );
+        let column_name = name(&column.name.value);
+        let inline_key = column
+            .options
+            .iter()
+            .any(|opt| matches!(opt.option, ColumnOption::PrimaryKey(_)));
+        if inline_key && !key.is_empty() {
+            return Err(unsupported(
+                "table declares both an inline and a table primary key",
+            ));
+        }
+        let primary_key = inline_key || unbound_key.remove(column_name.name.as_str());
+        if primary_key && nullable {
+            return Err(unsupported("primary key column is nullable"));
+        }
+        if primary_key
+            && matches!(
+                program.table.type_table.types[ty.0 as usize].kind,
+                TypeKind::Float { .. }
+            )
+        {
+            return Err(unsupported(
+                "floating-point primary key requires a comparison warning",
+            ));
+        }
         let nullability = if nullable { "" } else { " NOT NULL" };
-        Ok(TableColumn {
-            name: name(&column.name.value),
+        let constraint = if inline_key { " PRIMARY KEY" } else { "" };
+        Ok(DeclaredColumn {
+            name: column_name,
             ty,
-            declaration: format!("{spelling}{nullability}"),
+            declaration: format!("{spelling}{nullability}{constraint}"),
+            primary_key,
         })
     })?;
+    if !unbound_key.is_empty() {
+        return Err(unsupported("primary key references an undeclared column"));
+    }
     let positions = tokens.column_ranges(table.columns.iter().map(|col| col.name.span))?;
-    let table_source = render_table(tokens.range()?, &table_name, &columns);
+    let key_index = tokens.primary_key_position().map(|pos| {
+        table
+            .columns
+            .partition_point(|col| col.name.span.start < pos)
+    });
+    let table_source = render_table(tokens.range()?, &table_name, &columns, key_index, &key);
     let table_columns = columns
         .iter()
         .zip(&positions)
         .enumerate()
         .map(|(index, (field, position))| {
             let text = format!("{} {}", field.name.name, field.declaration);
-            column(
+            let mut col = column(
                 field.name.clone(),
                 index,
                 field.ty,
                 diagnostic_source(position, &text),
-            )
+            );
+            col.primary_key = field.primary_key;
+            col
         })
         .collect();
     let schema = append_schema(
@@ -207,33 +240,49 @@ fn declare_table(
         source: table_source.source("CREATE_TABLE"),
         schema,
         name_diagnostic: diagnostic_source(&coordinates(table_ident.span), &table_name.name),
-        name: table_name.clone(),
+        name: table_name,
         foreign_keys: Vec::new(),
     });
 
-    Ok(BoundTable {
-        name: table_name,
-        columns,
-        schema,
-    })
+    Ok(())
+}
+
+fn table_key(table: &sqlparser_064::ast::CreateTable) -> Result<Vec<String>, Failure> {
+    let key = match table.constraints.as_slice() {
+        [] => return Ok(Vec::new()),
+        [TableConstraint::PrimaryKey(key)] => key,
+        _ => return Err(unsupported("expected a single table primary key")),
+    };
+    let mut seen = HashSet::new();
+    key.columns
+        .iter()
+        .map(|column| match &column.column.expr {
+            Expr::Identifier(ident) if ident.quote_style.is_none() => {
+                let name = ident.value.to_ascii_lowercase();
+                if !seen.insert(name.clone()) {
+                    return Err(unsupported("duplicate primary key column"));
+                }
+                Ok(name)
+            }
+            _ => Err(unsupported("expected an unquoted primary key column")),
+        })
+        .collect()
 }
 
 fn bind_view(
     program: &mut Program,
-    tables: &HashMap<String, BoundTable>,
     view: &sqlparser_064::ast::CreateView,
     position: Coordinates,
     sql: &str,
 ) -> Result<(), Failure> {
     validate_plain_view(view)?;
-    let view_name = name(&local_name(&view.name)?.value);
-    let kind = super::view_kind(view);
+    let declaration = ViewDeclaration::new(view)?;
     if program
         .catalog
         .schemas
         .iter()
-        .any(|schema| schema.name == view_name)
-        || system_relation(&view_name.name)
+        .any(|schema| schema.name == declaration.name)
+        || system_relation(&declaration.name.name)
     {
         return Err(unsupported("view name already exists"));
     }
@@ -243,18 +292,28 @@ fn bind_view(
     };
     let input =
         projection_input(select, false)?.ok_or_else(|| unsupported("expected a table in FROM"))?;
-    let BoundTable {
-        name: table_name,
-        columns,
-        schema,
-    } = tables.get(&input.name).ok_or_else(|| {
-        unsupported(format!(
-            "expected a declared base table in FROM, found {}",
-            input.name
-        ))
-    })?;
+    let (schema, relation) = program
+        .catalog
+        .schemas
+        .iter()
+        .enumerate()
+        .find(|(_, relation)| relation.name.name == input.name && !system_relation(&input.name))
+        .ok_or_else(|| {
+            unsupported(format!(
+                "expected a declared relation in FROM, found {}",
+                input.name
+            ))
+        })?;
+    let schema = schema as u32;
+    let columns: Vec<_> = relation
+        .columns
+        .iter()
+        .map(|col| TableColumn {
+            name: col.name.clone(),
+            ty: col.ty,
+        })
+        .collect();
     let columns = columns.as_slice();
-    let schema = *schema;
     let report_expression_error = |failure: Failure| failure.with_compiler_diagnostic(sql, None);
     let mut aggregate = aggregate::BoundAggregate::bind(
         program,
@@ -314,13 +373,7 @@ fn bind_view(
             if let Some(filter::Predicate::Expression { value, .. }) = &predicate {
                 append_table_filter(program, scan_row, value);
             }
-            append_table_scan(
-                program,
-                schema,
-                scan_row,
-                table_name.name.clone(),
-                scan_hint,
-            )?;
+            append_table_scan(program, schema, scan_row, input.name.clone(), scan_hint)?;
         }
         root
     } else if matches!(predicate, Some(filter::Predicate::Constant(false))) {
@@ -340,20 +393,13 @@ fn bind_view(
             }
             _ => None,
         };
-        let scan = append_table_scan(
-            program,
-            schema,
-            scan_row,
-            table_name.name.clone(),
-            scan_hint,
-        )?;
+        let scan = append_table_scan(program, schema, scan_row, input.name.clone(), scan_hint)?;
         project.or(filter).unwrap_or(scan)
     };
     let mut view_source = render_view(
         position,
-        kind,
-        &view_name.name,
-        &table_name.name,
+        &declaration,
+        &input.name,
         &input.qualifier,
         &projection,
     );
@@ -371,15 +417,7 @@ fn bind_view(
         .into_iter()
         .map(|field| (field.name, field.value.ty()))
         .collect();
-    append_view(
-        program,
-        view_source,
-        view_name,
-        kind,
-        fields,
-        view_row,
-        root,
-    )
+    append_view(program, view_source, declaration, fields, view_row, root)
 }
 
 fn apply_filtered_projection(projection: &mut [Projection], predicate: Option<&filter::Predicate>) {
@@ -555,14 +593,67 @@ fn render_column(qualifier: &str, column: &str) -> (String, String) {
 }
 
 fn table_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, String), Failure> {
+    use sqlparser_064::ast::{BinaryLength, TimezoneInfo};
+
     let integer =
         |width, signed, spelling: &str| (TypeKind::Integer { width, signed }, spelling.into());
     let kind = match data_type {
+        DataType::TinyIntUnsigned(None) => integer(IntegerWidth::I8, false, "TINYINT UNSIGNED"),
+        DataType::SmallIntUnsigned(None) => integer(IntegerWidth::I16, false, "SMALLINT UNSIGNED"),
+        DataType::BigIntUnsigned(None) => integer(IntegerWidth::I64, false, "BIGINT UNSIGNED"),
         DataType::Unsigned
         | DataType::UnsignedInteger
         | DataType::IntUnsigned(None)
         | DataType::IntegerUnsigned(None) => integer(IntegerWidth::I32, false, "INTEGER UNSIGNED"),
         DataType::Date => (TypeKind::Date {}, "DATE".into()),
+        DataType::Real => (
+            TypeKind::Float {
+                flavor: FloatFlavor::Real,
+            },
+            "REAL".into(),
+        ),
+        DataType::Binary(_) | DataType::Varbinary(_) => {
+            let (fixed, width) = match data_type {
+                DataType::Binary(width) => (true, *width),
+                DataType::Varbinary(None) => (false, None),
+                DataType::Varbinary(Some(BinaryLength::IntegerLength { length })) => {
+                    (false, Some(*length))
+                }
+                _ => return Err(unsupported("unsupported binary length")),
+            };
+            let name = if fixed { "BINARY" } else { "VARBINARY" };
+            let length = match width {
+                Some(n) => Precision::Specified(
+                    u32::try_from(n).map_err(|_| unsupported("binary length exceeds its range"))?,
+                ),
+                None if fixed => Precision::Specified(1),
+                None => Precision::Unspecified,
+            };
+            (
+                TypeKind::Binary { fixed, length },
+                width.map_or_else(|| name.into(), |n| format!("{name}({n})")),
+            )
+        }
+        DataType::Time(width, TimezoneInfo::None)
+        | DataType::Timestamp(width, TimezoneInfo::None) => {
+            let is_time = matches!(data_type, DataType::Time(..));
+            let (name, maximum) = if is_time {
+                ("TIME", 9)
+            } else {
+                ("TIMESTAMP", 6)
+            };
+            let precision = Precision::Specified(width.unwrap_or(maximum).min(maximum) as u32);
+            let zone = TimeZone::None;
+            let kind = if is_time {
+                TypeKind::Time { precision, zone }
+            } else {
+                TypeKind::Timestamp { precision, zone }
+            };
+            (
+                kind,
+                width.map_or_else(|| name.into(), |n| format!("{name}({n})")),
+            )
+        }
         DataType::Varchar(size)
         | DataType::CharVarying(size)
         | DataType::CharacterVarying(size)
@@ -624,17 +715,6 @@ fn table_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, String)
                 },
                 "DOUBLE".into(),
             ),
-            Kind::Timestamp { precision: 6 }
-                if matches!(data_type, DataType::Timestamp(None, _)) =>
-            {
-                (
-                    TypeKind::Timestamp {
-                        precision: Precision::Specified(6),
-                        zone: TimeZone::None,
-                    },
-                    "TIMESTAMP".into(),
-                )
-            }
             _ => {
                 return Err(unsupported(
                     "table type outside the direct projection slice",
@@ -652,17 +732,32 @@ fn name(ident: &str) -> Name {
     }
 }
 
-fn render_table(position: Coordinates, table: &Name, columns: &[TableColumn]) -> StatementText {
-    let pretty = columns
+fn render_table(
+    position: Coordinates,
+    table: &Name,
+    columns: &[DeclaredColumn],
+    key_index: Option<usize>,
+    key: &[String],
+) -> StatementText {
+    let mut pretty = columns
         .iter()
         .map(|column| format!("`{}` {}", column.name.name, column.declaration))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let diagnostic = columns
+        .collect::<Vec<_>>();
+    let mut diagnostic = columns
         .iter()
         .map(|column| format!("{} {}", column.name.name, column.declaration))
-        .collect::<Vec<_>>()
-        .join(", ");
+        .collect::<Vec<_>>();
+    if let Some(index) = key_index {
+        let quoted = key
+            .iter()
+            .map(|col| format!("`{col}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        pretty.insert(index, format!("PRIMARY KEY ({quoted})"));
+        diagnostic.insert(index, format!("PRIMARY KEY ({})", key.join(", ")));
+    }
+    let pretty = pretty.join(", ");
+    let diagnostic = diagnostic.join(", ");
     StatementText {
         position,
         pretty: format!("CREATE TABLE `{}` ({pretty})", table.name),
@@ -672,13 +767,11 @@ fn render_table(position: Coordinates, table: &Name, columns: &[TableColumn]) ->
 
 fn render_view(
     position: Coordinates,
-    kind: ViewKind,
-    view: &str,
+    declaration: &ViewDeclaration,
     table: &str,
     table_alias: &str,
     projection: &[Projection],
 ) -> StatementText {
-    let create = kind.create_sql();
     let pretty = projection
         .iter()
         .map(|field| field.pretty.as_str())
@@ -692,10 +785,12 @@ fn render_view(
     StatementText {
         position,
         pretty: format!(
-            "{create} `{view}` AS\nSELECT {pretty}\nFROM `schema`.`{table}` AS `{table_alias}`"
+            "{} AS\nSELECT {pretty}\nFROM `schema`.`{table}` AS `{table_alias}`",
+            declaration.sql(true)
         ),
         diagnostic: format!(
-            "{create} {view} AS\nSELECT {diagnostic}\nFROM schema.{table} AS {table_alias}"
+            "{} AS\nSELECT {diagnostic}\nFROM schema.{table} AS {table_alias}",
+            declaration.sql(false)
         ),
     }
 }
