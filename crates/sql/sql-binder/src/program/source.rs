@@ -14,7 +14,7 @@ pub(super) struct SqlDisplay {
 }
 
 impl SqlDisplay {
-    fn atom(text: String) -> Self {
+    pub(super) fn atom(text: String) -> Self {
         Self {
             diagnostic: text.clone(),
             pretty: text,

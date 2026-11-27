@@ -5911,6 +5911,7 @@ dependencies = [
 name = "feldera-sql-lower"
 version = "0.382.0"
 dependencies = [
+ "base64 0.22.1",
  "feldera-sql-ir",
  "feldera-sql-rel-model",
  "hex",

@@ -1,6 +1,6 @@
 //! Lower resolved scalar projections into the shared S1 expression arena.
 
-use super::{BoundExpression, BoundProjection, Column, ExpressionKind, Failure, span, unsupported};
+use super::{BoundExpression, Column, ExpressionKind, Failure, unsupported};
 use feldera_sql_rel_model::{
     TypeId, TypeTable,
     expressions::{
@@ -268,12 +268,17 @@ impl<'a> Emitter<'a> {
     }
 }
 
-pub(super) fn emit(projection: &BoundProjection, sql: &str) -> Result<ExpressionTable, Failure> {
+pub(super) fn emit(
+    sql: &str,
+    expression: &BoundExpression,
+    range: [u64; 4],
+    columns: Option<&[Column]>,
+) -> Result<ExpressionTable, Failure> {
     let mut emitter = Emitter::new(sql);
-    if projection.table.is_some() {
-        emitter.set_input(&projection.column_types)?;
+    if let Some(columns) = columns {
+        emitter.set_input(columns)?;
     }
-    let root = emitter.expression(&projection.expression, span(projection.projection_span))?;
+    let root = emitter.expression(expression, range)?;
     let result = emitter.output.expressions[root.0 as usize].ty;
     emitter.output.roots.push(root);
     emitter.output.type_table.roots.push(result);

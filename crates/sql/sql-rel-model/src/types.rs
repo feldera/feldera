@@ -39,6 +39,7 @@ impl SqlType {
         use serde_json::json;
         let mut result = json!({"nullable":self.nullable});
         let name = match self.kind {
+            TypeKind::Null {} if self.nullable => "NULL",
             TypeKind::Boolean {} => "BOOLEAN",
             TypeKind::Integer { width, signed } => match (width, signed) {
                 (IntegerWidth::I8, true) => "TINYINT",

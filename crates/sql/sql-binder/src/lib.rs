@@ -219,7 +219,12 @@ impl BoundProjection {
         &self,
         sql: &str,
     ) -> Result<feldera_sql_rel_model::expressions::ExpressionTable, Failure> {
-        frel::emit(self, sql)
+        frel::emit(
+            sql,
+            &self.expression,
+            span(self.projection_span),
+            self.table.as_ref().map(|_| self.column_types.as_slice()),
+        )
     }
 
     /// Schema of the fixed table/view experiment under the S2 probe options.
@@ -962,21 +967,8 @@ fn bind_query_projection(
         preserve_parentheses: !generated,
         tokens: OnceCell::new(),
     };
-    let expression = bind(expr, &scope, 0)
-        .map_err(|failure| failure.with_compiler_diagnostic(sql, Some(projection_span)))?;
-    let projection_span = if generated {
-        projection_span
-    } else {
-        from_span_array(cover(span(projection_span), expression.span))
-    };
-    let warning = projection_warning(&expression)
-        .and_then(|(kind, message)| projection_diagnostic(sql, projection_span, kind, &message));
-    let expression =
-        if input.is_none() && !matches!(expression.kind, ExpressionKind::TypedLiteral { .. }) {
-            constant::fold(expression)?
-        } else {
-            expression
-        };
+    let (expression, projection_span, warning) =
+        bind_projection_value(&scope, expr, projection_span, input.is_none())?;
     Ok(BoundProjection {
         name: alias.map_or_else(|| "EXPR$0".into(), |ident| ident.value.clone()),
         result: expression.ty,
@@ -990,6 +982,31 @@ fn bind_query_projection(
         local_view: view.local.is_some(),
         projection_span,
     })
+}
+
+fn bind_projection_value(
+    scope: &ColumnScope<'_>,
+    expr: &Expr,
+    projection_span: Span,
+    constant: bool,
+) -> Result<(BoundExpression, Span, Option<CompilerDiagnostic>), Failure> {
+    let sql = scope.sql;
+    let expression = bind(expr, scope, 0)
+        .map_err(|failure| failure.with_compiler_diagnostic(sql, Some(projection_span)))?;
+    let projection_span = if !scope.preserve_parentheses {
+        projection_span
+    } else {
+        from_span_array(cover(span(projection_span), expression.span))
+    };
+    let warning = projection_warning(&expression)
+        .and_then(|(kind, message)| projection_diagnostic(sql, projection_span, kind, &message));
+    let expression = if constant && !matches!(expression.kind, ExpressionKind::TypedLiteral { .. })
+    {
+        constant::fold(expression)?
+    } else {
+        expression
+    };
+    Ok((expression, projection_span, warning))
 }
 
 fn projection_input(select: &Select, generated: bool) -> Result<Option<TableInput>, Failure> {

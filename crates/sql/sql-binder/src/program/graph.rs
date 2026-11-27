@@ -379,7 +379,7 @@ fn append_input_ref(
 pub(super) fn append_project(
     program: &mut Program,
     row: TypeId,
-    expression: ExprId,
+    expressions: Vec<ExprId>,
 ) -> Result<(), Failure> {
     let integer = insert_type(
         &mut program.table.type_table,
@@ -411,11 +411,11 @@ pub(super) fn append_project(
             constants: Vec::new(),
         },
         Properties::Project {
-            expressions: 1,
+            expressions: expressions.len() as u32,
             variables: Vec::new(),
         },
         environment,
-        vec![expression],
+        expressions,
         Vec::new(),
     );
 

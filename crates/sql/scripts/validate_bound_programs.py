@@ -13,6 +13,13 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "constant_after_insert": "CREATE TABLE t(x INT); INSERT INTO t VALUES (3);"
+                             "\nCREATE VIEW v AS SELECT 1 AS x, 1 + 1 AS y;",
+    "constant_fields": "CREATE VIEW v AS SELECT 1 AS a, 2 AS b, TRUE AS c, 'Bob''s' AS d;",
+    "constant_literal_types": "CREATE VIEW v AS SELECT NULL AS n, X'0f' AS b, 2147483648 AS i;",
+    "constant_folded_fields": "CREATE VIEW v AS SELECT 1 + 2 AS x, TAN(1) AS t, -4 AS d;",
+    "constant_field_names": 'CREATE VIEW v AS SELECT TRUE AS "True", FALSE AS "lower", 1, 1;',
+    "constant_field_list": "CREATE VIEW v(a, b) AS SELECT 1, 'abc';",
     "insert_values": "CREATE TABLE t(a INT); INSERT INTO t VALUES (1), (-2), (NULL), (1);"
                      "\nCREATE VIEW v AS SELECT * FROM t;",
     "insert_permutation": "CREATE TABLE t(a INT, b INT); INSERT INTO t(b, a) VALUES (5, 2), (9, 3);"

@@ -2,6 +2,7 @@
 
 mod graph;
 mod insert;
+mod literal;
 mod order;
 mod source;
 mod table;
@@ -9,8 +10,8 @@ mod table;
 pub use table::bind_table_program;
 
 use super::{
-    Failure, SelectItem, Statement as ParsedStatement, Submission, Upstream, bind_query_projection,
-    parse_failure, plain_select, unsupported,
+    Failure, SelectItem, Statement as ParsedStatement, Submission, Upstream, parse_failure,
+    plain_select, unsupported,
 };
 use feldera_sql_rel_model::{
     TypeId,
@@ -25,7 +26,9 @@ use feldera_sql_rel_model::{
     source::{Origin, Position, SourceId},
     statements::{RelRoot, ResultField, Statement, StatementSource, ViewKind},
 };
-use graph::{append_expression, append_project, append_values, insert_row, reserve_environment};
+use graph::{
+    append_expression, append_project, append_values, insert_row_fields, reserve_environment,
+};
 use source::{display_constant, statement_position};
 
 const USER: SourceId = SourceId(0);
@@ -136,77 +139,153 @@ fn append_constant_view(
         return Err(unsupported("expected one constant view"));
     };
     let select = plain_select(&view.query)?;
-    let (expression, alias) = match select.projection.as_slice() {
-        [SelectItem::UnnamedExpr(expression)] => (expression, None),
-        [SelectItem::ExprWithAlias { expr, alias }] if alias.quote_style.is_none() => {
-            (expr, Some(alias.value.to_ascii_lowercase()))
-        }
-        _ => {
-            return Err(unsupported(
-                "expected one scalar projection with an optional plain alias",
-            ));
-        }
-    };
     if !select.from.is_empty() {
         return Err(unsupported("expected a view over one constant row"));
     }
-    let bound = bind_query_projection(sql, parsed, false)?;
-    if !bound.compiler_diagnostics.is_empty() {
+    super::validate_plain_view(view)?;
+    let declaration = ViewDeclaration::new(view)?;
+    if super::system_relation(&declaration.name.name)
+        || program
+            .catalog
+            .schemas
+            .iter()
+            .any(|schema| schema.name == declaration.name)
+    {
+        return Err(unsupported("view name already exists"));
+    }
+
+    let mut fields = Vec::new();
+    let mut names = std::collections::HashSet::new();
+    let mut roots = Vec::new();
+    let mut pretty = Vec::new();
+    let mut diagnostic = Vec::new();
+    let mut all_literals = true;
+    let scope = super::ColumnScope {
+        columns: &[],
+        qualifier: None,
+        sql,
+        preserve_parentheses: true,
+        tokens: Default::default(),
+    };
+    for (index, item) in select.projection.iter().enumerate() {
+        let (expr, alias) = match item {
+            SelectItem::UnnamedExpr(expr) => (expr, None),
+            SelectItem::ExprWithAlias { expr, alias } => (expr, Some(alias)),
+            _ => return Err(unsupported("expected a scalar SELECT item")),
+        };
+        let ConstantOperand {
+            root,
+            ty,
+            folded,
+            mut display,
+        } = constant_operand(program, &scope, expr)?;
+        let field = match alias {
+            Some(ident) => {
+                let quoted = ident.quote_style.is_some();
+                let name = if quoted {
+                    ident.value.clone()
+                } else {
+                    ident.value.to_ascii_lowercase()
+                };
+                display
+                    .pretty
+                    .push_str(&format!(" AS `{}`", name.replace('`', "``")));
+                let printed = if quoted {
+                    ident.to_string()
+                } else {
+                    name.clone()
+                };
+                display.diagnostic.push_str(&format!(" AS {printed}"));
+                // Calcite derives catalog case sensitivity from the resolved
+                // field spelling. The statement text retains the SQL quotes.
+                Name {
+                    quoted: name != name.to_lowercase(),
+                    name,
+                }
+            }
+            None => Name {
+                name: format!("EXPR${index}"),
+                quoted: true,
+            },
+        };
+        if !names.insert(field.name.clone()) {
+            return Err(unsupported("duplicate output name in constant projection"));
+        }
+        all_literals &= folded;
+        roots.push(root);
+        fields.push((field, ty));
+        pretty.push(display.pretty);
+        diagnostic.push(display.diagnostic);
+    }
+    let statement = StatementText {
+        position,
+        pretty: format!("{} AS\nSELECT {}", declaration.sql(true), pretty.join(", ")),
+        diagnostic: format!(
+            "{} AS\nSELECT {}",
+            declaration.sql(false),
+            diagnostic.join(", ")
+        ),
+    };
+    let row = insert_row_fields(
+        program,
+        fields.iter().map(|(name, ty)| (name.name.as_str(), *ty)),
+    );
+    let relation = program.table.relations;
+    if all_literals {
+        append_values(program, row, 1, roots)?;
+    } else {
+        append_project(program, row, roots)?;
+    }
+    append_view(program, statement, declaration, fields, row, relation)
+}
+
+struct ConstantOperand {
+    root: feldera_sql_rel_model::expressions::ExprId,
+    ty: TypeId,
+    folded: bool,
+    display: source::SqlDisplay,
+}
+
+fn constant_operand(
+    program: &mut Program,
+    scope: &super::ColumnScope<'_>,
+    expr: &super::Expr,
+) -> Result<ConstantOperand, Failure> {
+    use feldera_sql_rel_model::types::{SqlType, TypeKind};
+    use sqlparser_064::ast::Spanned;
+    if let Ok(cell) = literal::Cell::parse(expr) {
+        let ty = graph::insert_type(
+            &mut program.table.type_table,
+            SqlType {
+                nullable: matches!(cell.kind, TypeKind::Null {}),
+                kind: cell.kind,
+                origin: Origin::Absent {},
+            },
+        );
+        let root = graph::append_literal(program, ty, cell.value);
+        return Ok(ConstantOperand {
+            root,
+            ty,
+            folded: true,
+            display: source::SqlDisplay::atom(cell.sql),
+        });
+    }
+
+    let (bound, range, warning) = super::bind_projection_value(scope, expr, expr.span(), true)?;
+    if warning.is_some() {
         return Err(unsupported(
             "constant program has unsupported frontend diagnostics",
         ));
     }
-    if program
-        .catalog
-        .schemas
-        .iter()
-        .any(|schema| schema.name.name == bound.view_name)
-    {
-        return Err(unsupported("view name already exists"));
-    }
-    let mut display = display_constant(expression)?;
-    if let Some(alias) = alias {
-        display.pretty.push_str(&format!(" AS `{alias}`"));
-        display.diagnostic.push_str(&format!(" AS {alias}"));
-    }
-    let declaration = ViewDeclaration::new(view)?;
-    let statement = StatementText {
-        position,
-        pretty: format!("{} AS\nSELECT {}", declaration.sql(true), display.pretty),
-        diagnostic: format!(
-            "{} AS\nSELECT {}",
-            declaration.sql(false),
-            display.diagnostic
-        ),
-    };
-
-    let fragment = bound.frel_expression(sql)?;
-    let (expression, scalar, folded) = append_expression(program, fragment)?;
-    let field_name = Name {
-        name: if bound.output_quoted {
-            bound.name
-        } else {
-            bound.name.to_ascii_lowercase()
-        },
-        quoted: bound.output_quoted,
-    };
-    let row = insert_row(program, &field_name.name, scalar);
-
-    let relation = program.table.relations;
-    if folded {
-        append_values(program, row, 1, vec![expression])?;
-    } else {
-        append_project(program, row, expression)?;
-    }
-
-    append_view(
-        program,
-        statement,
-        declaration,
-        vec![(field_name, scalar)],
-        row,
-        relation,
-    )
+    let display = display_constant(expr)?;
+    let fragment = super::frel::emit(scope.sql, &bound, super::span(range), None)?;
+    let (root, ty, folded) = append_expression(program, fragment)?;
+    Ok(ConstantOperand {
+        root,
+        ty,
+        folded,
+        display,
+    })
 }
 
 fn check_prelude(program: &Program) -> Result<(), Failure> {

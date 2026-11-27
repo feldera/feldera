@@ -103,7 +103,7 @@ pub fn lower_program(
     if has_query || matches!(input, Input::Checkpoint) {
         view::restore_system_scan(&mut checkpoint, program)?;
     }
-    let mut ids = source_table::Ids::after(&checkpoint["circuit"], program.table_scan_order.len());
+    let mut ids = source_table::Ids::after(&checkpoint["circuit"], program);
     let mut precision_warnings = std::collections::HashSet::new();
     for (index, statement) in program
         .statements

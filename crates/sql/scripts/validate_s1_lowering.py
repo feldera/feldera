@@ -14,7 +14,8 @@ from validate_bound_programs import CASES as BINDING_CASES
 
 CASES = {
     **{name: BINDING_CASES[name] for name in (
-        "local_constant", "materialized_constant", "view_kinds", "view_chain", "constant_view_input",
+        "constant_after_insert", "constant_fields", "constant_literal_types", "constant_folded_fields", "constant_field_names",
+        "constant_field_list", "local_constant", "materialized_constant", "view_kinds", "view_chain", "constant_view_input",
         "scalar_widths", "temporal_precision", "explicit_view_columns", "named_constant",
         "inline_key", "composite_key", "interleaved_key", "insert_values", "insert_permutation",
         "insert_widths", "insert_null")},

@@ -19,15 +19,16 @@ use std::fmt::Write;
 pub(super) struct Ids {
     inner: u64,
     operator: u64,
-    relation: usize,
+    relations: Vec<usize>,
     origin: u64,
     doubles: [Option<u64>; 2],
     reals: [Option<u64>; 2],
+    null: Option<u64>,
     bools: [Option<u64>; 2],
 }
 
 impl Ids {
-    pub(super) fn after(graph: &Value, scan_count: usize) -> Self {
+    pub(super) fn after(graph: &Value, program: &feldera_sql_rel_model::program::Program) -> Self {
         fn next(value: &Value) -> u64 {
             match value {
                 Value::Object(obj) => obj
@@ -42,9 +43,10 @@ impl Ids {
         let ops = graph["allOperators"].as_array().expect("system operators");
         Self {
             inner: next(graph),
-            relation: scan_count,
+            relations: relation_ids(program),
             doubles: [None; 2],
             reals: [None; 2],
+            null: None,
             bools: [None; 2],
             operator: ops
                 .iter()
@@ -60,11 +62,8 @@ impl Ids {
         }
     }
 
-    /// Detached S1 allocates every table scan before constructing its consumers.
-    pub(super) fn next_relation(&mut self) -> usize {
-        let id = self.relation;
-        self.relation += 1;
-        id
+    pub(super) fn relation(&self, id: u32) -> usize {
+        self.relations[id as usize]
     }
 
     pub(super) fn next_operator(&mut self) -> u64 {
@@ -106,6 +105,41 @@ impl Ids {
         let id = self.next_inner();
         json!({"class":class, "id":id, "sourceEmpty":false, "position":position})
     }
+}
+
+/// The S1 consumer allocates scans in their recorded order, then all other
+/// relations in dependency order. An INSERT's VALUES consumes an ID even
+/// when it produces no operator in a pipeline.
+fn relation_ids(program: &feldera_sql_rel_model::program::Program) -> Vec<usize> {
+    let producers = &program.producers.relations;
+    let mut ids = vec![usize::MAX; producers.len()];
+    for (physical, &scan) in program.table_scan_order.iter().enumerate() {
+        ids[scan as usize] = physical;
+    }
+    let mut next = program.table_scan_order.len();
+    let mut stack = Vec::new();
+    for root in 0..ids.len() {
+        stack.push((root, false));
+        while let Some((id, children_done)) = stack.pop() {
+            if ids[id] != usize::MAX {
+                continue;
+            }
+            if children_done {
+                ids[id] = next;
+                next += 1;
+            } else {
+                stack.push((id, true));
+                stack.extend(
+                    producers[id]
+                        .inputs
+                        .iter()
+                        .rev()
+                        .map(|&i| (i as usize, false)),
+                );
+            }
+        }
+    }
+    ids
 }
 
 pub(super) fn range(line: u32, column: u32, end_line: u32, end_column: u32) -> Value {
@@ -151,6 +185,9 @@ impl Scalar {
                     format!("{}{bits}", if signed { "i" } else { "u" }),
                     json!({"width":bits,"signed":signed}),
                 )
+            }
+            TypeKind::Null {} if ty.nullable => {
+                (CircuitType::Null, "NULL".into(), "null".into(), json!({}))
             }
             TypeKind::Date {} => (CircuitType::Date, "DATE".into(), "Date".into(), json!({})),
             TypeKind::Time {
@@ -222,7 +259,7 @@ impl Scalar {
                 )));
             }
         };
-        if ty.nullable {
+        if ty.nullable && class != CircuitType::Null {
             short.push('?');
         }
         let column = ty
@@ -239,13 +276,13 @@ impl Scalar {
     }
 
     fn node(&self, ids: &mut Ids) -> Value {
-        let singletons = match self.class {
-            CircuitType::Double => Some(&mut ids.doubles),
-            CircuitType::Real => Some(&mut ids.reals),
+        let slot = match self.class {
+            CircuitType::Double => Some(&mut ids.doubles[usize::from(self.nullable)]),
+            CircuitType::Real => Some(&mut ids.reals[usize::from(self.nullable)]),
+            CircuitType::Null => Some(&mut ids.null),
             _ => None,
         };
-        let mut node = if let Some(singletons) = singletons {
-            let slot = &mut singletons[usize::from(self.nullable)];
+        let mut node = if let Some(slot) = slot {
             if let Some(id) = slot {
                 return json!({"node":id});
             }

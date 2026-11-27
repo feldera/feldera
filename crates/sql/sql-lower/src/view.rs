@@ -87,7 +87,7 @@ struct Scan<'a> {
     physical_id: usize,
     input: &'a CatalogSchema,
     columns: Option<Vec<usize>>,
-    predicate: Option<super::filter::Predicate>,
+    predicate: Option<(u32, super::filter::Predicate)>,
 }
 
 fn resolve_scan<'a>(
@@ -95,8 +95,8 @@ fn resolve_scan<'a>(
     root: &RelRoot,
     schema: &CatalogSchema,
 ) -> Result<Scan<'a>, Error> {
-    let (input, columns) = super::projection::input_columns(program, root.relation)?;
-    let (scan_id, predicate) = super::filter::Predicate::resolve(program, input)?;
+    let (input_relation, columns) = super::projection::input_columns(program, root.relation)?;
+    let (scan_id, predicate) = super::filter::Predicate::resolve(program, input_relation)?;
     let relation = &program.properties.relations[scan_id as usize];
     let Properties::Scan { name: path } = &relation.fields else {
         return Err(Error("query lowering requires a direct table scan".into()));
@@ -164,7 +164,7 @@ fn resolve_scan<'a>(
         physical_id,
         input,
         columns,
-        predicate,
+        predicate: predicate.map(|p| (input_relation, p)),
     })
 }
 
@@ -251,8 +251,8 @@ fn scan_stream(
     };
     let mut output_type = reference(&input["outputType"])?;
     let mut source_id = input["id"].clone();
-    if let Some(predicate) = &scan.predicate {
-        let relation_id = ids.next_relation();
+    if let Some((filter, predicate)) = &scan.predicate {
+        let relation_id = ids.relation(*filter);
         relation = json!({"ref":relation_id});
         let layout = RowLayout::new(scan.input, &program.table.type_table)?;
         input_origin = predicate.relation(
@@ -276,7 +276,7 @@ fn scan_stream(
             output: schema,
             columns,
         };
-        let relation_id = ids.next_relation();
+        let relation_id = ids.relation(root.relation);
         relation = json!({"ref":relation_id});
         let relation = projection.relation(&input_origin, relation_id, user_plan_id)?;
         let map = projection.map(program, ids, &source_id, relation, generated)?;
