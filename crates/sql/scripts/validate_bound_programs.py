@@ -13,6 +13,15 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "uuid_variant_columns": "CREATE TABLE t(a UUID, b VARIANT, c UUID NOT NULL, d VARIANT NOT NULL,"
+                            " e UUID ARRAY, f MAP<INT, VARIANT>); CREATE VIEW v AS SELECT d, c, b, a FROM t;",
+    "uuid_literal": "CREATE VIEW v AS SELECT UUID '11223344-AABB-1122-EEFF-FFEEDDCCBBAA' AS x,"
+                    " UUID '00000000-0001-0002-0003-000000000004' AS y;",
+    "uuid_insert": "CREATE TABLE t(a UUID); INSERT INTO t VALUES"
+                   " (UUID '00112233-AaBb-0000-0000-000000000000'), (NULL);"
+                   " INSERT INTO t VALUES ('invalid'), ('{00112233aabb00000000000000000000}'), ('invalid');",
+    "variant_assignments": "CREATE TABLE t(a VARIANT); INSERT INTO t VALUES (1), (NULL);"
+                           " INSERT INTO t VALUES ('test'); INSERT INTO t VALUES (1.25); INSERT INTO t VALUES (true);",
     "alias_forward_use": "CREATE TABLE t(a scores); CREATE TYPE scores AS INTEGER;"
                          " CREATE VIEW v AS SELECT * FROM t;",
     "alias_chain": "CREATE TYPE weights AS DECIMAL(12,3); CREATE TYPE rate AS weights;"

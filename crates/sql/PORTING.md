@@ -177,6 +177,11 @@ collection elements, and a batch containing only type declarations. Their
 schema previews, plans, S2 checkpoints, diagnostics and emitted Gen-2 artifacts
 matched the Java reference.
 
+Four more programs cover UUID and VARIANT columns, arrays and maps of those types,
+UUID literal normalization, INSERT conversion warnings, and projections that clone
+borrowed values. Each matched direct Java through Gen-2 emission and a separate
+Java resume of Rust S2.
+
 The frozen audit used the original submission calls and default nonincremental
 Gen-2 options. The temporal-literal checkpoint bound 153 of 8,571 programs. All 153 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,

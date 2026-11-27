@@ -128,6 +128,13 @@ fn lower_literal(
         (_, _) if ty.nullable => {
             return Err(Error("unsupported nullable VALUES literal type".into()));
         }
+        (TypeKind::Uuid {}, LiteralValue::Uuid { bytes }) => {
+            let text = feldera_sql_rel_model::literals::uuid_to_text(*bytes);
+            let mut literal = ids.node("DBSPUuidLiteral", &unknown);
+            literal["value"] = text.clone().into();
+            let sql = format!("UUID '{text}'");
+            (literal, "UUID".into(), text, sql)
+        }
         (TypeKind::Date {}, LiteralValue::Date { epoch_days }) => {
             let text = feldera_sql_rel_model::literals::date_to_text(*epoch_days)
                 .ok_or_else(|| Error("DATE literal is outside the SQL year range".into()))?;

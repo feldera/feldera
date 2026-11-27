@@ -265,12 +265,23 @@ fn constant_operand(
                 origin: Origin::Absent {},
             },
         );
+        // The validator canonicalizes UUID literals in SELECT. INSERT keeps
+        // the spelling from its unvalidated VALUES clause.
+        let spelling = match &cell.value {
+            feldera_sql_rel_model::literals::LiteralValue::Uuid { bytes } => {
+                format!(
+                    "UUID '{}'",
+                    feldera_sql_rel_model::literals::uuid_to_text(*bytes)
+                )
+            }
+            _ => cell.sql,
+        };
         let root = graph::append_literal(program, ty, cell.value);
         return Ok(ConstantOperand {
             root,
             ty,
             folded: true,
-            display: source::SqlDisplay::atom(cell.sql),
+            display: source::SqlDisplay::atom(spelling),
         });
     }
 

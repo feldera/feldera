@@ -224,6 +224,13 @@ impl ColumnLayout {
             TypeKind::Null {} if ty.nullable => {
                 (CircuitType::Null, "NULL".into(), "null".into(), json!({}))
             }
+            TypeKind::Uuid {} => (CircuitType::Uuid, "UUID".into(), "Uuid".into(), json!({})),
+            TypeKind::Variant {} => (
+                CircuitType::Variant,
+                "VARIANT".into(),
+                "VARIANT".into(),
+                json!({}),
+            ),
             TypeKind::Date {} => (CircuitType::Date, "DATE".into(), "Date".into(), json!({})),
             TypeKind::Time {
                 precision: Precision::Specified(_),

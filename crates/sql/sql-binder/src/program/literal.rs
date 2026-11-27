@@ -89,6 +89,15 @@ impl Cell {
                 let Value::SingleQuotedString(text) = &typed.value.value else {
                     return Err(unsupported("expected a quoted typed literal"));
                 };
+                if typed.data_type == crate::DataType::Uuid {
+                    let bytes = feldera_sql_rel_model::literals::uuid_from_text(text)
+                        .ok_or_else(|| unsupported("invalid UUID literal"))?;
+                    return Ok(Self {
+                        value: LiteralValue::Uuid { bytes },
+                        kind: TypeKind::Uuid {},
+                        sql: format!("UUID '{text}'"),
+                    });
+                }
                 temporal::parse(&typed.data_type, text)
                     .ok_or_else(|| unsupported("unsupported typed literal"))
             }

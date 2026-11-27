@@ -118,6 +118,7 @@ fn fits_source(value: &LiteralValue, ty: &SqlType) -> bool {
     match (value, &ty.kind) {
         (LiteralValue::Null {}, _) => ty.nullable,
         (LiteralValue::Boolean { .. }, TypeKind::Boolean {}) => true,
+        (LiteralValue::Uuid { .. }, TypeKind::Uuid {}) => true,
         (LiteralValue::Date { .. }, TypeKind::Date {}) => true,
         (
             LiteralValue::Time {
@@ -179,9 +180,24 @@ fn assignment(
                 ..
             },
         )
+        | (
+            LiteralValue::Boolean { .. }
+            | LiteralValue::Integer { .. }
+            | LiteralValue::Decimal { .. }
+            | LiteralValue::Character { .. },
+            TypeKind::Variant {},
+        )
         | (LiteralValue::Character { .. }, TypeKind::Character { .. })
         | (LiteralValue::Integer { .. } | LiteralValue::Decimal { .. }, TypeKind::Float { .. })
         | (LiteralValue::Decimal { .. }, TypeKind::Integer { .. }) => None,
+        (LiteralValue::Character { value }, TypeKind::Uuid {}) => {
+            crate::literals::uuid_from_text(value)
+                .is_none()
+                .then(|| AssignmentWarning {
+                    kind: "Not a UUID",
+                    message: format!(" String '{value}' cannot be interpreted as a UUID"),
+                })
+        }
         (LiteralValue::Character { value }, TypeKind::Date {}) => {
             let text = value.trim_matches(|c: char| c <= ' ');
             date_from_text(text).is_none().then(|| AssignmentWarning {

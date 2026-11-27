@@ -76,6 +76,8 @@ impl SqlType {
                     (_, false) => "VARBINARY",
                 }
             }
+            TypeKind::Uuid {} => "UUID",
+            TypeKind::Variant {} => "VARIANT",
             TypeKind::Date {} => "DATE",
             TypeKind::Time {
                 precision: Precision::Specified(n),

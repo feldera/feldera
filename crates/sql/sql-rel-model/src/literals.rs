@@ -25,6 +25,37 @@ pub fn date_to_text(days: i32) -> Option<String> {
     (1..=9999).contains(&date.year()).then(|| date.to_string())
 }
 
+/// SQL accepts braces and optional hyphens between groups of four UUID digits.
+pub fn uuid_from_text(text: &str) -> Option<[u8; 16]> {
+    let body = text
+        .strip_prefix('{')
+        .map_or(Some(text), |s| s.strip_suffix('}'))?;
+    let mut digits = 0;
+    let mut value = 0u128;
+    for part in body.split('-') {
+        if part.is_empty() || !part.len().is_multiple_of(4) || part.len() > 32 - digits {
+            return None;
+        }
+        for ch in part.chars() {
+            value = (value << 4) | u128::from(ch.to_digit(16)?);
+        }
+        digits += part.len();
+    }
+    (digits == 32).then(|| value.to_be_bytes())
+}
+
+pub fn uuid_to_text(bytes: [u8; 16]) -> String {
+    let hex = format!("{:032x}", u128::from_be_bytes(bytes));
+    format!(
+        "{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    )
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Literal {

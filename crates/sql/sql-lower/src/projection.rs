@@ -159,6 +159,8 @@ impl Projection<'_> {
                     | TypeKind::Binary { .. }
                     | TypeKind::Array { .. }
                     | TypeKind::Map { .. }
+                    | TypeKind::Uuid {}
+                    | TypeKind::Variant {}
             ) {
                 let mut clone = ids.generated("DBSPCloneExpression");
                 clone["type"] = field["type"].clone();

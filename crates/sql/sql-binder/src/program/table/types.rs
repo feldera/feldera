@@ -47,6 +47,17 @@ pub(super) fn declare_type(
         .checked_sub(1)
         .ok_or_else(|| unsupported("table type nesting exceeds the validation limit"))?;
     let (kind, spelling) = match data_type {
+        // sqlparser represents VARIANT as an identifier. Quoted names still
+        // resolve through the ordinary user-defined type catalog.
+        DataType::Custom(name, modifiers)
+            if modifiers.is_empty()
+                && matches!(name.0.as_slice(), [sqlparser_064::ast::ObjectNamePart::Identifier(id)] if id.quote_style.is_none() && id.value.eq_ignore_ascii_case("VARIANT")) =>
+        {
+            (
+                TypeKind::Variant {},
+                TypeSpelling::render(|_| "VARIANT".into()),
+            )
+        }
         DataType::Array(ArrayElemTypeDef::Qualified(element, None)) => {
             let (element, spelling) = declare_type(types, aliases, element, true, child_depth)?;
             (
@@ -213,6 +224,7 @@ fn scalar_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, String
         | DataType::UnsignedInteger
         | DataType::IntUnsigned(None)
         | DataType::IntegerUnsigned(None) => integer(IntegerWidth::I32, false, "INTEGER UNSIGNED"),
+        DataType::Uuid => (TypeKind::Uuid {}, "UUID".into()),
         DataType::Date => (TypeKind::Date {}, "DATE".into()),
         DataType::Real => (
             TypeKind::Float {
