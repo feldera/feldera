@@ -32,7 +32,6 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -42,7 +41,6 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
 
 /** Information used to translate INSERT or DELETE SQL statements */
@@ -113,24 +111,26 @@ class ModifyTableTranslation {
         return this.statement.getPosition();
     }
 
-    DBSPExpression permuteColumns(DBSPExpression expression) {
-        Utilities.enforce(this.columnPermutation != null);
-        DBSPExpression[] columns = new DBSPExpression[this.columnPermutation.size()];
-        DBSPTupleExpression tuple = expression.to(DBSPTupleExpression.class);
-        for (Map.Entry<Integer, Integer> e : this.columnPermutation.entrySet()) {
-            columns[e.getValue()] = tuple.get(e.getKey());
-        }
-        return new DBSPTupleExpression(columns);
+    /** Apply the same destination order to the row type and each row's fields. */
+    private <T> T[] inTableOrder(T[] fields) {
+        var permutation = Objects.requireNonNull(this.columnPermutation);
+        Utilities.enforce(fields.length == permutation.size());
+        T[] ordered = fields.clone();
+        for (var entry : permutation.entrySet())
+            ordered[entry.getValue()] = fields[entry.getKey()];
+        return ordered;
     }
 
     DBSPZSetExpression permuteColumns(DBSPZSetExpression source) {
-        Utilities.enforce(this.resultType != null);
         if (this.columnPermutation == null)
             return source;
-        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(this.resultType);
-        for (Map.Entry<DBSPExpression, Long> e : source.data.entrySet()) {
-            DBSPExpression perm = this.permuteColumns(e.getKey());
-            result.append(perm, e.getValue());
+        var sourceType = source.getElementType().to(DBSPTypeTuple.class);
+        var elementType = new DBSPTypeTuple(this.inTableOrder(sourceType.tupFields));
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(elementType);
+        for (var entry : source.data.entrySet()) {
+            var tuple = entry.getKey().to(DBSPTupleExpression.class);
+            var fields = this.inTableOrder(Objects.requireNonNull(tuple.fields));
+            result.append(new DBSPTupleExpression(fields), entry.getValue());
         }
         return result;
     }
@@ -138,6 +138,6 @@ class ModifyTableTranslation {
     public void setResult(DBSPZSetExpression literal) {
         if (this.valuesTranslation != null)
             throw new InternalCompilerError("Overwriting logical value translation", CalciteObject.EMPTY);
-        this.valuesTranslation = this.permuteColumns(literal);
+        this.valuesTranslation = literal;
     }
 }
