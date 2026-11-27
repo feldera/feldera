@@ -42,6 +42,14 @@ pub struct ExactDecimal {
     pub scale: i32,
 }
 
+/// The VALUES common type rounds ties away from zero. Destination casts
+/// discard excess fractional digits.
+#[derive(Clone, Copy)]
+pub enum DecimalRounding {
+    HalfUp,
+    Truncate,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LiteralValue {
@@ -154,6 +162,69 @@ impl ExactDecimal {
     /// Validate the coefficient spelling, preserving leading zeros and scale.
     pub fn has_valid_coefficient(&self) -> bool {
         valid_integer(&self.coefficient)
+    }
+
+    /// Convert between fixed scales in the compiler's 38-digit decimal range.
+    pub fn at_sql_scale(&self, scale: u32, rounding: DecimalRounding) -> Option<Self> {
+        if !(0..=38).contains(&self.scale) || scale > 38 {
+            return None;
+        }
+        let n: i128 = self.coefficient.parse().ok()?;
+        let change = scale as i32 - self.scale;
+        let factor = 10_i128.pow(change.unsigned_abs());
+        let result = if change >= 0 {
+            n.checked_mul(factor)?
+        } else {
+            let integral = n / factor;
+            if matches!(rounding, DecimalRounding::HalfUp) && (n % factor).abs() >= factor / 2 {
+                integral + n.signum()
+            } else {
+                integral
+            }
+        };
+        Some(Self {
+            coefficient: result.to_string(),
+            scale: scale as i32,
+        })
+    }
+
+    /// The SQL writer keeps fractional zeros. Java's BigDecimal uses
+    /// scientific notation for the same value when its exponent is below -6.
+    pub fn sql_and_digest(&self) -> Option<(String, String)> {
+        let scale = usize::try_from(self.scale).ok().filter(|&s| s <= 38)?;
+        let coefficient: i128 = self.coefficient.parse().ok()?;
+        let sign = if coefficient < 0 { "-" } else { "" };
+        let digits = coefficient.unsigned_abs().to_string();
+        let exponent = digits.len() as i32 - self.scale - 1;
+        let plain = if scale == 0 {
+            format!("{sign}{digits}")
+        } else if digits.len() > scale {
+            let (whole, fraction) = digits.split_at(digits.len() - scale);
+            format!("{sign}{whole}.{fraction}")
+        } else {
+            format!("{sign}0.{digits:0>scale$}")
+        };
+        let digest = if exponent < -6 {
+            let (first, rest) = digits.split_at(1);
+            let point = if rest.is_empty() { "" } else { "." };
+            format!("{sign}{first}{point}{rest}E{exponent}")
+        } else {
+            plain.clone()
+        };
+        Some((plain, digest))
+    }
+}
+
+impl LiteralValue {
+    pub fn as_exact_decimal(&self) -> Option<ExactDecimal> {
+        match self {
+            Self::Integer { value } => Some(ExactDecimal {
+                coefficient: value.clone(),
+                scale: 0,
+            }),
+            Self::Decimal { value } => Some(value.clone()),
+            _ => None,
+        }
     }
 }
 

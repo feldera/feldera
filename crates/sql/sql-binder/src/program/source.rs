@@ -220,6 +220,14 @@ impl DeclarationTokens {
         token_range(&self.0)
     }
 
+    pub(super) fn column_type_position(&self, name: Span) -> Result<Coordinates, Failure> {
+        let next = self.0.partition_point(|token| token.span.start < name.end);
+        self.0
+            .get(next)
+            .map(|token| coordinates(token.span))
+            .ok_or_else(|| unsupported("missing column type after its name"))
+    }
+
     /// Find the table constraint between columns. An inline PRIMARY KEY
     /// follows the column's type or nullability marker.
     pub(super) fn primary_key_position(&self) -> Option<sqlparser_064::tokenizer::Location> {

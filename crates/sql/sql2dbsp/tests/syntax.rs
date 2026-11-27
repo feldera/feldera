@@ -56,6 +56,18 @@ fn advisory_preview_distinguishes_sql_errors_from_unsupported_programs() {
     let valid = preview("CREATE MATERIALIZED VIEW v AS SELECT 3 AS x;");
     assert_eq!(valid["status"], "bound");
     assert_eq!(valid["schema"]["outputs"][1]["materialized"], true);
+    let decimals = preview("CREATE TABLE t(\n  n NUMERIC, m NUMBER, d DECIMAL(8,2));");
+    assert_eq!(decimals["status"], "bound");
+    let warnings = decimals["messages"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0]["warning"], true);
+    assert_eq!(
+        warnings[0]["error_type"],
+        "DECIMAL precision and scale unspecified"
+    );
+    assert_eq!(warnings[0]["start_line_number"], 2);
+    assert_eq!(warnings[0]["start_column"], 5);
+    assert!(warnings[0]["snippet"].as_str().unwrap().contains("^^^^^^^"));
     for (sql, class) in [
         ("CREATE TABLE t(x INT(10))", "Error parsing SQL"),
         ("CREATE TABLE sqrt(x INT);", "Reserved name"),

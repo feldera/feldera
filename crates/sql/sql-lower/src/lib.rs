@@ -15,7 +15,9 @@ mod view;
 pub use plan::query_plan;
 
 use feldera_sql_ir::Circuit;
-use feldera_sql_rel_model::{program::Program, statements::Statement};
+use feldera_sql_rel_model::{
+    diagnostics::DiagnosticBoundary, program::Program, statements::Statement,
+};
 use serde_json::Value;
 use std::fmt;
 
@@ -79,16 +81,9 @@ pub fn lower_program(
     if let Input::Sql(filename) = input {
         sources["file"] = filename.into();
     }
-    if !program.context.unresolved_view_lateness.is_empty()
-        || !program.diagnostics.after.messages.is_empty()
-        || program
-            .diagnostics
-            .before
-            .iter()
-            .any(|b| !b.messages.is_empty())
-    {
+    if !program.context.unresolved_view_lateness.is_empty() {
         return Err(Error(
-            "S2 lowering requires a program without pending lateness or frontend messages".into(),
+            "S2 lowering requires a program without pending lateness".into(),
         ));
     }
     checkpoint["sources"] = sources;
@@ -105,12 +100,13 @@ pub fn lower_program(
     }
     let mut ids = source_table::Ids::after(&checkpoint["circuit"], program);
     let mut precision_warnings = std::collections::HashSet::new();
-    for (index, statement) in program
-        .statements
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| s.source().visible)
-    {
+    for (index, statement) in program.statements.iter().enumerate() {
+        let diagnostics = &mut checkpoint["diagnostics"];
+        apply_boundary(diagnostics, &program.diagnostics.before[index]);
+        if !statement.source().visible {
+            continue;
+        }
+        let context = diagnostics["context"].clone();
         if let Statement::ModifyTable {
             source,
             name,
@@ -135,12 +131,12 @@ pub fn lower_program(
                 .as_array_mut()
                 .expect("system diagnostics");
             messages.push(serde_json::json!({
-                "context":position, "range":position, "warning":true, "continuation":false,
+                "context":context, "range":position, "warning":true, "continuation":false,
                 "type":"Statement ignored", "message":"INSERT has no effect in a pipeline definition"
             }));
             for warning in warnings {
                 messages.push(serde_json::json!({
-                    "context":position, "range":source_table::range(0, 0, 0, 0), "warning":true,
+                    "context":context, "range":source_table::range(0, 0, 0, 0), "warning":true,
                     "continuation":false, "type":warning.kind, "message":warning.message
                 }));
             }
@@ -153,6 +149,7 @@ pub fn lower_program(
                 &program.catalog.schemas[*schema as usize],
                 &program.table.type_table,
                 source,
+                &context,
                 &mut precision_warnings,
                 checkpoint["diagnostics"]["messages"]
                     .as_array_mut()
@@ -219,10 +216,33 @@ pub fn lower_program(
             .expect("system schema")
             .push(metadata);
     }
+    let diagnostics = &mut checkpoint["diagnostics"];
+    apply_boundary(diagnostics, &program.diagnostics.after);
+    // CompilerMessages retains the first occurrence across binding and lowering.
+    let mut reported = std::collections::HashSet::new();
+    diagnostics["messages"]
+        .as_array_mut()
+        .expect("system diagnostics")
+        .retain(|warning| reported.insert(warning.clone()));
     let graph = &mut checkpoint["circuit"];
     origin_order::assign(graph)?;
     let circuit = Circuit::from_json(graph.take()).map_err(|e| Error(e.to_string()))?;
     circuit.provenance().map_err(|e| Error(e.to_string()))?;
     *graph = circuit.to_json();
     Ok(checkpoint)
+}
+
+fn apply_boundary(diagnostics: &mut Value, boundary: &DiagnosticBoundary) {
+    let messages = diagnostics["messages"]
+        .as_array_mut()
+        .expect("system diagnostics");
+    messages.extend(boundary.messages.iter().map(|warning| {
+        serde_json::json!({
+            "context":source_table::location(&warning.context),
+            "range":source_table::location(&warning.range),
+            "warning":true, "continuation":warning.continuation,
+            "type":warning.category, "message":warning.message
+        })
+    }));
+    diagnostics["context"] = source_table::location(&boundary.context);
 }

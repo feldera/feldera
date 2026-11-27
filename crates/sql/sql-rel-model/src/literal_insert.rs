@@ -5,7 +5,7 @@
 use crate::{
     catalog::Name,
     expression_objects::ObjectKind,
-    literals::{ExactDecimal, LiteralValue, date_from_text},
+    literals::{DecimalRounding, LiteralValue, date_from_text},
     program::Program,
     relation_properties::Properties,
     statements::{Statement, TargetColumn},
@@ -119,6 +119,12 @@ fn fits_source(value: &LiteralValue, ty: &SqlType) -> bool {
         (LiteralValue::Null {}, _) => ty.nullable,
         (LiteralValue::Boolean { .. }, TypeKind::Boolean {}) => true,
         (LiteralValue::Date { .. }, TypeKind::Date {}) => true,
+        (
+            LiteralValue::Decimal { value },
+            TypeKind::Decimal {
+                precision, scale, ..
+            },
+        ) => decimal_fits(value, *precision, *scale),
         (LiteralValue::Integer { value }, TypeKind::Integer { width, signed }) => {
             integer_fits(value, *width, *signed)
         }
@@ -141,7 +147,8 @@ fn assignment(
 ) -> Result<Option<AssignmentWarning>, String> {
     let result = match (value, &target.kind) {
         (LiteralValue::Character { .. }, TypeKind::Character { .. })
-        | (LiteralValue::Integer { .. }, TypeKind::Float { .. }) => None,
+        | (LiteralValue::Integer { .. } | LiteralValue::Decimal { .. }, TypeKind::Float { .. })
+        | (LiteralValue::Decimal { .. }, TypeKind::Integer { .. }) => None,
         (LiteralValue::Character { value }, TypeKind::Date {}) => {
             let text = value.trim_matches(|c: char| c <= ' ');
             date_from_text(text).is_none().then(|| AssignmentWarning {
@@ -160,18 +167,27 @@ fn assignment(
             })
         }
         (
-            LiteralValue::Integer { value },
+            _,
             TypeKind::Decimal {
                 precision, scale, ..
             },
-        ) => {
-            let decimal = ExactDecimal {
-                coefficient: value.clone(),
-                scale: 0,
-            };
-            (!decimal_fits(&decimal, *precision, *scale)).then(|| AssignmentWarning {
-                kind: "Invalid DECIMAL", message: format!("cannot represent {value} as DECIMAL({precision}, {scale}): precision of DECIMAL type too small to represent value")
-            })
+        ) if let Some(decimal) = value.as_exact_decimal() => {
+            let fits = decimal
+                .at_sql_scale(*scale, DecimalRounding::Truncate)
+                .is_some_and(|v| decimal_fits(&v, *precision, *scale));
+            if fits {
+                None
+            } else {
+                let (_, spelling) = decimal
+                    .sql_and_digest()
+                    .ok_or("decimal assignment exceeds SQL limits")?;
+                Some(AssignmentWarning {
+                    kind: "Invalid DECIMAL",
+                    message: format!(
+                        "cannot represent {spelling} as DECIMAL({precision}, {scale}): precision of DECIMAL type too small to represent value"
+                    ),
+                })
+            }
         }
         _ if fits_source(value, target) => None,
         _ => return Err(format!("unsupported INSERT assignment to {column}")),

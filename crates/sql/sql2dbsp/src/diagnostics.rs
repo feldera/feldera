@@ -56,9 +56,9 @@ pub fn syntax(sql: &str) -> Result<Option<Value>, Box<dyn Error>> {
 /// Advisory front-end result for editors. A valid SQL construct outside the
 /// binder's coverage needs a different verdict from a located compiler error.
 pub fn preview(sql: &str) -> Result<Value, Box<dyn Error>> {
-    match feldera_sql_binder::preview_schema(sql) {
-        Ok(schema) => {
-            Ok(json!({"advisory":true, "status":"bound", "schema":schema, "messages":[]}))
+    match feldera_sql_binder::preview_schema_and_diagnostics(sql) {
+        Ok((schema, messages)) => {
+            Ok(json!({"advisory":true, "status":"bound", "schema":schema, "messages":messages}))
         }
         Err(failure) => {
             let diagnostic = if failure.is_parse_error() {

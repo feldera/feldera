@@ -147,13 +147,9 @@ pub(super) fn range(line: u32, column: u32, end_line: u32, end_column: u32) -> V
     json!({"start_line_number":line, "start_column":column, "end_line_number":end_line, "end_column":end_column})
 }
 
-fn location(origin: &Origin) -> Value {
-    match origin {
-        Origin::Absent {} => range(0, 0, 0, 0),
-        Origin::Source { start, end, .. } | Origin::Generated { start, end, .. } => {
-            range(start.line, start.column, end.line, end.column)
-        }
-    }
+pub(super) fn location(origin: &Origin) -> Value {
+    let [line, column, end_line, end_column] = origin.coordinates();
+    range(line, column, end_line, end_column)
 }
 
 pub(super) fn name(identifier: &Name) -> Value {
@@ -477,6 +473,7 @@ pub(super) fn precision_warnings(
     schema: &CatalogSchema,
     types: &TypeTable,
     source: &StatementSource,
+    context: &Value,
     seen: &mut std::collections::HashSet<(&'static str, u32)>,
     messages: &mut Vec<Value>,
 ) {
@@ -508,7 +505,7 @@ pub(super) fn precision_warnings(
         if requested != runtime && seen.insert((name, requested)) {
             let position = statement_position(source);
             messages.push(json!({
-                "context":position, "range":position, "warning":true, "continuation":false,
+                "context":context, "range":position, "warning":true, "continuation":false,
                 "type":format!("{name} precision ignored"),
                 "message":format!("{name} precision is always {name}({runtime}); specified precision {requested} is ignored")
             }));

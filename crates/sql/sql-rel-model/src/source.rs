@@ -58,6 +58,16 @@ pub struct Identifier {
 }
 
 impl Origin {
+    /// Inclusive source coordinates in the order used by compiler diagnostics.
+    pub fn coordinates(&self) -> [u32; 4] {
+        match self {
+            Self::Absent {} => [0; 4],
+            Self::Source { start, end, .. } | Self::Generated { start, end, .. } => {
+                [start.line, start.column, end.line, end.column]
+            }
+        }
+    }
+
     /// The source is absent only for a completely unknown position.
     pub fn source(&self) -> Option<SourceId> {
         match self {

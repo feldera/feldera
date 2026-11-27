@@ -3,45 +3,42 @@
 mod aggregate;
 mod compute;
 mod filter;
+mod types;
+
+use types::{TypeSpelling, declare_type};
 
 use super::{
     StatementText, ViewDeclaration, append_boundary, append_schema, append_view, check_prelude,
     column, diagnostic_source, finish,
     graph::{
         ProjectInput, ProjectValue, TableOperand, append_table_filter, append_table_project,
-        append_table_scan, append_values, insert_row_fields, insert_type,
+        append_table_scan, append_values, insert_row_fields,
     },
     set_source,
     source::{DeclarationTokens, coordinates},
 };
 use crate::{
-    DataType, Expr, Failure, Kind, SelectItem, Spanned, Statement as ParsedStatement, Submission,
-    Upstream, checked_type, local_name, map_table_columns, parse_submissions, projection_input,
-    select_without_modifiers, system_relation, unsupported, unsupported_niladic,
-    validate_plain_view,
+    Expr, Failure, SelectItem, Spanned, Statement as ParsedStatement, Submission, Upstream,
+    local_name, map_table_columns, parse_submissions, projection_input, select_without_modifiers,
+    system_relation, unsupported, unsupported_niladic, validate_plain_view,
 };
 use feldera_sql_rel_model::{
-    TypeId, TypeTable, ValidationLimits,
+    TypeId, ValidationLimits,
     catalog::Name,
     program::Program,
     relation_metadata::{Coordinates, Hint},
-    source::Origin,
     statements::Statement,
-    types::{
-        Cardinality, CharacterMetadata, FloatFlavor, IntegerWidth, Precision, SqlType, TimeZone,
-        TypeKind,
-    },
+    types::TypeKind,
 };
 use sqlparser_064::ast::{
-    ArrayElemTypeDef, ColumnOption, GroupByExpr, Ident, MapBracketKind, TableConstraint,
-    WildcardAdditionalOptions,
+    ColumnOption, GroupByExpr, Ident, TableConstraint, WildcardAdditionalOptions,
 };
 use std::collections::HashSet;
 
 struct DeclaredColumn {
     name: Name,
     ty: TypeId,
-    declaration: String,
+    declaration: TypeSpelling,
     primary_key: bool,
 }
 
@@ -175,6 +172,20 @@ fn declare_table(
             nullable,
             ValidationLimits::default().depth,
         )?;
+        if types::warns_on_unspecified_precision(&column.data_type) {
+            // Calcite checks top-level column type specs for the whole batch
+            // before lowering the first compiler-owned statement.
+            let position = tokens.column_type_position(column.name.span)?;
+            program.diagnostics.before[0].messages.push(
+                feldera_sql_rel_model::diagnostics::FrontendWarning {
+                    context: feldera_sql_rel_model::source::Origin::Absent {},
+                    range: super::source_origin(&position),
+                    continuation: false,
+                    category: "DECIMAL precision and scale unspecified".into(),
+                    message: "DECIMAL/NUMERIC type used without specifying precision and scale.\nThis is interpreted as DECIMAL(38, 0)".into(),
+                }
+            );
+        }
         let column_name = name(&column.name.value);
         let inline_key = column
             .options
@@ -204,7 +215,9 @@ fn declare_table(
         Ok(DeclaredColumn {
             name: column_name,
             ty,
-            declaration: format!("{spelling}{nullability}{constraint}"),
+            declaration: TypeSpelling::render(|quoted| {
+                format!("{}{nullability}{constraint}", spelling.spelling(quoted))
+            }),
             primary_key,
         })
     })?;
@@ -223,7 +236,7 @@ fn declare_table(
         .zip(&positions)
         .enumerate()
         .map(|(index, (field, position))| {
-            let text = format!("{} {}", field.name.name, field.declaration);
+            let text = format!("{} {}", field.name.name, field.declaration.diagnostic);
             let mut col = column(
                 field.name.clone(),
                 index,
@@ -597,178 +610,6 @@ fn render_column(qualifier: &str, column: &str) -> (String, String) {
     )
 }
 
-fn declare_type(
-    types: &mut TypeTable,
-    data_type: &DataType,
-    nullable: bool,
-    depth: usize,
-) -> Result<(TypeId, String), Failure> {
-    let child_depth = depth
-        .checked_sub(1)
-        .ok_or_else(|| unsupported("table type nesting exceeds the validation limit"))?;
-    let (kind, spelling) = match data_type {
-        DataType::Array(ArrayElemTypeDef::Qualified(element, None)) => {
-            let (element, spelling) = declare_type(types, element, true, child_depth)?;
-            (
-                TypeKind::Array {
-                    element,
-                    cardinality: Cardinality::Unbounded,
-                },
-                format!("{spelling} ARRAY"),
-            )
-        }
-        DataType::Map(key, value, MapBracketKind::AngleBrackets) => {
-            let (key, key_spelling) = declare_type(types, key, false, child_depth)?;
-            if !types.types[key.0 as usize].kind.can_be_map_key() {
-                return Err(unsupported("MAP keys cannot have type MAP or NULL"));
-            }
-            let (value, value_spelling) = declare_type(types, value, true, child_depth)?;
-            (
-                TypeKind::Map { key, value },
-                format!("MAP< {key_spelling}, {value_spelling} >"),
-            )
-        }
-        _ => scalar_type(data_type, nullable)?,
-    };
-    let ty = insert_type(
-        types,
-        SqlType {
-            kind,
-            nullable,
-            origin: Origin::Absent {},
-        },
-    );
-    Ok((ty, spelling))
-}
-
-fn scalar_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, String), Failure> {
-    use sqlparser_064::ast::{BinaryLength, TimezoneInfo};
-
-    let integer =
-        |width, signed, spelling: &str| (TypeKind::Integer { width, signed }, spelling.into());
-    let kind = match data_type {
-        DataType::TinyIntUnsigned(None) => integer(IntegerWidth::I8, false, "TINYINT UNSIGNED"),
-        DataType::SmallIntUnsigned(None) => integer(IntegerWidth::I16, false, "SMALLINT UNSIGNED"),
-        DataType::BigIntUnsigned(None) => integer(IntegerWidth::I64, false, "BIGINT UNSIGNED"),
-        DataType::Unsigned
-        | DataType::UnsignedInteger
-        | DataType::IntUnsigned(None)
-        | DataType::IntegerUnsigned(None) => integer(IntegerWidth::I32, false, "INTEGER UNSIGNED"),
-        DataType::Date => (TypeKind::Date {}, "DATE".into()),
-        DataType::Real => (
-            TypeKind::Float {
-                flavor: FloatFlavor::Real,
-            },
-            "REAL".into(),
-        ),
-        DataType::Binary(_) | DataType::Varbinary(_) => {
-            let (fixed, width) = match data_type {
-                DataType::Binary(width) => (true, *width),
-                DataType::Varbinary(None) => (false, None),
-                DataType::Varbinary(Some(BinaryLength::IntegerLength { length })) => {
-                    (false, Some(*length))
-                }
-                _ => return Err(unsupported("unsupported binary length")),
-            };
-            let name = if fixed { "BINARY" } else { "VARBINARY" };
-            let length = match width {
-                Some(n) => Precision::Specified(
-                    u32::try_from(n).map_err(|_| unsupported("binary length exceeds its range"))?,
-                ),
-                None if fixed => Precision::Specified(1),
-                None => Precision::Unspecified,
-            };
-            (
-                TypeKind::Binary { fixed, length },
-                width.map_or_else(|| name.into(), |n| format!("{name}({n})")),
-            )
-        }
-        DataType::Time(width, TimezoneInfo::None)
-        | DataType::Timestamp(width, TimezoneInfo::None) => {
-            let is_time = matches!(data_type, DataType::Time(..));
-            let (name, maximum) = if is_time {
-                ("TIME", 9)
-            } else {
-                ("TIMESTAMP", 6)
-            };
-            let precision = Precision::Specified(width.unwrap_or(maximum).min(maximum) as u32);
-            let zone = TimeZone::None;
-            let kind = if is_time {
-                TypeKind::Time { precision, zone }
-            } else {
-                TypeKind::Timestamp { precision, zone }
-            };
-            (
-                kind,
-                width.map_or_else(|| name.into(), |n| format!("{name}({n})")),
-            )
-        }
-        DataType::Varchar(size)
-        | DataType::CharVarying(size)
-        | DataType::CharacterVarying(size)
-        | DataType::Char(size)
-        | DataType::Character(size) => {
-            use sqlparser_064::ast::CharacterLength;
-            let fixed = matches!(data_type, DataType::Char(_) | DataType::Character(_));
-            let name = if fixed { "CHAR" } else { "VARCHAR" };
-            let (length, spelling) = match size {
-                None => (
-                    if fixed {
-                        Precision::Specified(1)
-                    } else {
-                        Precision::Unspecified
-                    },
-                    name.to_string(),
-                ),
-                Some(CharacterLength::IntegerLength { length, unit: None })
-                    if *length <= i32::MAX as u64 =>
-                {
-                    (
-                        Precision::Specified(*length as u32),
-                        format!("{name}({length})"),
-                    )
-                }
-                _ => return Err(unsupported("unsupported character length")),
-            };
-            (
-                TypeKind::Character {
-                    fixed,
-                    length,
-                    metadata: CharacterMetadata::implicit(),
-                },
-                spelling,
-            )
-        }
-        _ => match checked_type(data_type, nullable)?.kind {
-            Kind::Boolean => (TypeKind::Boolean {}, "BOOLEAN".into()),
-            Kind::Decimal { precision, scale } => (
-                TypeKind::Decimal {
-                    precision: precision.into(),
-                    scale: scale.into(),
-                    explicit_scale: true,
-                },
-                format!("DECIMAL({precision}, {scale})"),
-            ),
-            Kind::Integer { bits: 8 } => integer(IntegerWidth::I8, true, "TINYINT"),
-            Kind::Integer { bits: 16 } => integer(IntegerWidth::I16, true, "SMALLINT"),
-            Kind::Integer { bits: 32 } => integer(IntegerWidth::I32, true, "INTEGER"),
-            Kind::Integer { bits: 64 } => integer(IntegerWidth::I64, true, "BIGINT"),
-            Kind::Double => (
-                TypeKind::Float {
-                    flavor: FloatFlavor::Double,
-                },
-                "DOUBLE".into(),
-            ),
-            _ => {
-                return Err(unsupported(
-                    "table type outside the direct projection slice",
-                ));
-            }
-        },
-    };
-    Ok(kind)
-}
-
 fn name(ident: &str) -> Name {
     Name {
         name: ident.to_ascii_lowercase(),
@@ -785,11 +626,11 @@ fn render_table(
 ) -> StatementText {
     let mut pretty = columns
         .iter()
-        .map(|column| format!("`{}` {}", column.name.name, column.declaration))
+        .map(|column| format!("`{}` {}", column.name.name, column.declaration.quoted))
         .collect::<Vec<_>>();
     let mut diagnostic = columns
         .iter()
-        .map(|column| format!("{} {}", column.name.name, column.declaration))
+        .map(|column| format!("{} {}", column.name.name, column.declaration.diagnostic))
         .collect::<Vec<_>>();
     if let Some(index) = key_index {
         let quoted = key

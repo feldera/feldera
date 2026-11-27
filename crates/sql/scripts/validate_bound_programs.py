@@ -13,6 +13,26 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "type_unspecified_decimal": "CREATE TABLE t(a DECIMAL, b DEC, c NUMERIC, d DECIMAL ARRAY, e MAP<NUMERIC,DECIMAL>);"
+                                "\nINSERT INTO t VALUES (NULL, NULL, NULL, NULL, NULL);"
+                                "\nCREATE TABLE s(d NUMERIC, e TIMESTAMP(2)); CREATE VIEW v AS SELECT * FROM s;",
+    "type_aliases": "CREATE TABLE t(s TEXT, x STRING, b BYTEA, i INT2, j INT4, k INT8,"
+                    " l INT64, m SIGNED, q BOOL, f FLOAT4, g FLOAT32, h FLOAT8, z FLOAT64, n NUMBER);"
+                    "\nCREATE VIEW v AS SELECT b, i, q, f, z, n FROM t;",
+    "type_alias_collections": "CREATE TABLE t(x INT2 ARRAY, d MAP<TEXT, FLOAT8 ARRAY>);"
+                              "\nCREATE VIEW v AS SELECT d, x FROM t;",
+    "type_standard_spellings": "CREATE TABLE t(x NUMERIC(38,10), y DECIMAL(8), z DEC(5,1),"
+                               " d DOUBLE PRECISION, a TIME(2) WITHOUT TIME ZONE, b TIMESTAMP(0) WITHOUT TIME ZONE);",
+    "decimal_projection": "CREATE VIEW v AS SELECT 1.00 AS a, .1 AS b, 000.0040 AS c,"
+                          " -.00000012 AS d, -0.00 AS e, 2147483648. AS f;",
+    "decimal_strings": "CREATE VIEW v AS SELECT DECIMAL '-001.00' AS a, DECIMAL '.00120' AS b,"
+                       " DECIMAL '1E2' AS c, DECIMAL '00.0000000' AS z;",
+    "decimal_widening": "CREATE TABLE t(d DECIMAL(13,3)); INSERT INTO t VALUES (1.23), (2.5), (42), (NULL), (-0.001);",
+    "decimal_bigint": "CREATE TABLE t(d DOUBLE); INSERT INTO t VALUES (3), (2.0), (2147483648);",
+    "decimal_precision_cap": "CREATE TABLE t(d DECIMAL(38,0)); INSERT INTO t VALUES"
+                             " (12345678901234567890123456789012345678), (.99), (-.99), (.5), (-.501);",
+    "decimal_assignment": "CREATE TABLE t(i INT, n DECIMAL(3,1)); INSERT INTO t VALUES"
+                          " (123456789000.1, 2322.345), (-19.2, -100.55), (1.19, -9.999);",
     "assignment_numeric": "CREATE TABLE t(d DATE, i BIGINT, n DECIMAL(7,2), c CHAR(4), f REAL, g DOUBLE);"
                           "\nINSERT INTO t VALUES ('2020-02-29', '+123', -124, 'abcdef', 1, 9),"
                           " ('2000-01-01', '-2', 5, 'x', 0, 2);",

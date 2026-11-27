@@ -6,7 +6,7 @@ mod frel;
 mod program;
 mod schema;
 
-pub use schema::preview_schema;
+pub use schema::{preview_schema, preview_schema_and_diagnostics};
 
 pub use program::{bind_constant_program, bind_sql, bind_submissions, bind_table_program};
 
@@ -50,7 +50,7 @@ enum DiagnosticSpan {
 #[derive(Debug, Serialize)]
 pub struct CompilerDiagnostic {
     warning: bool,
-    error_type: &'static str,
+    error_type: String,
     start_line_number: usize,
     start_column: usize,
     end_line_number: usize,
@@ -1203,20 +1203,32 @@ fn projection_diagnostic(
         (start.line, start.column),
         (end.line, end.column),
     )?;
-    let snippet = range.snippet(&lines).ok()?;
-    Some(CompilerDiagnostic {
-        warning: !matches!(
-            kind,
-            DiagnosticKind::CompilationError | DiagnosticKind::ReservedName
-        ),
-        error_type: kind.error_type(),
-        start_line_number: range.start_line_number as usize,
-        start_column: range.start_column as usize,
-        end_line_number: range.end_line_number as usize,
-        end_column: range.end_column as usize,
-        message: message.into(),
-        snippet,
-    })
+    let warning = !matches!(
+        kind,
+        DiagnosticKind::CompilationError | DiagnosticKind::ReservedName
+    );
+    CompilerDiagnostic::at(range, &lines, warning, kind.error_type(), message).ok()
+}
+
+impl CompilerDiagnostic {
+    fn at(
+        range: feldera_sql_source::SourceRange,
+        lines: &[&str],
+        warning: bool,
+        class: &str,
+        message: &str,
+    ) -> Result<Self, &'static str> {
+        Ok(Self {
+            warning,
+            error_type: class.into(),
+            message: message.into(),
+            snippet: range.snippet(lines)?,
+            start_line_number: range.start_line_number as usize,
+            start_column: range.start_column as usize,
+            end_line_number: range.end_line_number as usize,
+            end_column: range.end_column as usize,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -1314,7 +1326,7 @@ mod tests {
             );
             let bound = bind_generated_projection(&sql).unwrap();
             let warning = bound.compiler_diagnostics.first();
-            assert_eq!(warning.map(|warning| warning.error_type), expected);
+            assert_eq!(warning.map(|warning| warning.error_type.as_str()), expected);
             if let Some(warning) = warning {
                 assert!(warning.warning);
                 assert_eq!(warning.start_column, 25);

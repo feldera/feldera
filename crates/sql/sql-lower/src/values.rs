@@ -137,6 +137,24 @@ fn lower_literal(
             (literal, "DATE".into(), text, sql)
         }
         (
+            TypeKind::Decimal {
+                precision, scale, ..
+            },
+            LiteralValue::Decimal { value },
+        ) => {
+            let (sql, digest) = value
+                .sql_and_digest()
+                .ok_or_else(|| Error("unsupported SQL decimal literal".into()))?;
+            let mut literal = ids.node("DBSPDecimalLiteral", &unknown);
+            literal["value"] = digest.clone().into();
+            (
+                literal,
+                format!("DECIMAL({precision}, {scale})"),
+                digest,
+                sql,
+            )
+        }
+        (
             TypeKind::Integer {
                 width,
                 signed: true,

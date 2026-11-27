@@ -3,15 +3,16 @@
 //! individual widths of character and binary literals and the type of NULL.
 
 use super::{
-    literal::Cell,
     StatementText, append_boundary,
     graph::{append_literal, append_values, insert_row_fields, insert_type},
+    literal::Cell,
     source::coordinates,
 };
 use crate::{Failure, SetExpr, local_name, query_body, unsupported};
 use feldera_sql_rel_model::{
     catalog::Name,
     literal_insert,
+    literals::{DecimalRounding, LiteralValue},
     program::Program,
     relation_metadata::Coordinates,
     source::Origin,
@@ -146,10 +147,25 @@ fn bind_values(program: &mut Program, rows: &[Vec<Cell>]) -> Result<u32, Failure
     for cells in rows {
         for (cell, (_, column_type)) in cells.iter().zip(&columns) {
             let kind = match cell.kind {
-                TypeKind::Integer { .. } => {
+                TypeKind::Integer { .. } | TypeKind::Decimal { .. } => {
                     &program.table.type_table.types[column_type.0 as usize].kind
                 }
                 _ => &cell.kind,
+            };
+            let value = if let TypeKind::Decimal { scale, .. } = kind {
+                let decimal = cell
+                    .value
+                    .as_exact_decimal()
+                    .ok_or_else(|| unsupported("non-numeric decimal VALUES element"))?;
+                LiteralValue::Decimal {
+                    value: decimal
+                        .at_sql_scale(*scale, DecimalRounding::HalfUp)
+                        .ok_or_else(|| {
+                            unsupported("decimal VALUES element exceeds its common type")
+                        })?,
+                }
+            } else {
+                cell.value.clone()
             };
             let ty = SqlType {
                 kind: kind.clone(),
@@ -157,7 +173,7 @@ fn bind_values(program: &mut Program, rows: &[Vec<Cell>]) -> Result<u32, Failure
                 origin: Origin::Absent {},
             };
             let ty = insert_type(&mut program.table.type_table, ty);
-            roots.push(append_literal(program, ty, cell.value.clone()));
+            roots.push(append_literal(program, ty, value));
         }
     }
     append_values(program, row, rows.len() as u32, roots)
@@ -170,6 +186,18 @@ fn widen(kind: &mut TypeKind, next: &TypeKind) -> Result<(), Failure> {
     match (kind, next) {
         (current @ TypeKind::Null {}, next) => *current = next.clone(),
         (TypeKind::Integer { width, .. }, TypeKind::Integer { .. }) => *width = IntegerWidth::I64,
+        (current, next)
+            if let (Some((p1, s1)), Some((p2, s2))) =
+                (decimal_shape(current), decimal_shape(next)) =>
+        {
+            let integral = (p1 - s1).max(p2 - s2);
+            let scale = s1.max(s2).min(38 - integral);
+            *current = TypeKind::Decimal {
+                precision: integral + scale,
+                scale,
+                explicit_scale: true,
+            };
+        }
         (
             TypeKind::Character {
                 fixed,
@@ -197,4 +225,21 @@ fn widen(kind: &mut TypeKind, next: &TypeKind) -> Result<(), Failure> {
         _ => return Err(unsupported("incompatible INSERT VALUES column types")),
     }
     Ok(())
+}
+
+fn decimal_shape(kind: &TypeKind) -> Option<(u32, u32)> {
+    match kind {
+        TypeKind::Decimal {
+            precision, scale, ..
+        } => Some((*precision, *scale)),
+        TypeKind::Integer {
+            width: IntegerWidth::I32,
+            ..
+        } => Some((10, 0)),
+        TypeKind::Integer {
+            width: IntegerWidth::I64,
+            ..
+        } => Some((19, 0)),
+        _ => None,
+    }
 }

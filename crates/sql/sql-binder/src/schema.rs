@@ -1,8 +1,9 @@
 //! Public schema before optimization determines column usage.
 
-use crate::{Failure, bind_sql, unsupported};
+use crate::{CompilerDiagnostic, Failure, bind_sql, unsupported};
 use feldera_sql_rel_model::{
     catalog::CatalogSchema,
+    program::Program,
     statements::{Statement, ViewKind},
     types::TypeTable,
 };
@@ -11,7 +12,48 @@ use serde_json::{Value, json};
 /// Bind user SQL and describe the visible tables and views under the default
 /// Gen-2 profile. C1a omits optimizer usage flags and default/lateness text.
 pub fn preview_schema(sql: &str) -> Result<Value, Failure> {
-    let program = bind_sql("<schema>".into(), sql)?;
+    bound_schema(&bind_sql("<schema>".into(), sql)?)
+}
+
+/// Bind once for an editor request and render frontend warnings against the
+/// same source buffer as the schema.
+pub fn preview_schema_and_diagnostics(
+    sql: &str,
+) -> Result<(Value, Vec<CompilerDiagnostic>), Failure> {
+    let program = bind_sql("<preview>".into(), sql)?;
+    let schema = bound_schema(&program)?;
+    let lines: Vec<_> = program
+        .context
+        .sources
+        .lines
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let mut warnings = Vec::new();
+    for boundary in program
+        .diagnostics
+        .before
+        .iter()
+        .chain([&program.diagnostics.after])
+    {
+        for message in &boundary.messages {
+            let [line, col, end_line, end_col] = message.range.coordinates();
+            let range = feldera_sql_source::SourceRange {
+                start_line_number: line as i32,
+                start_column: col as i32,
+                end_line_number: end_line as i32,
+                end_column: end_col as i32,
+            };
+            warnings.push(
+                CompilerDiagnostic::at(range, &lines, true, &message.category, &message.message)
+                    .map_err(unsupported)?,
+            );
+        }
+    }
+    Ok((schema, warnings))
+}
+
+fn bound_schema(program: &Program) -> Result<Value, Failure> {
     let types = &program.table.type_table;
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
