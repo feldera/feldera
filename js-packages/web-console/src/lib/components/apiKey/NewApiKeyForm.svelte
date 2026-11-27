@@ -110,7 +110,8 @@
         ></button>
       </div>
 
-      <div class="pt-4 pl-8">
+      <!-- PostHog session replays leave out elements under `ph-no-capture`, so they do not record the API keys -->
+      <div class="ph-no-capture pt-4 pl-8">
         {#each lastGenerated as { name, key }}
           <div class="flex w-full flex-nowrap items-center gap-2">
             <span class="text-nowrap">{name}:</span>

@@ -6,9 +6,9 @@
  *
  * The graph pane is rendered inside `{#if hasProfile}`; the analysis pane below it is
  * unconditional. PaneForge orders panes by registration time unless each pane declares an
- * explicit `order`. When a profile loads *after* the layout has mounted (profileData
+ * explicit `order`. When a profile loads after the layout has mounted (profile
  * undefined -> defined), the graph pane registers second and, without `order`, PaneForge
- * treats it as the *lower* pane. The resizer then drives the panes backwards, so moving the
+ * treats it as the lower pane. The resizer then drives the panes backwards, so moving the
  * divider down shrinks the top pane instead of growing it - the reversal the user reported.
  *
  * The test drives the actual resize behavior rather than an internal-order proxy: it presses
@@ -57,8 +57,7 @@ import { capture } from '../test-support/LayoutPanelStub.svelte'
 import SupportBundleViewerLayout from './SupportBundleViewerLayout.svelte'
 
 const baseProps = () => ({
-  profileData: undefined,
-  dataflowData: undefined,
+  profile: undefined,
   triageResults: new TriageResults(),
   profileFiles: [],
   selectedTimestamp: null,
@@ -115,7 +114,7 @@ describe('SupportBundleViewerLayout vertical pane order', () => {
     expect(container.querySelector('.pane-divider-horizontal')).toBeNull()
 
     // Profile arrives -> graph pane mounts and registers after the analysis pane.
-    await rerender({ profileData: someProfile })
+    await rerender({ profile: someProfile })
 
     await expectDividerDownGrowsTopPane(container)
   })
@@ -126,7 +125,7 @@ describe('SupportBundleViewerLayout vertical pane order', () => {
       sqlPanelFullHeight: true
     })
 
-    await rerender({ profileData: someProfile })
+    await rerender({ profile: someProfile })
 
     await expectDividerDownGrowsTopPane(container)
   })
@@ -157,7 +156,7 @@ describe('SupportBundleViewerLayout source navigation', () => {
     render(SupportBundleViewerLayout, {
       props: {
         ...baseProps(),
-        profileData: someProfile,
+        profile: someProfile,
         sourceFiles: [{ name: 'program.sql', language: 'sql', code: 'a\nb\nc' }],
         onHighlightSourceRanges: (r: SourcePositionRange[]) => highlighted.push(r)
       }
@@ -193,6 +192,55 @@ describe('SupportBundleViewerLayout source navigation', () => {
     click('operator')
     click('internal')
     expect(highlighted).toEqual([ranges.operator, []])
+  })
+})
+
+describe('SupportBundleViewerLayout diagram metric', () => {
+  const option = (id: string) => ({ id, label: id })
+  // runtime_percent is the diagram default and is not a basic metric.
+  const metrics = ['runtime_percent', 'runtime_seconds', 'spine_storage_size_bytes'].map(option)
+
+  const mount = async (selected: string) => {
+    capture.callbacks = undefined
+    capture.profile = { getSourceRanges: () => [] } as never
+    capture.selectedMetrics = []
+    const { container } = render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      profile: someProfile
+    })
+    await expect.poll(() => capture.callbacks).toBeDefined()
+    capture.callbacks!.onMetricsChanged(metrics, selected)
+    const advanced = container.querySelector<HTMLInputElement>('input[name="showAdvancedMetrics"]')
+    if (!advanced) {
+      throw new Error('the "Show advanced" switch is not rendered')
+    }
+    const toggleAdvanced = async () => {
+      const before = advanced.checked
+      advanced.click()
+      await expect.poll(() => advanced.checked).toBe(!before)
+    }
+    const diagramMetric = () => capture.selectedMetrics.at(-1)
+    return { toggleAdvanced, diagramMetric }
+  }
+
+  it('keeps the diagram metric when the advanced metrics are shown and hidden', async () => {
+    const { toggleAdvanced, diagramMetric } = await mount('runtime_percent')
+    await expect.poll(diagramMetric).toBe('runtime_seconds')
+    capture.selectedMetrics = []
+    await toggleAdvanced()
+    await toggleAdvanced()
+    await toggleAdvanced()
+    // A toggle that changed the metric would restyle every node of the diagram.
+    expect(capture.selectedMetrics.filter((id) => id !== 'runtime_seconds')).toEqual([])
+  })
+
+  it('selects the runtime when the advanced metrics are hidden while one of them is selected', async () => {
+    const { toggleAdvanced, diagramMetric } = await mount('runtime_percent')
+    await toggleAdvanced()
+    capture.callbacks!.onMetricsChanged(metrics, 'runtime_percent')
+    await expect.poll(diagramMetric).toBe('runtime_percent')
+    await toggleAdvanced()
+    await expect.poll(diagramMetric).toBe('runtime_seconds')
   })
 })
 
@@ -312,7 +360,6 @@ describe('SupportBundleViewerLayout code panel', () => {
     capture.callbacks = undefined
     capture.profile = { getSourceRanges: () => operatorRanges } as never
     capture.sourceTab = undefined
-    capture.programCode = undefined
   })
 
   it('has a tab for each source file and opens the SQL program', async () => {
@@ -330,45 +377,22 @@ describe('SupportBundleViewerLayout code panel', () => {
       .toEqual(['program.sql'])
   })
 
-  it('hands the diagram the lines of the SQL program', async () => {
-    render(SupportBundleViewerLayout, {
-      ...baseProps(),
-      profileData: someProfile,
-      sourceFiles: [udf, program]
-    })
-    await expect.poll(() => capture.programCode).toEqual(['a', 'b', 'c'])
-  })
-
-  it('hands the diagram no lines when the bundle has no source files', async () => {
-    render(SupportBundleViewerLayout, { ...baseProps(), profileData: someProfile })
-    await expect.poll(() => capture.callbacks).toBeDefined()
-    expect(capture.programCode).toBeUndefined()
-  })
-
-  it('says that the source code is not in the bundle when it has no source files', async () => {
-    render(SupportBundleViewerLayout, baseProps())
-    await expect.poll(() => document.body.textContent).toContain('Profile does not contain the source code')
-    expect(document.querySelector('[role="tab"]')).toBeNull()
-  })
-
   it('opens the first file when the bundle has no SQL program', async () => {
     render(SupportBundleViewerLayout, { ...baseProps(), sourceFiles: [udf] })
     await expect.poll(() => capture.sourceTab?.file).toEqual(udf)
     await expect.poll(selectedTab).toBe('udf.rs')
-    expect(document.body.textContent).not.toContain('Profile does not contain the source code')
   })
 
   it('shows the files when a bundle with source files follows one without', async () => {
     const { rerender } = render(SupportBundleViewerLayout, baseProps())
     await rerender({ sourceFiles: [program, udf] })
     await expect.poll(() => capture.sourceTab?.file).toEqual(program)
-    expect(document.body.textContent).not.toContain('Profile does not contain the source code')
   })
 
   it('selects node ranges only in the SQL program', async () => {
     render(SupportBundleViewerLayout, {
       ...baseProps(),
-      profileData: someProfile,
+      profile: someProfile,
       sourceFiles: [program, udf]
     })
     capture.callbacks?.onNodeClick?.('operator')
@@ -382,7 +406,7 @@ describe('SupportBundleViewerLayout code panel', () => {
   it('goes back to the SQL program when a node with SQL is clicked', async () => {
     render(SupportBundleViewerLayout, {
       ...baseProps(),
-      profileData: someProfile,
+      profile: someProfile,
       sourceFiles: [program, udf]
     })
     await expect.poll(() => fileTab('udf.rs')).toBeDefined()
@@ -397,7 +421,7 @@ describe('SupportBundleViewerLayout code panel', () => {
     capture.profile = { getSourceRanges: () => [] } as never
     render(SupportBundleViewerLayout, {
       ...baseProps(),
-      profileData: someProfile,
+      profile: someProfile,
       sourceFiles: [program, udf]
     })
     await expect.poll(() => fileTab('udf.rs')).toBeDefined()
@@ -519,5 +543,169 @@ describe('SupportBundleViewerLayout Connectors tab', () => {
     await expect.element(page.getByTestId('btn-icon-input-errors').first()).toBeInTheDocument()
     ;(page.getByTestId('btn-icon-input-errors').first().element() as HTMLElement).click()
     await expect.element(page.getByText('bad row one').first()).toBeInTheDocument()
+  })
+})
+
+describe('SupportBundleViewerLayout without parts of the bundle', () => {
+  const program = { name: 'program.sql', language: 'sql', code: 'select 1' } as const
+  const emptyProgram = { name: 'program.sql', language: 'sql', code: ' \n' } as const
+  // `stats.json` with one known global metric.
+  const someGlobalMetrics = { state: 'Running' }
+
+  // Only the code panel has `role="tab"`. The analysis tabs are radios.
+  const fileTabCount = () => document.querySelectorAll('[role="tab"]').length
+  const codePaneResizer = (container: HTMLElement) =>
+    container.querySelector('.pane-divider-vertical[data-pane-resizer]')
+  const analysisTab = (container: HTMLElement, id: string) => {
+    const tab = container.querySelector<HTMLInputElement>(`input[value="${id}"]`)
+    if (!tab) {
+      throw new Error(`${id} tab not found`)
+    }
+    return tab
+  }
+  const selectedAnalysisTab = (container: HTMLElement) =>
+    container.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value
+  // All header notices start with "This bundle has", so a count above one means that the layout
+  // joined two notices.
+  const noticeCount = () => (document.body.textContent ?? '').split('This bundle has').length - 1
+
+  describe('code panel', () => {
+    it.each([
+      ['the normal layout', false],
+      ['the SQL full-height layout', true]
+    ])('is not shown in %s when the bundle has no source files', async (_, sqlPanelFullHeight) => {
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        profile: someProfile,
+        sqlPanelFullHeight
+      })
+      // Throws if the layout did not render the analysis tabs.
+      analysisTab(container, 'Logs')
+      expect(fileTabCount()).toBe(0)
+      expect(codePaneResizer(container)).toBeNull()
+    })
+
+    it('is not shown when all source files are empty', async () => {
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        sourceFiles: [emptyProgram]
+      })
+      analysisTab(container, 'Logs')
+      expect(fileTabCount()).toBe(0)
+      expect(codePaneResizer(container)).toBeNull()
+    })
+
+    it('is shown with a resizer when the bundle has code', async () => {
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        sourceFiles: [emptyProgram, { ...program, name: 'udf.rs', language: 'rust' }]
+      })
+      await expect.poll(fileTabCount).toBe(2)
+      expect(codePaneResizer(container)).not.toBeNull()
+    })
+
+    it('appears when a bundle with code follows one without', async () => {
+      const { container, rerender } = render(SupportBundleViewerLayout, baseProps())
+      expect(codePaneResizer(container)).toBeNull()
+      await rerender({ sourceFiles: [program] })
+      await expect.poll(fileTabCount).toBe(1)
+      expect(codePaneResizer(container)).not.toBeNull()
+    })
+  })
+
+  describe('Metrics tab', () => {
+    it('is disabled when the bundle has no profile and no global metrics', () => {
+      const { container } = render(SupportBundleViewerLayout, baseProps())
+      expect(analysisTab(container, 'Metrics').disabled).toBe(true)
+    })
+
+    it.each([
+      ['a profile', { profile: someProfile }],
+      ['only global metrics', { globalMetrics: someGlobalMetrics }]
+    ])('is enabled when the bundle has %s', (_, props) => {
+      const { container } = render(SupportBundleViewerLayout, { ...baseProps(), ...props })
+      expect(analysisTab(container, 'Metrics').disabled).toBe(false)
+    })
+
+    it('is not selected when disabled, and the first enabled tab is selected', async () => {
+      // Connectors, Health and Config have no data either, so Logs is the first enabled tab.
+      const { container } = render(SupportBundleViewerLayout, baseProps())
+      await expect.poll(() => selectedAnalysisTab(container)).toBe('Logs')
+    })
+
+    it('is selected by default when it is enabled', async () => {
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        profile: someProfile
+      })
+      await expect.poll(() => selectedAnalysisTab(container)).toBe('Metrics')
+    })
+  })
+
+  describe('header notice', () => {
+    it.each([
+      [
+        'no profile, no metrics, no code',
+        {},
+        'This bundle has no circuit profile and no pipeline code, so the dataflow graph, metrics and code are unavailable.'
+      ],
+      [
+        'no profile, no code, but global metrics',
+        { globalMetrics: someGlobalMetrics },
+        'This bundle has no circuit profile and no pipeline code, so the dataflow graph and code are unavailable.'
+      ],
+      [
+        'no profile, no metrics, but code',
+        { sourceFiles: [program] },
+        'This bundle has no circuit profile, so the dataflow graph and metrics are unavailable.'
+      ],
+      [
+        'no profile, but global metrics and code',
+        { globalMetrics: someGlobalMetrics, sourceFiles: [program] },
+        'This bundle has no circuit profile, so the dataflow graph is unavailable.'
+      ],
+      [
+        'a profile, but no code',
+        { profile: someProfile },
+        'This bundle has no pipeline code, so the code panel is unavailable.'
+      ],
+      [
+        'a profile and only empty code',
+        { profile: someProfile, sourceFiles: [emptyProgram] },
+        'This bundle has no pipeline code, so the code panel is unavailable.'
+      ]
+    ])('for a bundle with %s is a single message', async (_, props, notice) => {
+      render(SupportBundleViewerLayout, { ...baseProps(), ...props })
+      await expect.element(page.getByText(notice, { exact: true })).toBeInTheDocument()
+      expect(noticeCount()).toBe(1)
+    })
+
+    it('for an unreadable profile collapses the graph panel and gives the reason on hover', async () => {
+      const profileError = 'Failed to read the circuit profile: unknown version'
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        profileError,
+        sourceFiles: [program]
+      })
+      const notice = page.getByText(
+        'This bundle has an unreadable circuit profile, so the dataflow graph and metrics are unavailable.',
+        { exact: true }
+      )
+      await expect.element(notice).toHaveAttribute('title', profileError)
+      expect(noticeCount()).toBe(1)
+      // Only a shown graph panel has the resizer above the analysis panel.
+      expect(container.querySelector('.pane-divider-horizontal')).toBeNull()
+      expect(document.body.textContent).not.toContain(profileError)
+    })
+
+    it('is not shown when the bundle has a profile and code', async () => {
+      render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        profile: someProfile,
+        sourceFiles: [program]
+      })
+      await expect.poll(fileTabCount).toBe(1)
+      expect(noticeCount()).toBe(0)
+    })
   })
 })

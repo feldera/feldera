@@ -816,6 +816,14 @@ def _fixture_build_lock(key: str) -> Iterator[None]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+# Maven Central can refuse CI with a 4xx, which Spark reports as "not found":
+# resolve from Google's mirror of Central first, then from Central.
+SPARK_ENV = {
+    "DEFAULT_ARTIFACT_REPOSITORY": "https://maven-central.storage-download.googleapis.com/maven2/",
+    "PYSPARK_SUBMIT_ARGS": "--repositories https://repo1.maven.org/maven2/ pyspark-shell",
+}
+
+
 def _run_spark_subprocess(
     command: Sequence[str], *, capture_output: bool, timeout_s: float
 ) -> subprocess.CompletedProcess:
@@ -830,7 +838,12 @@ def _run_spark_subprocess(
     """
     pipe = subprocess.PIPE if capture_output else None
     proc = subprocess.Popen(
-        command, stdout=pipe, stderr=pipe, text=True, start_new_session=True
+        command,
+        stdout=pipe,
+        stderr=pipe,
+        text=True,
+        start_new_session=True,
+        env={**os.environ, **SPARK_ENV},
     )
     try:
         stdout, stderr = proc.communicate(timeout=timeout_s)

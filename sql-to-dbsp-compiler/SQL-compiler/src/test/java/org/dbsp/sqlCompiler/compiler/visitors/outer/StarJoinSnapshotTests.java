@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -60,7 +61,7 @@ public class StarJoinSnapshotTests {
         circuit.addOperator(consumer);
 
         var rewritten = new CreateStarJoins(compiler).apply(circuit);
-        var output = rewritten.allOperators.getLast().to(DBSPDifferentiateOperator.class).input();
+        var output = Utilities.last(rewritten.allOperators).to(DBSPDifferentiateOperator.class).input();
         Assert.assertEquals(StreamKind.COLLECTION, output.kind());
         Assert.assertTrue(root.outputType().sameType(output.outputType()));
         var star = output.to(DBSPIntegrateOperator.class).input().to(DBSPStarJoinIndexOperator.class);

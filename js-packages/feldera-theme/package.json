@@ -4,10 +4,14 @@
   "description": "Feldera modern theme CSS for reuse across projects",
   "type": "module",
   "exports": {
-    "./feldera-modern.css": "./feldera-modern.css"
+    "./feldera-modern.css": "./feldera-modern.css",
+    "./fd.css": "./fd.css",
+    "./scrollbar.css": "./scrollbar.css"
   },
   "files": [
-    "feldera-modern.css"
+    "feldera-modern.css",
+    "fd.css",
+    "scrollbar.css"
   ],
   "sideEffects": [
     "*.css"

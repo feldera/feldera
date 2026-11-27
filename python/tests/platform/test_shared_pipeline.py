@@ -509,8 +509,10 @@ class TestPipeline(SharedTestPipeline):
                 and len(self.pipeline.deployment_error()) > 0
             ),
             # Panic -> pod exit -> runner notices -> status transition takes
-            # longer on a fresh k8s install than on a warm instance.
-            timeout_s=60.0,
+            # longer on a fresh k8s install than on a warm instance, and a
+            # brief Kubernetes API server outage can delay the runner from
+            # detecting the pod exit and updating the status by over a minute.
+            timeout_s=180.0,
             poll_interval_s=1.0,
         )
         self.pipeline.stop(force=True)

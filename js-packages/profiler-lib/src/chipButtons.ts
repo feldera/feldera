@@ -143,15 +143,29 @@ export function chipAt(node: NodeSingular, x: number, y: number): ChipSlot | nul
     return null;
 }
 
+/** A cytoscape node and its bounding box in graph coordinates. */
+export interface NodeWithBox {
+    node: NodeSingular;
+    box: ChipBox;
+}
+
+const nodeBoxes = (cy: Core): NodeWithBox[] =>
+    cy.nodes().map((node) => ({ node, box: node.boundingBox() }));
+
 /** The chip at a point in graph coordinates, on any node. A fast bounding box check skips most nodes.
  *  The box is made wider on the left, because a chip can be wider than its node. If the chip of a node
- *  and the chip of its region overlap, the node wins, because it is drawn on top. */
-export function hitTestChips(cy: Core, x: number, y: number): ChipHit | null {
+ *  and the chip of its region overlap, the node wins, because it is drawn on top. `boxes` must hold
+ *  the current box of each node of `cy`. */
+export function hitTestChips(
+    cy: Core,
+    x: number,
+    y: number,
+    boxes: NodeWithBox[] = nodeBoxes(cy)
+): ChipHit | null {
     let region: ChipHit | null = null;
-    for (const node of cy.nodes().toArray()) {
-        const box = node.boundingBox();
-        if (!shown(node)
-            || x < box.x1 - BADGE_CANVAS_WIDTH || x > box.x2 || y < box.y1 || y > box.y2) {
+    for (const { node, box } of boxes) {
+        if (x < box.x1 - BADGE_CANVAS_WIDTH || x > box.x2 || y < box.y1 || y > box.y2
+            || !shown(node)) {
             continue;
         }
         const slot = chipAt(node, x, y);
@@ -182,8 +196,17 @@ export function refreshChips(node: NodeSingular, theme: DiagramTheme, hovered = 
 /** The left mouse button. Chips ignore the other buttons. */
 const PRIMARY_BUTTON = 0;
 
-/** Make the chips on `cy` work as buttons. Call this one time for each cytoscape instance. */
-export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions: ChipActions): void {
+/** Makes the chips on `cy` work as buttons. Call it only once for a cytoscape instance: each call adds
+ *  its own listeners, so after two calls a click on a chip runs its action two times.
+ *
+ *  Returns a function that removes the listeners on the container of `cy`. Call it when the diagram
+ *  is disposed, because the application can use the container again for a new diagram. The listeners
+ *  on `cy` go away when `cy` is destroyed. */
+export function installChipButtons(
+    cy: Core,
+    theme: () => DiagramTheme,
+    actions: ChipActions
+): () => void {
     const container = cy.container();
     const pointer = (over: boolean) => {
         if (container !== null) {
@@ -212,8 +235,20 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
     // pointer moves. Without this, the clicked region keeps its icon, which now shows the wrong action.
     cy.on('layoutstop', () => showCount());
 
+    // `hitTestChips` runs on each pointer move, and a read of the boxes of all nodes takes
+    // milliseconds. So `chipAtPoint` keeps the boxes until a node is added or removed, or until the
+    // box of a node changes. Cytoscape emits `bounds` when the box of an element changes.
+    let boxes: NodeWithBox[] | null = null;
+    cy.on('add remove bounds', 'node', () => {
+        boxes = null;
+    });
+    const chipAtPoint = (x: number, y: number): ChipHit | null => {
+        boxes ??= nodeBoxes(cy);
+        return hitTestChips(cy, x, y, boxes);
+    };
+
     cy.on('mousemove', (event: EventObject) => {
-        pointer(hitTestChips(cy, event.position.x, event.position.y) !== null);
+        pointer(chipAtPoint(event.position.x, event.position.y) !== null);
     });
 
     const dispatch = (hit: ChipHit) => {
@@ -226,23 +261,25 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
     // Touch and pen input only. A mouse click does not get here, because the `mousedown` listener below
     // stops it.
     cy.on('tap', (event: EventObject) => {
-        const hit = hitTestChips(cy, event.position.x, event.position.y);
+        const hit = chipAtPoint(event.position.x, event.position.y);
         if (hit !== null) {
             dispatch(hit);
         }
     });
 
     if (container === null) {
-        return;
+        return () => { };
     }
     const chipAtMouse = (event: MouseEvent): ChipHit | null => {
         const point = projectIntoViewport(cy, event);
-        return point === null ? null : hitTestChips(cy, point.x, point.y);
+        return point === null ? null : chipAtPoint(point.x, point.y);
     };
     /** The chip under the pointer at `mousedown`, until `mouseup`. */
     let pressed: ChipHit | null = null;
     // Both listeners use the capture phase, so they run before the cytoscape listeners on the
-    // container.
+    // container. An abort of `listeners` removes both of them.
+    const listeners = new AbortController();
+    const options = { capture: true, signal: listeners.signal };
     container.addEventListener('mousedown', (event) => {
         pressed = event.button === PRIMARY_BUTTON ? chipAtMouse(event) : null;
         if (pressed === null) {
@@ -254,7 +291,7 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
         event.stopPropagation();
         // Do not select text on the page, as the cytoscape `mousedown` handler also does.
         event.preventDefault();
-    }, true);
+    }, options);
     container.addEventListener('mouseup', (event) => {
         const from = pressed;
         pressed = null;
@@ -266,5 +303,6 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
         if (to !== null && to.node.id() === from.node.id() && to.slot === from.slot) {
             dispatch(to);
         }
-    }, true);
+    }, options);
+    return () => listeners.abort();
 }

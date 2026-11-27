@@ -1232,10 +1232,11 @@ pub fn rest_follow_empty_table(engine: &dyn PipelineTestEngine) {
     pipeline.start();
     wait(|| output_record_count(second_out.path()) >= 5, 120_000)
         .expect("timed out following the table");
-    assert_eq!(
-        iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total"),
-        5.0
-    );
+    // The connector counts the rows after it queues them, so the metric can lag the output.
+    let follow_records =
+        || iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total");
+    wait(|| follow_records() >= 5.0, 10_000).expect("the follow record count stayed below 5");
+    assert_eq!(follow_records(), 5.0);
     pipeline.stop().unwrap();
 
     let zset = follow_output_zset(second_out.path());
@@ -1594,6 +1595,20 @@ fn spark_table(name: &str) -> SparkTable {
     spark_tables(&[name])
 }
 
+/// Maven Central can refuse CI with a 4xx, which Spark reports as "not found":
+/// resolve from Google's mirror of Central first, then from Central.
+/// Same as `SPARK_ENV` in `python/tests/utils.py`.
+const SPARK_ENV: [(&str, &str); 2] = [
+    (
+        "DEFAULT_ARTIFACT_REPOSITORY",
+        "https://maven-central.storage-download.googleapis.com/maven2/",
+    ),
+    (
+        "PYSPARK_SUBMIT_ARGS",
+        "--repositories https://repo1.maven.org/maven2/ pyspark-shell",
+    ),
+];
+
 /// Build `names` in order and return the last. A retry builds them all again,
 /// because each one starts from the table that the one before it left.
 fn spark_tables(names: &[&str]) -> SparkTable {
@@ -1615,6 +1630,7 @@ fn spark_tables(names: &[&str]) -> SparkTable {
                 &format!("pyspark=={pyspark}"),
                 "python",
             ])
+            .envs(SPARK_ENV)
             .arg(script)
             .arg(format!("--namespace={namespace}"))
             .arg(format!("--table={name}"))

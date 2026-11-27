@@ -51,6 +51,7 @@
   import { buildSearchTargets, matchTargets } from '../functions/metricsSearch'
   import { positiveMod, Tooltip, type SearchDirection } from 'common-ui'
   import { tick } from 'svelte'
+  import TopNodesTable from './TopNodesTable.svelte'
 
   interface Props {
     mode: MetricsMode
@@ -111,6 +112,7 @@
   const genericTable = $derived(
     tooltipData && 'genericTable' in tooltipData ? tooltipData.genericTable : null
   )
+  let topNodesTable: TopNodesTable | undefined = $state()
 
   // Scroll targets the search can jump to in the current view, in DOM order; each carries a
   // `data-block-id` anchor (see {@link buildSearchTargets}).
@@ -167,6 +169,12 @@
     const n = ids.length
     matchCursor = positiveMod(matchCursor, n)
     const target = ids[matchCursor]
+    if (!showAttributesView) {
+      // The list mounts the row of the hit only after it scrolls to that row.
+      const rowIndex = searchTargets.findIndex((t) => t.id === target)
+      topNodesTable?.scrollToRow(rowIndex)
+      return { current: matchCursor + 1, total: n }
+    }
     // A hit inside a collapsed block would scroll to a hidden row.
     setCollapsed(target, false)
     // Scrolling before the expanded rows are laid out clamps the scroll to the collapsed
@@ -246,35 +254,7 @@
       No top-nodes data — select a metric to compute.
     </div>
   {:else}
-    <div class="rounded-base bg-white-dark p-4 shadow-sm">
-      <h3 class="mb-3 text-base font-semibold text-surface-900-100">{genericTable.header}</h3>
-      <table class="w-full border-collapse text-sm">
-        <thead>
-          <tr class="text-left text-xs font-medium uppercase tracking-wide text-surface-600-400">
-            {#each genericTable.columns as col}
-              <th class="px-2 py-1">{col}</th>
-            {/each}
-          </tr>
-        </thead>
-        <tbody>
-          {#each genericTable.rows as row, i}
-            <tr class="border-t border-surface-200-800" data-block-id="top-node-{i}">
-              <td class="px-2 py-1">
-                <button
-                  type="button"
-                  class="cursor-pointer text-secondary-600-400 hover:underline"
-                  onclick={() => row.stub.onclick?.()}
-                >{row.stub.text}</button>
-              </td>
-              {#each row.cells as cell}
-                <td class="px-2 py-1 text-right tabular-nums">{cell.text}</td>
-                <td class="px-2 py-1 text-surface-700-300">{cell.operation}</td>
-              {/each}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+    <TopNodesTable table={genericTable} bind:this={topNodesTable} />
   {/if}
 {/snippet}
 

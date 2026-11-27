@@ -248,6 +248,26 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void dateDefaultsOutsideTheSupportedYearRange() {
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t(
+                    zero_year DATE DEFAULT CAST('0000-01-01' AS DATE),
+                    negative_year DATE DEFAULT CAST('-0001-01-01' AS DATE),
+                    expanded_year DATE DEFAULT CAST('+10000-01-01' AS DATE),
+                    first_date DATE DEFAULT CAST('0001-01-01' AS DATE),
+                    last_date DATE DEFAULT CAST('9999-12-31' AS DATE));
+                CREATE VIEW v AS SELECT * FROM t;""");
+        compiler.getFinalCircuit(true);
+        Assert.assertEquals(0, compiler.messages.errorCount());
+        Assert.assertEquals(3, compiler.messages.warningCount());
+        for (String value : List.of("0000-01-01", "-0001-01-01", "+10000-01-01")) {
+            TestUtil.assertMessagesContain(compiler.messages,
+                    "Suspicious argument: String '" + value + "' cannot be interpreted as a DATE");
+        }
+    }
+
+    @Test
     public void testLongLineSnippets() {
         // Lines of 343 and 347 characters; column 'y' starts at column 180 of line 1
         String pad = "/* " + "x".repeat(150) + " */";

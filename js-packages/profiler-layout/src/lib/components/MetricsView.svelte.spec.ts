@@ -1,6 +1,6 @@
 import { CountValue, MetricDescriptions, type NodeAttributes, type TooltipRow } from 'profiler-lib'
 import { tick } from 'svelte'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest'
 import { render } from 'vitest-browser-svelte'
 import { createLookupCoordinator } from '../functions/lookup'
 import { setCollapsed } from './metrics/collapsedBlocks.svelte'
@@ -8,6 +8,7 @@ import { setCollapsed } from './metrics/collapsedBlocks.svelte'
 afterEach(() => {
   delete document.documentElement.dataset.theme
 })
+
 import MetricsView from './MetricsView.svelte'
 
 const row = (metric: string): TooltipRow => ({
@@ -221,5 +222,66 @@ describe('MetricsView global stats', () => {
     })
     await tick()
     expect(rows(container)).toEqual([])
+  })
+})
+
+describe('MetricsView top nodes', () => {
+  const rowCount = 2000
+  const genericTable = {
+    header: 'Nodes with highest values for "Runtime seconds"',
+    columns: ['Node', 'Value', 'Operation'],
+    rows: Array.from({ length: rowCount }, (_, i) => ({
+      stub: { text: `n${i}` },
+      cells: [{ text: `${rowCount - i}s`, operation: `op${i}`, normalizedValue: 0 }]
+    }))
+  }
+
+  const mount = async (lookup?: ReturnType<typeof createLookupCoordinator>) => {
+    await import('../../../test/tailwind.css')
+    // The list mounts the rows that fit in the panel, so the panel needs a height.
+    const container = document.createElement('div')
+    container.style.position = 'relative'
+    container.style.height = '300px'
+    document.body.appendChild(container)
+    onTestFinished(() => container.remove())
+    render(MetricsView, {
+      target: container,
+      props: {
+        mode: 'top-nodes',
+        tooltipData: { genericTable },
+        rootNodeId: 'root',
+        showAdvanced: false,
+        lookup
+      }
+    })
+    const shownRows = () =>
+      Array.from(container.querySelectorAll<HTMLElement>('[role="row"][data-block-id]'))
+    const shownNodes = () => shownRows().map((row) => row.querySelector('button')?.textContent)
+    await expect.poll(() => shownRows().length).toBeGreaterThan(0)
+    const list = container.querySelector<HTMLElement>('[role="rowgroup"]')!
+    return { shownRows, shownNodes, list }
+  }
+
+  it('mounts only the rows near the view, and the last row at the end of the list', async () => {
+    const { shownRows, shownNodes, list } = await mount()
+    expect(shownRows().length).toBeLessThan(100)
+    expect(shownNodes()[0]).toBe('n0')
+
+    list.scrollTop = list.scrollHeight
+    await expect.poll(() => shownNodes()).toContain(`n${rowCount - 1}`)
+    const lastRow = shownRows().find((row) => row.dataset.blockId === `top-node-${rowCount - 1}`)!
+    await expect
+      .poll(() =>
+        Math.abs(lastRow.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom)
+      )
+      .toBeLessThan(2)
+    expect(shownRows().length).toBeLessThan(100)
+  })
+
+  it('scrolls a search hit far down the list into view', async () => {
+    const lookup = createLookupCoordinator()
+    const { shownNodes } = await mount(lookup)
+    expect(lookup.execute('Metrics', 'op1500').total).toBe(1)
+    await expect.poll(() => shownNodes()).toContain('n1500')
   })
 })

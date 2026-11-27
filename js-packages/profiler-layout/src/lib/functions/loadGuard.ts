@@ -1,3 +1,5 @@
+import { afterNextPaint } from 'profiler-lib'
+
 /**
  * Runs async loading work behind a guard that toggles `isLoading` and routes
  * any thrown error to a caller-provided handler — an inline try/catch/finally
@@ -51,6 +53,9 @@ export function createLoadGuard(opts: {
     isRunning = true
     opts.setLoading(true)
     try {
+      // The work can block the main thread for seconds, so the browser must paint the loading
+      // state first.
+      await afterNextPaint()
       await work()
     } catch (e) {
       onError(e)

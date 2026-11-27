@@ -65,46 +65,50 @@
   })
 </script>
 
-<MonacoEditor
-  model={currentModel}
-  jsonSchemas={felderaApiJsonSchemas}
-  extras={{ isDarkMode: darkMode.current === 'dark' }}
-  onready={(ref) => {
-    ref.onKeyDown((e) => {
-      if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
-        const currentValue = currentModel.getValue()
-        updateUpstream()
-        onSubmit?.(currentValue)
-        e.preventDefault()
-      }
-    })
+<!-- Pipeline config can contain secrets, such as `runtime_config.env`. PostHog session
+     replays show the text under `ph-mask` as asterisks. -->
+<div class="ph-mask h-full w-full">
+  <MonacoEditor
+    model={currentModel}
+    jsonSchemas={felderaApiJsonSchemas}
+    extras={{ isDarkMode: darkMode.current === 'dark' }}
+    onready={(ref) => {
+      ref.onKeyDown((e) => {
+        if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
+          const currentValue = currentModel.getValue()
+          updateUpstream()
+          onSubmit?.(currentValue)
+          e.preventDefault()
+        }
+      })
 
-    // Update bound value when editor loses focus (avoiding keystroke updates)
-    ref.onDidBlurEditorText(() => {
-      setTimeout(() => updateUpstream())
-    })
-  }}
-  bind:editor={editorRef}
-  options={{
-    fontFamily: theme.config.monospaceFontFamily,
-    fontSize: editorFontSize.value,
-    theme: darkMode.current === 'dark' ? 'feldera-dark' : 'feldera-light',
-    automaticLayout: true,
-    lineNumbersMinChars: 2,
-    overviewRulerLanes: 0,
-    hideCursorInOverviewRuler: true,
-    overviewRulerBorder: false,
-    scrollbar: {
-      vertical: 'visible'
-    },
-    minimap: {
-      enabled: false
-    },
-    stickyScroll: {
-      enabled: false
-    },
-    scrollBeyondLastLine: false,
-    readOnlyMessage,
-    ...isMonacoEditorDisabled(disabled)
-  }}
-/>
+      // Update bound value when editor loses focus (avoiding keystroke updates)
+      ref.onDidBlurEditorText(() => {
+        setTimeout(() => updateUpstream())
+      })
+    }}
+    bind:editor={editorRef}
+    options={{
+      fontFamily: theme.config.monospaceFontFamily,
+      fontSize: editorFontSize.value,
+      theme: darkMode.current === 'dark' ? 'feldera-dark' : 'feldera-light',
+      automaticLayout: true,
+      lineNumbersMinChars: 2,
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      overviewRulerBorder: false,
+      scrollbar: {
+        vertical: 'visible'
+      },
+      minimap: {
+        enabled: false
+      },
+      stickyScroll: {
+        enabled: false
+      },
+      scrollBeyondLastLine: false,
+      readOnlyMessage,
+      ...isMonacoEditorDisabled(disabled)
+    }}
+  />
+</div>

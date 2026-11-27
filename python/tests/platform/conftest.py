@@ -6,6 +6,8 @@ Uses pytest-xdist hooks to ensure OIDC token fetching happens only once on the m
 """
 
 import os
+import sys
+from pathlib import Path
 
 import pytest
 import logging
@@ -77,3 +79,41 @@ def oidc_token_fixture(request):
         return token_data.get("access_token")
 
     return None
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_makereport(item, call):
+    """Keeps each phase's report on the test item, so that a fixture can tell
+    in its teardown whether the test failed (``item.report_call.failed``)."""
+    outcome = yield
+    report = outcome.get_result()
+    setattr(item, f"report_{report.when}", report)
+
+
+@pytest.fixture(scope="session")
+def run_shared_dir(tmp_path_factory, worker_id) -> Path:
+    """A directory that all the processes of this test run share, and no
+    other run.
+
+    pytest-xdist runs the tests in several worker processes. What they must
+    build only once, they coordinate through files in this directory. The
+    base temporary directory of a worker is a subdirectory of the
+    controller's, which is new for every run.
+    """
+    base = tmp_path_factory.getbasetemp()
+    return base if worker_id == "master" else base.parent
+
+
+def pytest_sessionfinish(session):
+    """Removes what the processes of the run shared through `run_shared_dir`,
+    after the last test of the run."""
+    factory = getattr(session.config, "_tmp_path_factory", None)
+    if not is_master(session.config) or factory is None:
+        return
+    shared = factory.getbasetemp()
+    if not any(shared.glob("sync-golden-*.json")):
+        return
+    from tests.platform.checkpoint_sync_harness import remove_golden_buckets
+
+    for failure in remove_golden_buckets(shared):
+        print(f"cleanup: {failure}", file=sys.stderr)

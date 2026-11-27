@@ -420,8 +420,10 @@
     <!-- Monaco rounds its height down to whole pixels; the editor's own background fills the
          leftover sliver, so it doesn't read as a second line above the status bar. -->
     <div class="relative flex-1 bg-white dark:bg-dark">
+      <!-- Connector definitions in the pipeline code can contain credentials. PostHog session
+           replays show the text under `ph-mask` as asterisks. -->
       <div
-        class="absolute h-full w-full"
+        class="ph-mask absolute h-full w-full"
         onkeydown={(e) => {
           if (e.code === 'Period' && e.key === ':') {
             // Workaround for Firefox browser when using AZERTY layout

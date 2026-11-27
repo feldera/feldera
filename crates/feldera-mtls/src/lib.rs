@@ -295,6 +295,13 @@ impl PipelineClientAuth {
             Caller::Anonymous => false,
         }
     }
+
+    /// Whether a pipeline server admits `caller` to its `/coordination` routes, which only the
+    /// pipeline's own coordinator and hosts call. They share the pipeline's identity, so the
+    /// control plane and external clients are refused.
+    pub fn is_allowed_to_coordinate(&self, caller: &Caller) -> bool {
+        *caller == self.own
+    }
 }
 
 /// TLS configurations for the connections between the hosts of a multihost pipeline.
@@ -620,6 +627,17 @@ mod tests {
         assert!(!auth.is_allowed(&Caller::External("urn:example:other".to_string())));
         assert!(!auth.is_allowed(&Caller::Pipeline(PIPELINE_B)));
         assert!(!auth.is_allowed(&Caller::Anonymous));
+
+        // Only its own pipeline may coordinate it.
+        assert!(auth.is_allowed_to_coordinate(&Caller::Pipeline(PIPELINE_A)));
+        for caller in [
+            Caller::ControlPlane,
+            Caller::External(SIDECAR.to_string()),
+            Caller::Pipeline(PIPELINE_B),
+            Caller::Anonymous,
+        ] {
+            assert!(!auth.is_allowed_to_coordinate(&caller), "{caller:?}");
+        }
 
         let no_external = PipelineClientAuth::from_chain(&chain, &[]).unwrap();
         assert!(!no_external.is_allowed(&Caller::External(SIDECAR.to_string())));

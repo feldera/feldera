@@ -22,6 +22,7 @@ import {
     type DiagramTheme,
     HEAT_TEXT_FLIP,
     ID_FONT_WEIGHT,
+    MIN_READABLE_FONT_PX,
     NODE_OUTER_HEIGHT
 } from './diagramTheme.js';
 
@@ -124,10 +125,21 @@ export function paintTextRuns(
     context.restore();
 }
 
+/** The size on screen, in CSS pixels, of a font of size `fontSize` painted on `context`. The scale of the
+ *  context includes the zoom and the device pixel ratio. Cytoscape also paints nodes into cached
+ *  layer images, at the scale of the image, so the scale comes from the context and not from the
+ *  zoom. */
+const fontSizeOnScreen = (context: CanvasRenderingContext2D, fontSize: number): number =>
+    (fontSize * context.getTransform().a) / (globalThis.devicePixelRatio || 1);
+
 /** Start to draw node text on `cy`. Call this one time for each cytoscape instance, after you create
  *  it. Each frame reads `theme`, so the first repaint after a theme change uses the new colors. */
 export function installNodeText(cy: Core, theme: () => DiagramTheme): void {
     paintNodeLayer(cy, 'drawNodeOverlay', (context, node, body) => {
+        const fontSize = Number(node.numericStyle('font-size'));
+        if (fontSizeOnScreen(context, fontSize) < MIN_READABLE_FONT_PX) {
+            return;
+        }
         const isRegion = node.isParent();
         const center = textCenter(body.center, node.outerHeight(), isRegion);
         paintTextRuns(
@@ -138,7 +150,7 @@ export function installNodeText(cy: Core, theme: () => DiagramTheme): void {
                 Number(node.data('value')) || 0,
                 theme(),
                 isRegion),
-            Number(node.numericStyle('font-size')),
+            fontSize,
             String(node.style('font-family')),
             center.x,
             center.y

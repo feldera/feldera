@@ -40,6 +40,13 @@ export const ID_FONT_WEIGHT = 600;
  *  same font. */
 export const NODE_FONT_SIZE = 12;
 export const NODE_FONT_FAMILY = 'Helvetica Neue, Helvetica, sans-serif';
+
+/** The smallest font size on screen, in CSS pixels, of the text that the diagram paints. At 4 px
+ *  a capital letter is about 3 px high, so the text cannot be read. But the paint of this text costs
+ *  as much as the paint of readable text, and it is most of the cost of a frame when the diagram is
+ *  zoomed out. */
+export const MIN_READABLE_FONT_PX = 4;
+
 /** The font as a canvas shorthand, in the order cytoscape builds it: style, weight, size, family. */
 export const labelFont = (weight: number | string = ID_FONT_WEIGHT): string =>
     `normal ${weight} ${NODE_FONT_SIZE}px ${NODE_FONT_FAMILY}`;
@@ -85,6 +92,12 @@ export function labelWidth(text: string): number {
  *  other element here leaves it at the cytoscape default of 0, so any value above 0 puts a traced edge
  *  over every plain one. */
 const TRACED_EDGE_Z_INDEX = 1;
+
+/** The class that gives a traced edge `TRACED_EDGE_Z_INDEX`. It is separate from the color classes,
+ *  because a change of `z-index` makes cytoscape sort all elements again before the next draw.
+ *  `CytographRendering` adds this class one frame after the color classes, so the frame that shows
+ *  the colors does not include the sort. */
+export const RAISED_EDGE_CLASS = 'raised-edge';
 
 /** Heat above which a node's text switches to `textOnHeat`: past here the fill is a deep red that
  *  dark text sinks into. */
@@ -263,6 +276,11 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 'min-width': 'data(min_width)',
                 'min-width-bias-left': '0%',
                 'min-width-bias-right': '100%',
+                // `reserveRegionChipRows` sets this height to leave room for the chip row above the nodes.
+                'min-height': 'data(min_height)',
+                'min-height-bias-top': '100%',
+                // The cytoscape typings do not have this property.
+                ...({ 'min-height-bias-bottom': '0%' } as Record<string, string>),
                 'background-color': p.region,
                 'background-opacity': REGION_OPACITY,
             }
@@ -277,6 +295,9 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 // only sinks below nodes at its own depth, which leaves an edge between two operators
                 // over the region around them and over the region's chips.
                 'z-compound-depth': 'bottom',
+                // No code listens to edge events. Without `events: no`, cytoscape tests each edge and
+                // its label on each pointer move, and an edge hides the region under it from the pointer.
+                'events': 'no',
                 'curve-style': 'round-taxi',
                 'taxi-direction': 'vertical',
                 'taxi-turn': '50%',
@@ -289,12 +310,28 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             }
         },
         {
+            // An edge that stands for more than one stream shows the count in a chip.
+            selector: 'edge[label]',
+            style: {
+                'label': 'data(label)',
+                'font-size': `${NODE_FONT_SIZE - 2}px`,
+                'min-zoomed-font-size': MIN_READABLE_FONT_PX,
+                'color': p.chipInk,
+                'text-background-color': p.chipFill,
+                'text-background-opacity': 1,
+                'text-background-shape': 'roundrectangle',
+                'text-background-padding': '2px',
+                'text-border-color': p.chipBorder,
+                'text-border-width': 1,
+                'text-border-opacity': 1
+            }
+        },
+        {
             selector: 'edge.highlight-backward',
             style: {
                 'line-color': p.edgeBackward,
                 'target-arrow-color': p.edgeBackward,
-                'width': 3,
-                'z-index': TRACED_EDGE_Z_INDEX
+                'width': 3
             }
         },
         {
@@ -302,7 +339,12 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             style: {
                 'line-color': p.edgeForward,
                 'target-arrow-color': p.edgeForward,
-                'width': 3,
+                'width': 3
+            }
+        },
+        {
+            selector: `edge.${RAISED_EDGE_CLASS}`,
+            style: {
                 'z-index': TRACED_EDGE_Z_INDEX
             }
         },

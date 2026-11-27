@@ -279,13 +279,15 @@ public class CalciteOptimizer implements IWritesLogs {
         BaseOptimizerStep removeSubqueries = new BaseOptimizerStep("Remove sub-queries", 0);
         // A collection: removing a subquery can expose a nested subquery that another rule removes
         removeSubqueries.addRuleCollection(0,
+                // First: the rules below would turn the IN sub-query into a join
+                new InUnnestToInListRule(),
                 CoreRules.FILTER_SUB_QUERY_TO_CORRELATE,
                 CoreRules.PROJECT_SUB_QUERY_TO_CORRELATE,
                 CoreRules.JOIN_SUB_QUERY_TO_CORRELATE);
         removeSubqueries.addRules(0, CoreRules.AGGREGATE_REMOVE_LITERAL_AGG);
         this.addStep(removeSubqueries.setAbortOnError());
         // Must run right after "Remove sub-queries": later steps rewrite the constructs
-        // that RejectUnsupportedPlans checks, such as ROWS frames and DISTINCT aggregates.
+        // that RejectUnsupportedPlans checks, such as window frames.
         this.addStep(new CalciteOptimizerStep() {
             @Override
             public String getName() {
@@ -447,6 +449,10 @@ public class CalciteOptimizer implements IWritesLogs {
         };
         this.addStep(joinOrder);
 
+        // Must run right before decorrelation: a simplification would remove the COALESCE
+        // that the rule adds, since the argument of the COALESCE can be NOT NULL
+        this.addStep(new SimpleOptimizerStep("Collect to ARRAY_AGG", 0,
+                new CollectToArrayAggRule()));
         this.addStep(new SimpleOptimizerStep("Decorrelate UNNEST", 2,
                 CoreRules.UNNEST_DECORRELATE,
                 CoreRules.UNNEST_PROJECT_DECORRELATE));

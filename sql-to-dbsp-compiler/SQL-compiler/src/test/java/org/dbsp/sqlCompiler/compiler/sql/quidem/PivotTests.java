@@ -242,7 +242,8 @@ public class PivotTests extends ScottBaseTests {
                 SELECT CASE WHEN ename < 'F' THEN 'F' ELSE 'M' END AS gender,
                     deptno, job, sal
                 FROM emp
-                WHERE (job, deptno) IN (('CLERK', 10), ('CLERK', 20), ('ANALYST', 20))
+                -- Calcite: WHERE (job, deptno) IN (('CLERK', 10), ('CLERK', 20), ('ANALYST', 20))
+                WHERE (job = 'CLERK' AND deptno IN (10, 20)) OR (job = 'ANALYST' AND deptno = 20)
                 -- ORDER BY gender, deptno, job
                 ;
                 +--------+--------+---------+---------+

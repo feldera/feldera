@@ -9,6 +9,8 @@
 //   drawNodeUnderlay      paint below the node body and its chips (`nodeShadow.ts`)
 //
 //   drawNodeOverlay       paint above the node body and its chips (`nodeText.ts`)
+//
+//   requestedFrame        pause the frames while a layout runs (`cytograph.ts`)
 
 import type { Core, NodeSingular } from 'cytoscape';
 
@@ -30,6 +32,8 @@ interface CanvasRenderer {
     projectIntoViewport?: (clientX: number, clientY: number) => [number, number];
     drawNodeUnderlay?: DrawNodeLayer;
     drawNodeOverlay?: DrawNodeLayer;
+    requestedFrame?: boolean;
+    redraw?: () => void;
 }
 
 const canvasRenderer = (cy: Core): CanvasRenderer =>
@@ -86,5 +90,48 @@ export function paintNodeLayer(
             });
         }
         original.call(this, context, node, ...rest);
+    };
+}
+
+/** Stops cytoscape from drawing the diagram until the returned function is called. Does nothing if
+ *  `cy` has no canvas renderer.
+ *
+ *  What this prevents: when a region is expanded or collapsed, the graph changes at once, but ELK
+ *  gives the new positions only some animation frames later. Without the pause, cytoscape draws the
+ *  changed graph at the old positions in those frames: a style update of all changed elements and a
+ *  full draw. The user does not see these frames, because `FrozenLayout` shows a picture of the old
+ *  diagram over them. On a large bundle they cost about 0.8 s. With the pause, cytoscape draws only
+ *  the finished layout.
+ *
+ *  How: `requestedFrame` is a private field of the cytoscape renderer, not a public API. Cytoscape
+ *  sets it to true when the diagram must be drawn again. In each animation frame, the render loop of
+ *  cytoscape 3.35 draws only if the field is true, and sets it to false. The pause makes the field
+ *  always read false, and keeps what cytoscape writes to it. The returned function puts back the last
+ *  written value, so the next frame draws all the changes. `diagramFrames.test.ts` in
+ *  profiler-layout fails if a cytoscape update changes this loop.
+ *
+ *  The public `cy.startBatch()` also stops the frames, but not only the frames: after two overlapping
+ *  layouts in a batch, the nodes do not get the positions that ELK gives without the batch. */
+export function pauseFrames(cy: Core): () => void {
+    const renderer = canvasRenderer(cy);
+    // A headless cytoscape instance has no `redraw`.
+    if (typeof renderer.redraw !== 'function') {
+        return () => { };
+    }
+    let isFrameRequested = renderer.requestedFrame === true;
+    // Regression tests: "draws no frame until the layout is finished, then draws the new layout" and
+    // "draws no frame until the last of two overlapping layouts is finished" in
+    // `profiler-layout/src/lib/components/diagramFrames.test.ts`.
+    Object.defineProperty(renderer, 'requestedFrame', {
+        configurable: true,
+        get: () => false,
+        set: (value: boolean) => {
+            isFrameRequested = value;
+        }
+    });
+    return () => {
+        // Replaces the accessor with a plain property that holds the kept request.
+        delete renderer.requestedFrame;
+        renderer.requestedFrame = isFrameRequested;
     };
 }

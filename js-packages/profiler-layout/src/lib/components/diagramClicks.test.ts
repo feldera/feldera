@@ -363,6 +363,39 @@ describe('the overview report a profile opens with', () => {
   })
 })
 
+describe('a hover on an operator', () => {
+  // biome-ignore lint/suspicious/noExplicitAny: the harness returns an untyped cytoscape instance
+  const raised = (cy: any) => cy.edges('.raised-edge').map((e: { id(): string }) => e.id())
+
+  it('draws the traced edges on top one frame after it colors them', async () => {
+    // The diagram adds the trace colors first, so that they paint in the next frame. A change of the
+    // draw order makes cytoscape sort all elements, so the diagram raises the edges one frame later.
+    const { cy, cleanup } = await mount()
+    const node = cy.$id('n1')
+    node.emit('mouseover')
+    expect(highlighted(cy).length).toBeGreaterThan(0)
+    expect(raised(cy)).toEqual([])
+    await settle()
+    expect(raised(cy).sort()).toEqual(highlighted(cy).sort())
+
+    node.emit('mouseout')
+    expect(highlighted(cy)).toEqual([])
+    await settle()
+    expect(raised(cy)).toEqual([])
+    cleanup()
+  })
+
+  it('raises no edges when the pointer leaves before the next frame', async () => {
+    const { cy, cleanup } = await mount()
+    const node = cy.$id('n1')
+    node.emit('mouseover')
+    node.emit('mouseout')
+    await settle()
+    expect(raised(cy)).toEqual([])
+    cleanup()
+  })
+})
+
 describe('a double click on a nested region', () => {
   it('does nothing, since only the top-level region around it expands and collapses', async () => {
     const { cy, toggle, reported, cleanup } = await mountDiagram('light', NESTED)
@@ -381,6 +414,45 @@ describe('a double click on a nested region', () => {
     expect(cy.$id('outer').isParent()).toBe(false)
     expect(cy.$id('sub').length).toBe(0)
     expect(reported.doubleClicks).toEqual([{ nodeId: 'outer', type: 'group' }])
+    cleanup()
+  })
+})
+
+describe('a click on an operator next to a collapsed region', () => {
+  it('colors the one drawn edge that stands for several edges of the circuit', async () => {
+    // Both operators in the collapsed region feed n1, so the diagram draws one edge for the two edges
+    // of the circuit. The trace back from n1 follows both, and both lead to that drawn edge.
+    const { cy, click, cleanup } = await mountDiagram('light', {
+      metrics: [],
+      worker_profiles: [{ metadata: {} }],
+      graph: {
+        nodes: {
+          id: 'n',
+          label: 'circuit',
+          nodes: [
+            { Simple: { id: 'n1', label: 'sink' } },
+            {
+              Cluster: {
+                id: 'region',
+                label: 'region',
+                nodes: [
+                  { Simple: { id: 'n2', label: 'map' } },
+                  { Simple: { id: 'n3', label: 'filter' } }
+                ]
+              }
+            }
+          ]
+        },
+        edges: [
+          { from_node: 'n2', to_node: 'n1' },
+          { from_node: 'n3', to_node: 'n1' }
+        ]
+      }
+    })
+    expect(cy.edges().map((e: { id(): string }) => e.id())).toEqual(['region->n1'])
+    const node = cy.$id('n1')
+    await click(node.renderedPosition().x, node.renderedPosition().y)
+    expect(highlighted(cy)).toEqual(['region->n1'])
     cleanup()
   })
 })

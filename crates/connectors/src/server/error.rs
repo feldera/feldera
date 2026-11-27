@@ -194,6 +194,8 @@ pub enum PipelineError {
         /// The incarnation UUID of the running pipeline.
         expected: Uuid,
     },
+    /// A request for a `/coordination` route to a pipeline that has no coordinator.
+    NoCoordinator,
 }
 
 impl From<ControllerError> for PipelineError {
@@ -306,7 +308,8 @@ impl Display for PipelineError {
             Self::InvalidTransition(transition, status) => {
                 write!(f, "Cannot execute {transition} transition starting from {status:?}")
             }
-            Self::IncarnationUuidMismatch { requested, expected } => write!(f, "Incarnation UUID mismatch ({requested} in request, expected {expected})")
+            Self::IncarnationUuidMismatch { requested, expected } => write!(f, "Incarnation UUID mismatch ({requested} in request, expected {expected})"),
+            Self::NoCoordinator => f.write_str("This pipeline has no coordinator, so it does not serve the /coordination routes. Only a host of a multihost pipeline serves them.")
         }
     }
 }
@@ -330,6 +333,7 @@ impl DetailedError for PipelineError {
             Self::InvalidActivateStatus(_) => Cow::from("InvalidActivateStatus"),
             Self::InvalidTransition(_, _) => Cow::from("InvalidTransition"),
             Self::IncarnationUuidMismatch { .. } => Cow::from("IncarnationUuidMismatch"),
+            Self::NoCoordinator => Cow::from("NoCoordinator"),
         }
     }
 
@@ -364,6 +368,7 @@ impl ResponseError for PipelineError {
             Self::InvalidActivateStatus(_) => StatusCode::BAD_REQUEST,
             Self::InvalidTransition(_, _) => StatusCode::BAD_REQUEST,
             Self::IncarnationUuidMismatch { .. } => StatusCode::BAD_REQUEST,
+            Self::NoCoordinator => StatusCode::BAD_REQUEST,
         }
     }
 

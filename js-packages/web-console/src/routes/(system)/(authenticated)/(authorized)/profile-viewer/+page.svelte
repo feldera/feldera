@@ -13,7 +13,7 @@
     SupportBundleViewerLayout,
     type ZipItem
   } from 'profiler-layout'
-  import type { Dataflow, JsonProfiles } from 'profiler-lib'
+  import type { CircuitProfile } from 'profiler-lib'
   import { fade } from 'svelte/transition'
   import Popup from '#lib/components/common/Popup.svelte'
   import AppHeader from '#lib/components/layout/AppHeader.svelte'
@@ -60,8 +60,8 @@
   let selectedProfile: Date | null = $state(null)
   let getProfileData:
     | (() => {
-        profile: JsonProfiles | undefined
-        dataflow: Dataflow | undefined
+        profile: CircuitProfile | undefined
+        profileError: string | undefined
         logText: string | undefined
         globalMetrics: GlobalMetrics | undefined
         connectorMetrics: ConnectorMetrics | undefined
@@ -124,7 +124,7 @@
     }
     getProfileData = enclosure({
       profile: processed.profile,
-      dataflow: processed.dataflow,
+      profileError: processed.profileError,
       logText: processed.logText,
       globalMetrics: processed.globalMetrics,
       connectorMetrics: processed.connectorMetrics,
@@ -409,7 +409,7 @@
   {:else if getProfileData}
     {@const {
       profile,
-      dataflow,
+      profileError,
       logText,
       globalMetrics,
       connectorMetrics,
@@ -431,8 +431,8 @@
       class="min-h-0 flex-1 [&_.fd-layout-panel-left]:text-[16px]! [&_.fd-layout-panel-top]:text-[16px]! [&_.pane-divider-horizontal]:my-0! [&_.pane-divider-horizontal]:h-px! [&_.pane-divider-horizontal]:bg-panel-line [&_.pane-divider-vertical]:mx-0! [&_.pane-divider-vertical]:w-px! [&_.pane-divider-vertical]:bg-panel-line [&_.panel]:rounded-none! [&_.panel]:border-0! [&_.panel>.flex-wrap>.px-2]:px-0! [&_.panel>[role=tablist]]:border-line [&_.panel>[role=tablist]+div]:mx-0 [&_.panel[data-scope=tabs]]:px-0! [&_.panel[data-scope=tabs]]:pb-0! [&_.rounded-container]:rounded-none! [&_.rounded-container]:bg-panel! [&_.rounded-container>.flex-shrink-0]:border-b [&_.rounded-container>.flex-shrink-0]:border-line [&_.rounded-container>.flex-shrink-0]:py-3!"
     >
       <SupportBundleViewerLayout
-        profileData={profile}
-        dataflowData={dataflow}
+        {profile}
+        {profileError}
         {logText}
         {globalMetrics}
         {connectorMetrics}

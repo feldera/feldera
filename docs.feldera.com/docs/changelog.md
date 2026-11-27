@@ -12,6 +12,18 @@ Source edition can be found on github.
 
 - DBSP startup storage accounting now includes checkpoint files in nested directories and continues past unreadable child directories.
 
+## v0.391.0
+
+- Security: with client certificates (`mtls.enabled`), a pipeline admits
+  only its own coordinator and hosts to the `/coordination/*` routes.  Before,
+  the control plane and the clients of `mtls.extraClientUris` could also call
+  them, and so, for example, activate a multihost host with connectors of
+  their choice before its coordinator did.  A pipeline without a coordinator
+  refuses these routes with 400 Bad Request and error code `NoCoordinator`.
+  The leader of a distributed output connector refuses a report that names a
+  host that is not a follower.  Restart running pipelines so that they run on
+  the fixed runtime.
+
 ## v0.385.0
 
 - Security: pipeline diagnostics replace registered Secret values with their
