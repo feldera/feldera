@@ -45,3 +45,6 @@ anyhow = { workspace = true }
 ordered-float.workspace = true
 itertools.workspace = true
 zip.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }

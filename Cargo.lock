@@ -5560,6 +5560,7 @@ dependencies = [
  "futures-util",
  "itertools 0.14.0",
  "json_to_table",
+ "libc",
  "log",
  "ordered-float 4.6.0",
  "progenitor-client",

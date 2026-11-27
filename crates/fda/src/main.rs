@@ -39,6 +39,7 @@ mod bench;
 mod cli;
 mod debug;
 mod shell;
+mod splash;
 mod tags;
 mod util;
 
@@ -4102,6 +4103,10 @@ fn main() {
                 );
             }
 
+            if !matches!(cli.command, Commands::Welcome) {
+                splash::first_run(&cli.host, cli.command.reads_stdin());
+            }
+
             let client_opts = ClientOpts::from_cli(&cli);
             let client = move || {
                 make_client(client_opts)
@@ -4129,6 +4134,7 @@ fn main() {
                 } => validate_program(program_path, stdin, runtime_version, ir, client()).await,
                 Commands::Cluster { action } => cluster(cli.format, action, client()).await,
                 Commands::Debug { action } => debug::debug(cli.format, action, client()).await,
+                Commands::Welcome => splash::play(&cli.host),
             }
         })
 }
