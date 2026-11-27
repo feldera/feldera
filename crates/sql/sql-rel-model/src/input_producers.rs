@@ -40,7 +40,42 @@ pub enum RelationForm {
     LogicalCorrelate,
 }
 
+/// Positional SQL set operations represented by a relational producer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SetKind {
+    Union,
+    Intersect,
+    Except,
+}
+
+impl SetKind {
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Union => "UNION",
+            Self::Intersect => "INTERSECT",
+            Self::Except => "EXCEPT",
+        }
+    }
+
+    pub fn form(self) -> RelationForm {
+        match self {
+            Self::Union => RelationForm::LogicalUnion,
+            Self::Intersect => RelationForm::LogicalIntersect,
+            Self::Except => RelationForm::LogicalMinus,
+        }
+    }
+}
+
 impl RelationForm {
+    pub fn set_kind(self) -> Option<SetKind> {
+        match self {
+            Self::LogicalUnion => Some(SetKind::Union),
+            Self::LogicalIntersect => Some(SetKind::Intersect),
+            Self::LogicalMinus => Some(SetKind::Except),
+            _ => None,
+        }
+    }
+
     fn accepts_inputs(self, count: usize) -> bool {
         match self {
             Self::LogicalTableScan | Self::JdbcTableScan | Self::LogicalValues => count == 0,

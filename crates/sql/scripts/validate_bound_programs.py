@@ -12,7 +12,21 @@ from compile_bound_gen2 import compile_program
 
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
+SET_TABLES = ("CREATE TABLE a(x INT, y BIGINT NOT NULL); CREATE TABLE b(p INT, q BIGINT NOT NULL);"
+              " CREATE TABLE c(n INT, m BIGINT NOT NULL); CREATE VIEW v AS ")
 CASES = {
+    "set_union": SET_TABLES + "SELECT * FROM a UNION SELECT * FROM b;",
+    "set_union_all": SET_TABLES + "SELECT * FROM a UNION ALL SELECT * FROM b;",
+    "set_intersect_all": SET_TABLES + "SELECT * FROM a INTERSECT ALL SELECT * FROM b;",
+    "set_minus": SET_TABLES + "SELECT x AS k FROM a EXCEPT SELECT p FROM b;",
+    "set_minus_all": SET_TABLES + "SELECT * FROM a EXCEPT ALL SELECT * FROM b;",
+    "set_except_chain": SET_TABLES + "SELECT x FROM a EXCEPT SELECT p FROM b EXCEPT SELECT n FROM c;",
+    "set_intersect_chain": SET_TABLES + "SELECT * FROM a INTERSECT SELECT * FROM b INTERSECT SELECT * FROM c;",
+    "set_chain": SET_TABLES + "SELECT x FROM a UNION ALL SELECT p FROM b UNION ALL SELECT n FROM c;",
+    "set_mixed": SET_TABLES + "SELECT x FROM a UNION SELECT p FROM b INTERSECT SELECT n FROM c;",
+    "set_filter": SET_TABLES + "SELECT y AS z FROM a WHERE x > 1 UNION ALL SELECT q FROM b;",
+    "set_identity_names": "CREATE TABLE a(x INT); CREATE TABLE b(y INT);"
+                          " CREATE VIEW v AS SELECT x AS n FROM a UNION DISTINCT SELECT y AS n FROM b;",
     "uuid_variant_columns": "CREATE TABLE t(a UUID, b VARIANT, c UUID NOT NULL, d VARIANT NOT NULL,"
                             " e UUID ARRAY, f MAP<INT, VARIANT>); CREATE VIEW v AS SELECT d, c, b, a FROM t;",
     "uuid_literal": "CREATE VIEW v AS SELECT UUID '11223344-AABB-1122-EEFF-FFEEDDCCBBAA' AS x,"

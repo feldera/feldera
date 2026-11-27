@@ -97,6 +97,7 @@ pub(super) fn lower(
         .expect("system operators")
         .push(op);
     Ok(Stream {
+        origin,
         operator: operator.into(),
         output_type,
         relation: json!({"ref":relation}),

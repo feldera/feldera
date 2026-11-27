@@ -182,12 +182,18 @@ UUID literal normalization, INSERT conversion warnings, and projections that clo
 borrowed values. Each matched direct Java through Gen-2 emission and a separate
 Java resume of Rust S2.
 
+Eleven directed programs cover positional UNION, INTERSECT and EXCEPT with
+matching input types, including ALL, left-associated chains, mixed operations,
+aliases and filtered projections. Their bound programs matched Java through
+Gen-2 emission. Rust also produced S2 checkpoints that matched independent Java
+lowering and resumed through the optimizer.
+
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. The temporal-literal checkpoint bound 153 of 8,571 programs. All 153 matched Java compilation
+Gen-2 options. The UUID and VARIANT checkpoint (`c4fc08c7e`) bound 157 of 8,571 programs. All 157 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 68 of
-the 153 to S2. All 68 matched independent Java lowering and the Java optimizer
-resumed every checkpoint. The remaining 8,418 programs still need whole-program
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 72 of
+the 157 to S2. All 72 matched independent Java lowering and the Java optimizer
+resumed every checkpoint. The remaining 8,414 programs still need whole-program
 binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
 

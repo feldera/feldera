@@ -81,6 +81,7 @@ pub(super) fn restore_system_scan(checkpoint: &mut Value, program: &Program) -> 
 }
 
 struct Scan<'a> {
+    relation_id: u32,
     namespace: &'a str,
     table: &'a str,
     alias: &'a str,
@@ -92,10 +93,10 @@ struct Scan<'a> {
 
 fn resolve_scan<'a>(
     program: &'a Program,
-    root: &RelRoot,
+    root: u32,
     schema: &CatalogSchema,
 ) -> Result<Scan<'a>, Error> {
-    let (input_relation, columns) = super::projection::input_columns(program, root.relation)?;
+    let (input_relation, columns) = super::projection::input_columns(program, root)?;
     let (scan_id, predicate) = super::filter::Predicate::resolve(program, input_relation)?;
     let relation = &program.properties.relations[scan_id as usize];
     let Properties::Scan { name: path } = &relation.fields else {
@@ -139,25 +140,19 @@ fn resolve_scan<'a>(
             _ => None,
         })
         .ok_or_else(|| Error(format!("missing source table {table_name}")))?;
-    if root.fields.len() != columns.as_ref().map_or(input.columns.len(), Vec::len)
-        || root.fields.len() != schema.columns.len()
-        || root
-            .fields
-            .iter()
-            .zip(&schema.columns)
-            .enumerate()
-            .any(|(i, (field, output))| {
-                let index = columns.as_ref().map_or(i, |c| c[i]);
-                field.index as usize != i
-                    || field.name != output.name.name
-                    || input.columns.get(index).is_none_or(|input| {
-                        input.ty != output.ty || (columns.is_none() && input.name != output.name)
-                    })
-            })
+    if schema.columns.len() != columns.as_ref().map_or(input.columns.len(), Vec::len)
+        || schema.columns.iter().enumerate().any(|(i, output)| {
+            let index = columns.as_ref().map_or(i, |c| c[i]);
+            input
+                .columns
+                .get(index)
+                .is_none_or(|input| input.ty != output.ty)
+        })
     {
         return Err(Error("view fields differ from projection".into()));
     }
     Ok(Scan {
+        relation_id: scan_id,
         namespace,
         table: table_name,
         alias,
@@ -188,37 +183,27 @@ impl Scan<'_> {
 }
 
 pub(super) struct Stream {
+    /// Full relational record for composing the parent operator's provenance.
+    pub origin: Value,
     pub operator: Value,
     pub output_type: Value,
     pub relation: Value,
 }
 
-fn scan_stream(
+pub(super) fn scan_stream(
     checkpoint: &mut Value,
     program: &Program,
     ids: &mut Ids,
     schema: &CatalogSchema,
-    root: &RelRoot,
+    root: u32,
     source: &StatementSource,
 ) -> Result<Stream, Error> {
     let scan = resolve_scan(program, root, schema)?;
-    let user_plan_id = plan_id(checkpoint, &schema.name.name)?;
+    let user_plan_id = ids.plan(root)?;
     let mut generated = checkpoint["next_generated_name"]
         .as_u64()
         .ok_or_else(|| Error("missing generated name counter".into()))?;
-    let scan_plan_id = if scan.columns.is_some() || scan.predicate.is_some() {
-        checkpoint["calcite_plan"][&schema.name.name]["rels"]
-            .as_array()
-            .and_then(|rels| rels.first())
-            .and_then(|r| r["id"].as_u64())
-            .ok_or_else(|| Error("missing projection input plan".into()))?
-    } else {
-        user_plan_id
-    };
-    let filter_plan = checkpoint["calcite_plan"][&schema.name.name]["rels"]
-        .as_array()
-        .and_then(|rels| rels.iter().find(|r| r["relOp"] == "LogicalFilter"))
-        .and_then(|r| r["id"].as_u64());
+    let scan_plan_id = ids.plan(scan.relation_id)?;
     let graph = &mut checkpoint["circuit"];
     let operators = graph["allOperators"]
         .as_array_mut()
@@ -255,12 +240,8 @@ fn scan_stream(
         let relation_id = ids.relation(*filter);
         relation = json!({"ref":relation_id});
         let layout = RowLayout::new(scan.input, &program.table.type_table)?;
-        input_origin = predicate.relation(
-            scan.input,
-            &input_origin,
-            relation_id,
-            filter_plan.ok_or_else(|| Error("missing filter plan".into()))?,
-        );
+        input_origin =
+            predicate.relation(scan.input, &input_origin, relation_id, ids.plan(*filter)?);
         let closure = predicate.closure(ids, &layout, generated)?;
         generated += 1;
         let filter_id = ids.next_operator();
@@ -276,10 +257,10 @@ fn scan_stream(
             output: schema,
             columns,
         };
-        let relation_id = ids.relation(root.relation);
+        let relation_id = ids.relation(root);
         relation = json!({"ref":relation_id});
-        let relation = projection.relation(&input_origin, relation_id, user_plan_id)?;
-        let map = projection.map(program, ids, &source_id, relation, generated)?;
+        input_origin = projection.relation(&input_origin, relation_id, user_plan_id)?;
+        let map = projection.map(program, ids, &source_id, input_origin.clone(), generated)?;
         generated += 1;
         output_type = reference(&map["outputType"])?;
         source_id = map["id"].clone();
@@ -287,6 +268,7 @@ fn scan_stream(
     }
     checkpoint["next_generated_name"] = generated.into();
     Ok(Stream {
+        origin: input_origin,
         operator: source_id,
         output_type,
         relation,
@@ -304,7 +286,10 @@ pub(super) fn lower(
 ) -> Result<(), Error> {
     if !root.hints.is_empty()
         || !root.collation.is_empty()
-        || root.kind != "SELECT"
+        || !matches!(
+            root.kind.as_str(),
+            "SELECT" | "UNION" | "INTERSECT" | "EXCEPT"
+        )
         || schema.properties.is_some()
         || schema
             .columns
@@ -320,6 +305,9 @@ pub(super) fn lower(
     }
     let mut query_schema = std::borrow::Cow::Borrowed(schema);
     for (index, field) in root.fields.iter().enumerate() {
+        if field.index as usize != index {
+            return Err(Error("view fields are out of projection order".into()));
+        }
         if query_schema.columns[index].name.name != field.name {
             let name = &mut query_schema.to_mut().columns[index].name;
             name.quoted = field.name.to_lowercase() != field.name;
@@ -330,12 +318,28 @@ pub(super) fn lower(
         Properties::Values { .. } => {
             super::values::lower(checkpoint, program, ids, &query_schema, root, source)?
         }
-        _ => scan_stream(checkpoint, program, ids, &query_schema, root, source)?,
+        Properties::Set { .. } => super::set::lower(
+            checkpoint,
+            program,
+            ids,
+            &query_schema,
+            root.relation,
+            source,
+        )?,
+        _ => scan_stream(
+            checkpoint,
+            program,
+            ids,
+            &query_schema,
+            root.relation,
+            source,
+        )?,
     };
     let Stream {
         operator: source_id,
         output_type,
         relation,
+        ..
     } = stream;
     let layout = RowLayout::new(schema, &program.table.type_table)?;
     let position = statement_position(source);

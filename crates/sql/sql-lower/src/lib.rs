@@ -7,6 +7,7 @@ mod filter;
 mod origin_order;
 mod plan;
 mod projection;
+mod set;
 mod source_table;
 mod system;
 mod values;
@@ -87,7 +88,8 @@ pub fn lower_program(
         ));
     }
     checkpoint["sources"] = sources;
-    checkpoint["calcite_plan"] = query_plan(program)?;
+    let (plan, plan_ids) = plan::build(program)?;
+    checkpoint["calcite_plan"] = plan;
     checkpoint["producer_commit"] = producer.into();
     checkpoint["runtime_abi"] = runtime.into();
 
@@ -98,7 +100,7 @@ pub fn lower_program(
     if has_query || matches!(input, Input::Checkpoint) {
         view::restore_system_scan(&mut checkpoint, program)?;
     }
-    let mut ids = source_table::Ids::after(&checkpoint["circuit"], program);
+    let mut ids = source_table::Ids::after(&checkpoint["circuit"], program, plan_ids);
     let mut precision_warnings = std::collections::HashSet::new();
     for (index, statement) in program.statements.iter().enumerate() {
         let diagnostics = &mut checkpoint["diagnostics"];

@@ -11,6 +11,11 @@ use std::collections::{HashMap, HashSet};
 
 /// Write the profiler's query plan for supported bound relational operators.
 pub fn query_plan(program: &Program) -> Result<Value, Error> {
+    Ok(build(program)?.0)
+}
+
+/// S2 provenance refers to the same IDs that the profiler plan publishes.
+pub(super) fn build(program: &Program) -> Result<(Value, HashMap<u32, usize>), Error> {
     let mut views: Vec<_> = program
         .statements
         .iter()
@@ -55,7 +60,7 @@ pub fn query_plan(program: &Program) -> Result<Value, Error> {
         }
         plans.insert(view.clone(), json!({"rels":emitted}));
     }
-    Ok(plans.into())
+    Ok((plans.into(), ids))
 }
 
 fn describe(program: &Program, id: u32) -> Result<Value, Error> {

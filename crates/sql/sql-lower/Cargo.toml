@@ -9,6 +9,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+feldera-sql-opt = { path = "../sql-opt" }
 feldera-sql-ir = { path = "../sql-ir" }
 feldera-sql-rel-model = { path = "../sql-rel-model" }
 base64.workspace = true

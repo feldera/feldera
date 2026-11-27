@@ -275,6 +275,54 @@ pub(super) fn append_aggregate(
     relation
 }
 
+/// Set operations expose the concatenated physical input rows to Rex. The
+/// relation itself inherits the first physical row when no coercion is needed.
+pub(super) fn append_set(
+    program: &mut Program,
+    form: RelationForm,
+    all: bool,
+    inputs: Vec<u32>,
+) -> Result<u32, Failure> {
+    let row = program.producers.relations[inputs[0] as usize].row;
+    let mut fields = Vec::new();
+    for &input in &inputs {
+        let ty = program.producers.relations[input as usize].row;
+        let TypeKind::Row { fields: child, .. } =
+            &program.table.type_table.types[ty.0 as usize].kind
+        else {
+            return Err(unsupported("set operand requires a row type"));
+        };
+        fields.extend_from_slice(child);
+    }
+    let context = insert_type(
+        &mut program.table.type_table,
+        SqlType {
+            nullable: false,
+            origin: Origin::Absent {},
+            kind: TypeKind::Row {
+                struct_kind: StructKind::FullyQualified,
+                fields,
+            },
+        },
+    );
+    let (_, environment) = table_input(program, context, &inputs);
+    let relation = program.table.relations;
+    append_relation(
+        program,
+        InputProducer {
+            form,
+            row,
+            inputs,
+            constants: vec![],
+        },
+        Properties::Set { all },
+        environment,
+        vec![],
+        vec![],
+    );
+    Ok(relation)
+}
+
 fn table_input(
     program: &mut Program,
     row: TypeId,

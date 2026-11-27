@@ -22,6 +22,7 @@ pub(super) struct Ids {
     operator: u64,
     relations: Vec<usize>,
     origin: u64,
+    plan: std::collections::HashMap<u32, usize>,
     doubles: [Option<u64>; 2],
     reals: [Option<u64>; 2],
     null: Option<u64>,
@@ -29,7 +30,11 @@ pub(super) struct Ids {
 }
 
 impl Ids {
-    pub(super) fn after(graph: &Value, program: &feldera_sql_rel_model::program::Program) -> Self {
+    pub(super) fn after(
+        graph: &Value,
+        program: &feldera_sql_rel_model::program::Program,
+        plan: std::collections::HashMap<u32, usize>,
+    ) -> Self {
         fn next(value: &Value) -> u64 {
             match value {
                 Value::Object(obj) => obj
@@ -44,6 +49,7 @@ impl Ids {
         let ops = graph["allOperators"].as_array().expect("system operators");
         Self {
             inner: next(graph),
+            plan,
             relations: relation_ids(program),
             doubles: [None; 2],
             reals: [None; 2],
@@ -61,6 +67,13 @@ impl Ids {
                 .max()
                 .unwrap_or(0),
         }
+    }
+
+    pub(super) fn plan(&self, relation: u32) -> Result<u64, Error> {
+        self.plan
+            .get(&relation)
+            .map(|&id| id as u64)
+            .ok_or_else(|| Error(format!("missing profiler plan for relation {relation}")))
     }
 
     pub(super) fn relation(&self, id: u32) -> usize {

@@ -4,13 +4,14 @@ mod aggregate;
 mod compute;
 mod declarations;
 mod filter;
+mod sets;
 mod types;
 
 use types::{TypeSpelling, declare_type};
 
 use super::{
-    StatementText, ViewDeclaration, append_boundary, append_schema, append_view, check_prelude,
-    column, diagnostic_source, finish,
+    BoundQuery, QueryText, StatementText, ViewDeclaration, append_boundary, append_schema,
+    append_view, check_prelude, column, diagnostic_source, finish,
     graph::{
         ProjectInput, ProjectValue, TableOperand, append_table_filter, append_table_project,
         append_table_scan, append_values, insert_row_fields,
@@ -20,8 +21,8 @@ use super::{
 };
 use crate::{
     Expr, Failure, SelectItem, Spanned, Statement as ParsedStatement, Submission, Upstream,
-    local_name, map_table_columns, parse_submissions, projection_input, select_without_modifiers,
-    system_relation, unsupported, unsupported_niladic, validate_plain_view,
+    local_name, map_table_columns, parse_submissions, projection_input, system_relation,
+    unsupported, unsupported_niladic, validate_plain_view,
 };
 use feldera_sql_rel_model::{
     TypeId, ValidationLimits,
@@ -308,7 +309,16 @@ fn bind_view(
     {
         return Err(unsupported("view name already exists"));
     }
-    let select = select_without_modifiers(&view.query, true)?;
+    let query = sets::bind(program, crate::query_body(&view.query)?, sql, 0)?;
+    append_view(program, position, declaration, query)
+}
+
+fn bind_select(
+    program: &mut Program,
+    select: &crate::Select,
+    sql: &str,
+) -> Result<BoundQuery, Failure> {
+    crate::check_select_clauses(select, true)?;
     let GroupByExpr::Expressions(groups, _) = &select.group_by else {
         return Err(unsupported("expected ordinary grouping expressions"));
     };
@@ -418,13 +428,7 @@ fn bind_view(
         let scan = append_table_scan(program, schema, scan_row, input.name.clone(), scan_hint)?;
         project.or(filter).unwrap_or(scan)
     };
-    let mut view_source = render_view(
-        position,
-        &declaration,
-        &input.name,
-        &input.qualifier,
-        &projection,
-    );
+    let mut view_source = render_select(&input.name, &input.qualifier, &projection);
     if let Some(predicate) = &predicate {
         let (pretty, diagnostic) = predicate.render();
         view_source.pretty.push_str(&format!("\nWHERE {pretty}"));
@@ -439,7 +443,13 @@ fn bind_view(
         .into_iter()
         .map(|field| (field.name, field.value.ty()))
         .collect();
-    append_view(program, view_source, declaration, fields, view_row, root)
+    Ok(BoundQuery {
+        kind: "SELECT",
+        text: view_source,
+        fields,
+        row: view_row,
+        relation: root,
+    })
 }
 
 fn apply_filtered_projection(projection: &mut [Projection], predicate: Option<&filter::Predicate>) {
@@ -654,13 +664,7 @@ fn render_table(
     }
 }
 
-fn render_view(
-    position: Coordinates,
-    declaration: &ViewDeclaration,
-    table: &str,
-    table_alias: &str,
-    projection: &[Projection],
-) -> StatementText {
+fn render_select(table: &str, table_alias: &str, projection: &[Projection]) -> QueryText {
     let pretty = projection
         .iter()
         .map(|field| field.pretty.as_str())
@@ -671,15 +675,8 @@ fn render_view(
         .map(|field| field.diagnostic.as_str())
         .collect::<Vec<_>>()
         .join(", ");
-    StatementText {
-        position,
-        pretty: format!(
-            "{} AS\nSELECT {pretty}\nFROM `schema`.`{table}` AS `{table_alias}`",
-            declaration.sql(true)
-        ),
-        diagnostic: format!(
-            "{} AS\nSELECT {diagnostic}\nFROM schema.{table} AS {table_alias}",
-            declaration.sql(false)
-        ),
+    QueryText {
+        pretty: format!("SELECT {pretty}\nFROM `schema`.`{table}` AS `{table_alias}`"),
+        diagnostic: format!("SELECT {diagnostic}\nFROM schema.{table} AS {table_alias}"),
     }
 }

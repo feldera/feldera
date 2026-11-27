@@ -220,14 +220,9 @@ fn append_constant_view(
         pretty.push(display.pretty);
         diagnostic.push(display.diagnostic);
     }
-    let statement = StatementText {
-        position,
-        pretty: format!("{} AS\nSELECT {}", declaration.sql(true), pretty.join(", ")),
-        diagnostic: format!(
-            "{} AS\nSELECT {}",
-            declaration.sql(false),
-            diagnostic.join(", ")
-        ),
+    let text = QueryText {
+        pretty: format!("SELECT {}", pretty.join(", ")),
+        diagnostic: format!("SELECT {}", diagnostic.join(", ")),
     };
     let row = insert_row_fields(
         program,
@@ -239,7 +234,18 @@ fn append_constant_view(
     } else {
         append_project(program, row, roots)?;
     }
-    append_view(program, statement, declaration, fields, row, relation)
+    append_view(
+        program,
+        position,
+        declaration,
+        BoundQuery {
+            kind: "SELECT",
+            fields,
+            row,
+            relation,
+            text,
+        },
+    )
 }
 
 struct ConstantOperand {
@@ -491,14 +497,37 @@ impl ViewDeclaration {
     }
 }
 
-fn append_view(
-    program: &mut Program,
-    statement: StatementText,
-    declaration: ViewDeclaration,
+struct QueryText {
+    pretty: String,
+    diagnostic: String,
+}
+
+struct BoundQuery {
+    kind: &'static str,
     fields: Vec<(Name, TypeId)>,
     row: TypeId,
     relation: u32,
+    text: QueryText,
+}
+
+fn append_view(
+    program: &mut Program,
+    position: Coordinates,
+    declaration: ViewDeclaration,
+    query: BoundQuery,
 ) -> Result<(), Failure> {
+    let BoundQuery {
+        kind,
+        fields,
+        row,
+        relation,
+        text,
+    } = query;
+    let statement = StatementText {
+        position,
+        pretty: format!("{} AS\n{}", declaration.sql(true), text.pretty),
+        diagnostic: format!("{} AS\n{}", declaration.sql(false), text.diagnostic),
+    };
     let ViewDeclaration {
         name,
         kind: view_kind,
@@ -536,7 +565,7 @@ fn append_view(
         root: RelRoot {
             relation,
             validated_type: row,
-            kind: "SELECT".into(),
+            kind: kind.into(),
             fields: fields
                 .into_iter()
                 .enumerate()

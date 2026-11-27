@@ -720,6 +720,11 @@ fn select_without_modifiers(query: &Query, allow_table_clauses: bool) -> Result<
     let SetExpr::Select(select) = query_body(query)? else {
         return Err(unsupported("expected one SELECT"));
     };
+    check_select_clauses(select, allow_table_clauses)?;
+    Ok(select)
+}
+
+fn check_select_clauses(select: &Select, allow_table_clauses: bool) -> Result<(), Failure> {
     let Select {
         select_token: _,
         optimizer_hints,
@@ -745,7 +750,7 @@ fn select_without_modifiers(query: &Query, allow_table_clauses: bool) -> Result<
         window_before_qualify: _,
         value_table_mode: None,
         flavor: SelectFlavor::Standard,
-    } = select.as_ref()
+    } = select
     else {
         return Err(unsupported("expected a plain SELECT projection"));
     };
@@ -766,7 +771,7 @@ fn select_without_modifiers(query: &Query, allow_table_clauses: bool) -> Result<
             "SELECT clauses are outside the generated projection",
         ));
     }
-    Ok(select)
+    Ok(())
 }
 
 pub fn bind_generated_projection(sql: &str) -> Result<BoundProjection, Failure> {

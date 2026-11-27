@@ -1,7 +1,7 @@
 //! Bind aggregates with direct arguments over one table.
 
 use super::{
-    Failure, Projection, StatementText, TableColumn, column_ordinal, column_projection, filter,
+    Failure, Projection, QueryText, TableColumn, column_ordinal, column_projection, filter,
     projection_item, render_column,
 };
 use crate::program::{
@@ -375,7 +375,7 @@ impl BoundAggregate {
 
     pub(super) fn render_grouping(
         &self,
-        source: &mut StatementText,
+        source: &mut QueryText,
         columns: &[TableColumn],
         qualifier: &str,
     ) {
