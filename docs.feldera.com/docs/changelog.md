@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- DBSP startup storage accounting now includes checkpoint files in nested directories and continues past unreadable child directories.
+
 ## v0.391.0
 
 - Security: with client certificates (`mtls.enabled`), a pipeline admits
