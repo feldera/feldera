@@ -974,6 +974,23 @@ impl fmt::Display for InTarget {
     }
 }
 
+/// One name/value pair in a SQL/JSON object constructor.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct JsonObjectEntry {
+    /// Expression that supplies the member name.
+    pub key: Expr,
+    /// Expression that supplies the member value.
+    pub value: Expr,
+}
+
+impl fmt::Display for JsonObjectEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "KEY {} VALUE {}", self.key, self.value)
+    }
+}
+
 /// An SQL expression of any type.
 ///
 /// # Semantics / Type Checking
@@ -1384,6 +1401,40 @@ pub enum Expr {
         subquery: Box<Query>,
         /// Whether the `EXISTS` is negated (`NOT EXISTS`).
         negated: bool,
+    },
+    /// Prefix uniqueness predicate over a row or query expression.
+    Unique {
+        /// Operand of the predicate.
+        expr: Box<Expr>,
+        /// Range from UNIQUE through its operand.
+        span: Span,
+    },
+    /// Translate a character expression using a named character set.
+    TranslateUsing {
+        /// Expression to translate.
+        expr: Box<Expr>,
+        /// Character set after USING.
+        charset: Ident,
+        /// Complete range of the call.
+        span: Span,
+    },
+    /// SQL/JSON object constructor with ordered name/value pairs.
+    JsonObject {
+        /// Key and value expressions in source order.
+        entries: Vec<JsonObjectEntry>,
+        /// Explicit treatment of SQL NULL values.
+        null_clause: Option<JsonNullClause>,
+        /// Range of the whole call.
+        span: Span,
+    },
+    /// A postfix FORMAT JSON clause applied to an expression.
+    FormatJson {
+        /// SQL expression carrying JSON.
+        expr: Box<Expr>,
+        /// Explicit UTF encoding, when supplied.
+        encoding: Option<Ident>,
+        /// Range through the end of the representation clause.
+        span: Span,
     },
     /// A parenthesized subquery `(SELECT ...)`, used in expression like
     /// `SELECT (subquery) AS x` or `WHERE (subquery) = x`
@@ -2266,6 +2317,31 @@ impl fmt::Display for Expr {
                 subquery
             ),
             Expr::Subquery(s) => write!(f, "({s})"),
+            Expr::Unique { expr, .. } => write!(f, "UNIQUE {expr}"),
+            Expr::TranslateUsing { expr, charset, .. } => {
+                write!(f, "TRANSLATE({expr} USING {charset})")
+            }
+            Expr::JsonObject {
+                entries,
+                null_clause,
+                ..
+            } => {
+                write!(f, "JSON_OBJECT({}", display_comma_separated(entries))?;
+                if let Some(clause) = null_clause {
+                    if !entries.is_empty() {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{clause}")?;
+                }
+                write!(f, ")")
+            }
+            Expr::FormatJson { expr, encoding, .. } => {
+                write!(f, "{expr} FORMAT JSON")?;
+                if let Some(encoding) = encoding {
+                    write!(f, " ENCODING {encoding}")?;
+                }
+                Ok(())
+            }
             Expr::RowConstructor { fields, .. } => {
                 write!(f, "ROW({})", display_comma_separated(fields))
             }

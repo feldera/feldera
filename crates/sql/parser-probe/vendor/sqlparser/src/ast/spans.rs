@@ -1837,6 +1837,10 @@ impl Spanned for Expr {
             ),
             Expr::Exists { subquery, .. } => subquery.span(),
             Expr::RowConstructor { span, .. }
+            | Expr::Unique { span, .. }
+            | Expr::TranslateUsing { span, .. }
+            | Expr::JsonObject { span, .. }
+            | Expr::FormatJson { span, .. }
             | Expr::WildcardExclusion { span, .. }
             | Expr::MapQuery { span, .. } => *span,
             Expr::Subquery(query) => query.span(),

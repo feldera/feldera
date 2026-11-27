@@ -113,6 +113,22 @@ pub(super) fn allows(expression: &Expr) -> bool {
         | StringLiteralChain(_)
         | TypedString(_)
         | Function(_)
+        | Unique { expr: _, span: _ }
+        | TranslateUsing {
+            expr: _,
+            charset: _,
+            span: _,
+        }
+        | JsonObject {
+            entries: _,
+            null_clause: _,
+            span: _,
+        }
+        | FormatJson {
+            expr: _,
+            encoding: _,
+            span: _,
+        }
         | RowConstructor { fields: _, span: _ }
         | WildcardExclusion {
             wildcard: _,

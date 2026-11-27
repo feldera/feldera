@@ -18,6 +18,46 @@ use sqlparser_064::{
 };
 use std::{collections::HashMap, ops::ControlFlow};
 
+/// Builtin calls that Calcite can distinguish from ordinary identifier expressions
+/// with two tokens of lookahead.
+pub(super) fn dedicated_call(word: &sqlparser_064::tokenizer::Word) -> bool {
+    word.quote_style.is_none()
+        && matches!(
+            word.value.to_ascii_uppercase().as_str(),
+            "CAST"
+                | "TRY_CAST"
+                | "SAFE_CAST"
+                | "ROW"
+                | "DATEADD"
+                | "DATEDIFF"
+                | "DATEPART"
+                | "DATE_PART"
+                | "EXTRACT"
+                | "POSITION"
+                | "CONVERT"
+                | "TRANSLATE"
+                | "OVERLAY"
+                | "FLOOR"
+                | "CEIL"
+                | "CEILING"
+                | "SUBSTRING"
+                | "TRIM"
+                | "TUMBLE"
+                | "HOP"
+                | "SESSION"
+                | "ARRAY"
+                | "MAP"
+                | "MULTISET"
+                | "JSON_EXISTS"
+                | "JSON_VALUE"
+                | "JSON_QUERY"
+                | "JSON_OBJECT"
+                | "JSON_OBJECTAGG"
+                | "JSON_ARRAY"
+                | "JSON_ARRAYAGG"
+        )
+}
+
 pub(super) fn ambiguous_table_arguments(tokens: &[TokenWithSpan]) -> HashMap<Location, Location> {
     let significant: Vec<_> = tokens
         .iter()
@@ -29,48 +69,11 @@ pub(super) fn ambiguous_table_arguments(tokens: &[TokenWithSpan]) -> HashMap<Loc
             let Token::Word(word) = &pair[2].token else {
                 return None;
             };
-            // Named calls overlap Calcite's EXTEND lookahead. These dedicated
-            // expression productions do not have that ambiguity.
-            let dedicated = word.quote_style.is_none()
-                && matches!(
-                    word.value.to_ascii_uppercase().as_str(),
-                    "CAST"
-                        | "TRY_CAST"
-                        | "SAFE_CAST"
-                        | "ROW"
-                        | "DATEADD"
-                        | "DATEDIFF"
-                        | "DATEPART"
-                        | "DATE_PART"
-                        | "EXTRACT"
-                        | "POSITION"
-                        | "CONVERT"
-                        | "TRANSLATE"
-                        | "OVERLAY"
-                        | "FLOOR"
-                        | "CEIL"
-                        | "CEILING"
-                        | "SUBSTRING"
-                        | "TRIM"
-                        | "TUMBLE"
-                        | "HOP"
-                        | "SESSION"
-                        | "ARRAY"
-                        | "MAP"
-                        | "MULTISET"
-                        | "JSON_EXISTS"
-                        | "JSON_VALUE"
-                        | "JSON_QUERY"
-                        | "JSON_OBJECT"
-                        | "JSON_OBJECTAGG"
-                        | "JSON_ARRAY"
-                        | "JSON_ARRAYAGG"
-                );
             (matches!(pair[0].token, Token::Word(_))
                 && pair[1].token == Token::LParen
                 && pair[3].token == Token::LParen
-                && !dedicated)
-                .then_some((pair[0].span.end, pair[3].span.start))
+                && !dedicated_call(word))
+            .then_some((pair[0].span.end, pair[3].span.start))
         })
         .collect()
 }

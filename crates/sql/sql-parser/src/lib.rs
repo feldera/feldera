@@ -18,6 +18,7 @@ mod expression_policy;
 mod functions;
 mod grammar;
 mod hints;
+mod json_object;
 mod lateness;
 mod reject;
 mod relations;
@@ -28,6 +29,7 @@ mod unparse;
 pub use unparse::emit_statements;
 mod string_literals;
 mod temporal_types;
+mod translate;
 mod trim;
 mod type_policy;
 mod unicode;
@@ -54,6 +56,28 @@ use sqlparser_064::{
 };
 
 impl Dialect for FelderaDialect {
+    fn supports_qualified_wildcard_operand(&self) -> bool {
+        true
+    }
+
+    fn supports_format_json(&self) -> bool {
+        true
+    }
+
+    fn get_next_precedence(&self, parser: &Parser) -> Option<Result<u8, ParserError>> {
+        if parser.peek_token_ref().token == Token::Colon {
+            // The pinned dialect uses a colon between JSON object keys and values.
+            return Some(Ok(self.prec_unknown()));
+        }
+        if parser.peek_keyword(Keyword::FORMAT)
+            && matches!(&parser.peek_nth_token_ref(1).token, Token::Word(w) if w.keyword == Keyword::JSON)
+        {
+            // FORMAT JSON binds below comparisons and above prefix NOT.
+            return Some(Ok(self.prec_value(sqlparser_064::dialect::Precedence::Is)));
+        }
+        None
+    }
+
     fn supports_multiset_membership(&self) -> bool {
         true
     }
@@ -244,6 +268,27 @@ impl Dialect for FelderaDialect {
     }
 
     fn parse_prefix(&self, parser: &mut Parser) -> Option<Result<Expr, ParserError>> {
+        if matches!(&parser.peek_token_ref().token, Token::Word(w)
+            if w.quote_style.is_none() && w.value.eq_ignore_ascii_case("JSON_OBJECT"))
+            && parser.peek_nth_token_ref(1).token == Token::LParen
+        {
+            return Some(json_object::parse(parser));
+        }
+        if parser.peek_keyword(Keyword::UNIQUE) {
+            let start = parser.next_token().span;
+            // Calcite places UNIQUE at the additive level and includes a
+            // following addition in its operand, before comparison predicates.
+            let precedence = self.prec_value(sqlparser_064::dialect::Precedence::PlusMinus) - 1;
+            return Some(parser.parse_subexpr(precedence).map(|expr| Expr::Unique {
+                expr: Box::new(expr),
+                span: start.union(&parser.get_current_token().span),
+            }));
+        }
+        if parser.peek_keyword(Keyword::TRANSLATE)
+            && parser.peek_nth_token(1).token == Token::LParen
+        {
+            return Some(translate::parse(parser));
+        }
         if parser.peek_keyword(Keyword::EXTRACT) && parser.peek_nth_token(1).token == Token::LParen
         {
             return Some(temporal_types::parse_extract(parser));

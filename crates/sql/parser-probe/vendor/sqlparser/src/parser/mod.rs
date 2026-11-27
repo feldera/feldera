@@ -1407,6 +1407,12 @@ impl<'a> Parser<'a> {
                             id_parts.push(Ident::new(s))
                         }
                         Token::Mul => {
+                            if self.dialect.supports_qualified_wildcard_operand()
+                                && self.get_next_precedence()? > self.dialect.prec_unknown()
+                            {
+                                self.index = index;
+                                return self.parse_expr();
+                            }
                             return Ok(Expr::QualifiedWildcard(
                                 ObjectName::from(id_parts),
                                 AttachedToken(next_token),
@@ -2145,7 +2151,9 @@ impl<'a> Parser<'a> {
                     Token::Mul => {
                         // Postgres explicitly allows funcnm(tablenm.*) and the
                         // function array_agg traverses this control flow
-                        if dialect_of!(self is PostgreSqlDialect) {
+                        if dialect_of!(self is PostgreSqlDialect)
+                            || self.dialect.supports_qualified_wildcard_operand()
+                        {
                             ending_wildcard = Some(self.next_token());
                         } else {
                             // Put back the consumed `.` tokens before exiting.
@@ -4323,6 +4331,31 @@ impl<'a> Parser<'a> {
                     } else {
                         self.expected_ref("IN or BETWEEN after NOT", self.peek_token_ref())
                     }
+                }
+                Keyword::FORMAT if dialect.supports_format_json() => {
+                    self.expect_keyword_is(Keyword::JSON)?;
+                    let encoding = if self.parse_keyword(Keyword::ENCODING) {
+                        let token = self.next_token();
+                        match token.token {
+                            Token::Word(w)
+                                if w.quote_style.is_none()
+                                    && matches!(
+                                        w.value.to_ascii_uppercase().as_str(),
+                                        "UTF8" | "UTF16" | "UTF32"
+                                    ) =>
+                            {
+                                Some(w.into_ident(token.span))
+                            }
+                            _ => return self.expected("UTF8, UTF16 or UTF32", token),
+                        }
+                    } else {
+                        None
+                    };
+                    Ok(Expr::FormatJson {
+                        span: expr.span().union(&self.get_current_token().span),
+                        expr: Box::new(expr),
+                        encoding,
+                    })
                 }
                 Keyword::NOTNULL if dialect.supports_notnull_operator() => {
                     Ok(Expr::IsNotNull(Box::new(expr)))
@@ -20484,7 +20517,8 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_json_null_clause(&mut self) -> Option<JsonNullClause> {
+    /// Parse the optional constructor policy for SQL null values.
+    pub fn parse_json_null_clause(&mut self) -> Option<JsonNullClause> {
         if self.parse_keywords(&[Keyword::ABSENT, Keyword::ON, Keyword::NULL]) {
             Some(JsonNullClause::AbsentOnNull)
         } else if self.parse_keywords(&[Keyword::NULL, Keyword::ON, Keyword::NULL]) {

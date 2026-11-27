@@ -1876,6 +1876,16 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Allow a qualified wildcard as a scalar operand.
+    fn supports_qualified_wildcard_operand(&self) -> bool {
+        false
+    }
+
+    /// Allow an expression to be marked as JSON with optional UTF encoding.
+    fn supports_format_json(&self) -> bool {
+        false
+    }
+
     /// Whether the named aggregate accepts a SEPARATOR argument clause.
     fn supports_function_separator(&self, _name: &[ObjectNamePart]) -> bool {
         false
