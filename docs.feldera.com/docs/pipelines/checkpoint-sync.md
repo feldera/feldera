@@ -57,6 +57,7 @@ start, and the error names the field to change:
 | An `az://` bucket has no `access_key`                     | Set `access_key` to the name of the storage account.                  |
 | An `az://` bucket has no container name                   | Write the bucket as `az://<container>[/<path>]`.                      |
 | The deprecated `standby` field is `true`                  | Remove the field and start the pipeline with `initial=standby`.       |
+| `gc_files_per_delete` is `0`                              | Set it to 1 or more, or remove it to use the default.                 |
 
 Before, only a start in [standby mode](#standby-mode) did these checks.
 
@@ -217,6 +218,9 @@ On its first start **B** pulls from `bucket-a/pipeline-a` (because
 | `flags`                 | `array[string]` |             | Extra flags to pass to `rclone`. Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/), [S3 flags](https://rclone.org/s3/), [Google Cloud Storage flags](https://rclone.org/googlecloudstorage/), and [Azure Blob Storage flags](https://rclone.org/azureblob/).                                                                                                                                                                                                           |
 | `retention_min_count`   | `integer (u32)` | `10`        | The minimum number of checkpoints to retain in object store. No checkpoints will be deleted if the total count is below this threshold.                                                                                                                                                                                                                                             |
 | `min_retention` | duration   | `30d`       | The minimum age a checkpoint must reach before it becomes eligible for deletion, for example `30d`. All younger checkpoints will be preserved. Replaces the deprecated `retention_min_age`.                                                                                                                                                                                                                                               |
+| `gc_pass_new_files`     | `integer (u64)` | `100000`    | The batch files that one pass of the [garbage collection](#garbage-collection) may take beyond those of the oldest checkpoint that retention no longer keeps. Bounds the memory of a pass. |
+| `gc_files_per_delete`   | `integer (u64)` | `10000`     | The most files that one `rclone delete` run of the [garbage collection](#garbage-collection) removes. At least 1. Bounds the memory of rclone: about 100 MiB for a run of 10,000 files. |
+| `gc_time_budget`        | duration        | `5m`        | The time after which the [garbage collection](#garbage-collection) that follows a push starts no new pass, for example `5m`. `0s` runs one pass per push. |
 
 \*Fields marked with an asterisk are required.
 
@@ -541,6 +545,29 @@ To poll status yourself instead, use `sync_checkpoint_response()`, or
 `checkpoint_response()` for a local checkpoint. Only these return the
 `incarnation_uuid` that the later status check needs; `sync_checkpoint()` and
 `checkpoint()` return just the UUID or sequence number.
+
+## Garbage collection
+
+After each successful push, a single-host pipeline deletes from `bucket` the
+checkpoints that retention no longer keeps: those older than `min_retention`,
+beyond the newest `retention_min_count`. With them go the batch files that no
+remaining checkpoint needs.
+
+The garbage collection works in passes, oldest checkpoint first. A pass takes
+expired checkpoints until their batch files exceed those of its oldest
+checkpoint by `gc_pass_new_files`, keeps every file that another checkpoint in
+the bucket needs, and deletes the rest in `rclone delete` runs of at most
+`gc_files_per_delete` files. No pass starts after `gc_time_budget`. The next
+push waits for the garbage collection, so the garbage collection of many
+expired checkpoints, for example after `min_retention` was lowered, spreads
+over several pushes. The checkpoints that it leaves for a later push can still
+be restored, except one whose list of files the garbage collection cannot
+read: nothing keeps that checkpoint's files. Each push can make another
+checkpoint expire, so with a small `gc_time_budget`, such as `0s`, a backlog
+shrinks only if a pass removes more than one checkpoint.
+
+Multihost pipelines have no garbage collection yet; see
+[Limitations](#limitations).
 
 ## Multihost pipelines
 

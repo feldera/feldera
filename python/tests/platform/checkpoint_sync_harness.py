@@ -711,6 +711,37 @@ def surely_older_at(created: float, age_s: float) -> float:
     return created + age_s + 2 * CLOCK_SKEW_S + _GC_ROUNDING_S + 1.0
 
 
+# The default of `SyncConfig.gc_pass_new_files`.
+GC_PASS_NEW_FILES = 100_000
+
+
+def gc_pass_batch(expired: list, batches: dict, pass_new_files: int) -> set:
+    """Returns the checkpoints that one pass of the remote GC removes.
+
+    A pass takes the oldest expired checkpoints until their batch files would
+    grow `pass_new_files` past the files of the first one. The first one
+    always fits.
+
+    :param expired: the expired checkpoints in the bucket, as UUIDs, oldest
+        first.
+    :param batches: the batch files of each checkpoint, by UUID.
+    :param pass_new_files: the `gc_pass_new_files` setting.
+    :return: the UUIDs of the checkpoints that the pass removes.
+    """
+    batch: set = set()
+    files: set = set()
+    limit = None
+    for uuid in expired:
+        needed = batches[uuid]
+        if limit is None:
+            limit = len(needed) + pass_new_files
+        if batch and len(files | needed) > limit:
+            break
+        files |= needed
+        batch.add(uuid)
+    return batch
+
+
 def _redact(text: str) -> str:
     """Hides the secret key of the object store in text that the harness
     logs or prints.
@@ -767,6 +798,14 @@ class SyncOptions:
     # A bucket value to use as it is, for example one that does not exist.
     bucket_override: Optional[str] = None
     spill_everything: bool = True
+    # The limits of the remote GC (`SyncConfig.gc_*`); None leaves the
+    # default. With a `gc_time_budget` of "0s" a GC runs one pass, which the
+    # audit of each push models. With any other budget the audit expects a GC
+    # that removes every expired checkpoint, which takes the GC of a test far
+    # less than the default budget of 5 minutes.
+    gc_pass_new_files: Optional[int] = None
+    gc_files_per_delete: Optional[int] = None
+    gc_time_budget: Optional[str] = None
 
 
 class SyncPipeline:
@@ -856,6 +895,9 @@ class SyncPipeline:
             sync["read_bucket"] = o.read_bucket.sync_bucket
         if o.take_bucket_ownership:
             sync["take_bucket_ownership"] = True
+        for setting in ("gc_pass_new_files", "gc_files_per_delete", "gc_time_budget"):
+            if (value := getattr(o, setting)) is not None:
+                sync[setting] = value
         return sync
 
     def _runtime_config(self) -> RuntimeConfig:
@@ -1321,7 +1363,7 @@ class SyncPipeline:
             after.batches_of((made.uuids | {made.uuid}) & after.uuids())
         )
         if audit:
-            self.audit_after_push(made, after, started, time.time())
+            self.audit_after_push(made, after, started, time.time(), before)
             # A push uploads the batch files that the newest checkpoint in
             # the bucket lacks, and no others. A pipeline that carries on from
             # that checkpoint therefore uploads only new files. A pipeline
@@ -1444,8 +1486,50 @@ class SyncPipeline:
         may_remove = set(maybe_old[: max(excess, 0)])
         return set(pushed) - may_remove, must_remove
 
+    def expected_retention_one_pass(
+        self, before: Audit, made: Checkpoint, gc_from: float, gc_to: float
+    ) -> tuple[set, set]:
+        """Computes which checkpoints a remote GC of one pass must keep and
+        which it must remove.
+
+        Such a GC lists the checkpoints in the bucket, selects the expired
+        ones as :meth:`expected_retention` describes, and removes the batch
+        of them that one pass takes (see :func:`gc_pass_batch`). A checkpoint
+        whose age was near `min_retention` may count as expired or not, so
+        either batch may be the one removed.
+
+        :param before: the bucket before the push.
+        :param made: the checkpoint that the push pushed.
+        :param gc_from: the earliest time the GC can have run, on the test's
+            clock.
+        :param gc_to: the latest such time.
+        :return: `(must_keep, must_remove)`, as sets of UUIDs.
+        """
+        listed = sorted(before.uuids() | {made.uuid})
+        batches = {
+            uuid: files.dependencies_file or files.batches or frozenset()
+            for uuid, files in before.checkpoints.items()
+        }
+        batches[made.uuid] = made.batches
+        min_age = _seconds(self.options.min_retention)
+        slack = CLOCK_SKEW_S + _GC_ROUNDING_S
+        excess = max(len(listed) - self.options.retention_min_count, 0)
+        surely_old = [u for u in listed if uuid_time(u) < gc_from - min_age - slack]
+        maybe_old = [u for u in listed if uuid_time(u) < gc_to - min_age + slack]
+        new_files = self.options.gc_pass_new_files
+        if new_files is None:
+            new_files = GC_PASS_NEW_FILES
+        surely = gc_pass_batch(surely_old[:excess], batches, new_files)
+        maybe = gc_pass_batch(maybe_old[:excess], batches, new_files)
+        return set(listed) - (surely | maybe), surely & maybe
+
     def audit_after_push(
-        self, made: Checkpoint, audit: Audit, gc_from: float, gc_to: float
+        self,
+        made: Checkpoint,
+        audit: Audit,
+        gc_from: float,
+        gc_to: float,
+        before: Audit,
     ) -> None:
         """Checks the invariants of the bucket after a successful push.
 
@@ -1454,9 +1538,16 @@ class SyncPipeline:
         :param gc_from: the earliest time the remote GC of the push can have
             run, on the clock of the test.
         :param gc_to: the latest such time.
+        :param before: the bucket as it was before the push.
         """
         problems = audit.problems()
-        must_keep, must_remove = self.expected_retention(gc_from, gc_to)
+        budget = self.options.gc_time_budget
+        if not MULTIHOST and budget is not None and _seconds(budget) == 0:
+            must_keep, must_remove = self.expected_retention_one_pass(
+                before, made, gc_from, gc_to
+            )
+        else:
+            must_keep, must_remove = self.expected_retention(gc_from, gc_to)
         on_host0 = {u for u, c in audit.checkpoints.items() if c.host == "host0"}
         if not MULTIHOST:
             if missing := must_keep - audit.uuids():

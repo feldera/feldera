@@ -19,6 +19,14 @@ Source edition can be found on github.
   The leader of a distributed output connector refuses a report that names a
   host that is not a follower.  Restart running pipelines so that they run on
   the fixed runtime.
+- In the Enterprise edition, the garbage collection that follows a checkpoint
+  push works in passes of bounded size and starts no pass after 5 minutes,
+  leaving the other expired checkpoints to later pushes. Neither the pipeline
+  nor rclone holds the names of every file of a large backlog in memory any
+  more, and the next push waits for the garbage collection no longer than the
+  time budget plus one pass. The new `sync` settings `gc_pass_new_files`,
+  `gc_files_per_delete` and `gc_time_budget` set the limits; see [Garbage
+  collection](/pipelines/checkpoint-sync#garbage-collection).
 
 ## v0.385.0
 
