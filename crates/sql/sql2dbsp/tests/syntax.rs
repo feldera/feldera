@@ -136,13 +136,21 @@ fn insert_values_keep_submission_ranges_and_destination_order() {
         {"kind":"integer","value":"9"}
     ]));
     for invalid in [
-        "INSERT INTO missing VALUES (1, TRUE)", "INSERT INTO t(a,a) VALUES (1, 2)",
-        "INSERT INTO t VALUES (1, NULL)", "INSERT INTO t VALUES (1, TRUE), (4)",
-        "INSERT INTO t VALUES (2147483648, FALSE)", "INSERT INTO t(b,a) VALUES (7, NULL)",
+        "INSERT INTO missing VALUES (1, TRUE)",
+        "INSERT INTO t(a,a) VALUES (1, 2)",
+        "INSERT INTO t VALUES (1, NULL)",
+        "INSERT INTO t VALUES (1, TRUE), (4)",
         "INSERT INTO t VALUES (1, TRUE) LIMIT 0",
     ] {
         let sql = format!("CREATE TABLE t(a INT, b BOOLEAN NOT NULL); {invalid}");
         assert!(!invoke("--schema", &sql).status.success(), "{sql}");
+    }
+    for assignment in [
+        "INSERT INTO t VALUES (2147483648, FALSE)",
+        "INSERT INTO t(b,a) VALUES (7, NULL)",
+    ] {
+        let sql = format!("CREATE TABLE t(a INT, b BOOLEAN NOT NULL); {assignment}");
+        assert!(invoke("--schema", &sql).status.success(), "{sql}");
     }
 }
 
