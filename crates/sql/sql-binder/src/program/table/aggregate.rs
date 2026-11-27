@@ -318,7 +318,10 @@ impl BoundAggregate {
             };
             if empty {
                 let expression = append_integer(program, call.ty, 0);
-                return Ok((append_values(program, view_row, Some(expression))?, false));
+                return Ok((
+                    append_values(program, view_row, 1, vec![expression])?,
+                    false,
+                ));
             }
             // COUNT(*) consumes rows directly, even when no column is referenced.
             let call = call.transport(program);
@@ -346,7 +349,7 @@ impl BoundAggregate {
             append_aggregate(program, input_row, input_row, vec![0], Vec::new());
         }
         if empty {
-            append_values(program, input_row, None)?;
+            append_values(program, input_row, 0, Vec::new())?;
         } else if self.inputs.len() != columns.len()
             || self
                 .inputs

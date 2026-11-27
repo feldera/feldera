@@ -420,11 +420,21 @@ pub(super) fn append_project(
     );
 
     let zero = append_integer(program, integer, 0);
-    append_values(program, zero_row, Some(zero))?;
+    append_values(program, zero_row, 1, vec![zero])?;
     Ok(())
 }
 
 pub(super) fn append_integer(program: &mut Program, ty: TypeId, value: i64) -> ExprId {
+    append_literal(
+        program,
+        ty,
+        LiteralValue::Integer {
+            value: value.to_string(),
+        },
+    )
+}
+
+pub(super) fn append_literal(program: &mut Program, ty: TypeId, value: LiteralValue) -> ExprId {
     let root = ExprId(program.expressions.expressions.len() as u32);
     program.expressions.expressions.push(ExpressionObject {
         ty,
@@ -433,9 +443,7 @@ pub(super) fn append_integer(program: &mut Program, ty: TypeId, value: i64) -> E
             literal: Literal {
                 ty,
                 origin: Origin::Absent {},
-                value: LiteralValue::Integer {
-                    value: value.to_string(),
-                },
+                value,
             },
         },
     });
@@ -445,7 +453,8 @@ pub(super) fn append_integer(program: &mut Program, ty: TypeId, value: i64) -> E
 pub(super) fn append_values(
     program: &mut Program,
     row: TypeId,
-    expression: Option<ExprId>,
+    tuples: u32,
+    roots: Vec<ExprId>,
 ) -> Result<u32, Failure> {
     let relation = program.table.relations;
     let environment = reserve_environment(
@@ -460,11 +469,9 @@ pub(super) fn append_values(
             inputs: Vec::new(),
             constants: Vec::new(),
         },
-        Properties::Values {
-            tuples: u32::from(expression.is_some()),
-        },
+        Properties::Values { tuples },
         environment,
-        expression.into_iter().collect(),
+        roots,
         Vec::new(),
     );
     Ok(relation)

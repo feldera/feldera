@@ -27,10 +27,7 @@ use feldera_sql_rel_model::{
     relation_metadata::{Coordinates, Hint},
     source::Origin,
     statements::Statement,
-    types::{
-        CharacterMetadata, Coercibility, CollationIdentity, FloatFlavor, IntegerWidth, Precision,
-        SqlType, TimeZone, TypeKind,
-    },
+    types::{CharacterMetadata, FloatFlavor, IntegerWidth, Precision, SqlType, TimeZone, TypeKind},
 };
 use sqlparser_064::ast::{
     ColumnOption, GroupByExpr, Ident, TableConstraint, WildcardAdditionalOptions,
@@ -58,14 +55,16 @@ pub fn bind_table_program(
     submissions: &[Submission],
 ) -> Result<Program, Failure> {
     let many = submissions.iter().any(|s| s.many);
-    let (parsed, sql) = parse_submissions(submissions)?;
-    bind_parsed_table(id, program, &parsed, &sql, many)
+    let mut starts = Vec::new();
+    let (parsed, sql) = parse_submissions(submissions, |loc| starts.push(loc))?;
+    bind_parsed_table(id, program, &parsed, &starts, &sql, many)
 }
 
 pub(super) fn bind_parsed_table(
     id: String,
     mut program: Program,
     parsed: &[ParsedStatement],
+    starts: &[crate::Location],
     sql: &str,
     many: bool,
 ) -> Result<Program, Failure> {
@@ -74,7 +73,7 @@ pub(super) fn bind_parsed_table(
         return Err(unsupported("table statement source must be ASCII"));
     }
 
-    let declarations = DeclarationTokens::split(sql)?;
+    let declarations = DeclarationTokens::split(sql, starts)?;
     if declarations.len() != parsed.len() {
         return Err(unsupported(
             "source declaration count differs from parsed statements",
@@ -104,7 +103,12 @@ pub(super) fn bind_parsed_table(
                 )?;
             }
             Upstream::CreateView(view) => bind_view(&mut program, view, tokens.range()?, sql)?,
-            _ => return Err(unsupported("expected CREATE TABLE or CREATE VIEW")),
+            Upstream::Insert(insert) => super::insert::bind(&mut program, insert, tokens.range()?)?,
+            _ => {
+                return Err(unsupported(
+                    "expected a table, a view, or INSERT INTO ... VALUES",
+                ));
+            }
         }
     }
     finish(program)
@@ -377,7 +381,7 @@ fn bind_view(
         }
         root
     } else if matches!(predicate, Some(filter::Predicate::Constant(false))) {
-        append_values(program, view_row, None)?
+        append_values(program, view_row, 0, Vec::new())?
     } else {
         let project = (!identity).then(|| {
             append_table_project(
@@ -685,12 +689,7 @@ fn table_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, String)
                 TypeKind::Character {
                     fixed,
                     length,
-                    metadata: CharacterMetadata::Present {
-                        charset: "UTF-8".into(),
-                        collation: "ISO-8859-1$en_US$primary".into(),
-                        coercibility: Coercibility::Implicit,
-                        identity: CollationIdentity::BuiltinImplicit,
-                    },
+                    metadata: CharacterMetadata::implicit(),
                 },
                 spelling,
             )

@@ -99,6 +99,42 @@ fn preview_preserves_public_column_names_and_primary_key_order() {
 }
 
 #[test]
+fn insert_values_keep_submission_ranges_and_destination_order() {
+    use serde_json::{json, Value};
+    let request = json!({"id":"insert", "submissions":[
+        {"sql":"CREATE TABLE t(a INT, b BOOLEAN NOT NULL)", "many":false, "batch":0},
+        {"sql":"-- load rows\nINSERT INTO t(B,A) VALUES (TRUE, NULL), (FALSE, 9)", "many":false, "batch":0},
+        {"sql":"CREATE VIEW v AS SELECT * FROM t", "many":false, "batch":0}
+    ]});
+    let result = invoke("--bind-submissions", &request.to_string());
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    let bound: Value = serde_json::from_slice(&result.stdout).unwrap();
+    let insert = &bound["statements"][4];
+    assert_eq!(insert["source"]["position"]["line"], 3);
+    assert_eq!(insert["columns"][0]["name"]["name"], "b");
+    assert_eq!(insert["columns"][1]["position"]["column"], 17);
+    let id = insert["relation"].as_u64().unwrap() as usize;
+    assert_eq!(bound["properties"]["relations"][id]["fields"]["tuples"], 2);
+    let roots = &bound["expressions"]["relation_uses"][id]["roots"];
+    let literals: Vec<_> = roots.as_array().unwrap().iter().map(|id| {
+        &bound["expressions"]["expressions"][id.as_u64().unwrap() as usize]["kind"]["literal"]["value"]
+    }).collect();
+    assert_eq!(json!(literals), json!([
+        {"kind":"boolean","value":true}, {"kind":"null"}, {"kind":"boolean","value":false},
+        {"kind":"integer","value":"9"}
+    ]));
+    for invalid in [
+        "INSERT INTO missing VALUES (1, TRUE)", "INSERT INTO t(a,a) VALUES (1, 2)",
+        "INSERT INTO t VALUES (1, NULL)", "INSERT INTO t VALUES (1, TRUE), (4)",
+        "INSERT INTO t VALUES (2147483648, FALSE)", "INSERT INTO t(b,a) VALUES (7, NULL)",
+        "INSERT INTO t VALUES (1, TRUE) LIMIT 0",
+    ] {
+        let sql = format!("CREATE TABLE t(a INT, b BOOLEAN NOT NULL); {invalid}");
+        assert!(!invoke("--schema", &sql).status.success(), "{sql}");
+    }
+}
+
+#[test]
 fn refuses_the_wrong_stage_version_and_engine_before_emission() {
     let checkpoint = serde_json::json!({
         "schema_version":4, "stage":"S3-subset", "options":{"ioOptions":{"gen2":true}},

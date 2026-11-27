@@ -146,7 +146,15 @@ fn parse_statement(parser: &mut Parser) -> Result<Statement, ParserError> {
         .map(|statement| Statement::Upstream(Box::new(statement)))
 }
 
-pub(super) fn parse(mut tokens: Vec<TokenWithSpan>) -> Result<Vec<Statement>, ParserError> {
+#[cfg(test)]
+pub(super) fn parse(tokens: Vec<TokenWithSpan>) -> Result<Vec<Statement>, ParserError> {
+    parse_with_starts(tokens, |_| {})
+}
+
+pub(super) fn parse_with_starts(
+    mut tokens: Vec<TokenWithSpan>,
+    mut record_start: impl FnMut(Location),
+) -> Result<Vec<Statement>, ParserError> {
     // Upstream's synthetic EOF has an empty span. Retain the original input end
     // so truncated statements report a location, including trailing whitespace.
     let end = tokens
@@ -200,6 +208,7 @@ pub(super) fn parse(mut tokens: Vec<TokenWithSpan>) -> Result<Vec<Statement>, Pa
         if let ControlFlow::Break(error) = validation {
             return Err(error);
         }
+        record_start(scoped_checks.statement_start);
         statements.push(statement);
         // Every top-level statement must consume its full input. In particular,
         // END is not an implicit end of this outer script, unlike a block body.

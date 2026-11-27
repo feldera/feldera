@@ -105,7 +105,38 @@ pub fn lower_program(
     }
     let mut ids = source_table::Ids::after(&checkpoint["circuit"], program.table_scan_order.len());
     let mut precision_warnings = std::collections::HashSet::new();
-    for statement in program.statements.iter().filter(|s| s.source().visible) {
+    for (index, statement) in program
+        .statements
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.source().visible)
+    {
+        if let Statement::ModifyTable {
+            source,
+            name,
+            insert: true,
+            relation: Some(relation),
+            columns,
+        } = statement
+        {
+            // This profile builds a pipeline. Literal inserts have no circuit
+            // state and no table contents consumer. Testing mode and inserts
+            // that read another table require an actual DML evaluator.
+            feldera_sql_rel_model::literal_insert::validate(
+                program,
+                &program.statements[..index],
+                name,
+                columns.as_deref(),
+                *relation,
+            )
+            .map_err(Error)?;
+            let position = source_table::statement_position(source);
+            checkpoint["diagnostics"]["messages"].as_array_mut().expect("system diagnostics").push(serde_json::json!({
+                "context":position, "range":position, "warning":true, "continuation":false,
+                "type":"Statement ignored", "message":"INSERT has no effect in a pipeline definition"
+            }));
+            continue;
+        }
         if let Statement::CreateTable { source, schema, .. }
         | Statement::CreateView { source, schema, .. } = statement
         {

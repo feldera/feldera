@@ -147,21 +147,31 @@ Forge reader loaded all seventeen circuits with their profiler reports. The case
 COUNT(*), a filtered COUNT(*), COUNT(DISTINCT), a global SUM, a grouped SUM, and a multiline
 constant view. [Executable comparison](scripts/validate_bound_programs.py) · [Measured evidence](evidence/local-compiler-20261119.json)
 
-On 2026-11-27, 29 directed binding cases and 34 directed lowering cases
+On 2026-11-27, 33 directed binding cases and 38 directed lowering cases
 matched direct Gen-2 compilation with the Java reference built at
 `1222fd75f`. They include explicit view column lists, references to local
-views, inline and composite primary keys, and temporal precision warnings.
+views, inline and composite primary keys, temporal precision warnings and multirow
+`INSERT INTO … VALUES` with reordered columns, nulls, and widened literal types.
 The Rust schema preview and S2 preserve primary keys in column declaration order.
 [Binding comparison](scripts/validate_bound_programs.py) · [Lowering comparison](scripts/validate_s1_lowering.py)
 
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 82 of 8,571 programs. All 82 matched Java compilation
+Gen-2 options. Rust bound 86 of 8,571 programs. All 86 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 29 of
-the 82 to S2. All 29 matched independent Java lowering and the Java optimizer
-resumed every checkpoint. The remaining 8,489 programs still need whole-program
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 33 of
+the 86 to S2. All 33 matched independent Java lowering and the Java optimizer
+resumed every checkpoint. The remaining 8,485 programs still need whole-program
 binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
+
+On macOS ARM64, build `90063e1f8` compiled the `explicit_view_columns` workload
+in 334 ms median and 346 ms empirical p95 with Rust binding, lowering and
+Gen-2 emission and Java optimization. Direct Java took 630 ms median and
+655 ms empirical p95. All 20 alternating measured pairs and three warmup
+pairs matched on the circuit, schema, diagnostics and profiler data. Both
+paths used fresh processes and a warm filesystem. The workload declares a
+table, a local view with renamed columns, and a materialized view.
+[Benchmark runner](scripts/benchmark_bound_gen2.py)
 
 Ten additional incremental workloads used Java to compile raw SQL through S3.
 For all ten, the Rust worker matched the direct Java circuit, dataflow, schema and

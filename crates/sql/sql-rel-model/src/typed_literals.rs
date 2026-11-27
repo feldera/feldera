@@ -295,7 +295,7 @@ fn push_child<'a>(
     Ok(())
 }
 
-fn integer_fits(value: &str, width: IntegerWidth, signed: bool) -> bool {
+pub(crate) fn integer_fits(value: &str, width: IntegerWidth, signed: bool) -> bool {
     let bits = match width {
         IntegerWidth::I8 => 8,
         IntegerWidth::I16 => 16,
@@ -339,9 +339,7 @@ fn decimal_fits(value: &ExactDecimal, precision: u32, scale: u32) -> bool {
 }
 
 fn check_length(length: usize, precision: Precision, path: &str) -> Result<(), ValidationError> {
-    if let Precision::Specified(maximum) = precision
-        && length as u64 > u64::from(maximum)
-    {
+    if !precision.contains_length(length) {
         return Err(error(path, "literal exceeds its declared length"));
     }
     Ok(())

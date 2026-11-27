@@ -314,6 +314,27 @@ pub enum IntervalEnd {
     Through(IntervalUnit),
 }
 
+impl Precision {
+    pub(crate) fn contains_length(self, length: usize) -> bool {
+        match self {
+            Self::Unspecified => true,
+            Self::Specified(maximum) => length <= maximum as usize,
+        }
+    }
+}
+
+impl CharacterMetadata {
+    /// Default charset and collation of Calcite character columns and VALUES literals.
+    pub fn implicit() -> Self {
+        Self::Present {
+            charset: "UTF-8".into(),
+            collation: "ISO-8859-1$en_US$primary".into(),
+            coercibility: Coercibility::Implicit,
+            identity: CollationIdentity::BuiltinImplicit,
+        }
+    }
+}
+
 impl TypeKind {
     pub(crate) fn references(&self) -> Vec<TypeId> {
         match self {

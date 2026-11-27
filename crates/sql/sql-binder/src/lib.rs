@@ -10,7 +10,7 @@ pub use schema::preview_schema;
 
 pub use program::{bind_constant_program, bind_sql, bind_submissions, bind_table_program};
 
-use feldera_sql_parser::{Statement, parse as parse_feldera, parse_at as parse_feldera_at};
+use feldera_sql_parser::{Statement, parse as parse_feldera};
 use feldera_type_derivation_probe::{
     extras,
     model::{DerivedType, Kind, Outcome, SqlType},
@@ -687,7 +687,7 @@ fn plain_select(query: &Query) -> Result<&Select, Failure> {
     select_without_modifiers(query, false)
 }
 
-fn select_without_modifiers(query: &Query, allow_table_clauses: bool) -> Result<&Select, Failure> {
+fn query_body(query: &Query) -> Result<&SetExpr, Failure> {
     let Query {
         with: None,
         body,
@@ -708,7 +708,11 @@ fn select_without_modifiers(query: &Query, allow_table_clauses: bool) -> Result<
     if !locks.is_empty() || !pipe_operators.is_empty() {
         return Err(unsupported("query locks and pipes are outside the probe"));
     }
-    let SetExpr::Select(select) = body.as_ref() else {
+    Ok(body.as_ref())
+}
+
+fn select_without_modifiers(query: &Query, allow_table_clauses: bool) -> Result<&Select, Failure> {
+    let SetExpr::Select(select) = query_body(query)? else {
         return Err(unsupported("expected one SELECT"));
     };
     let Select {
@@ -782,20 +786,27 @@ pub struct Submission {
 pub fn bind_scalar_submissions(
     submissions: &[Submission],
 ) -> Result<(BoundProjection, String), Failure> {
-    let (statements, source) = parse_submissions(submissions)?;
+    let (statements, source) = parse_submissions(submissions, |_| {})?;
     let result = bind_projection(&source, &statements, false)?;
     Ok((result, source))
 }
 
-fn parse_submissions(submissions: &[Submission]) -> Result<(Vec<Statement>, String), Failure> {
+fn parse_submissions(
+    submissions: &[Submission],
+    mut record_start: impl FnMut(Location),
+) -> Result<(Vec<Statement>, String), Failure> {
     let mut statements = Vec::new();
     let mut lines = Vec::new();
     for submission in submissions {
         if submission.batch != 0 {
             return Err(unsupported("expected one compilation batch"));
         }
-        let parsed =
-            parse_feldera_at(&submission.sql, lines.len() as u64).map_err(parse_failure)?;
+        let parsed = feldera_sql_parser::parse_at_with_starts(
+            &submission.sql,
+            lines.len() as u64,
+            &mut record_start,
+        )
+        .map_err(parse_failure)?;
         if !submission.many && parsed.len() != 1 {
             return Err(parse_failure(
                 "single-statement submission requires exactly one statement",

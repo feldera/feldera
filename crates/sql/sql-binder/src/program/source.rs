@@ -200,15 +200,16 @@ pub(super) fn coordinates(span: Span) -> Coordinates {
 pub(super) struct DeclarationTokens(Vec<TokenWithSpan>);
 
 impl DeclarationTokens {
-    pub(super) fn split(sql: &str) -> Result<Vec<Self>, Failure> {
+    pub(super) fn split(sql: &str, starts: &[crate::Location]) -> Result<Vec<Self>, Failure> {
         let mut declarations: Vec<Self> = Vec::new();
+        let mut starts = starts.iter().copied().peekable();
         for token in significant_tokens(sql)? {
-            if matches!(&token.token, Token::Word(w) if w.keyword == Keyword::CREATE) {
+            if starts.next_if_eq(&token.span.start).is_some() {
                 declarations.push(Self(Vec::new()));
             }
             declarations
                 .last_mut()
-                .ok_or_else(|| unsupported("expected CREATE declaration"))?
+                .ok_or_else(|| unsupported("missing statement start"))?
                 .0
                 .push(token);
         }

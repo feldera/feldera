@@ -1,6 +1,7 @@
 //! Assemble bounded S1 programs over the fixed compiler system prelude.
 
 mod graph;
+mod insert;
 mod order;
 mod source;
 mod table;
@@ -48,16 +49,24 @@ pub fn bind_constant_program(
 /// The bootstrap contains only compiler-generated objects and an empty user source.
 pub fn bind_sql(id: String, source: &str) -> Result<Program, Failure> {
     let sql = source.trim_end_matches('\n');
-    let statements = super::parse_feldera(sql).map_err(parse_failure)?;
-    bind_statements(id, &statements, sql, true)
+    let mut starts = Vec::new();
+    let statements = feldera_sql_parser::parse_at_with_starts(sql, 0, |loc| starts.push(loc))
+        .map_err(parse_failure)?;
+    bind_statements(id, &statements, &starts, sql, true)
 }
 
 /// Bind a batch of API submissions, preserving per-call statement boundaries
 /// and source lines even when adjacent submissions omit their semicolon.
 pub fn bind_submissions(id: String, submissions: &[Submission]) -> Result<Program, Failure> {
-    let (statements, source) = super::parse_submissions(submissions)?;
-    let mut program =
-        bind_statements(id, &statements, &source, submissions.iter().any(|s| s.many))?;
+    let mut starts = Vec::new();
+    let (statements, source) = super::parse_submissions(submissions, |loc| starts.push(loc))?;
+    let mut program = bind_statements(
+        id,
+        &statements,
+        &starts,
+        &source,
+        submissions.iter().any(|s| s.many),
+    )?;
     // The API retains each submitted string verbatim in its whole-program buffer.
     // Its separate line index drops trailing empty lines from each append.
     let text = &mut program.context.sources.program;
@@ -72,6 +81,7 @@ pub fn bind_submissions(id: String, submissions: &[Submission]) -> Result<Progra
 fn bind_statements(
     id: String,
     statements: &[ParsedStatement],
+    starts: &[crate::Location],
     sql: &str,
     many: bool,
 ) -> Result<Program, Failure> {
@@ -89,7 +99,7 @@ fn bind_statements(
                 Upstream::CreateTable(_) | Upstream::CreateView(_)
             ) =>
         {
-            table::bind_parsed_table(id, prelude, statements, sql, many)
+            table::bind_parsed_table(id, prelude, statements, starts, sql, many)
         }
         _ => Err(unsupported(
             "expected a constant view or a table followed by a view",
@@ -184,7 +194,7 @@ fn append_constant_view(
 
     let relation = program.table.relations;
     if folded {
-        append_values(program, row, Some(expression))?;
+        append_values(program, row, 1, vec![expression])?;
     } else {
         append_project(program, row, expression)?;
     }

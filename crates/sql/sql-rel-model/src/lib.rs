@@ -16,6 +16,7 @@ mod graph;
 pub mod input_producers;
 pub mod input_uses;
 mod literal_validation;
+pub mod literal_insert;
 pub mod literals;
 mod object_relation_validation;
 mod object_validation;

@@ -48,6 +48,7 @@ pub fn preview_schema(sql: &str) -> Result<Value, Failure> {
                 view["materialized"] = (*view_kind == ViewKind::Materialized).into();
                 outputs.push(view);
             }
+            Statement::ModifyTable { .. } => continue,
             _ => return Err(unsupported("schema preview for this statement")),
         }
     }

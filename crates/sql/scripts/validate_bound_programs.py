@@ -13,6 +13,13 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "insert_values": "CREATE TABLE t(a INT); INSERT INTO t VALUES (1), (-2), (NULL), (1);"
+                     "\nCREATE VIEW v AS SELECT * FROM t;",
+    "insert_permutation": "CREATE TABLE t(a INT, b INT); INSERT INTO t(b, a) VALUES (5, 2), (9, 3);"
+                          "\nINSERT INTO t VALUES (3, 4);",
+    "insert_widths": "CREATE TABLE t(id BIGINT NOT NULL, flag BOOLEAN, s VARCHAR(20), b VARBINARY(4));"
+                     "\nINSERT INTO t VALUES (1, TRUE, 'Bob''s', X'ABCD'), (2147483648, NULL, 'a', X'12');",
+    "insert_null": "CREATE TABLE t(a INT); INSERT INTO t VALUES (NULL), (NULL);",
     "explicit_view_columns": "CREATE TABLE readings(x INT, y INT);\n"
                              "CREATE LOCAL VIEW swapped(a, b) AS SELECT y, x FROM readings;\n"
                              "CREATE MATERIALIZED VIEW stored AS SELECT b FROM swapped;",

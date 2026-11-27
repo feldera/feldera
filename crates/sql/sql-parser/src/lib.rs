@@ -370,6 +370,16 @@ pub fn parse(sql: &str) -> Result<Vec<Statement>, ParserError> {
 
 /// Parse an API submission after the given number of prior source lines.
 pub fn parse_at(sql: &str, preceding_lines: u64) -> Result<Vec<Statement>, ParserError> {
+    parse_at_with_starts(sql, preceding_lines, |_| {})
+}
+
+/// Parse a submission and report the first token of each complete statement.
+/// Coordinates include the preceding submissions, including when they omit a semicolon.
+pub fn parse_at_with_starts(
+    sql: &str,
+    preceding_lines: u64,
+    record_start: impl FnMut(sqlparser_064::tokenizer::Location),
+) -> Result<Vec<Statement>, ParserError> {
     let mut tokens = source_tokens(sql)?;
     if preceding_lines != 0 {
         for token in &mut tokens {
@@ -402,7 +412,7 @@ pub fn parse_at(sql: &str, preceding_lines: u64) -> Result<Vec<Statement>, Parse
     reserved::validate_tokens(&tokens)?;
     reject::validate_lossy_tokens(&tokens)?;
     attributes::validate_tokens(&mut tokens)?;
-    statements::parse(tokens)
+    statements::parse_with_starts(tokens, record_start)
 }
 
 #[cfg(test)]
