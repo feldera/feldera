@@ -323,8 +323,9 @@ views are *not* necessarily deterministic (e.g., a `LIMIT` query).
 We recommend against using elapsed time for synchronization: a test
 that sleeps for a fixed time and then reads fails when the pipeline is
 slower than expected.  Tests should wait for a deterministic condition instead.
-Some conditions are enforced by a blocking SDK call.  For other conditions, the test polls the
-condition, as the [helper functions](#helper-functions) do.  Timeouts are
+Some conditions are enforced by a blocking SDK call.  For other conditions,
+use `pipeline.wait_for_condition()` to poll a predicate that takes the pipeline
+as its argument.  Timeouts are
 used to deal with unresponsive pipelines or unresponsive systems under test (e.g.,
 Kubernetes does not allocate enough resources for the pipeline to start):
 
@@ -388,46 +389,19 @@ clock.
 
 ## Helper functions
 
-The following functions are not part of the SDK, but may be handy.
-`wait_for_condition()` polls a condition specified as a Python predicate
-function, `read_changes()` waits until a listener has received a number
-of changes, and `sorted_dicts()` sorts rows or changes.
+`read_changes()` uses `pipeline.wait_for_condition()` to wait until a listener
+has received a number of changes.  `sorted_dicts()` sorts rows or changes.
 
 ```python
-import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
+from feldera import Pipeline
 from feldera.output_handler import OutputHandler
 
 
-def wait_for_condition(
-    description: str,
-    predicate_func: Callable[[], bool],
-    timeout_s: float | None = None,
-    poll_interval_s: float = 0.1,
-) -> None:
-    """Keep re-evaluating `predicate_func` until it returns True or the timeout elapses.
-
-    :param description: Human-readable description used in the timeout error.
-    :param predicate_func: Callable returning True when a condition is met.
-    :param timeout_s: Maximum wait time in seconds.  None means wait forever.
-    :param poll_interval_s: How frequently to call the predicate, in seconds.
-    :raises TimeoutError: If the condition is not met within `timeout_s`.
-    """
-    timestamp_deadline_s = (
-        time.monotonic() + timeout_s if timeout_s is not None else float("inf")
-    )
-    while not predicate_func():
-        if time.monotonic() > timestamp_deadline_s:
-            raise TimeoutError(
-                f"timeout ({timeout_s:.1f}s) waiting for condition '{description}'"
-            )
-        time.sleep(poll_interval_s)
-
-
 def read_changes(
-    listener: OutputHandler, count: int, timeout_s: float | None = None
+    pipeline: Pipeline, listener: OutputHandler, count: int, timeout_s: float | None = None
 ) -> list[dict[str, Any]]:
     """Wait until `listener` has received at least `count` changes; return all
     received changes (could be more than count).
@@ -435,14 +409,15 @@ def read_changes(
     Each change has an `insert_delete` value of +1 or -1; a change of weight n
     arrives as n changes.
 
+    :param pipeline: The pipeline being tested.
     :param listener: The listener that `Pipeline.listen()` returned.
     :param count: Number of changes to wait for.
     :param timeout_s: Maximum wait time in seconds.  None means wait forever.
     :raises TimeoutError: If fewer than `count` changes arrive within `timeout_s`.
     """
-    wait_for_condition(
+    pipeline.wait_for_condition(
         f"{count} change(s) on the '{listener.view_name}' listener",
-        lambda: len(listener.to_pandas(clear_buffer=False)) >= count,
+        lambda _: len(listener.to_pandas(clear_buffer=False)) >= count,
         timeout_s,
     )
     return listener.to_dict()
@@ -732,7 +707,7 @@ def check_paused_pipeline_holds_queued_input(pipeline: Pipeline) -> None:
     pipeline.input_json(
         "orders", [{"id": 0, "customer": "alice", "amount": 1}]
     )
-    wait_for_condition("all input is processed", lambda: queues_empty(pipeline))
+    pipeline.wait_for_condition("all input is processed", queues_empty)
     pipeline.pause()
     before = list(pipeline.query("SELECT * FROM customer_totals"))
 
@@ -828,8 +803,8 @@ def clock_ms(pipeline: Pipeline) -> int | None:
 def advance_clock(pipeline: Pipeline, delta_ms: int) -> None:
     """Move NOW() forward and wait until all views use the new value."""
     target_ms = pipeline.advance_clock(delta_ms)["now_ms"]
-    wait_for_condition(
-        f"NOW() is {target_ms} ms", lambda: clock_ms(pipeline) == target_ms
+    pipeline.wait_for_condition(
+        f"NOW() is {target_ms} ms", lambda p: clock_ms(p) == target_ms
     )
 
 
@@ -1006,9 +981,9 @@ def check_overflow_stops_pipeline(pipeline: Pipeline) -> None:
         pipeline.input_json("numbers", [{"a": 120, "b": 100}])
     except FelderaAPIError:
         pass
-    wait_for_condition(
+    pipeline.wait_for_condition(
         "the pipeline stopped",
-        lambda: pipeline.status() == PipelineStatus.STOPPED,
+        lambda p: p.status() == PipelineStatus.STOPPED,
         timeout_s=60,
     )
     error = pipeline.deployment_error()
@@ -1056,14 +1031,14 @@ of hanging.  Most blocking SDK calls accept a time limit:
 | `pipeline.start()`, `pipeline.start_paused()`, `pipeline.pause()`, `pipeline.resume()` | `timeout_s=...` | `TimeoutError` |
 | `pipeline.commit_transaction()` | `timeout_s=...` | `TimeoutError` |
 | `pipeline.wait_for_completion()` | `timeout_s=...` | `TimeoutError` |
+| `pipeline.wait_for_condition()` | `timeout_s=...` | `TimeoutError` |
 | `pipeline.stop()`, `pipeline.clear_storage()` | `timeout_s=...` | `FelderaTimeoutError` |
 | Each HTTP request of a client | `FelderaClient(url, timeout=...)` | `FelderaTimeoutError` |
 | `pipeline.input_pandas()`, `pipeline.execute(..., wait=True)`, compilation in `PipelineBuilder(...).create_or_replace()` | None | |
 
-The polling helper from [Helper functions](#helper-functions) take a
-limit argument: pass `timeout_s` to `wait_for_condition()` or to
-`read_changes()`, for example `read_changes(totals, 3, timeout_s=60)`.
-They raise `TimeoutError` when the time is up.
+The `read_changes()` helper also accepts a time limit.  For example,
+`read_changes(pipeline, totals, 3, timeout_s=60)` raises `TimeoutError` if
+fewer than three changes arrive within 60 seconds.
 
 ```python
 from feldera.rest.errors import FelderaTimeoutError
