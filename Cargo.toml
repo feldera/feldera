@@ -151,7 +151,7 @@ dbsp = { path = "crates/dbsp", version = "0.392.0" }
 datafusion-functions-json = "0.55.4"
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
-# Feldera fork of delta-rs: upstream `main` + 7 commits on branch
+# Feldera fork of delta-rs: upstream `main` + 8 commits on branch
 # `main-feldera`. Keep them when bumping the rev:
 #   - "Disable unsupported feature check.": read tables with reader features
 #     delta-rs does not list. Five upstream tests fail by design.
@@ -168,9 +168,12 @@ deadpool-postgres = "0.14.1"
 #   - "catalog-unity: add Databricks workload identity federation": `uc://`
 #     reads exchange a Kubernetes service account token for a Databricks token
 #     (`unity_federated_token_file`), with no long-lived secret.
+#   - "public file_skipping_predicate for listing the files a scan reads": a
+#     distributed Delta input lists the files that a single-host scan reads
+#     (#8064).  Test: `test_file_skipping_predicate`.
 # Upstream now, do not reapply: the delta-io/delta-rs#4692 backport.
-deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "45a7cd64434335387b967321ed9d05da1e0fcb9a" }
-deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "45a7cd64434335387b967321ed9d05da1e0fcb9a" }
+deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "a6c23bab1147cf819daa4497fd65538dca912044" }
+deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "a6c23bab1147cf819daa4497fd65538dca912044" }
 
 delta_kernel = { package = "buoyant_kernel", version = "0.28" }
 derive_more = { version = "1.0.0" }
