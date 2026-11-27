@@ -13,6 +13,20 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "assignment_numeric": "CREATE TABLE t(d DATE, i BIGINT, n DECIMAL(7,2), c CHAR(4), f REAL, g DOUBLE);"
+                          "\nINSERT INTO t VALUES ('2020-02-29', '+123', -124, 'abcdef', 1, 9),"
+                          " ('2000-01-01', '-2', 5, 'x', 0, 2);",
+    "assignment_warnings": "CREATE TABLE t(i SMALLINT, d DATE, n DECIMAL(3,2));"
+                           "\nINSERT INTO t VALUES ('-32769', '2020-02-30', 55),"
+                           " ('hello', 'Bob''s', 42), ('hello', 'Bob''s', 42);"
+                           "\nINSERT INTO t VALUES ('hello', 'Bob''s', 42);",
+    "assignment_warning_order": "CREATE TABLE t(a INT, b INT); INSERT INTO t(b, a) VALUES ('one', 'two'), ('three', 'two');",
+    "assignment_unsigned": "CREATE TABLE t(u INT UNSIGNED, i INT);"
+                           "\nINSERT INTO t VALUES ('-0', '  +0002 '), ('4000000000', '03');",
+    "assignment_dates": "CREATE TABLE t(d DATE); INSERT INTO t VALUES (DATE '2020-01-31'),"
+                        " (DATE '1969-01-01'), (NULL); CREATE VIEW v AS SELECT * FROM t;",
+    "assignment_date_bounds": "CREATE VIEW v AS SELECT DATE '0001-01-01' AS first_day,"
+                              " DATE '9999-12-31' AS last_day, DATE '2024-02-29' AS leap_day;",
     "collection_identity": "CREATE TABLE t(a INT ARRAY); CREATE VIEW v AS SELECT * FROM t;",
     "collection_nested": "CREATE TABLE t(a INT ARRAY NOT NULL, b VARCHAR(4) ARRAY ARRAY NOT NULL, c INT ARRAY NOT NULL);",
     "collection_project": "CREATE TABLE t(m MAP<VARCHAR, INT> NOT NULL, n MAP<INT, VARCHAR ARRAY>);"

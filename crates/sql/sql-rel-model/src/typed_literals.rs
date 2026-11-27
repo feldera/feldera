@@ -313,7 +313,7 @@ pub(crate) fn integer_fits(value: &str, width: IntegerWidth, signed: bool) -> bo
     }
 }
 
-fn decimal_fits(value: &ExactDecimal, precision: u32, scale: u32) -> bool {
+pub(crate) fn decimal_fits(value: &ExactDecimal, precision: u32, scale: u32) -> bool {
     let digits = value
         .coefficient
         .trim_start_matches(['+', '-'])

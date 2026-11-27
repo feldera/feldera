@@ -8,6 +8,23 @@ use crate::{TypeId, source::Origin};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Calcite DATE literals use four unsigned year digits and the proleptic
+/// Gregorian calendar. Its DATE range starts at 0001-01-01.
+pub fn date_from_text(text: &str) -> Option<i32> {
+    use chrono::Datelike;
+    if text.len() != 10 {
+        return None;
+    }
+    let date: chrono::NaiveDate = text.parse().ok()?;
+    (date.year() > 0 && date.to_string() == text).then(|| date.to_epoch_days())
+}
+
+pub fn date_to_text(days: i32) -> Option<String> {
+    use chrono::Datelike;
+    let date = chrono::NaiveDate::from_epoch_days(days)?;
+    (1..=9999).contains(&date.year()).then(|| date.to_string())
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Literal {

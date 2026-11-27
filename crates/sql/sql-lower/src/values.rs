@@ -116,7 +116,7 @@ fn lower_literal(
     value: &LiteralValue,
     scalar: &mut Value,
 ) -> Result<ConstantField, Error> {
-    use base64::{Engine, engine::general_purpose::STANDARD};
+    use base64::{engine::general_purpose::STANDARD, Engine};
     let unknown = range(0, 0, 0, 0);
     let (mut literal, type_name, digest, sql) = match (&ty.kind, value) {
         (TypeKind::Null {}, LiteralValue::Null {}) => (
@@ -127,6 +127,14 @@ fn lower_literal(
         ),
         (_, _) if ty.nullable => {
             return Err(Error("unsupported nullable VALUES literal type".into()));
+        }
+        (TypeKind::Date {}, LiteralValue::Date { epoch_days }) => {
+            let text = feldera_sql_rel_model::literals::date_to_text(*epoch_days)
+                .ok_or_else(|| Error("DATE literal is outside the SQL year range".into()))?;
+            let mut literal = ids.node("DBSPDateLiteral", &unknown);
+            literal["value"] = (*epoch_days).into();
+            let sql = format!("DATE '{text}'");
+            (literal, "DATE".into(), text, sql)
         }
         (
             TypeKind::Integer {

@@ -5,14 +5,20 @@
 use crate::{
     catalog::Name,
     expression_objects::ObjectKind,
-    literals::LiteralValue,
+    literals::{ExactDecimal, LiteralValue, date_from_text},
     program::Program,
     relation_properties::Properties,
     statements::{Statement, TargetColumn},
-    typed_literals::integer_fits,
+    typed_literals::{decimal_fits, integer_fits},
     types::{SqlType, TypeKind},
 };
 use std::collections::HashSet;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AssignmentWarning {
+    pub kind: &'static str,
+    pub message: String,
+}
 
 /// Check a complete positional INSERT or an explicit permutation. Assignment
 /// casts outside this subset require the general DML translator. The caller
@@ -23,7 +29,7 @@ pub fn validate(
     target: &Name,
     columns: Option<&[TargetColumn]>,
     relation: u32,
-) -> Result<(), String> {
+) -> Result<Vec<AssignmentWarning>, String> {
     let schema = preceding
         .iter()
         .find_map(|statement| match statement {
@@ -59,12 +65,12 @@ pub fn validate(
                 .collect::<Result<_, String>>()?
         }
     };
+    let types = &program.table.type_table.types;
     let props = &program.properties.relations[relation as usize];
     let Properties::Values { tuples } = props.fields else {
         return Err("INSERT source requires literal VALUES".into());
     };
     let producer = &program.producers.relations[relation as usize];
-    let types = &program.table.type_table.types;
     let TypeKind::Row { fields, .. } = &types[producer.row.0 as usize].kind else {
         return Err("INSERT source requires a row type".into());
     };
@@ -81,31 +87,38 @@ pub fn validate(
     {
         return Err("unexpected INSERT source shape".into());
     }
+    // The compiler evaluates casts after permuting each row into table order.
+    let mut order: Vec<_> = destinations.iter().enumerate().collect();
+    order.sort_unstable_by_key(|(_, dest)| dest.index);
+    let mut warnings = Vec::new();
+    let mut reported = HashSet::new();
     for row in site.roots.chunks_exact(fields.len()) {
-        for ((&id, field), dest) in row.iter().zip(fields).zip(&destinations) {
+        for &(i, dest) in &order {
+            let id = row[i];
             let ObjectKind::Literal { literal } =
                 &program.expressions.expressions[id.0 as usize].kind
             else {
                 return Err("expected a literal in INSERT VALUES".into());
             };
-            if !assignable(&literal.value, &types[field.ty.0 as usize]) {
+            if !fits_source(&literal.value, &types[fields[i].ty.0 as usize]) {
                 return Err("literal does not fit the INSERT source row".into());
             }
-            if !assignable(&literal.value, &types[dest.ty.0 as usize]) {
-                return Err(format!(
-                    "unsupported INSERT assignment to {}",
-                    dest.name.name
-                ));
+            if let Some(warning) =
+                assignment(&literal.value, &types[dest.ty.0 as usize], &dest.name.name)?
+                && reported.insert(warning.clone())
+            {
+                warnings.push(warning);
             }
         }
     }
-    Ok(())
+    Ok(warnings)
 }
 
-fn assignable(value: &LiteralValue, ty: &SqlType) -> bool {
+fn fits_source(value: &LiteralValue, ty: &SqlType) -> bool {
     match (value, &ty.kind) {
         (LiteralValue::Null {}, _) => ty.nullable,
         (LiteralValue::Boolean { .. }, TypeKind::Boolean {}) => true,
+        (LiteralValue::Date { .. }, TypeKind::Date {}) => true,
         (LiteralValue::Integer { value }, TypeKind::Integer { width, signed }) => {
             integer_fits(value, *width, *signed)
         }
@@ -117,4 +130,51 @@ fn assignable(value: &LiteralValue, ty: &SqlType) -> bool {
         }
         _ => false,
     }
+}
+
+/// INSERT casts can truncate a string or leave a failed conversion for the
+/// runtime. Pipeline definitions retain the conversion warnings.
+fn assignment(
+    value: &LiteralValue,
+    target: &SqlType,
+    column: &str,
+) -> Result<Option<AssignmentWarning>, String> {
+    let result = match (value, &target.kind) {
+        (LiteralValue::Character { .. }, TypeKind::Character { .. })
+        | (LiteralValue::Integer { .. }, TypeKind::Float { .. }) => None,
+        (LiteralValue::Character { value }, TypeKind::Date {}) => {
+            let text = value.trim_matches(|c: char| c <= ' ');
+            date_from_text(text).is_none().then(|| AssignmentWarning {
+                kind: "Suspicious argument",
+                message: format!("String '{value}' cannot be interpreted as a DATE"),
+            })
+        }
+        (LiteralValue::Character { value }, TypeKind::Integer { width, signed }) => {
+            let text = value.trim_matches(|c: char| c <= ' ');
+            let fits = text.parse::<i64>().is_ok()
+                && (*signed || !text.starts_with('-'))
+                && integer_fits(text, *width, *signed);
+            (!fits).then(|| AssignmentWarning {
+                kind: "Not a number",
+                message: format!(" String '{value}' cannot be interpreted as a number"),
+            })
+        }
+        (
+            LiteralValue::Integer { value },
+            TypeKind::Decimal {
+                precision, scale, ..
+            },
+        ) => {
+            let decimal = ExactDecimal {
+                coefficient: value.clone(),
+                scale: 0,
+            };
+            (!decimal_fits(&decimal, *precision, *scale)).then(|| AssignmentWarning {
+                kind: "Invalid DECIMAL", message: format!("cannot represent {value} as DECIMAL({precision}, {scale}): precision of DECIMAL type too small to represent value")
+            })
+        }
+        _ if fits_source(value, target) => None,
+        _ => return Err(format!("unsupported INSERT assignment to {column}")),
+    };
+    Ok(result)
 }

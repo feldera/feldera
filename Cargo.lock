@@ -5958,6 +5958,7 @@ dependencies = [
 name = "feldera-sql-rel-model"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "schemars 0.8.22",
  "serde",
  "serde_json",

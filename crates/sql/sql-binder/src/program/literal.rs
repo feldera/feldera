@@ -2,7 +2,7 @@
 
 use crate::{Expr, Failure, Value, unsupported};
 use feldera_sql_rel_model::{
-    literals::LiteralValue,
+    literals::{LiteralValue, date_from_text},
     types::{CharacterMetadata, IntegerWidth, Precision, TypeKind},
 };
 use sqlparser_064::ast::UnaryOperator;
@@ -44,6 +44,18 @@ impl Cell {
         };
         match expr {
             Expr::Nested(expr) => Self::parse(expr),
+            Expr::TypedString(typed) if typed.data_type == crate::DataType::Date => {
+                let Value::SingleQuotedString(text) = &typed.value.value else {
+                    return Err(unsupported("expected a quoted DATE"));
+                };
+                let epoch_days =
+                    date_from_text(text).ok_or_else(|| unsupported("unsupported DATE literal"))?;
+                Ok(Self {
+                    value: LiteralValue::Date { epoch_days },
+                    kind: TypeKind::Date {},
+                    sql: format!("DATE '{text}'"),
+                })
+            }
             Expr::UnaryOp {
                 op: op @ (UnaryOperator::Plus | UnaryOperator::Minus),
                 expr,

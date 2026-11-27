@@ -122,7 +122,7 @@ pub fn lower_program(
             // This profile builds a pipeline. Literal inserts have no circuit
             // state and no table contents consumer. Testing mode and inserts
             // that read another table require an actual DML evaluator.
-            feldera_sql_rel_model::literal_insert::validate(
+            let warnings = feldera_sql_rel_model::literal_insert::validate(
                 program,
                 &program.statements[..index],
                 name,
@@ -131,10 +131,19 @@ pub fn lower_program(
             )
             .map_err(Error)?;
             let position = source_table::statement_position(source);
-            checkpoint["diagnostics"]["messages"].as_array_mut().expect("system diagnostics").push(serde_json::json!({
+            let messages = checkpoint["diagnostics"]["messages"]
+                .as_array_mut()
+                .expect("system diagnostics");
+            messages.push(serde_json::json!({
                 "context":position, "range":position, "warning":true, "continuation":false,
                 "type":"Statement ignored", "message":"INSERT has no effect in a pipeline definition"
             }));
+            for warning in warnings {
+                messages.push(serde_json::json!({
+                    "context":position, "range":source_table::range(0, 0, 0, 0), "warning":true,
+                    "continuation":false, "type":warning.kind, "message":warning.message
+                }));
+            }
             continue;
         }
         if let Statement::CreateTable { source, schema, .. }
