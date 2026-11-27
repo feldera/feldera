@@ -9,7 +9,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IContainsIntegrator;
@@ -105,8 +104,7 @@ public class StrayGC extends CircuitWithGraphsVisitor {
         DBSPOperator left = operator.left().operator;
         if (left.is(DBSPAggregateLinearPostprocessRetainKeysOperator.class) ||
             left.is(DBSPChainAggregateOperator.class) ||
-            left.is(DBSPAggregateOperator.class) ||
-            left.is(DBSPLagOperator.class))
+            left.is(DBSPAggregateOperator.class))
             return;
         this.check(operator);
     }

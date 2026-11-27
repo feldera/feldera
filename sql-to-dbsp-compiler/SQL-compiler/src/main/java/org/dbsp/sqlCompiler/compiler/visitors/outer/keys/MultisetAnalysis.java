@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -586,15 +587,26 @@ public class MultisetAnalysis extends CircuitVisitor {
         this.set(operator, isMultiset);
     }
 
-    @Override
-    public void postorder(DBSPLagOperator operator) {
-        // One output row per input row, computed from the row and an earlier row:
-        // a set if the input is a set and the input row is recoverable from the output row
+    /** A LAG operator produces one output row per input row, computed from the row and an earlier
+     * row: a set if the input on {@code data} is a set and the input row is recoverable from the
+     * output row. */
+    private void lag(DBSPSimpleOperator operator, OutputPort data) {
         DBSPClosureExpression function = operator.getFunction().as(DBSPClosureExpression.class);
-        boolean isMultiset = this.anyInputMultiset(operator)
+        boolean isMultiset = this.isMultiset(data)
                 || function == null
                 || !this.isCertainlyInjective(function, List.of(0));
         this.set(operator, isMultiset);
+    }
+
+    @Override
+    public void postorder(DBSPLagOperator operator) {
+        this.lag(operator, operator.input());
+    }
+
+    @Override
+    public void postorder(DBSPLagWithWaterlineOperator operator) {
+        // The second input carries the waterline
+        this.lag(operator, operator.left());
     }
 
     @Override

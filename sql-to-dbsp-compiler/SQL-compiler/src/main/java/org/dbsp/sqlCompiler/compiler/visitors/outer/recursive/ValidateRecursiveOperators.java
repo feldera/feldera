@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -89,6 +90,11 @@ public class ValidateRecursiveOperators extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPLagOperator node) {
+        this.reject(node, "LAG", false);
+    }
+
+    @Override
+    public void postorder(DBSPLagWithWaterlineOperator node) {
         this.reject(node, "LAG", false);
     }
 

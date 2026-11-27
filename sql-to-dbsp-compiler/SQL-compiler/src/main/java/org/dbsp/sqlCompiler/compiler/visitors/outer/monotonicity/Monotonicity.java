@@ -598,12 +598,7 @@ public class Monotonicity extends CircuitVisitor {
      * in column C may be bounded by n.C; the checks below decide when they are.
      * No other value field of those rows depends on n. */
     static int lagPreservedField(DBSPLagOperator node) {
-        DBSPFieldComparatorExpression firstColumnCompared = null;
-        DBSPExpression comparator = node.comparator;
-        while (comparator.is(DBSPFieldComparatorExpression.class)) {
-            firstColumnCompared = comparator.to(DBSPFieldComparatorExpression.class);
-            comparator = firstColumnCompared.source;
-        }
+        DBSPFieldComparatorExpression firstColumnCompared = node.firstComparedField();
         if (firstColumnCompared == null)
             return -1;
         final int c = firstColumnCompared.fieldNo;
