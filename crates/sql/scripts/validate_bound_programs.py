@@ -27,6 +27,19 @@ CASES = {
     "set_filter": SET_TABLES + "SELECT y AS z FROM a WHERE x > 1 UNION ALL SELECT q FROM b;",
     "set_identity_names": "CREATE TABLE a(x INT); CREATE TABLE b(y INT);"
                           " CREATE VIEW v AS SELECT x AS n FROM a UNION DISTINCT SELECT y AS n FROM b;",
+    "scalar_assignment_float": "CREATE TABLE t(x REAL, y DOUBLE); INSERT INTO t VALUES"
+                               " ('NaN', 'what'), ('1e999', '-2e23'), ('', 'inf');",
+    "scalar_assignment_text": "CREATE TABLE t(x CHAR(2), y VARCHAR, z VARCHAR(1));"
+                              " INSERT INTO t VALUES (123, -42.5, TRUE), (2, 3.20, FALSE);",
+    "scalar_assignment_bool": "CREATE TABLE t(x BOOLEAN); INSERT INTO t VALUES"
+                              " (' True '), ('1'), ('YES'), ('False'), (NULL), ('1');",
+    "scalar_assignment_numeric": "CREATE TABLE t(i INTEGER, r REAL, a BOOLEAN, b BOOLEAN);"
+                                 " INSERT INTO t VALUES (TRUE,FALSE,2,-2.25),(FALSE,TRUE,0,0.00);",
+    "scalar_assignment_narrow": "CREATE TABLE t(i TINYINT, u TINYINT UNSIGNED);"
+                                " INSERT INTO t VALUES (128,-1), (-129,256);",
+    "scalar_assignment_date_text": "CREATE TABLE t(x VARCHAR, y CHAR(5));"
+                                   " INSERT INTO t VALUES (DATE '2024-01-01', TIME '23:59:59');",
+    "scalar_assignment_binary_text": "CREATE TABLE t(x VARCHAR); INSERT INTO t VALUES (X'CAFE'), (X'');",
     "record_declaration": "CREATE TYPE pair AS (x INT NULL, y VARCHAR NOT NULL, z INT2);",
     "record_fields": 'CREATE TYPE pair AS (x INT, "Y" VARCHAR(12) NOT NULL);'
                      ' CREATE TABLE t(a pair, b pair NOT NULL, c pair ARRAY); CREATE VIEW v AS SELECT c, b, a FROM t;',

@@ -16,6 +16,8 @@ CASES = {
     **{name: BINDING_CASES[name] for name in (
         "set_minus", "set_minus_all", "set_mixed", "set_intersect_all", "set_except_chain", "set_intersect_chain",
         "set_union", "set_union_all", "set_chain", "set_filter", "set_identity_names",
+        "scalar_assignment_float", "scalar_assignment_text", "scalar_assignment_bool", "scalar_assignment_numeric",
+        "scalar_assignment_narrow", "scalar_assignment_date_text", "scalar_assignment_binary_text",
         "record_temporal", "record_nominal", "record_quoted",
         "record_declaration", "record_fields", "record_nested", "record_forward", "record_inline", "record_warnings",
         "uuid_variant_columns", "uuid_literal", "uuid_insert", "variant_assignments",

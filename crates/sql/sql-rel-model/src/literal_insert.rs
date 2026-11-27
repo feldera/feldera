@@ -187,9 +187,37 @@ fn assignment(
             | LiteralValue::Character { .. },
             TypeKind::Variant {},
         )
-        | (LiteralValue::Character { .. }, TypeKind::Character { .. })
-        | (LiteralValue::Integer { .. } | LiteralValue::Decimal { .. }, TypeKind::Float { .. })
-        | (LiteralValue::Decimal { .. }, TypeKind::Integer { .. }) => None,
+        // A pipeline discards the INSERT's rows. Conversions left as runtime
+        // casts by Simplify still accept the assignment and produce no warning.
+        | (
+            LiteralValue::Character { .. }
+            | LiteralValue::Integer { .. }
+            | LiteralValue::Decimal { .. }
+            | LiteralValue::Boolean { .. }
+            | LiteralValue::Date { .. }
+            | LiteralValue::Time { .. }
+            | LiteralValue::Timestamp { .. }
+            | LiteralValue::Binary { .. },
+            TypeKind::Character { .. },
+        )
+        | (
+            LiteralValue::Character { .. }
+            | LiteralValue::Integer { .. }
+            | LiteralValue::Decimal { .. }
+            | LiteralValue::Boolean { .. },
+            TypeKind::Float { .. },
+        )
+        | (
+            LiteralValue::Boolean { .. } | LiteralValue::Integer { .. } | LiteralValue::Decimal { .. },
+            TypeKind::Integer { .. } | TypeKind::Boolean {},
+        ) => None,
+        (LiteralValue::Character { value }, TypeKind::Boolean {}) => {
+            let text = value.trim_matches(|c: char| c <= ' ');
+            (!text.eq_ignore_ascii_case("true") && !text.eq_ignore_ascii_case("false")).then(|| AssignmentWarning {
+                kind: "Suspicious argument",
+                message: format!("String '{value}' cannot be interpreted as a BOOLEAN"),
+            })
+        }
         (LiteralValue::Character { value }, TypeKind::Uuid {}) => {
             crate::literals::uuid_from_text(value)
                 .is_none()
