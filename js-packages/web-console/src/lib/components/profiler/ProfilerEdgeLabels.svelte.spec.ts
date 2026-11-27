@@ -5,7 +5,7 @@
 
 import { ProfilerDiagram } from 'profiler-layout'
 import { CircuitProfile, type JsonProfiles, type ProfilerCallbacks } from 'profiler-lib'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 
@@ -65,19 +65,13 @@ const PROFILE = {
 // biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance that the diagram creates
 type Cy = any
 
-/** Wait until cytoscape draws no more frames. Cytoscape emits `render` after each draw. */
-const settle = async (cy: Cy) => {
-  await new Promise((resolve) => setTimeout(resolve, 150))
-  let hasDrawn: boolean
-  const onRender = () => {
-    hasDrawn = true
-  }
-  cy.on('render', onRender)
-  do {
-    hasDrawn = false
-    await new Promise((resolve) => requestAnimationFrame(resolve))
-  } while (hasDrawn)
-  cy.off('render', onRender)
+/** Waits until `ready` is true, then for one draw of cytoscape that starts after that. The screenshot
+ *  then shows the state that `ready` checks. */
+const drawnWhen = async (cy: Cy, ready: () => boolean = () => true) => {
+  await vi.waitFor(() => expect(ready()).toBe(true))
+  const drawn = new Promise((resolve) => cy.one('render', resolve))
+  cy.forceRender()
+  await drawn
 }
 
 /** Mount the diagram over `PROFILE`, wait for its layout, and fit the view to the whole graph. */
@@ -103,6 +97,7 @@ const mountDiagram = async () => {
   const wrapper = document.createElement('div')
   wrapper.style.cssText = 'position:relative;width:600px;height:400px'
   document.body.appendChild(wrapper)
+  onTestFinished(() => wrapper.remove())
   render(ProfilerDiagram, { target: wrapper, props: { profile, callbacks, theme: 'light' } })
   await layout
 
@@ -111,7 +106,7 @@ const mountDiagram = async () => {
   }
   const cy = container._cyreg.cy
   cy.fit(cy.elements(), 20)
-  await settle(cy)
+  await drawnWhen(cy)
   return { cy, graph: page.elementLocator(container) }
 }
 
@@ -138,7 +133,8 @@ describe('ProfilerDiagram edge labels', () => {
     const { cy, graph } = await mountDiagram()
     // A `mouseover` on `sink` traces the edges that reach it.
     cy.$id('sink').emit('mouseover')
-    await settle(cy)
+    // The diagram raises the traced edges one frame after it traces them.
+    await drawnWhen(cy, () => cy.edges('.raised-edge').length === 2)
     expect(cy.edges('.highlight-backward')).toHaveLength(2)
     await expect.element(graph).toMatchScreenshot('edge-labels-traced', screenshotOptions)
   })

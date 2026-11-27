@@ -176,25 +176,29 @@ class GraphEdge implements EncodableAsString {
     /** The operators whose output streams this edge stands for. DBSP names a stream by the operator that
      *  writes it, so two edges of `graph` from one operator carry the same stream. */
     private readonly streamSources: Set<NodeId> = new Set();
-    /** The number of rows in all the streams of this edge. Undefined when the profile has no row
-     *  count for any of the operator's streams. */
-    private rowCount: number | undefined = undefined;
+    /** The number of rows in all the streams of this edge. It is undefined if the profile has no row
+     *  count for one or more of the streams. The label then shows no row count, because a partial sum
+     *  looks like the full count. It starts at 0, the sum of no streams. */
+    private rowCount: number | undefined = 0;
 
     constructor(readonly source: string, readonly target: string, readonly id: string, readonly backedge: boolean) { }
 
     /** Adds the output stream of `operator` to the stream count and the row count of this edge.
-     *  `streamRows` is the number of rows in the stream, if the profile has it. If the stream is
-     *  already counted, the method does nothing. `label()` shows the two counts. */
+     *  `streamRows` is the number of rows in the stream, if the profile has it. If it is undefined,
+     *  the row count of the edge becomes undefined and stays undefined. If the stream is already
+     *  counted, the method does nothing. `label()` shows the two counts. */
     countStreamAndRows(operator: NodeId, streamRows: number | undefined) {
         if (this.streamSources.has(operator))
             return;
         this.streamSources.add(operator);
-        if (streamRows !== undefined)
-            this.rowCount = (this.rowCount ?? 0) + streamRows;
+        this.rowCount = streamRows === undefined || this.rowCount === undefined
+            ? undefined
+            : this.rowCount + streamRows;
     }
 
-    /** The label of this edge, for example "1.20k rows" text above "3 streams". The row count shows only
-     *  if the profile includes one. The stream count shows only if the edge stands for more than one stream. */
+    /** The label of this edge, for example "1.20k rows" text above "3 streams".
+     *  - The row count shows only if the profile has the row count of each stream of the edge.
+     *  - The stream count shows only if the edge stands for more than one stream. */
     private label(): string | undefined {
         const lines: Array<string> = [];
         if (this.rowCount !== undefined)

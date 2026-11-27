@@ -236,4 +236,49 @@ describe('drawn edges', () => {
         const graph = Cytograph.fromProfile(p, selection)
         expect(graph.edges[0]!.getDefinition().data.label).toBe('950 rows')
     })
+
+    /** The label of each drawn edge by id, with all regions collapsed. */
+    const labels = (workerProfiles: unknown[], nodes: unknown[], edges: { from_node: string, to_node: string }[]) => {
+        const p = CircuitProfile.fromJson({
+            metrics: [],
+            worker_profiles: workerProfiles,
+            graph: { nodes: { id: 'n', label: 'circuit', nodes }, edges }
+        } as never).profile
+        const selection = new CircuitSelection(new ExplicitSubSet(new Set(p.complexNodes.keys()), new Set()))
+        return Object.fromEntries(Cytograph.fromProfile(p, selection).edges
+            .map((e) => [e.getId(), e.getDefinition().data.label]))
+    }
+    const regionToSink = {
+        nodes: [simple('n1', 'sink'), cluster('region', 'region', [simple('n2', 'map'), simple('n3', 'filter')])],
+        edges: [{ from_node: 'n2', to_node: 'n1' }, { from_node: 'n3', to_node: 'n1' }]
+    }
+
+    it('sums the rows over all workers', () => {
+        expect(labels(
+            [{ metadata: { n2: outputRows(600) } }, { metadata: { n2: outputRows(400), n3: outputRows(0) } }],
+            regionToSink.nodes, regionToSink.edges
+        )).toEqual({ 'region->n1': '1.00k rows\n2 streams' })
+    })
+
+    it('shows no row count if one stream of the edge has no row count', () => {
+        // n3 has no output statistics, so 600 rows would look like the sum over both streams.
+        expect(labels([{ metadata: { n2: outputRows(600) } }], regionToSink.nodes, regionToSink.edges))
+            .toEqual({ 'region->n1': '2 streams' })
+    })
+
+    it('shows a row count of 0', () => {
+        expect(labels(
+            [{ metadata: { n2: outputRows(0), n3: outputRows(0) } }],
+            regionToSink.nodes, regionToSink.edges
+        )).toEqual({ 'region->n1': '0 rows\n2 streams' })
+    })
+
+    it('shows the rows on a back edge', () => {
+        // The profile merges the `Z^-1` pair into the output node, and the edge into it becomes a back edge.
+        expect(labels(
+            [{ metadata: { n1: outputRows(42) } }],
+            [simple('n1', 'map'), simple('z', 'Z^-1'), simple('zo', 'Z^-1 (output)')],
+            [{ from_node: 'zo', to_node: 'z' }, { from_node: 'n1', to_node: 'z' }, { from_node: 'zo', to_node: 'n1' }]
+        )).toEqual({ 'n1->zo:back': '42 rows', 'zo->n1': undefined })
+    })
 })
