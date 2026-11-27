@@ -136,6 +136,9 @@ CASES = {
                      "\nCREATE VIEW v AS SELECT * FROM t;",
     "insert_permutation": "CREATE TABLE t(a INT, b INT); INSERT INTO t(b, a) VALUES (5, 2), (9, 3);"
                           "\nINSERT INTO t VALUES (3, 4);",
+    "insert_heterogeneous_permutation": "CREATE TABLE t(i SMALLINT NOT NULL, d DATE, n DECIMAL(3,2));\n"
+                                        "INSERT INTO t(d, n, i) VALUES (DATE '2020-01-02', 1.23, 1), (NULL, 3.45, 2);\n"
+                                        "CREATE VIEW v AS SELECT i, d, n FROM t;",
     "insert_widths": "CREATE TABLE t(id BIGINT NOT NULL, flag BOOLEAN, s VARCHAR(20), b VARBINARY(4));"
                      "\nINSERT INTO t VALUES (1, TRUE, 'Bob''s', X'ABCD'), (2147483648, NULL, 'a', X'12');",
     "insert_null": "CREATE TABLE t(a INT); INSERT INTO t VALUES (NULL), (NULL);",

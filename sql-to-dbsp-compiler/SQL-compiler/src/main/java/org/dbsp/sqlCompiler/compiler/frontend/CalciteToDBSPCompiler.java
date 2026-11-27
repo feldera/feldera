@@ -2997,8 +2997,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         CreateTableStatement def = this.tableContents.getTableDefinition(modify.tableName);
         this.modifyTableTranslation = new ModifyTableTranslation(
-                modify, def, this.compiler.getTypeCompiler(),
-                this.options.ioOptions.inputCircuit || this.compiler.usesCircuitSeam());
+                modify, def, this.compiler.getTypeCompiler());
         DBSPZSetExpression result;
         if (modify.rel instanceof LogicalTableScan scan) {
             // Support for INSERT INTO table (SELECT * FROM otherTable)
@@ -3044,8 +3043,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new UnimplementedException("statement of this form not supported",
                     modify.getCalciteObject());
         }
-        // S1 lowering applies the destination order after it builds the complete input.
-        if (result != null && this.modifyTableTranslation.reorderAfterTranslation)
+        // Every input is in target-list order until all rows have been collected.
+        if (result != null)
             result = this.modifyTableTranslation.permuteColumns(result);
         this.modifyTableTranslation = null;
         if (result == null)

@@ -624,6 +624,27 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
+    public void reorderedInsertAndRemove() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t(i SMALLINT NOT NULL, d DATE, n DECIMAL(3,2));
+                CREATE TABLE expected(i SMALLINT NOT NULL, d DATE, n DECIMAL(3,2));
+                CREATE TABLE source_rows(d DATE, n DECIMAL(3,2), i SMALLINT NOT NULL);
+                INSERT INTO source_rows VALUES (DATE '2020-01-03', 2.34, 3);
+                INSERT INTO expected VALUES (2, NULL, 3.45), (3, DATE '2020-01-03', 2.34);
+                INSERT INTO t(d, n, i) VALUES (DATE '2020-01-02', 1.23, 1), (NULL, 3.45, 2);
+                REMOVE FROM t(n, i, d) VALUES (1.23, 1, DATE '2020-01-02');
+                INSERT INTO t(d, n, i) SELECT * FROM source_rows;
+                """);
+        var tables = compiler.getTableContents();
+        compiler.throwIfErrorsOccurred();
+        var expected = tables.getTableContents(new ProgramIdentifier("expected"));
+        var actual = tables.getTableContents(new ProgramIdentifier("t"));
+        Assert.assertEquals(2, expected.size());
+        Assert.assertTrue(expected.sameValue(actual));
+    }
+
+    @Test
     public void testRemove() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementForCompilation("CREATE TABLE T(I INTEGER, S VARCHAR)");

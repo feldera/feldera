@@ -162,10 +162,10 @@ and the effect of ignored inserts on subsequent relation IDs. Five cases cover
 nested ARRAY and MAP columns, including key and element nullability, reordered
 projections, repeated floating-point elements and temporal precision warnings.
 Six cases exercise DATE literals, string truncation, numeric INSERT assignments,
-and the order, positions and deduplication of conversion warnings. Outside this
-set, direct Java fails when a heterogeneous INSERT column permutation constructs
-a tuple in table order and appends it to a zset in target-list order. Detached
-Java and Rust accept that permutation. This discrepancy remains open for P5.
+and the order, positions and deduplication of conversion warnings. A separate
+program inserts dates, decimals and small integers in a different order from the
+table declaration. Rust binding and lowering matched the corrected Java reference
+through Gen-2 emission. [Java compiler fix](https://github.com/feldera/feldera/pull/8114)
 The Rust schema preview and S2 preserve primary keys in column declaration order.
 [Binding comparison](scripts/validate_bound_programs.py) · [Lowering comparison](scripts/validate_s1_lowering.py)
 

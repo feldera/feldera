@@ -31,7 +31,7 @@ CASES = {
         "constant_field_list", "local_constant", "materialized_constant", "view_kinds", "view_chain", "constant_view_input",
         "scalar_widths", "temporal_precision", "explicit_view_columns", "named_constant",
         "inline_key", "composite_key", "interleaved_key", "insert_values", "insert_permutation",
-        "insert_widths", "insert_null")},
+        "insert_heterogeneous_permutation", "insert_widths", "insert_null")},
     "two_constants": "CREATE VIEW a AS SELECT 5 AS first;\nCREATE VIEW b AS SELECT 7 AS second;",
     "table_and_constant": "CREATE TABLE t(x INT);\nCREATE VIEW v AS SELECT 42 AS answer;",
     "folded_tangent": "CREATE VIEW vv AS SELECT TAN(1);",
