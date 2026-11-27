@@ -55,6 +55,9 @@ const COMMIT_ID_PROPERTY: &str = "feldera.commit-id";
 /// Table property that names the open that created the table.
 const CREATE_ID_PROPERTY: &str = "feldera.create-id";
 
+/// Lets a catalog remove old `metadata.json` files. Each commit writes one.
+const DELETE_AFTER_COMMIT_PROPERTY: &str = "write.metadata.delete-after-commit.enabled";
+
 /// The Parquet writer buffers a whole row group in memory.
 const MAX_ROW_GROUP_BYTES: usize = 16 * 1024 * 1024;
 
@@ -648,10 +651,10 @@ impl IcebergSink {
             let creation = TableCreation::builder()
                 .name(sink.ident.name().to_string())
                 .schema(schema)
-                .properties(HashMap::from([(
-                    CREATE_ID_PROPERTY.to_string(),
-                    create_id.to_string(),
-                )]))
+                .properties(HashMap::from([
+                    (CREATE_ID_PROPERTY.to_string(), create_id.to_string()),
+                    (DELETE_AFTER_COMMIT_PROPERTY.to_string(), "true".to_string()),
+                ]))
                 .build();
             let create = catalog.create_table(sink.ident.namespace(), creation);
             match catalog_request(create).await {

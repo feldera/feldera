@@ -389,6 +389,23 @@ async fn the_created_table_has_the_columns_of_the_view() {
     assert!(table.metadata().default_partition_spec().is_unpartitioned());
 }
 
+/// A table that the connector creates lets the catalog remove old `metadata.json` files.
+#[tokio::test]
+async fn the_created_table_lets_the_catalog_remove_old_metadata_files() {
+    let warehouse = TestWarehouse::new().await;
+    warehouse
+        .sink("t", IcebergWriteMode::Append, &row_relation(), false)
+        .await
+        .unwrap();
+
+    let table = warehouse.table("t").await;
+    let property = table
+        .metadata()
+        .properties()
+        .get(DELETE_AFTER_COMMIT_PROPERTY);
+    assert_eq!(property.map(String::as_str), Some("true"));
+}
+
 #[tokio::test]
 async fn a_type_with_no_iceberg_type_is_refused() {
     let warehouse = TestWarehouse::new().await;
@@ -1201,6 +1218,43 @@ async fn a_column_that_the_view_lacks_gets_its_write_default() {
         column("day").as_primitive::<Date32Type>().values(),
         &[19000, 19000]
     );
+}
+
+/// On a v3 table, each commit assigns row ids that continue those of the commit before.
+#[tokio::test]
+async fn commits_to_a_v3_table_assign_row_ids() {
+    let warehouse = TestWarehouse::new().await;
+    let mut fields = change_log_fields(1);
+    fields.extend([long(3, "id", true), string(4, "name", false)]);
+    let schema = Schema::builder()
+        .with_fields(fields.into_iter().map(Arc::new))
+        .build()
+        .unwrap();
+    let creation = TableCreation::builder()
+        .name("t".to_string())
+        .schema(schema)
+        .format_version(iceberg::spec::FormatVersion::V3)
+        .build();
+    warehouse
+        .catalog
+        .create_table(&NamespaceIdent::new(NAMESPACE.to_string()), creation)
+        .await
+        .unwrap();
+
+    let sink = warehouse
+        .sink("t", IcebergWriteMode::Append, &row_relation(), false)
+        .await
+        .unwrap();
+    append(&sink, &rows(0..2)).await;
+    append(&sink, &rows(2..5)).await;
+
+    let table = warehouse.table("t").await;
+    let metadata = table.metadata();
+    let mut snapshots: Vec<_> = metadata.snapshots().collect();
+    snapshots.sort_by_key(|snapshot| snapshot.sequence_number());
+    let first_row_ids: Vec<_> = snapshots.iter().map(|s| s.first_row_id()).collect();
+    assert_eq!(first_row_ids, [Some(0), Some(2)]);
+    assert_eq!(metadata.next_row_id(), 5);
 }
 
 /// Glue converts every schema on commit, so a dropped `timestamptz` column still fails it.

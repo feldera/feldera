@@ -80,6 +80,13 @@ impl IcebergOutputEndpoint {
                  to. See https://docs.feldera.com/connectors#configuring-the-output-buffer"
             );
         }
+        // iceberg-rust never renews `rest.token`, even with `rest.credential`.
+        if config.rest_catalog_config.token.is_some() {
+            warn!(
+                "iceberg {endpoint_name}: 'rest.token' is never renewed, so the connector stops \
+                 writing when it expires. Use 'rest.credential' without 'rest.token' instead"
+            );
+        }
 
         // Panic safety: block_on() panics if called from a tokio async context.
         // new() is called from sync controller code (connect_output), so this is fine.
