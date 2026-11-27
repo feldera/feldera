@@ -70,7 +70,6 @@ This project uses **Bun** as the package manager.
 
 ### Key Commands
 - `bun install` - Install dependencies
-- `bun run dev` - Development server
 - `bun run build` - Build library (also builds profiler-lib dependency)
 - `bun run check` - Type checking with svelte-check
 - `bun run prepack` - Package for distribution
@@ -95,7 +94,7 @@ Components are tested through integration in consuming applications:
 ### Development Dependencies
 - **profiler-lib**: Core visualization engine (workspace dependency)
 - **@skeletonlabs/skeleton-svelte**: UI component library for consistent styling
-- **SvelteKit**: Build tooling and package publishing
+- **@sveltejs/package**: Builds `dist/` (`svelte-package`). There is no SvelteKit app here.
 
 ## Integration Points
 

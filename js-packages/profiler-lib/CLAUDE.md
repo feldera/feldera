@@ -88,6 +88,10 @@ export { type Dataflow } from './dataflow.js'
 - Renders performance metrics as node colors (percentile-based heatmap)
 - Builds structured tooltip data on hover with per-worker heatmap rows (sorted alphabetically), source code, and attributes
 - Highlights reachable edges on hover (forward paths in red, backward in blue)
+- Edge labels show the row count and, below it, the stream count if the edge stands for more than one stream
+  - Rows: sum of `output_batches_stats.record_count` over all workers, formatted with `formatQty(x, 'rounded')` from common-lib
+  - No row count if one stream of the edge has no statistics, because a partial sum looks like the full count
+- Hovering an edge label hovers the source node of the edge, the same as hovering the node
 - Uses ELK hierarchical layout algorithm for high-quality graph positioning
 - Communicates tooltip updates via callbacks with structured data
 - Key classes: `Cytograph`, `CytographRendering`, `GraphNode`, `GraphEdge`
@@ -112,6 +116,10 @@ export { type Dataflow } from './dataflow.js'
 - Scales dynamically as user pans/zooms main graph
 - Double-click to fit entire graph in viewport
 - Key class: `ViewNavigator`
+
+**`edgeLabels.ts`** - Edge Label Hit Test
+- Edges have `events: 'no'`, so cytoscape never reports a label under the pointer; `EdgeLabelFinder` tests the pointer against the label boxes
+- `LabelBoxCache` keeps all label boxes and drops them on `add remove data bounds` of an edge; a rebuild takes about 30 ms for 20000 labeled edges
 
 **Utility Modules:**
 
@@ -466,6 +474,11 @@ These must be installed by the consuming application:
 - **cytoscape-dblclick** ^0.3.1 - Double-click event handling
 - **cytoscape-elk** ^2.3.0 - ELK layout algorithm integration
 - **elkjs** ^0.11.0 - Eclipse Layout Kernel implementation
+- **d3-format**, **dayjs** - Needed by `common-lib/format`
+
+### Workspace Dependencies
+
+- **common-lib** - `formatQty` for the edge labels
 
 ### Dev Dependencies
 
@@ -513,15 +526,9 @@ useEffect(() => {
 
 ### TypeScript errors with imports
 
-Ensure `moduleResolution: "node"` in `tsconfig.json`:
-```json
-{
-  "compilerOptions": {
-    "moduleResolution": "node",
-    "esModuleInterop": true
-  }
-}
-```
+- `tsconfig.json` uses `"moduleResolution": "bundler"`. With `"node"`, TypeScript ignores the `exports` map of common-lib and cannot resolve `common-lib/format`.
+- `TS2307: Cannot find module 'common-lib/format'` means common-lib has no `dist/`. Run `bun run build` in common-lib, or `bun run deps` in a consuming package.
+- `prepare` runs `tsc --noCheck`: `bun install` can run it before common-lib has a `dist/`. `build:self` and `check:self` still type-check.
 
 ## Related Packages
 

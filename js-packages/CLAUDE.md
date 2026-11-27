@@ -31,9 +31,10 @@ Shared TypeScript types for the support bundle triage plugin system. Defines `Tr
 web-console -> profiler-layout, feldera-theme, triage-types, monaco-editor-vite-plugin
 profiler-app -> profiler-layout, feldera-theme
 profiler-layout -> profiler-lib
+profiler-lib -> common-lib
 ```
 
-Build order matters: profiler-lib → profiler-layout → web-console/profiler-app.
+Build order matters: common-lib → profiler-lib → profiler-layout → web-console/profiler-app.
 
 ## Development Commands
 

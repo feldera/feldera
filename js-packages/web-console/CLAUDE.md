@@ -26,7 +26,7 @@ bun run test-unit
 bun run build-openapi     # Generate new openapi.json from Rust backend
 bun run generate-openapi  # Generate TypeScript client from openapi.json
 
-# Icon packs webfont generation
+# Icon CSS (Lucide `fd-*` classes) and generic icon webfont generation
 bun run build-icons
 ```
 
@@ -88,7 +88,7 @@ Web Console is a dasboard UI app deployed as a static website that is served by 
 #### Code Generation
 
 - OpenAPI TypeScript client is auto-generated - do not manually edit files in `src/lib/services/manager/`
-- Icon fonts are generated from SVG files - use `bun run build-icons` after adding new icons
+- Icons: `<span class="fd fd-<name>">` shows the Lucide icon `<name>` (from `lucide-static`), sized by `font-size` and coloured by `color`. `scripts/build-lucide-icons.ts` writes `src/assets/icons/fd.css` for every `fd-<name>` it finds in the sources; run `bun run build-icons` after you use a new one. Set the stroke width in `STROKE_WIDTH` there. Icons that Lucide does not have go in `src/assets/icons/custom/`. The `gc-*` classes are still a webfont built from `src/assets/icons/generic/`
 - API schema updates require running `bun run build-openapi && bun run generate-openapi`
 
 ### Development Workflow
@@ -126,10 +126,15 @@ Run a single e2e test (args go after `--`, e2e expects pipeline-manager on `loca
 
 ### Snapshot Workflow
 
-1. `bun run test-prepare` — clones the snapshot repo (or creates empty dirs)
+`playwright-snapshots.commit` pins the commit of https://github.com/feldera/playwright-snapshots that the tests use. `scripts/playwright-snapshots.ts` downloads and publishes it.
+
+1. `bun run test-prepare` — downloads the pinned commit to `playwright-snapshots/`. `test-unit`, `test-e2e` and `test-update-snapshots` run it first. It skips the download when the folder already holds that commit, and refuses to replace screenshots that are not pushed.
 2. `bun run test-unit` — vitest reads/writes component snapshots from `playwright-snapshots/component/`
 3. `bun run test-e2e` — Playwright reads/writes e2e snapshots from `playwright-snapshots/e2e/`
 4. `bun run test-update-snapshots` — regenerates all snapshots
+5. `bun run test-snapshots-push` — commits `playwright-snapshots/` as the full contents of the snapshot repo, pushes it over SSH, and pins the new commit. Commit `playwright-snapshots.commit` with the change that needs the new screenshots.
+
+Gotcha: `toMatchScreenshot` captures at 1:1 only while the test viewport (`page.viewport()`) fits in the 1920x1080 browser window of `vite.config.ts`.
 
 ### Test ID Conventions
 
@@ -140,7 +145,7 @@ Svelte markup uses `data-testid` attributes: `[btn|input|box]-[element id]`
 - **box** — any other element or area
 - Element id should be concise but not abbreviated
 
-Most interactions and checks in the tests should be performed through data-testid attributes. The exception is locating an icon based on it's webfont class name (e.g. fd-circle-alert)
+Most interactions and checks in the tests should be performed through data-testid attributes. The exception is locating an icon by its class name (e.g. fd-circle-alert)
 
 ## Configuration Files
 
