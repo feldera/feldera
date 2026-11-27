@@ -25,6 +25,7 @@ use feldera_types::transport::dynamodb::DynamoDBWriterConfig;
 use rand::Rng;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
+use uuid::Uuid;
 
 use super::health::{ChunkGuard, RetryHealth};
 use super::metrics::DynamoDBOutputMetrics;
@@ -668,8 +669,11 @@ pub(crate) fn written_totals(rows: usize, bytes: usize, suppressed: u64) -> (u64
 /// [`TransactChunkOutcome`] reports how many items the condition suppressed so
 /// the caller can avoid counting them as written.
 ///
-/// Each request gets a fresh `ClientRequestToken` from the SDK, so a retry is a
-/// new transaction to DynamoDB, not an idempotent repeat.
+/// Each request gets a new `ClientRequestToken`, so a retry is a new
+/// transaction to DynamoDB, not an idempotent repeat. DynamoDB refuses a token
+/// that a different transaction used in the last 10 minutes, in the whole
+/// account and region. The connector makes the token, so that refusal says
+/// nothing about the items: the request is sent again with a new token.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn write_transact_chunk(
     client: Client,
@@ -692,10 +696,14 @@ pub(crate) async fn write_transact_chunk(
         let mut suppressed = 0u64;
 
         loop {
+            // The SDK's default token comes from a generator seeded with only
+            // the clock and the thread ID.
+            let token = Uuid::new_v4().to_string();
             let call_start = Instant::now();
             let result = client
                 .transact_write_items()
                 .set_transact_items(Some(transact_items.clone()))
+                .client_request_token(&token)
                 .send()
                 .await;
             metrics.record_write_call_latency(call_start.elapsed());
@@ -724,6 +732,16 @@ pub(crate) async fn write_transact_chunk(
             let cause = 'classify: {
                 let Some(cancelled) = cancelled else {
                     metrics.record_transact_write_failure();
+                    if error
+                        .as_service_error()
+                        .is_some_and(|error| error.is_idempotent_parameter_mismatch_exception())
+                    {
+                        // The token in the log identifies the two requests.
+                        break 'classify Some(format!(
+                            "another transaction used the client request token {token} in the \
+                             last 10 minutes: {description}"
+                        ));
+                    }
                     if classify_sdk_error(&error) == WriteErrorKind::Permanent {
                         let error = retries.give_up_now(transact_items.len(), &description);
                         return Err(retries.failed(error));
