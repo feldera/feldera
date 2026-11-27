@@ -92,6 +92,10 @@ class ModifyTableTranslation {
                 columnTypes[index] = sourceType.getFieldType(actualIndex);
                 index++;
             }
+            if (columnList.size() < sourceType.size())
+                throw new CompilationError(statement.getSqlOperationName() + " must specify all " +
+                        sourceType.size() + " columns of table " + statement.tableName.singleQuote() +
+                        " when using a target column list", statement.getCalciteObject());
             this.resultType = new DBSPTypeTuple(columnTypes);
         } else {
             this.resultType = sourceType;

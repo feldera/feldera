@@ -645,6 +645,34 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
+    public void reorderedInsertWithArray() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t(i INT NOT NULL, a INT ARRAY, s VARCHAR);
+                CREATE VIEW v AS SELECT * FROM t;
+                """);
+        ccs.stepWeightOne("INSERT INTO t(s, a, i) VALUES ('first', ARRAY[10, 11], 1);", """
+                 i | a        | s
+                ---+----------+-------
+                 1 | {10, 11} | first
+                """);
+        ccs.stepWeightOne("INSERT INTO t(s, a, i) VALUES ('second', ARRAY[20], 2), ('third', NULL, 3);", """
+                 i | a    | s
+                ---+------+--------
+                 2 | {20} | second
+                 3 | NULL | third
+                """);
+    }
+
+    @Test
+    public void partialTargetColumnList() {
+        String table = "CREATE TABLE t(i INT NOT NULL, d DATE, s VARCHAR);\n";
+        this.statementsFailingInCompilation(table + "INSERT INTO t(s, i) VALUES ('x', 1);",
+                "INSERT must specify all 3 columns of table 't' when using a target column list");
+        this.statementsFailingInCompilation(table + "REMOVE FROM t(i, d) VALUES (1, NULL);",
+                "REMOVE must specify all 3 columns of table 't' when using a target column list");
+    }
+
+    @Test
     public void testRemove() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementForCompilation("CREATE TABLE T(I INTEGER, S VARCHAR)");
