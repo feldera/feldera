@@ -176,6 +176,9 @@ where
     factories: B::Factories,
     name: OperatorName,
     spine: DynSpine<B>,
+    /// Whether the last imported batch was empty (see
+    /// [`ImportOperator::imported_empty`]).
+    imported_empty: Option<bool>,
 }
 
 impl<B> ImportAccumulator<B>
@@ -188,6 +191,7 @@ where
             factories: factories.clone(),
             spine: DynSpine::<B>::new(factories, name.get(), TraceRole::Accumulator),
             name,
+            imported_empty: None,
         }
     }
 }
@@ -215,11 +219,17 @@ where
     B: DynBatch,
 {
     async fn import(&mut self, val: &B) {
+        self.imported_empty = Some(val.is_empty());
         self.spine.insert(val.clone()).await
     }
 
     async fn import_owned(&mut self, val: B) {
+        self.imported_empty = Some(val.is_empty());
         self.spine.insert(val).await
+    }
+
+    fn imported_empty(&self) -> Option<bool> {
+        self.imported_empty
     }
 
     async fn eval(&mut self) -> DynSpine<B> {
