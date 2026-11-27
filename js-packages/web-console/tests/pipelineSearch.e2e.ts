@@ -102,7 +102,7 @@ test.describe('Pipeline search', () => {
     const statusSelect = page.getByTestId('select-pipeline-status')
     const selectStatus = async (status: string) => {
       await statusSelect.click()
-      await page.getByRole('option', { name: status, exact: true }).click()
+      await page.getByRole('option', { name: status }).click()
     }
     await selectStatus('Ready To Start')
 

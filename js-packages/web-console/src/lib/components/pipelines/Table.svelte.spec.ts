@@ -41,7 +41,8 @@ const lastChange: Record<string, string> = {
   alpha: '2024-01-04T00:00:00Z',
   bravo: '2024-01-01T00:00:00Z',
   charlie: '2024-01-03T00:00:00Z',
-  delta: '2024-01-02T00:00:00Z'
+  delta: '2024-01-02T00:00:00Z',
+  echo: '2024-01-05T00:00:00Z'
 }
 
 // Only the fields the Table template reads are populated; the rest of
@@ -100,7 +101,8 @@ const columnHeaders = () =>
 
 const persistedSort = () => JSON.parse(localStorage.getItem(SORT_KEY)!)
 
-const mountTable = () => render(Table, { props: { pipelines, selectedPipelines: [] } } as any)
+const mountTable = (rows = pipelines) =>
+  render(Table, { props: { pipelines: rows, selectedPipelines: [] } } as any)
 
 describe('Table — column sorting', () => {
   beforeEach(() => {
@@ -377,7 +379,7 @@ describe('Table — status filter', () => {
   // Real pointer clicks, which fail if the option is covered or closes under the pointer.
   const pickStatus = async (status: string) => {
     await userEvent.click(page.getByTestId('select-pipeline-status'))
-    await userEvent.click(page.getByRole('option', { name: status, exact: true }))
+    await userEvent.click(page.getByRole('option', { name: status }))
   }
 
   it('shows the total and the number of rows matching the filters', async () => {
@@ -391,6 +393,43 @@ describe('Table — status filter', () => {
 
     await pickStatus('Running')
     await expect.poll(count).toBe('0 of 4')
+  })
+
+  it('counts status options before applying the selected status to search results', async () => {
+    mountTable([
+      { ...thumb('alpha'), status: 'Running', tags: ['prod'] },
+      { ...thumb('bravo'), status: 'Running' },
+      { ...thumb('charlie'), status: { CompilingSql: { cause: 'compile' } }, tags: ['prod'] },
+      { ...thumb('delta'), status: { CompilingRust: { cause: 'compile' } }, tags: ['prod'] },
+      // Stopping has no status option but still counts toward All Pipelines.
+      { ...thumb('echo'), status: 'Stopping', tags: ['prod'] }
+    ])
+
+    await pickStatus('Running')
+    await page.getByTestId('input-pipeline-search').fill('prod')
+    await expect.poll(rowOrder).toEqual(['alpha'])
+
+    await userEvent.click(page.getByTestId('select-pipeline-status'))
+    const menu = page.getByRole('listbox', { name: 'Filter by status' })
+    await expect
+      .poll(() =>
+        menu
+          .getByRole('option')
+          .elements()
+          .map((option) => option.textContent?.replace(/\s+/g, ' ').trim())
+      )
+      .toEqual([
+        'All Pipelines 4',
+        'Running 1',
+        'Paused 0',
+        'Ready To Start 0',
+        'Compiling 2',
+        'Failed 0',
+        'Unavailable 0'
+      ])
+
+    await userEvent.click(menu.getByRole('option', { name: 'All Pipelines' }))
+    await expect.poll(rowOrder).toEqual(['alpha', 'charlie', 'delta', 'echo'])
   })
 
   it('stays open when picked from a second time', async () => {
