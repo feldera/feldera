@@ -64,7 +64,8 @@ use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::preprocess::PreprocessorWatchdog;
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
 use feldera_adapterlib::transport::{
-    CommandHandler, InputReader, OutputBatchType, OutputEndpointCallbacks, Resume, Watermark,
+    CommandHandler, InputEndpoint, InputReader, OutputBatchType, OutputEndpointCallbacks, Resume,
+    Watermark, take_resume_features,
 };
 use feldera_adapterlib::utils::datafusion::{create_runtime_env, create_session_context};
 use feldera_ir::LirCircuit;
@@ -5844,11 +5845,17 @@ impl FtState {
         }
         for (endpoint_name, log) in &metadata.input_logs {
             let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-            if let Some(reader) = controller.status.input_status()[&endpoint_id]
-                .reader
-                .as_ref()
-            {
-                reader.replay(log.metadata.clone(), log.data.clone())
+            let status = &controller.status.input_status()[&endpoint_id];
+            if let Some(reader) = status.reader.as_ref() {
+                // A step that a newer version journaled can need a feature
+                // that the checkpoint did not need.
+                let metadata =
+                    take_resume_features(Some(log.metadata.clone()), status.resume_features)
+                        .map_err(|e| {
+                            ControllerError::input_transport_error(endpoint_name, true, e)
+                        })?
+                        .unwrap_or_default();
+                reader.replay(metadata, log.data.clone())
             }
         }
         Ok(())
@@ -9275,8 +9282,17 @@ impl ControllerInner {
             &endpoint_config.connector_config,
             self.clone(),
         ));
-        let (fault_tolerance, open): (_, OpenInputReaderFn<'_>) = match endpoint {
+        // Refuses resume info that requires a feature that the endpoint does
+        // not know, for example one that a newer version wrote.
+        let check_features = |seek, endpoint: &dyn InputEndpoint| {
+            take_resume_features(seek, endpoint.resume_features())
+                .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
+        };
+        let (fault_tolerance, resume_features, open): (_, _, OpenInputReaderFn<'_>) = match endpoint
+        {
             Some(endpoint) => {
+                let seek = check_features(seek, endpoint.as_ref())?;
+
                 // Create parser.
                 let format_config = match (
                     &resolved_connector_config.transport,
@@ -9328,6 +9344,7 @@ impl ControllerInner {
 
                 (
                     endpoint.fault_tolerance(),
+                    endpoint.resume_features(),
                     Box::new(move || {
                         endpoint.open(probe, parser, input_handle.schema.clone(), seek)
                     }),
@@ -9349,9 +9366,11 @@ impl ControllerInner {
                     probe,
                     distributed,
                 )?;
+                let seek = check_features(seek, endpoint.as_ref())?;
 
                 (
                     endpoint.fault_tolerance(),
+                    endpoint.resume_features(),
                     Box::new(|| endpoint.open(input_handle, seek)),
                 )
             }
@@ -9378,6 +9397,7 @@ impl ControllerInner {
                 initial_statistics.as_ref(),
                 preprocessor_watchdog,
             )
+            .with_resume_features(resume_features)
             .share_queue(queue_hosts),
             || {
                 let reader = open()?;

@@ -59,6 +59,19 @@ pub trait InputEndpoint: Send {
     ///   {..})` to [InputConsumer::extended] for every step (see [Resume] for
     ///   details).
     fn fault_tolerance(&self) -> Option<FtModel>;
+
+    /// The features that this endpoint can resume from.
+    ///
+    /// When an endpoint changes the meaning of its resume info, so that an
+    /// older version would resume from it incorrectly, it gives the change a
+    /// feature name and lists it here.  While its resume info depends on the
+    /// change, it records the name in it with [require_resume_features].  The
+    /// controller then refuses to open an endpoint, with an error, if the
+    /// resume info requires a feature that the endpoint does not list (see
+    /// [take_resume_features]).
+    fn resume_features(&self) -> &'static [&'static str] {
+        &[]
+    }
 }
 
 pub trait TransportInputEndpoint: InputEndpoint {
@@ -1370,6 +1383,77 @@ where
             .map_err(|e| anyhow::anyhow!("unable to parse checkpointed connector state (checkpointed state: {metadata}; parse error: {e})"))
 }
 
+/// The key, in an object of resume info, that lists the features that a
+/// reader of the resume info must support (see
+/// [InputEndpoint::resume_features]).
+pub const REQUIRED_FEATURES_KEY: &str = "required_features";
+
+/// Records in `resume_info`, which must be a JSON object, that resuming from
+/// it requires each of `features` (see [InputEndpoint::resume_features]).
+///
+/// # Panics
+///
+/// If `resume_info` is not an object.
+pub fn require_resume_features(resume_info: &mut JsonValue, features: &[&str]) {
+    let object = resume_info
+        .as_object_mut()
+        .expect("resume info with required features must be a JSON object");
+    let required = object
+        .entry(REQUIRED_FEATURES_KEY)
+        .or_insert_with(|| JsonValue::Array(Vec::new()))
+        .as_array_mut()
+        .expect("required features must be an array");
+    for feature in features {
+        if !required.iter().any(|f| f == feature) {
+            required.push(JsonValue::from(*feature));
+        }
+    }
+}
+
+/// Checks that each feature that `resume_info` requires (see
+/// [require_resume_features]) is in `known`, and returns `resume_info` without
+/// the list.
+///
+/// Returns an error if `resume_info` requires a feature that is not in
+/// `known`, or if the list is not an array of strings.
+pub fn take_resume_features(
+    resume_info: Option<JsonValue>,
+    known: &[&str],
+) -> AnyResult<Option<JsonValue>> {
+    let Some(mut resume_info) = resume_info else {
+        return Ok(None);
+    };
+    let Some(required) = resume_info
+        .as_object_mut()
+        .and_then(|object| object.remove(REQUIRED_FEATURES_KEY))
+    else {
+        return Ok(Some(resume_info));
+    };
+    let required = required
+        .as_array()
+        .and_then(|required| required.iter().map(JsonValue::as_str).collect::<Option<Vec<_>>>())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "the checkpointed connector state has an invalid '{REQUIRED_FEATURES_KEY}': {required}"
+            )
+        })?;
+    let unknown = required
+        .into_iter()
+        .filter(|feature| !known.contains(feature))
+        .collect::<Vec<_>>();
+    if !unknown.is_empty() {
+        anyhow::bail!(
+            "the checkpointed connector state requires {}, which this version of Feldera does not support.  A newer version of Feldera wrote the checkpoint.  Resume the pipeline with that version, or a later one.",
+            unknown
+                .iter()
+                .map(|feature| format!("'{feature}'"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    Ok(Some(resume_info))
+}
+
 /// The controller side of an output endpoint.
 ///
 /// [`OutputEndpoint::connect`] hands the endpoint one of these. The endpoint
@@ -1703,6 +1787,44 @@ impl<M, D> InputCommandReceiver<M, D> {
 mod test {
     use super::*;
     use tokio::sync::mpsc::unbounded_channel;
+
+    /// Resume info keeps its required features through a round trip, and
+    /// passes the check only if every one of them is known.
+    #[test]
+    fn resume_features() {
+        let mut info = serde_json::json!({"cursor": 3});
+        require_resume_features(&mut info, &["a"]);
+        require_resume_features(&mut info, &["a", "b"]);
+        assert_eq!(
+            info,
+            serde_json::json!({"cursor": 3, "required_features": ["a", "b"]})
+        );
+
+        let plain = serde_json::json!({"cursor": 3});
+        assert_eq!(
+            take_resume_features(Some(info.clone()), &["b", "a", "c"]).unwrap(),
+            Some(plain.clone())
+        );
+        let error = take_resume_features(Some(info), &["a"]).unwrap_err();
+        assert!(error.to_string().contains("'b'"), "{error}");
+        assert!(!error.to_string().contains("'a'"), "{error}");
+
+        // Resume info without the list, including resume info that is not an
+        // object, passes unchanged.
+        for info in [plain, serde_json::json!(7), serde_json::Value::Null] {
+            assert_eq!(
+                take_resume_features(Some(info.clone()), &[]).unwrap(),
+                Some(info)
+            );
+        }
+        assert_eq!(take_resume_features(None, &[]).unwrap(), None);
+
+        // A list that is not an array of strings is an error.
+        for required in [serde_json::json!("a"), serde_json::json!([1])] {
+            let info = serde_json::json!({"required_features": required});
+            assert!(take_resume_features(Some(info), &["a"]).is_err());
+        }
+    }
 
     /// A fault-tolerant reader must not abandon an acknowledged replay step
     /// just because a control command arrives while the replay is in progress

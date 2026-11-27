@@ -2590,6 +2590,12 @@ pub struct InputEndpointStatus {
     /// Endpoint support for fault tolerance.
     pub fault_tolerance: Option<FtModel>,
 
+    /// The resume features that the endpoint knows (see
+    /// [InputEndpoint::resume_features]).
+    ///
+    /// [InputEndpoint::resume_features]: feldera_adapterlib::transport::InputEndpoint::resume_features
+    pub resume_features: &'static [&'static str],
+
     /// Endpoint has been paused by the user.
     ///
     /// When `true`, the endpoint doesn't produce any data even when the pipeline
@@ -2734,6 +2740,7 @@ impl InputEndpointStatus {
             removal_requested: AtomicBool::new(false),
             reader: None,
             fault_tolerance,
+            resume_features: &[],
             custom_metrics: None,
             completion_tokens: TokenList::new(),
             watermarks: WatermarkTracker::new(),
@@ -2746,6 +2753,12 @@ impl InputEndpointStatus {
     /// a distributed connector, until its reader reports the share it actually
     /// reads (see [Self::set_share]).  Otherwise, each host would queue up to
     /// the full thresholds, multiplying the connector's buffering by `n_hosts`.
+    /// Records that the endpoint knows the resume features `features`.
+    pub fn with_resume_features(mut self, features: &'static [&'static str]) -> Self {
+        self.resume_features = features;
+        self
+    }
+
     pub fn share_queue(mut self, n_hosts: usize) -> Self {
         self.set_share(1, n_hosts);
         self
