@@ -257,6 +257,9 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPSourceMultisetOperator node) {
+        // Only LATENESS supplies a source waterline, even when trimming leaves a constant empty tuple.
+        if (!Linq.any(node.metadata.getColumns(), column -> column.lateness != null))
+            return;
         List<IMaybeMonotoneType> fields = new ArrayList<>();
         for (InputColumnMetadata metadata: node.metadata.getColumns()) {
             IMaybeMonotoneType columnType = NonMonotoneType.nonMonotone(metadata.type);

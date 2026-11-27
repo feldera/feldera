@@ -25,7 +25,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
 
@@ -163,6 +165,8 @@ public class UnusedFields extends Passes {
             }
             Utilities.enforce(used.hasUnusedFields(1));
 
+            DBSPTypeTuple row = source.getOutputZSetElementType().to(DBSPTypeTuple.class);
+            List<DBSPType> columnTypes = new ArrayList<>();
             List<InputColumnMetadata> remainingColumns = new ArrayList<>();
             List<DBSPTypeStruct.Field> fields = new ArrayList<>();
             Iterator<ProgramIdentifier> fieldNames = source.originalRowType.getFieldNames();
@@ -171,6 +175,7 @@ public class UnusedFields extends Passes {
                 if (used.isUsed(i)) {
                     InputColumnMetadata meta = source.metadata.getColumnMetadata(i);
                     remainingColumns.add(meta);
+                    columnTypes.add(row.getFieldType(i));
                     DBSPTypeStruct.Field field = source.originalRowType.getField(fieldName);
                     fields.add(field);
                 }
@@ -183,8 +188,10 @@ public class UnusedFields extends Passes {
                     source.metadata.tableName,
                     remainingColumns, source.metadata.getForeignKeys(), source.metadata.expectedSize,
                     source.metadata.materialized, source.metadata.isStreaming(), source.metadata.skipUnusedColumns);
+            // Retain the circuit tuple types for nested ROW fields in the declared schema.
+            DBSPTypeTuple outputRow = new DBSPTypeTuple(row.getNode(), row.mayBeNull, newType, columnTypes);
             DBSPSourceMultisetOperator replacement = new DBSPSourceMultisetOperator(
-                    source.getRelNode(), source.sourceName, new DBSPTypeZSet(newType.toTuple()), newType,
+                    source.getRelNode(), source.sourceName, new DBSPTypeZSet(outputRow), newType,
                     metadata, source.tableName, source.kind, source.comment);
             this.addOperator(replacement);
             Utilities.putNew(this.replacement, source, replacement);
