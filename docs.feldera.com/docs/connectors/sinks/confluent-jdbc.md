@@ -127,14 +127,16 @@ Use the `kafka_output` transport with `avro` output format. Set the following Av
 * `"update_format": "confluent_jdbc"` - use Confluent JDBC connector-compatible Avro encoding.
 * `"registry_urls": ["<registry_url2>", "<registry_url2>", ...]` - the connector will publish Avro
   schemas for key and value components of Kafka messages to the specified schema registry.
-* `"key_fields": ["key_field1", "key_field2", ...]` - list of SQL view columns that form the primary
-  key in the external database table. When not specified, the encoder assumes that all columns in the
-  view are part of the primary key.
+
+Set the `index` property of the connector to an index over the view columns that form the primary
+key in the external database table. Without an index, the encoder assumes that all columns in the
+view are part of the primary key.
 
 ```sql
 CREATE VIEW my_view
 WITH (
   'connectors' = '[{
+    "index": "my_view_idx",
     "transport": {
       "name": "kafka_output",
       "config": {
@@ -146,17 +148,18 @@ WITH (
       "name": "avro",
       "config": {
         "update_format": "confluent_jdbc",
-        "registry_urls": ["http://redpanda:8081"],
-        "key_fields": ["id"]
+        "registry_urls": ["http://redpanda:8081"]
       }
     }
   }]'
 )
 AS SELECT * FROM test_table;
+
+CREATE INDEX my_view_idx ON my_view(id);
 ```
 
 :::note
-The user is responsible for selecting a set of columns for the `key_fields` property that are
+The user is responsible for selecting a set of index columns that are
 guaranteed to have unique values.  Failure to choose a unique key may lead to data loss.
 :::
 
