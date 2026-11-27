@@ -2274,6 +2274,14 @@ mod mock_dynamodb {
         client(server, Some(1))
     }
 
+    /// A single-attempt client whose SDK gives `token` to each request that has none.
+    pub(super) fn client_with_sdk_token(server: &MockServer, token: &'static str) -> Client {
+        let builder = client_config(&mock_config(server))
+            .retry_config(RetryConfig::standard().with_max_attempts(1))
+            .idempotency_token_provider(token);
+        Client::from_conf(builder.build())
+    }
+
     /// The requests the server received for `target`, in order.
     pub(super) fn requests(server: &MockServer, target: &str) -> Vec<Request> {
         TOKIO
@@ -2298,6 +2306,12 @@ mod mock_dynamodb {
             .or_else(|| body.get("TransactItems"))
             .cloned()
             .unwrap()
+    }
+
+    /// The `ClientRequestToken` of a `TransactWriteItems` request.
+    pub(super) fn request_token(request: &Request) -> String {
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        body["ClientRequestToken"].as_str().unwrap().to_string()
     }
 
     pub(super) fn item_count(request: &Request) -> usize {
@@ -2644,6 +2658,101 @@ mod retry_tests {
             2.0
         );
         assert_eq!(harness.publisher.reports().last(), Some(&Ok(())));
+    }
+
+    #[test]
+    fn each_transaction_request_carries_a_token_that_the_connector_makes() {
+        let server = mock_server();
+        mount_sequence(&server, TRANSACT_TARGET, vec![throttled(), throttled()]);
+        mount_rest(&server, TRANSACT_TARGET, ok());
+        let harness = Harness::new();
+
+        // The SDK would give every request the same token.
+        finish(harness.write_transact(
+            client_with_sdk_token(&server, "sdk-token"),
+            transact_puts(&[1, 2]),
+            policy(None),
+        ))
+        .unwrap();
+
+        let tokens = received(&server, TRANSACT_TARGET)
+            .iter()
+            .map(request_token)
+            .collect::<Vec<_>>();
+        assert_eq!(tokens.len(), 3);
+        for (index, token) in tokens.iter().enumerate() {
+            let uuid = uuid::Uuid::parse_str(token).unwrap();
+            assert_eq!(uuid.get_version_num(), 4, "{tokens:?}");
+            assert!(!tokens[..index].contains(token), "{tokens:?}");
+        }
+    }
+
+    #[test]
+    fn a_token_that_dynamodb_refuses_is_replaced_and_the_items_land() {
+        let server = mock_server();
+        mount_sequence(
+            &server,
+            TRANSACT_TARGET,
+            vec![error("IdempotentParameterMismatchException", "")],
+        );
+        mount_rest(&server, TRANSACT_TARGET, ok());
+        let harness = Harness::new();
+
+        let outcome = finish(harness.write_transact(
+            single_attempt_client(&server),
+            transact_puts(&[1, 2]),
+            policy(Some(10)),
+        ))
+        .unwrap();
+
+        assert_eq!(outcome.retries, 1);
+        let requests = received(&server, TRANSACT_TARGET);
+        assert_eq!(requests.len(), 2);
+        assert_eq!(write_items(&requests[0]), write_items(&requests[1]));
+        let refused = request_token(&requests[0]);
+        assert_ne!(refused, request_token(&requests[1]));
+        assert_eq!(harness.metric("dynamodb_output_failed_items_total"), 0.0);
+        assert_eq!(harness.metric("dynamodb_output_retries_total"), 1.0);
+        // The retry report names the refused token, to find the other request that used it.
+        let reports = harness.publisher.reports();
+        assert_eq!(reports.len(), 2, "{reports:?}");
+        assert!(
+            reports[0]
+                .as_ref()
+                .is_err_and(|cause| cause.contains("retry 1 of 10")
+                    && cause.contains(&format!("client request token {refused}"))
+                    && cause.contains("IdempotentParameterMismatchException")),
+            "{reports:?}"
+        );
+        assert_eq!(reports[1], Ok(()));
+    }
+
+    #[test]
+    fn refused_tokens_count_toward_the_retry_budget() {
+        let server = mock_server();
+        mount_rest(
+            &server,
+            TRANSACT_TARGET,
+            error("IdempotentParameterMismatchException", ""),
+        );
+        let harness = Harness::new();
+
+        let error = finish(harness.write_transact(
+            single_attempt_client(&server),
+            transact_puts(&[1, 2]),
+            policy(Some(2)),
+        ))
+        .unwrap_err()
+        .to_string();
+
+        let requests = received(&server, TRANSACT_TARGET);
+        assert_eq!(requests.len(), 3);
+        assert!(
+            error.contains("dropped 2 item(s) after 2 TransactWriteItems retries")
+                && error.contains(&request_token(&requests[2])),
+            "{error}"
+        );
+        assert_eq!(harness.metric("dynamodb_output_failed_items_total"), 2.0);
     }
 
     #[test]

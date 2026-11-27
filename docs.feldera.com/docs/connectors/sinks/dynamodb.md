@@ -107,6 +107,13 @@ Error and health descriptions retain DynamoDB's error code, message, request
 ID, and throttling or per-item cancellation reasons. They omit raw HTTP
 responses and item data returned with cancellation reasons.
 
+In `transactional` mode, the connector gives each `TransactWriteItems` request
+a new, random client request token. DynamoDB refuses a request with
+`IdempotentParameterMismatchException` if a different transaction in the same
+account and region used its token in the last 10 minutes. The connector then
+sends the request again with a new token, as one retry of the `max_retries`
+budget, and the description of that retry includes the refused token.
+
 Metrics prefixed `dynamodb_output_` show the retries: `retries_total` counts
 each retry as it starts, `retrying_chunks` is the number of chunks in a retry
 loop right now, `throttled_items_total` counts items returned as unprocessed,
