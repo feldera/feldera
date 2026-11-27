@@ -2585,8 +2585,9 @@ async fn heap_profile() -> impl Responder {
 //     - runs on: the controller's circuit thread, between circuit steps
 //     - what it does: `CircuitDriver::json_profile` assembles worker replies
 //     - produces: the engine's chunks of the document (for the static engine, a
-//       `DbspProfile`, with every worker's `WorkerProfile` plus the circuit
-//       `Graph`, which `ProfileJsonWriter` writes one worker per chunk)
+//       `DbspProfile`, with every worker's `WorkerProfile`, a `HostProfile`
+//       for the pod, and the circuit `Graph`, which `ProfileJsonWriter`
+//       writes one worker per chunk)
 //
 // [3] Serializer (`json_profile_body`, this file)
 //     - runs on: a Tokio blocking-pool thread, one `spawn_blocking` call per chunk
@@ -2604,7 +2605,7 @@ async fn heap_profile() -> impl Responder {
 //     - runs on: its own process, in multihost pipelines only
 //     - what it does: fetches each host's profile and combines them
 //     - produces: one JSON response with the hosts' `worker_profiles`
-//       concatenated
+//       and `hosts` concatenated
 //
 // [6] Pipeline manager, one of two variants
 //     - runs on: the manager service
@@ -3692,6 +3693,11 @@ pub mod test_http_helpers {
             let plain_json: serde_json::Value = serde_json::from_slice(&plain_body).unwrap();
             let workers = plain_json["worker_profiles"].as_array().unwrap().len();
             assert!(workers > 0);
+            // The one host ran every worker.
+            let hosts = plain_json["hosts"].as_array().unwrap();
+            assert_eq!(hosts.len(), 1);
+            assert_eq!(hosts[0]["ordinal"], 0);
+            assert_eq!(hosts[0]["workers"], json!({"start": 0, "end": workers}));
 
             // With `Accept-Encoding: gzip` it arrives gzip-compressed, with the same content.
             let mut gz = server

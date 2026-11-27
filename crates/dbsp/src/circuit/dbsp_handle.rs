@@ -47,7 +47,7 @@ use uuid::Uuid;
 
 #[cfg(doc)]
 use crate::circuit::circuit_builder::Stream;
-use crate::profile::{DbspProfile, WorkerProfile};
+use crate::profile::{DbspProfile, HostProfile, WorkerProfile};
 
 use super::SchedulerError;
 use super::bootstrap::BootstrapInfo;
@@ -2368,7 +2368,10 @@ impl DBSPHandle {
             }
         })?;
 
-        Ok(DbspProfile::new(profiles, graphs.pop()))
+        Ok(DbspProfile {
+            hosts: vec![HostProfile::local(self.runtime().layout())],
+            ..DbspProfile::new(profiles, graphs.pop())
+        })
     }
 
     pub fn lir(&mut self) -> Result<LirCircuit, DbspError> {

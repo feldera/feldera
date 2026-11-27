@@ -4253,6 +4253,20 @@ pub enum TransportConfig {
 /// on its local filesystem.
 pub const REFUSE_LOCAL_FILE_URIS_ENV: &str = "FELDERA_REFUSE_LOCAL_FILE_URIS";
 
+/// Environment variables that identify the Kubernetes pod of a pipeline, for
+/// its circuit profile.
+///
+/// The Kubernetes runner sets them from the pod's fields through the downward
+/// API. Elsewhere they are not set.
+pub const POD_NAME_ENV: &str = "FELDERA_POD_NAME";
+pub const NODE_NAME_ENV: &str = "FELDERA_NODE_NAME";
+
+/// Each environment variable above, with the pod field that sets it.
+pub const POD_FIELD_ENVS: [(&str, &str); 2] = [
+    (POD_NAME_ENV, "metadata.name"),
+    (NODE_NAME_ENV, "spec.nodeName"),
+];
+
 /// A `file:` URL, or a string without a URL scheme. A one-letter scheme is a Windows drive.
 fn is_local_file_uri(location: &str) -> bool {
     let Some((scheme, _)) = location.split_once(':') else {
