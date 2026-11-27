@@ -86,10 +86,23 @@ pub(super) fn bind_parsed_table(
     let aliases = declarations::register(&mut program, parsed, &declarations)?;
     for (parsed_statement, tokens) in parsed.iter().zip(&declarations) {
         if let ParsedStatement::CreateType(declaration) = parsed_statement {
-            if let feldera_sql_parser::TypeDefinition::Alias(ty) = &declaration.definition
-                && types::warns_on_unspecified_precision(ty)
-            {
-                types::warn_decimal(&mut program, tokens.alias_type_position()?);
+            match &declaration.definition {
+                feldera_sql_parser::TypeDefinition::Alias(ty)
+                    if types::warns_on_unspecified_precision(ty) =>
+                {
+                    types::warn_decimal(&mut program, tokens.alias_type_position()?);
+                }
+                feldera_sql_parser::TypeDefinition::Struct(fields) => {
+                    for field in fields {
+                        if types::warns_on_unspecified_precision(&field.data_type) {
+                            types::warn_decimal(
+                                &mut program,
+                                tokens.column_type_position(field.name.span)?,
+                            );
+                        }
+                    }
+                }
+                _ => {}
             }
             continue;
         }

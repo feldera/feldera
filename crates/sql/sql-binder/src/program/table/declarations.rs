@@ -13,7 +13,7 @@ use feldera_sql_rel_model::{
     source::Origin, statements::Statement,
 };
 use sqlparser_064::{
-    ast::{ObjectName, ObjectNamePart},
+    ast::{Ident, ObjectName, ObjectNamePart},
     tokenizer::Span,
 };
 use std::collections::HashMap;
@@ -24,6 +24,11 @@ pub(super) fn type_name(name: &ObjectName) -> Result<(Span, Name, TypeSpelling),
     let [ObjectNamePart::Identifier(ident)] = name.0.as_slice() else {
         return Err(unsupported("expected a local type name"));
     };
+    let (name, spelling) = identifier(ident);
+    Ok((ident.span, name, spelling))
+}
+
+pub(super) fn identifier(ident: &Ident) -> (Name, TypeSpelling) {
     let name = Name {
         name: if ident.quote_style.is_some() {
             ident.value.clone()
@@ -40,7 +45,7 @@ pub(super) fn type_name(name: &ObjectName) -> Result<(Span, Name, TypeSpelling),
             name.name.clone()
         },
     };
-    Ok((ident.span, name, spelling))
+    (name, spelling)
 }
 
 pub(super) fn register(
@@ -54,22 +59,61 @@ pub(super) fn register(
         let ParsedStatement::CreateType(decl) = parsed else {
             continue;
         };
-        let TypeDefinition::Alias(target) = &decl.definition else {
-            return Err(unsupported(
-                "structured type declarations require attribute binding",
-            ));
-        };
         if decl.replace {
             return Err(unsupported("CREATE OR REPLACE TYPE"));
         }
         let (span, name, spelling) = type_name(&decl.name)?;
-        let (ty, target) = declare_type(
-            &mut program.table.type_table,
-            &aliases,
-            target,
-            false,
-            ValidationLimits::default().depth,
-        )?;
+        let types = &mut program.table.type_table;
+        let depth = ValidationLimits::default().depth;
+        let (ty, target, attributes) = match &decl.definition {
+            TypeDefinition::Alias(target) => {
+                let (ty, spelling) = declare_type(types, &aliases, target, false, depth)?;
+                if matches!(
+                    types.types[ty.0 as usize].kind,
+                    feldera_sql_rel_model::types::TypeKind::Row { .. }
+                ) {
+                    return Err(unsupported(
+                        "a ROW type declaration requires named attributes",
+                    ));
+                }
+                (ty, spelling, None)
+            }
+            TypeDefinition::Struct(fields) => {
+                let mut record = super::types::RecordFields::default();
+                let mut attributes = Vec::with_capacity(fields.len());
+                for field in fields {
+                    if field.default.is_some() {
+                        return Err(unsupported("structured attribute DEFAULT"));
+                    }
+                    // CREATE TYPE attributes default to nullable. An inline ROW defaults to NOT NULL.
+                    let nullable = field.nullable.unwrap_or(true);
+                    let (ty, spelling) =
+                        declare_type(types, &aliases, &field.data_type, nullable, depth)?;
+                    let named_type = super::types::declared_type_name(&field.data_type)?;
+                    let name = record.push(
+                        &field.name,
+                        ty,
+                        spelling,
+                        if nullable { "" } else { " NOT NULL" },
+                    )?;
+                    attributes.push(feldera_sql_rel_model::statements::Attribute {
+                        name,
+                        named_type,
+                        nullable: Some(nullable),
+                    });
+                }
+                let (kind, spelling) = record.finish("");
+                let ty = super::super::graph::insert_type(
+                    types,
+                    feldera_sql_rel_model::types::SqlType {
+                        nullable: false,
+                        origin: Origin::Absent {},
+                        kind,
+                    },
+                );
+                (ty, spelling, Some(attributes))
+            }
+        };
         if aliases.insert(name.name.clone(), ty).is_some() {
             return Err(unsupported(format!("duplicate type {}", name.name)));
         }
@@ -86,7 +130,7 @@ pub(super) fn register(
             name,
             name_diagnostic: diagnostic_source(&coordinates(span), &spelling.diagnostic),
             ty,
-            attributes: None,
+            attributes,
         });
     }
     let boundary = DiagnosticBoundary {

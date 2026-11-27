@@ -27,6 +27,21 @@ CASES = {
     "set_filter": SET_TABLES + "SELECT y AS z FROM a WHERE x > 1 UNION ALL SELECT q FROM b;",
     "set_identity_names": "CREATE TABLE a(x INT); CREATE TABLE b(y INT);"
                           " CREATE VIEW v AS SELECT x AS n FROM a UNION DISTINCT SELECT y AS n FROM b;",
+    "record_declaration": "CREATE TYPE pair AS (x INT NULL, y VARCHAR NOT NULL, z INT2);",
+    "record_fields": 'CREATE TYPE pair AS (x INT, "Y" VARCHAR(12) NOT NULL);'
+                     ' CREATE TABLE t(a pair, b pair NOT NULL, c pair ARRAY); CREATE VIEW v AS SELECT c, b, a FROM t;',
+    "record_nested": "CREATE TYPE p AS (a INT);"
+                     " CREATE TYPE q AS (foo p NOT NULL, bar p, baz p ARRAY, qux MAP<INT, p>); CREATE TABLE t(col q);",
+    "record_temporal": "CREATE TYPE ticks AS (d TIME(2), t TIMESTAMP(3), a TIME(9) ARRAY);"
+                       " CREATE TABLE input_rows(sample ticks);",
+    "record_nominal": "CREATE TYPE p AS (a REAL, b BOOL, c DOUBLE); CREATE TYPE q AS (a p, b p, c p NOT NULL);"
+                      " CREATE TABLE t(data q); CREATE VIEW v AS SELECT * FROM t;",
+    "record_quoted": 'CREATE TYPE "Typ" AS ("a" BIGINT, "B" BIGINT, "T K" BOOLEAN);'
+                     ' CREATE TABLE s(t "Typ"); CREATE VIEW v AS SELECT * FROM s;',
+    "record_forward": "CREATE TABLE t(a foo_struct ARRAY); CREATE TYPE foo_struct AS (id BIGINT NOT NULL);",
+    "record_warnings": "CREATE TYPE s AS (x DECIMAL, y NUMERIC); CREATE TYPE empty_alias AS VARCHAR;",
+    "record_inline": "CREATE TABLE t(a ROW(x INTEGER, y VARCHAR), b ROW(p INTEGER NOT NULL),"
+                     " c ROW(m REAL NULL, n VARCHAR ARRAY) ARRAY); CREATE VIEW v AS SELECT * FROM t;",
     "uuid_variant_columns": "CREATE TABLE t(a UUID, b VARIANT, c UUID NOT NULL, d VARIANT NOT NULL,"
                             " e UUID ARRAY, f MAP<INT, VARIANT>); CREATE VIEW v AS SELECT d, c, b, a FROM t;",
     "uuid_literal": "CREATE VIEW v AS SELECT UUID '11223344-AABB-1122-EEFF-FFEEDDCCBBAA' AS x,"

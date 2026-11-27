@@ -10,7 +10,9 @@ use feldera_sql_rel_model::{
         TypeKind,
     },
 };
-use sqlparser_064::ast::{ArrayElemTypeDef, ExactNumberInfo, MapBracketKind};
+use sqlparser_064::ast::{
+    ArrayElemTypeDef, ExactNumberInfo, Ident, MapBracketKind, StructBracketKind,
+};
 
 /// The statement printer quotes type aliases. The diagnostic printer uses
 /// the same resolved names without quotes, including inside collections.
@@ -36,6 +38,70 @@ impl TypeSpelling {
     }
 }
 
+/// Calcite preserves the declared name of an attribute whose type goes
+/// through catalog lookup, even for built-in aliases such as INT2.
+pub(super) fn declared_type_name(
+    ty: &DataType,
+) -> Result<Option<feldera_sql_rel_model::catalog::Name>, Failure> {
+    if let Some((_, name)) = default_type_alias(ty) {
+        return Ok(Some(feldera_sql_rel_model::catalog::Name {
+            name,
+            quoted: false,
+        }));
+    }
+    match ty {
+        DataType::Custom(name, _) => {
+            let (_, name, _) = super::declarations::type_name(name)?;
+            Ok((name.quoted || name.name != "variant").then_some(name))
+        }
+        _ => Ok(None),
+    }
+}
+
+#[derive(Default)]
+pub(super) struct RecordFields {
+    fields: Vec<(String, TypeId)>,
+    pretty: Vec<String>,
+    diagnostic: Vec<String>,
+    names: std::collections::HashSet<String>,
+}
+
+impl RecordFields {
+    pub(super) fn push(
+        &mut self,
+        field: &Ident,
+        ty: TypeId,
+        spelling: TypeSpelling,
+        suffix: &str,
+    ) -> Result<feldera_sql_rel_model::catalog::Name, Failure> {
+        let (name, printed) = super::declarations::identifier(field);
+        if !self.names.insert(name.name.clone()) {
+            return Err(unsupported(format!("duplicate record field {}", name.name)));
+        }
+        self.fields.push((name.name.clone(), ty));
+        self.pretty
+            .push(format!("{} {}{suffix}", printed.quoted, spelling.quoted));
+        self.diagnostic.push(format!(
+            "{} {}{suffix}",
+            printed.diagnostic, spelling.diagnostic
+        ));
+        Ok(name)
+    }
+
+    pub(super) fn finish(self, constructor: &str) -> (TypeKind, TypeSpelling) {
+        let kind = super::super::graph::row_kind(
+            self.fields.iter().map(|(name, ty)| (name.as_str(), *ty)),
+        );
+        (
+            kind,
+            TypeSpelling {
+                quoted: format!("{constructor}({})", self.pretty.join(", ")),
+                diagnostic: format!("{constructor}({})", self.diagnostic.join(", ")),
+            },
+        )
+    }
+}
+
 pub(super) fn declare_type(
     types: &mut TypeTable,
     aliases: &super::declarations::Aliases,
@@ -57,6 +123,20 @@ pub(super) fn declare_type(
                 TypeKind::Variant {},
                 TypeSpelling::render(|_| "VARIANT".into()),
             )
+        }
+        DataType::Struct(fields, StructBracketKind::Parentheses) => {
+            let mut record = RecordFields::default();
+            for field in fields {
+                let name = field
+                    .field_name
+                    .as_ref()
+                    .ok_or_else(|| unsupported("expected a named ROW field"))?;
+                let nullable = field.nullable.unwrap_or(false);
+                let (ty, spelling) =
+                    declare_type(types, aliases, &field.field_type, nullable, child_depth)?;
+                record.push(name, ty, spelling, if nullable { " NULL" } else { "" })?;
+            }
+            record.finish("ROW")
         }
         DataType::Array(ArrayElemTypeDef::Qualified(element, None)) => {
             let (element, spelling) = declare_type(types, aliases, element, true, child_depth)?;

@@ -112,11 +112,34 @@ pub fn lower_program(
         // use site. Only struct declarations create a DBSP item.
         if let Statement::CreateType {
             ty,
-            attributes: None,
+            attributes,
+            name,
+            name_diagnostic,
             ..
         } = statement
         {
-            if matches!(
+            if let Some(attributes) = attributes {
+                let context = diagnostics["context"].clone();
+                source_table::precision_warnings(
+                    [*ty],
+                    &program.table.type_table,
+                    &source_table::location(&name_diagnostic.origin),
+                    &context,
+                    &mut precision_warnings,
+                    diagnostics["messages"]
+                        .as_array_mut()
+                        .expect("system diagnostics"),
+                );
+                source_table::declare_record(
+                    &mut checkpoint["circuit"],
+                    &mut ids,
+                    name,
+                    name_diagnostic,
+                    attributes,
+                    &program.table.type_table,
+                    *ty,
+                )?;
+            } else if matches!(
                 program.table.type_table.types[ty.0 as usize].kind,
                 feldera_sql_rel_model::types::TypeKind::Row { .. }
             ) {

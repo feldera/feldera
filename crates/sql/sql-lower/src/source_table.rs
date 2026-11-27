@@ -2,20 +2,21 @@
 //! The compiler keeps separate type objects for declarations, streams and
 //! column metadata. Those identities remain distinct at the replay boundary.
 
+mod column_layout;
+mod type_declaration;
+
 use super::Error;
+use column_layout::{ColumnLayout, Repr, field, field_hash, structure};
 use feldera_sql_ir::build::CollectionType;
-use feldera_sql_ir::TypeKind as CircuitType;
 use feldera_sql_rel_model::{
     catalog::{CatalogSchema, Name},
-    column_type::ColumnType,
     operators::DiagnosticSource,
     source::Origin,
     statements::StatementSource,
-    types::{FloatFlavor, IntegerWidth, Precision, SqlType, TimeZone, TypeKind, TypeTable},
+    types::{Precision, TimeZone, TypeKind, TypeTable},
 };
-use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
-use std::fmt::Write;
+use serde_json::{Value, json};
+pub(super) use type_declaration::declare_record;
 
 pub(super) struct Ids {
     inner: u64,
@@ -169,221 +170,14 @@ pub(super) fn name(identifier: &Name) -> Value {
     json!({"name":identifier.name, "isQuoted":identifier.quoted})
 }
 
-struct ColumnLayout {
-    class: CircuitType,
-    code: String,
-    short: String,
-    properties: Value,
-    arguments: Vec<Self>,
-    nullable: bool,
-}
-
-impl ColumnLayout {
-    fn lower(ty: &ColumnType<'_>) -> Result<Self, Error> {
-        let (class, code, name, arguments, nullable) = match ty {
-            ColumnType::Scalar(ty) => return Self::scalar(ty),
-            ColumnType::Array { nullable, element } => (
-                CircuitType::Array,
-                "ARRAY",
-                "Array",
-                vec![Self::lower(element)?],
-                *nullable,
-            ),
-            ColumnType::Map {
-                nullable,
-                key,
-                value,
-            } => (
-                CircuitType::Map,
-                "MAP",
-                "Map",
-                vec![Self::lower(key)?, Self::lower(value)?],
-                *nullable,
-            ),
-        };
-        let parameters = arguments
-            .iter()
-            .map(|arg| arg.short.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let suffix = if nullable { "?" } else { "" };
-        Ok(Self {
-            class,
-            code: code.into(),
-            short: format!("{name}<{parameters}>{suffix}"),
-            properties: json!({"name":name}),
-            arguments,
-            nullable,
-        })
-    }
-
-    fn scalar(ty: &SqlType) -> Result<Self, Error> {
-        let (class, code, mut short, properties) = match ty.kind {
-            TypeKind::Integer { width, signed } => {
-                let bits = match width {
-                    IntegerWidth::I8 => 8,
-                    IntegerWidth::I16 => 16,
-                    IntegerWidth::I32 => 32,
-                    IntegerWidth::I64 => 64,
-                };
-                let prefix = if signed { "" } else { "U" };
-                (
-                    CircuitType::Integer,
-                    format!("{prefix}INT{bits}"),
-                    format!("{}{bits}", if signed { "i" } else { "u" }),
-                    json!({"width":bits,"signed":signed}),
-                )
-            }
-            TypeKind::Null {} if ty.nullable => {
-                (CircuitType::Null, "NULL".into(), "null".into(), json!({}))
-            }
-            TypeKind::Uuid {} => (CircuitType::Uuid, "UUID".into(), "Uuid".into(), json!({})),
-            TypeKind::Variant {} => (
-                CircuitType::Variant,
-                "VARIANT".into(),
-                "VARIANT".into(),
-                json!({}),
-            ),
-            TypeKind::Date {} => (CircuitType::Date, "DATE".into(), "Date".into(), json!({})),
-            TypeKind::Time {
-                precision: Precision::Specified(_),
-                zone: TimeZone::None,
-            } => (CircuitType::Time, "TIME".into(), "Time".into(), json!({})),
-            TypeKind::Boolean {} => (CircuitType::Bool, "BOOL".into(), "b".into(), json!({})),
-            TypeKind::Decimal {
-                precision, scale, ..
-            } => (
-                CircuitType::Decimal,
-                "DECIMAL".into(),
-                format!("DECIMAL({precision}, {scale})"),
-                json!({"precision":precision, "scale":scale}),
-            ),
-            TypeKind::Timestamp {
-                precision: Precision::Specified(_),
-                zone: TimeZone::None,
-            } => (
-                CircuitType::Timestamp,
-                "TIMESTAMP".into(),
-                "Timestamp".into(),
-                json!({}),
-            ),
-            TypeKind::Float {
-                flavor: FloatFlavor::Double,
-            } => (CircuitType::Double, "DOUBLE".into(), "d".into(), json!({})),
-            TypeKind::Float {
-                flavor: FloatFlavor::Real,
-            } => (CircuitType::Real, "REAL".into(), "f".into(), json!({})),
-            TypeKind::Binary { fixed, length } => {
-                let precision = match length {
-                    Precision::Unspecified => -1,
-                    Precision::Specified(n) => i64::from(n),
-                };
-                let short = if precision < 0 {
-                    "bytes".into()
-                } else {
-                    format!("bytes({precision})")
-                };
-                (
-                    CircuitType::Binary,
-                    "BYTES".into(),
-                    short,
-                    json!({"precision":precision,"fixed":fixed}),
-                )
-            }
-            TypeKind::Character { fixed, length, .. } => {
-                let precision = match length {
-                    Precision::Unspecified => -1,
-                    Precision::Specified(n) => i64::from(n),
-                };
-                let short = if precision < 0 {
-                    "s".into()
-                } else {
-                    format!("s({precision},{fixed})")
-                };
-                (
-                    CircuitType::String,
-                    "STRING".into(),
-                    short,
-                    json!({"fixed":fixed,"precision":precision}),
-                )
-            }
-            _ => {
-                return Err(Error(format!(
-                    "unsupported table column type {:?}",
-                    ty.kind
-                )));
-            }
-        };
-        if ty.nullable && class != CircuitType::Null {
-            short.push('?');
-        }
-        Ok(Self {
-            class,
-            code,
-            short,
-            properties,
-            arguments: Vec::new(),
-            nullable: ty.nullable,
-        })
-    }
-
-    // Collection constructors inherit the source of the element or map key.
-    // Floating-point and NULL singletons have no source.
-    fn source_empty(&self) -> bool {
-        self.arguments.first().map_or_else(
-            || {
-                matches!(
-                    self.class,
-                    CircuitType::Double | CircuitType::Real | CircuitType::Null
-                )
-            },
-            Self::source_empty,
-        )
-    }
-
-    fn node(&self, ids: &mut Ids) -> Value {
-        let arguments: Vec<_> = self.arguments.iter().map(|arg| arg.node(ids)).collect();
-        let slot = match self.class {
-            CircuitType::Double => Some(&mut ids.doubles[usize::from(self.nullable)]),
-            CircuitType::Real => Some(&mut ids.reals[usize::from(self.nullable)]),
-            CircuitType::Null => Some(&mut ids.null),
-            _ => None,
-        };
-        let mut node = if let Some(slot) = slot {
-            if let Some(id) = slot {
-                return json!({"node":id});
-            }
-            let id = ids.inner;
-            ids.inner += 1;
-            *slot = Some(id);
-            json!({"class":self.class.wire_name(),"id":id,"sourceEmpty":true,"singleton":true})
-        } else if self.source_empty() {
-            ids.generated(self.class.wire_name())
-        } else {
-            ids.node(self.class.wire_name(), &range(0, 0, 0, 0))
-        };
-        node.as_object_mut()
-            .unwrap()
-            .extend(self.properties.as_object().unwrap().clone());
-        if !arguments.is_empty() {
-            node["typeArgs"] = arguments.into();
-        }
-        node["code"] = self.code.clone().into();
-        node["mayBeNull"] = self.nullable.into();
-        node
-    }
-}
-
 /// DBSP retains the SQL field names as well as the positional tuple layout.
 pub(super) struct RowLayout<'a> {
     schema: &'a CatalogSchema,
     columns: Vec<(ColumnLayout, Value)>,
-    signature: String,
 }
 
 impl<'a> RowLayout<'a> {
     pub(super) fn new(schema: &'a CatalogSchema, types: &TypeTable) -> Result<Self, Error> {
-        let mut signature = String::from("[");
         let mut columns = Vec::with_capacity(schema.columns.len());
         for col in &schema.columns {
             let ty = types
@@ -393,15 +187,9 @@ impl<'a> RowLayout<'a> {
                 .descriptor()
                 .ok_or_else(|| Error("unsupported column schema".into()))?;
             let layout = ColumnLayout::lower(&ty)?;
-            write!(signature, "{}:{},", col.name.name, layout.short).expect("string write");
             columns.push((layout, descriptor));
         }
-        signature.push(']');
-        Ok(Self {
-            schema,
-            columns,
-            signature,
-        })
+        Ok(Self { schema, columns })
     }
 
     pub(super) fn structure(&self, ids: &mut Ids, position: &Value) -> Value {
@@ -417,7 +205,16 @@ impl<'a> RowLayout<'a> {
         } else {
             self.schema.name.clone()
         };
-        let digest = Sha256::digest(format!("{}{}", row_name.name, self.signature));
+        let repr = if anonymous { Repr::Tuple } else { Repr::Struct };
+        let hash = field_hash(
+            &row_name.name,
+            self.schema
+                .columns
+                .iter()
+                .zip(&self.columns)
+                .map(|(col, (layout, _))| (col.name.name.as_str(), layout)),
+            repr,
+        );
         let fields: Vec<_> = self
             .schema
             .columns
@@ -429,20 +226,11 @@ impl<'a> RowLayout<'a> {
                 } else {
                     location(&col.diagnostic.origin)
                 };
-                let mut field = ids.node("Field", &field_position);
-                field["type"] = layout.node(ids);
-                field["index"] = col.index.into();
-                field["name"] = name(&col.name);
-                field
+                let ty = layout.emit(ids, repr);
+                field(ids, &field_position, &col.name, col.index, ty)
             })
             .collect();
-        let mut node = ids.node("DBSPTypeStruct", position);
-        node["fields"] = fields.into();
-        node["hashName"] = format!("struct_{}", hex::encode(&digest[..8])).into();
-        node["name"] = name(&row_name);
-        node["code"] = "STRUCT".into();
-        node["mayBeNull"] = false.into();
-        node
+        structure(ids, position, &row_name, fields, hash, false)
     }
 
     pub(super) fn tuple(&self, ids: &mut Ids, position: &Value, anonymous: bool) -> Value {

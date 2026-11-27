@@ -188,12 +188,18 @@ aliases and filtered projections. Their bound programs matched Java through
 Gen-2 emission. Rust also produced S2 checkpoints that matched independent Java
 lowering and resumed through the optimizer.
 
+Nine programs exercise structured CREATE TYPE declarations and inline ROW types.
+They cover field nullability, nominal attribute references, nested arrays and maps,
+quoted names, forward references from tables, and precision warnings. Rust emits
+both the named struct used in metadata and the positional tuple used on streams.
+The nine bound programs and their Rust S2 checkpoints matched Java.
+
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. The UUID and VARIANT checkpoint (`c4fc08c7e`) bound 157 of 8,571 programs. All 157 matched Java compilation
+Gen-2 options. Rust bound 162 of 8,571 programs. All 162 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 72 of
-the 157 to S2. All 72 matched independent Java lowering and the Java optimizer
-resumed every checkpoint. The remaining 8,414 programs still need whole-program
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 77 of
+the 162 to S2. All 77 matched independent Java lowering and the Java optimizer
+resumed every checkpoint. The remaining 8,409 programs still need whole-program
 binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
 

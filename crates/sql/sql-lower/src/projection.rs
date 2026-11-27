@@ -159,6 +159,7 @@ impl Projection<'_> {
                     | TypeKind::Binary { .. }
                     | TypeKind::Array { .. }
                     | TypeKind::Map { .. }
+                    | TypeKind::Row { .. }
                     | TypeKind::Uuid {}
                     | TypeKind::Variant {}
             ) {

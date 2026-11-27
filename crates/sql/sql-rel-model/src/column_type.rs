@@ -8,6 +8,10 @@ use serde_json::{Value, json};
 
 pub enum ColumnType<'a> {
     Scalar(&'a SqlType),
+    Row {
+        nullable: bool,
+        fields: Vec<(&'a str, Self)>,
+    },
     Array {
         nullable: bool,
         element: Box<Self>,
@@ -55,9 +59,20 @@ impl TypeTable {
                     value: Box::new(self.expand_column(value, depth, remaining)?),
                 }
             }
+            TypeKind::Row { ref fields, .. } => ColumnType::Row {
+                nullable,
+                fields: fields
+                    .iter()
+                    .map(|field| {
+                        Some((
+                            field.name.name.as_str(),
+                            self.expand_column(field.ty, depth, remaining)?,
+                        ))
+                    })
+                    .collect::<Option<_>>()?,
+            },
             TypeKind::Array { .. }
             | TypeKind::Multiset { .. }
-            | TypeKind::Row { .. }
             | TypeKind::Named { .. }
             | TypeKind::Function { .. } => return None,
             _ => ColumnType::Scalar(ty),
@@ -76,6 +91,17 @@ impl ColumnType<'_> {
     pub fn descriptor(&self) -> Option<Value> {
         match self {
             Self::Scalar(ty) => ty.scalar_column_type(),
+            Self::Row { nullable, fields } => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, field)| {
+                        let mut column = field.descriptor()?;
+                        column["name"] = (*name).into();
+                        Some(column)
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some(json!({"fields":fields, "nullable":nullable}))
+            }
             Self::Array { nullable, element } => Some(json!({
                 "component": element.descriptor()?, "nullable": nullable, "type": "ARRAY"
             })),

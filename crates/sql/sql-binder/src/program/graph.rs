@@ -113,6 +113,18 @@ pub(super) fn insert_row_fields<'a>(
     program: &mut Program,
     fields: impl IntoIterator<Item = (&'a str, TypeId)>,
 ) -> TypeId {
+    let kind = row_kind(fields);
+    insert_type(
+        &mut program.table.type_table,
+        SqlType {
+            nullable: false,
+            origin: Origin::Absent {},
+            kind,
+        },
+    )
+}
+
+pub(super) fn row_kind<'a>(fields: impl IntoIterator<Item = (&'a str, TypeId)>) -> TypeKind {
     let fields = fields
         .into_iter()
         .map(|(name, ty)| Field {
@@ -124,17 +136,10 @@ pub(super) fn insert_row_fields<'a>(
             ty,
         })
         .collect();
-    insert_type(
-        &mut program.table.type_table,
-        SqlType {
-            nullable: false,
-            origin: Origin::Absent {},
-            kind: TypeKind::Row {
-                struct_kind: StructKind::PeekFieldsNoExpand,
-                fields,
-            },
-        },
-    )
+    TypeKind::Row {
+        struct_kind: StructKind::PeekFieldsNoExpand,
+        fields,
+    }
 }
 
 #[derive(Clone, Copy)]
