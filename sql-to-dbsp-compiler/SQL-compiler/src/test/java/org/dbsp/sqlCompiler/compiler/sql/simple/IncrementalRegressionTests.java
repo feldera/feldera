@@ -316,8 +316,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
             @Override
             public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
-                // Both retainers depend on the join. Their relative order must be stable.
-                Assert.assertEquals(1, this.integrateTraceValues);
                 this.integrateTraceValuesLastN++;
             }
 
@@ -329,6 +327,68 @@ public class IncrementalRegressionTests extends SqlIoTest {
             }
         };
         ccs.visit(visitor);
+    }
+
+    @Test
+    public void asofDeterministicCircuit() {
+        // Compiling a program twice must give the same circuit and the same Rust code.
+        // For each ASOF join with bounded state the compiler adds two operators that
+        // discard old rows from the join inputs: an IntegrateTraceRetainValues operator
+        // for the left input and an IntegrateTraceRetainNValues operator for the right input.
+        // LowerAsof sets their position in the circuit with extra dependency edges on the join.
+        // The order of these edges was different from one compilation to the next,
+        // thus the two operators changed places.
+        // One compilation shows only one of the possible orders, so compile many times.
+        String sql = """
+                create table l1 (
+                    id BIGINT NOT NULL,
+                    ts timestamp NOT NULL LATENESS INTERVAL 0 days
+                );
+
+                create table r1 (
+                    id BIGINT NOT NULL,
+                    ts timestamp NOT NULL LATENESS INTERVAL 0 days
+                );
+
+                create table l2 (
+                    id BIGINT NOT NULL,
+                    ts timestamp NOT NULL LATENESS INTERVAL 0 days
+                );
+
+                create table r2 (
+                    id BIGINT NOT NULL,
+                    ts timestamp NOT NULL LATENESS INTERVAL 0 days
+                );
+
+                create view v1 as
+                select l1.id as id, l1.ts as lts, r1.ts as rts
+                from l1 left asof join r1
+                    MATCH_CONDITION (r1.ts <= l1.ts)
+                ON l1.id = r1.id;
+
+                create view v2 as
+                select l2.id as id, l2.ts as lts, r2.ts as rts
+                from l2 left asof join r2
+                    MATCH_CONDITION (r2.ts <= l2.ts)
+                ON l2.id = r2.id;""";
+        Set<String> circuits = new HashSet<>();
+        for (int i = 0; i < 30; i++) {
+            var cc = this.getCC(sql);
+            StringBuilder operators = new StringBuilder();
+            cc.visit(new CircuitVisitor(cc.compiler) {
+                @Override
+                public void postorder(DBSPOperator operator) {
+                    operators.append(operator.getClass().getSimpleName()).append("\n");
+                }
+            });
+            circuits.add(operators.toString());
+        }
+        // The Rust code contains operator ids, which are different for each compilation
+        // in the same JVM. Thus compare the sequence of operators, not the Rust code.
+        Assert.assertEquals(1, circuits.size());
+        String operators = circuits.iterator().next();
+        Assert.assertTrue(operators.contains(DBSPIntegrateTraceRetainValuesOperator.class.getSimpleName()));
+        Assert.assertTrue(operators.contains(DBSPIntegrateTraceRetainNValuesOperator.class.getSimpleName()));
     }
 
     @Test
