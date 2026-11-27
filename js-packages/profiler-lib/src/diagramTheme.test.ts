@@ -200,6 +200,26 @@ describe('draw order', () => {
     })
 })
 
+describe('edge label', () => {
+    /** The `rgb(...)` string that cytoscape reports for a `#rrggbb` color. */
+    const rgb = (hex: string) =>
+        `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(',')})`
+
+    it('gives the label of a traced edge a thicker border in the color of the edge', () => {
+        const palette = DIAGRAM_PALETTES.light
+        const edge = graph('light').$id('e').data('label', '10 rows')
+        expect(edge.style('text-border-width')).toBe('1px')
+
+        edge.addClass('highlight-forward')
+        expect(edge.style('text-border-color')).toBe(rgb(palette.edgeForward))
+        expect(edge.style('text-border-width')).toBe('2px')
+
+        edge.addClass('highlight-forward-adjacent')
+        expect(edge.style('text-border-color')).toBe(rgb(palette.edgeForwardAdjacent))
+        expect(edge.style('text-border-width')).toBe('2px')
+    })
+})
+
 describe('chip geometry', () => {
     it('draws chips at the node font size', () => {
         // The node font size and the chip font size live in different modules; they have to agree

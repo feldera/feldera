@@ -93,6 +93,17 @@ export function labelWidth(text: string): number {
  *  over every plain one. */
 const TRACED_EDGE_Z_INDEX = 1;
 
+/** The width of a traced edge, in graph pixels. */
+const TRACED_EDGE_WIDTH_PX = 3;
+
+/** The space between the text of an edge label chip and its border, in graph pixels. */
+const EDGE_LABEL_PADDING_PX = 3;
+
+/** The border of an edge label chip, in graph pixels. When the edge is traced, the chip gets a
+ *  thicker border. */
+const EDGE_LABEL_BORDER_PX = 1;
+const TRACED_EDGE_LABEL_BORDER_PX = 2;
+
 /** The class that gives a traced edge `TRACED_EDGE_Z_INDEX`. It is separate from the color classes,
  *  because a change of `z-index` makes cytoscape sort all elements again before the next draw.
  *  `CytographRendering` adds this class one frame after the color classes, so the frame that shows
@@ -310,19 +321,22 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             }
         },
         {
-            // An edge that stands for more than one stream shows the count in a chip.
+            // An edge shows a chip with the row count of its streams. Below the row count, the chip
+            // shows the stream count if the edge stands for more than one stream.
             selector: 'edge[label]',
             style: {
                 'label': 'data(label)',
+                // Breaks the label at the newline between the two counts.
+                'text-wrap': 'wrap',
                 'font-size': `${NODE_FONT_SIZE - 2}px`,
                 'min-zoomed-font-size': MIN_READABLE_FONT_PX,
                 'color': p.chipInk,
                 'text-background-color': p.chipFill,
                 'text-background-opacity': 1,
                 'text-background-shape': 'roundrectangle',
-                'text-background-padding': '2px',
+                'text-background-padding': `${EDGE_LABEL_PADDING_PX}px`,
                 'text-border-color': p.chipBorder,
-                'text-border-width': 1,
+                'text-border-width': EDGE_LABEL_BORDER_PX,
                 'text-border-opacity': 1
             }
         },
@@ -331,7 +345,9 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             style: {
                 'line-color': p.edgeBackward,
                 'target-arrow-color': p.edgeBackward,
-                'width': 3
+                'width': TRACED_EDGE_WIDTH_PX,
+                'text-border-color': p.edgeBackward,
+                'text-border-width': TRACED_EDGE_LABEL_BORDER_PX
             }
         },
         {
@@ -339,7 +355,9 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             style: {
                 'line-color': p.edgeForward,
                 'target-arrow-color': p.edgeForward,
-                'width': 3
+                'width': TRACED_EDGE_WIDTH_PX,
+                'text-border-color': p.edgeForward,
+                'text-border-width': TRACED_EDGE_LABEL_BORDER_PX
             }
         },
         {
@@ -353,14 +371,16 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             selector: 'edge.highlight-backward-adjacent',
             style: {
                 'line-color': p.edgeBackwardAdjacent,
-                'target-arrow-color': p.edgeBackwardAdjacent
+                'target-arrow-color': p.edgeBackwardAdjacent,
+                'text-border-color': p.edgeBackwardAdjacent
             }
         },
         {
             selector: 'edge.highlight-forward-adjacent',
             style: {
                 'line-color': p.edgeForwardAdjacent,
-                'target-arrow-color': p.edgeForwardAdjacent
+                'target-arrow-color': p.edgeForwardAdjacent,
+                'text-border-color': p.edgeForwardAdjacent
             }
         },
     ];

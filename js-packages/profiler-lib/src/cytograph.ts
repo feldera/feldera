@@ -2,6 +2,7 @@
 
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeCollection, type NodeDefinition, type NodeSingular } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
+import { formatQty } from 'common-lib/format';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
 import { CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, type DisplayScales, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
@@ -174,17 +175,33 @@ class GraphEdge implements EncodableAsString {
     /** The operators whose output streams this edge stands for. DBSP names a stream by the operator that
      *  writes it, so two edges of `graph` from one operator carry the same stream. */
     private readonly streamSources: Set<NodeId> = new Set();
+    /** The number of rows in all the streams of this edge. Undefined when the profile has no row
+     *  count for any of the operator's streams. */
+    private rowCount: number | undefined = undefined;
 
     constructor(readonly source: string, readonly target: string, readonly id: string, readonly backedge: boolean) { }
 
-    addStream(writer: NodeId) {
-        this.streamSources.add(writer);
+    /** Adds the output stream of `operator` to the stream count and the row count of this edge.
+     *  `streamRows` is the number of rows in the stream, if the profile has it. If the stream is
+     *  already counted, the method does nothing. `label()` shows the two counts. */
+    countStreamAndRows(operator: NodeId, streamRows: number | undefined) {
+        if (this.streamSources.has(operator))
+            return;
+        this.streamSources.add(operator);
+        if (streamRows !== undefined)
+            this.rowCount = (this.rowCount ?? 0) + streamRows;
     }
 
-    /** The label of an edge that stands for more than one stream, for example "3 streams". */
+    /** The label of this edge, for example "1.20k rows" text above "3 streams". The row count shows only
+     *  if the profile includes one. The stream count shows only if the edge stands for more than one stream. */
     private label(): string | undefined {
-        const count = this.streamSources.size;
-        return count > 1 ? `${count} streams` : undefined;
+        const lines: Array<string> = [];
+        if (this.rowCount !== undefined)
+            lines.push(`${formatQty(this.rowCount, 'rounded')} rows`);
+        const streamCount = this.streamSources.size;
+        if (streamCount > 1)
+            lines.push(`${streamCount} streams`);
+        return lines.length > 0 ? lines.join("\n") : undefined;
     }
 
     getDefinition(): EdgeDefinition {
@@ -232,7 +249,7 @@ export class Cytograph {
     /** Adds the drawn edge from `source` to `target` that stands for the edge `original` of `graph`.
      *  All edges of `graph` with the same drawn nodes and the same `back` flag share one drawn edge.
      *  ELK then lays out one edge for each pair of nodes, which makes the layout faster. */
-    addDrawnEdge(original: Edge<NodeId>, source: NodeId, target: NodeId) {
+    addDrawnEdge(original: Edge<NodeId>, source: NodeId, target: NodeId, streamRows: number | undefined) {
         // The id depends only on the drawn edge, so that `diff` keeps the edge when other edges change.
         const id = source + "->" + target + (original.back ? ":back" : "");
         let drawn = this.edgesById.get(id);
@@ -241,7 +258,7 @@ export class Cytograph {
             this.edgesById.set(id, drawn);
             this.edges.push(drawn);
         }
-        drawn.addStream(original.from);
+        drawn.countStreamAndRows(original.from, streamRows);
         this.edgeMap.set(original.id, id);
     }
 
@@ -290,6 +307,20 @@ export class Cytograph {
             .map(node => ({ id: node.getId(), label: node.label }));
         return profile.rankNodes(metric, displayed);
     }
+
+    /** The number of rows in the output stream of `operator`, summed over all workers. The sum ignores
+     *  the worker selection, because a change of the selection does not rebuild the edges. Undefined
+     *  when the profile has no output statistics for the operator. */
+    private static outputRows(profile: CircuitProfile, operator: NodeId): number | undefined {
+        const node = profile.getNode(operator);
+        if (node.isNone())
+            return undefined;
+        const values = node.unwrap().getMeasurements(Cytograph.OUTPUT_ROWS_METRIC);
+        const total = node.unwrap().totalOf(Cytograph.OUTPUT_ROWS_METRIC, values);
+        return total.isSome() ? total.unwrap().getNumericValue().unwrapOr(0) : undefined;
+    }
+
+    private static readonly OUTPUT_ROWS_METRIC = "output_batches_stats.record_count";
 
     // Create a Cytograph from a CircuitProfile filtered by the specified selection.
     static fromProfile(profile: CircuitProfile, selection: CircuitSelection): Cytograph {
@@ -371,7 +402,7 @@ export class Cytograph {
                 // Induced edges can be self-edges; do not add these
                 continue;
             }
-            result.addDrawnEdge(edge, sourceNode.id, targetNode.id);
+            result.addDrawnEdge(edge, sourceNode.id, targetNode.id, Cytograph.outputRows(profile, edge.from));
         }
         return result;
     }
