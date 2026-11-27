@@ -39,7 +39,7 @@ use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use tokio::{fs, fs::create_dir_all, select, spawn};
-use tokio_stream::StreamExt;
+use tokio_stream::{Stream, StreamExt};
 use tracing::{Level, error, info, warn};
 use uuid::Uuid;
 
@@ -564,7 +564,8 @@ impl LocalRunner {
 
     /// Retrieves the binary executable or program info file of the pipeline from the compiler
     /// server and stores it in the local runner working directory for that pipeline
-    /// located at `target_file_path`.
+    /// located at `target_file_path`. A file that is already there is replaced by a new
+    /// file; see [`replace_file`].
     ///
     /// Attempts to retrieve several times. Attempts are only made again if a sending error
     /// occurred, not when a response was returned.
@@ -620,52 +621,21 @@ impl LocalRunner {
                     }
 
                     // Response body as a stream of bytes
-                    let mut body = response.bytes_stream();
-
-                    // Create and open the file
-                    let mut file = fs::File::options()
-                        .create(true)
-                        .truncate(true)
-                        .write(true)
-                        .read(true)
-                        .mode(mode)
-                        .open(target_file_path)
-                        .await
-                        .map_err(|e| {
-                            ManagerError::from(RunnerError::RunnerProvisionError {
-                                error: format!(
-                                    "pipeline {description} retrieval failed: unable to create file '{}': {e}",
-                                    target_file_path.display()
-                                ),
-                            })
-                        })?;
-
-                    // Write the file in streaming fashion
-                    while let Some(result_bytes) = body.next().await {
-                        let bytes = result_bytes.map_err(|e| ManagerError::from(RunnerError::RunnerProvisionError {
-                            error: format!("pipeline {description} retrieval failed: GET '{file_url}': could not convert response body chunk into bytes due to: {e}")
-                        }))?;
-                        file.write_all(&bytes).await.map_err(|e| {
-                            ManagerError::from(RunnerError::RunnerProvisionError {
-                                error: format!(
-                                    "pipeline {description} retrieval failed: unable to write file '{}': {e}",
-                                    target_file_path.display()
-                                ),
-                            })
-                        })?;
-                    }
-
-                    // Flush the file to be sure everything is written to disk
-                    file.flush().await.map_err(|e| {
-                        ManagerError::from(RunnerError::RunnerProvisionError {
-                            error: format!(
-                                "pipeline {description} retrieval failed: unable to flush file '{}': {e}",
-                                target_file_path.display()
-                            ),
+                    let body = response.bytes_stream().map(|chunk| {
+                        chunk.map_err(|e| {
+                            format!(
+                                "GET '{file_url}': could not convert response body chunk into bytes due to: {e}"
+                            )
                         })
-                    })?;
+                    });
 
-                    return Ok(());
+                    return replace_file(target_file_path, mode, body)
+                        .await
+                        .map_err(|error| {
+                            ManagerError::from(RunnerError::RunnerProvisionError {
+                                error: format!("pipeline {description} retrieval failed: {error}"),
+                            })
+                        });
                 }
                 Err(e) => {
                     let error = format!(
@@ -1579,6 +1549,122 @@ impl PipelineExecutor for LocalRunner {
     }
 }
 
+/// Suffix of the name under which [`replace_file`] writes a file before it moves the file
+/// into place.
+const STAGED_FILE_SUFFIX: &str = ".download";
+
+/// Writes the chunks of `body` to a new file and moves the file to `target_file_path`.
+///
+/// A file that is already at `target_file_path` is replaced, not rewritten. That matters
+/// for an executable: a pipeline that restarts without a storage clear still has the
+/// binary of its previous run, and macOS ties the code signature of an executable that
+/// ran to its file. It kills a new process of such a file with SIGKILL ("Code Signature
+/// Invalid") if the file is open for writing anywhere when the process starts, or if the
+/// file was rewritten while a process of its previous contents still existed. A new file
+/// has no such history, so its process starts in both cases.
+///
+/// # Arguments
+///
+/// * `target_file_path` - The path to store the file at.
+/// * `mode` - File access mode for the created file.
+/// * `body` - The contents of the file, in chunks. An error ends the write.
+///
+/// # Returns
+///
+/// `Ok(())` once the complete file is at `target_file_path`. Otherwise a description of
+/// the step that failed; `target_file_path` is then as it was.
+async fn replace_file<B: AsRef<[u8]>>(
+    target_file_path: &Path,
+    mode: u32,
+    body: impl Stream<Item = Result<B, String>> + Unpin,
+) -> Result<(), String> {
+    let mut staged_file_path = target_file_path.as_os_str().to_owned();
+    staged_file_path.push(STAGED_FILE_SUFFIX);
+    let staged_file_path = PathBuf::from(staged_file_path);
+
+    let replaced = write_and_move_file(&staged_file_path, target_file_path, mode, body).await;
+    if replaced.is_err() {
+        // Nothing reads a file that was not moved into place.
+        let _ = remove_file(&staged_file_path).await;
+    }
+    replaced
+}
+
+/// Writes the chunks of `body` to a new file at `staged_file_path` and renames that file
+/// to `target_file_path`. This is the part of [`replace_file`] that can fail; a failure
+/// may leave a file at `staged_file_path`.
+///
+/// A file that is already at `staged_file_path`, left there by a download that did not
+/// finish, is removed first. Opened again, it would keep its mode and its inode, and the
+/// rename would pass both to `target_file_path`.
+///
+/// # Arguments
+///
+/// * `staged_file_path` - The path to write the file at, in the directory of
+///   `target_file_path`.
+/// * `target_file_path` - The path to move the complete file to.
+/// * `mode` - File access mode for the created file.
+/// * `body` - The contents of the file, in chunks. An error ends the write.
+///
+/// # Returns
+///
+/// `Ok(())` once the complete file is at `target_file_path`, otherwise a description of
+/// the step that failed.
+async fn write_and_move_file<B: AsRef<[u8]>>(
+    staged_file_path: &Path,
+    target_file_path: &Path,
+    mode: u32,
+    mut body: impl Stream<Item = Result<B, String>> + Unpin,
+) -> Result<(), String> {
+    match remove_file(staged_file_path).await {
+        Err(e) if e.kind() != ErrorKind::NotFound => {
+            return Err(format!(
+                "unable to remove file '{}': {e}",
+                staged_file_path.display()
+            ));
+        }
+        _ => {}
+    }
+
+    // Create and open the file
+    let mut file = fs::File::options()
+        .create_new(true)
+        .write(true)
+        .read(true)
+        .mode(mode)
+        .open(staged_file_path)
+        .await
+        .map_err(|e| {
+            format!(
+                "unable to create file '{}': {e}",
+                staged_file_path.display()
+            )
+        })?;
+
+    // Write the file in streaming fashion
+    while let Some(chunk) = body.next().await {
+        file.write_all(chunk?.as_ref())
+            .await
+            .map_err(|e| format!("unable to write file '{}': {e}", staged_file_path.display()))?;
+    }
+
+    // Wait until everything is written, and close the file before it gets its name
+    file.flush()
+        .await
+        .map_err(|e| format!("unable to flush file '{}': {e}", staged_file_path.display()))?;
+    drop(file);
+
+    fs::rename(staged_file_path, target_file_path)
+        .await
+        .map_err(|e| {
+            format!(
+                "unable to move file '{}' to '{}': {e}",
+                staged_file_path.display(),
+                target_file_path.display()
+            )
+        })
+}
+
 /// Splits `available_mb` evenly among `n_hosts` colocated host processes;
 /// `None` when the share rounds down to nothing.
 fn per_host_share(available_mb: Option<u64>, n_hosts: usize) -> Option<u64> {
@@ -1599,6 +1685,161 @@ fn apply_default_memory_limit(global: &mut RuntimeConfig, available_mb: Option<u
 defaulting 'resources.memory_max' to {available}"
         );
         global.resources.memory_max = Some(available);
+    }
+}
+
+#[cfg(test)]
+mod replace_file_tests {
+    use super::{STAGED_FILE_SUFFIX, replace_file};
+    use std::fs::Permissions;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::path::Path;
+
+    /// Returns a body that delivers `chunks` one by one.
+    fn body(
+        chunks: &[Result<&str, &str>],
+    ) -> impl tokio_stream::Stream<Item = Result<Vec<u8>, String>> + Unpin {
+        tokio_stream::iter(
+            chunks
+                .iter()
+                .map(|chunk| chunk.map(|c| c.as_bytes().to_vec()).map_err(String::from))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Returns the names of the files in `dir`.
+    fn files_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Requires `path` to have the mode of a file that `replace_file` wrote with mode
+    /// 0o760. The process's umask may clear bits of the group, never of the owner.
+    fn assert_mode_760(path: &Path) {
+        let mode = std::fs::metadata(path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o700, 0o700, "mode {mode:o}");
+        assert_eq!(mode & 0o007, 0, "mode {mode:o}");
+    }
+
+    /// The chunks of the body end up in a file with the mode asked for, and the name
+    /// under which the file was written is gone.
+    #[tokio::test]
+    async fn writes_a_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("program");
+        replace_file(&target, 0o760, body(&[Ok("first "), Ok("version")]))
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"first version");
+        assert_mode_760(&target);
+        assert_eq!(files_in(dir.path()), ["program"]);
+    }
+
+    /// A file that is already there is replaced by another file, not rewritten: a process
+    /// that runs the old file keeps it, and the new file has no history.
+    #[tokio::test]
+    async fn replaces_an_existing_file_with_a_new_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("program");
+        replace_file(&target, 0o760, body(&[Ok("old")]))
+            .await
+            .unwrap();
+        let old_inode = std::fs::metadata(&target).unwrap().ino();
+        let old_file = std::fs::File::open(&target).unwrap();
+
+        replace_file(&target, 0o760, body(&[Ok("new "), Ok("contents")]))
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"new contents");
+        assert_ne!(std::fs::metadata(&target).unwrap().ino(), old_inode);
+        // What was open before still reads the old contents.
+        assert_eq!(std::io::read_to_string(old_file).unwrap(), "old");
+        assert_eq!(files_in(dir.path()), ["program"]);
+    }
+
+    /// A body that fails leaves the file that is there as it was.
+    #[tokio::test]
+    async fn keeps_the_existing_file_when_the_body_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("program");
+        replace_file(&target, 0o760, body(&[Ok("complete")]))
+            .await
+            .unwrap();
+
+        let error = replace_file(
+            &target,
+            0o760,
+            body(&[Ok("part"), Err("connection lost"), Ok("ial")]),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, "connection lost");
+        assert_eq!(std::fs::read(&target).unwrap(), b"complete");
+        assert_eq!(files_in(dir.path()), ["program"]);
+    }
+
+    /// A file that an interrupted download left under the staging name does not get in
+    /// the way of the next download, and nothing of it ends up in the result: neither
+    /// its contents, nor its mode, nor the file itself.
+    #[tokio::test]
+    async fn replaces_what_an_interrupted_download_left() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("program");
+        let leftover = dir.path().join(format!("program{STAGED_FILE_SUFFIX}"));
+        std::fs::write(&leftover, "a much longer leftover").unwrap();
+        std::fs::set_permissions(&leftover, Permissions::from_mode(0o644)).unwrap();
+        // While the leftover is open, its inode cannot go to another file.
+        let leftover_file = std::fs::File::open(&leftover).unwrap();
+        let leftover_inode = leftover_file.metadata().unwrap().ino();
+
+        replace_file(&target, 0o760, body(&[Ok("short")]))
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"short");
+        assert_mode_760(&target);
+        assert_ne!(std::fs::metadata(&target).unwrap().ino(), leftover_inode);
+        assert_eq!(files_in(dir.path()), ["program"]);
+    }
+
+    /// Something under the staging name that cannot be removed is an error that names
+    /// it, and the file that is there stays as it was.
+    #[tokio::test]
+    async fn reports_a_staging_name_that_cannot_be_freed() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("program");
+        replace_file(&target, 0o760, body(&[Ok("complete")]))
+            .await
+            .unwrap();
+        // `remove_file` does not remove a directory.
+        std::fs::create_dir(dir.path().join(format!("program{STAGED_FILE_SUFFIX}"))).unwrap();
+
+        let error = replace_file(&target, 0o760, body(&[Ok("new")]))
+            .await
+            .unwrap_err();
+        assert!(
+            error.starts_with("unable to remove file")
+                && error.contains(&format!("program{STAGED_FILE_SUFFIX}")),
+            "{error}"
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"complete");
+    }
+
+    /// A target whose directory does not exist is an error that names the file.
+    #[tokio::test]
+    async fn reports_a_file_that_cannot_be_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("missing").join("program");
+        let error = replace_file(&target, 0o760, body(&[Ok("contents")]))
+            .await
+            .unwrap_err();
+        assert!(
+            error.starts_with("unable to create file") && error.contains("missing/program"),
+            "{error}"
+        );
     }
 }
 
