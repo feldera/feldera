@@ -191,6 +191,10 @@ public abstract class CircuitVisitor
         return this.preorder((DBSPUnaryOperator) node);
     }
 
+    public VisitDecision preorder(DBSPLagWithWaterlineOperator node) {
+        return this.preorder((DBSPBinaryOperator) node);
+    }
+
     public VisitDecision preorder(DBSPNoopOperator node) {
         return this.preorder((DBSPUnaryOperator) node);
     }
@@ -556,6 +560,10 @@ public abstract class CircuitVisitor
 
     public void postorder(DBSPLagOperator node) {
         this.postorder((DBSPUnaryOperator) node);
+    }
+
+    public void postorder(DBSPLagWithWaterlineOperator node) {
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPSubtractOperator node) {

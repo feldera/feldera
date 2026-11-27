@@ -654,9 +654,23 @@ FROM
 
 #### Garbage collection
 
-GC for `LAG` and `LEAD` functions has not been implemented yet (see our
-GC feature [roadmap](https://github.com/feldera/feldera/issues/1850)).
-[Let us know](https://github.com/feldera/feldera/issues/new/) if you are interested in this feature.
+The `LAG` and `LEAD` operators store their input and output relations.  If the
+first column in the `ORDER BY` clause has a waterline and is sorted in ascending
+order, the operators discard old records below the waterline, except for the last
+few records below it in each partition, which a new record can still refer to.  For
+`LAG(x, n)` or `LEAD(x, n)`, the operators keep up to `n` input records and up to
+`2 * n` output records below the waterline in each partition.  In the
+`purchase_with_prev_next` view above, `ts` has a waterline.
+
+When the `ORDER BY` column is nullable, records with a `NULL` value in it are never
+late.  In ascending order, `NULL` values come first unless the query specifies
+`NULLS LAST`.  GC then does not apply: a new record with a `NULL` value sorts next
+to the oldest records, so the operators still need them.  Write
+`ORDER BY ts NULLS LAST` to enable GC.
+
+GC does not apply in descending order, nor when only a `PARTITION BY` column
+has a waterline (see our GC feature
+[roadmap](https://github.com/feldera/feldera/issues/1850)).
 
 ### Deduplicating a CDC stream
 

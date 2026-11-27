@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
@@ -303,6 +304,15 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPLagOperator operator) {
         if (this.preorder(operator.to(DBSPUnaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("offset");
+        this.stream.append(operator.offset);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLagWithWaterlineOperator operator) {
+        if (this.preorder(operator.to(DBSPBinaryOperator.class)).stop())
             return VisitDecision.STOP;
         this.property("offset");
         this.stream.append(operator.offset);

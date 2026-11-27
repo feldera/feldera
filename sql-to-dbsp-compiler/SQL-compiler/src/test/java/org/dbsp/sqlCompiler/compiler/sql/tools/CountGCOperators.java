@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
@@ -24,7 +25,8 @@ import java.util.List;
 /** Records the GC operators of a circuit, its star joins, and its inner and left joins. */
 public class CountGCOperators extends CircuitVisitor {
     /** One letter per GC operator: K for RetainKeys, V for RetainValues, N for RetainNValues,
-     * W for a window with a lower bound, and R for a rolling aggregate with a waterline. */
+     * W for a window with a lower bound, R for a rolling aggregate with a waterline, and L for a
+     * LAG with a waterline. */
     private final List<String> kinds = new ArrayList<>();
     /** The kinds of star join operators, in circuit order. */
     public final List<String> starJoins = new ArrayList<>();
@@ -59,6 +61,11 @@ public class CountGCOperators extends CircuitVisitor {
     @Override
     public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
         this.kinds.add("R");
+    }
+
+    @Override
+    public void postorder(DBSPLagWithWaterlineOperator operator) {
+        this.kinds.add("L");
     }
 
     @Override

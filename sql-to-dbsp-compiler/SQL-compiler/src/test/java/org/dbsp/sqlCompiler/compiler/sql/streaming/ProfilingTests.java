@@ -640,7 +640,8 @@ public class ProfilingTests extends StreamingTestBase {
 
     /** A LAG partitioned by a column with LATENESS keeps in its traces only the partitions at or
      * above the waterline.  The state grows today: the runtime LAG integrates an encoded copy of
-     * its input, which the RetainKeys of the compiler do not reach. */
+     * its input, which no GC operator reaches, and garbage collects it only with a waterline of
+     * the first ORDER BY column. */
     @Test @Ignore("https://github.com/feldera/feldera/issues/1850")
     public void profileLagRetainKeys() throws IOException, InterruptedException, SQLException {
         if (BaseSQLTests.skipRust)
@@ -665,6 +666,39 @@ public class ProfilingTests extends StreamingTestBase {
                 let _ = &read_output_spine(&streams.1);
                 """);
         assertStateBounded(this.measure(sql, main), "The traces of the LAG");
+    }
+
+    /** LAG and LEAD ordered by a column with LATENESS keep in their traces the rows at or above
+     * the waterline and a few rows below it in each partition. */
+    @Test
+    public void profileLagLeadOrderedByLateness() throws IOException, InterruptedException, SQLException {
+        if (BaseSQLTests.skipRust)
+            return;
+        String sql = """
+                CREATE TABLE events (
+                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL 5 MINUTES,
+                    id BIGINT NOT NULL,
+                    amount BIGINT NOT NULL
+                );
+                CREATE VIEW previous_amounts AS
+                SELECT event_time, id, amount,
+                       LAG(amount) OVER (PARTITION BY id ORDER BY event_time) AS previous
+                FROM events;
+                CREATE VIEW next_amounts AS
+                SELECT event_time, id, amount,
+                       LEAD(amount, 2) OVER (PARTITION BY id ORDER BY event_time) AS next_amount
+                FROM events;""";
+        // One batch per second with a row for each id.  The five minute LATENESS keeps 300 rows
+        // of each partition live, 15,000 rows of 100,000.
+        String main = growthMain("""
+                for id in 0..IDS {
+                    append_to_collection_handle(&zset!(Tup3::new(event_time, id, batch + id) => 1), &streams.0);
+                }
+                let _ = circuit.transaction().expect("could not run circuit");
+                let _ = &read_output_spine(&streams.1);
+                let _ = &read_output_spine(&streams.2);
+                """);
+        assertStateBounded(this.measure(sql, main), "The traces of the LAG and the LEAD");
     }
 
     @Test

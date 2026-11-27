@@ -1728,6 +1728,46 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    @Override
+    public VisitDecision preorder(DBSPLagWithWaterlineOperator operator) {
+        this.computeHash(operator);
+        this.innerVisitor.setOperatorContext(operator);
+        DBSPType streamType = this.streamType(operator);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(this.getInputName(operator, 0))
+                .append(".")
+                .append(operator.operation);
+        this.builder.append("_persistent");
+        this.builder.append("::<_, _, _, ");
+        this.builder.append(operator.comparator.to(DBSPComparatorExpression.class).getComparatorStructName());
+        this.builder.append(", _, _, _>")
+                .append("(hash, &")
+                .append(this.getInputName(operator, 1))
+                .append(",")
+                .increase();
+        operator.aboveWaterline.accept(this.innerVisitor);
+        this.builder.append(",").newline();
+        DBSPISizeLiteral offset = new DBSPISizeLiteral(operator.offset);
+        offset.accept(this.innerVisitor);
+        this.builder.append(",").newline();
+        operator.projection.accept(this.innerVisitor);
+        this.builder.append(",").newline();
+        operator.getFunction().accept(this.innerVisitor);
+        this.builder.newline()
+                .decrease()
+                .append(")")
+                .append(this.markDistinct(operator))
+                .append(";");
+        this.innerVisitor.setOperatorContext(null);
+        this.tagStream(operator);
+        return VisitDecision.STOP;
+    }
+
     void emitWindowBounds(DBSPWindowBoundExpression lower, DBSPWindowBoundExpression upper) {
         this.builder.append("RelRange::new(").increase();
         lower.accept(this.innerVisitor);

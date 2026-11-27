@@ -54,6 +54,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
@@ -857,6 +858,31 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             result = new DBSPLagOperator(operator.getRelNode(), operator.offset,
                     projection, function, comparator,
                     type.to(DBSPTypeIndexedZSet.class), input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPLagWithWaterlineOperator operator) {
+        DBSPType type = this.transform(operator.getType());
+        OutputPort data = this.mapped(operator.left());
+        OutputPort waterline = this.mapped(operator.right());
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPExpression comparator = this.transform(operator.comparator);
+        DBSPExpression projection = this.transform(operator.projection);
+        DBSPExpression aboveWaterline = this.transform(operator.aboveWaterline);
+        DBSPSimpleOperator result = operator;
+        if (!type.sameType(operator.getType())
+                || !data.equals(operator.left())
+                || !waterline.equals(operator.right())
+                || projection != operator.projection
+                || function != operator.getFunction()
+                || comparator != operator.comparator
+                || aboveWaterline != operator.aboveWaterline) {
+            result = new DBSPLagWithWaterlineOperator(operator.getRelNode(), operator.offset,
+                    projection, function, comparator, aboveWaterline.to(DBSPClosureExpression.class),
+                    type.to(DBSPTypeIndexedZSet.class), data, waterline)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

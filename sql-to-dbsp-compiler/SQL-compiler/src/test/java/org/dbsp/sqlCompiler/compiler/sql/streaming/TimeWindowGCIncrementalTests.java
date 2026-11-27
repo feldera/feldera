@@ -119,7 +119,8 @@ public class TimeWindowGCIncrementalTests extends StreamingTestBase {
             .flatMap(shape -> Stream.of(shape, shape.notNull())).toList();
 
     /** The GC operators of each shape; see {@link CountGCOperators#kinds()}.  The operators of
-     * SESSION do not bound its state: the LAG that implements it keeps every row. */
+     * SESSION do not bound its state: the LAG that implements it keeps only the rows near the
+     * waterline, but its other operators keep every row. */
     static final String EXPECTED_GC = """
             ts >= NOW() - 1 hour                                | W
             ts >= NOW() - 1 hour NOT NULL                       | W
@@ -173,10 +174,10 @@ public class TimeWindowGCIncrementalTests extends StreamingTestBase {
             HOP, GROUP BY start, end NOT NULL                   | K
             HOP with offset                                     | K
             HOP with offset NOT NULL                            | K
-            SESSION rows                                        | KKKNNRR
-            SESSION rows NOT NULL                               | KKKNNRR
-            SESSION, GROUP BY k, start, end                     | KKKNNRR
-            SESSION, GROUP BY k, start, end NOT NULL            | KKKNNRR
+            SESSION rows                                        | KKKLNNRR
+            SESSION rows NOT NULL                               | KKKLNNRR
+            SESSION, GROUP BY k, start, end                     | KKKLNNRR
+            SESSION, GROUP BY k, start, end NOT NULL            | KKKLNNRR
             """;
 
     /** The GC operators of each shape compiled alone, one line per shape. */

@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
@@ -597,6 +598,13 @@ public class FindUnboundedState extends Passes {
                 super.postorder(node);
         }
 
+        /** The waterline prunes the traces of the operator, as a GC operator would */
+        @Override
+        public void postorder(DBSPLagWithWaterlineOperator node) {
+            if (this.insideRecursive())
+                super.postorder(node);
+        }
+
         @Override
         public void postorder(DBSPWindowOperator node) {
             if (node.lowerUnbounded || this.insideRecursive())
@@ -715,7 +723,8 @@ public class FindUnboundedState extends Passes {
                     || operator.is(DBSPPartitionedRollingAggregateWithWaterlineOperator.class)
                     || operator.is(DBSPRankOperator.class)
                     || operator.is(DBSPRowNumberOperator.class)
-                    || operator.is(DBSPLagOperator.class))
+                    || operator.is(DBSPLagOperator.class)
+                    || operator.is(DBSPLagWithWaterlineOperator.class))
                 return "a window function";
             if (operator.is(ILinearAggregate.class)
                     || operator.is(INonLinearAggregate.class)

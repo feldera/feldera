@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -92,6 +93,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
  * - {@link DBSPWaterlineOperator} operators near sources with lateness information
  * - {@link DBSPIntegrateTraceRetainKeysOperator} to prune data from integral operators
  * - {@link DBSPPartitionedRollingAggregateWithWaterlineOperator} operators
+ * - {@link DBSPLagWithWaterlineOperator} operators
  * - {@link DBSPIntegrateTraceRetainValuesOperator} to prune data from integral operators
  * This also inserts WINDOWS before views that have "emit_final" annotations.
  * It also converts {@link DBSPSourceMultisetOperator} into {@link DBSPInputMapWithWaterlineOperator}
@@ -712,55 +714,79 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.map(aggregator, filteredAggregator, false);
     }
 
+    /** Replace a LAG operator with a {@link DBSPLagWithWaterlineOperator} when the waterline of
+     * its input bounds its state. */
     @Override
-    public void postorder(DBSPLagOperator aggregator) {
-        OutputPort source = this.mapped(aggregator.input());
-        OperatorDeltaExpansion expanded = this.expandedInto.get(aggregator);
-        if (expanded == null) {
-            this.nonMonotone(aggregator);
-            super.postorder(aggregator);
-            return;
-        }
-
-        OutputPort limiter = this.bound.get(aggregator.input());
-        if (limiter == null) {
-            super.postorder(aggregator);
-            this.nonMonotone(aggregator);
+    public void postorder(DBSPLagOperator lag) {
+        OperatorDeltaExpansion expanded = this.expandedInto.get(lag);
+        OutputPort limiter = this.bound.get(lag.input());
+        if (expanded == null || limiter == null) {
+            this.nonMonotone(lag);
+            super.postorder(lag);
             return;
         }
 
         ReplacementDeltaExpansion ae = expanded.to(ReplacementDeltaExpansion.class);
-        OutputPort expandedSource = ae.replacement.inputs.get(0);
-        MonotoneExpression inputValue = this.expansionMonotoneValues.get(expandedSource);
+        MonotoneExpression inputValue = this.expansionMonotoneValues.get(ae.replacement.inputs.get(0));
         if (inputValue == null) {
-            super.postorder(aggregator);
-            this.nonMonotone(aggregator);
+            this.nonMonotone(lag);
+            super.postorder(lag);
             return;
         }
 
-        IMaybeMonotoneType projection = Monotonicity.getBodyType(inputValue);
-        MonotoneExpression monotoneValue2 = this.expansionMonotoneValues.get(ae.replacement);
-        if (monotoneValue2 == null) {
-            super.postorder(aggregator);
-            this.nonMonotone(aggregator);
+        // The bound of the output, for the operators that read it
+        if (this.addBounds(lag, ae.replacement, 0) == null)
+            this.nonMonotone(lag);
+
+        PartiallyMonotoneTuple projection =
+                Monotonicity.getBodyType(inputValue).to(PartiallyMonotoneTuple.class);
+        DBSPLagWithWaterlineOperator replacement = this.lagWithWaterline(lag, projection, limiter);
+        if (replacement == null) {
+            super.postorder(lag);
             return;
         }
+        this.map(lag, replacement);
+    }
 
-        this.createRetainKeys(aggregator.getRelNode(), source, projection, limiter);
-        IMaybeMonotoneType projection2 = Monotonicity.getBodyType(Objects.requireNonNull(monotoneValue2));
-        OutputPort aggLimiter = this.addBounds(aggregator, ae.replacement, 0);
-        if (aggLimiter == null) {
-            super.postorder(aggregator);
-            this.nonMonotone(aggregator);
-            return;
-        }
+    /** Given a LAG operator, the monotone fields of its input, and the bound of its input, return
+     * the {@link DBSPLagWithWaterlineOperator} that replaces it, or null when the rows that can
+     * still change do not come last in each partition of the sort order. */
+    @Nullable
+    DBSPLagWithWaterlineOperator lagWithWaterline(
+            DBSPLagOperator lag, PartiallyMonotoneTuple projection, OutputPort limiter) {
+        // The waterline of the first column C of the sort order bounds the rows that can change:
+        // every later change has C at or above it.  These rows come last in each partition when
+        // C is ascending and its NULL values, which are never late, sort last.
+        DBSPFieldComparatorExpression first = lag.firstComparedField();
+        if (first == null || !first.ascending)
+            return null;
+        final int column = first.fieldNo;
+        DBSPTypeTupleBase rowType = lag.input().getOutputIndexedZSetType()
+                .elementType.to(DBSPTypeTupleBase.class);
+        if (rowType.getFieldType(column).mayBeNull && first.nullsFirst)
+            return null;
+        IMaybeMonotoneType value = projection.getFieldType(1);
+        if (!value.mayBeMonotone() ||
+                !value.to(PartiallyMonotoneTuple.class).getFieldType(column).mayBeMonotone())
+            return null;
 
-        DBSPSimpleOperator filteredAggregator = aggregator
-                .withInputs(Linq.list(source), false)
-                .to(DBSPSimpleOperator.class);
-        this.addOperator(filteredAggregator);
-        this.createRetainKeys(aggregator.getRelNode(), filteredAggregator.outputPort(), projection2, aggLimiter);
-        this.map(aggregator, filteredAggregator, false);
+        OutputPort columnBound = this.createDelay(this.extractTimestamp(projection, column, limiter));
+        // The operator reads its waterline in a TypedBox.  A delay cannot have a type
+        // that includes a TypedBox, so the box is added after the delay.
+        DBSPVariablePath bound = columnBound.outputType().ref().var();
+        DBSPClosureExpression box = DBSPTypeTypedBox.wrapTypedBox(
+                bound.deref().applyCloneIfNeeded(), false).closure(bound);
+        DBSPApplyOperator boxApply = new DBSPApplyOperator(lag.getRelNode(), box, columnBound, null);
+        this.addOperator(boxApply);
+
+        DBSPVariablePath row = rowType.ref().var();
+        DBSPVariablePath waterline = columnBound.outputType().ref().var();
+        DBSPClosureExpression aboveWaterline = DBSPControlledKeyFilterOperator.generateTupleCompare(
+                row.deref().field(column), waterline.deref(), DBSPOpcode.CONTROLLED_FILTER_GTE)
+                .closure(row, waterline);
+        return new DBSPLagWithWaterlineOperator(lag.getRelNode(), lag.offset, lag.projection,
+                lag.getFunction(), lag.comparator, aboveWaterline,
+                lag.getOutputIndexedZSetType(), this.mapped(lag.input()), boxApply.outputPort());
     }
 
     @Override

@@ -280,6 +280,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     public void postorder(DBSPRowNumberOperator operator) { this.replace(operator); }
 
     @Override
+    public void postorder(DBSPLagWithWaterlineOperator operator) { this.replace(operator); }
+
+    @Override
     public void postorder(DBSPMapIndexOperator operator) { this.replace(operator); }
 
     @Override

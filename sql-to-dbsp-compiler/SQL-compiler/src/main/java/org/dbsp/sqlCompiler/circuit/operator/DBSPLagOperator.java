@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -56,6 +57,20 @@ public final class DBSPLagOperator extends DBSPUnaryOperator implements IHasInpu
         this.comparator = comparator;
         this.projection = projection;
         this.offset = offset;
+    }
+
+    /** The comparison of the first column of the sort order, or null if the comparator compares
+     * no column. */
+    @Nullable
+    public DBSPFieldComparatorExpression firstComparedField() {
+        // A comparator compares its source first, so the first column is the innermost one
+        DBSPFieldComparatorExpression first = null;
+        DBSPExpression comparator = this.comparator;
+        while (comparator.is(DBSPFieldComparatorExpression.class)) {
+            first = comparator.to(DBSPFieldComparatorExpression.class);
+            comparator = first.source;
+        }
+        return first;
     }
 
     @Override
