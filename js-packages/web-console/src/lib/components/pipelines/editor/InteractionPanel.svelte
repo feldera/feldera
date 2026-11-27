@@ -18,7 +18,7 @@
     deleted?: boolean
     currentTab: string | null
   } = $props()
-  const pipelineName = $derived(pipeline.current.name)
+  const pipelineId = $derived(pipeline.current.id)
 
   const { showInteractionPanel } = useLayoutSettings()
 
@@ -47,7 +47,7 @@
 
   const currentTab = $derived(
     useLocalStorage<(typeof tabs)[number]['id']>(
-      'pipelines/' + pipelineName + '/currentInteractionTab',
+      `pipelines/${pipelineId}/currentInteractionTab`,
       tabs[0].id
     )
   )
