@@ -21,6 +21,24 @@ Source edition can be found on github.
   fires `INSERT` triggers, and fails if the table has a `NOT NULL` column
   with no default that the view does not write. With
   `on_conflict_do_nothing`, updates do not change.
+- The PostgreSQL output connector now connects again and writes the batch
+  again when a connection pooler, such as PgBouncer, ends the session with
+  an error of its own (SQLSTATE `08P01`). Before, it dropped the batch. It
+  still drops a batch that fails in 10 attempts. See [connection loss and
+  connection
+  poolers](/connectors/sinks/postgresql#connection-loss-and-connection-poolers)
+  and [issue 8014](https://github.com/feldera/feldera/issues/8014).
+
+- The PostgreSQL output connector now writes a batch again when the server
+  cannot write through the session of the connector, for example on a
+  read-only server after a failover (SQLSTATE `25006`), or when a statement
+  fails for a cause on the server side: a cancelled statement, a lock that
+  is not available, a deadlock, a serialization failure, a shortage of disk
+  space or memory, a system error or an internal error. Each new attempt
+  uses a new connection. The connector makes at most 10 attempts, the first
+  one included, and then drops the batch. See [connection loss and
+  connection
+  poolers](/connectors/sinks/postgresql#connection-loss-and-connection-poolers).
 
 ## v0.391.0
 

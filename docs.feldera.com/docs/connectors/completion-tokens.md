@@ -69,6 +69,12 @@ it have been written to all connected data sinks.  It returns `"inprogress"` oth
 The response also carries `step`: the number of steps the pipeline completes
 before the token is complete.
 
+A token is also `"complete"` when an output connector gave up on some of that
+output, for example after an error that it cannot recover from. The status
+of a token does not report such errors. To find them, check the status of
+each output connector (`fatal_error` and the error counters) with the
+[connector status](/api/get-output-status) endpoint.
+
 ## Waiting for output on an HTTP stream
 
 For an [HTTP output connector](/connectors/sinks/http), "written to the
