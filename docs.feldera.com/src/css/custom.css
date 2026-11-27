@@ -599,7 +599,15 @@ main > .container {
 
 /* ---------- Sidebar ---------- */
 
+/* A slightly narrower menu (Docusaurus's default is 300px). */
+:root {
+  --doc-sidebar-width: 260px !important;
+}
+
+/* A subtle Sink ground (the brand's warm step between Paper and Shell), so the menu reads as its
+   own column beside the Paper page. */
 .theme-doc-sidebar-container {
+  background: var(--color-sink);
   border-right: 1px solid var(--hair-07) !important;
 }
 
@@ -614,7 +622,7 @@ main > .container {
 
 .menu__link,
 .menu__caret {
-  border-radius: var(--radius-base);
+  border-radius: 0;
   line-height: 1.35;
 }
 
@@ -631,12 +639,13 @@ main > .container {
   color: var(--color-secondary-950);
 }
 
-/* The current page: a Moss fill with Paper text */
+/* The current page: a square Stone fill with Ink text, medium weight, so it reads clearly on the
+   Sink nav. */
 .menu__link--active:not(.menu__link--sublist),
 .menu__link--active:not(.menu__link--sublist):hover {
-  color: var(--color-paper);
-  background: var(--color-moss);
-  box-shadow: 0 1px 2px 0 rgb(32 31 30 / 0.05);
+  color: var(--color-secondary-950);
+  background: var(--color-stone);
+  box-shadow: none;
   font-weight: 500;
 }
 
@@ -645,7 +654,8 @@ main > .container {
   background: none;
 }
 
-/* Top-level categories read as lab labels. A hairline above each one closes the section before it. */
+/* Top-level categories: DM Sans medium in Ink, in their own case (mono capitals are for small lab
+   labels, not navigation). A hairline above each one closes the section before it. */
 .theme-doc-sidebar-menu > .theme-doc-sidebar-item-category {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
@@ -664,11 +674,11 @@ main > .container {
 }
 
 .theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link {
-  font-family: var(--ifm-font-family-monospace);
-  font-size: 12px;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
   font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: -0.005em;
+  text-transform: none;
   color: var(--color-secondary-950);
 }
 
@@ -683,26 +693,19 @@ main > .container {
   color: var(--color-secondary-950);
 }
 
-/* A category with its own page gets the Moss fill when that page is current (aria-current),
+/* A category with its own page gets the same Stone fill when that page is current (aria-current),
    not when one of its children is */
 .theme-doc-sidebar-menu .menu__list-item-collapsible:has(> .menu__link[aria-current='page']),
 .theme-doc-sidebar-menu .menu__list-item-collapsible:has(> .menu__link[aria-current='page']):hover {
-  background: var(--color-moss);
-  box-shadow: 0 1px 2px 0 rgb(32 31 30 / 0.05);
+  background: var(--color-stone);
+  box-shadow: none;
 }
 
 .theme-doc-sidebar-menu .menu__list-item-collapsible > .menu__link[aria-current='page'],
 .theme-doc-sidebar-menu .menu__list-item-collapsible > .menu__link[aria-current='page']:hover {
-  color: var(--color-paper);
+  color: var(--color-secondary-950);
   background: none;
   font-weight: 500;
-}
-
-/* Light carets on the Moss fill */
-.menu__list-item-collapsible:has(> .menu__link[aria-current='page']) .menu__caret:before,
-.menu__link[aria-current='page'].menu__link--sublist-caret:after {
-  filter: invert(1);
-  opacity: 0.8;
 }
 
 /* Nested items: indent with a hairline guide. Not under a top-level category. */
@@ -720,7 +723,7 @@ main > .container {
 
 .menu__list-item-collapsible {
   position: relative;
-  border-radius: var(--radius-base);
+  border-radius: 0;
 }
 
 .menu__list-item-collapsible:hover {
@@ -798,27 +801,33 @@ main > .container {
   background: var(--color-stone);
 }
 
-/* Narrow screens: "On this page" sits on Moss, so its label, caret and links are Paper (about 9:1). */
-.theme-doc-toc-mobile,
-.theme-doc-toc-mobile [class*="tocCollapsibleButton"] {
-  color: var(--color-paper);
+/* Narrow screens: "On this page" is a Shell bar with Ink text and a Stone edge, square, as the
+   phone menu's back bar; the open list uses the sidebar's grey links, the current one in Ink. */
+/* !important: Docusaurus paints this bar with the menu's active colour from a stronger rule. */
+.theme-doc-toc-mobile {
+  background: var(--color-shell) !important;
+  border: 1px solid var(--color-stone);
+  border-radius: 0 !important;
+  color: var(--color-secondary-950);
 }
 
-.theme-doc-toc-mobile [class*="tocCollapsibleButton"]::after {
-  filter: invert(1);
+.theme-doc-toc-mobile [class*="tocCollapsibleButton"] {
+  color: var(--color-secondary-950);
+  font-weight: 500;
 }
 
 .theme-doc-toc-mobile .table-of-contents {
   border-left: 0;
+  border-top: 1px solid var(--color-stone);
 }
 
 .theme-doc-toc-mobile .table-of-contents__link {
-  color: rgb(250 249 246 / 0.8);
+  color: var(--color-surface-600);
 }
 
 .theme-doc-toc-mobile .table-of-contents__link:hover,
 .theme-doc-toc-mobile .table-of-contents__link--active {
-  color: var(--color-paper);
+  color: var(--color-secondary-950);
 }
 
 /* ---------- Buttons: square, 40px, DM Sans 500 ---------- */
