@@ -152,22 +152,24 @@ Forge reader loaded all seventeen circuits with their profiler reports. The case
 COUNT(*), a filtered COUNT(*), COUNT(DISTINCT), a global SUM, a grouped SUM, and a multiline
 constant view. [Executable comparison](scripts/validate_bound_programs.py) · [Measured evidence](evidence/local-compiler-20261119.json)
 
-On 2026-11-27, 39 directed binding cases and 44 directed lowering cases
+On 2026-11-27, 44 directed binding cases and 49 directed lowering cases
 matched direct Gen-2 compilation with the Java reference built at
 `1222fd75f`. They include explicit view column lists, references to local
 views, inline and composite primary keys, temporal precision warnings and multirow
 `INSERT INTO … VALUES` with reordered columns, nulls, and widened literal types.
 They also cover multi-column constant views, folded arithmetic, quoted field names,
-and the effect of ignored inserts on subsequent relation IDs.
+and the effect of ignored inserts on subsequent relation IDs. Five cases cover
+nested ARRAY and MAP columns, including key and element nullability, reordered
+projections, repeated floating-point elements and temporal precision warnings.
 The Rust schema preview and S2 preserve primary keys in column declaration order.
 [Binding comparison](scripts/validate_bound_programs.py) · [Lowering comparison](scripts/validate_s1_lowering.py)
 
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 95 of 8,571 programs. All 95 matched Java compilation
+Gen-2 options. Rust bound 96 of 8,571 programs. All 96 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 42 of
-the 95 to S2. All 42 matched independent Java lowering and the Java optimizer
-resumed every checkpoint. The remaining 8,476 programs still need whole-program
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 43 of
+the 96 to S2. All 43 matched independent Java lowering and the Java optimizer
+resumed every checkpoint. The remaining 8,475 programs still need whole-program
 binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
 

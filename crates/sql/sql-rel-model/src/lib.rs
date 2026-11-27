@@ -6,6 +6,7 @@
 //! These experimental contracts are not an accepted production S1 protocol.
 
 pub mod catalog;
+pub mod column_type;
 pub mod compilation_context;
 pub mod diagnostics;
 pub mod expression_objects;

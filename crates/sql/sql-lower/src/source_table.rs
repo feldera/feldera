@@ -7,6 +7,7 @@ use feldera_sql_ir::build::CollectionType;
 use feldera_sql_ir::TypeKind as CircuitType;
 use feldera_sql_rel_model::{
     catalog::{CatalogSchema, Name},
+    column_type::ColumnType,
     operators::DiagnosticSource,
     source::Origin,
     statements::StatementSource,
@@ -159,17 +160,55 @@ pub(super) fn name(identifier: &Name) -> Value {
     json!({"name":identifier.name, "isQuoted":identifier.quoted})
 }
 
-struct Scalar {
+struct ColumnLayout {
     class: CircuitType,
     code: String,
     short: String,
     properties: Value,
-    column: Value,
+    arguments: Vec<Self>,
     nullable: bool,
 }
 
-impl Scalar {
-    fn lower(ty: &SqlType) -> Result<Self, Error> {
+impl ColumnLayout {
+    fn lower(ty: &ColumnType<'_>) -> Result<Self, Error> {
+        let (class, code, name, arguments, nullable) = match ty {
+            ColumnType::Scalar(ty) => return Self::scalar(ty),
+            ColumnType::Array { nullable, element } => (
+                CircuitType::Array,
+                "ARRAY",
+                "Array",
+                vec![Self::lower(element)?],
+                *nullable,
+            ),
+            ColumnType::Map {
+                nullable,
+                key,
+                value,
+            } => (
+                CircuitType::Map,
+                "MAP",
+                "Map",
+                vec![Self::lower(key)?, Self::lower(value)?],
+                *nullable,
+            ),
+        };
+        let parameters = arguments
+            .iter()
+            .map(|arg| arg.short.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let suffix = if nullable { "?" } else { "" };
+        Ok(Self {
+            class,
+            code: code.into(),
+            short: format!("{name}<{parameters}>{suffix}"),
+            properties: json!({"name":name}),
+            arguments,
+            nullable,
+        })
+    }
+
+    fn scalar(ty: &SqlType) -> Result<Self, Error> {
         let (class, code, mut short, properties) = match ty.kind {
             TypeKind::Integer { width, signed } => {
                 let bits = match width {
@@ -262,20 +301,32 @@ impl Scalar {
         if ty.nullable && class != CircuitType::Null {
             short.push('?');
         }
-        let column = ty
-            .scalar_column_type()
-            .ok_or_else(|| Error("unsupported scalar schema".into()))?;
         Ok(Self {
             class,
             code,
             short,
             properties,
-            column,
+            arguments: Vec::new(),
             nullable: ty.nullable,
         })
     }
 
+    // Collection constructors inherit the source of the element or map key.
+    // Floating-point and NULL singletons have no source.
+    fn source_empty(&self) -> bool {
+        self.arguments.first().map_or_else(
+            || {
+                matches!(
+                    self.class,
+                    CircuitType::Double | CircuitType::Real | CircuitType::Null
+                )
+            },
+            Self::source_empty,
+        )
+    }
+
     fn node(&self, ids: &mut Ids) -> Value {
+        let arguments: Vec<_> = self.arguments.iter().map(|arg| arg.node(ids)).collect();
         let slot = match self.class {
             CircuitType::Double => Some(&mut ids.doubles[usize::from(self.nullable)]),
             CircuitType::Real => Some(&mut ids.reals[usize::from(self.nullable)]),
@@ -290,12 +341,17 @@ impl Scalar {
             ids.inner += 1;
             *slot = Some(id);
             json!({"class":self.class.wire_name(),"id":id,"sourceEmpty":true,"singleton":true})
+        } else if self.source_empty() {
+            ids.generated(self.class.wire_name())
         } else {
             ids.node(self.class.wire_name(), &range(0, 0, 0, 0))
         };
         node.as_object_mut()
             .unwrap()
             .extend(self.properties.as_object().unwrap().clone());
+        if !arguments.is_empty() {
+            node["typeArgs"] = arguments.into();
+        }
         node["code"] = self.code.clone().into();
         node["mayBeNull"] = self.nullable.into();
         node
@@ -305,23 +361,29 @@ impl Scalar {
 /// DBSP retains the SQL field names as well as the positional tuple layout.
 pub(super) struct RowLayout<'a> {
     schema: &'a CatalogSchema,
-    scalars: Vec<Scalar>,
+    columns: Vec<(ColumnLayout, Value)>,
     signature: String,
 }
 
 impl<'a> RowLayout<'a> {
     pub(super) fn new(schema: &'a CatalogSchema, types: &TypeTable) -> Result<Self, Error> {
         let mut signature = String::from("[");
-        let mut scalars = Vec::new();
+        let mut columns = Vec::with_capacity(schema.columns.len());
         for col in &schema.columns {
-            let scalar = Scalar::lower(&types.types[col.ty.0 as usize])?;
-            write!(signature, "{}:{},", col.name.name, scalar.short).expect("string write");
-            scalars.push(scalar);
+            let ty = types
+                .column_type(col.ty)
+                .ok_or_else(|| Error("unsupported column type".into()))?;
+            let descriptor = ty
+                .descriptor()
+                .ok_or_else(|| Error("unsupported column schema".into()))?;
+            let layout = ColumnLayout::lower(&ty)?;
+            write!(signature, "{}:{},", col.name.name, layout.short).expect("string write");
+            columns.push((layout, descriptor));
         }
         signature.push(']');
         Ok(Self {
             schema,
-            scalars,
+            columns,
             signature,
         })
     }
@@ -344,15 +406,15 @@ impl<'a> RowLayout<'a> {
             .schema
             .columns
             .iter()
-            .zip(&self.scalars)
-            .map(|(col, scalar)| {
+            .zip(&self.columns)
+            .map(|(col, (layout, _))| {
                 let field_position = if anonymous {
                     position.clone()
                 } else {
                     location(&col.diagnostic.origin)
                 };
                 let mut field = ids.node("Field", &field_position);
-                field["type"] = scalar.node(ids);
+                field["type"] = layout.node(ids);
                 field["index"] = col.index.into();
                 field["name"] = name(&col.name);
                 field
@@ -381,7 +443,14 @@ impl<'a> RowLayout<'a> {
     }
 
     pub(super) fn column_types(&self, ids: &mut Ids) -> Vec<Value> {
-        self.scalars.iter().map(|s| s.node(ids)).collect()
+        self.columns
+            .iter()
+            .map(|(layout, _)| layout.node(ids))
+            .collect()
+    }
+
+    pub(super) fn descriptors(&self) -> impl Iterator<Item = &Value> {
+        self.columns.iter().map(|(_, descriptor)| descriptor)
     }
 }
 
@@ -411,14 +480,26 @@ pub(super) fn precision_warnings(
     seen: &mut std::collections::HashSet<(&'static str, u32)>,
     messages: &mut Vec<Value>,
 ) {
-    for column in &schema.columns {
-        use TypeKind::{Time, Timestamp};
-        let (name, requested, runtime) = match types.types[column.ty.0 as usize].kind {
-            Time {
+    let mut pending: Vec<_> = schema.columns.iter().rev().map(|c| c.ty).collect();
+    let mut visited = std::collections::HashSet::new();
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        let (name, requested, runtime) = match types.types[id.0 as usize].kind {
+            TypeKind::Array { element, .. } => {
+                pending.push(element);
+                continue;
+            }
+            TypeKind::Map { key, value } => {
+                pending.extend([value, key]);
+                continue;
+            }
+            TypeKind::Time {
                 precision: Precision::Specified(n),
                 zone: TimeZone::None,
             } => ("TIME", n, 9),
-            Timestamp {
+            TypeKind::Timestamp {
                 precision: Precision::Specified(n),
                 zone: TimeZone::None,
             } => ("TIMESTAMP", n, 6),
@@ -450,17 +531,17 @@ pub(super) fn lower(
     let output = stream_type(ids, tuple, &position)?;
     let mut fields = Vec::new();
     let mut columns = Vec::new();
-    for (col, scalar) in schema.columns.iter().zip(&layout.scalars) {
+    for (col, (ty, descriptor)) in schema.columns.iter().zip(&layout.columns) {
         fields.push(json!({
             "name": col.name.name,
             "case_sensitive": col.name.quoted,
-            "columntype": scalar.column,
+            "columntype": descriptor,
             "unused": false,
         }));
         columns.push(json!({
             "name": name(&col.name),
             "position": location(&col.diagnostic.origin),
-            "type": scalar.node(ids),
+            "type": ty.node(ids),
             "isPrimaryKey": col.primary_key,
             "interned": false,
         }));

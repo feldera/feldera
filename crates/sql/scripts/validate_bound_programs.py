@@ -13,6 +13,14 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "collection_identity": "CREATE TABLE t(a INT ARRAY); CREATE VIEW v AS SELECT * FROM t;",
+    "collection_nested": "CREATE TABLE t(a INT ARRAY NOT NULL, b VARCHAR(4) ARRAY ARRAY NOT NULL, c INT ARRAY NOT NULL);",
+    "collection_project": "CREATE TABLE t(m MAP<VARCHAR, INT> NOT NULL, n MAP<INT, VARCHAR ARRAY>);"
+                          "\nCREATE VIEW v AS SELECT n, m FROM t;",
+    "collection_shared": "CREATE TABLE t(a DOUBLE ARRAY, b MAP<INT, DOUBLE ARRAY>);"
+                         "\nCREATE LOCAL VIEW intermediate AS SELECT b, a FROM t;"
+                         "\nCREATE VIEW v AS SELECT a, a AS again FROM intermediate;",
+    "collection_precision": "CREATE TABLE t(a TIME(2) ARRAY, b MAP<TIMESTAMP(3), TIME(2)>);",
     "constant_after_insert": "CREATE TABLE t(x INT); INSERT INTO t VALUES (3);"
                              "\nCREATE VIEW v AS SELECT 1 AS x, 1 + 1 AS y;",
     "constant_fields": "CREATE VIEW v AS SELECT 1 AS a, 2 AS b, TRUE AS c, 'Bob''s' AS d;",

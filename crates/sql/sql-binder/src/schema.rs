@@ -60,8 +60,9 @@ fn relation(schema: &CatalogSchema, types: &TypeTable) -> Result<Value, Failure>
         return Err(unsupported("schema preview for relation properties"));
     }
     let fields = schema.columns.iter().map(|col| {
-        let ty = &types.types[col.ty.0 as usize];
-        Ok(json!({"name":col.name.name, "case_sensitive":col.name.quoted, "columntype":ty.scalar_column_type().ok_or_else(|| unsupported("schema preview for this column type"))?}))
+        let descriptor = types.column_type(col.ty).and_then(|ty| ty.descriptor())
+            .ok_or_else(|| unsupported("schema preview for this column type"))?;
+        Ok(json!({"name":col.name.name, "case_sensitive":col.name.quoted, "columntype":descriptor}))
     }).collect::<Result<Vec<_>,Failure>>()?;
     Ok(
         json!({"name":schema.name.name, "case_sensitive":schema.name.quoted,

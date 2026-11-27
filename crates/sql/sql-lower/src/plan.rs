@@ -91,9 +91,8 @@ fn describe(program: &Program, id: u32) -> Result<Value, Error> {
                 let mut column = program
                     .table
                     .type_table
-                    .types
-                    .get(field.ty.0 as usize)
-                    .and_then(|ty| ty.scalar_column_type())
+                    .column_type(field.ty)
+                    .and_then(|ty| ty.descriptor())
                     .ok_or_else(|| Error("unsupported VALUES row type in profiler plan".into()))?;
                 column["name"] = field.name.name.clone().into();
                 columns.push(column);

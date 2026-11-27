@@ -351,10 +351,12 @@ pub(super) fn lower(
     let structure = layout.structure(ids, &position);
     let mut fields = Vec::with_capacity(schema.columns.len());
     let mut columns = Vec::with_capacity(schema.columns.len());
-    for (column, ty) in schema.columns.iter().zip(layout.column_types(ids)) {
-        let descriptor = program.table.type_table.types[column.ty.0 as usize]
-            .scalar_column_type()
-            .ok_or_else(|| Error("unsupported public view column".into()))?;
+    for ((column, ty), descriptor) in schema
+        .columns
+        .iter()
+        .zip(layout.column_types(ids))
+        .zip(layout.descriptors())
+    {
         fields.push(
             json!({"name":column.name.name,"case_sensitive":column.name.quoted,
                             "columntype":descriptor,"unused":false}),

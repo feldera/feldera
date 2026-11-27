@@ -21,16 +21,20 @@ use crate::{
     validate_plain_view,
 };
 use feldera_sql_rel_model::{
-    TypeId,
+    TypeId, TypeTable, ValidationLimits,
     catalog::Name,
     program::Program,
     relation_metadata::{Coordinates, Hint},
     source::Origin,
     statements::Statement,
-    types::{CharacterMetadata, FloatFlavor, IntegerWidth, Precision, SqlType, TimeZone, TypeKind},
+    types::{
+        Cardinality, CharacterMetadata, FloatFlavor, IntegerWidth, Precision, SqlType, TimeZone,
+        TypeKind,
+    },
 };
 use sqlparser_064::ast::{
-    ColumnOption, GroupByExpr, Ident, TableConstraint, WildcardAdditionalOptions,
+    ArrayElemTypeDef, ColumnOption, GroupByExpr, Ident, MapBracketKind, TableConstraint,
+    WildcardAdditionalOptions,
 };
 use std::collections::HashSet;
 
@@ -165,15 +169,12 @@ fn declare_table(
                 "named column constraints are outside the table slice",
             ));
         }
-        let (kind, spelling) = table_type(&column.data_type, nullable)?;
-        let ty = insert_type(
+        let (ty, spelling) = declare_type(
             &mut program.table.type_table,
-            SqlType {
-                nullable,
-                origin: Origin::Absent {},
-                kind,
-            },
-        );
+            &column.data_type,
+            nullable,
+            ValidationLimits::default().depth,
+        )?;
         let column_name = name(&column.name.value);
         let inline_key = column
             .options
@@ -596,7 +597,51 @@ fn render_column(qualifier: &str, column: &str) -> (String, String) {
     )
 }
 
-fn table_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, String), Failure> {
+fn declare_type(
+    types: &mut TypeTable,
+    data_type: &DataType,
+    nullable: bool,
+    depth: usize,
+) -> Result<(TypeId, String), Failure> {
+    let child_depth = depth
+        .checked_sub(1)
+        .ok_or_else(|| unsupported("table type nesting exceeds the validation limit"))?;
+    let (kind, spelling) = match data_type {
+        DataType::Array(ArrayElemTypeDef::Qualified(element, None)) => {
+            let (element, spelling) = declare_type(types, element, true, child_depth)?;
+            (
+                TypeKind::Array {
+                    element,
+                    cardinality: Cardinality::Unbounded,
+                },
+                format!("{spelling} ARRAY"),
+            )
+        }
+        DataType::Map(key, value, MapBracketKind::AngleBrackets) => {
+            let (key, key_spelling) = declare_type(types, key, false, child_depth)?;
+            if !types.types[key.0 as usize].kind.can_be_map_key() {
+                return Err(unsupported("MAP keys cannot have type MAP or NULL"));
+            }
+            let (value, value_spelling) = declare_type(types, value, true, child_depth)?;
+            (
+                TypeKind::Map { key, value },
+                format!("MAP< {key_spelling}, {value_spelling} >"),
+            )
+        }
+        _ => scalar_type(data_type, nullable)?,
+    };
+    let ty = insert_type(
+        types,
+        SqlType {
+            kind,
+            nullable,
+            origin: Origin::Absent {},
+        },
+    );
+    Ok((ty, spelling))
+}
+
+fn scalar_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, String), Failure> {
     use sqlparser_064::ast::{BinaryLength, TimezoneInfo};
 
     let integer =
