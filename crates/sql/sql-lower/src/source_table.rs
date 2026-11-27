@@ -470,20 +470,25 @@ pub(super) fn statement_position(source: &StatementSource) -> Value {
 /// The public schema retains the requested precision. DBSP represents all
 /// TIME and TIMESTAMP values at the runtime's fixed precision.
 pub(super) fn precision_warnings(
-    schema: &CatalogSchema,
+    column_types: impl IntoIterator<Item = feldera_sql_rel_model::TypeId>,
     types: &TypeTable,
-    source: &StatementSource,
+    position: &Value,
     context: &Value,
     seen: &mut std::collections::HashSet<(&'static str, u32)>,
     messages: &mut Vec<Value>,
 ) {
-    let mut pending: Vec<_> = schema.columns.iter().rev().map(|c| c.ty).collect();
+    let mut pending: Vec<_> = column_types.into_iter().collect();
+    pending.reverse();
     let mut visited = std::collections::HashSet::new();
     while let Some(id) = pending.pop() {
         if !visited.insert(id) {
             continue;
         }
         let (name, requested, runtime) = match types.types[id.0 as usize].kind {
+            TypeKind::Row { ref fields, .. } => {
+                pending.extend(fields.iter().rev().map(|field| field.ty));
+                continue;
+            }
             TypeKind::Array { element, .. } => {
                 pending.push(element);
                 continue;
@@ -503,7 +508,6 @@ pub(super) fn precision_warnings(
             _ => continue,
         };
         if requested != runtime && seen.insert((name, requested)) {
-            let position = statement_position(source);
             messages.push(json!({
                 "context":context, "range":position, "warning":true, "continuation":false,
                 "type":format!("{name} precision ignored"),

@@ -10,7 +10,7 @@ use crate::{
     relation_properties::Properties,
     statements::{Statement, TargetColumn},
     typed_literals::{decimal_fits, integer_fits},
-    types::{SqlType, TypeKind},
+    types::{SqlType, TimeZone, TypeKind},
 };
 use std::collections::HashSet;
 
@@ -120,6 +120,25 @@ fn fits_source(value: &LiteralValue, ty: &SqlType) -> bool {
         (LiteralValue::Boolean { .. }, TypeKind::Boolean {}) => true,
         (LiteralValue::Date { .. }, TypeKind::Date {}) => true,
         (
+            LiteralValue::Time {
+                nanoseconds_since_midnight,
+            },
+            TypeKind::Time {
+                zone: TimeZone::None,
+                precision,
+            },
+        )
+        | (
+            LiteralValue::Timestamp {
+                nanoseconds_since_midnight,
+                ..
+            },
+            TypeKind::Timestamp {
+                zone: TimeZone::None,
+                precision,
+            },
+        ) => precision.contains_fraction(*nanoseconds_since_midnight),
+        (
             LiteralValue::Decimal { value },
             TypeKind::Decimal {
                 precision, scale, ..
@@ -146,7 +165,21 @@ fn assignment(
     column: &str,
 ) -> Result<Option<AssignmentWarning>, String> {
     let result = match (value, &target.kind) {
-        (LiteralValue::Character { .. }, TypeKind::Character { .. })
+        (
+            LiteralValue::Time { .. },
+            TypeKind::Time {
+                zone: TimeZone::None,
+                ..
+            },
+        )
+        | (
+            LiteralValue::Timestamp { .. },
+            TypeKind::Timestamp {
+                zone: TimeZone::None,
+                ..
+            },
+        )
+        | (LiteralValue::Character { .. }, TypeKind::Character { .. })
         | (LiteralValue::Integer { .. } | LiteralValue::Decimal { .. }, TypeKind::Float { .. })
         | (LiteralValue::Decimal { .. }, TypeKind::Integer { .. }) => None,
         (LiteralValue::Character { value }, TypeKind::Date {}) => {

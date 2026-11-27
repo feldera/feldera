@@ -12,7 +12,7 @@ use feldera_sql_rel_model::{
     program::Program,
     relation_properties::Properties,
     statements::{RelRoot, StatementSource},
-    types::{FloatFlavor, IntegerWidth, Precision, SqlType, TypeKind},
+    types::{FloatFlavor, IntegerWidth, Precision, SqlType, TimeZone, TypeKind},
 };
 use serde_json::{json, Value};
 
@@ -137,6 +137,49 @@ fn lower_literal(
             (literal, "DATE".into(), text, sql)
         }
         (
+            TypeKind::Time {
+                precision: Precision::Specified(p),
+                zone: TimeZone::None,
+            },
+            LiteralValue::Time {
+                nanoseconds_since_midnight,
+            },
+        ) => {
+            let (time, digest) = clock_text(*nanoseconds_since_midnight, *p)?;
+            let mut literal = ids.node("DBSPTimeLiteral", &unknown);
+            literal["value"] = digest.clone().into();
+            (
+                literal,
+                format!("TIME({p})"),
+                digest,
+                format!("TIME '{time}'"),
+            )
+        }
+        (
+            TypeKind::Timestamp {
+                precision: Precision::Specified(p),
+                zone: TimeZone::None,
+            },
+            LiteralValue::Timestamp {
+                epoch_days,
+                nanoseconds_since_midnight,
+            },
+        ) if *p <= 6 => {
+            let date = feldera_sql_rel_model::literals::date_to_text(*epoch_days)
+                .ok_or_else(|| Error("timestamp outside the SQL date range".into()))?;
+            let (time, digest) = clock_text(*nanoseconds_since_midnight, *p)?;
+            let micros = i64::from(*epoch_days) * 86_400_000_000
+                + (nanoseconds_since_midnight / 1000) as i64;
+            let mut literal = ids.node("DBSPTimestampLiteral", &unknown);
+            literal["value"] = micros.to_string().into();
+            (
+                literal,
+                format!("TIMESTAMP({p})"),
+                format!("{date} {digest}"),
+                format!("TIMESTAMP '{date} {time}'"),
+            )
+        }
+        (
             TypeKind::Decimal {
                 precision, scale, ..
             },
@@ -241,6 +284,29 @@ fn lower_literal(
         digest,
         sql,
     })
+}
+
+/// The plan's SQL uses the declared precision. The relational digest and
+/// the DBSP time literal drop trailing fractional zeros.
+fn clock_text(nanos: u64, precision: u32) -> Result<(String, String), Error> {
+    if precision > 9 || nanos >= 86_400_000_000_000 {
+        return Err(Error("invalid SQL time value or precision".into()));
+    }
+    let seconds = nanos / 1_000_000_000;
+    let mut sql = format!(
+        "{:02}:{:02}:{:02}",
+        seconds / 3600,
+        seconds / 60 % 60,
+        seconds % 60
+    );
+    if precision == 0 {
+        return Ok((sql.clone(), sql));
+    }
+    let fraction = format!("{:09}", nanos % 1_000_000_000);
+    sql.push('.');
+    sql.push_str(&fraction[..precision as usize]);
+    let digest = sql.trim_end_matches('0').trim_end_matches('.').to_owned();
+    Ok((sql, digest))
 }
 
 // The relational digest uses Calcite's Double spelling with an explicit

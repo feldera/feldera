@@ -1,8 +1,10 @@
 //! SQL literals shared by VALUES and constant SELECT projections.
 
+mod temporal;
+
 use crate::{Expr, Failure, Value, unsupported};
 use feldera_sql_rel_model::{
-    literals::{ExactDecimal, LiteralValue, date_from_text},
+    literals::{ExactDecimal, LiteralValue},
     types::{CharacterMetadata, IntegerWidth, Precision, TypeKind},
 };
 use sqlparser_064::ast::UnaryOperator;
@@ -83,17 +85,12 @@ impl Cell {
                 Self::quoted_decimal(text)
                     .ok_or_else(|| unsupported("DECIMAL literal exceeds the supported precision"))
             }
-            Expr::TypedString(typed) if typed.data_type == crate::DataType::Date => {
+            Expr::TypedString(typed) => {
                 let Value::SingleQuotedString(text) = &typed.value.value else {
-                    return Err(unsupported("expected a quoted DATE"));
+                    return Err(unsupported("expected a quoted typed literal"));
                 };
-                let epoch_days =
-                    date_from_text(text).ok_or_else(|| unsupported("unsupported DATE literal"))?;
-                Ok(Self {
-                    value: LiteralValue::Date { epoch_days },
-                    kind: TypeKind::Date {},
-                    sql: format!("DATE '{text}'"),
-                })
+                temporal::parse(&typed.data_type, text)
+                    .ok_or_else(|| unsupported("unsupported typed literal"))
             }
             Expr::UnaryOp {
                 op: op @ (UnaryOperator::Plus | UnaryOperator::Minus),

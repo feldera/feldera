@@ -186,6 +186,26 @@ fn widen(kind: &mut TypeKind, next: &TypeKind) -> Result<(), Failure> {
     match (kind, next) {
         (current @ TypeKind::Null {}, next) => *current = next.clone(),
         (TypeKind::Integer { width, .. }, TypeKind::Integer { .. }) => *width = IntegerWidth::I64,
+        (
+            TypeKind::Time {
+                precision: Precision::Specified(current),
+                zone: left,
+            },
+            TypeKind::Time {
+                precision: Precision::Specified(next),
+                zone: right,
+            },
+        )
+        | (
+            TypeKind::Timestamp {
+                precision: Precision::Specified(current),
+                zone: left,
+            },
+            TypeKind::Timestamp {
+                precision: Precision::Specified(next),
+                zone: right,
+            },
+        ) if left == right => *current = (*current).max(*next),
         (current, next)
             if let (Some((p1, s1)), Some((p2, s2))) =
                 (decimal_shape(current), decimal_shape(next)) =>

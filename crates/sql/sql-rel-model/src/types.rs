@@ -316,6 +316,15 @@ pub enum IntervalEnd {
 }
 
 impl Precision {
+    pub(crate) fn contains_fraction(self, nanoseconds: u64) -> bool {
+        match self {
+            Self::Specified(digits) if digits < 9 => {
+                nanoseconds.is_multiple_of(10_u64.pow(9 - digits))
+            }
+            _ => true,
+        }
+    }
+
     pub(crate) fn contains_length(self, length: usize) -> bool {
         match self {
             Self::Unspecified => true,

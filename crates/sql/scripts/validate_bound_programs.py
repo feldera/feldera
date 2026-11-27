@@ -13,6 +13,15 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "temporal_fraction": "CREATE VIEW v AS SELECT TIME '23:59:59.123456789' AS t,"
+                         " TIMESTAMP '1969-12-31 23:59:59.125000' AS ts, TIME '12:34:56.120' AS u;",
+    "temporal_calendar": "CREATE VIEW v AS SELECT TIMESTAMP '1-1-1 0:0:0.000001' AS a,"
+                         " TIMESTAMP '2020-02-29' AS b, TIME '1:2:3.' AS c, DATE '24-2-1' AS d;",
+    "temporal_precision_cap": "CREATE VIEW v AS SELECT TIME '12:00:00.12345678908' AS a,"
+                              " TIMESTAMP '2020-01-01 01:02:03.12345678901' AS b;",
+    "temporal_insert": "CREATE TABLE t(t TIME, d TIMESTAMP); INSERT INTO t VALUES"
+                       " (TIME '01:02:03.1', TIMESTAMP '0001-01-01 01:00:01'),"
+                       " (TIME '12:34:56.700', TIMESTAMP '1969-12-31 23:59:59.000001'), (NULL, NULL);",
     "type_unspecified_decimal": "CREATE TABLE t(a DECIMAL, b DEC, c NUMERIC, d DECIMAL ARRAY, e MAP<NUMERIC,DECIMAL>);"
                                 "\nINSERT INTO t VALUES (NULL, NULL, NULL, NULL, NULL);"
                                 "\nCREATE TABLE s(d NUMERIC, e TIMESTAMP(2)); CREATE VIEW v AS SELECT * FROM s;",

@@ -14,6 +14,7 @@ from validate_bound_programs import CASES as BINDING_CASES
 
 CASES = {
     **{name: BINDING_CASES[name] for name in (
+        "temporal_fraction", "temporal_calendar", "temporal_precision_cap", "temporal_insert",
         "type_aliases", "type_alias_collections", "type_standard_spellings", "type_unspecified_decimal",
         "decimal_projection", "decimal_strings", "decimal_widening", "decimal_bigint", "decimal_precision_cap", "decimal_assignment",
         "assignment_numeric", "assignment_warnings", "assignment_warning_order", "assignment_unsigned", "assignment_dates", "assignment_date_bounds",

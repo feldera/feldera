@@ -134,6 +134,20 @@ pub fn lower_program(
                 "context":context, "range":position, "warning":true, "continuation":false,
                 "type":"Statement ignored", "message":"INSERT has no effect in a pipeline definition"
             }));
+            // Java constructs the VALUES row type before visiting its literal
+            // cells. Each cell can retain a narrower fractional precision.
+            let row = program.producers.relations[*relation as usize].row;
+            let cells = projection::expressions(program, *relation)?
+                .iter()
+                .map(|id| program.expressions.expressions[id.0 as usize].ty);
+            source_table::precision_warnings(
+                std::iter::once(row).chain(cells),
+                &program.table.type_table,
+                &source_table::range(0, 0, 0, 0),
+                &context,
+                &mut precision_warnings,
+                messages,
+            );
             for warning in warnings {
                 messages.push(serde_json::json!({
                     "context":context, "range":source_table::range(0, 0, 0, 0), "warning":true,
@@ -145,10 +159,24 @@ pub fn lower_program(
         if let Statement::CreateTable { source, schema, .. }
         | Statement::CreateView { source, schema, .. } = statement
         {
+            let position = match statement {
+                Statement::CreateView { root, .. }
+                    if matches!(
+                        program.properties.relations[root.relation as usize].fields,
+                        feldera_sql_rel_model::relation_properties::Properties::Values { .. }
+                    ) =>
+                {
+                    source_table::range(0, 0, 0, 0)
+                }
+                _ => source_table::statement_position(source),
+            };
             source_table::precision_warnings(
-                &program.catalog.schemas[*schema as usize],
+                program.catalog.schemas[*schema as usize]
+                    .columns
+                    .iter()
+                    .map(|c| c.ty),
                 &program.table.type_table,
-                source,
+                &position,
                 &context,
                 &mut precision_warnings,
                 checkpoint["diagnostics"]["messages"]

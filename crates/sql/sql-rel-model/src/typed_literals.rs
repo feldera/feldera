@@ -363,10 +363,7 @@ fn check_fraction(
     precision: Precision,
     path: &str,
 ) -> Result<(), ValidationError> {
-    if let Precision::Specified(digits) = precision
-        && digits < 9
-        && !nanoseconds.is_multiple_of(10u64.pow(9 - digits))
-    {
+    if !precision.contains_fraction(nanoseconds) {
         return Err(error(
             path,
             "temporal payload exceeds its declared fractional precision",
