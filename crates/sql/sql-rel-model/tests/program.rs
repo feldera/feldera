@@ -116,6 +116,19 @@ fn required_nullable_fields_and_unknown_statement_fields_are_strict() {
 }
 
 #[test]
+fn optimizer_selection_survives_replay_of_new_and_old_programs() {
+    for selected in [true, false] {
+        let mut wire = fixture();
+        wire["context"]["options"]["ioOptions"]["rustOptimizerPasses"] = json!(selected);
+        let program: Program = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(program).unwrap(), wire);
+    }
+    let mut invalid = fixture();
+    invalid["context"]["options"]["ioOptions"]["rustOptimizerPasses"] = Value::Null;
+    assert!(serde_json::from_value::<Program>(invalid).is_err());
+}
+
+#[test]
 fn duplicate_logging_keys_are_rejected_before_map_construction() {
     // Construct the raw bytes: parsing into Value first would lose the duplicate.
     let wire = serde_json::to_string(&fixture()).unwrap();

@@ -160,10 +160,25 @@ pub struct IoOptions {
     pub write_s3: String,
     #[serde(rename = "readS3")]
     pub read_s3: bool,
+    /// Snapshots taken before the Rust optimizer was introduced omit this flag.
+    #[serde(
+        rename = "rustOptimizerPasses",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_bool"
+    )]
+    #[schemars(with = "bool")]
+    pub rust_optimizer_passes: Option<bool>,
     #[serde(rename = "nowStream")]
     pub now_stream: bool,
     #[serde(rename = "showVersion")]
     pub show_version: bool,
+}
+
+fn present_bool<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<bool>, D::Error> {
+    bool::deserialize(deserializer).map(Some)
 }
 
 /// Serde's map implementation overwrites duplicate keys. Compiler options must

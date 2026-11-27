@@ -13,6 +13,11 @@ from compile_bound_gen2 import compile_program
 METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS "
 
 CASES = {
+    "local_constant": "CREATE LOCAL VIEW one AS SELECT 5 AS five;",
+    "materialized_constant": "CREATE MATERIALIZED VIEW one AS SELECT 5 AS five;",
+    "view_kinds": "CREATE TABLE readings(x INT, y BIGINT);\n"
+                  "CREATE LOCAL VIEW selected AS SELECT y FROM readings WHERE x > 2;\n"
+                  "CREATE MATERIALIZED VIEW stored AS SELECT x, y FROM readings;",
     "character_date": "CREATE TABLE records(id INT NOT NULL, day DATE, label VARCHAR(24), tag CHAR(3));\n"
                       "CREATE VIEW result AS SELECT label, day, tag FROM records WHERE id > 2;",
     "string_projection": "CREATE TABLE names(id INT, name VARCHAR, prefix CHAR);\n"

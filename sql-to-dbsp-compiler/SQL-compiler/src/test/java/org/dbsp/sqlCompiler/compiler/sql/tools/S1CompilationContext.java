@@ -48,7 +48,12 @@ final class S1CompilationContext {
         var options = mapper.treeToValue(wire.path("options"), CompilerOptions.class);
         // Missing fields would otherwise acquire Java defaults. Require the
         // entire public option contract, including explicit nullable values.
-        check(mapper.valueToTree(options).equals(wire.path("options")), "Compiler option fields differ");
+        ObjectNode encoded = mapper.valueToTree(options);
+        if (!wire.at("/options/ioOptions").has("rustOptimizerPasses")) {
+            // Snapshots predating the Rust optimizer always used Java passes.
+            encoded.withObject("/ioOptions").remove("rustOptimizerPasses");
+        }
+        check(encoded.equals(wire.path("options")), "Compiler option fields differ");
         var source = wire.path("sources"); fields(source, "file", "program", "lines");
         text(source.path("program")); array(source.path("lines"));
         check(source.path("file").isNull() || source.path("file").isTextual(), "Invalid source filename");

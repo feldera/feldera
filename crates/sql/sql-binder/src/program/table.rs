@@ -26,7 +26,7 @@ use feldera_sql_rel_model::{
     program::Program,
     relation_metadata::{Coordinates, Hint},
     source::Origin,
-    statements::Statement,
+    statements::{Statement, ViewKind},
     types::{
         CharacterMetadata, Coercibility, CollationIdentity, FloatFlavor, IntegerWidth, Precision,
         SqlType, TimeZone, TypeKind,
@@ -227,16 +227,15 @@ fn bind_view(
 ) -> Result<(), Failure> {
     validate_plain_view(view)?;
     let view_name = name(&local_name(&view.name)?.value);
-    if view.materialized
-        || view.local.is_some()
-        || program
-            .catalog
-            .schemas
-            .iter()
-            .any(|schema| schema.name == view_name)
+    let kind = super::view_kind(view);
+    if program
+        .catalog
+        .schemas
+        .iter()
+        .any(|schema| schema.name == view_name)
         || system_relation(&view_name.name)
     {
-        return Err(unsupported("expected a standard view over a user table"));
+        return Err(unsupported("view name already exists"));
     }
     let select = select_without_modifiers(&view.query, true)?;
     let GroupByExpr::Expressions(groups, _) = &select.group_by else {
@@ -352,6 +351,7 @@ fn bind_view(
     };
     let mut view_source = render_view(
         position,
+        kind,
         &view_name.name,
         &table_name.name,
         &input.qualifier,
@@ -371,7 +371,15 @@ fn bind_view(
         .into_iter()
         .map(|field| (field.name, field.value.ty()))
         .collect();
-    append_view(program, view_source, view_name, fields, view_row, root)
+    append_view(
+        program,
+        view_source,
+        view_name,
+        kind,
+        fields,
+        view_row,
+        root,
+    )
 }
 
 fn apply_filtered_projection(projection: &mut [Projection], predicate: Option<&filter::Predicate>) {
@@ -664,11 +672,13 @@ fn render_table(position: Coordinates, table: &Name, columns: &[TableColumn]) ->
 
 fn render_view(
     position: Coordinates,
+    kind: ViewKind,
     view: &str,
     table: &str,
     table_alias: &str,
     projection: &[Projection],
 ) -> StatementText {
+    let create = kind.create_sql();
     let pretty = projection
         .iter()
         .map(|field| field.pretty.as_str())
@@ -682,10 +692,10 @@ fn render_view(
     StatementText {
         position,
         pretty: format!(
-            "CREATE VIEW `{view}` AS\nSELECT {pretty}\nFROM `schema`.`{table}` AS `{table_alias}`"
+            "{create} `{view}` AS\nSELECT {pretty}\nFROM `schema`.`{table}` AS `{table_alias}`"
         ),
         diagnostic: format!(
-            "CREATE VIEW {view} AS\nSELECT {diagnostic}\nFROM schema.{table} AS {table_alias}"
+            "{create} {view} AS\nSELECT {diagnostic}\nFROM schema.{table} AS {table_alias}"
         ),
     }
 }

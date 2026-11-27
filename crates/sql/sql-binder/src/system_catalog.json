@@ -561,6 +561,7 @@
         "readS2": false,
         "readS3": false,
         "runtimePath": "",
+        "rustOptimizerPasses": false,
         "showVersion": false,
         "skipCalciteOptimizations": "",
         "sqlNames": false,

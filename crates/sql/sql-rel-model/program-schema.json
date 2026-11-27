@@ -1735,6 +1735,10 @@
         "runtimePath": {
           "type": "string"
         },
+        "rustOptimizerPasses": {
+          "description": "Snapshots taken before the Rust optimizer was introduced omit this flag.",
+          "type": "boolean"
+        },
         "showVersion": {
           "type": "boolean"
         },

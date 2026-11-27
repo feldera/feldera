@@ -137,10 +137,8 @@ fn append_constant_view(
             ));
         }
     };
-    if !select.from.is_empty() || view.materialized || view.local.is_some() {
-        return Err(unsupported(
-            "expected a standard view over one constant row",
-        ));
+    if !select.from.is_empty() {
+        return Err(unsupported("expected a view over one constant row"));
     }
     let bound = bind_projection(sql, parsed, false)?;
     if !bound.compiler_diagnostics.is_empty() {
@@ -161,14 +159,16 @@ fn append_constant_view(
         display.pretty.push_str(&format!(" AS `{alias}`"));
         display.diagnostic.push_str(&format!(" AS {alias}"));
     }
+    let kind = view_kind(view);
+    let create = kind.create_sql();
     let statement = StatementText {
         position,
         pretty: format!(
-            "CREATE VIEW `{}` AS\nSELECT {}",
+            "{create} `{}` AS\nSELECT {}",
             bound.view_name, display.pretty
         ),
         diagnostic: format!(
-            "CREATE VIEW {} AS\nSELECT {}",
+            "{create} {} AS\nSELECT {}",
             bound.view_name, display.diagnostic
         ),
     };
@@ -200,6 +200,7 @@ fn append_constant_view(
         program,
         statement,
         view_name,
+        kind,
         vec![(field_name, scalar)],
         row,
         relation,
@@ -327,10 +328,21 @@ fn column(name: Name, index: usize, ty: TypeId, diagnostic: DiagnosticSource) ->
     }
 }
 
+fn view_kind(view: &sqlparser_064::ast::CreateView) -> ViewKind {
+    if view.local.is_some() {
+        ViewKind::Local
+    } else if view.materialized {
+        ViewKind::Materialized
+    } else {
+        ViewKind::Standard
+    }
+}
+
 fn append_view(
     program: &mut Program,
     statement: StatementText,
     name: Name,
+    view_kind: ViewKind,
     fields: Vec<(Name, TypeId)>,
     row: TypeId,
     relation: u32,
@@ -352,7 +364,7 @@ fn append_view(
         source: statement.source("CREATE_VIEW"),
         schema,
         name,
-        view_kind: ViewKind::Standard,
+        view_kind,
         emit_final: -1,
         root: RelRoot {
             relation,

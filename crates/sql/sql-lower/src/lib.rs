@@ -15,10 +15,7 @@ mod view;
 pub use plan::query_plan;
 
 use feldera_sql_ir::Circuit;
-use feldera_sql_rel_model::{
-    program::Program,
-    statements::{Statement, ViewKind},
-};
+use feldera_sql_rel_model::{program::Program, statements::Statement};
 use serde_json::Value;
 use std::fmt;
 
@@ -111,7 +108,7 @@ pub fn lower_program(
         if let Statement::CreateView {
             source,
             schema,
-            view_kind: ViewKind::Standard,
+            view_kind,
             emit_final: -1,
             root,
             ..
@@ -122,6 +119,7 @@ pub fn lower_program(
                 program,
                 &mut ids,
                 &program.catalog.schemas[*schema as usize],
+                *view_kind,
                 root,
                 source,
             )?;

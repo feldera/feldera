@@ -1,4 +1,4 @@
-//! Lower standard views and attach their public output circuits.
+//! Lower view definitions and attach sinks for public outputs.
 
 use super::{
     source_table::{name, statement_position, Ids, RowLayout},
@@ -8,7 +8,7 @@ use feldera_sql_rel_model::{
     catalog::CatalogSchema,
     program::Program,
     relation_properties::Properties,
-    statements::{RelRoot, StatementSource},
+    statements::{RelRoot, StatementSource, ViewKind},
 };
 use serde_json::{json, Value};
 
@@ -294,6 +294,7 @@ pub(super) fn lower(
     program: &Program,
     ids: &mut Ids,
     schema: &CatalogSchema,
+    kind: ViewKind,
     root: &RelRoot,
     source: &StatementSource,
 ) -> Result<(), Error> {
@@ -344,19 +345,25 @@ pub(super) fn lower(
         columns.push(json!({"position":position,"viewName":name(&schema.name),
                             "columnName":name(&column.name),"type":ty}));
     }
-    let public = json!({"name":schema.name.name,"case_sensitive":schema.name.quoted,
-                        "fields":fields,"materialized":false});
     let metadata = |columns: &[Value]| {
-        json!({"viewName":name(&schema.name),"viewKind":"STANDARD",
+        json!({"viewName":name(&schema.name),"viewKind":kind,
         "emitFinalColumn":-1,"recursive":false,"system":false,"columns":columns})
     };
     let view_id = ids.next_operator();
     let origin = |id: u64, kind: &str| json!({"id":id,"kind":kind,"position":position,"positions":[position],"relation":{"ref":relation_id}});
     let row_ref = reference(&structure)?;
+    let view_origin = if kind == ViewKind::Local {
+        "LastRel"
+    } else {
+        "IntermediateRel"
+    };
     operators.push(json!({"class":"DBSPViewOperator","id":view_id,"annotations":[],
-        "provenance":origin(ids.next_origin(),"IntermediateRel"),"inputs":[{"outputNumber":0,"operator":{"node":source_id}}],
+        "provenance":origin(ids.next_origin(),view_origin),"inputs":[{"outputNumber":0,"operator":{"node":source_id}}],
         "originalRowType":structure,"outputType":output_type,"function":identity(ids,&any),
         "viewName":name(&schema.name),"query":source.statement_text,"metadata":metadata(&columns)}));
+    if kind == ViewKind::Local {
+        return Ok(());
+    }
     for column in &mut columns {
         column["type"] = reference(&column["type"])?;
     }
@@ -367,6 +374,9 @@ pub(super) fn lower(
     graph["metadata"]["outputs"]
         .as_array_mut()
         .expect("system outputs")
-        .push(public);
+        .push(
+            json!({"name":schema.name.name,"case_sensitive":schema.name.quoted,
+                     "fields":fields,"materialized":kind == ViewKind::Materialized}),
+        );
     Ok(())
 }

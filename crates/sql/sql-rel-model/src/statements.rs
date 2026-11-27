@@ -120,6 +120,17 @@ pub enum ViewKind {
     Standard,
 }
 
+impl ViewKind {
+    /// SQL introducer used when rendering a bound view declaration.
+    pub fn create_sql(self) -> &'static str {
+        match self {
+            Self::Standard => "CREATE VIEW",
+            Self::Materialized => "CREATE MATERIALIZED VIEW",
+            Self::Local => "CREATE LOCAL VIEW",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RelRoot {

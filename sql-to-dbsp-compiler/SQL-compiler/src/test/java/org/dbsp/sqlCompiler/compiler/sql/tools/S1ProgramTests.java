@@ -44,6 +44,16 @@ public class S1ProgramTests {
                 < reverseDecoded.relations().nodes().get(order.get(1).intValue()).getId());
     }
 
+    @Test public void snapshotsPredatingTheRustOptimizerUseJavaPasses() throws IOException {
+        var wire = capture("CREATE VIEW v AS SELECT 1 AS x;");
+        var io = wire.withObject("/context/options/ioOptions");
+        io.remove("rustOptimizerPasses");
+        var registry = new S1BuiltinOperatorRegistry();
+        Assert.assertFalse(S1Program.decode(wire, registry).context().options().ioOptions.rustOptimizerPasses);
+        io.putNull("rustOptimizerPasses");
+        Assert.assertThrows(IOException.class, () -> S1Program.decode(wire, registry));
+    }
+
     @Test public void orderedStatementsAndDmlRoundTripWithoutParsingSql() throws IOException {
         var wire = capture("""
                 SET ENFORCE_POSITIVE_INPUTS = TRUE;

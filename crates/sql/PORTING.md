@@ -149,6 +149,14 @@ Forge reader loaded all seventeen circuits with their profiler reports. The case
 COUNT(*), a filtered COUNT(*), COUNT(DISTINCT), a global SUM, a grouped SUM, and a multiline
 constant view. [Executable comparison](scripts/validate_bound_programs.py) · [Measured evidence](evidence/local-compiler-20261119.json)
 
+On 2026-11-27, all 20 directed binding cases and all 25 directed Rust lowering
+cases matched direct Gen-2 compilation with the Java reference built at
+`1222fd75f`. The added cases exercise local and materialized constant views
+and a table shared by a local filtered projection and a materialized output.
+Local views have a final provenance record on the view operator. Public views
+have a separate sink. The lowerer preserves both shapes across S2 replay.
+[Binding comparison](scripts/validate_bound_programs.py) · [Lowering comparison](scripts/validate_s1_lowering.py)
+
 The full-corpus binding audit preserves the original submission calls and uses
 default nonincremental Gen-2 options. Rust bound 75 of 8,571 programs. Java
 compilation of all 75 matched Java continuation from Rust S1 at every captured

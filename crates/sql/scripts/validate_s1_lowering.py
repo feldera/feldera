@@ -10,8 +10,10 @@ from benchmark_bound_gen2 import compare, direct
 from compile_bound_gen2 import compile_program
 from run_determinism import file_digest
 from validate_table_lowering import compare_checkpoints
+from validate_bound_programs import CASES as BINDING_CASES
 
 CASES = {
+    **{name: BINDING_CASES[name] for name in ("local_constant", "materialized_constant", "view_kinds")},
     "two_constants": "CREATE VIEW a AS SELECT 5 AS first;\nCREATE VIEW b AS SELECT 7 AS second;",
     "table_and_constant": "CREATE TABLE t(x INT);\nCREATE VIEW v AS SELECT 42 AS answer;",
     "folded_tangent": "CREATE VIEW vv AS SELECT TAN(1);",
