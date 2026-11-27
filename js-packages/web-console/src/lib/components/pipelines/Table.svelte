@@ -219,9 +219,19 @@
     <div
       class="sticky left-0 flex max-w-[100cqi] flex-wrap items-center gap-x-4 gap-y-2 px-2 md:px-8"
     >
-      {#if header}
-        {@render header()}
-      {/if}
+      <div class="flex items-center gap-3">
+        {#if header}
+          {@render header()}
+        {/if}
+        <span
+          class="relative -top-0.5 text-sm whitespace-nowrap text-surface-600-400 tabular-nums"
+          data-testid="box-pipeline-count"
+        >
+          {rowsInDisplayOrder.length === pipelines.length
+            ? pipelines.length
+            : `${rowsInDisplayOrder.length} of ${pipelines.length}`}
+        </span>
+      </div>
       <!-- The page reserves a scrollbar gutter that the header above it doesn't have; the
            negative margin carries the controls into it so they end where the header's
            buttons do. -->

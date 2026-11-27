@@ -380,6 +380,19 @@ describe('Table — status filter', () => {
     await userEvent.click(page.getByRole('option', { name: status, exact: true }))
   }
 
+  it('shows the total and the number of rows matching the filters', async () => {
+    mountTable()
+    const count = () => page.getByTestId('box-pipeline-count').element().textContent?.trim()
+
+    await expect.poll(count).toBe('4')
+
+    await page.getByTestId('input-pipeline-search').fill('alp')
+    await expect.poll(count).toBe('1 of 4')
+
+    await pickStatus('Running')
+    await expect.poll(count).toBe('0 of 4')
+  })
+
   it('stays open when picked from a second time', async () => {
     mountTable()
     await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
