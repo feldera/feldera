@@ -42,6 +42,20 @@ impl Dialect for HintDialect {
     }
 }
 
+fn opener(comment: Span) -> Span {
+    let start = comment.start;
+    Span::new(start, Location::new(start.line, start.column + 3))
+}
+
+// Calcite uses lookahead at the start of each optional list element. When
+// that element cannot start here it reports the delimiter that introduced it.
+fn at_delimiter(error: ParserError, message: &str, delimiter: Span) -> ParserError {
+    match error {
+        ParserError::RecursionLimitExceeded | ParserError::Located { .. } => error,
+        _ => super::diagnostic::located(message, delimiter),
+    }
+}
+
 pub(super) struct Attachments {
     pending: BTreeMap<(u64, u64), OptimizerHint>,
 }
@@ -56,9 +70,9 @@ impl Attachments {
                     let hint = parse_comment(text, token.span)?;
                     let key = (preceding_end.line, preceding_end.column);
                     if pending.insert(key, hint).is_some() {
-                        return Err(super::diagnostic::at(
+                        return Err(super::diagnostic::located(
                             "only one hint comment is allowed at each attachment site",
-                            token.span.start,
+                            opener(token.span),
                         ));
                     }
                 }
@@ -75,9 +89,9 @@ impl Attachments {
 
     pub(super) fn finish(self) -> Result<(), ParserError> {
         if let Some(OptimizerHint::Structured { span, .. }) = self.pending.into_values().next() {
-            return Err(super::diagnostic::at(
+            return Err(super::diagnostic::located(
                 "hint must follow SELECT or a named table reference",
-                span.start,
+                opener(span),
             ));
         }
         Ok(())
@@ -126,7 +140,7 @@ impl VisitorMut for Attachments {
 
 fn parse_comment(text: &str, span: Span) -> Result<OptimizerHint, ParserError> {
     let mut tokens = super::unicode::tokens_with_dialect(text, &HintDialect)
-        .map_err(|error| super::diagnostic::at(format!("invalid hint: {error}"), span.start))?;
+        .map_err(|error| at_delimiter(error, "invalid hint comment", opener(span)))?;
     for token in &mut tokens {
         let shift = |location: Location| {
             Location::new(
@@ -148,7 +162,16 @@ fn parse_comment(text: &str, span: Span) -> Result<OptimizerHint, ParserError> {
         span: Span::new(end, end),
     });
     let mut parser = Parser::new(&super::FelderaDialect).with_tokens_with_locations(tokens);
-    let hints = parser.parse_comma_separated(parse_hint)?;
+    let mut hints =
+        vec![parse_hint(&mut parser)
+            .map_err(|e| at_delimiter(e, "expected hint name", opener(span)))?];
+    while parser.peek_token_ref().token == Token::Comma {
+        let comma = parser.next_token().span;
+        hints.push(
+            parse_hint(&mut parser)
+                .map_err(|e| at_delimiter(e, "expected hint after comma", comma))?,
+        );
+    }
     parser.expect_token(&Token::EOF)?;
     Ok(OptimizerHint::Structured { hints, span })
 }
@@ -232,44 +255,56 @@ fn require_key(key: &SqlHintValue) -> Result<(), ParserError> {
 }
 
 fn options(parser: &mut Parser) -> Result<SqlHintOptions, ParserError> {
-    if !parser.consume_token(&Token::LParen) {
+    if parser.peek_token_ref().token != Token::LParen {
         return Ok(SqlHintOptions::Empty);
     }
+    let opening = parser.next_token().span;
     if parser.consume_token(&Token::RParen) {
         return Ok(SqlHintOptions::Empty);
     }
+    option_list(parser).map_err(|e| at_delimiter(e, "invalid hint options", opening))
+}
+
+fn following<T>(
+    parser: &mut Parser,
+    first: T,
+    mut next: impl FnMut(&mut Parser) -> Result<T, ParserError>,
+) -> Result<Vec<T>, ParserError> {
+    let mut elements = vec![first];
+    while parser.peek_token_ref().token == Token::Comma {
+        let comma = parser.next_token().span;
+        elements.push(
+            next(parser).map_err(|e| at_delimiter(e, "invalid hint option after comma", comma))?,
+        );
+    }
+    Ok(elements)
+}
+
+fn option_list(parser: &mut Parser) -> Result<SqlHintOptions, ParserError> {
     let first = value(parser)?;
     let options = if parser.consume_token(&Token::Eq) {
         require_key(&first)?;
-        let mut pairs = vec![SqlHintKeyValue {
+        let first = SqlHintKeyValue {
             key: first,
             value: value(parser)?,
-        }];
-        while parser.consume_token(&Token::Comma) {
+        };
+        let pairs = following(parser, first, |parser| {
             let key = value(parser)?;
             require_key(&key)?;
             parser.expect_token(&Token::Eq)?;
-            pairs.push(SqlHintKeyValue {
+            Ok(SqlHintKeyValue {
                 key,
                 value: value(parser)?,
-            });
-        }
+            })
+        })?;
         SqlHintOptions::KeyValue(pairs)
     } else {
         match first {
             SqlHintValue::Identifier(first) => {
-                let mut names = vec![first];
-                while parser.consume_token(&Token::Comma) {
-                    names.push(identifier(parser)?);
-                }
-                SqlHintOptions::Identifiers(names)
+                SqlHintOptions::Identifiers(following(parser, first, identifier)?)
             }
             SqlHintValue::Literal(first) => {
-                let mut literals = vec![first];
-                while parser.consume_token(&Token::Comma) {
-                    literals.push(literal(parser)?);
-                }
-                SqlHintOptions::Literals(literals)
+                SqlHintOptions::Literals(following(parser, first, literal)?)
             }
         }
     };

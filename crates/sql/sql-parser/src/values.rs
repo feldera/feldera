@@ -22,12 +22,17 @@ pub(super) fn parse(parser: &mut Parser, value_keyword: bool) -> Result<Values, 
         if row || parser.peek_token().token == Token::LParen {
             let opening = parser.expect_token(&Token::LParen)?;
             let content = if parser
-                .peek_one_of_keywords(&[Keyword::SELECT, Keyword::WITH, Keyword::VALUES])
+                .peek_one_of_keywords(&[
+                    Keyword::SELECT,
+                    Keyword::WITH,
+                    Keyword::VALUES,
+                    Keyword::TABLE,
+                ])
                 .is_some()
             {
                 vec![Expr::Subquery(parser.parse_query()?)]
             } else {
-                parser.parse_comma_separated(Parser::parse_expr)?
+                parser.parse_comma_separated(|parser| field(parser, row, wrapped_row))?
             };
             let closing = parser.expect_token(&Token::RParen)?;
             let (opening, closing) = if let Some(wrapper) = wrapper {
@@ -43,7 +48,7 @@ pub(super) fn parse(parser: &mut Parser, value_keyword: bool) -> Result<Values, 
         } else {
             // Absent parentheses have empty attached tokens; the expression
             // keeps its own source spans. Do not invent source coordinates.
-            Ok(Parens::with_empty_span(vec![parser.parse_expr()?]))
+            Ok(Parens::with_empty_span(vec![value_expression(parser)?]))
         }
     })?;
     Ok(Values {
@@ -51,6 +56,55 @@ pub(super) fn parse(parser: &mut Parser, value_keyword: bool) -> Result<Values, 
         rows,
         value_keyword,
     })
+}
+
+fn value_expression(parser: &mut Parser) -> Result<Expr, ParserError> {
+    // A qualified wildcard is a Calcite expression. An unqualified star is
+    // available only inside an explicit ROW constructor.
+    if matches!(parser.peek_token_ref().token, Token::Word(_))
+        && parser.peek_nth_token(1).token == Token::Period
+    {
+        let mut expr = parser.parse_wildcard_expr()?;
+        if let Expr::QualifiedWildcard(name, _) = &expr {
+            for part in &name.0 {
+                if let sqlparser_064::ast::ObjectNamePart::Identifier(ident) = part {
+                    if let std::ops::ControlFlow::Break(error) = super::reserved::identifier(ident)
+                    {
+                        return Err(error);
+                    }
+                }
+            }
+            loop {
+                let precedence = parser.get_next_precedence()?;
+                if precedence == 0 || parser.peek_token_ref().token == Token::Period {
+                    break;
+                }
+                expr = parser.parse_infix(expr, precedence)?;
+            }
+        }
+        Ok(expr)
+    } else {
+        parser.parse_expr()
+    }
+}
+
+fn field(parser: &mut Parser, explicit_row: bool, wrapped_row: bool) -> Result<Expr, ParserError> {
+    if parser.peek_keyword(Keyword::DEFAULT) {
+        return Ok(Expr::DefaultValue(parser.next_token().span));
+    }
+    let expr = if explicit_row && !wrapped_row {
+        super::collections::row_operand(parser)?
+    } else {
+        value_expression(parser)?
+    };
+    if !wrapped_row && parser.parse_keyword(Keyword::AS) {
+        Ok(Expr::Named {
+            expr: Box::new(expr),
+            name: super::statements::identifier(parser)?,
+        })
+    } else {
+        Ok(expr)
+    }
 }
 
 #[cfg(test)]

@@ -109,6 +109,7 @@ pub(super) fn allows(expression: &Expr) -> bool {
         | IsNotDistinctFrom(_, _)
         | Nested(_)
         | Value(_)
+        | DefaultValue(_)
         | StringLiteralChain(_)
         | TypedString(_)
         | Function(_)

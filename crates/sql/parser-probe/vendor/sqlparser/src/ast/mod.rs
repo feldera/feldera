@@ -1340,6 +1340,8 @@ pub enum Expr {
     Nested(Box<Expr>),
     /// A literal value, such as string, number, date or NULL
     Value(ValueWithSpan),
+    /// The DEFAULT placeholder in a function argument or VALUES row.
+    DefaultValue(Span),
     /// Feldera string continuation, retaining each decoded fragment and span.
     StringLiteralChain(Vec<ValueWithSpan>),
     /// Prefixed expression, e.g. introducer strings, projection prefix
@@ -2199,6 +2201,7 @@ impl fmt::Display for Expr {
             Expr::Collate { expr, collation } => write!(f, "{expr} COLLATE {collation}"),
             Expr::Nested(ast) => write!(f, "({ast})"),
             Expr::Value(v) => write!(f, "{v}"),
+            Expr::DefaultValue(_) => f.write_str("DEFAULT"),
             Expr::StringLiteralChain(values) => {
                 let unicode = values
                     .first()
@@ -2548,6 +2551,9 @@ impl fmt::Display for WindowSpec {
             } else {
                 write!(f, "{} {}", window_frame.units, window_frame.start_bound)?;
             }
+            if let Some(exclusion) = window_frame.exclusion {
+                write!(f, " {exclusion}")?;
+            }
         }
         Ok(())
     }
@@ -2570,7 +2576,34 @@ pub struct WindowFrame {
     /// indicates the shorthand form (e.g. `ROWS 1 PRECEDING`), which must
     /// behave the same as `end_bound = WindowFrameBound::CurrentRow`.
     pub end_bound: Option<WindowFrameBound>,
-    // TBD: EXCLUDE
+    /// Rows excluded after computing the frame bounds.
+    pub exclusion: Option<WindowFrameExclusion>,
+}
+
+/// An explicit SQL window frame exclusion.
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum WindowFrameExclusion {
+    /// Omit the current row.
+    CurrentRow,
+    /// Omit the current row and all of its peers.
+    Group,
+    /// Keep the current row but omit its other peers.
+    Ties,
+    /// Keep every row in the frame.
+    NoOthers,
+}
+
+impl fmt::Display for WindowFrameExclusion {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::CurrentRow => "EXCLUDE CURRENT ROW",
+            Self::Group => "EXCLUDE GROUP",
+            Self::Ties => "EXCLUDE TIES",
+            Self::NoOthers => "EXCLUDE NO OTHERS",
+        })
+    }
 }
 
 impl Default for WindowFrame {
@@ -2582,6 +2615,7 @@ impl Default for WindowFrame {
             units: WindowFrameUnits::Range,
             start_bound: WindowFrameBound::Preceding(None),
             end_bound: None,
+            exclusion: None,
         }
     }
 }
@@ -8673,7 +8707,7 @@ pub enum FunctionArgumentClause {
     /// The `SEPARATOR` clause to the [`GROUP_CONCAT`] function in MySQL.
     ///
     /// [`GROUP_CONCAT`]: https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html#function_group-concat
-    Separator(ValueWithSpan),
+    Separator(Expr),
     /// The `ON NULL` clause for some JSON functions.
     ///
     /// [MSSQL `JSON_ARRAY`](https://learn.microsoft.com/en-us/sql/t-sql/functions/json-array-transact-sql?view=sql-server-ver16)

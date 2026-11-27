@@ -45,15 +45,17 @@ fn asof(parser: &mut Parser, left: bool) -> Result<Join, ParserError> {
 
 pub(super) fn function_argument(parser: &mut Parser) -> Option<Result<FunctionArg, ParserError>> {
     let named = matches!(parser.peek_token().token, Token::Word(_))
-        && parser.peek_nth_token(1).token == Token::RArrow
-        && matches!(parser.peek_nth_token(2).token, Token::Word(word) if word.keyword == Keyword::TABLE && word.quote_style.is_none());
-    if !named && !parser.peek_keyword(Keyword::TABLE) {
+        && parser.peek_nth_token(1).token == Token::RArrow;
+    let offset = if named { 2 } else { 0 };
+    if !matches!(parser.peek_nth_token(offset).token, Token::Word(word)
+        if matches!(word.keyword, Keyword::TABLE | Keyword::DEFAULT) && word.quote_style.is_none())
+    {
         return None;
     }
-    Some(table_argument(parser, named))
+    Some(table_or_default_argument(parser, named))
 }
 
-fn table_argument(parser: &mut Parser, named: bool) -> Result<FunctionArg, ParserError> {
+fn table_or_default_argument(parser: &mut Parser, named: bool) -> Result<FunctionArg, ParserError> {
     let argument_name = if named {
         let name = parser.parse_identifier()?;
         if let ControlFlow::Break(error) = super::reserved::identifier(&name) {
@@ -64,11 +66,17 @@ fn table_argument(parser: &mut Parser, named: bool) -> Result<FunctionArg, Parse
     } else {
         None
     };
-    let start = parser.peek_token().span.start;
-    parser.expect_keyword_is(Keyword::TABLE)?;
-    let name = parser.parse_object_name(false)?;
-    let span = Span::new(start, parser.token_at(parser.index() - 1).span.end);
-    let arg = FunctionArgExpr::Table { name, span };
+    let token = parser.next_token();
+    let arg = if matches!(token.token, Token::Word(w) if w.keyword == Keyword::DEFAULT) {
+        FunctionArgExpr::Expr(sqlparser_064::ast::Expr::DefaultValue(token.span))
+    } else {
+        let name = parser.parse_object_name(false)?;
+        let span = Span::new(
+            token.span.start,
+            parser.token_at(parser.index() - 1).span.end,
+        );
+        FunctionArgExpr::Table { name, span }
+    };
     Ok(match argument_name {
         Some(name) => FunctionArg::Named {
             name,

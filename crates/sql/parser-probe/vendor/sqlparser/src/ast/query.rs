@@ -2345,6 +2345,9 @@ impl fmt::Display for TableFactor {
                 if *with_ordinality {
                     write!(f, " WITH ORDINALITY")?;
                 }
+                if let Some(version @ TableVersion::ForSystemTimeAsOf(_)) = version {
+                    write!(f, " {version}")?;
+                }
                 if let Some(TableSampleKind::BeforeTableAlias(sample)) = sample {
                     write!(f, " {sample}")?;
                 }
@@ -2357,7 +2360,10 @@ impl fmt::Display for TableFactor {
                 if !with_hints.is_empty() {
                     write!(f, " WITH ({})", display_comma_separated(with_hints))?;
                 }
-                if let Some(version) = version {
+                if let Some(version) = version
+                    .as_ref()
+                    .filter(|v| !matches!(v, TableVersion::ForSystemTimeAsOf(_)))
+                {
                     write!(f, " {version}")?;
                 }
                 if let Some(TableSampleKind::AfterTableAlias(sample)) = sample {

@@ -11,6 +11,13 @@ pub(super) fn at(message: impl std::fmt::Display, location: Location) -> ParserE
     ParserError::ParserError(format!("{message}{location}"))
 }
 
+pub(super) fn located(message: impl Into<String>, span: Span) -> ParserError {
+    ParserError::Located {
+        message: message.into(),
+        span,
+    }
+}
+
 /// A syntax failure and its original token span. Some tokenizer failures
 /// provide only a point, and some parser errors have no recorded location.
 pub struct SyntaxDiagnostic {
@@ -24,6 +31,12 @@ pub fn syntax_diagnostic(sql: &str) -> Result<Option<SyntaxDiagnostic>, ParserEr
     let message = match crate::parse(sql) {
         Ok(_) => return Ok(None),
         Err(ParserError::ParserError(message) | ParserError::TokenizerError(message)) => message,
+        Err(ParserError::Located { message, span }) => {
+            return Ok(Some(SyntaxDiagnostic {
+                message,
+                span: Some(span),
+            }));
+        }
         Err(error) => return Err(error),
     };
     // sqlparser 0.64 exposes diagnostic locations only as a terminal suffix.
@@ -111,6 +124,34 @@ mod tests {
             assert!(
                 error.ends_with(&format!("Line: {line}, Column: {column}")),
                 "{source}: {error}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod span_tests {
+    use super::syntax_diagnostic;
+    use sqlparser_064::tokenizer::{Location, Span};
+
+    #[test]
+    fn diagnostics_select_original_delimiters_inside_multiline_hints() {
+        for (sql, line, col, width) in [
+            ("SELECT\n /*+ */ 1", 2, 2, 3),
+            ("SELECT /*+ h(NULL) */ 1", 1, 13, 1),
+            ("SELECT /*+ h(abc\n , 1) */ 1", 2, 2, 1),
+            ("SELECT /*+ a, */ 1", 1, 13, 1),
+            ("SELECT 1 /*+ h */", 1, 10, 3),
+            ("SELECT _nosuch'abc'", 1, 8, 12),
+        ] {
+            let diagnostic = syntax_diagnostic(sql).unwrap().expect("invalid SQL");
+            assert_eq!(
+                diagnostic.span,
+                Some(Span::new(
+                    Location::new(line, col),
+                    Location::new(line, col + width)
+                )),
+                "{sql}"
             );
         }
     }

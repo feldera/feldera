@@ -1737,6 +1737,7 @@ impl Spanned for Expr {
                 .union(&union_spans(collation.0.iter().map(|i| i.span()))),
             Expr::Nested(expr) => expr.span(),
             Expr::Value(value) => value.span(),
+            Expr::DefaultValue(span) => *span,
             Expr::StringLiteralChain(values) => union_spans(values.iter().map(Spanned::span)),
             Expr::TypedString(TypedString { value, .. }) => value.span(),
             Expr::Function(function) => function.span(),

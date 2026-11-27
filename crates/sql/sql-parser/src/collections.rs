@@ -39,32 +39,17 @@ pub(super) fn parse_map(parser: &mut Parser) -> Result<Expr, ParserError> {
 
 /// ROW field aliases require an explicit AS. Each field keeps its identifier span.
 pub(super) fn parse_row(parser: &mut Parser) -> Result<Expr, ParserError> {
-    use sqlparser_064::ast::{ExprWithAlias, Spanned};
+    use sqlparser_064::ast::ExprWithAlias;
     let start = parser.next_token().span;
     parser.expect_token(&Token::LParen)?;
     let mut first = true;
     let fields = parser.parse_comma_separated(|parser| {
-        let mut expr = if first && matches!(parser.peek_token().token, Token::Word(w) if matches!(w.keyword, Keyword::SELECT | Keyword::WITH | Keyword::VALUES | Keyword::TABLE)) {
+        let expr = if first && matches!(parser.peek_token().token, Token::Word(w) if matches!(w.keyword, Keyword::SELECT | Keyword::WITH | Keyword::VALUES | Keyword::TABLE)) {
             Expr::Subquery(parser.parse_query()?)
         } else {
-            parser.parse_wildcard_expr()?
+            row_operand(parser)?
         };
         first = false;
-        if matches!(&expr, Expr::QualifiedWildcard(_, _) | Expr::Wildcard(_))
-            && parser
-                .parse_one_of_keywords(&[Keyword::EXCEPT, Keyword::EXCLUDE])
-                .is_some()
-        {
-            parser.expect_token(&Token::LParen)?;
-            let columns = parser.parse_comma_separated(|parser| parser.parse_object_name(false))?;
-            let end = parser.expect_token(&Token::RParen)?.span;
-            let span = expr.span().union(&end);
-            expr = Expr::WildcardExclusion {
-                wildcard: Box::new(expr),
-                columns,
-                span,
-            };
-        }
         let alias = if parser.parse_keyword(Keyword::AS) {
             let name = parser.parse_identifier()?;
             if let std::ops::ControlFlow::Break(error) = super::reserved::identifier(&name) {
@@ -81,6 +66,27 @@ pub(super) fn parse_row(parser: &mut Parser) -> Result<Expr, ParserError> {
         fields,
         span: start.union(&end),
     })
+}
+
+pub(super) fn row_operand(parser: &mut Parser) -> Result<Expr, ParserError> {
+    use sqlparser_064::ast::Spanned;
+    let mut expr = parser.parse_wildcard_expr()?;
+    if matches!(&expr, Expr::QualifiedWildcard(_, _) | Expr::Wildcard(_))
+        && parser
+            .parse_one_of_keywords(&[Keyword::EXCEPT, Keyword::EXCLUDE])
+            .is_some()
+    {
+        parser.expect_token(&Token::LParen)?;
+        let columns = parser.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+        let end = parser.expect_token(&Token::RParen)?.span;
+        let span = expr.span().union(&end);
+        expr = Expr::WildcardExclusion {
+            wildcard: Box::new(expr),
+            columns,
+            span,
+        };
+    }
+    Ok(expr)
 }
 
 #[cfg(test)]

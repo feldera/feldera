@@ -1871,6 +1871,26 @@ pub trait Dialect: Debug + Any {
         true
     }
 
+    /// Whether MEMBER OF accepts an arbitrary right operand (SQL multisets).
+    fn supports_multiset_membership(&self) -> bool {
+        false
+    }
+
+    /// Whether the named aggregate accepts a SEPARATOR argument clause.
+    fn supports_function_separator(&self, _name: &[ObjectNamePart]) -> bool {
+        false
+    }
+
+    /// Whether a table factor accepts the SQL system-time snapshot clause.
+    fn supports_system_time_as_of(&self) -> bool {
+        self.supports_table_versioning()
+    }
+
+    /// Whether an explicit window frame can end with an EXCLUDE clause.
+    fn supports_window_frame_exclusion(&self) -> bool {
+        false
+    }
+
     /// Returns true if this dialect supports querying historical table data
     /// by specifying which version of the data to query.
     fn supports_table_versioning(&self) -> bool {

@@ -60,6 +60,13 @@ pub enum ParserError {
     TokenizerError(String),
     /// Generic parser error with a message.
     ParserError(String),
+    /// A syntax error with the original source range.
+    Located {
+        /// Diagnostic text without a location suffix.
+        message: String,
+        /// Half-open token range in the input.
+        span: Span,
+    },
     /// Raised when a recursion depth limit is exceeded.
     RecursionLimitExceeded,
 }
@@ -179,15 +186,12 @@ impl From<TokenizerError> for ParserError {
 
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "sql parser error: {}",
-            match self {
-                ParserError::TokenizerError(s) => s,
-                ParserError::ParserError(s) => s,
-                ParserError::RecursionLimitExceeded => "recursion limit exceeded",
-            }
-        )
+        f.write_str("sql parser error: ")?;
+        match self {
+            Self::TokenizerError(s) | Self::ParserError(s) => f.write_str(s),
+            Self::Located { message, span } => write!(f, "{message}{}", span.start),
+            Self::RecursionLimitExceeded => f.write_str("recursion limit exceeded"),
+        }
     }
 }
 
@@ -2783,10 +2787,37 @@ impl<'a> Parser<'a> {
         } else {
             (self.parse_window_frame_bound()?, None)
         };
+        let exclusion = if self.dialect.supports_window_frame_exclusion()
+            && self.parse_keyword(Keyword::EXCLUDE)
+        {
+            Some(
+                match self.expect_one_of_keywords(&[
+                    Keyword::CURRENT,
+                    Keyword::GROUP,
+                    Keyword::TIES,
+                    Keyword::NO,
+                ])? {
+                    Keyword::CURRENT => {
+                        self.expect_keyword_is(Keyword::ROW)?;
+                        WindowFrameExclusion::CurrentRow
+                    }
+                    Keyword::GROUP => WindowFrameExclusion::Group,
+                    Keyword::TIES => WindowFrameExclusion::Ties,
+                    Keyword::NO => {
+                        self.expect_keyword_is(Keyword::OTHERS)?;
+                        WindowFrameExclusion::NoOthers
+                    }
+                    _ => unreachable!("expected an exclusion keyword"),
+                },
+            )
+        } else {
+            None
+        };
         Ok(WindowFrame {
             units,
             start_bound,
             end_bound,
+            exclusion,
         })
     }
 
@@ -4295,6 +4326,14 @@ impl<'a> Parser<'a> {
                 }
                 Keyword::NOTNULL if dialect.supports_notnull_operator() => {
                     Ok(Expr::IsNotNull(Box::new(expr)))
+                }
+                Keyword::MEMBER if dialect.supports_multiset_membership() => {
+                    self.expect_keyword_is(Keyword::OF)?;
+                    Ok(Expr::BinaryOp {
+                        left: Box::new(expr),
+                        op: BinaryOperator::MemberOf,
+                        right: Box::new(self.parse_subexpr(precedence)?),
+                    })
                 }
                 Keyword::MEMBER => {
                     if self.parse_keyword(Keyword::OF) {
@@ -18429,12 +18468,16 @@ impl<'a> Parser<'a> {
 
     /// Parses a the timestamp version specifier (i.e. query historical data)
     pub fn maybe_parse_table_version(&mut self) -> Result<Option<TableVersion>, ParserError> {
+        if self.dialect.supports_system_time_as_of()
+            && self.parse_keywords(&[Keyword::FOR, Keyword::SYSTEM_TIME, Keyword::AS, Keyword::OF])
+        {
+            return self
+                .parse_expr()
+                .map(TableVersion::ForSystemTimeAsOf)
+                .map(Some);
+        }
         if self.dialect.supports_table_versioning() {
-            if self.parse_keywords(&[Keyword::FOR, Keyword::SYSTEM_TIME, Keyword::AS, Keyword::OF])
-            {
-                let expr = self.parse_expr()?;
-                return Ok(Some(TableVersion::ForSystemTimeAsOf(expr)));
-            } else if self.peek_keyword(Keyword::CHANGES) {
+            if self.peek_keyword(Keyword::CHANGES) {
                 return self.parse_table_version_changes().map(Some);
             } else if self.peek_keyword(Keyword::AT) || self.peek_keyword(Keyword::BEFORE) {
                 let func_name = self.parse_object_name(true)?;
@@ -20407,10 +20450,16 @@ impl<'a> Parser<'a> {
             )))
         }
 
-        if dialect_of!(self is GenericDialect | MySqlDialect)
+        if (dialect_of!(self is GenericDialect | MySqlDialect)
+            || self.dialect.supports_function_separator(&name.0))
             && self.parse_keyword(Keyword::SEPARATOR)
         {
-            clauses.push(FunctionArgumentClause::Separator(self.parse_value()?));
+            let separator = if self.dialect.supports_function_separator(&name.0) {
+                self.parse_expr()?
+            } else {
+                Expr::Value(self.parse_value()?)
+            };
+            clauses.push(FunctionArgumentClause::Separator(separator));
         }
 
         if let Some(on_overflow) = self.parse_listagg_on_overflow()? {

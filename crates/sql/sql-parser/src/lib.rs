@@ -54,6 +54,22 @@ use sqlparser_064::{
 };
 
 impl Dialect for FelderaDialect {
+    fn supports_multiset_membership(&self) -> bool {
+        true
+    }
+
+    fn supports_window_frame_exclusion(&self) -> bool {
+        true
+    }
+
+    fn supports_system_time_as_of(&self) -> bool {
+        true
+    }
+
+    fn is_select_item_alias(&self, explicit: bool, keyword: &Keyword, parser: &mut Parser) -> bool {
+        explicit || *keyword == Keyword::END || self.is_column_alias(keyword, parser)
+    }
+
     fn supports_local_time_zone(&self) -> bool {
         true
     }
@@ -215,8 +231,10 @@ impl Dialect for FelderaDialect {
         &self,
         name: &[sqlparser_064::ast::ObjectNamePart],
     ) -> bool {
-        // Calcite's StringAggFunctionCall accepts this clause inside the
-        // arguments. Ordinary functions accept the suffix after the call.
+        self.supports_function_separator(name) || grammar::is_percentile(name)
+    }
+
+    fn supports_function_separator(&self, name: &[sqlparser_064::ast::ObjectNamePart]) -> bool {
         matches!(name, [sqlparser_064::ast::ObjectNamePart::Identifier(ident)] if ident.quote_style.is_none()
             && matches!(ident.value.to_ascii_uppercase().as_str(), "ARRAY_AGG" | "ARRAY_CONCAT_AGG" | "STRING_AGG" | "GROUP_CONCAT"))
     }
@@ -226,6 +244,10 @@ impl Dialect for FelderaDialect {
     }
 
     fn parse_prefix(&self, parser: &mut Parser) -> Option<Result<Expr, ParserError>> {
+        if parser.peek_keyword(Keyword::EXTRACT) && parser.peek_nth_token(1).token == Token::LParen
+        {
+            return Some(temporal_types::parse_extract(parser));
+        }
         if [Keyword::CAST, Keyword::TRY_CAST, Keyword::SAFE_CAST]
             .iter()
             .any(|keyword| parser.peek_keyword(*keyword))

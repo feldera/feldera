@@ -282,6 +282,8 @@ pub enum BinaryOperator {
     /// Specifies a test for an overlap between two datetime periods:
     /// ISO/IEC 9075-2:2016, `overlaps predicate`
     Overlaps,
+    /// SQL multiset membership.
+    MemberOf,
     /// `##` Point of closest proximity (PostgreSQL/Redshift geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     DoubleHash,
@@ -396,6 +398,7 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::PGCustomBinaryOperator(idents) => {
                 write!(f, "OPERATOR({})", display_separated(idents, "."))
             }
+            BinaryOperator::MemberOf => f.write_str("MEMBER OF"),
             BinaryOperator::Overlaps => f.write_str("OVERLAPS"),
             BinaryOperator::DoubleHash => f.write_str("##"),
             BinaryOperator::LtDashGt => f.write_str("<->"),

@@ -143,3 +143,170 @@ fn inline_null_treatment_is_rejected_outside_its_feldera_grammar() {
         assert!(parse(&sql).is_ok(), "{sql}");
     }
 }
+
+#[test]
+fn window_exclusions_keep_their_distinct_ast_variants() {
+    use sqlparser_064::ast::{WindowFrameExclusion, WindowType};
+    for (sql, exclusion) in [
+        ("CURRENT ROW", WindowFrameExclusion::CurrentRow),
+        ("GROUP", WindowFrameExclusion::Group),
+        ("TIES", WindowFrameExclusion::Ties),
+        ("NO OTHERS", WindowFrameExclusion::NoOthers),
+    ] {
+        let source = format!(
+            "SELECT sum(x) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW EXCLUDE {sql}) FROM t"
+        );
+        let query = select(&source);
+        let SelectItem::UnnamedExpr(Expr::Function(f)) = &query.projection[0] else {
+            panic!("expected aggregate")
+        };
+        let Some(WindowType::WindowSpec(spec)) = &f.over else {
+            panic!("expected window frame")
+        };
+        assert_eq!(
+            spec.window_frame.as_ref().unwrap().exclusion,
+            Some(exclusion)
+        );
+        assert_eq!(
+            crate::emit_statements(&crate::parse(&source).unwrap()).unwrap(),
+            [source]
+        );
+    }
+    for suffix in [
+        "CURRENT",
+        "NO OTHER",
+        "NONE",
+        "OTHERS",
+        "GROUP EXCLUDE TIES",
+    ] {
+        assert!(crate::parse(&format!(
+            "SELECT sum(x) OVER (ROWS CURRENT ROW EXCLUDE {suffix}) FROM t"
+        ))
+        .is_err());
+    }
+}
+
+#[test]
+fn special_aggregates_preserve_percentile_and_separator_operands() {
+    let source = "SELECT percentile_disc(DEFAULT, -DECIMAL '.25' IGNORE NULLS), string_agg(DISTINCT x ORDER BY y SEPARATOR ';') FROM t";
+    let query = select(source);
+    let arguments = |i: usize| {
+        let SelectItem::UnnamedExpr(Expr::Function(f)) = &query.projection[i] else {
+            panic!("expected call")
+        };
+        let FunctionArguments::List(args) = &f.args else {
+            panic!("expected arguments")
+        };
+        args
+    };
+    use sqlparser_064::ast::{FunctionArg, FunctionArgExpr};
+    let pct = arguments(0);
+    assert!(matches!(
+        pct.args[0],
+        FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::DefaultValue(_)))
+    ));
+    assert!(matches!(
+        pct.clauses.as_slice(),
+        [FunctionArgumentClause::IgnoreOrRespectNulls(
+            NullTreatment::IgnoreNulls
+        )]
+    ));
+    let string = arguments(1);
+    assert!(string.duplicate_treatment.is_some());
+    assert!(
+        matches!(string.clauses.as_slice(), [FunctionArgumentClause::OrderBy(_), FunctionArgumentClause::Separator(Expr::Value(v))] if v.value.to_string() == "';'")
+    );
+    assert_eq!(
+        crate::emit_statements(&crate::parse(source).unwrap()).unwrap(),
+        [source]
+    );
+    for sql in [
+        "percentile_cont(*)",
+        "percentile_cont(DISTINCT x)",
+        "percentile_cont(x, (0.5))",
+        "percentile_cont(x, 0.5 + 0.1)",
+        "percentile_cont(x, DECIMAL 'NaN')",
+        "percentile_cont(x, 0.25, 0.75)",
+        "percentile_cont(x, 0.5 IGNORE NULLS RESPECT NULLS)",
+        "s.percentile_cont(x, 0.5 IGNORE NULLS)",
+        "array_agg()",
+        "string_agg(* SEPARATOR ',')",
+        "string_agg(x SEPARATOR 3)",
+        "string_agg(x SEPARATOR ('a'))",
+        "s.string_agg(x SEPARATOR ',')",
+    ] {
+        assert!(
+            crate::parse(&format!("SELECT {sql} FROM t")).is_err(),
+            "{sql}"
+        );
+    }
+}
+
+#[test]
+fn snapshot_membership_and_extract_keep_query_structure() {
+    use sqlparser_064::ast::{BinaryOperator, DateTimeField, TableFactor, TableVersion};
+    let sql = r#"SELECT a MEMBER OF b + c AND d AS END, EXTRACT("Fiscal Week" FROM t.x) FROM t FOR SYSTEM_TIME AS OF a AS old"#;
+    let query = select(sql);
+    let SelectItem::ExprWithAlias {
+        expr:
+            Expr::BinaryOp {
+                left,
+                op: BinaryOperator::And,
+                ..
+            },
+        alias,
+    } = &query.projection[0]
+    else {
+        panic!("expected aliased conjunction")
+    };
+    assert_eq!(alias.value, "END");
+    assert!(
+        matches!(left.as_ref(), Expr::BinaryOp {op: BinaryOperator::MemberOf, right, ..} if matches!(right.as_ref(), Expr::BinaryOp {op: BinaryOperator::Plus, ..}))
+    );
+    assert!(
+        matches!(&query.projection[1], SelectItem::UnnamedExpr(Expr::Extract { field: DateTimeField::Custom(name), .. }) if name.value == "Fiscal Week" && name.quote_style == Some('"'))
+    );
+    assert!(
+        matches!(&query.from[0].relation, TableFactor::Table { alias: Some(alias), version: Some(TableVersion::ForSystemTimeAsOf(Expr::Identifier(time))), .. } if alias.name.value == "old" && time.value == "a")
+    );
+    assert_eq!(
+        crate::emit_statements(&crate::parse(sql).unwrap()).unwrap(),
+        [sql]
+    );
+    for sql in [
+        "SELECT * FROM t FOR SYSTEM_TIME AS OF (SELECT x FROM t)",
+        "SELECT * FROM t VERSION AS OF 1",
+        "SELECT EXTRACT(WHERE FROM x)",
+        "SELECT a NOT MEMBER OF b FROM t",
+    ] {
+        assert!(crate::parse(sql).is_err(), "{sql}");
+    }
+}
+
+#[test]
+fn values_defaults_and_named_fields_are_contextual() {
+    let sql = "VALUES (DEFAULT, 1 AS x, t.*)";
+    let parsed = crate::parse(sql).unwrap();
+    let crate::Statement::Upstream(statement) = &parsed[0] else {
+        panic!("expected upstream statement")
+    };
+    let Statement::Query(query) = statement.as_ref() else {
+        panic!("expected query")
+    };
+    let SetExpr::Values(values) = query.body.as_ref() else {
+        panic!("expected values")
+    };
+    assert!(
+        matches!(values.rows[0].as_slice(), [Expr::DefaultValue(_), Expr::Named { name, .. }, Expr::QualifiedWildcard(..)] if name.value == "x")
+    );
+    assert_eq!(crate::emit_statements(&parsed).unwrap(), [sql]);
+    for bad in [
+        "VALUES DEFAULT",
+        "VALUES (DEFAULT AS x)",
+        "VALUES 1 AS x",
+        "VALUES (ROW(1 AS x))",
+        "SELECT DEFAULT",
+    ] {
+        assert!(crate::parse(bad).is_err(), "{bad}");
+    }
+}

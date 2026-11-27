@@ -106,6 +106,28 @@ fn parse_interval(parser: &mut Parser) -> Result<DataType, ParserError> {
     })
 }
 
+/// Calcite accepts a named time frame as well as a built-in extraction unit.
+pub(super) fn parse_extract(parser: &mut Parser) -> Result<Expr, ParserError> {
+    use sqlparser_064::ast::{DateTimeField, ExtractSyntax};
+    parser.expect_keyword_is(Keyword::EXTRACT)?;
+    parser.expect_token(&Token::LParen)?;
+    let field = match parser.maybe_parse(|p| p.parse_date_time_field())? {
+        Some(field) => field,
+        None if matches!(parser.peek_token_ref().token, Token::Word(_)) => {
+            DateTimeField::Custom(super::statements::identifier(parser)?)
+        }
+        None => return parser.expected("time unit or identifier", parser.peek_token()),
+    };
+    parser.expect_keyword_is(Keyword::FROM)?;
+    let expr = Box::new(parser.parse_expr()?);
+    parser.expect_token(&Token::RParen)?;
+    Ok(Expr::Extract {
+        field,
+        expr,
+        syntax: ExtractSyntax::From,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

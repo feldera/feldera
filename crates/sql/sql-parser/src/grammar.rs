@@ -5,12 +5,14 @@
 
 use sqlparser_064::{
     ast::{
-        AccessExpr, BinaryOperator, DataType, Expr, FunctionArgumentClause, FunctionArguments,
-        GroupByExpr, NamedWindowExpr, ObjectNamePart, PivotValueSource, Select, Spanned, Subscript,
-        TableFactor, TableSample, TableSampleKind, TableSampleMethod, TableSampleModifier,
-        TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier, UnaryOperator, Value,
-        WindowFrameUnits, WindowSpec, WindowType,
+        AccessExpr, BinaryOperator, DataType, Expr, FunctionArg, FunctionArgExpr,
+        FunctionArgumentClause, FunctionArgumentList, FunctionArguments, GroupByExpr,
+        NamedWindowExpr, ObjectNamePart, PivotValueSource, Select, Spanned, Subscript, TableFactor,
+        TableSample, TableSampleKind, TableSampleMethod, TableSampleModifier, TableSampleQuantity,
+        TableSampleSeed, TableSampleSeedModifier, UnaryOperator, Value, WindowFrameUnits,
+        WindowSpec, WindowType,
     },
+    dialect::Dialect,
     parser::ParserError,
     tokenizer::{Location, Token, TokenWithSpan},
 };
@@ -103,6 +105,12 @@ pub(super) fn select(select: &Select) -> ControlFlow<ParserError> {
 
 pub(super) fn expression(expression: &Expr) -> ControlFlow<ParserError> {
     if !super::expression_policy::allows(expression) {
+        if let Expr::Prefixed { prefix, value } = expression {
+            return ControlFlow::Break(super::diagnostic::located(
+                "unknown character set in string literal",
+                prefix.span.union(&value.span()),
+            ));
+        }
         return ControlFlow::Break(super::diagnostic::at(
             "expression field is outside the supported Feldera grammar",
             expression.span().start,
@@ -196,6 +204,15 @@ pub(super) fn expression(expression: &Expr) -> ControlFlow<ParserError> {
 }
 
 pub(super) fn table_factor(table: &TableFactor) -> ControlFlow<ParserError> {
+    if let TableFactor::Table {
+        version: Some(sqlparser_064::ast::TableVersion::ForSystemTimeAsOf(time)),
+        ..
+    } = table
+    {
+        if let Err(error) = super::reject::validate_non_query(time) {
+            return ControlFlow::Break(error);
+        }
+    }
     if let TableFactor::GroupedUnpivot {
         measures,
         axes,
@@ -281,6 +298,107 @@ fn window_allowed(spec: &WindowSpec) -> bool {
         .is_none_or(|frame| frame.units != WindowFrameUnits::Groups)
 }
 
+pub(super) fn is_percentile(name: &[ObjectNamePart]) -> bool {
+    matches!(name, [ObjectNamePart::Identifier(ident)] if ident.quote_style.is_none()
+        && matches!(ident.value.to_ascii_uppercase().as_str(), "PERCENTILE_CONT" | "PERCENTILE_DISC"))
+}
+
+// Calcite's AddArg accepts qualified wildcards and named arguments. The bare
+// star in COUNT(*) belongs to a different production.
+fn aggregate_operand(argument: &FunctionArg) -> bool {
+    let (FunctionArg::Unnamed(arg)
+    | FunctionArg::Named { arg, .. }
+    | FunctionArg::ExprNamed { arg, .. }) = argument;
+    !matches!(
+        arg,
+        FunctionArgExpr::Wildcard | FunctionArgExpr::WildcardWithOptions(_)
+    )
+}
+
+fn numeric_fraction(expr: &Expr) -> bool {
+    let unsigned = match expr {
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus | UnaryOperator::Minus,
+            expr,
+        } => expr.as_ref(),
+        expr => expr,
+    };
+    match unsigned {
+        Expr::Value(value) => matches!(value.value, Value::Number(_, false)),
+        Expr::TypedString(literal)
+            if literal.data_type
+                == DataType::Decimal(sqlparser_064::ast::ExactNumberInfo::None) =>
+        {
+            matches!(&literal.value.value, Value::SingleQuotedString(text) if decimal_text(text))
+        }
+        _ => false,
+    }
+}
+
+// BigDecimal accepts a signed mantissa and an optional exponent with a signed
+// 32-bit scale. Check the spelling without rounding through floating point.
+fn decimal_text(text: &str) -> bool {
+    let text = text.trim_matches(' ');
+    let (mantissa, exponent) = match text.split_once(['e', 'E']) {
+        Some((mantissa, exponent)) => match exponent.parse::<i32>() {
+            Ok(exponent) => (mantissa, exponent),
+            Err(_) => return false,
+        },
+        None => (text, 0),
+    };
+    let mantissa = mantissa.strip_prefix(['+', '-']).unwrap_or(mantissa);
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    !(whole.is_empty() && fraction.is_empty())
+        && whole
+            .bytes()
+            .chain(fraction.bytes())
+            .all(|c| c.is_ascii_digit())
+        && i32::try_from(fraction.len())
+            .ok()
+            .and_then(|n| n.checked_sub(exponent))
+            .is_some()
+}
+
+fn percentile_arguments(args: &FunctionArgumentList) -> bool {
+    if args.duplicate_treatment.is_some() {
+        return false;
+    }
+    match args.args.as_slice() {
+        [value] => aggregate_operand(value) && args.clauses.is_empty(),
+        [value, FunctionArg::Unnamed(FunctionArgExpr::Expr(fraction))] => {
+            aggregate_operand(value)
+                && numeric_fraction(fraction)
+                && matches!(
+                    args.clauses.as_slice(),
+                    [] | [FunctionArgumentClause::IgnoreOrRespectNulls(_)]
+                )
+        }
+        _ => false,
+    }
+}
+
+fn string_aggregate_arguments(args: &FunctionArgumentList) -> bool {
+    !args.args.is_empty()
+        && args.args.iter().all(aggregate_operand)
+        && args.clauses.iter().all(|clause| match clause {
+            FunctionArgumentClause::IgnoreOrRespectNulls(_)
+            | FunctionArgumentClause::OrderBy(_) => true,
+            FunctionArgumentClause::Separator(expr) => match expr {
+                Expr::Value(v) => matches!(
+                    v.value,
+                    Value::SingleQuotedString(_)
+                        | Value::NationalStringLiteral(_)
+                        | Value::EscapedStringLiteral(_)
+                        | Value::UnicodeStringLiteral(_)
+                        | Value::HexStringLiteral(_)
+                ),
+                Expr::StringLiteralChain(_) | Expr::Prefixed { .. } => true,
+                _ => false,
+            },
+            _ => false,
+        })
+}
+
 fn function_arguments_allowed(function: &sqlparser_064::ast::Function) -> bool {
     let json_constructor = matches!(function.name.0.as_slice(),
         [ObjectNamePart::Identifier(name)] if name.quote_style.is_none()
@@ -292,8 +410,15 @@ fn function_arguments_allowed(function: &sqlparser_064::ast::Function) -> bool {
             let FunctionArguments::List(args) = args else {
                 return true;
             };
+            if is_percentile(&function.name.0) {
+                return percentile_arguments(args);
+            }
+            if super::FelderaDialect.supports_function_separator(&function.name.0) {
+                return string_aggregate_arguments(args);
+            }
             args.clauses.iter().all(|clause| match clause {
-                FunctionArgumentClause::Where(_)
+                FunctionArgumentClause::Separator(_)
+                | FunctionArgumentClause::Where(_)
                 | FunctionArgumentClause::Limit(_)
                 | FunctionArgumentClause::OnOverflow(_) => false,
                 FunctionArgumentClause::JsonNullClause(_) => json_constructor,
