@@ -347,7 +347,11 @@ schema_registry_converter = { version = "4.2.0", default-features = false }
 semver = "1.0.27"
 serde = "1.0.213"
 serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"] }
-serde_arrow = { version = "0.15.0", features = ["arrow-59"] }
+# Mirror of upstream main for the unreleased speed-ups of chmp/serde_arrow#334
+# and #335; use a release after 0.15.1 when one has them. Not a `[patch]`:
+# patches do not apply to generated pipeline workspaces. `unsafe-optimizations`
+# skips UTF-8 checks that arrow-rs already guarantees for string arrays.
+serde_arrow = { version = "0.15.1", git = "https://github.com/feldera/serde_arrow.git", rev = "ebe6918f26b0c21cd70e646834e423f989111333", features = ["arrow-59", "unsafe-optimizations"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
 serde_json_path_to_error = "0.1.5"
