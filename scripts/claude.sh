@@ -35,6 +35,9 @@ push_claude_context() {
 
   # New context files not yet on claude-context
   while IFS= read -r f; do
+    # Skip the files of other checkouts inside this one: git worktrees at any path, including stale
+    # ones, and cloned dependencies. Git names the checkout of the directory, so no path list is needed.
+    [ "$(git -C "$(dirname "$f")" rev-parse --show-toplevel 2>/dev/null)" = "$REPO_ROOT" ] || continue
     rel="${f#$REPO_ROOT/}"
     if ! git ls-tree origin/claude-context -- "$rel" 2>/dev/null | grep -q .; then
       CHANGED_FILES+=("$rel")
