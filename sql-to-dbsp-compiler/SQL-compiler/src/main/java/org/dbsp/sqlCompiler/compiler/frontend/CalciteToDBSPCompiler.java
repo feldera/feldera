@@ -3081,6 +3081,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new UnimplementedException("statement of this form not supported",
                     modify.getCalciteObject());
         }
+        // Every input is in target-list order until all rows have been collected.
+        if (result != null)
+            result = this.modifyTableTranslation.permuteColumns(result);
         this.modifyTableTranslation = null;
         if (result == null)
             return result;
