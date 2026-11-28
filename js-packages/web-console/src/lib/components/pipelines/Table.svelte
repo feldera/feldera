@@ -67,11 +67,8 @@
     table.selected = selectedPipelines
   })
 
-  const statusMatchesFilter = (
-    entry: NamesInUnion<PipelineStatusType>,
-    _value: keyof typeof filterStatuses
-  ) => {
-    const value = filterStatuses.find((f) => f[0] === _value)![1]
+  const statusMatchesFilter = (entry: NamesInUnion<PipelineStatusType>, label: string) => {
+    const value = filterStatuses.find((f) => f[0] === label)![1]
     return !value.length || value.includes(entry)
   }
   const statusFilter = table.createFilter(
@@ -219,9 +216,19 @@
     <div
       class="sticky left-0 flex max-w-[100cqi] flex-wrap items-center gap-x-4 gap-y-2 px-2 md:px-8"
     >
-      {#if header}
-        {@render header()}
-      {/if}
+      <div class="flex items-center gap-3">
+        {#if header}
+          {@render header()}
+        {/if}
+        <span
+          class="relative -top-0.5 text-sm whitespace-nowrap text-surface-600-400 tabular-nums"
+          data-testid="box-pipeline-count"
+        >
+          {rowsInDisplayOrder.length === pipelines.length
+            ? pipelines.length
+            : `${rowsInDisplayOrder.length} of ${pipelines.length}`}
+        </span>
+      </div>
       <!-- The page reserves a scrollbar gutter that the header above it doesn't have; the
            negative margin carries the controls into it so they end where the header's
            buttons do. -->
@@ -256,17 +263,20 @@
           {#snippet content(close)}
             <div
               transition:fade={{ duration: 100 }}
-              class="bg-white-dark absolute top-full left-0 z-30 mt-1 flex w-full min-w-[180px] flex-col overflow-hidden rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
+              class="bg-white-dark absolute top-full right-0 z-30 mt-1 flex w-max min-w-56 flex-col overflow-hidden rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
               role="listbox"
               aria-label="Filter by status"
             >
               {#each filterStatuses as filter (filter[0])}
                 {@const selected = filter[0] === statusFilterLabel}
+                {@const count = pipelinesFiltered.filter((p) =>
+                  statusMatchesFilter(unionName(p.status), filter[0])
+                ).length}
                 <button
                   type="button"
                   role="option"
                   aria-selected={selected}
-                  class="flex h-9 items-center justify-between gap-2 rounded px-3 text-left hover:bg-row-hover"
+                  class="flex h-9 items-center justify-between gap-4 rounded px-3 text-left hover:bg-row-hover"
                   onclick={() => {
                     statusFilterLabel = filter[0]
                     statusFilter.value = filter[0]
@@ -287,9 +297,14 @@
                     {/if}
                     {filter[0]}
                   </span>
-                  {#if selected}
-                    <span class="fd fd-check text-[16px]"></span>
-                  {/if}
+                  <span class="flex items-center gap-4">
+                    <span class="text-sm text-surface-600-400 tabular-nums">{count}</span>
+                    <span
+                      class="fd fd-check h-4 w-4 text-[16px]"
+                      class:invisible={!selected}
+                      aria-hidden="true"
+                    ></span>
+                  </span>
                 </button>
               {/each}
             </div>
