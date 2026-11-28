@@ -154,6 +154,30 @@ mod span_tests {
     use sqlparser_064::tokenizer::{Location, Span};
 
     #[test]
+    fn derived_query_errors_keep_the_offending_token() {
+        for (sql, line, col, width) in [
+            ("SELECT * FROM (SELECT FROM t) q", 1, 23, 4),
+            ("SELECT * FROM (SELECT x IN s FROM t) q", 1, 25, 2),
+            ("SELECT * FROM (SELECT x(+) FROM t) q", 1, 25, 1),
+            (
+                "SELECT * FROM (WITH t AS (\nSELECT FROM src) SELECT * FROM t)",
+                2,
+                8,
+                4,
+            ),
+        ] {
+            assert_eq!(
+                syntax_diagnostic(sql).unwrap().unwrap().span,
+                Some(Span::new(
+                    Location::new(line, col),
+                    Location::new(line, col + width)
+                )),
+                "{sql}",
+            );
+        }
+    }
+
+    #[test]
     fn diagnostics_select_original_delimiters_inside_multiline_hints() {
         for (sql, line, col, width) in [
             ("SELECT\n /*+ */ 1", 2, 2, 3),

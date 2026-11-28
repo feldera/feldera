@@ -165,8 +165,12 @@ Two directed comparisons covered CTE cycle detection, aggregate modifier order,
 natural and cross joins, and pattern escape operands and aliases. Rust matched
 Java on all 242 and 231 verdicts, respectively. Java parsed the formatted output
 into equivalent ASTs for all 144 and 93 accepted cases.
-Against the product compiler, 841 of the 1,061 shared rejections matched severity,
-error class, start and snippet together. The remaining 220 are open P5a differences.
+The parser treats TOP as a name in SELECT lists and reports syntax errors
+inside derived SELECT and WITH queries. All 116 directed verdicts and all
+80 accepted formatter ASTs matched Java. Of the 36 directed rejections, 14
+matched the product diagnostic. On the larger suite, 861 of the 1,061 shared
+rejections matched severity, error class, start and snippet together. The
+remaining 200 are open P5a differences.
 [Diagnostic comparison](scripts/validate_syntax_diagnostics.py)
 
 In a 360-case comparison of index declarations, drops, LIMIT, OFFSET and FETCH,

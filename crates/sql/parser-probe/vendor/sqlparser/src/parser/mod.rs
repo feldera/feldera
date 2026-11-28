@@ -16352,7 +16352,10 @@ impl<'a> Parser<'a> {
 
         let mut top_before_distinct = false;
         let mut top = None;
-        if self.dialect.supports_top_before_distinct() && self.parse_keyword(Keyword::TOP) {
+        if self.dialect.supports_select_top()
+            && self.dialect.supports_top_before_distinct()
+            && self.parse_keyword(Keyword::TOP)
+        {
             top = Some(self.parse_top()?);
             top_before_distinct = true;
         }
@@ -16363,7 +16366,10 @@ impl<'a> Parser<'a> {
             self.parse_all_or_distinct()?
         };
 
-        if !self.dialect.supports_top_before_distinct() && self.parse_keyword(Keyword::TOP) {
+        if self.dialect.supports_select_top()
+            && !self.dialect.supports_top_before_distinct()
+            && self.parse_keyword(Keyword::TOP)
+        {
             top = Some(self.parse_top()?);
         }
 
@@ -17623,7 +17629,11 @@ impl<'a> Parser<'a> {
             // `FROM ((((...`, where the nested-join fallback recurses back into
             // `parse_table_factor` and re-attempts the same speculative parse.
             let derived_pos = self.index;
-            let derived = if self
+            let unambiguous = matches!(&self.peek_token_ref().token, Token::Word(word)
+                if self.dialect.starts_unambiguous_derived_query(word.keyword));
+            let derived = if unambiguous {
+                Some(self.parse_derived_table_factor(NotLateral)?)
+            } else if self
                 .failed_derived_table_factor_positions
                 .contains(&derived_pos)
             {

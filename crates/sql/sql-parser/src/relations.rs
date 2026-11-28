@@ -125,6 +125,18 @@ pub(super) fn function_argument(parser: &mut Parser) -> Option<Result<FunctionAr
     let named = matches!(parser.peek_token().token, Token::Word(_))
         && parser.peek_nth_token(1).token == Token::RArrow;
     let offset = if named { 2 } else { 0 };
+    let first = parser.peek_nth_token_ref(offset);
+    if matches!(first.token, Token::Plus | Token::Minus)
+        && matches!(
+            parser.peek_nth_token_ref(offset + 1).token,
+            Token::Comma | Token::RParen
+        )
+    {
+        return Some(Err(super::diagnostic::located(
+            "expected an operand after the sign",
+            first.span,
+        )));
+    }
     if !matches!(parser.peek_nth_token(offset).token, Token::Word(word)
         if matches!(word.keyword, Keyword::TABLE | Keyword::DEFAULT) && word.quote_style.is_none())
     {

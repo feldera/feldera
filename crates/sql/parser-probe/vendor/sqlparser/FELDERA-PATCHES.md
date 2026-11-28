@@ -126,3 +126,7 @@ lexer takes the longest complete escaped-string token, then decodes doubled
 quotes and C escapes. Octal escapes begin with 0 through 3 and carry up to
 eight bits. Unicode escapes decode adjacent UTF-16 surrogate pairs together.
 Unknown escapes preserve their backslash.
+
+Feldera disables the SELECT TOP modifier so TOP can name a column or function.
+After `FROM (SELECT` or `FROM (WITH`, it preserves the derived query's
+parse error. Ambiguous parentheses still allow the nested-join grammar.

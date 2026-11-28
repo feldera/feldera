@@ -1685,6 +1685,11 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Whether TOP can introduce a row-limit clause in a SELECT list.
+    fn supports_select_top(&self) -> bool {
+        true
+    }
+
     /// Returns true if this dialect expects the `TOP` option
     /// before the `ALL`/`DISTINCT` options in a `SELECT` statement.
     fn supports_top_before_distinct(&self) -> bool {
@@ -1886,6 +1891,12 @@ pub trait Dialect: Debug + Any {
     /// SQLite reads `OVER` as a keyword only when `(` or a name follows, see
     /// `analyzeOverKeyword` in [tokenize.c](https://sqlite.org/src/file?name=src/tokenize.c)
     fn supports_over_keyword_as_column_alias(&self) -> bool {
+        false
+    }
+
+    /// Whether this keyword after FROM ( can only start a query. For such
+    /// prefixes the parser can report the query error without retrying a join.
+    fn starts_unambiguous_derived_query(&self, _keyword: Keyword) -> bool {
         false
     }
 

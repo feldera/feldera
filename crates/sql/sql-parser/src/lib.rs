@@ -110,6 +110,22 @@ impl Dialect for FelderaDialect {
         relations::cte_cycle(parser)
     }
 
+    fn parse_infix(
+        &self,
+        parser: &mut Parser,
+        _expr: &Expr,
+        _precedence: u8,
+    ) -> Option<Result<Expr, ParserError>> {
+        // Calcite's lookahead recognizes the positive IN predicate only at IN (.
+        if parser.peek_keyword(Keyword::IN) && parser.peek_nth_token_ref(1).token != Token::LParen {
+            return Some(Err(diagnostic::located(
+                "IN requires a parenthesized list or query",
+                parser.peek_token_ref().span,
+            )));
+        }
+        None
+    }
+
     fn get_next_precedence(&self, parser: &Parser) -> Option<Result<u8, ParserError>> {
         // Calcite requires IS in the postfix null test. An adjacent NOT NULL
         // can instead be a column or type modifier for the enclosing parser.
@@ -149,6 +165,14 @@ impl Dialect for FelderaDialect {
 
     fn supports_local_time_zone(&self) -> bool {
         true
+    }
+
+    fn supports_select_top(&self) -> bool {
+        false
+    }
+
+    fn starts_unambiguous_derived_query(&self, keyword: Keyword) -> bool {
+        matches!(keyword, Keyword::SELECT | Keyword::WITH)
     }
 
     fn supports_string_escape_constant(&self) -> bool {
@@ -341,6 +365,12 @@ impl Dialect for FelderaDialect {
     }
 
     fn parse_prefix(&self, parser: &mut Parser) -> Option<Result<Expr, ParserError>> {
+        if parser.peek_keyword(Keyword::FROM) {
+            return Some(Err(diagnostic::located(
+                "expected an expression before FROM",
+                parser.peek_token_ref().span,
+            )));
+        }
         if matches!(&parser.peek_token_ref().token, Token::Word(w)
             if w.quote_style.is_none() && w.value.eq_ignore_ascii_case("JSON_OBJECT"))
             && parser.peek_nth_token_ref(1).token == Token::LParen
@@ -571,6 +601,21 @@ pub fn parse_at_with_starts(
 mod tests {
     use super::*;
     use sqlparser_064::ast::{DataType, Statement};
+
+    #[test]
+    fn top_is_an_ordinary_name_in_a_select_list() {
+        for sql in [
+            "SELECT top FROM t",
+            "SELECT DISTINCT top.x FROM t",
+            "SELECT top(3) FROM t",
+            "SELECT top * 2 FROM t",
+            "SELECT * FROM (SELECT top + 1 FROM t) AS q",
+        ] {
+            let statements = parse(sql).unwrap();
+            assert_eq!(statements[0].to_string(), sql);
+        }
+        assert!(parse("SELECT TOP 1 * FROM t").is_err());
+    }
 
     #[test]
     fn row_type_retains_named_fields_and_nested_structure() {
