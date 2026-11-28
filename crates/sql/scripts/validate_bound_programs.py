@@ -28,6 +28,17 @@ NUMERIC_COLUMN_CASES = {
 
 CASES = {
     **NUMERIC_COLUMN_CASES,
+    "qualified_wildcard": "CREATE TABLE t(a INT, b INT);"
+                          " CREATE VIEW v AS SELECT q.*, a + b FROM t AS q;",
+    "overlapping_wildcards": "CREATE TABLE t(a INT, a0 INT);"
+                             " CREATE VIEW v AS SELECT a, q.*, a, q.* FROM t AS q;",
+    "duplicate_constant_names": "CREATE VIEW v AS SELECT 1 AS a, 2 AS a, 3 AS a0;",
+    "empty_duplicate_names": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT a, a FROM t WHERE FALSE;",
+    "duplicate_set_names": "CREATE TABLE t(a INT, b INT); CREATE TABLE u(a INT, b INT);"
+                           " CREATE VIEW v AS SELECT a,a FROM t UNION ALL SELECT b,b FROM u;",
+    "quoted_wildcard_names": 'CREATE TABLE t(a INT, b INT);'
+                             ' CREATE VIEW c AS SELECT a AS "a""b", b AS "Mi`XeD" FROM t;'
+                             ' CREATE VIEW v AS SELECT c.*, c.* FROM c;',
     "cast_null_scalars": "CREATE VIEW v AS SELECT CAST(NULL AS INT UNSIGNED) AS u,"
                          " CAST(NULL AS VARCHAR(3)) AS s, CAST(NULL AS CHAR) AS c,"
                          " CAST(NULL AS BINARY(2)) AS b, CAST(NULL AS DECIMAL(12,2)) AS d,"

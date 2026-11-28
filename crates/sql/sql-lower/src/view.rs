@@ -9,8 +9,10 @@ use feldera_sql_rel_model::{
     program::Program,
     relation_properties::Properties,
     statements::{RelRoot, StatementSource, ViewKind},
+    types::{Field, TypeKind},
 };
 use serde_json::{json, Value};
+use std::borrow::Cow;
 
 /// An inner definition and an earlier use both identify the same arena node.
 pub(super) fn reference(node: &Value) -> Result<Value, Error> {
@@ -279,6 +281,31 @@ pub(super) fn scan_stream(
     })
 }
 
+/// The stream carries the producer's field names. A SELECT may repeat a
+/// name, and a view's explicit column list may rename the public output.
+pub(super) fn stream_schema<'a>(
+    schema: &'a CatalogSchema,
+    fields: &[Field],
+) -> Result<Cow<'a, CatalogSchema>, Error> {
+    if schema.columns.len() != fields.len() {
+        return Err(Error("stream width differs from its output schema".into()));
+    }
+    let mut result = Cow::Borrowed(schema);
+    for (i, field) in fields.iter().enumerate() {
+        let column = &schema.columns[i];
+        if column.ty != field.ty {
+            return Err(Error("stream field requires a type conversion".into()));
+        }
+        let quoted = field.name.name != field.name.name.to_lowercase();
+        if column.name.name != field.name.name || column.name.quoted != quoted {
+            let name = &mut result.to_mut().columns[i].name;
+            name.name.clone_from(&field.name.name);
+            name.quoted = quoted;
+        }
+    }
+    Ok(result)
+}
+
 pub(super) fn lower(
     checkpoint: &mut Value,
     program: &Program,
@@ -302,22 +329,17 @@ pub(super) fn lower(
     {
         return Err(Error("unsupported view metadata".into()));
     }
-    // A declared view column list renames the public row. Calcite keeps the
-    // SELECT names in the stream feeding that view, including generated EXPR$n names.
     if root.fields.len() != schema.columns.len() {
         return Err(Error("view column count differs from SELECT output".into()));
     }
-    let mut query_schema = std::borrow::Cow::Borrowed(schema);
-    for (index, field) in root.fields.iter().enumerate() {
-        if field.index as usize != index {
-            return Err(Error("view fields are out of projection order".into()));
-        }
-        if query_schema.columns[index].name.name != field.name {
-            let name = &mut query_schema.to_mut().columns[index].name;
-            name.quoted = field.name.to_lowercase() != field.name;
-            name.name.clone_from(&field.name);
-        }
+    if root.fields.iter().enumerate().any(|(i, f)| f.index as usize != i) {
+        return Err(Error("view fields are out of projection order".into()));
     }
+    let row = program.producers.relations[root.relation as usize].row;
+    let TypeKind::Row { fields, .. } = &program.table.type_table.types[row.0 as usize].kind else {
+        return Err(Error("view input requires a row type".into()));
+    };
+    let query_schema = stream_schema(schema, fields)?;
     let stream = match program.properties.relations[root.relation as usize].fields {
         Properties::Values { .. } => {
             super::values::lower(checkpoint, program, ids, &query_schema, root, source)?

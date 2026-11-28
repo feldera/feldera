@@ -2,7 +2,7 @@
 
 use super::{
     source_table::{range, Ids},
-    view::{scan_stream, Stream},
+    view::{scan_stream, stream_schema, Stream},
     Error,
 };
 use feldera_sql_ir::{Circuit, NodeId, OperatorKind as Op, OutputPort};
@@ -77,9 +77,7 @@ impl SetQuery<'_> {
             };
             // Input rows retain their own names. The SQL result inherits its
             // names from the left operand, and the view can rename them again.
-            if fields.len() != schema.columns.len() {
-                return Err(Error("set operands have different widths".into()));
-            }
+            let child = stream_schema(schema, fields)?;
             let names: Vec<_> = fields.iter().map(|f| f.name.name.as_str()).collect();
             if inputs.is_empty() {
                 first_names = names;
@@ -89,14 +87,6 @@ impl SetQuery<'_> {
                 return Err(Error(
                     "set operands require a reordered-fields warning".into(),
                 ));
-            }
-            let mut child = schema.clone();
-            for (column, field) in child.columns.iter_mut().zip(fields) {
-                if column.ty != field.ty {
-                    return Err(Error("set operand requires a type conversion".into()));
-                }
-                column.name.name.clone_from(&field.name.name);
-                column.name.quoted = field.name.name != field.name.name.to_lowercase();
             }
             inputs.push(self.stream(checkpoint, ids, &child, input)?);
         }

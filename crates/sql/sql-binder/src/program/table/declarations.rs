@@ -28,7 +28,7 @@ pub(super) fn type_name(name: &ObjectName) -> Result<(Span, Name, TypeSpelling),
     Ok((ident.span, name, spelling))
 }
 
-pub(super) fn identifier(ident: &Ident) -> (Name, TypeSpelling) {
+pub(in crate::program) fn identifier(ident: &Ident) -> (Name, TypeSpelling) {
     let name = Name {
         name: if ident.quote_style.is_some() {
             ident.value.clone()

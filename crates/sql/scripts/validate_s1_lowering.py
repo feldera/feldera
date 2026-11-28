@@ -15,6 +15,8 @@ from validate_bound_programs import CASES as BINDING_CASES, NUMERIC_COLUMN_CASES
 CASES = {
     **NUMERIC_COLUMN_CASES,
     **{name: BINDING_CASES[name] for name in (
+        "qualified_wildcard", "overlapping_wildcards", "duplicate_constant_names",
+        "empty_duplicate_names", "duplicate_set_names", "quoted_wildcard_names",
         "cast_null_scalars", "cast_null_temporal", "cast_null_aliases", "cast_null_insert",
         "cast_null_precision", "unknown_insert", "cast_null_numeric_widths",
         "unicode_origins", "unicode_identifiers", "unicode_record", "unicode_alias", "unicode_insert",

@@ -243,12 +243,19 @@ decimal, floating-point, temporal, UUID and VARIANT types. Each matched Java
 at S2 and through Gen-2 emission.
 
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 199 of 8,571 programs. All 199 matched Java compilation
+Gen-2 options. Rust bound 204 of 8,571 programs. All 204 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 144
-to S2. Of those, 124 checkpoints matched previously verified bytes and 20
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 149
+to S2. Of those, 144 checkpoints matched previously verified bytes and five
 matched a fresh Java lowering and resumed in the Java optimizer.
-The remaining 8,372 programs still need whole-program binding.
+The remaining 8,367 programs still need whole-program binding.
+
+The binder expands qualified and overlapping wildcards in projection order.
+It preserves repeated SELECT aliases in the validated row and assigns unique
+names to the relational output. Twenty-five directed programs matched Java
+through Gen-2 emission. Twenty-four also matched independent Java S2 lowering,
+including empty results, set operations, and view columns with embedded quotes.
+The aggregate case used Java lowering.
 
 Five directed programs exercised nullable operands, repeated builtins and a
 projection above a filter. Ten more exercised all four arithmetic operations

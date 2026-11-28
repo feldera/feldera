@@ -123,9 +123,9 @@ pub(super) fn insert_row(program: &mut Program, name: &str, scalar: TypeId) -> T
     insert_row_fields(program, [(name, scalar)])
 }
 
-pub(super) fn insert_row_fields<'a>(
+pub(super) fn insert_row_fields<S: Into<String>>(
     program: &mut Program,
-    fields: impl IntoIterator<Item = (&'a str, TypeId)>,
+    fields: impl IntoIterator<Item = (S, TypeId)>,
 ) -> TypeId {
     let kind = row_kind(fields);
     insert_type(
@@ -138,7 +138,7 @@ pub(super) fn insert_row_fields<'a>(
     )
 }
 
-pub(super) fn row_kind<'a>(fields: impl IntoIterator<Item = (&'a str, TypeId)>) -> TypeKind {
+pub(super) fn row_kind<S: Into<String>>(fields: impl IntoIterator<Item = (S, TypeId)>) -> TypeKind {
     let fields = fields
         .into_iter()
         .map(|(name, ty)| Field {

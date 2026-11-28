@@ -3,6 +3,7 @@
 mod graph;
 mod insert;
 mod literal;
+mod names;
 mod order;
 mod source;
 mod table;
@@ -29,6 +30,7 @@ use feldera_sql_rel_model::{
 use graph::{
     append_expression, append_project, append_values, insert_row_fields, reserve_environment,
 };
+use names::OutputNames;
 use source::{DeclarationTokens, display_constant};
 
 const USER: SourceId = SourceId(0);
@@ -156,7 +158,6 @@ fn append_constant_view(
     }
 
     let mut fields = Vec::new();
-    let mut names = std::collections::HashSet::new();
     let mut roots = Vec::new();
     let mut pretty = Vec::new();
     let mut diagnostic = Vec::new();
@@ -181,37 +182,12 @@ fn append_constant_view(
             mut display,
         } = constant_operand(program, &scope, tokens, expr)?;
         let field = match alias {
-            Some(ident) => {
-                let quoted = ident.quote_style.is_some();
-                let name = if quoted {
-                    ident.value.clone()
-                } else {
-                    ident.value.to_lowercase()
-                };
-                display
-                    .pretty
-                    .push_str(&format!(" AS `{}`", name.replace('`', "``")));
-                let printed = if quoted {
-                    ident.to_string()
-                } else {
-                    name.clone()
-                };
-                display.diagnostic.push_str(&format!(" AS {printed}"));
-                // Calcite derives catalog case sensitivity from the resolved
-                // field spelling. The statement text retains the SQL quotes.
-                Name {
-                    quoted: name != name.to_lowercase(),
-                    name,
-                }
-            }
+            Some(ident) => projection_alias(ident, &mut display.pretty, &mut display.diagnostic),
             None => Name {
                 name: format!("EXPR${index}"),
                 quoted: true,
             },
         };
-        if !names.insert(field.name.clone()) {
-            return Err(unsupported("duplicate output name in constant projection"));
-        }
         all_literals &= folded;
         roots.push(root);
         fields.push((field, ty));
@@ -222,10 +198,7 @@ fn append_constant_view(
         pretty: format!("SELECT {}", pretty.join(", ")),
         diagnostic: format!("SELECT {}", diagnostic.join(", ")),
     };
-    let row = insert_row_fields(
-        program,
-        fields.iter().map(|(name, ty)| (name.name.as_str(), *ty)),
-    );
+    let row = projected_row(program, &fields);
     let relation = program.table.relations;
     if all_literals {
         append_values(program, row, 1, roots)?;
@@ -239,7 +212,6 @@ fn append_constant_view(
         BoundQuery {
             kind: "SELECT",
             fields,
-            row,
             relation,
             text,
         },
@@ -484,6 +456,22 @@ impl ViewDeclaration {
     }
 }
 
+/// The statement keeps the alias quotes. Calcite derives the result field's
+/// case sensitivity separately, from the resolved spelling.
+fn projection_alias(
+    ident: &sqlparser_064::ast::Ident,
+    pretty: &mut String,
+    diagnostic: &mut String,
+) -> Name {
+    let (mut name, spelling) = table::identifier(ident);
+    pretty.push_str(" AS ");
+    pretty.push_str(spelling.spelling(true));
+    diagnostic.push_str(" AS ");
+    diagnostic.push_str(spelling.spelling(false));
+    name.quoted = name.name != name.name.to_lowercase();
+    name
+}
+
 struct QueryText {
     pretty: String,
     diagnostic: String,
@@ -492,9 +480,23 @@ struct QueryText {
 struct BoundQuery {
     kind: &'static str,
     fields: Vec<(Name, TypeId)>,
-    row: TypeId,
     relation: u32,
     text: QueryText,
+}
+
+/// Project and Values operators require distinct field names. The validated
+/// SELECT row, stored separately in the view root, retains duplicate aliases.
+fn projected_row(program: &mut Program, fields: &[(Name, TypeId)]) -> TypeId {
+    let mut names = OutputNames::default();
+    insert_row_fields(
+        program,
+        fields.iter().map(|(name, ty)| {
+            let field = names
+                .disambiguate(&name.name)
+                .unwrap_or_else(|| name.name.clone());
+            (field, *ty)
+        }),
+    )
 }
 
 fn append_view(
@@ -506,7 +508,6 @@ fn append_view(
     let BoundQuery {
         kind,
         fields,
-        row,
         relation,
         text,
     } = query;
@@ -523,6 +524,11 @@ fn append_view(
     if !columns.is_empty() && columns.len() != fields.len() {
         return Err(unsupported("view column count differs from SELECT output"));
     }
+    let row = insert_row_fields(
+        program,
+        fields.iter().map(|(name, ty)| (name.name.as_str(), *ty)),
+    );
+    let mut names = OutputNames::default();
     let diagnostic = statement.description();
     let schema = append_schema(
         program,
@@ -532,12 +538,11 @@ fn append_view(
             .iter()
             .enumerate()
             .map(|(index, (field, ty))| {
-                column(
-                    columns.get(index).unwrap_or(field).clone(),
-                    index,
-                    *ty,
-                    diagnostic.clone(),
-                )
+                let mut name = columns.get(index).unwrap_or(field).clone();
+                if let Some(unique) = names.disambiguate(&name.name) {
+                    name.name = unique;
+                }
+                column(name, index, *ty, diagnostic.clone())
             })
             .collect(),
     )?;

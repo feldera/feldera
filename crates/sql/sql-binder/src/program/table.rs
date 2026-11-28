@@ -7,6 +7,7 @@ mod filter;
 mod sets;
 mod types;
 
+pub(super) use declarations::identifier;
 use types::declare_type;
 pub(super) use types::{TypeSpelling, null_cast_type};
 
@@ -34,7 +35,8 @@ use feldera_sql_rel_model::{
     types::TypeKind,
 };
 use sqlparser_064::ast::{
-    ColumnOption, GroupByExpr, Ident, TableConstraint, WildcardAdditionalOptions,
+    ColumnOption, GroupByExpr, Ident, SelectItemQualifiedWildcardKind, TableConstraint,
+    WildcardAdditionalOptions,
 };
 use std::collections::HashSet;
 
@@ -398,12 +400,11 @@ fn bind_select(
             .iter()
             .map(|column| (column.name.name.as_str(), column.ty)),
     );
-    let view_row = insert_row_fields(
-        program,
-        projection
-            .iter()
-            .map(|field| (field.name.name.as_str(), field.value.ty())),
-    );
+    let fields: Vec<_> = projection
+        .iter()
+        .map(|field| (field.name.clone(), field.value.ty()))
+        .collect();
+    let view_row = super::projected_row(program, &fields);
     let identity = projection.len() == columns.len()
         && projection.iter().enumerate().all(|(index, field)| {
             matches!(
@@ -458,15 +459,10 @@ fn bind_select(
     if let Some(aggregate) = aggregate {
         aggregate.render_grouping(&mut view_source, columns, &input.qualifier);
     }
-    let fields = projection
-        .into_iter()
-        .map(|field| (field.name, field.value.ty()))
-        .collect();
     Ok(BoundQuery {
         kind: "SELECT",
         text: view_source,
         fields,
-        row: view_row,
         relation: root,
     })
 }
@@ -525,60 +521,66 @@ fn bind_projection(
     qualifier: &str,
     tokens: &DeclarationTokens<'_>,
 ) -> Result<Vec<Projection>, Failure> {
-    if let [
-        SelectItem::Wildcard(WildcardAdditionalOptions {
-            wildcard_token: _,
-            opt_ilike: None,
-            opt_exclude: None,
-            opt_except: None,
-            opt_replace: None,
-            opt_rename: None,
-            opt_alias: None,
-        }),
-    ] = items
-    {
-        return Ok(columns
-            .iter()
-            .enumerate()
-            .map(|(ordinal, column)| column_projection(ordinal, column, qualifier, None))
-            .collect());
-    }
-    let mut output_names = HashSet::new();
-    items
-        .iter()
-        .enumerate()
-        .map(|(index, item)| {
-            let (expression, alias) = projection_item(item)?;
-            let field = match expression {
-                Expr::BinaryOp { .. } | Expr::Function(_) => {
-                    if let Some(failure) = unsupported_niladic(expression) {
-                        return Err(failure);
-                    }
-                    compute::projection(
-                        program, expression, alias, columns, qualifier, tokens, index,
-                    )?
-                }
-                _ => {
-                    let ordinal = column_ordinal(expression, columns, qualifier)?;
-                    column_projection(ordinal, &columns[ordinal], qualifier, alias)
-                }
-            };
-            if !output_names.insert(field.name.name.clone()) {
-                return Err(unsupported(
-                    "repeated output names are outside the projection slice",
-                ));
+    let mut projection = Vec::new();
+    let mut names = super::OutputNames::default();
+    for item in items {
+        let wildcard = match item {
+            SelectItem::Wildcard(options) => Some(options),
+            SelectItem::QualifiedWildcard(
+                SelectItemQualifiedWildcardKind::ObjectName(name),
+                options,
+            ) if local_name(name)?.value.to_lowercase() == qualifier => Some(options),
+            _ => None,
+        };
+        if let Some(options) = wildcard {
+            if options != &WildcardAdditionalOptions::default() {
+                return Err(unsupported("wildcard projection modifiers"));
             }
-            Ok(field)
-        })
-        .collect()
+            for (ordinal, column) in columns.iter().enumerate() {
+                let mut field = column_projection(ordinal, column, qualifier, None);
+                if let Some(alias) = names.disambiguate(&field.name.name) {
+                    field
+                        .pretty
+                        .push_str(&format!(" AS `{}`", alias.replace('`', "``")));
+                    field.diagnostic.push_str(&format!(" AS {alias}"));
+                    field.name.name = alias;
+                }
+                projection.push(field);
+            }
+            continue;
+        }
+
+        let (expression, alias) = projection_item(item)?;
+        let field = match expression {
+            Expr::BinaryOp { .. } | Expr::Function(_) => {
+                if let Some(failure) = unsupported_niladic(expression) {
+                    return Err(failure);
+                }
+                compute::projection(
+                    program,
+                    expression,
+                    alias,
+                    columns,
+                    qualifier,
+                    tokens,
+                    projection.len(),
+                )?
+            }
+            _ => {
+                let ordinal = column_ordinal(expression, columns, qualifier)?;
+                column_projection(ordinal, &columns[ordinal], qualifier, alias)
+            }
+        };
+        names.record(&field.name.name);
+        projection.push(field);
+    }
+    Ok(projection)
 }
 
 fn projection_item(item: &SelectItem) -> Result<(&Expr, Option<&Ident>), Failure> {
     match item {
         SelectItem::UnnamedExpr(expression) => Ok((expression, None)),
-        SelectItem::ExprWithAlias { expr, alias } if alias.quote_style.is_none() => {
-            Ok((expr, Some(alias)))
-        }
+        SelectItem::ExprWithAlias { expr, alias } => Ok((expr, Some(alias))),
         _ => Err(unsupported("expected a plain output name")),
     }
 }
@@ -631,16 +633,18 @@ fn column_projection(
 impl Projection {
     fn apply_alias(&mut self, alias: Option<&Ident>) {
         if let Some(alias) = alias {
-            self.name = name(&alias.value);
-            self.pretty.push_str(&format!(" AS `{}`", self.name.name));
-            self.diagnostic.push_str(&format!(" AS {}", self.name.name));
+            self.name = super::projection_alias(alias, &mut self.pretty, &mut self.diagnostic);
         }
     }
 }
 
 fn render_column(qualifier: &str, column: &str) -> (String, String) {
     (
-        format!("`{qualifier}`.`{column}`"),
+        format!(
+            "`{}`.`{}`",
+            qualifier.replace('`', "``"),
+            column.replace('`', "``")
+        ),
         format!("{qualifier}.{column}"),
     )
 }

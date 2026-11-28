@@ -62,10 +62,10 @@ pub(super) fn lower(
             &output["elementType"]["tupFields"],
         )?)
     };
-    let aliases = root
-        .fields
+    let aliases = schema
+        .columns
         .iter()
-        .map(|field| format!("`{}`", field.name.replace('`', "``")))
+        .map(|field| format!("`{}`", field.name.name.replace('`', "``")))
         .collect::<Vec<_>>()
         .join(", ");
     let (data, tuples_text, sql) = match row {
