@@ -206,6 +206,18 @@ export const isPipelineShutdown = (status: PipelineStatus) => {
     .exhaustive()
 }
 
+/** True while the pipeline is queued for compilation or compiles. */
+export const isPipelineCompiling = (status: PipelineStatus | undefined) =>
+  match(status)
+    .with(
+      { Queued: P.any },
+      { CompilingSql: P.any },
+      { SqlCompiled: P.any },
+      { CompilingRust: P.any },
+      () => true
+    )
+    .otherwise(() => false)
+
 export const deletePipelineDisabledReason = (
   status: PipelineStatus,
   storageStatus: StorageStatus,

@@ -29,8 +29,9 @@
 </script>
 
 <!-- The version comes first so it lines up with the left-aligned column
-  header; the status icon, when there is one, trails it. The tooltip must
-  directly follow the icon, since it anchors to its previous sibling. -->
+  header. The status icon, when there is one, trails it. The tooltip anchors to
+  its previous sibling, the icon wrapper. The wrapper keeps the open popover in
+  place when a click on Update removes the icon. -->
 {#if version.length < 11}
   <span>{version}</span>
 {:else}
@@ -41,9 +42,11 @@
   </div>
 {/if}
 
-{#if status === 'update_available'}
-  <div class="fd fd-info pb-0.5 text-[16px] text-tertiary-700-300"></div>
-{:else if status === 'custom'}
-  <div class="fd fd-info pb-0.5 text-[16px] text-warning-500"></div>
-{/if}
+<span class="flex">
+  {#if status === 'update_available'}
+    <div class="fd fd-info pb-0.5 text-[16px] text-tertiary-700-300"></div>
+  {:else if status === 'custom'}
+    <div class="fd fd-info pb-0.5 text-[16px] text-warning-500"></div>
+  {/if}
+</span>
 <PipelineVersionTooltip {pipelineName} {status} {baseRuntimeVersion} />
