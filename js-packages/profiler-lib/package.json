@@ -15,7 +15,7 @@
     "build:self": "tsc",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "prepare": "bun run clean && bun run build:self",
+    "prepare": "bun run clean && tsc --noCheck",
     "check": "bun run check:self",
     "check:self": "tsc --noEmit",
     "test": "vitest --run"
@@ -24,13 +24,20 @@
   "author": "",
   "license": "MIT",
   "description": "Reusable library for visualizing Feldera DBSP circuit profiles",
+  "dependencies": {
+    "common-lib": "workspace:*"
+  },
   "peerDependencies": {
     "cytoscape": "^3.35.0",
     "cytoscape-dblclick": "^0.3.1",
     "cytoscape-elk": "^2.3.0",
+    "d3-format": "3.1.2",
+    "dayjs": "1.11.19",
     "elkjs": "^0.11.0"
   },
   "devDependencies": {
+    "d3-format": "3.1.2",
+    "dayjs": "1.11.19",
     "typescript": "^5.9.2",
     "vitest": "^4.1.12"
   }

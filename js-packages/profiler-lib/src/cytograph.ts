@@ -2,6 +2,7 @@
 
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeCollection, type NodeDefinition, type NodeSingular } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
+import { formatQty } from 'common-lib/format';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
 import { CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, type DisplayScales, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
@@ -20,6 +21,7 @@ import { notifyObservers, type DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
 import { FrozenLayout } from './frozenLayout.js';
 import { pauseFrames } from './cytoscapeRenderer.js';
+import { EdgeLabelFinder } from './edgeLabels.js';
 import { type ElkLayoutOptions, layoutCache, layoutCacheKey, leafPositions, runPresetLayout } from './layoutCache.js';
 
 // The module registers each extension one time, because cytoscape warns when code registers it again.
@@ -174,17 +176,37 @@ class GraphEdge implements EncodableAsString {
     /** The operators whose output streams this edge stands for. DBSP names a stream by the operator that
      *  writes it, so two edges of `graph` from one operator carry the same stream. */
     private readonly streamSources: Set<NodeId> = new Set();
+    /** The number of rows in all the streams of this edge. It is undefined if the profile has no row
+     *  count for one or more of the streams. The label then shows no row count, because a partial sum
+     *  looks like the full count. It starts at 0, the sum of no streams. */
+    private rowCount: number | undefined = 0;
 
     constructor(readonly source: string, readonly target: string, readonly id: string, readonly backedge: boolean) { }
 
-    addStream(writer: NodeId) {
-        this.streamSources.add(writer);
+    /** Adds the output stream of `operator` to the stream count and the row count of this edge.
+     *  `streamRows` is the number of rows in the stream, if the profile has it. If it is undefined,
+     *  the row count of the edge becomes undefined and stays undefined. If the stream is already
+     *  counted, the method does nothing. `label()` shows the two counts. */
+    countStreamAndRows(operator: NodeId, streamRows: number | undefined) {
+        if (this.streamSources.has(operator))
+            return;
+        this.streamSources.add(operator);
+        this.rowCount = streamRows === undefined || this.rowCount === undefined
+            ? undefined
+            : this.rowCount + streamRows;
     }
 
-    /** The label of an edge that stands for more than one stream, for example "3 streams". */
+    /** The label of this edge, for example "1.20k rows" text above "3 streams".
+     *  - The row count shows only if the profile has the row count of each stream of the edge.
+     *  - The stream count shows only if the edge stands for more than one stream. */
     private label(): string | undefined {
-        const count = this.streamSources.size;
-        return count > 1 ? `${count} streams` : undefined;
+        const lines: Array<string> = [];
+        if (this.rowCount !== undefined)
+            lines.push(`${formatQty(this.rowCount, 'rounded')} rows`);
+        const streamCount = this.streamSources.size;
+        if (streamCount > 1)
+            lines.push(`${streamCount} streams`);
+        return lines.length > 0 ? lines.join("\n") : undefined;
     }
 
     getDefinition(): EdgeDefinition {
@@ -232,7 +254,7 @@ export class Cytograph {
     /** Adds the drawn edge from `source` to `target` that stands for the edge `original` of `graph`.
      *  All edges of `graph` with the same drawn nodes and the same `back` flag share one drawn edge.
      *  ELK then lays out one edge for each pair of nodes, which makes the layout faster. */
-    addDrawnEdge(original: Edge<NodeId>, source: NodeId, target: NodeId) {
+    addDrawnEdge(original: Edge<NodeId>, source: NodeId, target: NodeId, streamRows: number | undefined) {
         // The id depends only on the drawn edge, so that `diff` keeps the edge when other edges change.
         const id = source + "->" + target + (original.back ? ":back" : "");
         let drawn = this.edgesById.get(id);
@@ -241,7 +263,7 @@ export class Cytograph {
             this.edgesById.set(id, drawn);
             this.edges.push(drawn);
         }
-        drawn.addStream(original.from);
+        drawn.countStreamAndRows(original.from, streamRows);
         this.edgeMap.set(original.id, id);
     }
 
@@ -290,6 +312,20 @@ export class Cytograph {
             .map(node => ({ id: node.getId(), label: node.label }));
         return profile.rankNodes(metric, displayed);
     }
+
+    /** The number of rows in the output stream of `operator`, summed over all workers. The sum ignores
+     *  the worker selection, because a change of the selection does not rebuild the edges. Undefined
+     *  when the profile has no output statistics for the operator. */
+    private static outputRows(profile: CircuitProfile, operator: NodeId): number | undefined {
+        const node = profile.getNode(operator);
+        if (node.isNone())
+            return undefined;
+        const values = node.unwrap().getMeasurements(Cytograph.OUTPUT_ROWS_METRIC);
+        const total = node.unwrap().totalOf(Cytograph.OUTPUT_ROWS_METRIC, values);
+        return total.isSome() ? total.unwrap().getNumericValue().unwrapOr(0) : undefined;
+    }
+
+    private static readonly OUTPUT_ROWS_METRIC = "output_batches_stats.record_count";
 
     // Create a Cytograph from a CircuitProfile filtered by the specified selection.
     static fromProfile(profile: CircuitProfile, selection: CircuitSelection): Cytograph {
@@ -371,7 +407,7 @@ export class Cytograph {
                 // Induced edges can be self-edges; do not add these
                 continue;
             }
-            result.addDrawnEdge(edge, sourceNode.id, targetNode.id);
+            result.addDrawnEdge(edge, sourceNode.id, targetNode.id, Cytograph.outputRows(profile, edge.from));
         }
         return result;
     }
@@ -449,6 +485,10 @@ export class CytographRendering {
     private raiseFrame: number | null = null;
     /** `setEvents` adds this listener to the document, and `dispose` removes it. */
     private readonly onDocumentKeyup = (event: KeyboardEvent) => this.keyup(event);
+    /** The node that shows as hovered, or null. This is the node under the mouse pointer,
+      * or the source of the edge label under the pointer (see `hoverTarget`). */
+    private hoveredNode: NodeSingular | null = null;
+    private readonly edgeLabels: EdgeLabelFinder;
     /** Removes the chip button listeners from the graph container. `dispose` calls it. */
     private removeChipButtonListeners: () => void = () => { };
 
@@ -475,6 +515,7 @@ export class CytographRendering {
         this.raisedEdges = this.cy.collection();
         installNodeShadows(this.cy);
         installNodeText(this.cy, () => this.theme);
+        this.edgeLabels = new EdgeLabelFinder(this.cy);
         this.cy.style(buildGraphStyle(this.theme));
         this.viewport = new Viewport(
             this.cy,
@@ -900,8 +941,9 @@ export class CytographRendering {
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
             .on('layoutstop', () => this.layoutComplete())
-            .on('mouseover', 'node', event => this.hoverNode(event))
-            .on('mouseout', 'node', event => this.mouseOut(event))
+            .on('mouseover', 'node', event => this.setHoveredNode(this.hoverTarget(event)))
+            .on('mouseout', 'node', () => this.setHoveredNode(null))
+            .on('mousemove', event => this.setHoveredNode(this.hoverTarget(event)))
             .on('click', 'node', (e) => this.pinNodeInformation(e.target.id()))
             .on('dblclick', 'node', (e) => {
                 let node = e.target as NodeSingular;
@@ -995,10 +1037,42 @@ export class CytographRendering {
         return result;
     }
 
-    /** Called when the pointer hovers a node.
-     */
-    private hoverNode(event: EventObject) {
-        const node: NodeSingular = event.target;
+    /** The node that a pointer event hovers. The first match in this list wins:
+     *  1. the operator or collapsed region under the pointer,
+     *  2. the source of the edge label under the pointer,
+     *  3. the expanded region under the pointer, which can be the root node.
+     *  So a label inside an expanded region hovers the source of its edge, not the region. */
+    private hoverTarget(event: EventObject): NodeSingular | null {
+        const target = event.target;
+        const node: NodeSingular | null = target !== this.cy && target.isNode() ? target : null;
+        if (node?.isParent() === false) {
+            return node;
+        }
+        // An event that `emit` sends has no position.
+        const label = event.position === undefined
+            ? null
+            : this.edgeLabels.edgeAt(event.position.x, event.position.y);
+        return label?.source() ?? node;
+    }
+
+    /** Ends the hover of the last hovered node, and starts the hover of `node`. Does nothing if `node`
+     *  is the hovered node. */
+    private setHoveredNode(node: NodeSingular | null) {
+        if (node?.id() === this.hoveredNode?.id()) {
+            return;
+        }
+        if (this.hoveredNode !== null) {
+            this.mouseOut();
+        }
+        this.hoveredNode = node;
+        if (node !== null) {
+            this.hoverNode(node);
+        }
+    }
+
+    /** Starts the hover of `node`. `setHoveredNode` calls it for the node under the pointer, and for the
+     *  source of the edge label under the pointer. */
+    private hoverNode(node: NodeSingular) {
         if (this.stickyInformation) {
             if (!this.reportIsMarked()) {
                 this.traceSelection(node);
@@ -1180,9 +1254,9 @@ export class CytographRendering {
         this.callbacks.displayNodeAttributes(Option.some(tooltipData), this.stickyInformation);
     }
 
-    /** The other half of a hover (see `hoverNode`): a report the pointer brought with it goes when the
-     *  pointer does. */
-    mouseOut(_event: EventObject) {
+    /** Ends the hover that `hoverNode` started. If the report is not pinned, hides the report. If the
+     *  report is pinned, removes only the trace that the hover added. */
+    private mouseOut() {
         if (!this.stickyInformation) {
             this.hideNodeInformation();
             return;

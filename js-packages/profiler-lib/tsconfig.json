@@ -6,7 +6,8 @@
         // Environment Settings
         "module": "es6",
         "target": "esnext",
-        "moduleResolution": "node",
+        // Reads the "exports" map of a package, which the import of "common-lib/format" needs.
+        "moduleResolution": "bundler",
         "types": [],
         "allowSyntheticDefaultImports": true,
         "esModuleInterop": true,
