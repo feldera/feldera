@@ -14,7 +14,20 @@ METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW t
 
 SET_TABLES = ("CREATE TABLE a(x INT, y BIGINT NOT NULL); CREATE TABLE b(p INT, q BIGINT NOT NULL);"
               " CREATE TABLE c(n INT, m BIGINT NOT NULL); CREATE VIEW v AS ")
+# Exercise both orders of nullability. Division reuses its left operand's
+# type when it already has the inferred nullability.
+NUMERIC_COLUMN_CASES = {
+    f"column_arithmetic_{sql_type.lower().replace(' ', '_')}":
+        f"CREATE TABLE t(a {sql_type} NOT NULL, b {sql_type});"
+        " CREATE VIEW v AS SELECT a+b AS p, a-b AS m, b*a AS x, a/b AS d,"
+        " b/a AS nd, b/b AS bd, a/a AS self_div, a+a AS twice,"
+        " ABS(a) AS magnitude, ABS(b) AS nullable_magnitude FROM t;"
+    for sql_type in ("TINYINT", "SMALLINT", "INT", "BIGINT", "REAL", "DOUBLE",
+                     "TINYINT UNSIGNED", "SMALLINT UNSIGNED", "INT UNSIGNED", "BIGINT UNSIGNED")
+}
+
 CASES = {
+    **NUMERIC_COLUMN_CASES,
     "cast_null_scalars": "CREATE VIEW v AS SELECT CAST(NULL AS INT UNSIGNED) AS u,"
                          " CAST(NULL AS VARCHAR(3)) AS s, CAST(NULL AS CHAR) AS c,"
                          " CAST(NULL AS BINARY(2)) AS b, CAST(NULL AS DECIMAL(12,2)) AS d,"

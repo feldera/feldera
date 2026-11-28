@@ -10,9 +10,10 @@ from benchmark_bound_gen2 import compare, direct
 from compile_bound_gen2 import compile_program
 from run_determinism import file_digest
 from validate_table_lowering import compare_checkpoints
-from validate_bound_programs import CASES as BINDING_CASES
+from validate_bound_programs import CASES as BINDING_CASES, NUMERIC_COLUMN_CASES
 
 CASES = {
+    **NUMERIC_COLUMN_CASES,
     **{name: BINDING_CASES[name] for name in (
         "cast_null_scalars", "cast_null_temporal", "cast_null_aliases", "cast_null_insert",
         "cast_null_precision", "unknown_insert", "cast_null_numeric_widths",

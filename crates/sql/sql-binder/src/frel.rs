@@ -24,6 +24,20 @@ const SCOPE: ScopeId = ScopeId(0);
 pub(super) const CALCITE: &str = "calcite-s1-fixture";
 pub(super) const FELDERA: &str = "feldera-s1-builtins";
 
+pub(super) fn arithmetic_key(symbol: &str, checked: bool) -> Result<&'static str, Failure> {
+    match (symbol, checked) {
+        ("+", true) => Ok("SqlStdOperatorTable.CHECKED_PLUS"),
+        ("-", true) => Ok("SqlStdOperatorTable.CHECKED_MINUS"),
+        ("*", true) => Ok("SqlStdOperatorTable.CHECKED_MULTIPLY"),
+        ("/", true) => Ok("SqlStdOperatorTable.CHECKED_DIVIDE"),
+        ("+", false) => Ok("SqlStdOperatorTable.PLUS"),
+        ("-", false) => Ok("SqlStdOperatorTable.MINUS"),
+        ("*", false) => Ok("SqlStdOperatorTable.MULTIPLY"),
+        ("/", false) => Ok("SqlStdOperatorTable.DIVIDE"),
+        _ => Err(unsupported("binary operator outside the FRel registry")),
+    }
+}
+
 struct Emitter<'a> {
     sql: &'a str,
     output: ExpressionTable,
@@ -217,21 +231,7 @@ impl<'a> Emitter<'a> {
             },
             ExpressionKind::Binary { operator, operands } => {
                 let checked = matches!(bound.ty.kind, Kind::Integer { .. });
-                let key = match (*operator, checked) {
-                    ("+", true) => "SqlStdOperatorTable.CHECKED_PLUS",
-                    ("-", true) => "SqlStdOperatorTable.CHECKED_MINUS",
-                    ("*", true) => "SqlStdOperatorTable.CHECKED_MULTIPLY",
-                    ("/", true) => "SqlStdOperatorTable.CHECKED_DIVIDE",
-                    ("+", false) => "SqlStdOperatorTable.PLUS",
-                    ("-", false) => "SqlStdOperatorTable.MINUS",
-                    ("*", false) => "SqlStdOperatorTable.MULTIPLY",
-                    ("/", false) => "SqlStdOperatorTable.DIVIDE",
-                    _ => {
-                        return Err(unsupported(
-                            "binary operator outside the FRel registry subset",
-                        ));
-                    }
-                };
+                let key = arithmetic_key(operator, checked)?;
                 let arguments = self.arguments(operands)?;
                 self.call(CALCITE, key, ty, arguments)
             }

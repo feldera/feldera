@@ -2,7 +2,7 @@
 
 use crate::{
     closure::RowParameter,
-    source_table::{range, Ids},
+    source_table::{range, Ids, RowLayout},
     Error,
 };
 use feldera_sql_ir::{BinaryOp, TypeKind as CircuitType};
@@ -28,10 +28,11 @@ enum Call {
         right: usize,
         symbol: &'static str,
         opcode: BinaryOp,
+        reuse_left_type: bool,
     },
     Abs {
         field: usize,
-        nullable: bool,
+        function: String,
     },
 }
 
@@ -66,45 +67,60 @@ impl Computed {
         };
         let call = match (registry.as_str(), key.as_str(), args) {
             ("calcite-s1-fixture", op, &[left, right]) => {
-                let (symbol, opcode) = match op {
-                    "SqlStdOperatorTable.CHECKED_PLUS" => ("+", BinaryOp::Add),
-                    "SqlStdOperatorTable.CHECKED_MINUS" => ("-", BinaryOp::Sub),
-                    "SqlStdOperatorTable.CHECKED_MULTIPLY" => ("*", BinaryOp::Mul),
-                    _ => return Err(Error("unsupported binary projection operator".into())),
+                let name = match result.kind {
+                    TypeKind::Integer { .. } => op.strip_prefix("SqlStdOperatorTable.CHECKED_"),
+                    TypeKind::Float {
+                        flavor: FloatFlavor::Real | FloatFlavor::Double,
+                    } => op.strip_prefix("SqlStdOperatorTable."),
+                    _ => None,
+                };
+                let (symbol, opcode) = match name {
+                    Some("PLUS") => ("+", BinaryOp::Add),
+                    Some("MINUS") => ("-", BinaryOp::Sub),
+                    Some("MULTIPLY") => ("*", BinaryOp::Mul),
+                    Some("DIVIDE") => ("/", BinaryOp::Div),
+                    _ => return Err(Error("unsupported arithmetic projection operator".into())),
                 };
                 let (left, left_type) = column(left)?;
                 let (right, right_type) = column(right)?;
-                if !matches!(result.kind, TypeKind::Integer { signed: true, .. })
-                    || left_type.kind != result.kind
+                if left_type.kind != result.kind
                     || right_type.kind != result.kind
                     || result.nullable != (left_type.nullable || right_type.nullable)
                 {
-                    return Err(Error("integer projection requires equal operand widths and the inferred nullability".into()));
+                    return Err(Error(
+                        "arithmetic result differs from the inferred common operand type".into(),
+                    ));
                 }
                 Call::Arithmetic {
                     left,
                     right,
                     symbol,
                     opcode,
+                    reuse_left_type: opcode == BinaryOp::Div
+                        && left_type.nullable == result.nullable,
                 }
             }
             ("feldera-s1-builtins", ABS_KEY, &[arg]) => {
                 let (field, input) = column(arg)?;
-                if !matches!(
-                    input.kind,
-                    TypeKind::Float {
-                        flavor: FloatFlavor::Double
-                    }
-                ) || input.kind != result.kind
-                    || input.nullable != result.nullable
-                {
-                    return Err(Error(
-                        "ABS projection requires a DOUBLE field and matching return type".into(),
-                    ));
+                if input.kind != result.kind || input.nullable != result.nullable {
+                    return Err(Error("ABS result differs from its operand type".into()));
                 }
+                let suffix = match input.kind {
+                    TypeKind::Integer { width, signed } => {
+                        format!("{}{}", if signed { "i" } else { "u" }, width.bits())
+                    }
+                    TypeKind::Float {
+                        flavor: FloatFlavor::Real,
+                    } => "f".into(),
+                    TypeKind::Float {
+                        flavor: FloatFlavor::Double,
+                    } => "d".into(),
+                    _ => return Err(Error("unsupported ABS operand type".into())),
+                };
+                let nullable = if input.nullable { "N" } else { "" };
                 Call::Abs {
                     field,
-                    nullable: input.nullable,
+                    function: format!("abs_{suffix}{nullable}"),
                 }
             }
             _ => return Err(Error("unsupported projection call".into())),
@@ -149,24 +165,38 @@ impl Computed {
         &self,
         ids: &mut Ids,
         parameter: &mut RowParameter,
-        ty: Value,
+        output: &RowLayout<'_>,
+        index: usize,
     ) -> Result<Value, Error> {
-        let mut expr = match self.call {
+        let expr = match self.call {
             Call::Arithmetic {
                 left,
                 right,
                 opcode,
+                reuse_left_type,
                 ..
             } => {
                 let mut expr = ids.node("DBSPBinaryExpression", &self.position);
                 expr["left"] = parameter.read(ids, left)?;
                 expr["right"] = parameter.read(ids, right)?;
                 expr["opcode"] = opcode.wire_name().into();
+                // Division uses the common operand type. When nullability
+                // already matches, Java shares the left operand's type object.
+                expr["type"] = if reuse_left_type {
+                    expr["left"]["type"].clone()
+                } else if opcode == BinaryOp::Div {
+                    output.fresh_scalar_type(ids, index)
+                } else {
+                    output.column_type(ids, index)
+                };
                 expr
             }
-            Call::Abs { field, nullable } => {
+            Call::Abs {
+                field,
+                ref function,
+            } => {
                 let mut segment = ids.generated("DBSPSimplePathSegment");
-                segment["identifier"] = if nullable { "abs_dN" } else { "abs_d" }.into();
+                segment["identifier"] = function.as_str().into();
                 segment["genericArgs"] = json!([]);
                 let mut path = ids.generated("DBSPPath");
                 path["components"] = vec![segment].into();
@@ -176,10 +206,10 @@ impl Computed {
                 let mut expr = ids.node("DBSPApplyExpression", &self.position);
                 expr["function"] = function;
                 expr["arguments"] = vec![parameter.read(ids, field)?].into();
+                expr["type"] = output.column_type(ids, index);
                 expr
             }
         };
-        expr["type"] = ty;
         Ok(expr)
     }
 }

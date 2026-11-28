@@ -326,6 +326,14 @@ impl ColumnLayout {
         ) {
             return ids.singleton(self.class, &self.code, self.nullable);
         }
+        let mut node = self.type_node(ids);
+        if !arguments.is_empty() {
+            node["typeArgs"] = arguments.into();
+        }
+        node
+    }
+
+    pub(super) fn type_node(&self, ids: &mut Ids) -> Value {
         let mut node = if self.source_empty() {
             ids.generated(self.class.wire_name())
         } else {
@@ -334,9 +342,6 @@ impl ColumnLayout {
         node.as_object_mut()
             .unwrap()
             .extend(self.properties.as_object().unwrap().clone());
-        if !arguments.is_empty() {
-            node["typeArgs"] = arguments.into();
-        }
         node["code"] = self.code.clone().into();
         node["mayBeNull"] = self.nullable.into();
         node

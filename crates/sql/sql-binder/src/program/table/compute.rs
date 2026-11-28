@@ -1,12 +1,12 @@
-//! Bind an integer arithmetic or floating-point ABS projection.
+//! Bind arithmetic and ABS projections over numeric table columns.
 
 use super::{
     ProjectInput, ProjectValue, Projection, TableColumn, TableOperand, column_ordinal,
     render_column,
 };
 use crate::{
-    BinaryOperator, Expr, Failure, Spanned,
-    frel::{CALCITE, FELDERA},
+    Expr, Failure, Spanned,
+    frel::{CALCITE, FELDERA, arithmetic_key},
     program::{graph::insert_type, source::DeclarationTokens},
     scalar_args, unsupported,
 };
@@ -14,7 +14,7 @@ use feldera_sql_rel_model::{
     catalog::Name,
     operators::ABS_KEY,
     program::Program,
-    types::{FloatFlavor, IntegerWidth, TypeKind},
+    types::{FloatFlavor, TypeKind},
 };
 use sqlparser_064::ast::Ident;
 
@@ -40,35 +40,29 @@ pub(super) fn projection(
     let types = &mut program.table.type_table;
     let (value, pretty, diagnostic) = match expression {
         Expr::BinaryOp { left, op, right } => {
-            let key = match op {
-                BinaryOperator::Plus => "SqlStdOperatorTable.CHECKED_PLUS",
-                BinaryOperator::Minus => "SqlStdOperatorTable.CHECKED_MINUS",
-                BinaryOperator::Multiply => "SqlStdOperatorTable.CHECKED_MULTIPLY",
-                _ => return Err(unsupported("arithmetic outside the table projection slice")),
-            };
             let left = argument(left)?;
             let right = argument(right)?;
-            let operands = [
-                &types.types[left.ty.0 as usize],
-                &types.types[right.ty.0 as usize],
-            ];
-            if left.field == right.field
-                || !operands.iter().all(|operand| {
-                    matches!(
-                        operand.kind,
-                        TypeKind::Integer {
-                            width: IntegerWidth::I32,
-                            signed: true
-                        }
-                    )
-                })
-            {
+            let left_type = &types.types[left.ty.0 as usize];
+            let right_type = &types.types[right.ty.0 as usize];
+            if left_type.kind != right_type.kind {
                 return Err(unsupported(
-                    "arithmetic requires distinct signed INTEGER columns",
+                    "arithmetic between different column types requires coercion",
                 ));
             }
-            let mut result = operands[0].clone();
-            result.nullable = operands.iter().any(|operand| operand.nullable);
+            let checked = match left_type.kind {
+                TypeKind::Integer { .. } => true,
+                TypeKind::Float {
+                    flavor: FloatFlavor::Real | FloatFlavor::Double,
+                } => false,
+                _ => {
+                    return Err(unsupported(
+                        "arithmetic requires integer, REAL or DOUBLE columns",
+                    ));
+                }
+            };
+            let key = arithmetic_key(&op.to_string(), checked)?;
+            let mut result = left_type.clone();
+            result.nullable |= right_type.nullable;
             let ty = insert_type(types, result);
             let (left_pretty, left_diagnostic) = render(left);
             let (right_pretty, right_diagnostic) = render(right);
@@ -94,13 +88,14 @@ pub(super) fn projection(
             if !name.eq_ignore_ascii_case("ABS")
                 || !matches!(
                     types.types[ty.0 as usize].kind,
-                    TypeKind::Float {
-                        flavor: FloatFlavor::Double
-                    }
+                    TypeKind::Integer { .. }
+                        | TypeKind::Float {
+                            flavor: FloatFlavor::Real | FloatFlavor::Double
+                        }
                 )
             {
                 return Err(unsupported(
-                    "table function projection requires ABS of DOUBLE",
+                    "expected ABS of an integer, REAL or DOUBLE column",
                 ));
             }
             let (pretty, diagnostic) = render(input);

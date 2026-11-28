@@ -126,10 +126,7 @@ impl Field {
         position: &Value,
     ) -> Result<Value, Error> {
         match self {
-            Self::Computed(call) => {
-                let result_type = output.column_type(ids, index);
-                call.lower(ids, parameter, result_type)
-            }
+            Self::Computed(call) => call.lower(ids, parameter, output, index),
             Self::Integer(n) => Ok(n.lower(ids)),
             Self::NullableInteger(n) => {
                 let mut cast = ids.node("DBSPCastExpression", position);

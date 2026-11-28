@@ -18,8 +18,9 @@ Allocation IDs are not persistent IDs.
 
 The local Gen-2 driver takes a SQL file through the Rust parser and binder,
 Java optimization and Rust artifact emission. The Rust lowerer handles table scans,
-column projections, signed integer arithmetic, ABS on DOUBLE columns, selected
-constant rows and signed-integer comparison filters. Other supported queries use Java lowering. The binder accepts
+column projections, integer and floating-point arithmetic, numeric ABS,
+selected constant rows and signed-integer comparison filters. Other supported
+queries use Java lowering. The binder accepts
 selected constant views, multiple table declarations, and views with
 projections, filters, global aggregates, COUNT(DISTINCT) and grouped SUM over a base table.
 It reports unsupported inputs explicitly. Its bootstrap contains compiler-owned
@@ -242,15 +243,19 @@ decimal, floating-point, temporal, UUID and VARIANT types. Each matched Java
 at S2 and through Gen-2 emission.
 
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 189 of 8,571 programs. All 189 matched Java compilation
+Gen-2 options. Rust bound 199 of 8,571 programs. All 199 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 134 of
-the 189 to S2. The original 126 checkpoints were byte-identical to the
-previous Java-verified run. Eight more matched independent Java lowering and
-resumed in the Java optimizer. Five directed programs also matched direct Java
-through Gen-2 emission for integer arithmetic and ABS, including nullable
-inputs, repeated builtins and a projection above a filter. The remaining 8,382 programs still need whole-program
-binding. The parser's 8,571 successes measure syntax acceptance.
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 144
+to S2. Of those, 124 checkpoints matched previously verified bytes and 20
+matched a fresh Java lowering and resumed in the Java optimizer.
+The remaining 8,372 programs still need whole-program binding.
+
+Five directed programs exercised nullable operands, repeated builtins and a
+projection above a filter. Ten more exercised all four arithmetic operations
+and ABS on every signed and unsigned integer width, REAL and DOUBLE. Each
+matched direct Java through Gen-2 emission. The division cases include a
+nullable divisor, a nullable dividend and two reads of the same field.
+The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
 
 The lowerer preserves the coerced integer width in comparison filters. When an

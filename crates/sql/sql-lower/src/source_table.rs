@@ -264,6 +264,11 @@ impl<'a> RowLayout<'a> {
         self.columns[index].0.node(ids)
     }
 
+    /// A nullability conversion creates a fresh scalar type even for REAL and DOUBLE.
+    pub(super) fn fresh_scalar_type(&self, ids: &mut Ids, index: usize) -> Value {
+        self.columns[index].0.type_node(ids)
+    }
+
     pub(super) fn descriptors(&self) -> impl Iterator<Item = &Value> {
         self.columns.iter().map(|(_, descriptor)| descriptor)
     }
