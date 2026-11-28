@@ -3,6 +3,7 @@
 
 mod computed;
 mod field;
+mod interval_count;
 pub(super) use field::Field;
 
 use super::{
@@ -33,6 +34,27 @@ pub(super) fn expressions(
         ));
     }
     Ok(&usage.roots)
+}
+
+/// Types visited while compiling scalar projections, in Rex operand order.
+pub(super) fn expression_types(
+    program: &Program,
+    root: u32,
+) -> Result<Vec<feldera_sql_rel_model::TypeId>, Error> {
+    use feldera_sql_rel_model::expression_objects::ObjectKind;
+    let mut pending: Vec<_> = expressions(program, root)?.iter().rev().copied().collect();
+    let mut visited = std::collections::HashSet::new();
+    let mut types = Vec::new();
+    while let Some(id) = pending.pop() {
+        if visited.insert(id.0) {
+            let expr = &program.expressions.expressions[id.0 as usize];
+            types.push(expr.ty);
+            if let ObjectKind::Call { arguments, .. } = &expr.kind {
+                pending.extend(arguments.iter().rev().copied());
+            }
+        }
+    }
+    Ok(types)
 }
 
 pub(super) fn projected_fields(

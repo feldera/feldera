@@ -21,7 +21,7 @@ pub(crate) enum Field {
     Integer(SignedInteger),
     NullableInteger(SignedInteger),
     Double(DoubleLiteral),
-    Computed(Computed),
+    Computed(Box<Computed>),
 }
 
 /// Rex digests for approximate literals include their SQL type inside calls.
@@ -118,12 +118,9 @@ impl Field {
             ObjectKind::Literal { .. } if !ty.nullable => {
                 Ok(Self::Integer(SignedInteger::resolve(program, id)?))
             }
-            ObjectKind::Call {
-                operator,
-                arguments,
-            } if let ObjectPosition::Present { position, .. } = &expr.position => {
-                let resolved = &program.expressions.operators[operator.0 as usize];
-                Computed::resolve(program, resolved.object, arguments, ty, position)
+            ObjectKind::Call { .. } if matches!(expr.position, ObjectPosition::Present { .. }) => {
+                Computed::resolve(program, id)
+                    .map(Box::new)
                     .map(Self::Computed)
             }
             ObjectKind::Call {
@@ -196,7 +193,7 @@ impl Field {
         position: &Value,
     ) -> Result<Value, Error> {
         match self {
-            Self::Computed(call) => call.lower(ids, parameter, output, index),
+            Self::Computed(call) => call.lower(ids, parameter),
             Self::Integer(n) => Ok(n.lower(ids)),
             Self::Double(n) => Ok(n.lower(ids)),
             Self::NullableInteger(n) => {

@@ -1,6 +1,7 @@
 //! Lower empty and single-row VALUES relations to weighted collections.
 
 mod null;
+pub(super) mod temporal;
 mod type_name;
 
 use super::{
@@ -16,7 +17,7 @@ use feldera_sql_rel_model::{
     program::Program,
     relation_properties::Properties,
     statements::StatementSource,
-    types::{FloatFlavor, Precision, SqlType, TimeZone, TypeKind},
+    types::{FloatFlavor, Precision, SqlType, TypeKind},
 };
 use serde_json::{json, Value};
 
@@ -192,50 +193,9 @@ fn lower_literal(
             let sql = format!("UUID '{text}'");
             (literal, text, sql)
         }
-        (TypeKind::Date {}, LiteralValue::Date { epoch_days }) => {
-            let text = feldera_sql_rel_model::literals::date_to_text(*epoch_days)
-                .ok_or_else(|| Error("DATE literal is outside the SQL year range".into()))?;
-            let mut literal = ids.node("DBSPDateLiteral", &unknown);
-            literal["value"] = (*epoch_days).into();
-            let sql = format!("DATE '{text}'");
-            (literal, text, sql)
-        }
-        (
-            TypeKind::Time {
-                precision: Precision::Specified(p),
-                zone: TimeZone::None,
-            },
-            LiteralValue::Time {
-                nanoseconds_since_midnight,
-            },
-        ) => {
-            let (time, digest) = clock_text(*nanoseconds_since_midnight, *p)?;
-            let mut literal = ids.node("DBSPTimeLiteral", &unknown);
-            literal["value"] = digest.clone().into();
-            (literal, digest, format!("TIME '{time}'"))
-        }
-        (
-            TypeKind::Timestamp {
-                precision: Precision::Specified(p),
-                zone: TimeZone::None,
-            },
-            LiteralValue::Timestamp {
-                epoch_days,
-                nanoseconds_since_midnight,
-            },
-        ) if *p <= 6 => {
-            let date = feldera_sql_rel_model::literals::date_to_text(*epoch_days)
-                .ok_or_else(|| Error("timestamp outside the SQL date range".into()))?;
-            let (time, digest) = clock_text(*nanoseconds_since_midnight, *p)?;
-            let micros = i64::from(*epoch_days) * 86_400_000_000
-                + (nanoseconds_since_midnight / 1000) as i64;
-            let mut literal = ids.node("DBSPTimestampLiteral", &unknown);
-            literal["value"] = micros.to_string().into();
-            (
-                literal,
-                format!("{date} {digest}"),
-                format!("TIMESTAMP '{date} {time}'"),
-            )
+        (TypeKind::Date {} | TypeKind::Time { .. } | TypeKind::Timestamp { .. }, _) => {
+            let literal = temporal::TemporalLiteral::resolve(&ty.kind, value)?;
+            (literal.expression(ids), literal.digest, literal.sql)
         }
         (TypeKind::Decimal { .. }, LiteralValue::Decimal { value }) => {
             let (sql, digest) = value

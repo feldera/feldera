@@ -1,18 +1,14 @@
 //! Bind literal arguments of unary trigonometric functions.
 
-use super::{
-    ConstantOperand, graph,
-    literal::Cell,
-    source::{DeclarationTokens, SqlDisplay},
-    table::null_cast_type,
-};
-use crate::{Expr, Failure, Spanned, scalar_args, unsupported};
+use super::{ConstantOperand, graph, literal::Cell, source::SqlDisplay, table::null_cast_type};
+use crate::{Expr, Failure, unsupported};
 use feldera_fold_probe::{SemanticsProfile, trigonometric_kernel};
 use feldera_sql_rel_model::{
     expression_objects::ObjectPosition,
     literals::LiteralValue,
     operators::OperatorObject,
     program::Program,
+    relation_metadata::Coordinates,
     source::Origin,
     types::{FloatFlavor, SqlType, TypeKind},
 };
@@ -20,23 +16,14 @@ use sqlparser_064::ast::CastKind;
 
 pub(super) fn trigonometric_call(
     program: &mut Program,
-    tokens: &DeclarationTokens<'_>,
-    mut expr: &Expr,
+    name: &str,
+    arguments: &[&Expr],
+    position: impl FnOnce() -> Result<Coordinates, Failure>,
 ) -> Result<Option<ConstantOperand>, Failure> {
-    let mut enclosing = 0;
-    while let Expr::Nested(inner) = expr {
-        enclosing += 1;
-        expr = inner;
-    }
-    let Expr::Function(function) = expr else {
+    let Some(kernel) = trigonometric_kernel(name, SemanticsProfile::LegacyJanino) else {
         return Ok(None);
     };
-    let (name, arguments) = scalar_args(function)?;
-    let name = name.to_ascii_uppercase();
-    let Some(kernel) = trigonometric_kernel(&name, SemanticsProfile::LegacyJanino) else {
-        return Ok(None);
-    };
-    let &[mut argument] = arguments.as_slice() else {
+    let &[mut argument] = arguments else {
         return Err(unsupported("expected one trigonometric argument"));
     };
     while let Expr::Nested(inner) = argument {
@@ -107,7 +94,7 @@ pub(super) fn trigonometric_call(
                 vec![literal],
                 ty,
                 ObjectPosition::Present {
-                    position: tokens.call_position(function.name.span(), enclosing)?,
+                    position: position()?,
                     internal: Some(false),
                 },
             );

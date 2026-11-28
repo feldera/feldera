@@ -26,7 +26,7 @@ enum Children {
     },
 }
 
-pub(super) struct ColumnLayout {
+pub(crate) struct ColumnLayout {
     class: CircuitType,
     code: String,
     pub(super) short: String,
@@ -114,7 +114,7 @@ impl ColumnLayout {
         })
     }
 
-    fn scalar(ty: &SqlType) -> Result<Self, Error> {
+    pub(crate) fn scalar(ty: &SqlType) -> Result<Self, Error> {
         let (class, code, mut short, properties) = match ty.kind {
             TypeKind::Integer { width, signed } => {
                 let bits = width.bits();
@@ -262,7 +262,7 @@ impl ColumnLayout {
         }
     }
 
-    pub(super) fn node(&self, ids: &mut Ids) -> Value {
+    pub(crate) fn node(&self, ids: &mut Ids) -> Value {
         self.emit(ids, Repr::Tuple)
     }
 
@@ -333,7 +333,7 @@ impl ColumnLayout {
         node
     }
 
-    pub(super) fn type_node(&self, ids: &mut Ids) -> Value {
+    pub(crate) fn type_node(&self, ids: &mut Ids) -> Value {
         let mut node = if self.source_empty() {
             ids.generated(self.class.wire_name())
         } else {

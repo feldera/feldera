@@ -8,6 +8,7 @@ mod names;
 mod order;
 mod source;
 mod table;
+mod timestamp_diff;
 
 pub use table::bind_table_program;
 
@@ -255,7 +256,7 @@ fn constant_operand(
         });
     }
 
-    if let Some(operand) = math::trigonometric_call(program, tokens, expr)? {
+    if let Some(operand) = constant_call(program, tokens, expr)? {
         return Ok(operand);
     }
     let (bound, range, warning) = super::bind_projection_value(scope, expr, expr.span(), true)?;
@@ -273,6 +274,29 @@ fn constant_operand(
         folded,
         display,
     })
+}
+
+fn constant_call(
+    program: &mut Program,
+    tokens: &DeclarationTokens<'_>,
+    mut expr: &super::Expr,
+) -> Result<Option<ConstantOperand>, Failure> {
+    use super::{Expr, Spanned};
+    let mut enclosing = 0;
+    while let Expr::Nested(inner) = expr {
+        enclosing += 1;
+        expr = inner;
+    }
+    let Expr::Function(function) = expr else {
+        return Ok(None);
+    };
+    let (name, arguments) = super::scalar_args(function)?;
+    let name = name.to_ascii_uppercase();
+    let position = || tokens.call_position(function.name.span(), enclosing);
+    if name == "TIMESTAMPDIFF" {
+        return timestamp_diff::bind(program, tokens, &arguments, position()?).map(Some);
+    }
+    math::trigonometric_call(program, &name, &arguments, position)
 }
 
 fn check_prelude(program: &Program) -> Result<(), Failure> {

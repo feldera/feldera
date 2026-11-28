@@ -11,10 +11,12 @@ from compile_bound_gen2 import compile_program
 from run_determinism import file_digest
 from validate_table_lowering import compare_checkpoints
 from validate_bound_programs import (
-    CASES as BINDING_CASES, INTEGER_COMPARISONS, NUMERIC_COLUMN_CASES, TRIGONOMETRIC_CASES,
+    CASES as BINDING_CASES, INTEGER_COMPARISONS, NUMERIC_COLUMN_CASES, TIMESTAMP_DIFF_CASES, TRIGONOMETRIC_CASES,
 )
 
 CASES = {
+    **TIMESTAMP_DIFF_CASES,
+    "runtime_integer_divide": BINDING_CASES["runtime_integer_divide"],
     **NUMERIC_COLUMN_CASES,
     **INTEGER_COMPARISONS,
     **TRIGONOMETRIC_CASES,

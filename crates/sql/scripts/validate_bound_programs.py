@@ -55,7 +55,20 @@ TRIGONOMETRIC_CASES = {
                             " COS(CAST(-123 AS DOUBLE)), SIN(CAST(0.0001 AS DOUBLE));",
 }
 
+TIMESTAMP_DIFF_CASES = {
+    "timestampdiff_date": "CREATE VIEW v AS SELECT TIMESTAMPDIFF(MONTH, DATE '2001-02-02', DATE '2001-03-01') AS d;",
+    "timestampdiff_scale": "CREATE VIEW v AS SELECT ((TIMESTAMPDIFF(SQL_TSI_WEEK, TIMESTAMP '2023-02-03',"
+                           " TIMESTAMP '2022-02-03 01:02:03.000123'))) AS weeks;",
+    "timestampdiff_mixed": "CREATE VIEW v AS SELECT TIMESTAMPDIFF(HOUR, TIME '12:00:00.123', DATE '2001-01-01');",
+    "timestampdiff_nanos": "CREATE VIEW v AS SELECT TIMESTAMPDIFF(SQL_TSI_FRAC_SECOND,"
+                           " TIME '00:00:00', TIME '00:00:01') AS ns;",
+    "timestampdiff_units": "CREATE VIEW v AS SELECT TIMESTAMPDIFF(QUARTER, DATE '2001-01-01', DATE '2001-12-31'),"
+                           " TIMESTAMPDIFF(YEAR, DATE '2001-01-01', DATE '2001-12-31');",
+}
+
 CASES = {
+    **TIMESTAMP_DIFF_CASES,
+    "runtime_integer_divide": "CREATE VIEW v AS SELECT 1 / 0, 2 / (1 / 0), (3 / 0) / 2;",
     **NUMERIC_COLUMN_CASES,
     **INTEGER_COMPARISONS,
     **TRIGONOMETRIC_CASES,

@@ -6,7 +6,8 @@ mod column_layout;
 mod type_declaration;
 
 use super::Error;
-use column_layout::{field, field_hash, structure, ColumnLayout, Repr};
+pub(super) use column_layout::ColumnLayout;
+use column_layout::{field, field_hash, structure, Repr};
 use feldera_sql_ir::{build::CollectionType, TypeKind as CircuitType};
 use feldera_sql_rel_model::{
     catalog::{CatalogSchema, Name},
@@ -262,11 +263,6 @@ impl<'a> RowLayout<'a> {
 
     pub(super) fn column_type(&self, ids: &mut Ids, index: usize) -> Value {
         self.columns[index].0.node(ids)
-    }
-
-    /// A nullability conversion creates a fresh scalar type even for REAL and DOUBLE.
-    pub(super) fn fresh_scalar_type(&self, ids: &mut Ids, index: usize) -> Value {
-        self.columns[index].0.type_node(ids)
     }
 
     pub(super) fn descriptors(&self) -> impl Iterator<Item = &Value> {

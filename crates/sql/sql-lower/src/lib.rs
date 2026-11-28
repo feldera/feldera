@@ -250,6 +250,21 @@ pub fn lower_program(
             ..
         } = statement
         {
+            if matches!(
+                program.properties.relations[root.relation as usize].fields,
+                feldera_sql_rel_model::relation_properties::Properties::Project { .. }
+            ) {
+                source_table::precision_warnings(
+                    projection::expression_types(program, root.relation)?,
+                    &program.table.type_table,
+                    &source_table::range(0, 0, 0, 0),
+                    &context,
+                    &mut precision_warnings,
+                    checkpoint["diagnostics"]["messages"]
+                        .as_array_mut()
+                        .expect("system diagnostics"),
+                );
+            }
             view::lower(
                 &mut checkpoint,
                 program,

@@ -19,7 +19,7 @@ Allocation IDs are not persistent IDs.
 The local Gen-2 driver takes a SQL file through the Rust parser and binder,
 Java circuit optimization with optional Rust passes via JNI, and Rust artifact emission. The Rust lowerer handles table scans,
 column projections, integer and floating-point arithmetic, numeric ABS,
-selected constant rows and signed-integer comparison filters. Other supported
+selected constant rows, literal TIMESTAMPDIFF expressions, and signed-integer comparison filters. Other supported
 queries use Java lowering. The binder accepts
 selected constant views, multiple table declarations, and views with
 projections, filters, global aggregates, COUNT(DISTINCT) and grouped SUM over a base table.
@@ -261,12 +261,20 @@ decimal, floating-point, temporal, UUID and VARIANT types. Each matched Java
 at S2 and through Gen-2 emission.
 
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 556 of 8,571 programs. All 556 matched Java compilation
-at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 501
-to S2. Of those, 393 reproduced previously verified checkpoint bytes and 108
-matched independent Java lowering and resumed through the Java optimizer.
-The remaining 8,015 programs still need whole-program binding.
+Gen-2 options. Rust bound 675 of 8,571 programs. The original 556 produced
+identical bound programs. All 119 new programs matched direct Java in the
+Linux devcontainer at every captured optimizer observation, persistent-ID
+inputs, schema, diagnostics and final Gen-2 bytes. Rust lowered 626 programs
+to S2. Of those, 501 reproduced the previously verified checkpoint bytes and
+125 matched independent Java lowering and resumed through the Java optimizer.
+The remaining 7,896 programs still need whole-program binding. All 49 bound
+programs that still require Java lowering use aggregates.
+
+TIMESTAMPDIFF retains the interval subtraction, result width, unit conversion
+and precision diagnostics for non-null local date and time literals. The
+directed tests cover fractional seconds, ODBC unit names, mixed datetime
+types and multiple calls. A division by zero in a constant projection also
+retains its nested arithmetic, source range and runtime check.
 
 Signed integer filters widen the narrower operand for comparison. Validated SQL
 retains implicit casts even when the bound literal folds. Twelve directed
