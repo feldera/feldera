@@ -73,6 +73,14 @@ CASES = {
                       "CREATE VIEW b AS SELECT x FROM t WHERE x <> 4;",
     "bool_projection": "CREATE TABLE flags(id INT, a BOOLEAN, b BOOLEAN NOT NULL);\n"
                        "CREATE VIEW state AS SELECT b, a FROM flags;",
+    "boolean_field_filter": "CREATE TABLE flags(id INT, b BOOLEAN NOT NULL);\n"
+                            "CREATE VIEW v AS SELECT id FROM flags WHERE b;",
+    "nullable_boolean_field_filter": "CREATE TABLE flags(id INT, b BOOLEAN);\n"
+                                     "CREATE VIEW v AS SELECT * FROM flags WHERE b;",
+    "nullable_truth_test": "CREATE TABLE flags(a BOOLEAN, b BOOLEAN);\n"
+                           "CREATE VIEW v AS SELECT b FROM flags WHERE a IS TRUE;",
+    "required_truth_test": "CREATE TABLE flags(a BOOLEAN NOT NULL, b BOOLEAN);\n"
+                           "CREATE VIEW v AS SELECT b FROM flags WHERE a IS TRUE;",
     "float_projection": "CREATE TABLE samples(a DOUBLE, b DOUBLE, c DECIMAL(10,2));\n"
                         "CREATE VIEW result AS SELECT c, b FROM samples;",
     "reverse_reads": "CREATE TABLE a(x INT);\nCREATE TABLE b(y BIGINT);\n"

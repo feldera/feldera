@@ -60,6 +60,16 @@ impl RowParameter {
         Ok(field)
     }
 
+    /// A closure returning a field writes the type definition in resultType,
+    /// which the checkpoint reader visits before the parameter tuple.
+    pub(super) fn take_result_type(&mut self, index: usize) -> Result<Value, Error> {
+        let field = self.ty["type"]["tupFields"]
+            .get_mut(index)
+            .ok_or_else(|| Error("result field outside input row".into()))?;
+        let field_ref = reference(field)?;
+        Ok(std::mem::replace(field, field_ref))
+    }
+
     pub(super) fn close(
         self,
         ids: &mut Ids,

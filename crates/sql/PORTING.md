@@ -221,11 +221,16 @@ requires Java lowering. Single-row INSERT projections preserve the internal
 VARCHAR call, its source span, and the generated-name counter. Multirow
 INSERTs containing that call still require a union.
 
+Boolean filters retain a direct field read for required columns and wrap
+nullable fields so NULL fails the filter. Four programs exercised these cases
+and explicit IS TRUE on both kinds of column. All four matched direct Java
+through Gen-2 emission and matched independent Java lowering at S2.
+
 The frozen audit used the original submission calls and default nonincremental
 Gen-2 options. Rust bound 176 of 8,571 programs. All 176 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 112 of
-the 176 to S2. All 112 matched independent Java lowering and the Java optimizer
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 115 of
+the 176 to S2. All 115 matched independent Java lowering and the Java optimizer
 resumed every checkpoint. The remaining 8,395 programs still need whole-program
 binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)

@@ -73,14 +73,19 @@ pub(super) fn bind(
         }
         Expr::IsTrue(operand) => {
             let (input, pretty, diagnostic) = boolean_column(operand)?;
-            (
+            let value = if types.types[input.ty.0 as usize].nullable {
                 ProjectValue::Call {
                     registry: CALCITE,
                     key: "SqlStdOperatorTable.IS_TRUE",
                     arguments: vec![TableOperand::Column(input)],
                     ty: insert_type(types, boolean(false)),
                     position: Some(tokens.end_at_is_true(operand.span())?),
-                },
+                }
+            } else {
+                ProjectValue::Column(input)
+            };
+            (
+                value,
                 format!("{pretty} IS TRUE"),
                 format!("({diagnostic} IS TRUE)"),
             )

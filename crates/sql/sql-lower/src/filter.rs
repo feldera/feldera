@@ -1,4 +1,6 @@
-//! Compile a bound, signed-integer comparison into a DBSP filter closure.
+//! Lower a bound table predicate into its relational provenance and DBSP closure.
+
+mod boolean;
 
 use super::{
     closure::RowParameter,
@@ -7,6 +9,7 @@ use super::{
     view::reference,
     Error,
 };
+use boolean::BooleanField;
 use feldera_sql_rel_model::{
     catalog::CatalogSchema,
     expression_objects::{ObjectKind, ObjectPosition},
@@ -54,12 +57,19 @@ impl Operand {
 }
 
 pub(super) struct Predicate {
-    left: Operand,
-    right: Operand,
-    symbol: &'static str,
-    opcode: &'static str,
-    nullable: bool,
+    condition: Condition,
     position: Value,
+}
+
+enum Condition {
+    Field(BooleanField),
+    Comparison {
+        left: Operand,
+        right: Operand,
+        symbol: &'static str,
+        opcode: &'static str,
+        nullable: bool,
+    },
 }
 
 impl Predicate {
@@ -85,14 +95,43 @@ impl Predicate {
         let [root] = super::projection::expressions(program, id)? else {
             return Err(Error("filter requires one predicate".into()));
         };
+        Ok((*input, Some(Self::from_expression(program, *root)?)))
+    }
+
+    fn from_expression(program: &Program, root: ExprId) -> Result<Self, Error> {
+        let type_of = |id: ExprId| {
+            &program.table.type_table.types
+                [program.expressions.expressions[id.0 as usize].ty.0 as usize]
+        };
+        if !matches!(type_of(root).kind, TypeKind::Boolean {}) {
+            return Err(Error("filter requires a BOOLEAN predicate".into()));
+        }
         let expr = &program.expressions.expressions[root.0 as usize];
+        let position = match &expr.position {
+            ObjectPosition::Present { position, .. } => range(
+                position.line,
+                position.column,
+                position.end_line,
+                position.end_column,
+            ),
+            ObjectPosition::Absent {} => range(0, 0, 0, 0),
+        };
+        if matches!(expr.kind, ObjectKind::InputRef { .. }) {
+            return Ok(Self {
+                position,
+                condition: Condition::Field(BooleanField::resolve(program, root, false)?),
+            });
+        }
         let ObjectKind::Call {
             operator,
             arguments,
         } = &expr.kind
         else {
-            return Err(Error("expected a comparison predicate".into()));
+            return Err(Error("expected a Boolean field or a predicate call".into()));
         };
+        if matches!(expr.position, ObjectPosition::Absent {}) {
+            return Err(Error("missing filter call source position".into()));
+        }
         let resolved = &program.expressions.operators[operator.0 as usize];
         let OperatorObject::Builtin {
             registry,
@@ -100,10 +139,19 @@ impl Predicate {
             key,
         } = &program.expressions.operator_objects[resolved.object.0 as usize]
         else {
-            return Err(Error("expected a built-in comparison".into()));
+            return Err(Error("expected a built-in filter predicate".into()));
         };
         if registry != "calcite-s1-fixture" || registry_version != "1" {
-            return Err(Error("unsupported comparison registry".into()));
+            return Err(Error("unsupported filter operator registry".into()));
+        }
+        if key == "SqlStdOperatorTable.IS_TRUE" {
+            let [argument] = arguments.as_slice() else {
+                return Err(Error("IS TRUE requires one operand".into()));
+            };
+            return Ok(Self {
+                position,
+                condition: Condition::Field(BooleanField::resolve(program, *argument, true)?),
+            });
         }
         let (symbol, opcode) = match key.as_str() {
             "SqlStdOperatorTable.EQUALS" => ("=", "EQ"),
@@ -117,10 +165,6 @@ impl Predicate {
         let [left, right] = arguments.as_slice() else {
             return Err(Error("comparison requires two operands".into()));
         };
-        let type_of = |id: ExprId| {
-            &program.table.type_table.types
-                [program.expressions.expressions[id.0 as usize].ty.0 as usize]
-        };
         if !matches!(type_of(*left).kind, TypeKind::Integer { signed: true, .. })
             || type_of(*left).kind != type_of(*right).kind
         {
@@ -128,25 +172,16 @@ impl Predicate {
                 "filter requires signed integers of equal width".into(),
             ));
         }
-        let ObjectPosition::Present { position, .. } = &expr.position else {
-            return Err(Error("missing comparison source position".into()));
-        };
-        Ok((
-            *input,
-            Some(Self {
+        Ok(Self {
+            position,
+            condition: Condition::Comparison {
                 left: Operand::resolve(program, *left)?,
                 right: Operand::resolve(program, *right)?,
                 symbol,
                 opcode,
-                nullable: type_of(*root).nullable,
-                position: range(
-                    position.line,
-                    position.column,
-                    position.end_line,
-                    position.end_column,
-                ),
-            }),
-        ))
+                nullable: type_of(root).nullable,
+            },
+        })
     }
 
     pub(super) fn relation(
@@ -156,15 +191,28 @@ impl Predicate {
         id: usize,
         plan: u64,
     ) -> Value {
-        let (left, left_sql) = self.left.render(input);
-        let (right, right_sql) = self.right.render(input);
-        let condition = format!("{}({left}, {right})", self.symbol);
+        let (condition, predicate_sql) = match &self.condition {
+            Condition::Comparison {
+                left,
+                right,
+                symbol,
+                ..
+            } => {
+                let (left, left_sql) = left.render(input);
+                let (right, right_sql) = right.render(input);
+                (
+                    format!("{symbol}({left}, {right})"),
+                    format!("{left_sql} {symbol} {right_sql}"),
+                )
+            }
+            Condition::Field(field) => field.render(input),
+        };
         let child = scan["text"].as_str().expect("scan text");
         let sql = scan["sql"].as_str().expect("scan SQL");
         json!({"id":id,"relId":id,"planId":plan,"tableScan":false,
             "digest":format!("LogicalFilter.(input=LogicalTableScan#{},condition={condition})",scan["relId"]),
             "text":format!("LogicalFilter(condition=[{condition}])\n  {child}"),
-            "sql":format!("{sql}\nWHERE {left_sql} {} {right_sql}",self.symbol),"statefulSqlName":null,"origin":scan["origin"]})
+            "sql":format!("{sql}\nWHERE {predicate_sql}"),"statefulSqlName":null,"origin":scan["origin"]})
     }
 
     pub(super) fn closure(
@@ -174,25 +222,37 @@ impl Predicate {
         ordinal: u64,
     ) -> Result<Value, Error> {
         let mut parameter = RowParameter::new(ids, layout, ordinal)?;
-        let ty = ids.boolean(self.nullable);
-        let mut body = ids.node("DBSPBinaryExpression", &self.position);
-        body["left"] = self.left.lower(ids, &mut parameter)?;
-        body["right"] = self.right.lower(ids, &mut parameter)?;
-        body["opcode"] = self.opcode.into();
-        let result = if self.nullable {
-            body["type"] = ty;
-            let mut boolean = ids.generated("DBSPTypeBool");
-            boolean["code"] = "BOOL".into();
-            boolean["mayBeNull"] = false.into();
-            let mut wrap = ids.node("DBSPUnaryExpression", &self.position);
-            wrap["source"] = body;
-            wrap["type"] = reference(&boolean)?;
-            wrap["opcode"] = "WRAP_BOOL".into();
-            body = wrap;
-            boolean
-        } else {
-            body["type"] = reference(&ty)?;
-            ty
+        let (result, body) = match &self.condition {
+            Condition::Field(field) => field.lower(ids, &mut parameter, &self.position)?,
+            Condition::Comparison {
+                left,
+                right,
+                opcode,
+                nullable,
+                ..
+            } => {
+                let ty = ids.boolean(*nullable);
+                let mut body = ids.node("DBSPBinaryExpression", &self.position);
+                body["left"] = left.lower(ids, &mut parameter)?;
+                body["right"] = right.lower(ids, &mut parameter)?;
+                body["opcode"] = (*opcode).into();
+                let result = if *nullable {
+                    body["type"] = ty;
+                    let mut boolean = ids.generated("DBSPTypeBool");
+                    boolean["code"] = "BOOL".into();
+                    boolean["mayBeNull"] = false.into();
+                    let mut wrap = ids.node("DBSPUnaryExpression", &self.position);
+                    wrap["source"] = body;
+                    wrap["type"] = reference(&boolean)?;
+                    wrap["opcode"] = "WRAP_BOOL".into();
+                    body = wrap;
+                    boolean
+                } else {
+                    body["type"] = reference(&ty)?;
+                    ty
+                };
+                (result, body)
+            }
         };
         parameter.close(ids, result, body, &self.position)
     }
