@@ -155,7 +155,7 @@ impl Dialect for FelderaDialect {
         true
     }
 
-    fn preserves_unknown_string_escapes(&self) -> bool {
+    fn uses_calcite_string_escapes(&self) -> bool {
         true
     }
 

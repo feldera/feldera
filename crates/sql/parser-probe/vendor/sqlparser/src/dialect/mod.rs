@@ -1968,8 +1968,8 @@ pub trait Dialect: Debug + Any {
         false
     }
 
-    /// Preserve the backslash in unknown E-string escapes, as Calcite does.
-    fn preserves_unknown_string_escapes(&self) -> bool {
+    /// Use Calcite's lexical and numeric escape rules for E-strings.
+    fn uses_calcite_string_escapes(&self) -> bool {
         false
     }
 

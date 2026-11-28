@@ -41,6 +41,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
+mod calcite_escape;
+
 use crate::ast::{DollarQuotedString, QuoteDelimitedString};
 use crate::dialect::Dialect;
 use crate::dialect::{
@@ -807,6 +809,7 @@ impl fmt::Display for TokenizerError {
 
 impl core::error::Error for TokenizerError {}
 
+#[derive(Clone)]
 struct State<'a> {
     byte_offset: usize,
     peekable: Peekable<Chars<'a>>,
@@ -1433,6 +1436,13 @@ impl<'a> Tokenizer<'a> {
                     let starting_loc = chars.location();
                     chars.next(); // consume, to check the next char
                     match chars.peek() {
+                        Some('\'') if self.dialect.uses_calcite_string_escapes() => {
+                            match calcite_escape::literal(chars) {
+                                Ok(Some(value)) => Ok(Some(Token::EscapedStringLiteral(value))),
+                                Ok(None) => Ok(Some(Token::make_word_owned(x.to_string(), None))),
+                                Err(message) => self.tokenizer_error(starting_loc, message),
+                            }
+                        }
                         Some('\'') => {
                             let s =
                                 self.tokenize_escaped_single_quoted_string(starting_loc, chars)?;
@@ -2418,9 +2428,7 @@ impl<'a> Tokenizer<'a> {
         starting_loc: Location,
         chars: &mut State,
     ) -> Result<String, TokenizerError> {
-        let mut decoder = Unescape::new(chars);
-        decoder.preserve_unknown = self.dialect.preserves_unknown_string_escapes();
-        if let Some(s) = decoder.unescape() {
+        if let Some(s) = Unescape::new(chars).unescape() {
             return Ok(s);
         }
 
@@ -2793,15 +2801,11 @@ fn unescape_single_quoted_string(chars: &mut State<'_>) -> Option<String> {
 
 struct Unescape<'a: 'b, 'b> {
     chars: &'b mut State<'a>,
-    preserve_unknown: bool,
 }
 
 impl<'a: 'b, 'b> Unescape<'a, 'b> {
     fn new(chars: &'b mut State<'a>) -> Self {
-        Self {
-            chars,
-            preserve_unknown: false,
-        }
+        Self { chars }
     }
     fn unescape(mut self) -> Option<String> {
         let mut unescaped = String::new();
@@ -2834,12 +2838,7 @@ impl<'a: 'b, 'b> Unescape<'a, 'b> {
                 'U' => self.unescape_unicode_32()?,
                 'x' => self.unescape_hex()?,
                 c if c.is_digit(8) => self.unescape_octal(c)?,
-                c => {
-                    if self.preserve_unknown && c != '\\' && c != '\'' {
-                        unescaped.push('\\');
-                    }
-                    c
-                }
+                c => c,
             };
 
             unescaped.push(Self::check_null(c)?);

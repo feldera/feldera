@@ -121,7 +121,8 @@ original span. Escaped `E'...'` literals use the dialect capability during both
 tokenization and parsing; the old parser branch checked only concrete dialect
 identities. These changes are confined to the vendored candidate.
 
-The escape decoder also has an opt-in unknown-escape preservation capability.
-Calcite keeps the backslash in E'\\q', unlike PostgreSQL. Stock dialects retain
-their original decoding behavior; the Feldera dialect and its hint dialect
-enable this capability.
+The Feldera SQL and hint dialects opt into Calcite's E-string grammar. The
+lexer takes the longest complete escaped-string token, then decodes doubled
+quotes and C escapes. Octal escapes begin with 0 through 3 and carry up to
+eight bits. Unicode escapes decode adjacent UTF-16 surrogate pairs together.
+Unknown escapes preserve their backslash.

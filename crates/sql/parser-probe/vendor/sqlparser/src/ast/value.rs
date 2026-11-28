@@ -586,6 +586,7 @@ impl fmt::Display for EscapeEscapedStringLiteral<'_> {
                 '\\' => {
                     write!(f, r#"\\"#)?;
                 }
+                '\0' => write!(f, r"\000")?,
                 '\n' => {
                     write!(f, r#"\n"#)?;
                 }

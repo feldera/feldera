@@ -132,4 +132,32 @@ mod tests {
             }
         ));
     }
+
+    #[test]
+    fn calcite_numeric_escapes_keep_all_eight_bits_and_decode_utf16_pairs() {
+        for (raw, decoded) in [
+            (r"\0007", "\u{0}7"),
+            (r"\200\377\xff", "\u{80}\u{ff}\u{ff}"),
+            (r"\400\777", r"\400\777"),
+            (r"\uD83D\uDE00", "😀"),
+            (r"\x", "x"),
+        ] {
+            let SelectItem::UnnamedExpr(Expr::Value(value)) =
+                projection(&format!("SELECT E'{raw}'"))
+            else {
+                panic!("expected escape literal {raw}");
+            };
+            assert_eq!(value.value, Value::EscapedStringLiteral(decoded.into()));
+            assert!(!value.to_string().contains('\0'));
+        }
+        let SelectItem::ExprWithAlias {
+            expr: Expr::Identifier(name),
+            alias,
+        } = projection(r"SELECT E'a\'")
+        else {
+            panic!("expected identifier and alias after incomplete escape token");
+        };
+        assert!(name.value.eq_ignore_ascii_case("e"));
+        assert_eq!(alias.value, "a\\");
+    }
 }

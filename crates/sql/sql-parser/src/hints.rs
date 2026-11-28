@@ -37,7 +37,7 @@ impl Dialect for HintDialect {
     fn supports_string_escape_constant(&self) -> bool {
         true
     }
-    fn preserves_unknown_string_escapes(&self) -> bool {
+    fn uses_calcite_string_escapes(&self) -> bool {
         true
     }
 }
