@@ -1,15 +1,16 @@
-//! Lower a projection of input columns to a DBSP map. The closure shares its
+//! Lower a relational projection to a DBSP map. The closure shares its
 //! parameter across field reads and retains the anonymous Calcite row types.
+
+mod field;
+pub(super) use field::Field;
 
 use super::{
     source_table::{stream_type, Ids, RowLayout},
     view::reference,
     Error,
 };
-use feldera_sql_rel_model::types::TypeKind;
 use feldera_sql_rel_model::{
-    catalog::CatalogSchema, expression_objects::ObjectKind, program::Program,
-    relation_properties::Properties,
+    catalog::CatalogSchema, program::Program, relation_properties::Properties,
 };
 use serde_json::{json, Value};
 
@@ -33,10 +34,11 @@ pub(super) fn expressions(
     Ok(&usage.roots)
 }
 
-pub(super) fn input_columns(
+pub(super) fn projected_fields(
     program: &Program,
     root: u32,
-) -> Result<(u32, Option<Vec<usize>>), Error> {
+    output: &CatalogSchema,
+) -> Result<(u32, Option<Vec<Field>>), Error> {
     let prop = &program.properties.relations[root as usize];
     match &prop.fields {
         Properties::Scan { .. } | Properties::Filter { .. } => Ok((root, None)),
@@ -48,18 +50,18 @@ pub(super) fn input_columns(
             let [input] = program.producers.relations[root as usize].inputs.as_slice() else {
                 return Err(Error("projection requires one input".into()));
             };
-            let columns = expressions(program, root)?
+            let exprs = expressions(program, root)?;
+            if exprs.len() != output.columns.len() {
+                return Err(Error(
+                    "projection width differs from the output schema".into(),
+                ));
+            }
+            let fields = exprs
                 .iter()
-                .map(|expr| {
-                    let ObjectKind::InputRef { object } =
-                        program.expressions.expressions[expr.0 as usize].kind
-                    else {
-                        return Err(Error("projection requires a bound input column".into()));
-                    };
-                    Ok(program.table.objects[object.0 as usize].field as usize)
-                })
+                .zip(&output.columns)
+                .map(|(&expr, column)| Field::resolve(program, expr, column.ty))
                 .collect::<Result<_, _>>()?;
-            Ok((*input, Some(columns)))
+            Ok((*input, Some(fields)))
         }
         _ => Err(Error(
             "query lowering requires a table scan or column projection".into(),
@@ -68,11 +70,11 @@ pub(super) fn input_columns(
 }
 
 /// Calcite compresses the leading identity fields in its relational digest.
-fn digest(columns: &[usize], input: &str, scan: usize) -> String {
+fn digest(columns: &[Field], input: &str, scan: usize) -> String {
     let prefix = columns
         .iter()
         .enumerate()
-        .take_while(|(i, col)| i == *col)
+        .take_while(|(i, col)| matches!(col, Field::Column(index) if i == index))
         .count();
     let mut terms = vec![format!("input={input}#{scan}")];
     match prefix {
@@ -83,7 +85,7 @@ fn digest(columns: &[usize], input: &str, scan: usize) -> String {
     if prefix < columns.len() {
         let fields = columns[prefix..]
             .iter()
-            .map(|i| format!("${i}"))
+            .map(Field::digest)
             .collect::<Vec<_>>()
             .join(", ");
         terms.push(format!("exprs=[{fields}]"));
@@ -94,7 +96,7 @@ fn digest(columns: &[usize], input: &str, scan: usize) -> String {
 pub(super) struct Projection<'a> {
     pub input: &'a CatalogSchema,
     pub output: &'a CatalogSchema,
-    pub columns: &'a [usize],
+    pub fields: &'a [Field],
 }
 
 impl Projection<'_> {
@@ -104,16 +106,10 @@ impl Projection<'_> {
             .ok_or_else(|| Error("missing physical scan".into()))? as usize;
         let mut text = Vec::new();
         let mut select = Vec::new();
-        for (index, output) in self.columns.iter().zip(&self.output.columns) {
-            let input = &self.input.columns[*index].name.name;
+        for (field, output) in self.fields.iter().zip(&self.output.columns) {
             let name = &output.name.name;
-            text.push(format!("{name}=[${index}]"));
-            let quote = |s: &str| format!("`{}`", s.replace('`', "``"));
-            select.push(if input == name {
-                quote(input)
-            } else {
-                format!("{} AS {}", quote(input), quote(name))
-            });
+            text.push(format!("{name}=[{}]", field.digest()));
+            select.push(field.sql(self.input, name));
         }
         let from = scan["sql"]
             .as_str()
@@ -128,7 +124,7 @@ impl Projection<'_> {
             .ok_or_else(|| Error("missing input relation name".into()))?;
         let child = child.replace('\n', "\n  ");
         Ok(
-            json!({"id":id,"relId":id,"planId":plan,"tableScan":false,"digest":digest(self.columns, child_name, scan_id),
+            json!({"id":id,"relId":id,"planId":plan,"tableScan":false,"digest":digest(self.fields, child_name, scan_id),
             "text":format!("LogicalProject({})\n  {child}",text.join(", ")),
             "sql":format!("SELECT {}\n{from}",select.join(", ")),"statefulSqlName":null,"origin":scan["origin"]}),
         )
@@ -145,36 +141,25 @@ impl Projection<'_> {
         let position =
             json!({"start_line_number":0,"start_column":0,"end_line_number":0,"end_column":0});
         let types = &program.table.type_table;
-        let output = RowLayout::new(self.output, types)?.tuple(ids, &position, true);
+        let output_layout = RowLayout::new(self.output, types)?;
+        let output = output_layout.tuple(ids, &position, true);
         let output_ref = reference(&output)?;
         let input = RowLayout::new(self.input, types)?;
         let mut parameter = super::closure::RowParameter::new(ids, &input, name)?;
-        let mut field_reads = Vec::with_capacity(self.columns.len());
-        for &index in self.columns {
-            let field = parameter.read(ids, index)?;
-            let column = &self.input.columns[index];
-            let value = if matches!(
-                types.types[column.ty.0 as usize].kind,
-                TypeKind::Character { .. }
-                    | TypeKind::Binary { .. }
-                    | TypeKind::Array { .. }
-                    | TypeKind::Map { .. }
-                    | TypeKind::Row { .. }
-                    | TypeKind::Uuid {}
-                    | TypeKind::Variant {}
-            ) {
-                let mut clone = ids.generated("DBSPCloneExpression");
-                clone["type"] = field["type"].clone();
-                clone["expression"] = field;
-                clone
-            } else {
-                field
-            };
-            field_reads.push(value);
+        let mut values = Vec::with_capacity(self.fields.len());
+        for (index, (field, column)) in self.fields.iter().zip(&self.output.columns).enumerate() {
+            values.push(field.lower(
+                ids,
+                &mut parameter,
+                &types.types[column.ty.0 as usize].kind,
+                &output_layout,
+                index,
+                &position,
+            )?);
         }
         let mut body = ids.node("DBSPTupleExpression", &position);
         body["type"] = output_ref.clone();
-        body["fields"] = field_reads.into();
+        body["fields"] = values.into();
         let closure = parameter.close(ids, output_ref, body, &position)?;
         Ok(
             json!({"class":"DBSPMapOperator","id":ids.next_operator(),"annotations":[],

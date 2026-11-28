@@ -2,6 +2,7 @@
 
 use super::{
     closure::RowParameter,
+    integer::SignedInteger,
     source_table::{range, Ids, RowLayout},
     view::reference,
     Error,
@@ -10,17 +11,16 @@ use feldera_sql_rel_model::{
     catalog::CatalogSchema,
     expression_objects::{ObjectKind, ObjectPosition},
     expressions::ExprId,
-    literals::LiteralValue,
     operators::OperatorObject,
     program::Program,
     relation_properties::Properties,
-    types::{IntegerWidth, TypeKind},
+    types::TypeKind,
 };
 use serde_json::{json, Value};
 
 enum Operand {
     Column(usize),
-    Integer(i32),
+    Integer(SignedInteger),
 }
 
 impl Operand {
@@ -30,25 +30,7 @@ impl Operand {
             ObjectKind::InputRef { object } => Ok(Self::Column(
                 program.table.objects[object.0 as usize].field as usize,
             )),
-            ObjectKind::Literal { literal } => {
-                let LiteralValue::Integer { value } = &literal.value else {
-                    return Err(Error("expected an integer filter literal".into()));
-                };
-                if !matches!(
-                    program.table.type_table.types[literal.ty.0 as usize].kind,
-                    TypeKind::Integer {
-                        width: IntegerWidth::I32,
-                        signed: true
-                    }
-                ) {
-                    return Err(Error("expected an INT filter literal".into()));
-                }
-                Ok(Self::Integer(
-                    value
-                        .parse()
-                        .map_err(|_| Error("INT literal outside range".into()))?,
-                ))
-            }
+            ObjectKind::Literal { .. } => Ok(Self::Integer(SignedInteger::resolve(program, id)?)),
             _ => Err(Error("unsupported filter operand".into())),
         }
     }
@@ -59,24 +41,14 @@ impl Operand {
                 format!("${i}"),
                 format!("`{}`", schema.columns[*i].name.name.replace('`', "``")),
             ),
-            Self::Integer(n) => (n.to_string(), n.to_string()),
+            Self::Integer(n) => (n.value.to_string(), n.value.to_string()),
         }
     }
 
     fn lower(&self, ids: &mut Ids, parameter: &mut RowParameter) -> Result<Value, Error> {
         match self {
             Self::Column(i) => parameter.read(ids, *i),
-            Self::Integer(n) => {
-                let mut ty = ids.generated("DBSPTypeInteger");
-                ty["width"] = 32.into();
-                ty["signed"] = true.into();
-                ty["code"] = "INT32".into();
-                ty["mayBeNull"] = false.into();
-                let mut literal = ids.generated("DBSPI32Literal");
-                literal["type"] = ty;
-                literal["value"] = n.to_string().into();
-                Ok(literal)
-            }
+            Self::Integer(n) => Ok(n.lower(ids)),
         }
     }
 }

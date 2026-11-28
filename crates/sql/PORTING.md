@@ -220,11 +220,17 @@ INSERTs containing that call still require a union.
 The frozen audit used the original submission calls and default nonincremental
 Gen-2 options. Rust bound 176 of 8,571 programs. All 176 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 88 of
-the 176 to S2. All 88 matched independent Java lowering and the Java optimizer
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 112 of
+the 176 to S2. All 112 matched independent Java lowering and the Java optimizer
 resumed every checkpoint. The remaining 8,395 programs still need whole-program
 binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
+
+The lowerer preserves the coerced integer width in comparison filters. When an
+equality fixes the value of a projected column, it emits the integer literal
+and any cast required by the output column's nullability. Directed comparisons
+cover a small literal coerced to BIGINT, the maximum BIGINT, and repeated and
+renamed projections. Each matched direct Java through Gen-2 emission.
 
 On macOS ARM64, build `90063e1f8` compiled the `explicit_view_columns` workload
 in 334 ms median and 346 ms empirical p95 with Rust binding, lowering and

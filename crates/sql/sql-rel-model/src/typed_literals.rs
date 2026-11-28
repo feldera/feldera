@@ -296,12 +296,7 @@ fn push_child<'a>(
 }
 
 pub(crate) fn integer_fits(value: &str, width: IntegerWidth, signed: bool) -> bool {
-    let bits = match width {
-        IntegerWidth::I8 => 8,
-        IntegerWidth::I16 => 16,
-        IntegerWidth::I32 => 32,
-        IntegerWidth::I64 => 64,
-    };
+    let bits = width.bits();
     // Payload syntax is already checked; i128 covers every declared integer.
     let Ok(value) = value.parse::<i128>() else {
         return false;

@@ -59,6 +59,13 @@ CASES = {
     "filtered_projection": "CREATE TABLE readings (sensor INTEGER NOT NULL, temperature INTEGER NOT NULL);\n"
                            "CREATE VIEW hot AS SELECT sensor FROM readings WHERE temperature > 20;",
     "nullable_filter": "CREATE TABLE t(x INT); CREATE VIEW result AS SELECT * FROM t WHERE x > 10;",
+    "nullable_bigint_filter": "CREATE TABLE t(x BIGINT); CREATE VIEW result AS SELECT * FROM t WHERE x <> 456;",
+    "wide_bigint_filter": "CREATE TABLE t(x BIGINT NOT NULL); "
+                          "CREATE VIEW result AS SELECT * FROM t WHERE x = 9223372036854775807;",
+    "nullable_bigint_projection": "CREATE TABLE t(x BIGINT, y INT); "
+                                  "CREATE VIEW result AS SELECT y, x AS constrained FROM t WHERE x = 456;",
+    "repeated_integer_projection": "CREATE TABLE t(x INT NOT NULL, y INT); "
+                                   "CREATE VIEW result AS SELECT y, x AS a, x AS b FROM t WHERE x = 5;",
     "column_comparison": "CREATE TABLE t(x INT NOT NULL, y INT NOT NULL);\n"
                          "CREATE VIEW result AS SELECT * FROM t WHERE x <= y;",
     "shared_filters": "CREATE TABLE t(x INT NOT NULL, y INT);\n"

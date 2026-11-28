@@ -4,6 +4,7 @@
 
 mod closure;
 mod filter;
+mod integer;
 mod origin_order;
 mod plan;
 mod projection;

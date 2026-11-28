@@ -253,6 +253,10 @@ impl<'a> RowLayout<'a> {
             .collect()
     }
 
+    pub(super) fn column_type(&self, ids: &mut Ids, index: usize) -> Value {
+        self.columns[index].0.node(ids)
+    }
+
     pub(super) fn descriptors(&self) -> impl Iterator<Item = &Value> {
         self.columns.iter().map(|(_, descriptor)| descriptor)
     }

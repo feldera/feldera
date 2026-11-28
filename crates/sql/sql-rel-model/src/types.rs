@@ -215,6 +215,17 @@ pub enum IntegerWidth {
     I64,
 }
 
+impl IntegerWidth {
+    pub const fn bits(self) -> u8 {
+        match self {
+            Self::I8 => 8,
+            Self::I16 => 16,
+            Self::I32 => 32,
+            Self::I64 => 64,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FloatFlavor {

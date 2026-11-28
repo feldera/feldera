@@ -87,7 +87,7 @@ struct Scan<'a> {
     alias: &'a str,
     physical_id: usize,
     input: &'a CatalogSchema,
-    columns: Option<Vec<usize>>,
+    fields: Option<Vec<super::projection::Field>>,
     predicate: Option<(u32, super::filter::Predicate)>,
 }
 
@@ -96,7 +96,7 @@ fn resolve_scan<'a>(
     root: u32,
     schema: &CatalogSchema,
 ) -> Result<Scan<'a>, Error> {
-    let (input_relation, columns) = super::projection::input_columns(program, root)?;
+    let (input_relation, fields) = super::projection::projected_fields(program, root, schema)?;
     let (scan_id, predicate) = super::filter::Predicate::resolve(program, input_relation)?;
     let relation = &program.properties.relations[scan_id as usize];
     let Properties::Scan { name: path } = &relation.fields else {
@@ -140,9 +140,13 @@ fn resolve_scan<'a>(
             _ => None,
         })
         .ok_or_else(|| Error(format!("missing source table {table_name}")))?;
-    if schema.columns.len() != columns.as_ref().map_or(input.columns.len(), Vec::len)
+    if schema.columns.len() != fields.as_ref().map_or(input.columns.len(), Vec::len)
         || schema.columns.iter().enumerate().any(|(i, output)| {
-            let index = columns.as_ref().map_or(i, |c| c[i]);
+            let index = match fields.as_ref().map(|fields| &fields[i]) {
+                None => i,
+                Some(super::projection::Field::Column(i)) => *i,
+                Some(_) => return false,
+            };
             input
                 .columns
                 .get(index)
@@ -158,7 +162,7 @@ fn resolve_scan<'a>(
         alias,
         physical_id,
         input,
-        columns,
+        fields,
         predicate: predicate.map(|p| (input_relation, p)),
     })
 }
@@ -251,11 +255,11 @@ pub(super) fn scan_stream(
             "inputs":[{"outputNumber":0,"operator":{"node":source_id}}],"outputType":output_type,"function":closure}));
         source_id = filter_id.into();
     }
-    if let Some(columns) = &scan.columns {
+    if let Some(fields) = &scan.fields {
         let projection = super::projection::Projection {
             input: scan.input,
             output: schema,
-            columns,
+            fields,
         };
         let relation_id = ids.relation(root);
         relation = json!({"ref":relation_id});

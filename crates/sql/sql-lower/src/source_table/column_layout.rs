@@ -5,7 +5,7 @@ use feldera_sql_ir::TypeKind as CircuitType;
 use feldera_sql_rel_model::{
     catalog::Name,
     column_type::ColumnType,
-    types::{FloatFlavor, IntegerWidth, Precision, SqlType, TimeZone, TypeKind},
+    types::{FloatFlavor, Precision, SqlType, TimeZone, TypeKind},
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -117,12 +117,7 @@ impl ColumnLayout {
     fn scalar(ty: &SqlType) -> Result<Self, Error> {
         let (class, code, mut short, properties) = match ty.kind {
             TypeKind::Integer { width, signed } => {
-                let bits = match width {
-                    IntegerWidth::I8 => 8,
-                    IntegerWidth::I16 => 16,
-                    IntegerWidth::I32 => 32,
-                    IntegerWidth::I64 => 64,
-                };
+                let bits = width.bits();
                 let prefix = if signed { "" } else { "U" };
                 (
                     CircuitType::Integer,
