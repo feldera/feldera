@@ -111,6 +111,28 @@ fn preview_preserves_public_column_names_and_primary_key_order() {
 }
 
 #[test]
+fn supplementary_literals_share_the_operator_but_keep_their_positions() {
+    use serde_json::Value;
+    let sql = "CREATE VIEW v AS SELECT 'é' AS a, '😀' AS b, ('🐕') AS c;";
+    let output = invoke("--emit-s1", sql);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let bound: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let graph = &bound["expressions"];
+    let objects = graph["operator_objects"].as_array().unwrap();
+    assert_eq!(objects.len(), 1);
+    assert_eq!(objects[0]["key"], "non-bmp-literal");
+    let calls: Vec<_> = graph["expressions"].as_array().unwrap().iter()
+        .filter(|e| e["kind"]["kind"] == "call").collect();
+    assert_eq!(calls.len(), 2);
+    for (call, spelling) in calls.iter().zip(["'😀'", "('🐕')"]) {
+        let offset = sql[..sql.find(spelling).unwrap()].encode_utf16().count();
+        let position = &call["position"]["position"];
+        assert_eq!(position["column"], offset + 1);
+        assert_eq!(position["end_column"], offset + spelling.encode_utf16().count());
+    }
+}
+
+#[test]
 fn insert_values_keep_submission_ranges_and_destination_order() {
     use serde_json::{json, Value};
     let request = json!({"id":"insert", "submissions":[

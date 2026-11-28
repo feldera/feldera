@@ -4,10 +4,7 @@ use super::{ProjectInput, ProjectValue, TableColumn, TableOperand, column_ordina
 use crate::{
     BinaryOperator, Expr, Failure, Spanned, Value,
     frel::CALCITE,
-    program::{
-        graph::insert_type,
-        source::{coordinates, end_at_is_true},
-    },
+    program::{graph::insert_type, source::DeclarationTokens},
     unsupported,
 };
 use feldera_sql_rel_model::{
@@ -42,7 +39,7 @@ pub(super) fn bind(
     expression: &Expr,
     columns: &[TableColumn],
     qualifier: &str,
-    sql: &str,
+    tokens: &DeclarationTokens<'_>,
 ) -> Result<Predicate, Failure> {
     let column = |expression| {
         let field = column_ordinal(expression, columns, qualifier)?;
@@ -82,7 +79,7 @@ pub(super) fn bind(
                     key: "SqlStdOperatorTable.IS_TRUE",
                     arguments: vec![TableOperand::Column(input)],
                     ty: insert_type(types, boolean(false)),
-                    position: Some(end_at_is_true(sql, operand.span())?),
+                    position: Some(tokens.end_at_is_true(operand.span())?),
                 },
                 format!("{pretty} IS TRUE"),
                 format!("({diagnostic} IS TRUE)"),
@@ -169,7 +166,7 @@ pub(super) fn bind(
                     key,
                     arguments: vec![TableOperand::Column(left), right],
                     ty: insert_type(types, boolean(left_nullable || right_nullable)),
-                    position: Some(coordinates(expression.span())),
+                    position: Some(tokens.coordinates(expression.span())?),
                 },
                 format!("{left_pretty} {token} {right_pretty}"),
                 format!("({left_diagnostic} {token} {right_diagnostic})"),

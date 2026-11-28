@@ -4,9 +4,9 @@
 
 use super::{
     StatementText, append_boundary,
-    graph::{append_literal, append_values, insert_row_fields, insert_type},
+    graph::{append_literal, append_project, append_values, insert_row_fields, insert_type},
     literal::Cell,
-    source::coordinates,
+    source::DeclarationTokens,
 };
 use crate::{Failure, SetExpr, local_name, query_body, unsupported};
 use feldera_sql_rel_model::{
@@ -14,7 +14,6 @@ use feldera_sql_rel_model::{
     literal_insert,
     literals::{DecimalRounding, LiteralValue},
     program::Program,
-    relation_metadata::Coordinates,
     source::Origin,
     statements::{Statement, TargetColumn},
     types::{IntegerWidth, Precision, SqlType, TypeKind},
@@ -24,13 +23,13 @@ use sqlparser_064::ast::{Insert, TableObject};
 pub(super) fn bind(
     program: &mut Program,
     insert: &Insert,
-    position: Coordinates,
+    tokens: &DeclarationTokens<'_>,
 ) -> Result<(), Failure> {
     let TableObject::TableName(target) = &insert.table else {
         return Err(unsupported("expected a plain INSERT target"));
     };
     let name = Name {
-        name: local_name(target)?.value.to_ascii_lowercase(),
+        name: local_name(target)?.value.to_lowercase(),
         quoted: false,
     };
     let columns = insert
@@ -38,14 +37,14 @@ pub(super) fn bind(
         .iter()
         .map(|column| {
             let ident = local_name(column)?;
-            let name = ident.value.to_ascii_lowercase();
+            let name = ident.value.to_lowercase();
             Ok(TargetColumn {
                 display_name: name.clone(),
                 name: Name {
                     name,
                     quoted: false,
                 },
-                position: coordinates(ident.span),
+                position: tokens.coordinates(ident.span)?,
             })
         })
         .collect::<Result<Vec<_>, Failure>>()?;
@@ -60,7 +59,29 @@ pub(super) fn bind(
     for row in &values.rows {
         rows.push(row.iter().map(Cell::parse).collect::<Result<Vec<_>, _>>()?);
     }
-    let relation = bind_values(program, &rows)?;
+    let relation = if rows.iter().flatten().any(Cell::needs_non_bmp_wrapper) {
+        let [cells] = rows.as_slice() else {
+            return Err(unsupported(
+                "multirow INSERT with projected values requires a union",
+            ));
+        };
+        let mut fields = Vec::with_capacity(cells.len());
+        let mut roots = Vec::with_capacity(cells.len());
+        for (i, (cell, expr)) in cells.iter().zip(values.rows[0].iter()).enumerate() {
+            let (root, ty) = cell.emit(program, tokens, expr)?;
+            fields.push((format!("EXPR${i}"), ty));
+            roots.push(root);
+        }
+        let row = insert_row_fields(
+            program,
+            fields.iter().map(|(name, ty)| (name.as_str(), *ty)),
+        );
+        let relation = program.table.relations;
+        append_project(program, row, roots)?;
+        relation
+    } else {
+        bind_values(program, &rows)?
+    };
     let columns = (!columns.is_empty()).then_some(columns);
     literal_insert::validate(
         program,
@@ -97,7 +118,7 @@ pub(super) fn bind(
         format!("{header}\nVALUES {}", rows.join(",\n"))
     };
     let text = StatementText {
-        position,
+        position: tokens.range()?,
         pretty: render(true),
         diagnostic: render(false),
     };

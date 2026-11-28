@@ -166,10 +166,11 @@ impl ColumnScope<'_> {
         column: &Ident,
         range: [u64; 4],
     ) -> Result<(SqlType, ExpressionKind), Failure> {
+        let name = column.value.to_lowercase();
         self.columns
             .iter()
             .enumerate()
-            .find(|(_, candidate)| candidate.name.eq_ignore_ascii_case(&column.value))
+            .find(|(_, candidate)| candidate.name.to_lowercase() == name)
             .map(|(ordinal, candidate)| (candidate.ty, ExpressionKind::Column { ordinal }))
             .ok_or_else(|| Failure {
                 category: "unresolved_column",
@@ -295,7 +296,7 @@ fn schema_column(name: &str, quoted: bool, ty: SqlType) -> serde_json::Value {
     let name = if quoted {
         name.to_owned()
     } else {
-        name.to_ascii_lowercase()
+        name.to_lowercase()
     };
     let mut descriptor = match ty.kind {
         Kind::Boolean => json!({"type": "BOOLEAN"}),
@@ -606,7 +607,7 @@ fn bind(node: &Expr, scope: &ColumnScope<'_>, depth: usize) -> Result<BoundExpre
                 || column.quote_style.is_some()
                 || !scope
                     .qualifier
-                    .is_some_and(|name| name.eq_ignore_ascii_case(&qualifier.value))
+                    .is_some_and(|name| name == qualifier.value.to_lowercase())
             {
                 return Err(unsupported(
                     "column qualifier does not match the visible table",
@@ -843,11 +844,7 @@ fn parse_failure(error: impl std::fmt::Display) -> Failure {
 
 fn local_name(name: &ObjectName) -> Result<&Ident, Failure> {
     match name.0.as_slice() {
-        [ObjectNamePart::Identifier(ident)]
-            if ident.quote_style.is_none() && ident.value.is_ascii() =>
-        {
-            Ok(ident)
-        }
+        [ObjectNamePart::Identifier(ident)] if ident.quote_style.is_none() => Ok(ident),
         _ => Err(unsupported("expected an unquoted local relation name")),
     }
 }
@@ -907,7 +904,7 @@ fn bind_query_projection(
     let Upstream::CreateView(view) = view.as_ref() else {
         return Err(unsupported("expected a trailing CREATE VIEW"));
     };
-    let view_name = local_name(&view.name)?.value.to_ascii_lowercase();
+    let view_name = local_name(&view.name)?.value.to_lowercase();
     if system_relation(&view_name) {
         return Err(unsupported("view name conflicts with a system relation"));
     }
@@ -936,7 +933,7 @@ fn bind_query_projection(
                 "only plain table declarations can precede the scalar view",
             ));
         };
-        let declared = local_name(&table.name)?.value.to_ascii_lowercase();
+        let declared = local_name(&table.name)?.value.to_lowercase();
         if system_relation(&declared) || declared == view_name || !tables.insert(declared.clone()) {
             return Err(unsupported("ambiguous scalar projection relation name"));
         }
@@ -1047,7 +1044,7 @@ fn projection_input(select: &Select, generated: bool) -> Result<Option<TableInpu
     {
         return Err(unsupported("expected an unfiltered table scan"));
     }
-    let name = local_name(name)?.value.to_ascii_lowercase();
+    let name = local_name(name)?.value.to_lowercase();
     let qualifier = match alias {
         None => name.clone(),
         Some(alias)
@@ -1056,7 +1053,7 @@ fn projection_input(select: &Select, generated: bool) -> Result<Option<TableInpu
                 && alias.at.is_none()
                 && alias.name.quote_style.is_none() =>
         {
-            alias.name.value.to_ascii_lowercase()
+            alias.name.value.to_lowercase()
         }
         Some(_) => return Err(unsupported("expected a plain table alias")),
     };
@@ -1129,8 +1126,7 @@ fn map_table_columns<T>(
                 }
             };
             let quoted = column.name.quote_style.is_some();
-            if !generated && (quoted || !identifiers.insert(column.name.value.to_ascii_lowercase()))
-            {
+            if !generated && (quoted || !identifiers.insert(column.name.value.to_lowercase())) {
                 return Err(unsupported("expected unique unquoted scalar column names"));
             }
             bind_column(column, nullable)

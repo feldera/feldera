@@ -203,12 +203,20 @@ temporal and binary types. They exercise casts left to runtime and the compiler
 warning for invalid boolean text. Each bound program and its Rust S2 checkpoint
 matched Java through Gen-2 emission.
 
+Nine further programs cover Unicode source coordinates, identifier casing,
+and the character types of BMP and supplementary string literals. Their bound
+programs matched direct Java, including Gen-2 artifacts. Eight also matched
+independent S2 lowering. The constant view with supplementary strings still
+requires Java lowering. Single-row INSERT projections preserve the internal
+VARCHAR call, its source span, and the generated-name counter. Multirow
+INSERTs containing that call still require a union.
+
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 175 of 8,571 programs. All 175 matched Java compilation
+Gen-2 options. Rust bound 176 of 8,571 programs. All 176 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 87 of
-the 175 to S2. All 87 matched independent Java lowering and the Java optimizer
-resumed every checkpoint. The remaining 8,396 programs still need whole-program
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 88 of
+the 176 to S2. All 88 matched independent Java lowering and the Java optimizer
+resumed every checkpoint. The remaining 8,395 programs still need whole-program
 binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
 

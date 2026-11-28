@@ -114,11 +114,6 @@ fn display_integer(value: &Value) -> Result<String, Failure> {
         .map_err(|_| unsupported("expected an exact integer literal"))
 }
 
-pub(super) fn statement_position(sql: &str) -> Result<Coordinates, Failure> {
-    let tokens = significant_tokens(sql)?;
-    token_range(&tokens)
-}
-
 fn significant_tokens(sql: &str) -> Result<Vec<TokenWithSpan>, Failure> {
     let tokens = feldera_sql_parser::source_tokens(sql).map_err(parse_failure)?;
     Ok(tokens
@@ -132,116 +127,172 @@ fn significant_tokens(sql: &str) -> Result<Vec<TokenWithSpan>, Failure> {
         .collect())
 }
 
-fn token_range(tokens: &[TokenWithSpan]) -> Result<Coordinates, Failure> {
-    let first = tokens
-        .first()
-        .ok_or_else(|| unsupported("missing SQL source"))?;
-    let last = tokens
-        .last()
-        .ok_or_else(|| unsupported("incomplete SQL source"))?;
-    Ok(coordinates(Span {
-        start: first.span.start,
-        end: last.span.end,
-    }))
+pub(super) struct DeclarationTokens<'a> {
+    pub(super) sql: &'a str,
+    lines: &'a [&'a str],
+    tokens: Vec<TokenWithSpan>,
 }
 
-pub(super) fn end_at_call_close(sql: &str, call: Span, last: Span) -> Result<Coordinates, Failure> {
-    let closing = significant_tokens(sql)?
-        .into_iter()
-        .find(|token| token.span.start >= last.end)
-        .filter(|token| token.token == Token::RParen)
-        .ok_or_else(|| unsupported("missing closing parenthesis of scalar call"))?;
-    Ok(coordinates(Span {
-        start: call.start,
-        end: closing.span.end,
-    }))
-}
-
-pub(super) fn simple_aggregate_position(sql: &str, call: Span) -> Result<Coordinates, Failure> {
-    let closing = significant_tokens(sql)?
-        .into_iter()
-        .find(|token| token.span.start > call.start && token.token == Token::RParen)
-        .ok_or_else(|| unsupported("missing closing parenthesis of aggregate call"))?;
-    Ok(coordinates(Span {
-        start: call.start,
-        end: closing.span.end,
-    }))
-}
-
-pub(super) fn end_at_is_true(sql: &str, operand: Span) -> Result<Coordinates, Failure> {
-    let tokens = significant_tokens(sql)?;
-    let mut suffix = tokens
-        .iter()
-        .filter(|token| token.span.start >= operand.end);
-    let (Some(is), Some(truth)) = (suffix.next(), suffix.next()) else {
-        return Err(unsupported("missing IS TRUE predicate suffix"));
-    };
-    if !matches!(&is.token, Token::Word(word) if word.keyword == Keyword::IS)
-        || !matches!(&truth.token, Token::Word(word) if word.keyword == Keyword::TRUE)
-    {
-        return Err(unsupported("missing IS TRUE predicate suffix"));
+impl<'a> DeclarationTokens<'a> {
+    pub(super) fn single(sql: &'a str, lines: &'a [&'a str]) -> Result<Self, Failure> {
+        Ok(Self {
+            sql,
+            lines,
+            tokens: significant_tokens(sql)?,
+        })
     }
-    Ok(coordinates(Span {
-        start: operand.start,
-        end: truth.span.end,
-    }))
-}
 
-pub(super) fn coordinates(span: Span) -> Coordinates {
-    Coordinates {
-        line: span.start.line as u32,
-        column: span.start.column as u32,
-        end_line: span.end.line as u32,
-        end_column: span.end.column.saturating_sub(1) as u32,
-        quoted: false,
-    }
-}
-
-pub(super) struct DeclarationTokens(Vec<TokenWithSpan>);
-
-impl DeclarationTokens {
-    pub(super) fn split(sql: &str, starts: &[crate::Location]) -> Result<Vec<Self>, Failure> {
-        let mut declarations: Vec<Self> = Vec::new();
+    pub(super) fn split(
+        sql: &'a str,
+        lines: &'a [&'a str],
+        starts: &[crate::Location],
+    ) -> Result<Vec<Self>, Failure> {
+        let mut declarations = Vec::new();
         let mut starts = starts.iter().copied().peekable();
         for token in significant_tokens(sql)? {
             if starts.next_if_eq(&token.span.start).is_some() {
-                declarations.push(Self(Vec::new()));
+                declarations.push(Self {
+                    sql,
+                    lines,
+                    tokens: Vec::new(),
+                });
             }
             declarations
                 .last_mut()
                 .ok_or_else(|| unsupported("missing statement start"))?
-                .0
+                .tokens
                 .push(token);
         }
         Ok(declarations)
     }
 
+    /// Parser columns count characters. The Java compiler publishes inclusive
+    /// UTF-16 positions for statements, table metadata, and expression sites.
+    pub(super) fn coordinates(&self, span: Span) -> Result<Coordinates, Failure> {
+        let range = feldera_sql_source::SourceRange::from_character_span(
+            self.lines,
+            (span.start.line, span.start.column),
+            (span.end.line, span.end.column),
+        )
+        .ok_or_else(|| unsupported("invalid SQL source range"))?;
+        Ok(Coordinates {
+            line: range.start_line_number as u32,
+            column: range.start_column as u32,
+            end_line: range.end_line_number as u32,
+            end_column: range.end_column as u32,
+            quoted: false,
+        })
+    }
+
+    /// Calcite includes explicit parentheses in a literal's parser position.
+    pub(super) fn literal_position(&self, expr: &Expr) -> Result<Coordinates, Failure> {
+        use sqlparser_064::ast::Spanned;
+        let span = expr.span();
+        let mut first = self.tokens.partition_point(|t| t.span.start < span.start);
+        let mut last = self.tokens.partition_point(|t| t.span.start < span.end);
+        let mut inner = expr;
+        while let Expr::Nested(child) = inner {
+            if first == 0
+                || self.tokens[first - 1].token != Token::LParen
+                || self
+                    .tokens
+                    .get(last)
+                    .is_none_or(|t| t.token != Token::RParen)
+            {
+                return Err(unsupported("missing literal parentheses"));
+            }
+            first -= 1;
+            last += 1;
+            inner = child;
+        }
+        self.token_range(&self.tokens[first..last])
+    }
+
+    fn token_range(&self, tokens: &[TokenWithSpan]) -> Result<Coordinates, Failure> {
+        let first = tokens
+            .first()
+            .ok_or_else(|| unsupported("missing SQL source"))?;
+        let last = tokens
+            .last()
+            .ok_or_else(|| unsupported("incomplete SQL source"))?;
+        self.coordinates(first.span.union(&last.span))
+    }
+
+    pub(super) fn end_at_call_close(&self, call: Span, last: Span) -> Result<Coordinates, Failure> {
+        let index = self
+            .tokens
+            .partition_point(|token| token.span.start < last.end);
+        let closing = self
+            .tokens
+            .get(index)
+            .filter(|token| token.token == Token::RParen)
+            .ok_or_else(|| unsupported("missing closing parenthesis of scalar call"))?;
+        self.coordinates(Span {
+            start: call.start,
+            end: closing.span.end,
+        })
+    }
+
+    pub(super) fn simple_aggregate_position(&self, call: Span) -> Result<Coordinates, Failure> {
+        let index = self
+            .tokens
+            .partition_point(|token| token.span.start <= call.start);
+        let closing = self.tokens[index..]
+            .iter()
+            .find(|token| token.token == Token::RParen)
+            .ok_or_else(|| unsupported("missing closing parenthesis of aggregate call"))?;
+        self.coordinates(Span {
+            start: call.start,
+            end: closing.span.end,
+        })
+    }
+
+    pub(super) fn end_at_is_true(&self, operand: Span) -> Result<Coordinates, Failure> {
+        let index = self
+            .tokens
+            .partition_point(|token| token.span.start < operand.end);
+        let [is, truth, ..] = &self.tokens[index..] else {
+            return Err(unsupported("missing IS TRUE predicate suffix"));
+        };
+        if !matches!(&is.token, Token::Word(w) if w.keyword == Keyword::IS)
+            || !matches!(&truth.token, Token::Word(w) if w.keyword == Keyword::TRUE)
+        {
+            return Err(unsupported("missing IS TRUE predicate suffix"));
+        }
+        self.coordinates(Span {
+            start: operand.start,
+            end: truth.span.end,
+        })
+    }
+
     pub(super) fn range(&self) -> Result<Coordinates, Failure> {
-        token_range(&self.0)
+        self.token_range(&self.tokens)
     }
 
     pub(super) fn column_type_position(&self, name: Span) -> Result<Coordinates, Failure> {
-        let next = self.0.partition_point(|token| token.span.start < name.end);
-        self.0
+        let next = self
+            .tokens
+            .partition_point(|token| token.span.start < name.end);
+        self.tokens
             .get(next)
-            .map(|token| coordinates(token.span))
-            .ok_or_else(|| unsupported("missing column type after its name"))
+            .map(|token| self.coordinates(token.span))
+            .ok_or_else(|| unsupported("missing column type after its name"))?
     }
 
     pub(super) fn alias_type_position(&self) -> Result<Coordinates, Failure> {
-        self.0
+        self.tokens
             .windows(2)
             .find_map(|pair| {
                 matches!(&pair[0].token, Token::Word(w) if w.keyword == Keyword::AS)
-                    .then(|| coordinates(pair[1].span))
+                    .then(|| self.coordinates(pair[1].span))
             })
-            .ok_or_else(|| unsupported("missing type after AS"))
+            .ok_or_else(|| unsupported("missing type after AS"))?
     }
 
     /// Find the table constraint between columns. An inline PRIMARY KEY
     /// follows the column's type or nullability marker.
     pub(super) fn primary_key_position(&self) -> Option<sqlparser_064::tokenizer::Location> {
-        self.0.windows(2).find_map(|tokens| {
+        self.tokens.windows(2).find_map(|tokens| {
             (matches!(tokens[0].token, Token::Comma | Token::LParen)
                 && matches!(&tokens[1].token, Token::Word(w) if w.keyword == Keyword::PRIMARY))
             .then_some(tokens[1].span.start)
@@ -252,7 +303,7 @@ impl DeclarationTokens {
         &self,
         column_spans: impl IntoIterator<Item = Span>,
     ) -> Result<Vec<Coordinates>, Failure> {
-        let Some((closing, columns)) = self.0.split_last() else {
+        let Some((closing, columns)) = self.tokens.split_last() else {
             return Err(unsupported("missing table column source"));
         };
         if closing.token != Token::RParen {
@@ -284,7 +335,7 @@ impl DeclarationTokens {
             if end > 0 && column[end - 1].token == Token::Comma {
                 end -= 1;
             }
-            ranges.push(token_range(&column[..end])?);
+            ranges.push(self.token_range(&column[..end])?);
         }
         Ok(ranges)
     }

@@ -1,7 +1,7 @@
 //! Bind positional set operations. The SQL result takes its field names from
 //! the left operand, even when an identity projection disappears from the plan.
 
-use super::{BoundQuery, Failure, bind_select, unsupported};
+use super::{BoundQuery, DeclarationTokens, Failure, bind_select, unsupported};
 use crate::{SetExpr, program::graph::append_set};
 use feldera_sql_rel_model::{ValidationLimits, input_producers::SetKind, program::Program};
 use sqlparser_064::ast::{SetOperator, SetQuantifier};
@@ -32,19 +32,19 @@ impl SetOperation {
 pub(super) fn bind(
     program: &mut Program,
     body: &SetExpr,
-    sql: &str,
+    tokens: &DeclarationTokens<'_>,
     depth: usize,
 ) -> Result<BoundQuery, Failure> {
     if depth >= ValidationLimits::default().depth {
         return Err(unsupported("set expression exceeds the validation depth"));
     }
     match body {
-        SetExpr::Select(select) => bind_select(program, select, sql),
+        SetExpr::Select(select) => bind_select(program, select, tokens),
         SetExpr::SetOperation {
             op, set_quantifier, ..
         } => {
             let operation = SetOperation::from_ast(*op, *set_quantifier)?;
-            bind_set(program, operation, body, sql, depth + 1)
+            bind_set(program, operation, body, tokens, depth + 1)
         }
         _ => Err(unsupported("expected SELECT or a positional set operation")),
     }
@@ -54,7 +54,7 @@ fn bind_set(
     program: &mut Program,
     operation: SetOperation,
     body: &SetExpr,
-    sql: &str,
+    tokens: &DeclarationTokens<'_>,
     depth: usize,
 ) -> Result<BoundQuery, Failure> {
     // Calcite combines a left-associated chain of identical operations into
@@ -75,13 +75,13 @@ fn bind_set(
         left = child;
     }
     let first_scan = program.catalog.tables.len();
-    let mut result = bind(program, left, sql, depth)?;
+    let mut result = bind(program, left, tokens, depth)?;
     let mut inputs = vec![result.relation];
     let keyword = operation.kind.keyword();
     let quantifier = if operation.all { " ALL" } else { "" };
     let separator = format!("\n{keyword}{quantifier}\n");
     for operand in operands.into_iter().rev() {
-        let right = bind(program, operand, sql, depth)?;
+        let right = bind(program, operand, tokens, depth)?;
         if !result
             .fields
             .iter()

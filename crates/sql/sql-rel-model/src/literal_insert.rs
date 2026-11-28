@@ -3,9 +3,12 @@
 //! catalog at the statement, before lowering can issue the pipeline warning.
 
 use crate::{
+    TypeId,
     catalog::Name,
     expression_objects::ObjectKind,
+    expressions::ExprId,
     literals::{DecimalRounding, LiteralValue, date_from_text},
+    operators::OperatorObject,
     program::Program,
     relation_properties::Properties,
     statements::{Statement, TargetColumn},
@@ -67,10 +70,23 @@ pub fn validate(
     };
     let types = &program.table.type_table.types;
     let props = &program.properties.relations[relation as usize];
-    let Properties::Values { tuples } = props.fields else {
-        return Err("INSERT source requires literal VALUES".into());
-    };
     let producer = &program.producers.relations[relation as usize];
+    let (tuples, projected) = match &props.fields {
+        Properties::Values { tuples } => (*tuples, false),
+        Properties::Project { variables, .. } if variables.is_empty() => {
+            let [input] = producer.inputs.as_slice() else {
+                return Err("constant INSERT projection requires one input".into());
+            };
+            if !matches!(
+                program.properties.relations[*input as usize].fields,
+                Properties::Values { tuples: 1 }
+            ) {
+                return Err("constant INSERT projection requires a single VALUES row".into());
+            }
+            (1, true)
+        }
+        _ => return Err("INSERT source requires literal VALUES or a constant projection".into()),
+    };
     let TypeKind::Row { fields, .. } = &types[producer.row.0 as usize].kind else {
         return Err("INSERT source requires a row type".into());
     };
@@ -95,16 +111,15 @@ pub fn validate(
     for row in site.roots.chunks_exact(fields.len()) {
         for &(i, dest) in &order {
             let id = row[i];
-            let ObjectKind::Literal { literal } =
-                &program.expressions.expressions[id.0 as usize].kind
-            else {
-                return Err("expected a literal in INSERT VALUES".into());
-            };
-            if !fits_source(&literal.value, &types[fields[i].ty.0 as usize]) {
+            let value = source_value(program, id, fields[i].ty, projected)?;
+            if !fits_source(value, &types[fields[i].ty.0 as usize]) {
                 return Err("literal does not fit the INSERT source row".into());
             }
-            if let Some(warning) =
-                assignment(&literal.value, &types[dest.ty.0 as usize], &dest.name.name)?
+            // VALUES casts to the destination while compiling its cells. A
+            // project keeps its own types until TableContents adds the row,
+            // after the simplifier has already emitted its cast warnings.
+            if let Some(warning) = assignment(value, &types[dest.ty.0 as usize], &dest.name.name)?
+                && !projected
                 && reported.insert(warning.clone())
             {
                 warnings.push(warning);
@@ -112,6 +127,47 @@ pub fn validate(
         }
     }
     Ok(warnings)
+}
+
+/// A projected INSERT can contain Feldera's identity call on a supplementary
+/// character literal. Other calls require full expression evaluation.
+fn source_value(
+    program: &Program,
+    id: ExprId,
+    field: TypeId,
+    projected: bool,
+) -> Result<&LiteralValue, String> {
+    let graph = &program.expressions;
+    let expr = &graph.expressions[id.0 as usize];
+    if projected && expr.ty != field {
+        return Err("projected INSERT expression differs from its column type".into());
+    }
+    match &expr.kind {
+        ObjectKind::Literal { literal } => Ok(&literal.value),
+        ObjectKind::Call {
+            operator,
+            arguments,
+        } if projected => {
+            let signature = &graph.operators[operator.0 as usize];
+            let object = &graph.operator_objects[signature.object.0 as usize];
+            let [arg] = arguments.as_slice() else {
+                return Err("expected one character literal in INSERT projection".into());
+            };
+            let child = &graph.expressions[arg.0 as usize];
+            let types = &program.table.type_table.types;
+            if *object == OperatorObject::non_bmp_literal()
+                && let ObjectKind::Literal { literal } = &child.kind
+                && let Some(result) = literal
+                    .value
+                    .non_bmp_result_type(&types[child.ty.0 as usize])
+                && result == types[expr.ty.0 as usize]
+            {
+                return Ok(&literal.value);
+            }
+            Err("unsupported call in constant INSERT projection".into())
+        }
+        _ => Err("expected a literal in INSERT VALUES".into()),
+    }
 }
 
 fn fits_source(value: &LiteralValue, ty: &SqlType) -> bool {

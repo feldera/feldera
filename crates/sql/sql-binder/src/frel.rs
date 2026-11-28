@@ -74,7 +74,7 @@ impl<'a> Emitter<'a> {
                 let name = if column.quoted {
                     column.name.clone()
                 } else {
-                    column.name.to_ascii_lowercase()
+                    column.name.to_lowercase()
                 };
                 Ok(Field {
                     name: Identifier {

@@ -2,10 +2,15 @@
 
 mod temporal;
 
+use super::{graph, source::DeclarationTokens};
 use crate::{Expr, Failure, Value, unsupported};
 use feldera_sql_rel_model::{
+    TypeId,
+    expressions::ExprId,
     literals::{ExactDecimal, LiteralValue},
-    types::{CharacterMetadata, IntegerWidth, Precision, TypeKind},
+    program::Program,
+    source::Origin,
+    types::{CharacterMetadata, IntegerWidth, Precision, SqlType, TypeKind},
 };
 use sqlparser_064::ast::UnaryOperator;
 
@@ -16,6 +21,41 @@ pub(super) struct Cell {
 }
 
 impl Cell {
+    pub(super) fn needs_non_bmp_wrapper(&self) -> bool {
+        self.value.contains_supplementary_character()
+    }
+
+    pub(super) fn emit(
+        &self,
+        program: &mut Program,
+        tokens: &DeclarationTokens<'_>,
+        expr: &Expr,
+    ) -> Result<(ExprId, TypeId), Failure> {
+        let source = SqlType {
+            nullable: matches!(self.kind, TypeKind::Null {}),
+            kind: self.kind.clone(),
+            origin: Origin::Absent {},
+        };
+        let wrapped = self.value.non_bmp_result_type(&source);
+        let ty = graph::insert_type(&mut program.table.type_table, source);
+        let literal = graph::append_literal(program, ty, self.value.clone());
+        if let Some(result) = wrapped {
+            let result = graph::insert_type(&mut program.table.type_table, result);
+            Ok((
+                graph::wrap_non_bmp_literal(
+                    program,
+                    literal,
+                    ty,
+                    result,
+                    tokens.literal_position(expr)?,
+                ),
+                result,
+            ))
+        } else {
+            Ok((literal, ty))
+        }
+    }
+
     fn number(text: &str, negative: bool) -> Result<Self, Failure> {
         let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
         if whole.is_empty() && fraction.is_empty()

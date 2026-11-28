@@ -7,10 +7,7 @@ use super::{
 use crate::{
     BinaryOperator, Expr, Failure, Spanned,
     frel::{CALCITE, FELDERA},
-    program::{
-        graph::insert_type,
-        source::{coordinates, end_at_call_close},
-    },
+    program::{graph::insert_type, source::DeclarationTokens},
     scalar_args, unsupported,
 };
 use feldera_sql_rel_model::{
@@ -26,7 +23,7 @@ pub(super) fn projection(
     alias: Option<&Ident>,
     columns: &[TableColumn],
     qualifier: &str,
-    sql: &str,
+    tokens: &DeclarationTokens<'_>,
     ordinal: usize,
 ) -> Result<Projection, Failure> {
     let argument = |value| {
@@ -80,7 +77,7 @@ pub(super) fn projection(
                     key,
                     arguments: vec![TableOperand::Column(left), TableOperand::Column(right)],
                     ty,
-                    position: Some(coordinates(expression.span())),
+                    position: Some(tokens.coordinates(expression.span())?),
                 },
                 format!("{left_pretty} {op} {right_pretty}"),
                 format!("({left_diagnostic} {op} {right_diagnostic})"),
@@ -112,7 +109,7 @@ pub(super) fn projection(
                     key: "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions$AbsFunction#abs",
                     arguments: vec![TableOperand::Column(input)],
                     ty,
-                    position: Some(end_at_call_close(sql, expression.span(), source.span())?),
+                    position: Some(tokens.end_at_call_close(expression.span(), source.span())?),
                 },
                 format!("ABS({pretty})"),
                 format!("ABS({diagnostic})"),

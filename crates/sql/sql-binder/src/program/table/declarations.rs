@@ -5,7 +5,7 @@ use super::{
     DeclarationTokens, ParsedStatement, StatementText,
     types::{TypeSpelling, declare_type},
 };
-use crate::program::{diagnostic_source, source::coordinates};
+use crate::program::diagnostic_source;
 use crate::{Failure, unsupported};
 use feldera_sql_parser::TypeDefinition;
 use feldera_sql_rel_model::{
@@ -33,7 +33,7 @@ pub(super) fn identifier(ident: &Ident) -> (Name, TypeSpelling) {
         name: if ident.quote_style.is_some() {
             ident.value.clone()
         } else {
-            ident.value.to_ascii_lowercase()
+            ident.value.to_lowercase()
         },
         quoted: ident.quote_style.is_some(),
     };
@@ -128,7 +128,7 @@ pub(super) fn register(
         statements.push(Statement::CreateType {
             source: text.source("CREATE_TYPE"),
             name,
-            name_diagnostic: diagnostic_source(&coordinates(span), &spelling.diagnostic),
+            name_diagnostic: diagnostic_source(&tokens.coordinates(span)?, &spelling.diagnostic),
             ty,
             attributes,
         });

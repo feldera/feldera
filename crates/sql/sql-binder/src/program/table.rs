@@ -17,7 +17,7 @@ use super::{
         append_table_scan, append_values, insert_row_fields,
     },
     set_source,
-    source::{DeclarationTokens, coordinates},
+    source::DeclarationTokens,
 };
 use crate::{
     Expr, Failure, SelectItem, Spanned, Statement as ParsedStatement, Submission, Upstream,
@@ -72,11 +72,8 @@ pub(super) fn bind_parsed_table(
     many: bool,
 ) -> Result<Program, Failure> {
     check_prelude(&program)?;
-    if !sql.is_ascii() {
-        return Err(unsupported("table statement source must be ASCII"));
-    }
-
-    let declarations = DeclarationTokens::split(sql, starts)?;
+    let lines: Vec<_> = sql.split('\n').collect();
+    let declarations = DeclarationTokens::split(sql, &lines, starts)?;
     if declarations.len() != parsed.len() {
         return Err(unsupported(
             "source declaration count differs from parsed statements",
@@ -123,12 +120,11 @@ pub(super) fn bind_parsed_table(
                 super::append_constant_view(
                     &mut program,
                     std::slice::from_ref(parsed_statement),
-                    sql,
-                    tokens.range()?,
+                    tokens,
                 )?;
             }
-            Upstream::CreateView(view) => bind_view(&mut program, view, tokens.range()?, sql)?,
-            Upstream::Insert(insert) => super::insert::bind(&mut program, insert, tokens.range()?)?,
+            Upstream::CreateView(view) => bind_view(&mut program, view, tokens)?,
+            Upstream::Insert(insert) => super::insert::bind(&mut program, insert, tokens)?,
             _ => {
                 return Err(unsupported(
                     "expected a table, a view, or INSERT INTO ... VALUES",
@@ -275,7 +271,10 @@ fn declare_table(
     program.statements.push(Statement::CreateTable {
         source: table_source.source("CREATE_TABLE"),
         schema,
-        name_diagnostic: diagnostic_source(&coordinates(table_ident.span), &table_name.name),
+        name_diagnostic: diagnostic_source(
+            &tokens.coordinates(table_ident.span)?,
+            &table_name.name,
+        ),
         name: table_name,
         foreign_keys: Vec::new(),
     });
@@ -294,7 +293,7 @@ fn table_key(table: &sqlparser_064::ast::CreateTable) -> Result<Vec<String>, Fai
         .iter()
         .map(|column| match &column.column.expr {
             Expr::Identifier(ident) if ident.quote_style.is_none() => {
-                let name = ident.value.to_ascii_lowercase();
+                let name = ident.value.to_lowercase();
                 if !seen.insert(name.clone()) {
                     return Err(unsupported("duplicate primary key column"));
                 }
@@ -308,8 +307,7 @@ fn table_key(table: &sqlparser_064::ast::CreateTable) -> Result<Vec<String>, Fai
 fn bind_view(
     program: &mut Program,
     view: &sqlparser_064::ast::CreateView,
-    position: Coordinates,
-    sql: &str,
+    tokens: &DeclarationTokens<'_>,
 ) -> Result<(), Failure> {
     validate_plain_view(view)?;
     let declaration = ViewDeclaration::new(view)?;
@@ -322,14 +320,14 @@ fn bind_view(
     {
         return Err(unsupported("view name already exists"));
     }
-    let query = sets::bind(program, crate::query_body(&view.query)?, sql, 0)?;
-    append_view(program, position, declaration, query)
+    let query = sets::bind(program, crate::query_body(&view.query)?, tokens, 0)?;
+    append_view(program, tokens.range()?, declaration, query)
 }
 
 fn bind_select(
     program: &mut Program,
     select: &crate::Select,
-    sql: &str,
+    tokens: &DeclarationTokens<'_>,
 ) -> Result<BoundQuery, Failure> {
     crate::check_select_clauses(select, true)?;
     let GroupByExpr::Expressions(groups, _) = &select.group_by else {
@@ -359,28 +357,35 @@ fn bind_select(
         })
         .collect();
     let columns = columns.as_slice();
-    let report_expression_error = |failure: Failure| failure.with_compiler_diagnostic(sql, None);
+    let report_expression_error =
+        |failure: Failure| failure.with_compiler_diagnostic(tokens.sql, None);
     let mut aggregate = aggregate::BoundAggregate::bind(
         program,
         &select.projection,
         groups,
         columns,
         &input.qualifier,
-        sql,
+        tokens,
     )
     .map_err(report_expression_error)?;
     let mut projection = if let Some(aggregate) = &mut aggregate {
         std::mem::take(&mut aggregate.projection)
     } else if groups.is_empty() {
-        bind_projection(program, &select.projection, columns, &input.qualifier, sql)
-            .map_err(report_expression_error)?
+        bind_projection(
+            program,
+            &select.projection,
+            columns,
+            &input.qualifier,
+            tokens,
+        )
+        .map_err(report_expression_error)?
     } else {
         return Err(unsupported("GROUP BY requires a supported aggregate"));
     };
     let predicate = select
         .selection
         .as_ref()
-        .map(|expression| filter::bind(program, expression, columns, &input.qualifier, sql))
+        .map(|expression| filter::bind(program, expression, columns, &input.qualifier, tokens))
         .transpose()
         .map_err(report_expression_error)?;
     if aggregate.is_none() {
@@ -406,7 +411,7 @@ fn bind_select(
         });
     let scan_hint = Hint {
         name: "alias".into(),
-        position: coordinates(select.from[0].relation.span()),
+        position: tokens.coordinates(select.from[0].relation.span())?,
         inherit_path: Vec::new(),
         list: vec![input.qualifier.clone()],
         options: Vec::new(),
@@ -517,7 +522,7 @@ fn bind_projection(
     items: &[SelectItem],
     columns: &[TableColumn],
     qualifier: &str,
-    sql: &str,
+    tokens: &DeclarationTokens<'_>,
 ) -> Result<Vec<Projection>, Failure> {
     if let [
         SelectItem::Wildcard(WildcardAdditionalOptions {
@@ -548,7 +553,9 @@ fn bind_projection(
                     if let Some(failure) = unsupported_niladic(expression) {
                         return Err(failure);
                     }
-                    compute::projection(program, expression, alias, columns, qualifier, sql, index)?
+                    compute::projection(
+                        program, expression, alias, columns, qualifier, tokens, index,
+                    )?
                 }
                 _ => {
                     let ordinal = column_ordinal(expression, columns, qualifier)?;
@@ -583,7 +590,7 @@ fn column_ordinal(expr: &Expr, columns: &[TableColumn], qualifier: &str) -> Resu
         Expr::Identifier(ident) => ident,
         Expr::CompoundIdentifier(parts) => match parts.as_slice() {
             [prefix, ident]
-                if prefix.quote_style.is_none() && prefix.value.eq_ignore_ascii_case(qualifier) =>
+                if prefix.quote_style.is_none() && prefix.value.to_lowercase() == qualifier =>
             {
                 ident
             }
@@ -639,7 +646,7 @@ fn render_column(qualifier: &str, column: &str) -> (String, String) {
 
 fn name(ident: &str) -> Name {
     Name {
-        name: ident.to_ascii_lowercase(),
+        name: ident.to_lowercase(),
         quoted: false,
     }
 }

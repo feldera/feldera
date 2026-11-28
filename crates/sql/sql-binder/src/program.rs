@@ -29,7 +29,7 @@ use feldera_sql_rel_model::{
 use graph::{
     append_expression, append_project, append_values, insert_row_fields, reserve_environment,
 };
-use source::{display_constant, statement_position};
+use source::{DeclarationTokens, display_constant};
 
 const USER: SourceId = SourceId(0);
 
@@ -121,19 +121,17 @@ fn bind_parsed_constant(
     many: bool,
 ) -> Result<Program, Failure> {
     check_prelude(&program)?;
-    if !sql.is_ascii() {
-        return Err(unsupported("constant program source must be ASCII"));
-    }
+    let lines: Vec<_> = sql.split('\n').collect();
+    let tokens = DeclarationTokens::single(sql, &lines)?;
     set_source(&mut program, id, sql, many);
-    append_constant_view(&mut program, parsed, sql, statement_position(sql)?)?;
+    append_constant_view(&mut program, parsed, &tokens)?;
     finish(program)
 }
 
 fn append_constant_view(
     program: &mut Program,
     parsed: &[ParsedStatement],
-    sql: &str,
-    position: Coordinates,
+    tokens: &DeclarationTokens<'_>,
 ) -> Result<(), Failure> {
     let [ParsedStatement::Upstream(statement)] = parsed else {
         return Err(unsupported("expected one constant view"));
@@ -166,7 +164,7 @@ fn append_constant_view(
     let scope = super::ColumnScope {
         columns: &[],
         qualifier: None,
-        sql,
+        sql: tokens.sql,
         preserve_parentheses: true,
         tokens: Default::default(),
     };
@@ -181,14 +179,14 @@ fn append_constant_view(
             ty,
             folded,
             mut display,
-        } = constant_operand(program, &scope, expr)?;
+        } = constant_operand(program, &scope, tokens, expr)?;
         let field = match alias {
             Some(ident) => {
                 let quoted = ident.quote_style.is_some();
                 let name = if quoted {
                     ident.value.clone()
                 } else {
-                    ident.value.to_ascii_lowercase()
+                    ident.value.to_lowercase()
                 };
                 display
                     .pretty
@@ -236,7 +234,7 @@ fn append_constant_view(
     }
     append_view(
         program,
-        position,
+        tokens.range()?,
         declaration,
         BoundQuery {
             kind: "SELECT",
@@ -258,19 +256,13 @@ struct ConstantOperand {
 fn constant_operand(
     program: &mut Program,
     scope: &super::ColumnScope<'_>,
+    tokens: &DeclarationTokens<'_>,
     expr: &super::Expr,
 ) -> Result<ConstantOperand, Failure> {
-    use feldera_sql_rel_model::types::{SqlType, TypeKind};
     use sqlparser_064::ast::Spanned;
     if let Ok(cell) = literal::Cell::parse(expr) {
-        let ty = graph::insert_type(
-            &mut program.table.type_table,
-            SqlType {
-                nullable: matches!(cell.kind, TypeKind::Null {}),
-                kind: cell.kind,
-                origin: Origin::Absent {},
-            },
-        );
+        let folded = !cell.needs_non_bmp_wrapper();
+        let (root, ty) = cell.emit(program, tokens, expr)?;
         // The validator canonicalizes UUID literals in SELECT. INSERT keeps
         // the spelling from its unvalidated VALUES clause.
         let spelling = match &cell.value {
@@ -282,11 +274,10 @@ fn constant_operand(
             }
             _ => cell.sql,
         };
-        let root = graph::append_literal(program, ty, cell.value);
         return Ok(ConstantOperand {
             root,
             ty,
-            folded: true,
+            folded,
             display: source::SqlDisplay::atom(spelling),
         });
     }
@@ -446,20 +437,16 @@ impl ViewDeclaration {
         };
         let ident = super::local_name(&view.name)?;
         let name = Name {
-            name: ident.value.to_ascii_lowercase(),
+            name: ident.value.to_lowercase(),
             quoted: false,
         };
         let mut columns = Vec::with_capacity(view.columns.len());
         let mut seen = std::collections::HashSet::new();
         for col in &view.columns {
-            if col.name.quote_style.is_some()
-                || !col.name.value.is_ascii()
-                || col.data_type.is_some()
-                || col.options.is_some()
-            {
+            if col.name.quote_style.is_some() || col.data_type.is_some() || col.options.is_some() {
                 return Err(unsupported("expected an unquoted view column name"));
             }
-            let name = col.name.value.to_ascii_lowercase();
+            let name = col.name.value.to_lowercase();
             if !seen.insert(name.clone()) {
                 return Err(unsupported("duplicate declared view column"));
             }

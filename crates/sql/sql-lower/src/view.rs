@@ -118,7 +118,7 @@ fn resolve_scan<'a>(
         || !relation.metadata.traits.is_empty()
         || [namespace, table_name, alias]
             .iter()
-            .any(|s| !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+            .any(|s| !s.chars().all(|c| c.is_alphanumeric() || c == '_'))
     {
         return Err(Error("unsupported scan or view metadata".into()));
     }

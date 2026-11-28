@@ -169,6 +169,17 @@ pub fn lower_program(
                 *relation,
             )
             .map_err(Error)?;
+            if matches!(
+                program.properties.relations[*relation as usize].fields,
+                feldera_sql_rel_model::relation_properties::Properties::Project { .. }
+            ) {
+                // compileConstantProject allocates an input-row variable even
+                // when every projected expression is independent of that row.
+                let next = checkpoint["next_generated_name"]
+                    .as_u64()
+                    .ok_or_else(|| Error("missing generated name counter".into()))?;
+                checkpoint["next_generated_name"] = (next + 1).into();
+            }
             let position = source_table::statement_position(source);
             let messages = checkpoint["diagnostics"]["messages"]
                 .as_array_mut()

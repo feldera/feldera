@@ -15,6 +15,18 @@ METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW t
 SET_TABLES = ("CREATE TABLE a(x INT, y BIGINT NOT NULL); CREATE TABLE b(p INT, q BIGINT NOT NULL);"
               " CREATE TABLE c(n INT, m BIGINT NOT NULL); CREATE VIEW v AS ")
 CASES = {
+    "unicode_origins": "/* 😀 é */ CREATE TABLE t(a INT, b INT); /* 🦀 */"
+                      " CREATE VIEW v AS SELECT a FROM t WHERE b > 1;",
+    "unicode_identifiers": "CREATE TABLE Über(Á INT); CREATE VIEW Ä AS SELECT ÜBER.Á FROM über;",
+    "unicode_record": '/*é*/ CREATE TYPE "😀" AS ("É" INTEGER); CREATE TABLE t(v "😀");',
+    "unicode_alias": 'CREATE VIEW v AS SELECT 2 AS "Ž😀", 1 AS "É";',
+    "unicode_literals": "CREATE VIEW v AS SELECT 'éé' AS a, (('🤖')) AS b, '🐕' AS c;",
+    "unicode_insert": "CREATE TABLE t(a VARCHAR, b VARCHAR); INSERT INTO t(b,a) VALUES ('🤝', '👋👋');"
+                      " INSERT INTO t VALUES ('é', '😀'); CREATE VIEW v AS SELECT * FROM t;",
+    "unicode_assignment": "CREATE TABLE t(a INT, b BOOLEAN); INSERT INTO t VALUES ('🙂', '🙂');"
+                          " INSERT INTO t VALUES ('bad', '🐆');",
+    "unicode_null": "CREATE TABLE t(a INT, b VARCHAR); INSERT INTO t VALUES (NULL, '👋');",
+    "unicode_tab": "\t/*😀*/ CREATE TABLE t(x INT, y INT);\tCREATE VIEW v AS SELECT y,x FROM t;",
     "set_union": SET_TABLES + "SELECT * FROM a UNION SELECT * FROM b;",
     "set_union_all": SET_TABLES + "SELECT * FROM a UNION ALL SELECT * FROM b;",
     "set_intersect_all": SET_TABLES + "SELECT * FROM a INTERSECT ALL SELECT * FROM b;",

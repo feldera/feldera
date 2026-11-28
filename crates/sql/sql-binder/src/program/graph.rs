@@ -477,6 +477,47 @@ pub(super) fn append_project(
     Ok(())
 }
 
+/// Calcite counts UTF-16 units when folding CHAR values. Feldera wraps
+/// supplementary literals in a VARCHAR identity call to preserve SQL length.
+pub(super) fn wrap_non_bmp_literal(
+    program: &mut Program,
+    literal: ExprId,
+    literal_type: TypeId,
+    result: TypeId,
+    position: Coordinates,
+) -> ExprId {
+    let builtin = OperatorObject::non_bmp_literal();
+    let table = &mut program.expressions;
+    let index = table
+        .operator_objects
+        .iter()
+        .position(|item| item == &builtin)
+        .unwrap_or_else(|| {
+            let index = table.operator_objects.len();
+            table.operator_objects.push(builtin);
+            index
+        });
+    let operator = OperatorId(table.operators.len() as u32);
+    table.operators.push(ResolvedOperator {
+        object: OperatorObjectId(index as u32),
+        result,
+        parameters: vec![literal_type],
+    });
+    let root = ExprId(table.expressions.len() as u32);
+    table.expressions.push(ExpressionObject {
+        ty: result,
+        position: ObjectPosition::Present {
+            position,
+            internal: None,
+        },
+        kind: ObjectKind::Call {
+            operator,
+            arguments: vec![literal],
+        },
+    });
+    root
+}
+
 pub(super) fn append_integer(program: &mut Program, ty: TypeId, value: i64) -> ExprId {
     append_literal(
         program,

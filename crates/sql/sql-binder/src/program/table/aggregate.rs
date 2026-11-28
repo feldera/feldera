@@ -9,7 +9,7 @@ use crate::program::{
         ProjectInput, ProjectValue, TableOperand, append_aggregate, append_integer,
         append_table_project, append_values, insert_row_fields, insert_type,
     },
-    source::simple_aggregate_position,
+    source::DeclarationTokens,
 };
 use crate::{Expr, SelectItem, Spanned, frel::CALCITE, local_name, unsupported};
 use feldera_sql_rel_model::{
@@ -92,7 +92,7 @@ impl BoundAggregate {
         groups: &[Expr],
         columns: &[TableColumn],
         qualifier: &str,
-        sql: &str,
+        tokens: &DeclarationTokens<'_>,
     ) -> Result<Option<Self>, Failure> {
         let aggregate = |item: &SelectItem| {
             projection_item(item)
@@ -225,7 +225,7 @@ impl BoundAggregate {
                     mut value,
                     pretty,
                     diagnostic,
-                } = filter::bind(program, predicate, columns, qualifier, sql)?
+                } = filter::bind(program, predicate, columns, qualifier, tokens)?
                 else {
                     return Err(unsupported(
                         "literal aggregate FILTER is outside the table slice",
@@ -265,7 +265,7 @@ impl BoundAggregate {
                 name: output.name.name.clone(),
                 arguments,
                 filter,
-                position: simple_aggregate_position(sql, expression.span())?,
+                position: tokens.simple_aggregate_position(expression.span())?,
             });
             plan.projection.push(output);
         }

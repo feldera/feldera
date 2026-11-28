@@ -247,6 +247,45 @@ impl ExactDecimal {
 }
 
 impl LiteralValue {
+    pub fn contains_supplementary_character(&self) -> bool {
+        matches!(self, Self::Character { value } if value.chars().any(|c| c.len_utf16() == 2))
+    }
+
+    /// Feldera's NON_BMP_LITERAL call prevents Calcite from padding a CHAR
+    /// literal to its UTF-16 length. The VARCHAR result inherits its collation.
+    pub fn non_bmp_result_type(
+        &self,
+        source: &crate::types::SqlType,
+    ) -> Option<crate::types::SqlType> {
+        use crate::types::{Precision, SqlType, TypeKind};
+        let Self::Character { value } = self else {
+            return None;
+        };
+        let TypeKind::Character {
+            fixed: true,
+            length: Precision::Specified(width),
+            metadata,
+        } = &source.kind
+        else {
+            return None;
+        };
+        if source.nullable
+            || !self.contains_supplementary_character()
+            || value.encode_utf16().count() != *width as usize
+        {
+            return None;
+        }
+        Some(SqlType {
+            kind: TypeKind::Character {
+                fixed: false,
+                length: Precision::Unspecified,
+                metadata: metadata.clone(),
+            },
+            nullable: false,
+            origin: Origin::Absent {},
+        })
+    }
+
     pub fn as_exact_decimal(&self) -> Option<ExactDecimal> {
         match self {
             Self::Integer { value } => Some(ExactDecimal {

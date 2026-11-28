@@ -14,6 +14,8 @@ from validate_bound_programs import CASES as BINDING_CASES
 
 CASES = {
     **{name: BINDING_CASES[name] for name in (
+        "unicode_origins", "unicode_identifiers", "unicode_record", "unicode_alias", "unicode_insert",
+        "unicode_assignment", "unicode_null", "unicode_tab",
         "set_minus", "set_minus_all", "set_mixed", "set_intersect_all", "set_except_chain", "set_intersect_chain",
         "set_union", "set_union_all", "set_chain", "set_filter", "set_identity_names",
         "scalar_assignment_float", "scalar_assignment_text", "scalar_assignment_bool", "scalar_assignment_numeric",

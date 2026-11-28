@@ -130,6 +130,14 @@ pub enum ComponentPositions {
 }
 
 impl OperatorObject {
+    pub fn non_bmp_literal() -> Self {
+        Self::Builtin {
+            registry: "feldera-s1-internals".into(),
+            registry_version: "1".into(),
+            key: "non-bmp-literal".into(),
+        }
+    }
+
     pub(crate) fn validate(&self, types: &TypeTable, path: &str) -> Result<(), ValidationError> {
         let invalid = |message| ValidationError {
             path: path.into(),
