@@ -923,6 +923,41 @@ pub mod tests {
         assert_eq!(snapshots(&warehouse), 3);
     }
 
+    /// Updates and deletes that several threads write give the same change log as one thread.
+    #[engine_test]
+    pub fn updates_and_deletes_arrive_multi_thread(engine: &dyn ConnectorTestEngine) {
+        let warehouse = TOKIO.block_on(TestWarehouse::new());
+        let mut endpoint = endpoint(&warehouse, 4, true);
+        let old = sample_rows(1000);
+        encode(&mut endpoint, inserts(engine, &old)).unwrap();
+        // New versions of the odd keys, taken from other rows.
+        let newer = sample_rows(2000).slice(1000, 1000);
+        let bigint = newer.schema().index_of("bigint").unwrap();
+        let mut columns = newer.columns().to_vec();
+        columns[bigint] = Arc::new(Int64Array::from_iter_values(0..1000));
+        let newer = RecordBatch::try_new(newer.schema(), columns).unwrap();
+        let odd = take_record_batch(&newer, &UInt32Array::from_iter_values((1..1000).step_by(2)));
+        let odd = odd.unwrap();
+        let even = take_record_batch(&old, &UInt32Array::from_iter_values((0..1000).step_by(2)));
+        let files = || TOKIO.block_on(warehouse.data_files("t")).1;
+        let files_before = files();
+
+        // Delete the even keys, update the odd keys.
+        let rows = concat_batches(&old.schema(), [&old, &odd]).unwrap();
+        let mut weights = vec![-1; 1000];
+        weights.resize(1500, 1);
+        encode(&mut endpoint, indexed_batch(engine, &rows, &weights)).unwrap();
+
+        let mut all = expected(&old, "i");
+        all.extend(expected(&even.unwrap(), "d"));
+        all.extend(expected(&odd, "u"));
+        all.sort();
+        assert_eq!(changes(&warehouse), all);
+        // More than one key range wrote the batch.
+        let written = files() - files_before;
+        assert!(written > 1, "{written} files");
+    }
+
     /// Without an index, a row repeats once per unit of weight.
     #[engine_test]
     pub fn rows_without_an_index_follow_their_weights(engine: &dyn ConnectorTestEngine) {
