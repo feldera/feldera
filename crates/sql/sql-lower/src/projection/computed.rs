@@ -14,7 +14,6 @@ use crate::{
 };
 use feldera_sql_ir::{BinaryOp, TypeKind as CircuitType};
 use feldera_sql_rel_model::{
-    catalog::CatalogSchema,
     expression_objects::{ObjectKind, ObjectPosition},
     expressions::ExprId,
     operators::{OperatorObject, ABS_KEY},
@@ -27,6 +26,7 @@ use serde_json::{json, Value};
 pub(crate) struct Computed {
     call: Call,
     result: ColumnLayout,
+    nullable_output: Option<ColumnLayout>,
     position: Value,
 }
 
@@ -65,14 +65,27 @@ impl Operand {
         }
     }
 
-    fn sql(&self, input: &CatalogSchema, min_precedence: u8) -> Result<String, Error> {
+    // RexCall omits a literal's type when its other operand identifies the
+    // same SQL type. Nullability alone does not distinguish the types.
+    fn arithmetic_digest(&self, other: &Self, same_type: bool) -> String {
         match self {
-            Self::Column(index) => {
-                super::field::column_name(input, *index).map(super::field::quote)
+            Self::Integer(integer) if same_type && !matches!(other, Self::Integer(_)) => {
+                integer.value.to_string()
             }
+            _ => self.digest(),
+        }
+    }
+
+    fn sql(
+        &self,
+        field: &impl Fn(usize, u8) -> Result<String, Error>,
+        min_precedence: u8,
+    ) -> Result<String, Error> {
+        match self {
+            Self::Column(index) => field(*index, min_precedence),
             Self::Integer(integer) => Ok(integer.value.to_string()),
             Self::Call(call) => {
-                let sql = call.sql(input)?;
+                let sql = call.sql(field)?;
                 if call.precedence() < min_precedence {
                     Ok(format!("({sql})"))
                 } else {
@@ -110,8 +123,12 @@ enum Call {
         name: String,
         argument: Box<TrigonometricArgument>,
     },
-    Abs {
+    NullableColumn {
         field: usize,
+        sql_type: &'static str,
+    },
+    Abs {
+        argument: Operand,
         function: String,
     },
 }
@@ -160,15 +177,34 @@ impl Computed {
                 "unsupported projection operator registry version".into(),
             ));
         }
-        let column = |id: ExprId| {
-            let expr = &program.expressions.expressions[id.0 as usize];
-            let ObjectKind::InputRef { object } = expr.kind else {
-                return Err(Error("computed projection requires column operands".into()));
-            };
-            let ty = &program.table.type_table.types[expr.ty.0 as usize];
-            Ok((program.table.objects[object.0 as usize].field as usize, ty))
-        };
+        let mut operation_nullable = result.nullable;
         let call = match (registry.as_str(), key.as_str(), arguments.as_slice()) {
+            ("calcite-s1-fixture", "SqlStdOperatorTable.CAST", &[arg])
+                if matches!(
+                    program.expressions.expressions[arg.0 as usize].kind,
+                    ObjectKind::InputRef { .. }
+                ) =>
+            {
+                let source = &program.expressions.expressions[arg.0 as usize];
+                let input = &program.table.type_table.types[source.ty.0 as usize];
+                let TypeKind::Integer {
+                    width,
+                    signed: true,
+                } = input.kind
+                else {
+                    return Err(Error("expected an integer column cast".into()));
+                };
+                if input.nullable || !result.nullable || input.kind != result.kind {
+                    return Err(Error("expected a nullability cast".into()));
+                }
+                let ObjectKind::InputRef { object } = source.kind else {
+                    unreachable!()
+                };
+                Call::NullableColumn {
+                    field: program.table.objects[object.0 as usize].field as usize,
+                    sql_type: width.signed_sql_name(),
+                }
+            }
             ("calcite-s1-fixture", "SqlStdOperatorTable.CAST", [_]) => {
                 Call::IntervalCount(Box::new(IntervalCount::resolve(program, id)?))
             }
@@ -203,9 +239,10 @@ impl Computed {
                         ObjectKind::Literal { .. }
                     )
                     && opcode == BinaryOp::Mul;
+                operation_nullable = left_type.nullable || right_type.nullable;
                 if left_type.kind != result.kind
                     || (!widen_right && right_type.kind != result.kind)
-                    || result.nullable != (left_type.nullable || right_type.nullable)
+                    || (!result.nullable && operation_nullable)
                 {
                     return Err(Error(
                         "arithmetic result differs from the inferred common operand type".into(),
@@ -218,7 +255,7 @@ impl Computed {
                     opcode,
                     widen_right,
                     reuse_left_type: opcode == BinaryOp::Div
-                        && left_type.nullable == result.nullable,
+                        && left_type.nullable == operation_nullable,
                 }
             }
             (
@@ -298,8 +335,10 @@ impl Computed {
                 )?))
             }
             ("feldera-s1-builtins", ABS_KEY, &[arg]) => {
-                let (field, input) = column(arg)?;
-                if input.kind != result.kind || input.nullable != result.nullable {
+                let input_ty = program.expressions.expressions[arg.0 as usize].ty;
+                let input = &program.table.type_table.types[input_ty.0 as usize];
+                operation_nullable = input.nullable;
+                if input.kind != result.kind || (input.nullable && !result.nullable) {
                     return Err(Error("ABS result differs from its operand type".into()));
                 }
                 let suffix = match input.kind {
@@ -316,7 +355,7 @@ impl Computed {
                 };
                 let nullable = if input.nullable { "N" } else { "" };
                 Call::Abs {
-                    field,
+                    argument: Operand::resolve(program, arg, budget, child_depth)?,
                     function: format!("abs_{suffix}{nullable}"),
                 }
             }
@@ -324,7 +363,13 @@ impl Computed {
         };
         Ok(Self {
             call,
-            result: ColumnLayout::scalar(result)?,
+            result: ColumnLayout::scalar(&feldera_sql_rel_model::types::SqlType {
+                nullable: operation_nullable,
+                ..result.clone()
+            })?,
+            nullable_output: (result.nullable != operation_nullable)
+                .then(|| ColumnLayout::scalar(result))
+                .transpose()?,
             position: range(
                 position.line,
                 position.column,
@@ -340,12 +385,18 @@ impl Computed {
                 ref left,
                 ref right,
                 symbol,
+                widen_right,
                 ..
-            } => format!("{symbol}({}, {})", left.digest(), right.digest()),
+            } => format!(
+                "{symbol}({}, {})",
+                left.arithmetic_digest(right, !widen_right),
+                right.arithmetic_digest(left, !widen_right)
+            ),
             Call::TemporalText(ref call) => call.digest(),
             Call::IntervalCount(ref count) => count.digest(),
             Call::ArrayLength { name, ref argument } => format!("{name}({})", argument.digest()),
-            Call::Abs { field, .. } => format!("abs(${field})"),
+            Call::Abs { ref argument, .. } => format!("abs({})", argument.digest()),
+            Call::NullableColumn { field, sql_type } => format!("CAST(${field}):{sql_type}"),
             Call::Trigonometric {
                 ref name,
                 ref argument,
@@ -353,7 +404,7 @@ impl Computed {
         }
     }
 
-    fn precedence(&self) -> u8 {
+    pub(crate) fn precedence(&self) -> u8 {
         match self.call {
             Call::Arithmetic {
                 opcode: BinaryOp::Add | BinaryOp::Sub,
@@ -364,8 +415,10 @@ impl Computed {
         }
     }
 
-    pub(super) fn sql(&self, input: &CatalogSchema) -> Result<String, Error> {
-        let field = |i| super::field::column_name(input, i).map(super::field::quote);
+    pub(crate) fn sql(
+        &self,
+        column: &impl Fn(usize, u8) -> Result<String, Error>,
+    ) -> Result<String, Error> {
         Ok(match self.call {
             Call::Arithmetic {
                 ref left,
@@ -374,13 +427,16 @@ impl Computed {
                 ..
             } => format!(
                 "{} {symbol} {}",
-                left.sql(input, self.precedence())?,
-                right.sql(input, self.precedence() + 1)?
+                left.sql(column, self.precedence())?,
+                right.sql(column, self.precedence() + 1)?
             ),
             Call::TemporalText(ref call) => call.sql(),
             Call::IntervalCount(ref count) => count.sql(),
             Call::ArrayLength { name, ref argument } => format!("{name}({})", argument.sql()),
-            Call::Abs { field: index, .. } => format!("ABS({})", field(index)?),
+            Call::Abs { ref argument, .. } => format!("ABS({})", argument.sql(column, 0)?),
+            Call::NullableColumn { field, sql_type } => {
+                format!("CAST({} AS {sql_type})", column(field, 0)?)
+            }
             Call::Trigonometric {
                 ref name,
                 ref argument,
@@ -433,11 +489,16 @@ impl Computed {
                 count.lower(ids, ty)?
             }
             Call::Abs {
-                field,
+                ref argument,
                 ref function,
             } => {
-                let argument = parameter.read(ids, field)?;
+                let argument = argument.lower(ids, parameter)?;
                 self.apply(ids, function, vec![argument])
+            }
+            Call::NullableColumn { field, .. } => {
+                let source = parameter.read(ids, field)?;
+                let ty = self.result.node(ids);
+                cast(ids, &self.position, source, ty)
             }
             Call::Trigonometric {
                 ref name,
@@ -455,7 +516,12 @@ impl Computed {
                 }
             }
         };
-        Ok(expr)
+        Ok(if let Some(output) = &self.nullable_output {
+            let ty = output.node(ids);
+            cast(ids, &self.position, expr, ty)
+        } else {
+            expr
+        })
     }
 
     pub(super) fn apply(&self, ids: &mut Ids, identifier: &str, arguments: Vec<Value>) -> Value {

@@ -189,6 +189,7 @@ impl Scan<'_> {
 }
 
 pub(super) struct Stream {
+    pub select: Option<super::select_sql::SelectSql>,
     /// Full relational record for composing the parent operator's provenance.
     pub origin: Value,
     pub operator: Value,
@@ -257,15 +258,23 @@ pub(super) fn scan_stream(
             "inputs":[{"outputNumber":0,"operator":{"node":source_id}}],"outputType":output_type,"function":closure}));
         source_id = filter_id.into();
     }
+    let mut select =
+        super::select_sql::SelectSql::scan(&input_origin, scan.input, scan.predicate.is_some())?;
     if let Some(fields) = &scan.fields {
         let projection = super::projection::Projection {
             input: scan.input,
             output: schema,
             fields,
         };
+        select.project(&projection)?;
         let relation_id = ids.relation(root);
         relation = json!({"ref":relation_id});
-        input_origin = projection.relation(&input_origin, relation_id, user_plan_id)?;
+        input_origin = projection.with_sql(
+            &input_origin,
+            relation_id,
+            user_plan_id,
+            select.sql(schema)?,
+        )?;
         let map = projection.map(program, ids, &source_id, input_origin.clone(), generated)?;
         generated += 1;
         output_type = reference(&map["outputType"])?;
@@ -274,6 +283,7 @@ pub(super) fn scan_stream(
     }
     checkpoint["next_generated_name"] = generated.into();
     Ok(Stream {
+        select: Some(select),
         origin: input_origin,
         operator: source_id,
         output_type,
@@ -345,47 +355,14 @@ pub(super) fn lower(
         return Err(Error("view input requires a row type".into()));
     };
     let query_schema = stream_schema(schema, fields)?;
-    let stream = match program.properties.relations[root.relation as usize].fields {
-        Properties::Values { .. } => super::values::lower(
-            checkpoint,
-            program,
-            ids,
-            &query_schema,
-            root.relation,
-            source,
-        )?,
-        Properties::Project { .. }
-            if matches!(
-                program.producers.relations[root.relation as usize].inputs.as_slice(),
-                &[input] if matches!(program.properties.relations[input as usize].fields, Properties::Values { .. })
-            ) =>
-        {
-            super::projection::over_values(
-                checkpoint,
-                program,
-                ids,
-                &query_schema,
-                root.relation,
-                source,
-            )?
-        }
-        Properties::Set { .. } => super::set::lower(
-            checkpoint,
-            program,
-            ids,
-            &query_schema,
-            root.relation,
-            source,
-        )?,
-        _ => scan_stream(
-            checkpoint,
-            program,
-            ids,
-            &query_schema,
-            root.relation,
-            source,
-        )?,
-    };
+    let stream = lower_stream(
+        checkpoint,
+        program,
+        ids,
+        &query_schema,
+        root.relation,
+        source,
+    )?;
     let Stream {
         operator: source_id,
         output_type,
@@ -454,4 +431,32 @@ pub(super) fn lower(
                      "fields":fields,"materialized":kind == ViewKind::Materialized}),
         );
     Ok(())
+}
+
+pub(super) fn lower_stream(
+    checkpoint: &mut Value,
+    program: &Program,
+    ids: &mut Ids,
+    schema: &CatalogSchema,
+    root: u32,
+    source: &StatementSource,
+) -> Result<Stream, Error> {
+    match program.properties.relations[root as usize].fields {
+        Properties::Values { .. } => {
+            super::values::lower(checkpoint, program, ids, schema, root, source)
+        }
+        Properties::Project { .. }
+            if matches!(
+                program.producers.relations[root as usize].inputs.as_slice(),
+                &[input] if matches!(program.properties.relations[input as usize].fields, Properties::Values { .. } | Properties::Aggregate { .. })
+            ) =>
+        {
+            super::projection::over_input(checkpoint, program, ids, schema, root, source)
+        }
+        Properties::Aggregate { .. } => {
+            super::grouping::lower(checkpoint, program, ids, schema, root, source)
+        }
+        Properties::Set { .. } => super::set::lower(checkpoint, program, ids, schema, root, source),
+        _ => scan_stream(checkpoint, program, ids, schema, root, source),
+    }
 }

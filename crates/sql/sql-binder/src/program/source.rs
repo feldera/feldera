@@ -192,6 +192,16 @@ impl<'a> DeclarationTokens<'a> {
         })
     }
 
+    pub(super) fn distinct_position(&self, select: Span) -> Result<Coordinates, Failure> {
+        let next = self.tokens.partition_point(|t| t.span.start < select.end);
+        let token = self
+            .tokens
+            .get(next)
+            .filter(|t| matches!(&t.token, Token::Word(w) if w.keyword == Keyword::DISTINCT))
+            .ok_or_else(|| unsupported("missing DISTINCT modifier"))?;
+        self.coordinates(token.span)
+    }
+
     /// Calcite includes explicit parentheses in a literal's parser position.
     pub(super) fn literal_position(&self, expr: &Expr) -> Result<Coordinates, Failure> {
         use sqlparser_064::ast::Spanned;

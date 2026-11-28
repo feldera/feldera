@@ -16,6 +16,7 @@ use sqlparser_064::ast::{
 
 /// The statement printer quotes type aliases. The diagnostic printer uses
 /// the same resolved names without quotes, including inside collections.
+#[derive(Clone)]
 pub(in crate::program) struct TypeSpelling {
     pub(super) quoted: String,
     pub(super) diagnostic: String,

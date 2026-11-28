@@ -1,6 +1,7 @@
 //! Assemble bounded S1 programs over the fixed compiler system prelude.
 
 mod array;
+mod equality;
 mod graph;
 mod insert;
 mod literal;
@@ -19,7 +20,7 @@ pub use table::bind_table_program;
 
 use super::{
     Failure, SelectItem, Statement as ParsedStatement, Submission, Upstream, parse_failure,
-    plain_select, unsupported,
+    select_without_modifiers, unsupported,
 };
 use feldera_sql_rel_model::{
     TypeId,
@@ -148,7 +149,7 @@ fn append_constant_view(
     let Upstream::CreateView(view) = statement.as_ref() else {
         return Err(unsupported("expected one constant view"));
     };
-    let select = plain_select(&view.query)?;
+    let select = select_without_modifiers(&view.query, false)?;
     if !select.from.is_empty() {
         return Err(unsupported("expected a view over one constant row"));
     }
@@ -220,11 +221,15 @@ fn append_constant_view(
     if reduced {
         array::replace_folded_constructors(program, &roots);
     }
+    let keyword = select_keyword(select);
     let text = QueryText {
-        pretty: format!("SELECT {}", pretty.join(", ")),
-        diagnostic: format!("SELECT {}", diagnostic.join(", ")),
+        pretty: format!("{keyword} {}", pretty.join(", ")),
+        diagnostic: format!("{keyword} {}", diagnostic.join(", ")),
     };
     let row = projected_row(program, &fields);
+    let warnings = equality::distinct(&program.table.type_table, select, &fields, tokens)?
+        .into_iter()
+        .collect();
     let relation = program.table.relations;
     if all_literals {
         append_values(program, row, 1, roots)?;
@@ -236,6 +241,7 @@ fn append_constant_view(
         tokens.range()?,
         declaration,
         BoundQuery {
+            warnings,
             kind: "SELECT",
             fields,
             relation,
@@ -571,12 +577,23 @@ fn projection_alias(
     name
 }
 
+fn select_keyword(select: &crate::Select) -> &'static str {
+    use sqlparser_064::ast::Distinct;
+    match select.distinct {
+        Some(Distinct::Distinct) => "SELECT DISTINCT",
+        Some(Distinct::All) => "SELECT ALL",
+        Some(Distinct::On(_)) => unreachable!("DISTINCT ON rejected by clause validation"),
+        None => "SELECT",
+    }
+}
+
 struct QueryText {
     pretty: String,
     diagnostic: String,
 }
 
 struct BoundQuery {
+    warnings: Vec<feldera_sql_rel_model::diagnostics::FrontendWarning>,
     kind: &'static str,
     fields: Vec<(Name, TypeId)>,
     relation: u32,
@@ -605,6 +622,7 @@ fn append_view(
     query: BoundQuery,
 ) -> Result<(), Failure> {
     let BoundQuery {
+        warnings,
         kind,
         fields,
         relation,
@@ -646,7 +664,10 @@ fn append_view(
             .collect(),
     )?;
     program.producers.roots.push(relation);
-    append_boundary(program, &statement);
+    program.diagnostics.before.push(DiagnosticBoundary {
+        context: source_origin(&statement.position),
+        messages: warnings,
+    });
     program.statements.push(Statement::CreateView {
         source: statement.source("CREATE_VIEW"),
         schema,

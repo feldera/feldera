@@ -27,6 +27,7 @@ use sqlparser_064::ast::{DuplicateTreatment, FunctionArg, FunctionArgExpr, Funct
 
 pub(super) struct BoundAggregate {
     calls: Vec<Call>,
+    pub(super) warnings: Vec<feldera_sql_rel_model::diagnostics::FrontendWarning>,
     inputs: Vec<Input>,
     group_columns: Vec<usize>,
     distinct: bool,
@@ -100,6 +101,7 @@ impl BoundAggregate {
         }
         let mut plan = Self {
             calls: Vec::with_capacity(items.len()),
+            warnings: Vec::new(),
             inputs: Vec::new(),
             group_columns: Vec::new(),
             distinct: false,
@@ -121,6 +123,13 @@ impl BoundAggregate {
                     "expected projected grouping columns in group order",
                 ));
             }
+            plan.warnings.extend(crate::program::equality::key(
+                &program.table.type_table,
+                columns[column].ty,
+                "GROUP BY",
+                tokens,
+                || tokens.coordinates(group.span()),
+            )?);
             plan.group_columns.push(column);
             plan.inputs.push(Input::Column(column));
             plan.projection
@@ -174,6 +183,15 @@ impl BoundAggregate {
                     ));
                 }
             };
+            if let Some(index) = column.filter(|_| distinct) {
+                plan.warnings.extend(crate::program::equality::key(
+                    &program.table.type_table,
+                    columns[index].ty,
+                    "COUNT(DISTINCT)",
+                    tokens,
+                    || tokens.call_position(call.name.span(), 0),
+                )?);
+            }
             let key = match name.as_str() {
                 "SUM" => "SqlStdOperatorTable.SUM",
                 "COUNT" => "SqlStdOperatorTable.COUNT",
@@ -192,6 +210,7 @@ impl BoundAggregate {
                 .unwrap_or_else(|| ("*".into(), "*".into()));
             let distinct_text = if distinct { "DISTINCT " } else { "" };
             let mut output = Projection {
+                alias: None,
                 name: Name {
                     name: format!("EXPR${index}"),
                     quoted: true,

@@ -2,8 +2,11 @@
 
 mod aggregate;
 mod compute;
+mod constants;
 mod declarations;
 mod filter;
+mod grouping;
+use constants::apply_filtered_projection;
 mod sets;
 mod types;
 
@@ -29,7 +32,6 @@ use crate::{
 use feldera_sql_rel_model::{
     TypeId, ValidationLimits,
     catalog::Name,
-    expression_objects::ObjectPosition,
     program::Program,
     relation_metadata::{Coordinates, Hint},
     statements::Statement,
@@ -48,7 +50,9 @@ struct DeclaredColumn {
     primary_key: bool,
 }
 
+#[derive(Clone)]
 struct Projection {
+    alias: Option<TypeSpelling>,
     name: Name,
     value: ProjectValue,
     pretty: String,
@@ -374,7 +378,7 @@ fn bind_select(
     .map_err(report_expression_error)?;
     let mut projection = if let Some(aggregate) = &mut aggregate {
         std::mem::take(&mut aggregate.projection)
-    } else if groups.is_empty() {
+    } else {
         bind_projection(
             program,
             &select.projection,
@@ -383,8 +387,6 @@ fn bind_select(
             tokens,
         )
         .map_err(report_expression_error)?
-    } else {
-        return Err(unsupported("GROUP BY requires a supported aggregate"));
     };
     let predicate = select
         .selection
@@ -392,7 +394,23 @@ fn bind_select(
         .map(|expression| filter::bind(program, expression, columns, &input.qualifier, tokens))
         .transpose()
         .map_err(report_expression_error)?;
-    if aggregate.is_none() {
+    let distinct = matches!(
+        select.distinct,
+        Some(sqlparser_064::ast::Distinct::Distinct)
+    );
+    let mut grouping = if aggregate.is_none() && (distinct || !groups.is_empty()) {
+        Some(grouping::Grouping::bind(
+            program,
+            select,
+            &projection,
+            columns,
+            &input.qualifier,
+            tokens,
+        )?)
+    } else {
+        None
+    };
+    if aggregate.is_none() && grouping.is_none() {
         apply_filtered_projection(
             &mut program.table.type_table,
             &mut projection,
@@ -409,13 +427,11 @@ fn bind_select(
         .iter()
         .map(|field| (field.name.clone(), field.value.ty()))
         .collect();
+    let mut warnings: Vec<_> =
+        super::equality::distinct(&program.table.type_table, select, &fields, tokens)?
+            .into_iter()
+            .collect();
     let view_row = super::projected_row(program, &fields);
-    let identity = projection.len() == columns.len()
-        && projection.iter().enumerate().all(|(index, field)| {
-            matches!(
-                field.value, ProjectValue::Column(input) if input.field as usize == index
-            )
-        });
     let scan_hint = Hint {
         name: "alias".into(),
         position: tokens.coordinates(select.from[0].relation.span())?,
@@ -436,14 +452,17 @@ fn bind_select(
     } else if matches!(predicate, Some(filter::Predicate::Constant(false))) {
         append_values(program, view_row, 0, Vec::new())?
     } else {
-        let project = (!identity).then(|| {
-            append_table_project(
+        let project = if let Some(grouping) = &mut grouping {
+            Some(grouping.append(
                 program,
-                view_row,
                 scan_row,
-                projection.iter().map(|field| &field.value),
-            )
-        });
+                view_row,
+                columns.len(),
+                predicate.as_ref(),
+            )?)
+        } else {
+            append_projection(program, scan_row, view_row, columns.len(), &projection)
+        };
         let filter = match &predicate {
             Some(filter::Predicate::Expression { value, .. }) => {
                 Some(append_table_filter(program, scan_row, value))
@@ -453,7 +472,12 @@ fn bind_select(
         let scan = append_table_scan(program, schema, scan_row, input.name.clone(), scan_hint)?;
         project.or(filter).unwrap_or(scan)
     };
-    let mut view_source = render_select(&input.name, &input.qualifier, &projection);
+    let mut view_source = render_select(
+        super::select_keyword(select),
+        &input.name,
+        &input.qualifier,
+        &projection,
+    );
     if let Some(predicate) = &predicate {
         let (pretty, diagnostic) = predicate.render();
         view_source.pretty.push_str(&format!("\nWHERE {pretty}"));
@@ -461,10 +485,16 @@ fn bind_select(
             .diagnostic
             .push_str(&format!("\nWHERE {diagnostic}"));
     }
+    if let Some(grouping) = grouping {
+        grouping.render(&mut view_source);
+        warnings.extend(grouping.warnings);
+    }
     if let Some(aggregate) = aggregate {
         aggregate.render_grouping(&mut view_source, columns, &input.qualifier);
+        warnings.extend(aggregate.warnings);
     }
     Ok(BoundQuery {
+        warnings,
         kind: "SELECT",
         text: view_source,
         fields,
@@ -472,89 +502,20 @@ fn bind_select(
     })
 }
 
-fn apply_filtered_projection(
-    types: &mut feldera_sql_rel_model::TypeTable,
-    projection: &mut [Projection],
-    predicate: Option<&filter::Predicate>,
-) {
-    let Some(filter::Predicate::Expression {
-        value:
-            ProjectValue::Call {
-                key: "SqlStdOperatorTable.EQUALS",
-                arguments,
-                ..
-            },
-        ..
-    }) = predicate
-    else {
-        return;
-    };
-    let [left, TableOperand::Integer { ty, value }] = arguments.as_slice() else {
-        return;
-    };
-    let (column, literal_ty) = match left {
-        TableOperand::Column(column) => (column, *ty),
-        TableOperand::Computed(call) => {
-            let ProjectValue::Call {
-                key: "SqlStdOperatorTable.CAST",
-                arguments,
-                ..
-            } = call.as_ref()
-            else {
-                return;
-            };
-            let [TableOperand::Column(column)] = arguments.as_slice() else {
-                return;
-            };
-            let column_type = &types.types[column.ty.0 as usize];
-            let TypeKind::Integer {
-                width,
-                signed: true,
-            } = column_type.kind
-            else {
-                return;
-            };
-            // Equality fixes the source column only if the widened value can
-            // also be represented in the original column type.
-            if !width.contains_signed(*value) {
-                return;
-            }
-            let ty = super::graph::insert_type(
-                types,
-                feldera_sql_rel_model::types::SqlType {
-                    nullable: false,
-                    ..column_type.clone()
-                },
-            );
-            (column, ty)
-        }
-        _ => return,
-    };
-    for field in projection {
-        let ProjectValue::Column(input) = field.value else {
-            continue;
-        };
-        if input.field != column.field {
-            continue;
-        }
-        field.value = if input.ty == literal_ty {
-            ProjectValue::Integer {
-                ty: literal_ty,
-                value: *value,
-            }
-        } else {
-            ProjectValue::Call {
-                registry: crate::frel::CALCITE,
-                key: "SqlStdOperatorTable.CAST",
-                arguments: vec![TableOperand::Integer {
-                    ty: literal_ty,
-                    value: *value,
-                }],
-                ty: input.ty,
-                position: ObjectPosition::Absent {},
-            }
-        };
-    }
+fn identity_projection(width: usize, fields: &[Projection]) -> bool {
+    fields.len() == width && fields.iter().enumerate().all(|(i, field)|
+        matches!(field.value, ProjectValue::Column(input) if input.field as usize == i))
+}
+
+fn append_projection(
+    program: &mut Program,
+    input: TypeId,
+    output: TypeId,
+    width: usize,
+    fields: &[Projection],
+) -> Option<u32> {
+    (!identity_projection(width, fields))
+        .then(|| append_table_project(program, output, input, fields.iter().map(|p| &p.value)))
 }
 
 fn bind_projection(
@@ -582,10 +543,10 @@ fn bind_projection(
             for (ordinal, column) in columns.iter().enumerate() {
                 let mut field = column_projection(ordinal, column, qualifier, None);
                 if let Some(alias) = names.disambiguate(&field.name.name) {
-                    field
-                        .pretty
-                        .push_str(&format!(" AS `{}`", alias.replace('`', "``")));
-                    field.diagnostic.push_str(&format!(" AS {alias}"));
+                    field.alias = Some(TypeSpelling {
+                        quoted: format!("`{}`", alias.replace('`', "``")),
+                        diagnostic: alias.clone(),
+                    });
                     field.name.name = alias;
                 }
                 projection.push(field);
@@ -664,6 +625,7 @@ fn column_projection(
         ty: column.ty,
     });
     let mut result = Projection {
+        alias: None,
         name: column.name.clone(),
         value,
         pretty,
@@ -676,7 +638,10 @@ fn column_projection(
 impl Projection {
     fn apply_alias(&mut self, alias: Option<&Ident>) {
         if let Some(alias) = alias {
-            self.name = super::projection_alias(alias, &mut self.pretty, &mut self.diagnostic);
+            let (mut name, spelling) = identifier(alias);
+            name.quoted = name.name != name.name.to_lowercase();
+            self.name = name;
+            self.alias = Some(spelling);
         }
     }
 }
@@ -732,19 +697,37 @@ fn render_table(
     }
 }
 
-fn render_select(table: &str, table_alias: &str, projection: &[Projection]) -> QueryText {
-    let pretty = projection
-        .iter()
-        .map(|field| field.pretty.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let diagnostic = projection
-        .iter()
-        .map(|field| field.diagnostic.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
+fn render_select(
+    keyword: &str,
+    table: &str,
+    table_alias: &str,
+    projection: &[Projection],
+) -> QueryText {
+    let list = |quoted| {
+        projection
+            .iter()
+            .map(|field| {
+                let expression = if quoted {
+                    &field.pretty
+                } else {
+                    &field.diagnostic
+                };
+                match &field.alias {
+                    Some(alias) => format!("{expression} AS {}", alias.spelling(quoted)),
+                    None => expression.clone(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     QueryText {
-        pretty: format!("SELECT {pretty}\nFROM `schema`.`{table}` AS `{table_alias}`"),
-        diagnostic: format!("SELECT {diagnostic}\nFROM schema.{table} AS {table_alias}"),
+        pretty: format!(
+            "{keyword} {}\nFROM `schema`.`{table}` AS `{table_alias}`",
+            list(true)
+        ),
+        diagnostic: format!(
+            "{keyword} {}\nFROM schema.{table} AS {table_alias}",
+            list(false)
+        ),
     }
 }

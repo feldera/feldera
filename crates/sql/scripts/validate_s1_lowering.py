@@ -11,11 +11,12 @@ from compile_bound_gen2 import compile_program
 from run_determinism import file_digest
 from validate_table_lowering import compare_checkpoints
 from validate_bound_programs import (
-    CASES as BINDING_CASES, INTEGER_COMPARISONS, LITERAL_ARRAY_CASES, NUMERIC_COLUMN_CASES,
+    CASES as BINDING_CASES, GROUPING_CASES, INTEGER_COMPARISONS, LITERAL_ARRAY_CASES, NUMERIC_COLUMN_CASES,
     ROUNDING_CASES, STRING_SLICE_CASES, TEMPORAL_TEXT_CASES, TIMESTAMP_DIFF_CASES, TRIGONOMETRIC_CASES,
 )
 
 CASES = {
+    **GROUPING_CASES,
     **STRING_SLICE_CASES,
     **ROUNDING_CASES,
     **TEMPORAL_TEXT_CASES,

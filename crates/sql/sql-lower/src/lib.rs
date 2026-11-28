@@ -6,10 +6,12 @@
 
 mod closure;
 mod filter;
+mod grouping;
 mod integer;
 mod origin_order;
 mod plan;
 mod projection;
+mod select_sql;
 mod set;
 mod source_table;
 mod system;
@@ -35,6 +37,12 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl From<feldera_sql_ir::Error> for Error {
+    fn from(error: feldera_sql_ir::Error) -> Self {
+        Self(error.to_string())
+    }
+}
 
 /// A SQL invocation supplies the filename used by the direct compiler.
 /// Detached lowering preserves the source identity carried by the S1 context.

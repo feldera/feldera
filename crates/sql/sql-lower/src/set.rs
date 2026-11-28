@@ -2,7 +2,7 @@
 
 use super::{
     source_table::{range, Ids},
-    view::{scan_stream, stream_schema, Stream},
+    view::{lower_stream, stream_schema, Stream},
     Error,
 };
 use feldera_sql_ir::{Circuit, NodeId, OperatorKind as Op, OutputPort};
@@ -52,7 +52,7 @@ impl SetQuery<'_> {
         let program = self.program;
         let properties = &program.properties.relations[relation as usize];
         let Properties::Set { all } = properties.fields else {
-            return scan_stream(checkpoint, program, ids, schema, relation, self.source);
+            return lower_stream(checkpoint, program, ids, schema, relation, self.source);
         };
         let producer = &program.producers.relations[relation as usize];
         let kind = producer
@@ -109,6 +109,7 @@ impl SetQuery<'_> {
         };
         let output = writer.combine(kind, all, &inputs, &multiplicities)?;
         Ok(Stream {
+            select: None,
             operator: output.id.into(),
             output_type: output.ty.clone(),
             relation: json!({"ref":id}),

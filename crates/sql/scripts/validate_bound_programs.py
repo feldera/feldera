@@ -129,7 +129,39 @@ LITERAL_ARRAY_CASES = {
 }
 
 
+GROUPING_CASES = {
+    "distinct_constants": "CREATE VIEW v AS SELECT DISTINCT SIN(1), SIN(2) AS x, 1+2 AS y;",
+    "select_all": "CREATE TABLE t(a INT); CREATE VIEW v AS SELECT ALL a, a FROM t;",
+    "group_after_inserts": "CREATE TABLE t(a INT, b INT); CREATE TABLE u(x INT);"
+                          " INSERT INTO u VALUES (0); CREATE VIEW v AS SELECT DISTINCT b FROM t;"
+                          " CREATE VIEW w AS SELECT a FROM t GROUP BY a;",
+    "group_hidden_expression": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT a FROM t GROUP BY a,ABS(b);",
+    "group_computed_output": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT b AS x, a+b AS s FROM t GROUP BY b,a;",
+    "distinct_over_group": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT DISTINCT a+b AS x,a+b AS y FROM t GROUP BY b,a;",
+    "distinct_computed": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT DISTINCT a+b AS n FROM t;",
+    "distinct_repeated": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT DISTINCT b AS x, b AS y FROM t;",
+    "group_omitted": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT b AS y FROM t GROUP BY b,a;",
+    "group_reordered": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT b,a FROM t GROUP BY a,b;",
+    "group_filtered": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT a FROM t WHERE b>1 GROUP BY a;",
+    "group_fixed_computed_key": "CREATE TABLE t(a INT, b INT NOT NULL);"
+                                " CREATE VIEW v AS SELECT ABS(b) AS k FROM t WHERE a=1 GROUP BY ABS(b), b, a+b;",
+    "distinct_fixed_output": "CREATE TABLE t(a INT, b INT NOT NULL);"
+                             " CREATE VIEW v AS SELECT DISTINCT ABS(b), b, ABS(b) FROM t WHERE b=1 GROUP BY a,ABS(b),b;",
+    "group_synthetic_alias": 'CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT a+b AS "$f0" FROM t GROUP BY ABS(b),a+b;',
+    "filter_fixed_integer": "CREATE TABLE t(a SMALLINT, b SMALLINT NOT NULL);"
+                            " CREATE VIEW v AS SELECT ABS(a),a+b,b/a,a*a FROM t WHERE a=-3;",
+    "filter_identity_cast": "CREATE TABLE t(a INT, b INT NOT NULL); CREATE VIEW v AS SELECT a+b, b-a FROM t WHERE a=0;",
+    "filter_batch_overflow": "CREATE TABLE t(a SMALLINT NOT NULL,b SMALLINT);"
+                             " CREATE VIEW v AS SELECT a/a,a+a,a+b,ABS(a) FROM t WHERE a=32767;",
+    "group_known_value": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT a AS x,b AS y FROM t WHERE a=1 GROUP BY a,b;",
+    "group_empty": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT a,a FROM t WHERE FALSE GROUP BY a,b;",
+    "distinct_strings": "CREATE TABLE t(a VARCHAR, b VARBINARY); CREATE VIEW v AS SELECT DISTINCT * FROM t;",
+    "group_float_alias": "CREATE TABLE t(a REAL, b DOUBLE); CREATE VIEW v AS SELECT ABS(b) AS k FROM t GROUP BY k;",
+    "distinct_nested": "CREATE TABLE t(a INT ARRAY, b ROW(x REAL, y VARCHAR)); CREATE VIEW v AS SELECT DISTINCT * FROM t;",
+}
+
 CASES = {
+    **GROUPING_CASES,
     **STRING_SLICE_CASES,
     **ROUNDING_CASES,
     **TEMPORAL_TEXT_CASES,

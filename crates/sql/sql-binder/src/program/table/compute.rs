@@ -115,6 +115,7 @@ pub(super) fn projection(
         _ => return Err(unsupported("expression outside the computed table slice")),
     };
     let mut result = Projection {
+        alias: None,
         name: Name {
             name: format!("EXPR${ordinal}"),
             quoted: true,

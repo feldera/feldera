@@ -91,6 +91,7 @@ fn bind_set(
             return Err(unsupported("set inputs require column type coercion"));
         }
         inputs.push(right.relation);
+        result.warnings.extend(right.warnings);
         result.text.pretty.push_str(&separator);
         result.text.pretty.push_str(&right.text.pretty);
         result.text.diagnostic.push_str(&separator);

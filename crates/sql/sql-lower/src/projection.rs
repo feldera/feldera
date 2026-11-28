@@ -8,7 +8,7 @@ mod interval_count;
 mod literal;
 mod temporal_text;
 mod trigonometric;
-pub(super) use field::Field;
+pub(super) use field::{aliased, quote, Field};
 
 use super::{
     source_table::{stream_type, Ids, RowLayout},
@@ -119,8 +119,8 @@ pub(super) fn projected_fields(
     }
 }
 
-/// A constant SELECT with unreduced calls is a Project over a VALUES row.
-pub(super) fn over_values(
+/// Lower a projection whose input is a computed relation.
+pub(super) fn over_input(
     checkpoint: &mut Value,
     program: &Program,
     ids: &mut Ids,
@@ -128,17 +128,57 @@ pub(super) fn over_values(
     root: u32,
     source: &feldera_sql_rel_model::statements::StatementSource,
 ) -> Result<super::view::Stream, Error> {
-    use feldera_sql_rel_model::catalog::{Column, Name};
     let (input, fields) = projected_fields(program, root, output)?;
     let fields = fields.ok_or_else(|| Error("missing projection fields".into()))?;
+    let input_schema = input_schema(program, input, output)?;
+    let stream = super::view::lower_stream(checkpoint, program, ids, &input_schema, input, source)?;
+    let projection = Projection {
+        input: &input_schema,
+        output,
+        fields: &fields,
+    };
+    let id = ids.relation(root);
+    let mut select = stream.select;
+    let origin = match &mut select {
+        Some(select) => {
+            select.project(&projection)?;
+            projection.with_sql(&stream.origin, id, ids.plan(root)?, select.sql(output)?)?
+        }
+        None => projection.relation(&stream.origin, id, ids.plan(root)?)?,
+    };
+    let generated = checkpoint["next_generated_name"]
+        .as_u64()
+        .ok_or_else(|| Error("missing generated name counter".into()))?;
+    let map = projection.map(program, ids, &stream.operator, origin.clone(), generated)?;
+    let result = super::view::Stream {
+        select,
+        origin,
+        operator: map["id"].clone(),
+        output_type: reference(&map["outputType"])?,
+        relation: json!({"ref":id}),
+    };
+    checkpoint["circuit"]["allOperators"]
+        .as_array_mut()
+        .expect("system operators")
+        .push(map);
+    checkpoint["next_generated_name"] = (generated + 1).into();
+    Ok(result)
+}
+
+pub(super) fn input_schema(
+    program: &Program,
+    input: u32,
+    output: &CatalogSchema,
+) -> Result<CatalogSchema, Error> {
+    use feldera_sql_rel_model::catalog::{Column, Name};
     let row = program.producers.relations[input as usize].row;
     let feldera_sql_rel_model::types::TypeKind::Row {
         fields: columns, ..
     } = &program.table.type_table.types[row.0 as usize].kind
     else {
-        return Err(Error("VALUES input requires a row type".into()));
+        return Err(Error("expected a relational row type".into()));
     };
-    let input_schema = CatalogSchema {
+    Ok(CatalogSchema {
         columns: columns
             .iter()
             .enumerate()
@@ -158,31 +198,7 @@ pub(super) fn over_values(
             })
             .collect(),
         ..output.clone()
-    };
-    let stream = super::values::lower(checkpoint, program, ids, &input_schema, input, source)?;
-    let projection = Projection {
-        input: &input_schema,
-        output,
-        fields: &fields,
-    };
-    let id = ids.relation(root);
-    let origin = projection.relation(&stream.origin, id, ids.plan(root)?)?;
-    let generated = checkpoint["next_generated_name"]
-        .as_u64()
-        .ok_or_else(|| Error("missing generated name counter".into()))?;
-    let map = projection.map(program, ids, &stream.operator, origin.clone(), generated)?;
-    let result = super::view::Stream {
-        origin,
-        operator: map["id"].clone(),
-        output_type: reference(&map["outputType"])?,
-        relation: json!({"ref":id}),
-    };
-    checkpoint["circuit"]["allOperators"]
-        .as_array_mut()
-        .expect("system operators")
-        .push(map);
-    checkpoint["next_generated_name"] = (generated + 1).into();
-    Ok(result)
+    })
 }
 
 /// Calcite compresses the leading identity fields in its relational digest.
@@ -217,20 +233,41 @@ pub(super) struct Projection<'a> {
 
 impl Projection<'_> {
     pub(super) fn relation(&self, scan: &Value, id: usize, plan: u64) -> Result<Value, Error> {
-        let scan_id = scan["relId"]
-            .as_u64()
-            .ok_or_else(|| Error("missing physical scan".into()))? as usize;
-        let mut text = Vec::new();
-        let mut select = Vec::new();
-        for (field, output) in self.fields.iter().zip(&self.output.columns) {
-            let name = &output.name.name;
-            text.push(format!("{name}=[{}]", field.digest()));
-            select.push(field.sql(self.input, name)?);
-        }
         let from = scan["sql"]
             .as_str()
             .and_then(|sql| sql.strip_prefix("SELECT *\n"))
             .ok_or_else(|| Error("missing SQL for scan".into()))?;
+        let select = self
+            .fields
+            .iter()
+            .zip(&self.output.columns)
+            .map(|(field, output)| field.sql(self.input, &output.name.name))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.with_sql(
+            scan,
+            id,
+            plan,
+            format!("SELECT {}\n{from}", select.join(", ")),
+        )
+    }
+
+    pub(super) fn with_sql(
+        &self,
+        scan: &Value,
+        id: usize,
+        plan: u64,
+        sql: String,
+    ) -> Result<Value, Error> {
+        let scan_id = scan["relId"]
+            .as_u64()
+            .ok_or_else(|| Error("missing physical input ID".into()))?
+            as usize;
+        let text = self
+            .fields
+            .iter()
+            .zip(&self.output.columns)
+            .map(|(field, output)| format!("{}=[{}]", output.name.name, field.digest()))
+            .collect::<Vec<_>>();
         let child = scan["text"]
             .as_str()
             .ok_or_else(|| Error("missing relational text for scan".into()))?;
@@ -242,7 +279,7 @@ impl Projection<'_> {
         Ok(
             json!({"id":id,"relId":id,"planId":plan,"tableScan":false,"digest":digest(self.fields, child_name, scan_id),
             "text":format!("LogicalProject({})\n  {child}",text.join(", ")),
-            "sql":format!("SELECT {}\n{from}",select.join(", ")),"statefulSqlName":null,"origin":scan["origin"]}),
+            "sql":sql,"statefulSqlName":null,"origin":scan["origin"]}),
         )
     }
 

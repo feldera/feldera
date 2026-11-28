@@ -26,7 +26,7 @@ pub(crate) enum Field {
     NullableLiteral(Box<ProjectedLiteral>),
 }
 
-pub(super) fn quote(name: &str) -> String {
+pub(crate) fn quote(name: &str) -> String {
     format!("`{}`", name.replace('`', "``"))
 }
 
@@ -109,28 +109,18 @@ impl Field {
         }
     }
 
-    pub(super) fn sql(&self, schema: &CatalogSchema, alias: &str) -> Result<String, Error> {
-        let value = match self {
-            Self::Column(i) => {
-                let name = column_name(schema, *i)?;
-                if name == alias {
-                    return Ok(quote(name));
-                }
-                quote(name)
-            }
-            Self::Computed(call) => call.sql(schema)?,
+    pub(crate) fn expression_sql(&self, schema: &CatalogSchema) -> Result<String, Error> {
+        Ok(match self {
+            Self::Column(i) => quote(column_name(schema, *i)?),
+            Self::Computed(call) => call.sql(&|index, _| column_name(schema, index).map(quote))?,
             Self::Array(array) => array.sql.clone(),
             Self::Literal(value) => value.sql(),
             Self::NullableLiteral(value) => value.cast_sql(),
-        };
-        if alias
-            .get(..5)
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("EXPR$"))
-        {
-            Ok(value)
-        } else {
-            Ok(format!("{value} AS {}", quote(alias)))
-        }
+        })
+    }
+
+    pub(super) fn sql(&self, schema: &CatalogSchema, alias: &str) -> Result<String, Error> {
+        Ok(aliased(self.expression_sql(schema)?, alias))
     }
 
     pub(super) fn lower(
@@ -180,5 +170,18 @@ impl Field {
                 }
             }
         }
+    }
+}
+
+pub(crate) fn aliased(expression: String, alias: &str) -> String {
+    let quoted = quote(alias);
+    if expression == quoted
+        || alias
+            .get(..5)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("EXPR$"))
+    {
+        expression
+    } else {
+        format!("{expression} AS {quoted}")
     }
 }

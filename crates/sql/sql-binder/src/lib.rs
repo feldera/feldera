@@ -695,7 +695,11 @@ fn bind(node: &Expr, scope: &ColumnScope<'_>, depth: usize) -> Result<BoundExpre
 }
 
 fn plain_select(query: &Query) -> Result<&Select, Failure> {
-    select_without_modifiers(query, false)
+    let select = select_without_modifiers(query, false)?;
+    if select.distinct.is_some() {
+        return Err(unsupported("expected a plain SELECT projection"));
+    }
+    Ok(select)
 }
 
 fn query_body(query: &Query) -> Result<&SetExpr, Failure> {
@@ -734,7 +738,7 @@ fn check_select_clauses(select: &Select, allow_table_clauses: bool) -> Result<()
     let Select {
         select_token: _,
         optimizer_hints,
-        distinct: None,
+        distinct,
         select_modifiers: None,
         top: None,
         top_before_distinct: _,
@@ -760,7 +764,9 @@ fn check_select_clauses(select: &Select, allow_table_clauses: bool) -> Result<()
     else {
         return Err(unsupported("expected a plain SELECT projection"));
     };
-    if !allow_table_clauses && selection.is_some() {
+    if matches!(distinct, Some(sqlparser_064::ast::Distinct::On(_)))
+        || (!allow_table_clauses && selection.is_some())
+    {
         return Err(unsupported("expected a plain SELECT projection"));
     }
     if !matches!(group_by, GroupByExpr::Expressions(items, modifiers)

@@ -89,6 +89,12 @@ impl Ids {
         self.relations[id as usize]
     }
 
+    /// Resume wire allocation after a subgraph built in the typed IR arena.
+    pub(super) fn after_subgraph(&mut self, last_operator: u64, last_inner: u64) {
+        self.operator = self.operator.max(last_operator + 1);
+        self.inner = self.inner.max(last_inner + 1);
+    }
+
     pub(super) fn next_operator(&mut self) -> u64 {
         let id = self.operator;
         self.operator += 1;

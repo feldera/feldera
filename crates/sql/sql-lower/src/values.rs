@@ -102,6 +102,7 @@ pub(super) fn lower(
         .expect("system operators")
         .push(op);
     Ok(Stream {
+        select: None,
         origin,
         operator: operator.into(),
         output_type,

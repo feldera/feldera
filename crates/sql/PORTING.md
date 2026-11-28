@@ -331,6 +331,17 @@ fractional seconds, supplementary characters, array projections and the
 order and locations of format warnings. All nine passed both comparisons.
 Unreduced text-to-datetime casts and calls over columns still require work.
 
+Grouping without aggregate calls raised frozen coverage to 1,542 bound programs
+and 1,491 Rust S2 checkpoints out of 8,571. All 13 additional bindings matched
+direct Java through Gen-2 emission. Independent Java lowering matched the 11
+new Rust checkpoints, and Java resumed each one. Rust reproduced all 1,529
+previous bindings and 1,480 previous checkpoints byte for byte.
+
+Twenty-two directed programs covered repeated and reordered keys, grouping
+ordinals and aliases, a second DISTINCT over a group, floating-point equality
+warnings, and projections simplified by integer equality filters. Each matched
+Java through binding, independent S2 lowering, and Gen-2 emission.
+
 Eight directed programs exercise literal ARRAY element coercion, typed and
 untyped NULLs, temporal precision warnings, length functions and project-wide
 folding. A checked division by zero keeps sibling array and trigonometric calls
