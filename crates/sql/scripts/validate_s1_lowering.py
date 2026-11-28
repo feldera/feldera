@@ -81,6 +81,14 @@ CASES = {
                            "CREATE VIEW v AS SELECT b FROM flags WHERE a IS TRUE;",
     "required_truth_test": "CREATE TABLE flags(a BOOLEAN NOT NULL, b BOOLEAN);\n"
                            "CREATE VIEW v AS SELECT b FROM flags WHERE a IS TRUE;",
+    "empty_scalar_rows": "CREATE TABLE t(i INT UNSIGNED, s CHAR(2), n DECIMAL(6,2), ts TIMESTAMP(3));\n"
+                         "CREATE VIEW v AS SELECT * FROM t WHERE FALSE;",
+    "empty_nested_rows": "CREATE TABLE t(a INT ARRAY, m MAP<INT, VARCHAR>, r ROW(x INTEGER, y VARCHAR));\n"
+                         "CREATE VIEW v AS SELECT * FROM t WHERE FALSE;",
+    "empty_renamed_output": "CREATE TABLE t(k BIGINT NOT NULL, s VARCHAR);\n"
+                            "CREATE VIEW v (renamed) AS SELECT s FROM t WHERE FALSE;",
+    "typed_null_row": "CREATE VIEW v AS SELECT CAST(NULL AS TINYINT) AS a, CAST(NULL AS SMALLINT) AS b,"
+                      " CAST(NULL AS INTEGER) AS c, CAST(NULL AS BIGINT) AS d, CAST(NULL AS BOOLEAN) AS e;",
     "float_projection": "CREATE TABLE samples(a DOUBLE, b DOUBLE, c DECIMAL(10,2));\n"
                         "CREATE VIEW result AS SELECT c, b FROM samples;",
     "reverse_reads": "CREATE TABLE a(x INT);\nCREATE TABLE b(y BIGINT);\n"

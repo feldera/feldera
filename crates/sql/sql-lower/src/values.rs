@@ -1,4 +1,7 @@
-//! Lower a single constant row to the constant weighted collection in S2.
+//! Lower empty and single-row VALUES relations to weighted collections.
+
+mod type_name;
+
 use super::{
     projection::expressions,
     source_table::{range, statement_position, stream_type, Ids, RowLayout},
@@ -12,7 +15,7 @@ use feldera_sql_rel_model::{
     program::Program,
     relation_properties::Properties,
     statements::{RelRoot, StatementSource},
-    types::{FloatFlavor, IntegerWidth, Precision, SqlType, TimeZone, TypeKind},
+    types::{FloatFlavor, Precision, SqlType, TimeZone, TypeKind},
 };
 use serde_json::{json, Value};
 
@@ -26,11 +29,16 @@ pub(super) fn lower(
 ) -> Result<Stream, Error> {
     let rel = &program.properties.relations[root.relation as usize];
     let roots = expressions(program, root.relation)?;
-    if !matches!(rel.fields, Properties::Values { tuples: 1 })
+    let Properties::Values { tuples } = rel.fields else {
+        return Err(Error("expected a VALUES relation".into()));
+    };
+    let empty = tuples == 0;
+    let expected_cells = if empty { 0 } else { schema.columns.len() };
+    if tuples > 1
         || !rel.metadata.traits.is_empty()
         || !rel.metadata.hints.is_empty()
-        || roots.len() != schema.columns.len()
-        || roots.len() != root.fields.len()
+        || root.fields.len() != schema.columns.len()
+        || roots.len() != expected_cells
     {
         return Err(Error("unsupported VALUES metadata".into()));
     }
@@ -41,53 +49,46 @@ pub(super) fn lower(
     let output = stream_type(ids, element, &unknown)?;
     let output_type = reference(&output)?;
 
-    let mut scalars = layout.column_types(ids);
-    let mut literals = Vec::new();
-    let mut columns = Vec::new();
-    let mut values = Vec::new();
-    let mut sql_values = Vec::new();
-    let mut aliases = Vec::new();
-    for (index, &expr_id) in roots.iter().enumerate() {
-        let field = &root.fields[index];
-        let column = &schema.columns[index];
-        let expr = &program.expressions.expressions[expr_id.0 as usize];
-        if field.index as usize != index || field.name != column.name.name || expr.ty != column.ty {
-            return Err(Error("VALUES column differs from SELECT output".into()));
+    let row = if empty {
+        None
+    } else {
+        Some(lower_row(program, ids, roots, schema, &layout)?)
+    };
+    let aliases = root
+        .fields
+        .iter()
+        .map(|field| format!("`{}`", field.name.replace('`', "``")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let (data, tuples_text, sql) = match row {
+        Some(row) => (
+            vec![row.tuple],
+            format!("{{ {} }}", row.digest),
+            format!("SELECT *\nFROM (VALUES ({})) AS `t` ({aliases})", row.sql),
+        ),
+        None => {
+            let nulls = vec!["NULL"; root.fields.len()].join(", ");
+            (
+                vec![],
+                String::new(),
+                format!("SELECT *\nFROM (VALUES ({nulls})) AS `t` ({aliases})\nWHERE 1 = 0"),
+            )
         }
-        let ObjectKind::Literal { literal } = &expr.kind else {
-            return Err(Error("expected a VALUES literal".into()));
-        };
-        let ty = &program.table.type_table.types[column.ty.0 as usize];
-        let cell = lower_literal(ids, ty, &literal.value, &mut scalars[index])?;
-        columns.push(format!("{} {}", cell.type_name, field.name));
-        aliases.push(format!("`{}`", field.name.replace('`', "``")));
-        values.push(cell.digest);
-        sql_values.push(cell.sql);
-        literals.push(cell.literal);
-    }
-    let mut tuple = ids.generated("DBSPTypeTuple");
-    tuple["tupFields"] = scalars.into();
-    tuple["code"] = "TUPLE".into();
-    tuple["mayBeNull"] = false.into();
-    let mut row = ids.node("DBSPTupleExpression", &unknown);
-    row["type"] = tuple;
-    row["fields"] = literals.into();
+    };
     let mut zset = ids.generated("DBSPZSetExpression");
-    zset["data"] = json!([row]);
+    zset["weights"] = vec![1; data.len()].into();
+    zset["data"] = data.into();
     zset["type"] = output_type.clone();
-    zset["weights"] = json!([1]);
     zset["elementType"] = element_ref;
     let relation = ids.relation(root.relation);
     let operator = ids.next_operator();
     let plan = plan_id(checkpoint, &schema.name.name)?;
-    let columns = columns.join(", ");
-    let text = values.join(", ");
-    let sql = sql_values.join(", ");
-    let aliases = aliases.join(", ");
+    let row = program.producers.relations[root.relation as usize].row;
+    let row_name = type_name::render(&program.table.type_table, row)?;
     let origin = json!({"id":relation,"relId":relation,"planId":plan,"tableScan":false,
-        "digest":format!("LogicalValues.(type=RecordType:peek_no_expand({columns}),tuples=[{{ {text} }}])"),
-        "text":format!("LogicalValues(tuples=[[{{ {text} }}]])"),
-        "sql":format!("SELECT *\nFROM (VALUES ({sql})) AS `t` ({aliases})"),"statefulSqlName":null,
+        "digest":format!("LogicalValues.(type={row_name},tuples=[{tuples_text}])"),
+        "text":format!("LogicalValues(tuples=[[{tuples_text}]])"),
+        "sql":sql,"statefulSqlName":null,
         "origin":{"name":schema.name.name,"caseSensitive":schema.name.quoted,"position":statement_position(source)}});
     let op = json!({"class":"DBSPConstantOperator","id":operator,"annotations":[],"inputs":[],
         "provenance":{"id":ids.next_origin(),"kind":"LastRel","position":unknown,"positions":[],"relation":origin},
@@ -104,9 +105,53 @@ pub(super) fn lower(
     })
 }
 
+struct ConstantRow {
+    tuple: Value,
+    digest: String,
+    sql: String,
+}
+
+fn lower_row(
+    program: &Program,
+    ids: &mut Ids,
+    roots: &[feldera_sql_rel_model::expressions::ExprId],
+    schema: &CatalogSchema,
+    layout: &RowLayout<'_>,
+) -> Result<ConstantRow, Error> {
+    let mut scalars = layout.column_types(ids);
+    let mut fields = Vec::with_capacity(roots.len());
+    let mut values = Vec::with_capacity(roots.len());
+    let mut sql_values = Vec::with_capacity(roots.len());
+    for ((&expr_id, column), scalar) in roots.iter().zip(&schema.columns).zip(&mut scalars) {
+        let expr = &program.expressions.expressions[expr_id.0 as usize];
+        if expr.ty != column.ty {
+            return Err(Error("VALUES column differs from SELECT output".into()));
+        }
+        let ObjectKind::Literal { literal } = &expr.kind else {
+            return Err(Error("expected a VALUES literal".into()));
+        };
+        let ty = &program.table.type_table.types[column.ty.0 as usize];
+        let cell = lower_literal(ids, ty, &literal.value, scalar)?;
+        values.push(cell.digest);
+        sql_values.push(cell.sql);
+        fields.push(cell.literal);
+    }
+    let mut tuple = ids.generated("DBSPTypeTuple");
+    tuple["tupFields"] = scalars.into();
+    tuple["code"] = "TUPLE".into();
+    tuple["mayBeNull"] = false.into();
+    let mut row = ids.node("DBSPTupleExpression", &range(0, 0, 0, 0));
+    row["type"] = tuple;
+    row["fields"] = fields.into();
+    Ok(ConstantRow {
+        tuple: row,
+        digest: values.join(", "),
+        sql: sql_values.join(", "),
+    })
+}
+
 struct ConstantField {
     literal: Value,
-    type_name: String,
     digest: String,
     sql: String,
 }
@@ -119,13 +164,19 @@ fn lower_literal(
 ) -> Result<ConstantField, Error> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     let unknown = range(0, 0, 0, 0);
-    let (mut literal, type_name, digest, sql) = match (&ty.kind, value) {
-        (TypeKind::Null {}, LiteralValue::Null {}) => (
-            ids.generated("DBSPNullLiteral"),
-            "NULL".into(),
-            "null".into(),
-            "NULL".into(),
-        ),
+    let (mut literal, digest, sql) = match (&ty.kind, value) {
+        (kind, LiteralValue::Null {}) if ty.nullable => {
+            let class = match kind {
+                TypeKind::Null {} => "DBSPNullLiteral".to_owned(),
+                TypeKind::Boolean {} => "DBSPBoolLiteral".to_owned(),
+                TypeKind::Integer {
+                    width,
+                    signed: true,
+                } => format!("DBSPI{}Literal", width.bits()),
+                _ => return Err(Error("unsupported typed NULL in VALUES".into())),
+            };
+            (ids.generated(&class), "null".into(), "NULL".into())
+        }
         (_, _) if ty.nullable => {
             return Err(Error("unsupported nullable VALUES literal type".into()));
         }
@@ -134,7 +185,7 @@ fn lower_literal(
             let mut literal = ids.node("DBSPUuidLiteral", &unknown);
             literal["value"] = text.clone().into();
             let sql = format!("UUID '{text}'");
-            (literal, "UUID".into(), text, sql)
+            (literal, text, sql)
         }
         (TypeKind::Date {}, LiteralValue::Date { epoch_days }) => {
             let text = feldera_sql_rel_model::literals::date_to_text(*epoch_days)
@@ -142,7 +193,7 @@ fn lower_literal(
             let mut literal = ids.node("DBSPDateLiteral", &unknown);
             literal["value"] = (*epoch_days).into();
             let sql = format!("DATE '{text}'");
-            (literal, "DATE".into(), text, sql)
+            (literal, text, sql)
         }
         (
             TypeKind::Time {
@@ -156,12 +207,7 @@ fn lower_literal(
             let (time, digest) = clock_text(*nanoseconds_since_midnight, *p)?;
             let mut literal = ids.node("DBSPTimeLiteral", &unknown);
             literal["value"] = digest.clone().into();
-            (
-                literal,
-                format!("TIME({p})"),
-                digest,
-                format!("TIME '{time}'"),
-            )
+            (literal, digest, format!("TIME '{time}'"))
         }
         (
             TypeKind::Timestamp {
@@ -182,28 +228,17 @@ fn lower_literal(
             literal["value"] = micros.to_string().into();
             (
                 literal,
-                format!("TIMESTAMP({p})"),
                 format!("{date} {digest}"),
                 format!("TIMESTAMP '{date} {time}'"),
             )
         }
-        (
-            TypeKind::Decimal {
-                precision, scale, ..
-            },
-            LiteralValue::Decimal { value },
-        ) => {
+        (TypeKind::Decimal { .. }, LiteralValue::Decimal { value }) => {
             let (sql, digest) = value
                 .sql_and_digest()
                 .ok_or_else(|| Error("unsupported SQL decimal literal".into()))?;
             let mut literal = ids.node("DBSPDecimalLiteral", &unknown);
             literal["value"] = digest.clone().into();
-            (
-                literal,
-                format!("DECIMAL({precision}, {scale})"),
-                digest,
-                sql,
-            )
+            (literal, digest, sql)
         }
         (
             TypeKind::Integer {
@@ -212,30 +247,19 @@ fn lower_literal(
             },
             LiteralValue::Integer { value },
         ) => {
-            let (class, name) = match width {
-                IntegerWidth::I8 => ("DBSPI8Literal", "TINYINT"),
-                IntegerWidth::I16 => ("DBSPI16Literal", "SMALLINT"),
-                IntegerWidth::I32 => ("DBSPI32Literal", "INTEGER"),
-                IntegerWidth::I64 => ("DBSPI64Literal", "BIGINT"),
-            };
-            let mut literal = ids.generated(class);
+            let mut literal = ids.generated(&format!("DBSPI{}Literal", width.bits()));
             literal["value"] = value.clone().into();
-            (literal, name.into(), value.clone(), value.clone())
+            (literal, value.clone(), value.clone())
         }
         (TypeKind::Boolean {}, LiteralValue::Boolean { value }) => {
             let mut literal = ids.generated("DBSPBoolLiteral");
             literal["value"] = (*value).into();
-            (
-                literal,
-                "BOOLEAN".into(),
-                value.to_string(),
-                value.to_string().to_uppercase(),
-            )
+            (literal, value.to_string(), value.to_string().to_uppercase())
         }
         (
             TypeKind::Character {
                 fixed: true,
-                length: Precision::Specified(n),
+                length: Precision::Specified(_),
                 metadata,
             },
             LiteralValue::Character { value },
@@ -244,12 +268,12 @@ fn lower_literal(
             literal["value"] = value.clone().into();
             literal["charset"] = "UTF-8".into();
             let text = format!("_UTF-8'{}'", value.replace('\'', "''"));
-            (literal, format!("CHAR({n})"), text.clone(), text)
+            (literal, text.clone(), text)
         }
         (
             TypeKind::Binary {
                 fixed: true,
-                length: Precision::Specified(n),
+                length: Precision::Specified(_),
             },
             LiteralValue::Binary { value },
         ) => {
@@ -257,7 +281,7 @@ fn lower_literal(
             literal["value"] = STANDARD.encode(value).into();
             let digest = format!("X'{}'", hex::encode(value));
             let sql = digest.to_uppercase();
-            (literal, format!("BINARY({n})"), digest, sql)
+            (literal, digest, sql)
         }
         (
             TypeKind::Float {
@@ -272,7 +296,7 @@ fn lower_literal(
             let mut literal = ids.generated("DBSPDoubleLiteral");
             literal["value"] = (*bits as i64).into();
             let (digest, sql) = double_spelling(n);
-            (literal, "DOUBLE".into(), digest, sql)
+            (literal, digest, sql)
         }
         _ => return Err(Error("unsupported scalar VALUES element".into())),
     };
@@ -288,7 +312,6 @@ fn lower_literal(
     literal["type"] = reference(scalar)?;
     Ok(ConstantField {
         literal,
-        type_name,
         digest,
         sql,
     })
