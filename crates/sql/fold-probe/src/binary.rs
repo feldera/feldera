@@ -129,33 +129,29 @@ pub(crate) fn evaluate(name: &str, values: &[Value]) -> Result<Value> {
                     .map_or(0, |index| index as i128 + 1),
             ))
         }
-        ("SUBSTRING", [Value::Binary(bytes), Value::Int(start)]) => {
-            let start = (*start - 1).clamp(0, bytes.len() as i128) as usize;
-            Ok(Value::Binary(bytes[start..].to_vec()))
-        }
-        ("SUBSTRING", [Value::Binary(bytes), Value::Int(start), Value::Int(count)]) => {
-            if *count < 0 {
-                return Err(unsupported(
-                    "negative binary SUBSTRING length differs between Java and runtime",
-                ));
-            }
-            let count = if *start < 1 {
-                (*count + *start - 1).max(0)
-            } else {
-                *count
+        (name @ ("SUBSTRING" | "LEFT" | "RIGHT"), [Value::Binary(s), Value::Int(n)]) => {
+            let slice = match name {
+                "LEFT" => crate::StringSlice::Left(*n),
+                "RIGHT" => crate::StringSlice::Right(*n),
+                _ => crate::StringSlice::Substring {
+                    start: *n,
+                    length: None,
+                },
             };
-            let start = (*start - 1).clamp(0, bytes.len() as i128) as usize;
-            let count = count.min((bytes.len() - start) as i128) as usize;
-            Ok(Value::Binary(bytes[start..start + count].to_vec()))
+            Ok(Value::Binary(
+                slice
+                    .bytes(s)
+                    .expect("a two-argument slice has no length error"),
+            ))
         }
-        ("LEFT" | "RIGHT", [Value::Binary(bytes), Value::Int(count)]) => {
-            let count = (*count).clamp(0, bytes.len() as i128) as usize;
-            let start = if name == "RIGHT" {
-                bytes.len() - count
-            } else {
-                0
+        ("SUBSTRING", [Value::Binary(s), Value::Int(start), Value::Int(length)]) => {
+            let slice = crate::StringSlice::Substring {
+                start: *start,
+                length: Some(*length),
             };
-            Ok(Value::Binary(bytes[start..start + count].to_vec()))
+            slice.bytes(s).map(Value::Binary).ok_or_else(|| {
+                unsupported("negative binary SUBSTRING length differs between Java and runtime")
+            })
         }
         (
             "OVERLAY",

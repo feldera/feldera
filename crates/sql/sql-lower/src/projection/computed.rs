@@ -106,7 +106,7 @@ enum Call {
     },
     Trigonometric {
         name: String,
-        argument: TrigonometricArgument,
+        argument: Box<TrigonometricArgument>,
     },
     Abs {
         field: usize,
@@ -284,7 +284,7 @@ impl Computed {
                 }
                 Call::Trigonometric {
                     name: name.into(),
-                    argument,
+                    argument: Box::new(argument),
                 }
             }
             ("feldera-s1-builtins", ABS_KEY, &[arg]) => {

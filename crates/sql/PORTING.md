@@ -260,16 +260,32 @@ multirow INSERTs. They cover signed and unsigned integers, text, binary,
 decimal, floating-point, temporal, UUID and VARIANT types. Each matched Java
 at S2 and through Gen-2 emission.
 
-The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 695 of 8,571 programs and lowered 646 to S2.
+The frozen audit uses the original submission calls and default nonincremental
+Gen-2 options. After literal ARRAY support, Rust bound 695 of 8,571 programs
+and lowered 646 to S2.
 The literal ARRAY implementation preserved the 675 previously verified bound
 programs and reproduced all 626 previous S2 checkpoints byte for byte.
 For the 20 additional programs, direct Java and Rust-bound replay agreed on
 optimizer observations, persistent-ID inputs, schema, diagnostics and Gen-2
 bytes. Independent Java lowering matched all 20 Rust S2 checkpoints, and the
-Java optimizer resumed each one. The remaining 7,876 programs still need
-whole-program binding. All 49 bound programs that require Java lowering use
-aggregates.
+Java optimizer resumed each one.
+
+Constant character and binary slicing raised coverage to 1,115 bound programs
+and 1,066 lowered to S2. All 420 additional programs matched direct Java on
+optimizer observations, persistent-ID inputs, schema, diagnostics and Gen-2
+bytes. Independent Java lowering matched all 420 Rust S2 checkpoints, and Java
+resumed each one. The comparison started a fresh JVM for each of the 210
+distinct bound inputs to isolate Calcite's relation counter. All 695 earlier
+bindings remained byte-identical. Of the 646 earlier S2 checkpoints, 510 stayed
+byte-identical and 136 matched structurally with identical compiler envelopes.
+The remaining 7,456 programs need whole-program binding. All 49 bound programs
+that still require Java lowering use aggregates.
+
+Six directed programs cover LEFT, RIGHT, SUBSTRING and SUBSTR on BMP text,
+binary data, negative indices and NULL arguments. All six matched Java through
+Gen-2 emission from both bound programs and Rust S2. The parser also matched
+Java on 70 ordinary, qualified, quoted and keyword calls and identifiers.
+Java recovered the original parsed SQL from all 41 accepted formatted cases.
 
 Eight directed programs exercise literal ARRAY element coercion, typed and
 untyped NULLs, temporal precision warnings, length functions and project-wide

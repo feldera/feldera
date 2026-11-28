@@ -1,26 +1,24 @@
 //! A projected ARRAY holds a fresh element type and converts its required
 //! elements to that type when another element makes the array's elements nullable.
 
-use super::interval_count::cast;
+use super::{interval_count::cast, literal::ProjectedLiteral};
 use crate::{
     source_table::{expression_range, ColumnLayout, Ids},
-    values::{scalar::ScalarLiteral, type_name},
     view::reference,
     Error,
 };
 use feldera_sql_rel_model::{
     expression_objects::ObjectKind,
     expressions::ExprId,
-    literals::LiteralValue,
     operators::OperatorObject,
     program::Program,
-    types::{Cardinality, IntegerWidth, Precision, SqlType, TypeKind},
+    types::{Cardinality, TypeKind},
 };
 use serde_json::Value;
 
 pub(crate) struct ArrayConstructor {
     layout: ColumnLayout,
-    elements: Vec<(SqlType, ScalarLiteral)>,
+    elements: Vec<ProjectedLiteral>,
     element_nullable: bool,
     position: Value,
     pub(super) digest: String,
@@ -57,61 +55,20 @@ impl ArrayConstructor {
             return Err(Error("ARRAY constructor requires a non-null result".into()));
         }
         let element_type = &types.types[element.0 as usize];
-        let mut type_text = type_name::render(types, element)?;
-        if matches!(element_type.kind, TypeKind::Character { .. }) {
-            type_text.push_str(" CHARACTER SET \"UTF-8\"");
-        }
         let mut elements = Vec::with_capacity(args.len());
         let mut digests = Vec::with_capacity(args.len());
         let mut texts = Vec::with_capacity(args.len());
         for id in args {
-            let expr = &program.expressions.expressions[id.0 as usize];
-            let ObjectKind::Literal { literal } = &expr.kind else {
-                return Err(Error("expected a scalar literal ARRAY element".into()));
-            };
-            let ty = &types.types[expr.ty.0 as usize];
+            let cell = ProjectedLiteral::resolve(program, *id)?;
+            let ty = &cell.ty;
             if ty.kind != element_type.kind || (ty.nullable && !element_type.nullable) {
                 return Err(Error(
                     "ARRAY element differs from the inferred common type".into(),
                 ));
             }
-            let value = ScalarLiteral::resolve(ty, &literal.value)?;
-            let skip_type = !ty.nullable
-                && match (&ty.kind, &literal.value) {
-                    (
-                        TypeKind::Boolean {}
-                        | TypeKind::Date {}
-                        | TypeKind::Integer {
-                            width: IntegerWidth::I32,
-                            signed: true,
-                        }
-                        | TypeKind::Time {
-                            precision: Precision::Specified(0),
-                            ..
-                        }
-                        | TypeKind::Timestamp {
-                            precision: Precision::Specified(0),
-                            ..
-                        },
-                        _,
-                    ) => true,
-                    (
-                        TypeKind::Character {
-                            fixed: true,
-                            length: Precision::Specified(n),
-                            ..
-                        },
-                        LiteralValue::Character { value },
-                    ) => value.encode_utf16().count() == *n as usize,
-                    _ => false,
-                };
-            digests.push(if skip_type {
-                value.digest.clone()
-            } else {
-                format!("{}:{type_text}", value.digest)
-            });
-            texts.push(value.sql.clone());
-            elements.push((ty.clone(), value));
+            digests.push(cell.digest.clone());
+            texts.push(cell.value.sql.clone());
+            elements.push(cell);
         }
         let layout = types
             .column_type(result)
@@ -130,10 +87,9 @@ impl ArrayConstructor {
         let ty = self.layout.node(ids);
         let element = reference(&ty["typeArgs"][0])?;
         let mut data = Vec::with_capacity(self.elements.len());
-        for (ty, cell) in &self.elements {
-            let mut scalar = ColumnLayout::scalar(ty)?.node(ids);
-            let literal = cell.expression(ids, ty, &mut scalar, None)?;
-            data.push(if self.element_nullable && !ty.nullable {
+        for cell in &self.elements {
+            let literal = cell.lower(ids)?;
+            data.push(if self.element_nullable && !cell.ty.nullable {
                 cast(ids, &self.position, literal, element.clone())
             } else {
                 literal

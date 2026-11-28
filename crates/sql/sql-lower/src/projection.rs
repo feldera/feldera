@@ -5,6 +5,7 @@ mod array;
 mod computed;
 mod field;
 mod interval_count;
+mod literal;
 mod trigonometric;
 pub(super) use field::Field;
 

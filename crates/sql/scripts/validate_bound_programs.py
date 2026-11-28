@@ -66,6 +66,21 @@ TIMESTAMP_DIFF_CASES = {
                            " TIMESTAMPDIFF(YEAR, DATE '2001-01-01', DATE '2001-12-31');",
 }
 
+STRING_SLICE_CASES = {
+    "slice_unicode": "CREATE VIEW v AS SELECT LEFT('éhéllo', 2), RIGHT('éhéllo', 3),"
+                     " SUBSTRING('éhéllo' FROM -1 FOR 4), SUBSTR('éhéllo', -2, 1);",
+    "slice_binary": "CREATE VIEW v AS SELECT SUBSTRING(X'1234AB' FROM 2 FOR 2),"
+                    " SUBSTR(X'1234AB', 0, 2), LEFT(X'FF', -1), RIGHT(X'0102', 8);",
+    "slice_nullable": "CREATE VIEW v AS SELECT LEFT(CAST(NULL AS VARCHAR(3)), 1),"
+                      " SUBSTRING(NULL, 3), SUBSTR('abc', CAST(NULL AS INT)), RIGHT('x', NULL);",
+    "slice_negative_index": "CREATE VIEW v AS SELECT SUBSTR('abc', -4, 0), SUBSTR('abc', -3, 2),"
+                            " SUBSTRING('abc' FROM 0 FOR 2), SUBSTR('abc', 1, -1);",
+    "slice_nullable_length": "CREATE VIEW v AS SELECT SUBSTR('abc', -10, NULL),"
+                             " SUBSTR(X'1234', -8, CAST(NULL AS INT)), ARRAY[1] AS a;",
+    "slice_projected_literals": "CREATE VIEW v AS SELECT ARRAY[1] AS a, SUBSTRING('hello', 2) AS s,"
+                                " RIGHT(X'FFAB', 1) AS b, 3.100 AS n, CAST(NULL AS BIGINT) AS i;",
+}
+
 LITERAL_ARRAY_CASES = {
     "array_numeric_coercion": "CREATE VIEW v AS SELECT ARRAY[1.25, NULL, 3000000000] AS a;",
     "array_string_widths": "CREATE VIEW v AS SELECT ARRAY['a', 'hello', NULL] AS a;",
@@ -79,6 +94,7 @@ LITERAL_ARRAY_CASES = {
 
 
 CASES = {
+    **STRING_SLICE_CASES,
     **LITERAL_ARRAY_CASES,
     **TIMESTAMP_DIFF_CASES,
     "runtime_integer_divide": "CREATE VIEW v AS SELECT 1 / 0, 2 / (1 / 0), (3 / 0) / 2;",

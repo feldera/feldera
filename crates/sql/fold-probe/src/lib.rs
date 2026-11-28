@@ -17,6 +17,7 @@ mod rounding;
 mod selection;
 mod spatial;
 mod strings;
+mod substring;
 mod temporal;
 mod temporal_rounding;
 mod uuid;
@@ -24,6 +25,7 @@ mod uuid;
 pub use math::trigonometric_kernel;
 pub use model::{Expression, Refusal, SqlType};
 pub use profile::SemanticsProfile;
+pub use substring::StringSlice;
 
 /// Evaluate only explicitly registered pure operations, under a fixed node/depth
 /// budget. A refusal leaves an optimization-only expression for the runtime.

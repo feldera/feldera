@@ -1,8 +1,10 @@
-use super::{array::ArrayConstructor, computed::Computed};
+use super::{
+    array::ArrayConstructor, computed::Computed, interval_count::cast, literal::ProjectedLiteral,
+};
 use crate::{
     closure::RowParameter,
-    integer::SignedInteger,
     source_table::{Ids, RowLayout},
+    view::reference,
     Error,
 };
 use feldera_sql_rel_model::{
@@ -18,71 +20,10 @@ use serde_json::Value;
 
 pub(crate) enum Field {
     Column(usize),
-    Integer(SignedInteger),
-    NullableInteger(SignedInteger),
-    Double(DoubleLiteral),
     Computed(Box<Computed>),
     Array(Box<ArrayConstructor>),
-}
-
-/// Rex digests for approximate literals include their SQL type inside calls.
-#[derive(Clone, Copy)]
-pub(crate) struct DoubleLiteral(Option<u64>);
-
-impl DoubleLiteral {
-    pub(super) fn null() -> Self {
-        Self(None)
-    }
-
-    pub(super) fn resolve(program: &Program, id: ExprId) -> Result<Self, Error> {
-        use feldera_sql_rel_model::{literals::LiteralValue, types::FloatFlavor};
-        let expr = &program.expressions.expressions[id.0 as usize];
-        let ty = &program.table.type_table.types[expr.ty.0 as usize];
-        let ObjectKind::Literal { literal } = &expr.kind else {
-            return Err(Error("expected a DOUBLE literal".into()));
-        };
-        if !matches!(
-            ty.kind,
-            TypeKind::Float {
-                flavor: FloatFlavor::Double
-            }
-        ) {
-            return Err(Error("expected a DOUBLE operand".into()));
-        }
-        match literal.value {
-            LiteralValue::Float64 { bits } if !ty.nullable => Ok(Self(Some(bits))),
-            LiteralValue::Null {} if ty.nullable => Ok(Self(None)),
-            _ => Err(Error("unsupported DOUBLE literal type".into())),
-        }
-    }
-
-    pub(super) fn is_null(self) -> bool {
-        self.0.is_none()
-    }
-
-    fn spelling(self) -> (String, String) {
-        self.0.map_or_else(
-            || ("null".into(), "NULL".into()),
-            |bits| crate::values::double_spelling(f64::from_bits(bits)),
-        )
-    }
-
-    pub(super) fn digest(self) -> String {
-        format!("{}:DOUBLE", self.spelling().0)
-    }
-    pub(super) fn sql(self) -> String {
-        self.spelling().1
-    }
-
-    pub(super) fn lower(self, ids: &mut Ids) -> Value {
-        let mut expression = ids.generated("DBSPDoubleLiteral");
-        expression["type"] =
-            ids.singleton(feldera_sql_ir::TypeKind::Double, "DOUBLE", self.is_null());
-        if let Some(bits) = self.0 {
-            expression["value"] = (bits as i64).into();
-        }
-        expression
-    }
+    Literal(Box<ProjectedLiteral>),
+    NullableLiteral(Box<ProjectedLiteral>),
 }
 
 pub(super) fn quote(name: &str) -> String {
@@ -110,19 +51,9 @@ impl Field {
             ObjectKind::InputRef { object } => Ok(Self::Column(
                 program.table.objects[object.0 as usize].field as usize,
             )),
-            ObjectKind::Literal { .. }
-                if matches!(
-                    ty.kind,
-                    TypeKind::Float {
-                        flavor: feldera_sql_rel_model::types::FloatFlavor::Double
-                    }
-                ) =>
-            {
-                DoubleLiteral::resolve(program, id).map(Self::Double)
-            }
-            ObjectKind::Literal { .. } if !ty.nullable => {
-                Ok(Self::Integer(SignedInteger::resolve(program, id)?))
-            }
+            ObjectKind::Literal { .. } => ProjectedLiteral::resolve(program, id)
+                .map(Box::new)
+                .map(Self::Literal),
             ObjectKind::Call { .. } if matches!(ty.kind, TypeKind::Array { .. }) => {
                 ArrayConstructor::resolve(program, id)
                     .map(Box::new)
@@ -147,10 +78,17 @@ impl Field {
                 {
                     return Err(Error("unsupported projection call".into()));
                 }
-                let literal = SignedInteger::resolve(program, *input)?;
-                if matches!(ty.kind, TypeKind::Integer { signed: true, width } if width == literal.width)
+                let value = ProjectedLiteral::resolve(program, *input)?;
+                if value.ty.kind == ty.kind
+                    && !value.ty.nullable
+                    && matches!(
+                        ty.kind,
+                        TypeKind::Character { .. }
+                            | TypeKind::Binary { .. }
+                            | TypeKind::Integer { signed: true, .. }
+                    )
                 {
-                    return Ok(Self::NullableInteger(literal));
+                    return Ok(Self::NullableLiteral(Box::new(value)));
                 }
                 Err(Error("unsupported projection cast".into()))
             }
@@ -161,11 +99,10 @@ impl Field {
     pub(super) fn digest(&self) -> String {
         match self {
             Self::Column(i) => format!("${i}"),
-            Self::Integer(n) => n.digest(),
-            Self::Double(n) => n.digest(),
-            Self::NullableInteger(n) => format!("CAST({}):{}", n.digest(), n.sql_type()),
             Self::Computed(call) => call.digest(),
             Self::Array(array) => array.digest.clone(),
+            Self::Literal(value) => value.digest.clone(),
+            Self::NullableLiteral(value) => value.cast_digest(),
         }
     }
 
@@ -178,12 +115,10 @@ impl Field {
                 }
                 quote(name)
             }
-            Self::Integer(n) => n.value.to_string(),
-            Self::Double(n) if n.is_null() => "CAST(NULL AS DOUBLE)".into(),
-            Self::Double(n) => n.sql(),
-            Self::NullableInteger(n) => format!("CAST({} AS {})", n.value, n.sql_type()),
             Self::Computed(call) => call.sql(schema)?,
             Self::Array(array) => array.sql.clone(),
+            Self::Literal(value) => value.sql(),
+            Self::NullableLiteral(value) => value.cast_sql(),
         };
         if alias
             .get(..5)
@@ -207,14 +142,19 @@ impl Field {
         match self {
             Self::Computed(call) => call.lower(ids, parameter),
             Self::Array(array) => array.lower(ids),
-            Self::Integer(n) => Ok(n.lower(ids)),
-            Self::Double(n) => Ok(n.lower(ids)),
-            Self::NullableInteger(n) => {
-                let mut cast = ids.node("DBSPCastExpression", position);
-                cast["source"] = n.lower(ids);
-                cast["type"] = output.column_type(ids, index);
-                cast["safe"] = "SqlUnsafe".into();
-                Ok(cast)
+            Self::Literal(value) => value.lower(ids),
+            Self::NullableLiteral(value) => {
+                let literal = value.lower(ids)?;
+                let target = output.column_type(ids, index);
+                let expression = cast(ids, position, literal, target);
+                if matches!(ty, TypeKind::Character { .. } | TypeKind::Binary { .. }) {
+                    let mut clone = ids.node("DBSPCloneExpression", position);
+                    clone["type"] = reference(&expression["type"])?;
+                    clone["expression"] = expression;
+                    Ok(clone)
+                } else {
+                    Ok(expression)
+                }
             }
             Self::Column(i) => {
                 let field = parameter.read(ids, *i)?;

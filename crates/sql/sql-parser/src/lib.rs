@@ -33,6 +33,7 @@ mod statements;
 mod unparse;
 pub use unparse::emit_statements;
 mod string_literals;
+mod substring;
 mod temporal_types;
 mod translate;
 mod trim;
@@ -365,6 +366,9 @@ impl Dialect for FelderaDialect {
     }
 
     fn parse_prefix(&self, parser: &mut Parser) -> Option<Result<Expr, ParserError>> {
+        if parser.peek_keyword(Keyword::SUBSTR) || parser.peek_keyword(Keyword::SUBSTRING) {
+            return Some(substring::parse(parser));
+        }
         if parser.peek_keyword(Keyword::FROM) {
             return Some(Err(diagnostic::located(
                 "expected an expression before FROM",

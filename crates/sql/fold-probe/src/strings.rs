@@ -120,33 +120,29 @@ pub(crate) fn evaluate(
         ) => overlay(source, replacement, *start, *remove),
         ("STARTS_WITH", [Value::String(a), Value::String(b)]) => Ok(Value::Bool(a.starts_with(b))),
         ("ENDS_WITH", [Value::String(a), Value::String(b)]) => Ok(Value::Bool(a.ends_with(b))),
-        ("SUBSTRING", [Value::String(s), Value::Int(start)]) => {
-            Ok(Value::String(s.chars().skip(index(*start - 1)).collect()))
-        }
-        ("SUBSTRING", [Value::String(s), Value::Int(start), Value::Int(count)]) => {
-            if *count < 0 {
-                return Err(unsupported(
-                    "negative SUBSTRING length differs between Java and runtime",
-                ));
-            }
-            let count = if *start < 1 {
-                (*count + *start - 1).max(0)
-            } else {
-                *count
+        (name @ ("SUBSTRING" | "LEFT" | "RIGHT"), [Value::String(s), Value::Int(n)]) => {
+            let slice = match name {
+                "LEFT" => crate::StringSlice::Left(*n),
+                "RIGHT" => crate::StringSlice::Right(*n),
+                _ => crate::StringSlice::Substring {
+                    start: *n,
+                    length: None,
+                },
             };
             Ok(Value::String(
-                s.chars()
-                    .skip(index(*start - 1))
-                    .take(index(count))
-                    .collect(),
+                slice
+                    .text(s)
+                    .expect("a two-argument slice has no length error"),
             ))
         }
-        ("LEFT", [Value::String(s), Value::Int(count)]) => {
-            Ok(Value::String(s.chars().take(index(*count)).collect()))
-        }
-        ("RIGHT", [Value::String(s), Value::Int(count)]) => {
-            let start = s.chars().count().saturating_sub(index(*count));
-            Ok(Value::String(s.chars().skip(start).collect()))
+        ("SUBSTRING", [Value::String(s), Value::Int(start), Value::Int(length)]) => {
+            let slice = crate::StringSlice::Substring {
+                start: *start,
+                length: Some(*length),
+            };
+            slice.text(s).map(Value::String).ok_or_else(|| {
+                unsupported("negative SUBSTRING length differs between Java and runtime")
+            })
         }
         ("POSITION", [Value::String(needle), Value::String(haystack)]) => Ok(Value::Int(
             haystack

@@ -9,6 +9,7 @@ mod math;
 mod names;
 mod order;
 mod source;
+mod string_slice;
 mod table;
 mod timestamp_diff;
 
@@ -324,11 +325,32 @@ fn constant_call(
             .projection(program, tokens, expr.span(), enclosing, fold)
             .map(Some);
     }
+    if let Expr::Substring {
+        expr,
+        substring_from: Some(start),
+        substring_for,
+        shorthand,
+        ..
+    } = expr
+    {
+        let mut args = vec![expr.as_ref(), start.as_ref()];
+        args.extend(substring_for.as_deref());
+        return string_slice::bind(
+            program,
+            if *shorthand { "SUBSTR" } else { "SUBSTRING" },
+            &args,
+            fold,
+        )
+        .map(Some);
+    }
     let Expr::Function(function) = expr else {
         return Ok(None);
     };
     let (name, arguments) = super::scalar_args(function)?;
     let name = name.to_ascii_uppercase();
+    if matches!(name.as_str(), "LEFT" | "RIGHT" | "SUBSTR" | "SUBSTRING") {
+        return string_slice::bind(program, &name, &arguments, fold).map(Some);
+    }
     let position = || tokens.call_position(function.name.span(), enclosing);
     if matches!(name.as_str(), "ARRAY_LENGTH" | "ARRAY_SIZE" | "CARDINALITY") {
         return array::length(program, tokens, &name, &arguments, position()?, fold).map(Some);
