@@ -267,16 +267,13 @@ pub fn lower_program(
                 let messages = checkpoint["diagnostics"]["messages"]
                     .as_array_mut()
                     .expect("system diagnostics");
-                for (ty, position) in projection::expression_types(program, root.relation)? {
-                    source_table::precision_warnings(
-                        [ty],
-                        &program.table.type_table,
-                        &source_table::expression_range(position),
-                        &context,
-                        &mut precision_warnings,
-                        messages,
-                    );
-                }
+                projection::expression_warnings(
+                    program,
+                    root.relation,
+                    &context,
+                    &mut precision_warnings,
+                    messages,
+                )?;
             }
             view::lower(
                 &mut checkpoint,

@@ -215,28 +215,10 @@ fn source_value(
     }
     match &expr.kind {
         ObjectKind::Literal { literal } => Ok(&literal.value),
-        ObjectKind::Call {
-            operator,
-            arguments,
-        } if projected => {
-            let signature = &graph.operators[operator.0 as usize];
-            let object = &graph.operator_objects[signature.object.0 as usize];
-            let [arg] = arguments.as_slice() else {
-                return Err("expected one character literal in INSERT projection".into());
-            };
-            let child = &graph.expressions[arg.0 as usize];
-            let types = &program.table.type_table.types;
-            if *object == OperatorObject::non_bmp_literal()
-                && let ObjectKind::Literal { literal } = &child.kind
-                && let Some(result) = literal
-                    .value
-                    .non_bmp_result_type(&types[child.ty.0 as usize])
-                && result == types[expr.ty.0 as usize]
-            {
-                return Ok(&literal.value);
-            }
-            Err("unsupported call in constant INSERT projection".into())
-        }
+        ObjectKind::Call { .. } if projected => program
+            .non_bmp_literal_input(id)
+            .map(|(_, literal)| &literal.value)
+            .ok_or_else(|| "unsupported call in constant INSERT projection".into()),
         _ => Err("expected a literal in INSERT VALUES".into()),
     }
 }

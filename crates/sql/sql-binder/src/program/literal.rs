@@ -1,6 +1,6 @@
 //! SQL literals shared by VALUES and constant SELECT projections.
 
-mod temporal;
+pub(super) mod temporal;
 
 use super::{graph, source::DeclarationTokens};
 use crate::{Expr, Failure, Value, unsupported};

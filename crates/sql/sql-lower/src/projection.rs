@@ -6,6 +6,7 @@ mod computed;
 mod field;
 mod interval_count;
 mod literal;
+mod temporal_text;
 mod trigonometric;
 pub(super) use field::Field;
 
@@ -39,31 +40,48 @@ pub(super) fn expressions(
     Ok(&usage.roots)
 }
 
-/// Types visited while compiling scalar projections, in Rex operand order.
-pub(super) fn expression_types(
+/// ExpressionCompiler converts each result type before visiting the operands
+/// and checks function-specific arguments after those visits.
+pub(super) fn expression_warnings(
     program: &Program,
     root: u32,
-) -> Result<
-    Vec<(
-        feldera_sql_rel_model::TypeId,
-        &feldera_sql_rel_model::expression_objects::ObjectPosition,
-    )>,
-    Error,
-> {
+    context: &Value,
+    precision_warnings: &mut std::collections::HashSet<(&'static str, u32)>,
+    messages: &mut Vec<Value>,
+) -> Result<(), Error> {
     use feldera_sql_rel_model::expression_objects::ObjectKind;
-    let mut pending: Vec<_> = expressions(program, root)?.iter().rev().copied().collect();
+    enum Visit {
+        Enter,
+        LeaveCall,
+    }
+    let mut pending: Vec<_> = expressions(program, root)?
+        .iter()
+        .rev()
+        .map(|&id| (id, Visit::Enter))
+        .collect();
     let mut visited = std::collections::HashSet::new();
-    let mut types = Vec::new();
-    while let Some(id) = pending.pop() {
-        if visited.insert(id.0) {
-            let expr = &program.expressions.expressions[id.0 as usize];
-            types.push((expr.ty, &expr.position));
-            if let ObjectKind::Call { arguments, .. } = &expr.kind {
-                pending.extend(arguments.iter().rev().copied());
+    while let Some((id, visit)) = pending.pop() {
+        let expr = &program.expressions.expressions[id.0 as usize];
+        match visit {
+            Visit::Enter if visited.insert(id.0) => {
+                super::source_table::precision_warnings(
+                    [expr.ty],
+                    &program.table.type_table,
+                    &super::source_table::expression_range(&expr.position),
+                    context,
+                    precision_warnings,
+                    messages,
+                );
+                if let ObjectKind::Call { arguments, .. } = &expr.kind {
+                    pending.push((id, Visit::LeaveCall));
+                    pending.extend(arguments.iter().rev().map(|&id| (id, Visit::Enter)));
+                }
             }
+            Visit::LeaveCall => temporal_text::check_format(program, expr, context, messages),
+            Visit::Enter => {}
         }
     }
-    Ok(types)
+    Ok(())
 }
 
 pub(super) fn projected_fields(

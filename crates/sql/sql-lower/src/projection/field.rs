@@ -47,6 +47,9 @@ impl Field {
             ));
         }
         let ty = &program.table.type_table.types[output.0 as usize];
+        if let Some(literal) = ProjectedLiteral::wrapped(program, id)? {
+            return Ok(Self::Literal(Box::new(literal)));
+        }
         match &expr.kind {
             ObjectKind::InputRef { object } => Ok(Self::Column(
                 program.table.objects[object.0 as usize].field as usize,

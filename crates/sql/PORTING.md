@@ -312,6 +312,16 @@ The exact numeric binder retains decimal scale and truncates the operand to an
 explicit cast's scale before rounding. Approximate operands and calls that
 survive constant reduction still need runtime rounding support.
 
+The six FORMAT and PARSE functions for DATE, TIME and TIMESTAMP now bind
+literal operands, including supported implicit casts. Frozen coverage rose to
+1,529 bound programs and 1,480 lowered to S2. All 1,269 earlier bindings
+remained byte-identical. All 260 additions matched direct Java through Gen-2
+emission and matched independent Java lowering at S2. Java resumed every
+Rust checkpoint. Nine directed programs check typed and untyped NULLs,
+fractional seconds, supplementary characters, array projections and the
+order and locations of format warnings. All nine passed both comparisons.
+Unreduced text-to-datetime casts and calls over columns still require work.
+
 Eight directed programs exercise literal ARRAY element coercion, typed and
 untyped NULLs, temporal precision warnings, length functions and project-wide
 folding. A checked division by zero keeps sibling array and trigonometric calls

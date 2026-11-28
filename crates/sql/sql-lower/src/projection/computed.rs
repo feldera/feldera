@@ -3,6 +3,7 @@
 use super::{
     array::{ArrayConstructor, ArrayLengthArgument},
     interval_count::{cast, IntervalCount},
+    temporal_text::TemporalCall,
     trigonometric::TrigonometricArgument,
 };
 use crate::{
@@ -100,6 +101,7 @@ enum Call {
         widen_right: bool,
     },
     IntervalCount(Box<IntervalCount>),
+    TemporalText(Box<TemporalCall>),
     ArrayLength {
         name: &'static str,
         argument: ArrayLengthArgument,
@@ -287,6 +289,14 @@ impl Computed {
                     argument: Box::new(argument),
                 }
             }
+            ("feldera-s1-builtins", key, args) if key != ABS_KEY => {
+                let function =
+                    feldera_sql_rel_model::operators::TemporalTextFunction::from_key(key)
+                        .ok_or_else(|| Error("unsupported Feldera projection function".into()))?;
+                Call::TemporalText(Box::new(TemporalCall::resolve(
+                    program, function, args, result,
+                )?))
+            }
             ("feldera-s1-builtins", ABS_KEY, &[arg]) => {
                 let (field, input) = column(arg)?;
                 if input.kind != result.kind || input.nullable != result.nullable {
@@ -332,6 +342,7 @@ impl Computed {
                 symbol,
                 ..
             } => format!("{symbol}({}, {})", left.digest(), right.digest()),
+            Call::TemporalText(ref call) => call.digest(),
             Call::IntervalCount(ref count) => count.digest(),
             Call::ArrayLength { name, ref argument } => format!("{name}({})", argument.digest()),
             Call::Abs { field, .. } => format!("abs(${field})"),
@@ -366,6 +377,7 @@ impl Computed {
                 left.sql(input, self.precedence())?,
                 right.sql(input, self.precedence() + 1)?
             ),
+            Call::TemporalText(ref call) => call.sql(),
             Call::IntervalCount(ref count) => count.sql(),
             Call::ArrayLength { name, ref argument } => format!("{name}({})", argument.sql()),
             Call::Abs { field: index, .. } => format!("ABS({})", field(index)?),
@@ -413,8 +425,9 @@ impl Computed {
             }
             Call::ArrayLength { ref argument, .. } => {
                 let value = argument.lower(ids)?;
-                self.apply(ids, argument.function(), value)
+                self.apply(ids, argument.function(), vec![value])
             }
+            Call::TemporalText(ref call) => call.lower(ids, self)?,
             Call::IntervalCount(ref count) => {
                 let ty = self.result.node(ids);
                 count.lower(ids, ty)?
@@ -424,7 +437,7 @@ impl Computed {
                 ref function,
             } => {
                 let argument = parameter.read(ids, field)?;
-                self.apply(ids, function, argument)
+                self.apply(ids, function, vec![argument])
             }
             Call::Trigonometric {
                 ref name,
@@ -434,14 +447,18 @@ impl Computed {
                 if argument.is_null() {
                     literal
                 } else {
-                    self.apply(ids, &format!("{}_d", name.to_ascii_lowercase()), literal)
+                    self.apply(
+                        ids,
+                        &format!("{}_d", name.to_ascii_lowercase()),
+                        vec![literal],
+                    )
                 }
             }
         };
         Ok(expr)
     }
 
-    fn apply(&self, ids: &mut Ids, identifier: &str, argument: Value) -> Value {
+    pub(super) fn apply(&self, ids: &mut Ids, identifier: &str, arguments: Vec<Value>) -> Value {
         let mut segment = ids.generated("DBSPSimplePathSegment");
         segment["identifier"] = identifier.into();
         segment["genericArgs"] = json!([]);
@@ -452,7 +469,7 @@ impl Computed {
         function["type"] = ids.singleton(CircuitType::Any, "ANY", false);
         let mut expr = ids.node("DBSPApplyExpression", &self.position);
         expr["function"] = function;
-        expr["arguments"] = vec![argument].into();
+        expr["arguments"] = arguments.into();
         expr["type"] = self.result.node(ids);
         expr
     }

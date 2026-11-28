@@ -2,7 +2,8 @@
 use crate::{
     LiteralLimits, ObjectLimits, TypeId, ValidationError, ValidationLimits,
     catalog::Catalog,
-    expression_objects::{ExpressionObjects, SourceContext},
+    expression_objects::{ExpressionObjects, ObjectKind, SourceContext},
+    expressions::ExprId,
     input_producers::InputProducers,
     input_uses::InputUses,
     operators::{DiagnosticSource, OperatorObject, QualifiedName},
@@ -53,6 +54,38 @@ pub struct Program {
 }
 
 impl Program {
+    /// Unwrap a supplementary character literal when both the registered
+    /// operator and its result type match the literal conversion.
+    pub fn non_bmp_literal_input(&self, id: ExprId) -> Option<(ExprId, &crate::literals::Literal)> {
+        let graph = &self.expressions;
+        let expr = graph.expressions.get(id.0 as usize)?;
+        let ObjectKind::Call {
+            operator,
+            arguments,
+        } = &expr.kind
+        else {
+            return None;
+        };
+        let &[child] = arguments.as_slice() else {
+            return None;
+        };
+        let signature = graph.operators.get(operator.0 as usize)?;
+        if graph.operator_objects.get(signature.object.0 as usize)?
+            != &OperatorObject::non_bmp_literal()
+        {
+            return None;
+        }
+        let input = graph.expressions.get(child.0 as usize)?;
+        let ObjectKind::Literal { literal } = &input.kind else {
+            return None;
+        };
+        let types = &self.table.type_table.types;
+        let result = literal
+            .value
+            .non_bmp_result_type(types.get(input.ty.0 as usize)?)?;
+        (&result == types.get(expr.ty.0 as usize)?).then_some((child, literal))
+    }
+
     pub fn validate(
         &self,
         types: ValidationLimits,

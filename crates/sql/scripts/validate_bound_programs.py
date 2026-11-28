@@ -66,6 +66,28 @@ TIMESTAMP_DIFF_CASES = {
                            " TIMESTAMPDIFF(YEAR, DATE '2001-01-01', DATE '2001-12-31');",
 }
 
+TEMPORAL_TEXT_CASES = {
+    "format_datetime": "CREATE VIEW v AS SELECT FORMAT_DATE('%F', DATE '2024-02-29'),"
+                       " FORMAT_TIME('%T', TIME '13:05:09.123456'),"
+                       " FORMAT_TIMESTAMP('%c', TIMESTAMP '2024-02-29 01:02:03');",
+    "parse_datetime": "CREATE VIEW v AS SELECT PARSE_DATE('%F', '2024-02-29'),"
+                      " PARSE_TIME('%T', 'noon'), PARSE_TIMESTAMP('%c', '');",
+    "parse_nulls": "CREATE VIEW v AS SELECT PARSE_TIME('%T', NULL),"
+                   " PARSE_DATE(NULL, 'tomorrow'), PARSE_TIMESTAMP('%F', CAST(NULL AS CHAR(4)));",
+    "format_nulls": "CREATE VIEW v AS SELECT FORMAT_TIME(CAST(NULL AS VARCHAR(5)), TIME '12:34:56'),"
+                    " FORMAT_TIMESTAMP('%T', NULL), FORMAT_DATE(NULL, CAST(NULL AS DATE));",
+    "format_warnings": "CREATE VIEW v AS SELECT FORMAT_TIME('hour', TIME '13:05:09.123456'),"
+                       " PARSE_TIMESTAMP('%F', '%Y'), PARSE_DATE('', '%');",
+    "datetime_unicode": "CREATE VIEW v AS SELECT PARSE_DATE('🍋', 'never'),"
+                        " PARSE_TIMESTAMP('%F', '🍋%'), '🍋' AS fruit;",
+    "format_implicit_casts": "CREATE VIEW v AS SELECT FORMAT_DATE('%Y', '2024-02-29'),"
+                             " FORMAT_TIME('%T', '13:05:09.123456'),"
+                             " FORMAT_TIMESTAMP('%T', '2024-02-29 01:02:03.000125');",
+    "format_coerced_null": "CREATE VIEW v AS SELECT FORMAT_DATE(NULL, '2024-02-29'),"
+                           " FORMAT_TIME('%T', CAST(NULL AS CHAR(3)));",
+    "format_cast_with_array": "CREATE VIEW v AS SELECT FORMAT_DATE('%F', '2020-02-29'), ARRAY[1];",
+}
+
 ROUNDING_CASES = {
     "round_exact_ties": "CREATE VIEW v AS SELECT ROUND(15.50), ROUND(-15.50),"
                         " TRUNCATE(-15.50), TRUNCATE(0.042, 2);",
@@ -110,6 +132,7 @@ LITERAL_ARRAY_CASES = {
 CASES = {
     **STRING_SLICE_CASES,
     **ROUNDING_CASES,
+    **TEMPORAL_TEXT_CASES,
     **LITERAL_ARRAY_CASES,
     **TIMESTAMP_DIFF_CASES,
     "runtime_integer_divide": "CREATE VIEW v AS SELECT 1 / 0, 2 / (1 / 0), (3 / 0) / 2;",

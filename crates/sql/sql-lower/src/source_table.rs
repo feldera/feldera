@@ -107,6 +107,10 @@ impl Ids {
         }
         self.singletons.insert((kind, nullable), self.inner);
         let mut ty = self.generated(kind.wire_name());
+        if kind == CircuitType::String {
+            ty["fixed"] = false.into();
+            ty["precision"] = (-1).into();
+        }
         ty["singleton"] = true.into();
         ty["code"] = code.into();
         ty["mayBeNull"] = nullable.into();

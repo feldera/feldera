@@ -4,6 +4,9 @@
 //! objects: their qualified names and declared types are transported explicitly.
 //! Object IDs preserve sharing without interning equal declarations by name.
 
+mod temporal_text;
+pub use temporal_text::TemporalTextFunction;
+
 use crate::{
     TypeId, TypeTable, ValidationError,
     expressions::{BindingId, ExprId, ScopeId},

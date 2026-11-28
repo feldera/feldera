@@ -48,6 +48,41 @@ pub(super) fn parse(ty: &DataType, text: &str) -> Option<Cell> {
     }
 }
 
+/// Character-to-datetime coercion has its own lexical and precision rules.
+pub(in crate::program) fn coerce_text(kind: &TypeKind, text: &str) -> Option<LiteralValue> {
+    let clock_value = |text: &str, precision| {
+        let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
+        if whole.len() != 8 || fraction.len() > precision || text.ends_with('.') {
+            return None;
+        }
+        clock(text, precision).map(|(nanos, _, _)| nanos)
+    };
+    match kind {
+        TypeKind::Date {} => {
+            let (year, rest) = text.trim_matches(' ').split_once('-')?;
+            let (month, day) = rest.split_once('-')?;
+            let (year, month, day) = (digits(year, 4)?, digits(month, 2)?, digits(day, 2)?);
+            let epoch_days = date_from_text(&format!("{year:04}-{month:02}-{day:02}"))?;
+            Some(LiteralValue::Date { epoch_days })
+        }
+        TypeKind::Time { .. } => Some(LiteralValue::Time {
+            nanoseconds_since_midnight: clock_value(text, 9)?,
+        }),
+        TypeKind::Timestamp { .. } => {
+            let (day, time) = text.split_once(' ')?;
+            if day.len() != 10 {
+                return None;
+            }
+            let (epoch_days, _) = date(day)?;
+            Some(LiteralValue::Timestamp {
+                epoch_days,
+                nanoseconds_since_midnight: clock_value(time, 6)?,
+            })
+        }
+        _ => None,
+    }
+}
+
 fn digits(text: &str, max_width: usize) -> Option<u32> {
     if text.len() > max_width || !text.bytes().all(|b| b.is_ascii_digit()) {
         return None;

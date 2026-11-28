@@ -12,6 +12,7 @@ mod rounding;
 mod source;
 mod string_slice;
 mod table;
+mod temporal_text;
 mod timestamp_diff;
 
 pub use table::bind_table_program;
@@ -356,6 +357,10 @@ fn constant_call(
         return string_slice::bind(program, &name, &arguments, fold).map(Some);
     }
     let position = || tokens.call_position(function.name.span(), enclosing);
+    if let Some(function) = feldera_sql_rel_model::operators::TemporalTextFunction::named(&name) {
+        return temporal_text::bind(program, function, &arguments, tokens, position()?, fold)
+            .map(Some);
+    }
     if matches!(name.as_str(), "ARRAY_LENGTH" | "ARRAY_SIZE" | "CARDINALITY") {
         return array::length(program, tokens, &name, &arguments, position()?, fold).map(Some);
     }
