@@ -23,13 +23,14 @@ use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::spec::{
     DataFile, DataFileFormat, ListType, Literal, MapType, NestedField, NestedFieldRef,
     PartitionKey, PrimitiveLiteral, PrimitiveType, Schema, SchemaRef, Struct, StructType,
-    TableProperties, Type,
+    TableMetadata, TableProperties, Type,
 };
 use iceberg::table::Table;
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
 use iceberg::writer::base_writer::data_file_writer::{DataFileWriter, DataFileWriterBuilder};
 use iceberg::writer::file_writer::location_generator::{
-    DefaultFileNameGenerator, DefaultLocationGenerator,
+    DefaultFileNameGenerator, DefaultLocationGenerator, LocationGenerator,
+    ObjectStorageLocationGenerator,
 };
 use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
 use iceberg::writer::file_writer::ParquetWriterBuilder;
@@ -107,22 +108,24 @@ impl SinkError {
         }
     }
 
-    /// I/O, server, and commit conflict errors are transient.
+    /// Transient unless the library cannot handle the table: a server can report a temporary
+    /// fault with any kind, for example `DataInvalid` from its token endpoint.
     fn iceberg(context: &str, e: iceberg::Error) -> Self {
-        let transient = matches!(
+        let permanent = matches!(
             e.kind(),
-            ErrorKind::Unexpected | ErrorKind::CatalogCommitConflicts
+            // For example, an encrypted table.
+            ErrorKind::PreconditionFailed | ErrorKind::FeatureUnsupported
         );
         let e = anyhow!("{context}: {e}");
-        if transient {
-            Self::Transient(e)
-        } else {
+        if permanent {
             Self::Permanent(e)
+        } else {
+            Self::Transient(e)
         }
     }
 }
 
-/// Always transient: storage reports every failure as `ErrorKind::Unexpected`.
+/// Always transient, so that a failed write is retried and not dropped at once.
 fn write_error(context: &str, e: iceberg::Error) -> SinkError {
     SinkError::Transient(anyhow!("{context}: {e}"))
 }
@@ -139,8 +142,36 @@ enum Source {
     Default(ArrayRef),
 }
 
-type FileWriter =
-    DataFileWriter<ParquetWriterBuilder, DefaultLocationGenerator, DefaultFileNameGenerator>;
+type FileWriter = DataFileWriter<ParquetWriterBuilder, Location, DefaultFileNameGenerator>;
+
+/// Data file paths, in the layout that `write.object-storage.enabled` selects.
+#[derive(Clone, Debug)]
+enum Location {
+    Default(DefaultLocationGenerator),
+    /// Hashed directories, which spread the files over object store prefixes.
+    ObjectStorage(ObjectStorageLocationGenerator),
+}
+
+impl Location {
+    fn new(metadata: &TableMetadata) -> iceberg::Result<Self> {
+        Ok(
+            if metadata.table_properties().write_object_storage_enabled()? {
+                Self::ObjectStorage(ObjectStorageLocationGenerator::new(metadata)?)
+            } else {
+                Self::Default(DefaultLocationGenerator::new(metadata)?)
+            },
+        )
+    }
+}
+
+impl LocationGenerator for Location {
+    fn generate_location(&self, key: Option<&PartitionKey>, file_name: &str) -> String {
+        match self {
+            Self::Default(location) => location.generate_location(key, file_name),
+            Self::ObjectStorage(location) => location.generate_location(key, file_name),
+        }
+    }
+}
 
 /// Maps view rows to the table, as loaded for one batch.
 pub struct Layout {
@@ -239,7 +270,7 @@ impl Layout {
             parquet,
             properties.write_target_file_size_bytes().map_err(error)?,
             self.table.file_io().clone(),
-            DefaultLocationGenerator::new(metadata).map_err(error)?,
+            Location::new(metadata).map_err(error)?,
             // Unique per writer, so no two writers share a file name.
             DefaultFileNameGenerator::new(
                 format!("feldera-{}", Uuid::new_v4()),
@@ -641,7 +672,9 @@ impl IcebergSink {
             let schema = Schema::builder()
                 .with_fields(iceberg_fields(relation).map_err(SinkError::Permanent)?)
                 .build()
-                .map_err(|e| SinkError::iceberg("error building the table schema", e))?;
+                .map_err(|e| {
+                    SinkError::Permanent(anyhow!("error building the table schema: {e}"))
+                })?;
             if let Some(column) = sink.glue_timestamptz([&schema]) {
                 return Err(SinkError::Permanent(anyhow!(
                     "the view column '{column}' has type TIMESTAMP WITH TIME ZONE, which the \
@@ -1051,6 +1084,7 @@ pub mod test_support {
     pub use iceberg::spec::PrimitiveType;
     use iceberg::transaction::AddColumn;
     use iceberg::CatalogBuilder;
+    pub use iceberg::ErrorKind;
     use std::collections::VecDeque;
     use tempfile::TempDir;
 
@@ -1263,6 +1297,8 @@ pub mod test_support {
         pub late: Option<TableCommit>,
         /// Number of upcoming table loads that fail.
         pub loads: usize,
+        /// Kind of the load failures. `None` gives `Unexpected`.
+        pub load_kind: Option<ErrorKind>,
         /// The next create lands, and the response is lost.
         pub create_response_lost: bool,
         /// Adds column `added` before the Nth table load from now.
@@ -1355,7 +1391,10 @@ pub mod test_support {
                 let mut faults = self.faults.lock().unwrap();
                 if faults.loads > 0 {
                     faults.loads -= 1;
-                    return Err(Self::unknown());
+                    return Err(match faults.load_kind {
+                        Some(kind) => iceberg::Error::new(kind, "the load failed (injected)"),
+                        None => Self::unknown(),
+                    });
                 }
                 let add_column = match &mut faults.add_column_at_load {
                     Some(1) => faults.add_column_at_load.take().is_some(),

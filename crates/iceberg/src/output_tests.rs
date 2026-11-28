@@ -238,8 +238,8 @@ fn all_types_row() -> AllTypes {
         c_decimal: SqlDecimal::<10, 3>::new(-1_234_567, 3).unwrap(),
         c_varchar: SqlString::from_ref("text"),
         c_date: Date::from_days(19_849),
-        // 01:02:03.000004
-        c_time: Time::from_nanoseconds(3_723_000_004_000),
+        // 01:02:03.000004999: Iceberg keeps microseconds, so the 999 ns are dropped.
+        c_time: Time::from_nanoseconds(3_723_000_004_999),
         c_timestamp: Timestamp::from_microseconds(TIMESTAMP_MICROS),
         c_timestamptz: TimestampTz::from(Timestamp::from_microseconds(TIMESTAMP_MICROS)),
         c_uuid: feldera_sqllib::Uuid::from_bytes(UUID),
@@ -428,6 +428,10 @@ async fn a_type_with_no_iceberg_type_is_refused() {
     let mut interval = ColumnType::bigint(false);
     interval.typ = SqlType::Interval(feldera_types::program_schema::IntervalUnit::Day);
     let error = open(interval).await;
+    assert!(error.contains("no Iceberg type"), "{error}");
+    let mut null = ColumnType::bigint(true);
+    null.typ = SqlType::Null;
+    let error = open(null).await;
     assert!(error.contains("no Iceberg type"), "{error}");
     // Nested, to check that the error names the path.
     let error = open(ColumnType::array(false, ColumnType::ubigint(false))).await;
@@ -898,7 +902,8 @@ async fn a_create_whose_response_is_lost_still_opens_the_table() {
     assert_eq!(bigints(&read(&warehouse, "t").await, "id"), [0]);
 }
 
-/// Table properties set the codec, row group size, and file size. Row groups cap at 16 MiB.
+/// Table properties set the codec, row group size, file size, and file layout. Row groups cap
+/// at 16 MiB.
 #[tokio::test]
 async fn data_files_follow_the_write_properties_of_the_table() {
     use datafusion::parquet::basic::Compression;
@@ -916,6 +921,7 @@ async fn data_files_follow_the_write_properties_of_the_table() {
                 ("write.parquet.compression-codec", "snappy"),
                 ("write.parquet.row-group-size-bytes", "20000"),
                 ("write.target-file-size-bytes", "100000"),
+                ("write.object-storage.enabled", "true"),
             ],
         )
         .await;
@@ -924,8 +930,12 @@ async fn data_files_follow_the_write_properties_of_the_table() {
 
     // The small target file size splits the batch into several files.
     assert!(pending.files.len() > 1, "{} files", pending.files.len());
+    let data = format!("{}/data/", warehouse.table("t").await.metadata().location());
     let mut row_groups = 0;
     for file in &pending.files {
+        // Hashed directories, for example `0101/0110/1001/10110010/feldera-....parquet`.
+        let relative = file.file_path().strip_prefix(&data).unwrap();
+        assert_eq!(relative.split('/').count(), 5, "{}", file.file_path());
         let reader = SerializedFileReader::new(std::fs::File::open(file.file_path()).unwrap());
         let metadata = reader.unwrap().metadata().clone();
         for row_group in metadata.row_groups() {
@@ -1255,6 +1265,69 @@ async fn commits_to_a_v3_table_assign_row_ids() {
     let first_row_ids: Vec<_> = snapshots.iter().map(|s| s.first_row_id()).collect();
     assert_eq!(first_row_ids, [Some(0), Some(2)]);
     assert_eq!(metadata.next_row_id(), 5);
+}
+
+/// The library cannot load a v3 table with `encryption.key-id` and no key client. No retry
+/// changes that, so the error must stay permanent.
+#[tokio::test]
+async fn an_encrypted_table_is_refused() {
+    let warehouse = TestWarehouse::new().await;
+    let mut fields = change_log_fields(1);
+    fields.extend([long(3, "id", true), string(4, "name", false)]);
+    let schema = Schema::builder()
+        .with_fields(fields.into_iter().map(Arc::new))
+        .build()
+        .unwrap();
+    let creation = TableCreation::builder()
+        .name("t".to_string())
+        .schema(schema)
+        .format_version(iceberg::spec::FormatVersion::V3)
+        .properties(HashMap::from([(
+            TableProperties::PROPERTY_ENCRYPTION_KEY_ID.to_string(),
+            "key".to_string(),
+        )]))
+        .build();
+    // The catalog stores the table, and then cannot load it.
+    let namespace = NamespaceIdent::new(NAMESPACE.to_string());
+    let error = warehouse
+        .catalog
+        .create_table(&namespace, creation)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::PreconditionFailed, "{error}");
+
+    let error = permanent(
+        warehouse
+            .sink("t", IcebergWriteMode::Append, &row_relation(), false)
+            .await,
+    );
+    assert!(error.contains("encryption.key-id"), "{error}");
+}
+
+/// A server can report a temporary fault as `DataInvalid`. An unsupported feature stays
+/// permanent.
+#[tokio::test]
+async fn a_load_error_is_permanent_only_when_no_retry_can_change_it() {
+    let warehouse = TestWarehouse::new().await;
+    let (sink, catalog) = warehouse
+        .flaky_sink("t", &row_relation(), Faults::default())
+        .await;
+    for (kind, permanent) in [
+        (ErrorKind::DataInvalid, false),
+        (ErrorKind::FeatureUnsupported, true),
+    ] {
+        *catalog.faults.lock().unwrap() = Faults {
+            loads: 1,
+            load_kind: Some(kind),
+            ..Faults::default()
+        };
+        let result = sink.begin().await.err();
+        assert_eq!(
+            matches!(result, Some(SinkError::Permanent(_))),
+            permanent,
+            "{kind:?}: {result:?}"
+        );
+    }
 }
 
 /// Glue converts every schema on commit, so a dropped `timestamptz` column still fails it.

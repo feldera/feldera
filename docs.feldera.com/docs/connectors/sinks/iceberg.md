@@ -130,8 +130,9 @@ retried start recognizes it in `error_if_exists` mode. The connector also sets
 | `MAP` | `map` |
 | `ROW` | `struct` |
 
-The connector cannot write a view that has a `BIGINT UNSIGNED` or an `INTERVAL` column.
-Cast a `BIGINT UNSIGNED` column to `DECIMAL(20, 0)` in the view.
+The connector cannot write a view that has a `BIGINT UNSIGNED`, `INTERVAL`, or `NULL`
+column. Cast a `BIGINT UNSIGNED` column to `DECIMAL(20, 0)` in the view, and a `NULL`
+column to a type, for example `CAST(NULL AS INT)`.
 
 ### A table that exists
 
@@ -151,9 +152,9 @@ and again before each batch:
 The connector honors these table properties: `write.parquet.compression-codec`,
 `write.parquet.compression-level`, `write.parquet.page-size-bytes`,
 `write.parquet.page-row-limit`, `write.parquet.dict-size-bytes`,
-`write.target-file-size-bytes`, `write.data.path`, and the `commit.retry.*` properties.
-It caps `write.parquet.row-group-size-bytes` at 16 MiB. Each thread buffers at most one
-row group and 100,000 encoded rows.
+`write.target-file-size-bytes`, `write.data.path`, `write.object-storage.enabled`, and the
+`commit.retry.*` properties. It caps `write.parquet.row-group-size-bytes` at 16 MiB. Each
+thread buffers at most one row group and 100,000 encoded rows.
 
 You can add an optional column, or an optional field of a struct column, while the
 pipeline runs. If the schema of the table changes while the connector writes a batch, the

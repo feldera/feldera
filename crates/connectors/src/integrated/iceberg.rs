@@ -584,7 +584,7 @@ pub mod tests {
     use arrow::datatypes::Int64Type;
     use feldera_adapterlib::test::{ConnectorTestEngine, Updates};
     use feldera_iceberg::test_support::{
-        Failure, Faults, FlakyCatalog, PrimitiveType, TestWarehouse,
+        ErrorKind, Failure, Faults, FlakyCatalog, PrimitiveType, TestWarehouse,
     };
     use feldera_iceberg::{OP_COLUMN, TS_COLUMN};
     use feldera_types::program_schema::{ColumnType, Field};
@@ -1221,6 +1221,25 @@ pub mod tests {
         assert!(error.contains("failed after 1 retries"), "{error}");
     }
 
+    /// The REST client returns `DataInvalid` when its token endpoint fails with an Iceberg
+    /// error body. The connector retries the table load, and keeps the batch.
+    #[engine_test]
+    pub fn a_load_error_from_a_token_endpoint_is_retried(engine: &dyn ConnectorTestEngine) {
+        let warehouse = TOKIO.block_on(TestWarehouse::new());
+        let faults = Faults {
+            loads: 1,
+            load_kind: Some(ErrorKind::DataInvalid),
+            ..Faults::default()
+        };
+        let shutdown = CancellationToken::new();
+        let (mut endpoint, _) = endpoint_with(&warehouse, 1, true, Some(1), faults, shutdown);
+        let rows = sample_rows(10);
+
+        encode(&mut endpoint, inserts(engine, &rows)).unwrap();
+
+        assert_eq!(changes(&warehouse), expected(&rows, "i"));
+    }
+
     /// A table that no change can make fit fails the batch at once, with no retry.
     #[engine_test]
     pub fn a_table_that_cannot_be_made_to_fit_fails_at_once(engine: &dyn ConnectorTestEngine) {
@@ -1323,6 +1342,46 @@ pub mod tests {
             .unwrap();
 
         assert!(error.to_string().contains("did not open"), "{error:#}");
+    }
+
+    /// A token endpoint that fails with an Iceberg error body does not stop the open: the
+    /// connector tries again.
+    #[cfg(test)]
+    #[tokio::test]
+    async fn an_open_retries_a_token_endpoint_error() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        const TOKENS: &str = "/v1/oauth/tokens";
+        let server = MockServer::start().await;
+        let body = json!({
+            "error": {"message": "try later", "type": "ServiceUnavailableException", "code": 503}
+        });
+        Mock::given(method("POST"))
+            .and(path(TOKENS))
+            .respond_with(ResponseTemplate::new(503).set_body_json(body))
+            .mount(&server)
+            .await;
+        let config: IcebergWriterConfig = serde_json::from_value(json!({
+            "catalog_type": "rest",
+            "rest.uri": server.uri(),
+            "rest.credential": "client:secret",
+            "table_name": "ns.t",
+            "max_retries": 1,
+        }))
+        .unwrap();
+        let shutdown = CancellationToken::new();
+
+        let error = open("test", &config, &value_relation(), false, &shutdown)
+            .await
+            .err()
+            .unwrap();
+
+        assert!(format!("{error:#}").contains("try later"), "{error:#}");
+        let requests = server.received_requests().await.unwrap();
+        let tokens = requests.iter().filter(|r| r.url.path() == TOKENS).count();
+        // The first try and one retry.
+        assert_eq!(tokens, 2, "{error:#}");
     }
 
     #[test]
