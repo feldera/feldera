@@ -1,13 +1,10 @@
-//! Column LATENESS syntax for the coverage experiment. The upstream AST stores
-//! dialect options as tokens; validate the expression before retaining them.
-//! This representation is not the typed S1 model.
+//! Parse column LATENESS and check its placement in table and view declarations.
 
 use sqlparser_064::{
-    ast::{AlterTableOperation, ColumnOption, Statement, Visit},
+    ast::{AlterTableOperation, ColumnOption, Statement},
     parser::{Parser, ParserError},
     tokenizer::Token,
 };
-use std::ops::ControlFlow;
 
 pub(super) fn column_option(
     parser: &mut Parser,
@@ -17,39 +14,13 @@ pub(super) fn column_option(
     {
         return Ok(None);
     }
-    let start = parser.index();
-    parser.next_token();
+    let keyword = parser.next_token();
     let expression = parser.parse_expr()?;
     super::reject::validate_non_query(&expression)?;
-    if let ControlFlow::Break(error) =
-        expression.visit(&mut super::reserved::ReservedIdentifiers::default())
-    {
-        return Err(error);
-    }
-    let tokens: Vec<_> = (start..parser.index())
-        .map(|index| parser.token_at(index).clone())
-        .collect();
-    // Expressions inside dialect options are opaque to the outer AST visitor.
-    // Apply its scoped syntax checks here as well, before discarding the tree.
-    if let ControlFlow::Break(error) =
-        expression.visit(&mut super::reject::ScopedChecks::new(&tokens))
-    {
-        return Err(error);
-    }
-    Ok(Some(Ok(Some(ColumnOption::DialectSpecific(
-        tokens
-            .into_iter()
-            .filter_map(|token| {
-                (!matches!(token.token, Token::Whitespace(_))).then_some(token.token)
-            })
-            .collect(),
-    )))))
-}
-
-fn is_lateness(option: &ColumnOption) -> bool {
-    matches!(option, ColumnOption::DialectSpecific(tokens)
-        if matches!(tokens.first(), Some(Token::Word(word))
-            if word.quote_style.is_none() && word.value.eq_ignore_ascii_case("LATENESS")))
+    Ok(Some(Ok(Some(ColumnOption::Lateness {
+        expression,
+        span: keyword.span.union(&parser.get_current_token().span),
+    }))))
 }
 
 pub(super) fn validate(statement: &Statement) -> Result<(), ParserError> {
@@ -60,7 +31,7 @@ pub(super) fn validate(statement: &Statement) -> Result<(), ParserError> {
                 .options
                 .iter()
                 .any(|option| {
-                    if !is_lateness(&option.option) {
+                    if !matches!(option.option, ColumnOption::Lateness { .. }) {
                         return false;
                     }
                     count += 1;
@@ -76,7 +47,7 @@ pub(super) fn validate(statement: &Statement) -> Result<(), ParserError> {
                     let count = options
                         .as_slice()
                         .iter()
-                        .filter(|option| is_lateness(option))
+                        .filter(|option| matches!(option, ColumnOption::Lateness { .. }))
                         .count();
                     count > 1 || (count > 0 && column.data_type.is_none())
                 })
@@ -87,7 +58,7 @@ pub(super) fn validate(statement: &Statement) -> Result<(), ParserError> {
                 column_def
                     .options
                     .iter()
-                    .any(|option| is_lateness(&option.option))
+                    .any(|option| matches!(option.option, ColumnOption::Lateness { .. }))
                     .then_some(column_def.name.span.start)
             } else {
                 None
@@ -122,12 +93,15 @@ mod tests {
         let Statement::CreateTable(table) = &statements[0] else {
             panic!("expected table");
         };
-        let ColumnOption::DialectSpecific(tokens) = &table.columns[0].options[0].option else {
+        let ColumnOption::Lateness { expression, span } = &table.columns[0].options[0].option
+        else {
             panic!("expected LATENESS");
         };
+        assert!(matches!(expression, sqlparser_064::ast::Expr::Interval(_)));
+        assert_eq!(expression.to_string(), "INTERVAL '1' HOUR");
         assert_eq!(
-            tokens.iter().map(ToString::to_string).collect::<Vec<_>>(),
-            ["LATENESS", "INTERVAL", "'1'", "HOUR"]
+            &sql[span.start.column as usize - 1..span.end.column as usize - 1],
+            "LATENESS INTERVAL '1' HOUR"
         );
         assert!(matches!(
             table.columns[0].options[1].option,

@@ -1455,6 +1455,20 @@ pub enum Expr {
         /// Range including the exclusion list.
         span: Span,
     },
+    /// Construct a MULTISET from one query primary.
+    MultisetQuery {
+        /// Input query or parenthesized query expression.
+        query: Box<SetExpr>,
+        /// Full constructor range.
+        span: Span,
+    },
+    /// Construct a MULTISET by enumerating its elements.
+    MultisetValue {
+        /// Ordered operands of the constructor.
+        elements: Vec<Expr>,
+        /// Full constructor range.
+        span: Span,
+    },
     /// Construct a MAP from the two columns of a query.
     MapQuery {
         /// Two-column input query.
@@ -2353,6 +2367,10 @@ impl fmt::Display for Expr {
                     "{wildcard} EXCLUDE ({})",
                     display_comma_separated(columns)
                 )
+            }
+            Expr::MultisetQuery { query, .. } => write!(f, "MULTISET({query})"),
+            Expr::MultisetValue { elements, .. } => {
+                write!(f, "MULTISET[{}]", display_comma_separated(elements))
             }
             Expr::MapQuery { query: s, .. } => write!(f, "MAP({s})"),
             Expr::GroupingSets(sets) => {

@@ -313,6 +313,11 @@ impl Dialect for FelderaDialect {
         if parser.peek_keyword(Keyword::ROW) && parser.peek_nth_token(1).token == Token::LParen {
             return Some(collections::parse_row(parser));
         }
+        if parser.peek_keyword(Keyword::MULTISET)
+            && matches!(parser.peek_nth_token_ref(1).token, Token::LParen | Token::LBracket)
+        {
+            return Some(collections::parse_multiset(parser));
+        }
         if parser.peek_keyword(Keyword::MAP)
             && parser.peek_nth_token(1).token == Token::LParen
             && matches!(parser.peek_nth_token(2).token, Token::Word(w) if matches!(w.keyword, Keyword::SELECT | Keyword::WITH | Keyword::VALUES | Keyword::TABLE))

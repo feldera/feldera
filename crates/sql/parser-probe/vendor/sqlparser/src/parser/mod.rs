@@ -16149,8 +16149,12 @@ impl<'a> Parser<'a> {
     ///   set_operation ::= query_body { 'UNION' | 'EXCEPT' | 'INTERSECT' } [ 'ALL' ] query_body
     /// ```
     pub fn parse_query_body(&mut self, precedence: u8) -> Result<Box<SetExpr>, ParserError> {
-        // We parse the expression using a Pratt parser, as in `parse_expr()`.
-        // Start by parsing a restricted SELECT or a `(subquery)`:
+        let expr = self.parse_query_primary()?;
+        self.parse_remaining_set_exprs(expr, precedence)
+    }
+
+    /// Parse one SELECT, VALUES, TABLE or parenthesized query before set operators.
+    pub fn parse_query_primary(&mut self) -> Result<SetExpr, ParserError> {
         let expr = if self.peek_keyword(Keyword::SELECT)
             || (self.peek_keyword(Keyword::FROM) && self.dialect.supports_from_first_select())
         {
@@ -16177,7 +16181,7 @@ impl<'a> Parser<'a> {
             );
         };
 
-        self.parse_remaining_set_exprs(expr, precedence)
+        Ok(expr)
     }
 
     /// Parse any extra set expressions that may be present in a query body

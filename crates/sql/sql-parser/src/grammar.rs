@@ -13,6 +13,7 @@ use sqlparser_064::{
         WindowSpec, WindowType,
     },
     dialect::Dialect,
+    keywords::Keyword,
     parser::ParserError,
     tokenizer::{Location, Token, TokenWithSpan},
 };
@@ -69,11 +70,20 @@ pub(super) fn ambiguous_table_arguments(tokens: &[TokenWithSpan]) -> HashMap<Loc
             let Token::Word(word) = &pair[2].token else {
                 return None;
             };
-            (matches!(pair[0].token, Token::Word(_))
-                && pair[1].token == Token::LParen
-                && pair[3].token == Token::LParen
+            if !matches!(pair[0].token, Token::Word(_)) || pair[1].token != Token::LParen {
+                return None;
+            }
+            // The implicit table call production has three tokens of lookahead.
+            // With CASE WHEN it cannot enter the call at the opening parenthesis.
+            if word.keyword == Keyword::CASE
+                && matches!(&pair[3].token, Token::Word(next) if next.keyword == Keyword::WHEN)
+            {
+                return Some((pair[0].span.end, pair[1].span.start));
+            }
+            (pair[3].token == Token::LParen
+                && !matches!(word.keyword, Keyword::EXISTS | Keyword::NOT)
                 && !dedicated_call(word))
-            .then_some((pair[0].span.end, pair[3].span.start))
+                .then_some((pair[0].span.end, pair[3].span.start))
         })
         .collect()
 }

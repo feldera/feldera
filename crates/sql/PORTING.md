@@ -139,11 +139,14 @@ That class overrides inferred column nullability. The current build omits the
 override. The run retains both original failures. The parser also covers
 UNIQUE predicates, TRANSLATE character sets, JSON_OBJECT entries, FORMAT JSON
 encodings, EXPLAIN PLAN, DESCRIBE and qualified TABLE operands. Java parsed the
-formatted SQL into equivalent ASTs for all 8,571 frozen programs and 1,063 of
+formatted SQL into equivalent ASTs for all 8,571 frozen programs and 1,066 of
 2,136 adversarial grammar cases. Rust rejected all 1,061 Java rejections and
-refused 12 additional Java acceptances. A separate 1,386-case comparison of
+refused nine additional Java acceptances. A separate 1,386-case comparison of
 plan options, nested query and DML syntax, table names and keyword lookahead
 matched Java on every verdict and on the ASTs of all 721 accepted cases.
+Another 342 cases exercised scalar subqueries in function arguments, ROW, MAP,
+MULTISET, LATENESS and system-time expressions. All verdicts and the ASTs of
+the 209 accepted cases matched Java.
 Against the product compiler, 766 of the shared rejections matched severity,
 error class, start and snippet together. The remaining 295 are open P5a differences.
 [Diagnostic comparison](scripts/validate_syntax_diagnostics.py)

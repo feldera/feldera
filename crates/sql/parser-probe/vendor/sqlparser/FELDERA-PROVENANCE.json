@@ -57,24 +57,24 @@
     "src/keywords.rs": "296aef023dddc832a9550125191823fa9e4e42e75d74427c47089037faa3ca16",
     "src/test_utils.rs": "4ab1294f241e5f66f90aa95614c01e2dc46dd9821ba8053db2fcf29e92e974f7",
     "src/tokenizer.rs": "ad3da7db725ca978fdb00e6e318d56b172bcad0b6aa1bcaac71f9901d9be4ea3",
-    "src/parser/mod.rs": "bbb972bd86dd310fed6d6564d062fa1da6323185edff196754217b0cf07cfedf",
-    "src/ast/spans.rs": "6540f38aa2f5aa7ffb5c1c366165cedadef7674b1816e0733c20bc9426e83a7d",
+    "src/parser/mod.rs": "906da930121237d61cbf90981582f31b10f69e2b1d4783a8c4a65cf649deed9a",
+    "src/ast/spans.rs": "e9b88a1f5e921d8d9095c1e1b9d0f2fccc9238802469914cb1a05f7b445a96ac",
     "src/ast/operator.rs": "8693738c03dba9751f72d866122752ac5775fa7bed8674d221f8e98cef85f683",
     "src/ast/data_type.rs": "39be85454159372b3ae3b8133d48f735719df4a567c246fab99b1a1a10379597",
     "src/ast/query.rs": "4b13f75396b0fc05453b68b81db26e554757d4e730694a19d397aca8cf43827f",
-    "src/ast/ddl.rs": "0445b8aa29abde2341125e69b8669744d2ff90769f6ab78f98ff477faff3622c",
-    "src/ast/mod.rs": "d719783182189d6799728016e95428ec136efeb2d7cdcc4e1efc745bcc3363ab",
+    "src/ast/ddl.rs": "8bc41da9c85e2a0771455dbda9bad1bc4df737cca235484773ebfdef496be986",
+    "src/ast/mod.rs": "e341bf9c3006f9ec85a0e4b5d8f3639cbb81c3bf1895ea5d76fdcab1cfa6c162",
     "src/ast/value.rs": "4054dd740743cfc85f75919edd8390f78a688243f19566c80d90940c8b173b6e",
     "src/ast/visitor.rs": "8e8dc8076343f354af40c9f73a258f1b36655d792938d4558bcbb07a63b8d512",
     "src/dialect/mod.rs": "f012da274da10b9434ef62226818951877c34c372d139ce6f9bc20de3df4343c"
   },
   "before_documentation_edits": {
     "README.md": "3f22fcd32dbf34ba4be110fe741d0c41a1b815939eb6ba99f1d8c15091a65f6f",
-    "src/parser/mod.rs": "90d1aa1de8c65a3be2d872fedcb2ccfeb2b06bad3742eaf5b7a17dfc6048c7e9",
+    "src/parser/mod.rs": "87a66beed5241a8957443156a4fa585173d210493d2a8e10bad184499b08ed55",
     "src/ast/operator.rs": "b1afaef6a237d29e93139fd714aba90df436cb7af0f1d497d44df1641dda8eb7",
     "src/ast/data_type.rs": "d825820903d10ab8991ac26ec8aceaa709bef81899cf2cce1bb37fce9e17e0b5",
     "src/ast/query.rs": "0066ef0cda56bab28739f4bbbf5c76b81b16a201749dcfc3c87319677d460866",
-    "src/ast/mod.rs": "0fc293f080fa13082cc846976d57ebd0a8f6e8400e7a82141a7032eb570f2b82",
+    "src/ast/mod.rs": "19852da6681a4c0e0f6c86bbcc1d1b59b1c09061da4ce48d25693fd78c3faaff",
     "src/dialect/mod.rs": "0225cadfa202d968f9c4f30480154dfab935e077176287ed577efc73fd073ac6"
   }
 }

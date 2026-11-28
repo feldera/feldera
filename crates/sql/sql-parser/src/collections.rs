@@ -1,4 +1,4 @@
-//! Feldera's alternating key/value MAP constructor, using structured AST entries.
+//! Parse Feldera's MAP, MULTISET and ROW constructors.
 
 use sqlparser_064::{
     ast::{Expr, Map, MapEntry},
@@ -7,6 +7,31 @@ use sqlparser_064::{
     tokenizer::Token,
 };
 
+pub(super) fn parse_multiset(parser: &mut Parser) -> Result<Expr, ParserError> {
+    let start = parser.next_token().span;
+    if parser.consume_token(&Token::LParen) {
+        let query = Box::new(parser.parse_query_primary()?);
+        let end = parser.expect_token(&Token::RParen)?.span;
+        return Ok(Expr::MultisetQuery {
+            query,
+            span: start.union(&end),
+        });
+    }
+    parser.expect_token(&Token::LBracket)?;
+    let elements = parser.parse_comma_separated(non_query_element)?;
+    let end = parser.expect_token(&Token::RBracket)?.span;
+    Ok(Expr::MultisetValue {
+        elements,
+        span: start.union(&end),
+    })
+}
+
+fn non_query_element(parser: &mut Parser) -> Result<Expr, ParserError> {
+    let expr = parser.parse_expr()?;
+    crate::reject::validate_non_query(&expr)?;
+    Ok(expr)
+}
+
 pub(super) fn parse_map(parser: &mut Parser) -> Result<Expr, ParserError> {
     parser.expect_keyword_is(Keyword::MAP)?;
     parser.expect_token(&Token::LBracket)?;
@@ -14,13 +39,13 @@ pub(super) fn parse_map(parser: &mut Parser) -> Result<Expr, ParserError> {
     let mut trailing_key = None;
     if !parser.consume_token(&Token::RBracket) {
         loop {
-            let key = parser.parse_expr()?;
+            let key = non_query_element(parser)?;
             if parser.consume_token(&Token::RBracket) {
                 trailing_key = Some(Box::new(key));
                 break;
             }
             parser.expect_token(&Token::Comma)?;
-            let value = parser.parse_expr()?;
+            let value = non_query_element(parser)?;
             entries.push(MapEntry {
                 key: Box::new(key),
                 value: Box::new(value),

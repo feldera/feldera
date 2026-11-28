@@ -3,9 +3,8 @@
 use sqlparser_064::dialect::Dialect;
 use sqlparser_064::{
     ast::{
-        DataType, Expr, FunctionArg, FunctionArgExpr, FunctionArguments,
-        ObjectNamePart, ObjectType, Query, Select, Set, Spanned, Statement, TableFactor, Visit,
-        Visitor,
+        DataType, Expr, FunctionArg, FunctionArgExpr, FunctionArguments, ObjectNamePart,
+        ObjectType, Query, Select, Set, Spanned, Statement, TableFactor, Visit, Visitor,
     },
     parser::ParserError,
     tokenizer::{Location, Token, TokenWithSpan},
@@ -18,6 +17,47 @@ use std::{
 struct NoQueries;
 
 pub(super) fn validate_non_query(expression: &Expr) -> Result<(), ParserError> {
+    // Expression2 passes its enclosing context to the leading operand. The
+    // right operand of a binary operator, CASE arms and ordinary function
+    // arguments have their own ACCEPT_SUB_QUERY context. ROW and parentheses
+    // propagate the enclosing context to each field.
+    use sqlparser_064::ast::CastKind;
+    match expression {
+        Expr::Nested(expr)
+        | Expr::UnaryOp { expr, .. }
+        | Expr::BinaryOp { left: expr, .. }
+        | Expr::Between { expr, .. }
+        | Expr::In { expr, .. }
+        | Expr::Like { expr, .. }
+        | Expr::ILike { expr, .. }
+        | Expr::SimilarTo { expr, .. }
+        | Expr::RLike { expr, .. }
+        | Expr::Cast {
+            kind: CastKind::DoubleColon,
+            expr,
+            ..
+        } => return validate_non_query(expr),
+        Expr::RowConstructor { fields, .. } => {
+            return fields
+                .iter()
+                .try_for_each(|field| validate_non_query(&field.expr));
+        }
+        Expr::Tuple(fields) => return fields.iter().try_for_each(validate_non_query),
+        Expr::Function(_)
+        | Expr::Case { .. }
+        | Expr::Array(_)
+        | Expr::Map(_)
+        | Expr::MapQuery { .. }
+        | Expr::MultisetQuery { .. }
+        | Expr::MultisetValue { .. }
+        | Expr::Cast {
+            kind: CastKind::Cast | CastKind::TryCast | CastKind::SafeCast,
+            ..
+        } => return Ok(()),
+        _ => {}
+    }
+    // For other expression forms, reject embedded queries until their
+    // operand grammar has been compared with Calcite.
     match expression.visit(&mut NoQueries) {
         ControlFlow::Break(error) => Err(error),
         ControlFlow::Continue(()) => Ok(()),
@@ -28,9 +68,6 @@ impl Visitor for NoQueries {
     type Break = ParserError;
 
     fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<Self::Break> {
-        // The direct grammar uses ACCEPT_NON_QUERY. Nested function contexts
-        // can admit queries in Calcite; this prototype conservatively refuses
-        // those too until it models that context explicitly.
         ControlFlow::Break(super::diagnostic::at(
             "queries in non-query expressions are unsupported",
             query.span().start,

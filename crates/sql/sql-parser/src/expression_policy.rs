@@ -135,6 +135,8 @@ pub(super) fn allows(expression: &Expr) -> bool {
             columns: _,
             span: _,
         }
+        | MultisetQuery { query: _, span: _ }
+        | MultisetValue { elements: _, span: _ }
         | MapQuery { query: _, span: _ }
         | Subquery(_)
         | GroupingSets(_)

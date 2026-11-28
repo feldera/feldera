@@ -108,7 +108,7 @@ fn unicode_literal(
         if let Token::UnicodeStringLiteral(text) | Token::SingleQuotedString(text) =
             &mut token.token
         {
-            *text = decode_units(text, escape, true)
+            *text = decode(text, escape)
                 .map_err(|error| super::diagnostic::at(error.to_string(), raw.span.start))?;
         }
         result.push(token);
@@ -161,10 +161,6 @@ fn valid_escape(ch: char) -> bool {
 }
 
 fn decode(text: &str, escape: char) -> Result<String, ParserError> {
-    decode_units(text, escape, false)
-}
-
-fn decode_units(text: &str, escape: char, literal: bool) -> Result<String, ParserError> {
     let mut units = Vec::with_capacity(text.len());
     let mut chars = text.chars();
     while let Some(ch) = chars.next() {
@@ -179,9 +175,9 @@ fn decode_units(text: &str, escape: char, literal: bool) -> Result<String, Parse
             units.push(escape as u16);
             continue;
         }
-        // Calcite parses four UTF-16 units with Integer.parseInt, including a
-        // possible sign. The identifier grammar has a narrower compatibility scope.
-        let signed = literal && matches!(first, '+' | '-');
+        // Calcite reads one UTF-16 code unit with Integer.parseInt on a
+        // four-character field. A sign occupies the first character.
+        let signed = matches!(first, '+' | '-');
         let mut value = if signed {
             0
         } else {
@@ -251,7 +247,9 @@ mod tests {
         assert_eq!(decode(r"\D83D\DE00", '\\').unwrap(), "😀");
         assert_eq!(decode(r"x\\y", '\\').unwrap(), r"x\y");
         assert_eq!(decode(r"\0000", '\\').unwrap(), "\0");
-        for text in [r"\D800", r"\DE00", r"\12", r"\zzzz", r"\+01F600"] {
+        assert_eq!(decode(r"\+01F600", '\\').unwrap(), "\u{1f}600");
+        assert_eq!(decode(r"\-001", '\\').unwrap(), "\u{ffff}");
+        for text in [r"\D800", r"\DE00", r"\12", r"\zzzz", r"\+0x1"] {
             assert!(decode(text, '\\').is_err(), "{text}");
         }
         for suffix in ["UESCAPE ''", "UESCAPE 'ab'", "UESCAPE '+'", "UESCAPE 'A'"] {

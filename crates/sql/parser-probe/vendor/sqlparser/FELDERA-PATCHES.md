@@ -78,6 +78,11 @@ optional encoding. Two dialect capabilities, off in stock dialects, permit a
 qualified wildcard as a scalar operand and the `FORMAT JSON` clause.
 `Parser::parse_json_null_clause` is public so that the adapter can call it.
 
+MULTISET stores either an element list or a query primary. The adapter uses
+`Parser::parse_query_primary` so set operations and ordering inside the
+constructor require parentheses. Column LATENESS stores an expression and
+its span so visitors can validate nested queries and preserve their hints.
+
 The join and TABLE-argument grammar lives in `crates/sql/sql-parser/src/relations.rs`; VALUES
 grammar lives in `crates/sql/sql-parser/src/values.rs`. The adapter requires both
 MATCH_CONDITION and ON for ASOF joins and preserves named TABLE arguments.

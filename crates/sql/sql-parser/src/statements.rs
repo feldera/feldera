@@ -274,6 +274,7 @@ impl Statement {
                 });
             }
             Self::Lateness { expression, .. } => {
+                VisitMut::visit(expression.as_mut(), hints)?;
                 Visit::visit(expression.as_ref(), checks)?;
                 return Visit::visit(expression.as_ref(), &mut identifiers);
             }

@@ -232,11 +232,8 @@ fn column(column: &ColumnDef) -> bool {
             // NullableOptDefaultTrue precedes all ColumnAttribute occurrences;
             // a second NULL marker, or a marker after an attribute, is invalid.
             ColumnOption::Null | ColumnOption::NotNull => index == 0,
-            ColumnOption::Default(_) | ColumnOption::InlineForeignKey { .. } => true,
+            ColumnOption::Default(_) | ColumnOption::InlineForeignKey { .. } | ColumnOption::Lateness { .. } => true,
             ColumnOption::PrimaryKey(key) => primary_key(key, true),
-            ColumnOption::DialectSpecific(tokens) => matches!(tokens.first(),
-                Some(sqlparser_064::tokenizer::Token::Word(word))
-                    if word.quote_style.is_none() && word.value.eq_ignore_ascii_case("LATENESS")),
             _ => false,
         }
     })

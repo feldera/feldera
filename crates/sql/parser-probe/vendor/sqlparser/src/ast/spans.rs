@@ -898,6 +898,7 @@ impl Spanned for ColumnOption {
             ColumnOption::Unique(constraint) => constraint.span(),
             ColumnOption::Check(constraint) => constraint.span(),
             ColumnOption::ForeignKey(constraint) => constraint.span(),
+            ColumnOption::Lateness { span, .. } => *span,
             ColumnOption::DialectSpecific(_) => Span::empty(),
             ColumnOption::CharacterSet(object_name) => object_name.span(),
             ColumnOption::Collation(object_name) => object_name.span(),
@@ -1842,6 +1843,8 @@ impl Spanned for Expr {
             | Expr::JsonObject { span, .. }
             | Expr::FormatJson { span, .. }
             | Expr::WildcardExclusion { span, .. }
+            | Expr::MultisetQuery { span, .. }
+            | Expr::MultisetValue { span, .. }
             | Expr::MapQuery { span, .. } => *span,
             Expr::Subquery(query) => query.span(),
             Expr::Struct { .. } => Span::empty(),

@@ -2121,6 +2121,13 @@ pub enum ColumnOption {
     },
     /// `CHECK (<expr>) [NO INHERIT] [[NOT] ENFORCED]`
     Check(CheckConstraint),
+    /// Feldera's event-time lateness expression on an input or view column.
+    Lateness {
+        /// Allowed lateness for this column.
+        expression: Expr,
+        /// Range from LATENESS through the end of the expression.
+        span: Span,
+    },
     /// Dialect-specific options, such as:
     /// - MySQL's `AUTO_INCREMENT` or SQLite's `AUTOINCREMENT`
     /// - ...
@@ -2286,6 +2293,7 @@ impl fmt::Display for ColumnOption {
                 Ok(())
             }
             Check(constraint) => write!(f, "{constraint}"),
+            Lateness { expression, .. } => write!(f, "LATENESS {expression}"),
             DialectSpecific(val) => write!(f, "{}", display_separated(val, " ")),
             CharacterSet(n) => write!(f, "CHARACTER SET {n}"),
             Collation(n) => write!(f, "COLLATE {n}"),
