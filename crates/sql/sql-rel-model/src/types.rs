@@ -42,13 +42,10 @@ impl SqlType {
             TypeKind::Null {} if self.nullable => "NULL",
             TypeKind::Boolean {} => "BOOLEAN",
             TypeKind::Integer { width, signed } => match (width, signed) {
-                (IntegerWidth::I8, true) => "TINYINT",
+                (width, true) => width.signed_sql_name(),
                 (IntegerWidth::I8, false) => "UTINYINT",
-                (IntegerWidth::I16, true) => "SMALLINT",
                 (IntegerWidth::I16, false) => "USMALLINT",
-                (IntegerWidth::I32, true) => "INTEGER",
                 (IntegerWidth::I32, false) => "UINTEGER",
-                (IntegerWidth::I64, true) => "BIGINT",
                 (IntegerWidth::I64, false) => "UBIGINT",
             },
             TypeKind::Float {
@@ -216,6 +213,24 @@ pub enum IntegerWidth {
 }
 
 impl IntegerWidth {
+    pub const fn signed_sql_name(self) -> &'static str {
+        match self {
+            Self::I8 => "TINYINT",
+            Self::I16 => "SMALLINT",
+            Self::I32 => "INTEGER",
+            Self::I64 => "BIGINT",
+        }
+    }
+
+    pub fn contains_signed(self, value: i64) -> bool {
+        match self {
+            Self::I8 => i8::try_from(value).is_ok(),
+            Self::I16 => i16::try_from(value).is_ok(),
+            Self::I32 => i32::try_from(value).is_ok(),
+            Self::I64 => true,
+        }
+    }
+
     pub const fn bits(self) -> u8 {
         match self {
             Self::I8 => 8,

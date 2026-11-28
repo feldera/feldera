@@ -26,6 +26,24 @@ NUMERIC_COLUMN_CASES = {
                      "TINYINT UNSIGNED", "SMALLINT UNSIGNED", "INT UNSIGNED", "BIGINT UNSIGNED")
 }
 
+INTEGER_COMPARISONS = {
+    name: f"CREATE TABLE t(a {left}, b {right}); CREATE VIEW v AS SELECT a FROM t AS i WHERE {predicate};"
+    for name, left, right, predicate in (
+        ("narrow_filter", "TINYINT", "BIGINT", "a > 1"),
+        ("wide_filter", "BIGINT", "SMALLINT", "a > 1"),
+        ("narrow_filter_equality", "TINYINT NOT NULL", "INT", "a = -2"),
+        ("unrepresentable_filter_equality", "SMALLINT", "INT", "a = 45000"),
+        ("wide_filter_literal", "INT NOT NULL", "INT", "a < 2147483648"),
+        ("filter_column_widening", "INT NOT NULL", "SMALLINT NOT NULL", "a >= b"),
+        ("filter_column_nullability", "TINYINT NOT NULL", "BIGINT", "a <> b"),
+        ("filter_postfix_alias", "SMALLINT", "INT", "i.a > '0'::INT4"),
+        ("filter_nested_postfix", "TINYINT", "INT", "i.a <= ('1'::TINYINT)"),
+        ("filter_cast", "BIGINT", "INT", "a = CAST(' 2 ' AS INT2)"),
+        ("filter_negative_cast", "SMALLINT", "INT", "a < -1::INT2"),
+        ("filter_parentheses", "INT", "INT", "a <> ((-1))"),
+    )
+}
+
 TRIGONOMETRIC_CASES = {
     "exact_trigonometry": "CREATE VIEW v AS SELECT SIN(-0.5), TAN(1), COS(0), ACOS(-0.75),"
                           " ASIN(2), COT(0), ATAN(NULL), DEGREES(1), RADIANS(90);",
@@ -39,6 +57,7 @@ TRIGONOMETRIC_CASES = {
 
 CASES = {
     **NUMERIC_COLUMN_CASES,
+    **INTEGER_COMPARISONS,
     **TRIGONOMETRIC_CASES,
     "array_insert_permutation": "CREATE TABLE t(a BIGINT ARRAY,b INT);"
                                 " INSERT INTO t(b,a) VALUES(5, ARRAY[(-3),-2,0]);"

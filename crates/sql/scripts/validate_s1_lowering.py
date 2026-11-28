@@ -10,10 +10,13 @@ from benchmark_bound_gen2 import compare, direct
 from compile_bound_gen2 import compile_program
 from run_determinism import file_digest
 from validate_table_lowering import compare_checkpoints
-from validate_bound_programs import CASES as BINDING_CASES, NUMERIC_COLUMN_CASES, TRIGONOMETRIC_CASES
+from validate_bound_programs import (
+    CASES as BINDING_CASES, INTEGER_COMPARISONS, NUMERIC_COLUMN_CASES, TRIGONOMETRIC_CASES,
+)
 
 CASES = {
     **NUMERIC_COLUMN_CASES,
+    **INTEGER_COMPARISONS,
     **TRIGONOMETRIC_CASES,
     **{name: BINDING_CASES[name] for name in (
         "array_insert_permutation", "array_insert_elements", "array_insert_decimal", "array_insert_multiline",

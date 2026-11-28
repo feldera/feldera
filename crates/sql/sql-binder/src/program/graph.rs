@@ -174,7 +174,7 @@ pub(super) enum ProjectValue {
         key: &'static str,
         arguments: Vec<TableOperand>,
         ty: TypeId,
-        position: Option<Coordinates>,
+        position: ObjectPosition,
     },
 }
 
@@ -389,14 +389,7 @@ fn append_table_expression(
             let root = ExprId(program.expressions.expressions.len() as u32);
             program.expressions.expressions.push(ExpressionObject {
                 ty: *ty,
-                position: position
-                    .as_ref()
-                    .map_or(ObjectPosition::Absent {}, |position| {
-                        ObjectPosition::Present {
-                            position: position.clone(),
-                            internal: Some(false),
-                        }
-                    }),
+                position: position.clone(),
                 kind: ObjectKind::Call {
                     operator,
                     arguments: Vec::new(),

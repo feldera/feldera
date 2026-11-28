@@ -29,6 +29,7 @@ use crate::{
 use feldera_sql_rel_model::{
     TypeId, ValidationLimits,
     catalog::Name,
+    expression_objects::ObjectPosition,
     program::Program,
     relation_metadata::{Coordinates, Hint},
     statements::Statement,
@@ -392,7 +393,11 @@ fn bind_select(
         .transpose()
         .map_err(report_expression_error)?;
     if aggregate.is_none() {
-        apply_filtered_projection(&mut projection, predicate.as_ref());
+        apply_filtered_projection(
+            &mut program.table.type_table,
+            &mut projection,
+            predicate.as_ref(),
+        );
     }
     let scan_row = insert_row_fields(
         program,
@@ -467,7 +472,11 @@ fn bind_select(
     })
 }
 
-fn apply_filtered_projection(projection: &mut [Projection], predicate: Option<&filter::Predicate>) {
+fn apply_filtered_projection(
+    types: &mut feldera_sql_rel_model::TypeTable,
+    projection: &mut [Projection],
+    predicate: Option<&filter::Predicate>,
+) {
     let Some(filter::Predicate::Expression {
         value:
             ProjectValue::Call {
@@ -480,12 +489,46 @@ fn apply_filtered_projection(projection: &mut [Projection], predicate: Option<&f
     else {
         return;
     };
-    let [
-        TableOperand::Column(column),
-        TableOperand::Integer { ty, value },
-    ] = arguments.as_slice()
-    else {
+    let [left, TableOperand::Integer { ty, value }] = arguments.as_slice() else {
         return;
+    };
+    let (column, literal_ty) = match left {
+        TableOperand::Column(column) => (column, *ty),
+        TableOperand::Computed(call) => {
+            let ProjectValue::Call {
+                key: "SqlStdOperatorTable.CAST",
+                arguments,
+                ..
+            } = call.as_ref()
+            else {
+                return;
+            };
+            let [TableOperand::Column(column)] = arguments.as_slice() else {
+                return;
+            };
+            let column_type = &types.types[column.ty.0 as usize];
+            let TypeKind::Integer {
+                width,
+                signed: true,
+            } = column_type.kind
+            else {
+                return;
+            };
+            // Equality fixes the source column only if the widened value can
+            // also be represented in the original column type.
+            if !width.contains_signed(*value) {
+                return;
+            }
+            let ty = super::graph::insert_type(
+                types,
+                feldera_sql_rel_model::types::SqlType {
+                    nullable: false,
+                    ..column_type.clone()
+                },
+            );
+            (column, ty)
+        }
+        _ => return,
     };
     for field in projection {
         let ProjectValue::Column(input) = field.value else {
@@ -494,9 +537,9 @@ fn apply_filtered_projection(projection: &mut [Projection], predicate: Option<&f
         if input.field != column.field {
             continue;
         }
-        field.value = if input.ty == *ty {
+        field.value = if input.ty == literal_ty {
             ProjectValue::Integer {
-                ty: *ty,
+                ty: literal_ty,
                 value: *value,
             }
         } else {
@@ -504,11 +547,11 @@ fn apply_filtered_projection(projection: &mut [Projection], predicate: Option<&f
                 registry: crate::frel::CALCITE,
                 key: "SqlStdOperatorTable.CAST",
                 arguments: vec![TableOperand::Integer {
-                    ty: *ty,
+                    ty: literal_ty,
                     value: *value,
                 }],
                 ty: input.ty,
-                position: None,
+                position: ObjectPosition::Absent {},
             }
         };
     }

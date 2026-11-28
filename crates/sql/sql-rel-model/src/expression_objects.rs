@@ -95,6 +95,15 @@ pub enum ObjectPosition {
     },
 }
 
+impl ObjectPosition {
+    pub fn user(position: Coordinates) -> Self {
+        Self::Present {
+            position,
+            internal: Some(false),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ObjectKind {

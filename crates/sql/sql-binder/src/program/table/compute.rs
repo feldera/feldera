@@ -12,6 +12,7 @@ use crate::{
 };
 use feldera_sql_rel_model::{
     catalog::Name,
+    expression_objects::ObjectPosition,
     operators::ABS_KEY,
     program::Program,
     types::{FloatFlavor, TypeKind},
@@ -72,7 +73,7 @@ pub(super) fn projection(
                     key,
                     arguments: vec![TableOperand::Column(left), TableOperand::Column(right)],
                     ty,
-                    position: Some(tokens.coordinates(expression.span())?),
+                    position: ObjectPosition::user(tokens.coordinates(expression.span())?),
                 },
                 format!("{left_pretty} {op} {right_pretty}"),
                 format!("({left_diagnostic} {op} {right_diagnostic})"),
@@ -105,7 +106,7 @@ pub(super) fn projection(
                     key: ABS_KEY,
                     arguments: vec![TableOperand::Column(input)],
                     ty,
-                    position: Some(tokens.call_position(function.name.span(), 0)?),
+                    position: ObjectPosition::user(tokens.call_position(function.name.span(), 0)?),
                 },
                 format!("ABS({pretty})"),
                 format!("ABS({diagnostic})"),

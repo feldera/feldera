@@ -15,6 +15,7 @@ use crate::{Expr, SelectItem, Spanned, frel::CALCITE, local_name, unsupported};
 use feldera_sql_rel_model::{
     TypeId,
     catalog::Name,
+    expression_objects::ObjectPosition,
     operators::OperatorObject,
     program::Program,
     relation_metadata::Coordinates,
@@ -234,7 +235,7 @@ impl BoundAggregate {
                         key: "SqlStdOperatorTable.IS_TRUE",
                         arguments: vec![TableOperand::Computed(Box::new(value))],
                         ty: insert_type(&mut program.table.type_table, filter::boolean(false)),
-                        position: None,
+                        position: ObjectPosition::Absent {},
                     };
                 }
                 output.pretty.push_str(&format!(" FILTER (WHERE {pretty})"));

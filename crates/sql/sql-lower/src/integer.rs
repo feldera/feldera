@@ -39,12 +39,7 @@ impl SignedInteger {
     }
 
     pub(super) fn sql_type(self) -> &'static str {
-        match self.width {
-            IntegerWidth::I8 => "TINYINT",
-            IntegerWidth::I16 => "SMALLINT",
-            IntegerWidth::I32 => "INTEGER",
-            IntegerWidth::I64 => "BIGINT",
-        }
+        self.width.signed_sql_name()
     }
 
     pub(super) fn digest(self) -> String {

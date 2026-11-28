@@ -281,6 +281,57 @@ impl<'a> DeclarationTokens<'a> {
         Err(unsupported("missing closing parenthesis of scalar call"))
     }
 
+    /// sqlparser spans omit CAST syntax and wrapping parentheses. Calcite
+    /// also starts an unparenthesized postfix cast at the WHERE token.
+    pub(super) fn comparison_position(
+        &self,
+        left: &Expr,
+        right: &Expr,
+    ) -> Result<Coordinates, Failure> {
+        use sqlparser_064::ast::Spanned;
+        let left = left.span();
+        let first = self.tokens.partition_point(|t| t.span.start < left.start);
+        let operator = self.tokens.partition_point(|t| t.span.start < left.end);
+        let rhs_end = right.span().end;
+        let mut end = operator + 1;
+        let mut depth = 0usize;
+        let mut bare_postfix = false;
+        while let Some(token) = self.tokens.get(end) {
+            if token.token == Token::DoubleColon {
+                bare_postfix |= depth == 0;
+                // The binder accepts only scalar signed integer target names here.
+                end += 2;
+                continue;
+            }
+            if token.span.start >= rhs_end && depth == 0 {
+                break;
+            }
+            match token.token {
+                Token::LParen => depth += 1,
+                Token::RParen => {
+                    depth = depth.checked_sub(1).ok_or_else(|| {
+                        unsupported("unexpected closing parenthesis in comparison")
+                    })?
+                }
+                _ => {}
+            }
+            end += 1;
+        }
+        let start = if bare_postfix
+            && first > 0
+            && matches!(&self.tokens[first - 1].token, Token::Word(w) if w.keyword == Keyword::WHERE)
+        {
+            first - 1
+        } else {
+            first
+        };
+        self.token_range(
+            self.tokens
+                .get(start..end)
+                .ok_or_else(|| unsupported("missing integer comparison operand"))?,
+        )
+    }
+
     pub(super) fn end_at_is_true(&self, operand: Span) -> Result<Coordinates, Failure> {
         let index = self
             .tokens

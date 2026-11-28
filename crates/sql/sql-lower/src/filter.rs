@@ -17,13 +17,19 @@ use feldera_sql_rel_model::{
     operators::OperatorObject,
     program::Program,
     relation_properties::Properties,
-    types::TypeKind,
+    types::{IntegerWidth, TypeKind},
 };
 use serde_json::{json, Value};
 
 enum Operand {
     Column(usize),
     Integer(SignedInteger),
+    CastColumn {
+        column: usize,
+        width: IntegerWidth,
+        nullable: bool,
+        position: Value,
+    },
 }
 
 impl Operand {
@@ -34,6 +40,54 @@ impl Operand {
                 program.table.objects[object.0 as usize].field as usize,
             )),
             ObjectKind::Literal { .. } => Ok(Self::Integer(SignedInteger::resolve(program, id)?)),
+            ObjectKind::Call {
+                operator,
+                arguments,
+            } => {
+                let resolved = &program.expressions.operators[operator.0 as usize];
+                let builtin = &program.expressions.operator_objects[resolved.object.0 as usize];
+                let [argument] = arguments.as_slice() else {
+                    return Err(Error("filter cast requires one column".into()));
+                };
+                if !matches!(builtin, OperatorObject::Builtin {registry, registry_version, key}
+                    if registry == "calcite-s1-fixture" && registry_version == "1" && key == "SqlStdOperatorTable.CAST")
+                {
+                    return Err(Error("unsupported filter operand call".into()));
+                }
+                let input = &program.expressions.expressions[argument.0 as usize];
+                let ObjectKind::InputRef { object } = input.kind else {
+                    return Err(Error("expected an integer column in filter cast".into()));
+                };
+                let types = &program.table.type_table.types;
+                let target = &types[expr.ty.0 as usize];
+                let source = &types[input.ty.0 as usize];
+                let TypeKind::Integer {
+                    width,
+                    signed: true,
+                } = target.kind
+                else {
+                    return Err(Error("expected signed integer filter cast".into()));
+                };
+                if source.nullable != target.nullable
+                    || !matches!(source.kind, TypeKind::Integer { width: from, signed: true } if from.bits() < width.bits())
+                {
+                    return Err(Error("expected a widening integer filter cast".into()));
+                }
+                let ObjectPosition::Present { position, .. } = &expr.position else {
+                    return Err(Error("missing filter cast position".into()));
+                };
+                Ok(Self::CastColumn {
+                    column: program.table.objects[object.0 as usize].field as usize,
+                    width,
+                    nullable: target.nullable,
+                    position: range(
+                        position.line,
+                        position.column,
+                        position.end_line,
+                        position.end_column,
+                    ),
+                })
+            }
             _ => Err(Error("unsupported filter operand".into())),
         }
     }
@@ -45,6 +99,20 @@ impl Operand {
                 format!("`{}`", schema.columns[*i].name.name.replace('`', "``")),
             ),
             Self::Integer(n) => (n.value.to_string(), n.value.to_string()),
+            Self::CastColumn {
+                column,
+                width,
+                nullable,
+                ..
+            } => {
+                let (field, sql) = Self::Column(*column).render(schema);
+                let name = width.signed_sql_name();
+                let required = if *nullable { "" } else { " NOT NULL" };
+                (
+                    format!("CAST({field}):{name}{required}"),
+                    format!("CAST({sql} AS {name})"),
+                )
+            }
         }
     }
 
@@ -52,6 +120,24 @@ impl Operand {
         match self {
             Self::Column(i) => parameter.read(ids, *i),
             Self::Integer(n) => Ok(n.lower(ids)),
+            Self::CastColumn {
+                column,
+                width,
+                nullable,
+                position,
+            } => {
+                let mut ty = ids.node("DBSPTypeInteger", &range(0, 0, 0, 0));
+                let bits = width.bits();
+                ty["width"] = bits.into();
+                ty["signed"] = true.into();
+                ty["code"] = format!("INT{bits}").into();
+                ty["mayBeNull"] = (*nullable).into();
+                let mut cast = ids.node("DBSPCastExpression", position);
+                cast["source"] = parameter.read(ids, *column)?;
+                cast["type"] = ty;
+                cast["safe"] = "SqlUnsafe".into();
+                Ok(cast)
+            }
         }
     }
 }
