@@ -17,7 +17,7 @@ Allocation IDs are not persistent IDs.
 ## Local compiler and phase status
 
 The local Gen-2 driver takes a SQL file through the Rust parser and binder,
-Java optimization and Rust artifact emission. The Rust lowerer handles table scans,
+Java circuit optimization with optional Rust passes via JNI, and Rust artifact emission. The Rust lowerer handles table scans,
 column projections, integer and floating-point arithmetic, numeric ABS,
 selected constant rows and signed-integer comparison filters. Other supported
 queries use Java lowering. The binder accepts
@@ -89,7 +89,7 @@ Build from the workspace root with Cargo. The mixed compiler also needs the
 SQL compiler dependency JAR and compiled Maven test classes from this checkout.
 
 ```sh
-cargo build --release --locked -p sql2dbsp -p feldera-sql-difftest
+cargo build --release --locked -p sql2dbsp -p feldera-sql-difftest -p feldera-sql-opt-jni
 compiler=target/release/sql2dbsp
 java_build=sql-to-dbsp-compiler/SQL-compiler/target
 classpath="$java_build/test-classes:$java_build/sql2dbsp-jar-with-dependencies.jar"
@@ -107,12 +107,16 @@ python3 crates/sql/scripts/compile_bound_gen2.py query.sql /tmp/gen2-run \
   --driver "$compiler" --classpath "$classpath" --revision "$(git rev-parse HEAD)"
 python3 crates/sql/scripts/benchmark_bound_gen2.py query.sql /tmp/gen2-bench \
   --driver "$compiler" --comparator target/release/sql-difftest \
-  --classpath "$classpath" --revision "$(git rev-parse HEAD)" --rust-lowering
+  --classpath "$classpath" --revision "$(git rev-parse HEAD)" --rust-lowering --rust-optimizer-passes
 ```
 
 Use a fresh output directory. For projections and filters supported by the Rust lowerer,
 pass `--rust-lowering` to either runner. Omit it to measure Java lowering for supported
-aggregates. The Rust worker reads S3 and publishes its status and files together
+aggregates. Pass `--rust-optimizer-passes` to either runner to load the Rust circuit
+passes through JNI. The JVM runs the remaining optimizer code. The benchmark
+records the stage implementations and JNI library digest in `profile.json`,
+and the candidate stage timings for each pair in `samples.jsonl`.
+The Rust worker reads S3 and publishes its status and files together
 under `tail/result/`. An interrupted worker leaves the attempt unpublished.
 
 The runner writes `circuit.json`, the bound S1
@@ -307,6 +311,15 @@ pairs matched on the circuit, schema, diagnostics and profiler data. Both
 paths used fresh processes and a warm filesystem. The workload declares a
 table, a local view with renamed columns, and a materialized view.
 [Benchmark runner](scripts/benchmark_bound_gen2.py)
+
+On 2026-11-28 the same workload ran with both `--rust-lowering` and
+`--rust-optimizer-passes` on an Apple M5 Pro using the release build of
+`c63b976e2` and OpenJDK 27. All 23 pairs matched on artifacts. Across
+20 measured pairs after three warmups, source-to-Gen-2 compilation took
+383 ms median and 389 ms empirical p95 with Rust binding, lowering, JNI
+optimizer passes and emission. Direct Java took 621 ms median and 634 ms
+empirical p95. The mixed optimization stage, including JVM startup and
+checkpoint I/O, took 368 ms median.
 
 Ten additional incremental workloads used Java to compile raw SQL through S3.
 For all ten, the Rust worker matched the direct Java circuit, dataflow, schema and

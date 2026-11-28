@@ -9,7 +9,7 @@ import subprocess
 import time
 
 from benchmark_java_baseline import latency
-from compile_bound_gen2 import compile_program
+from compile_bound_gen2 import compile_program, optimizer_library, stages
 from run_determinism import classpath_digest, file_digest
 
 
@@ -54,6 +54,10 @@ def benchmark(args):
         "tail": "sql2dbsp --s3-worker",
         "scope": "Fresh process per stage, warmed filesystem, Gen-2 default nonincremental options",
     }
+    profile["stages"] = stages(args.rust_lowering, args.rust_optimizer_passes)
+    if args.rust_optimizer_passes:
+        library = optimizer_library(args.driver)
+        profile["optimizer_library"] = {"path": str(library), "sha256": file_digest(library)}
     (args.output / "profile.json").write_text(json.dumps(profile, indent=2) + "\n")
     observations = {"direct_java": [], "mixed": []}
     with (args.output / "samples.jsonl").open("x") as records:
@@ -70,12 +74,15 @@ def benchmark(args):
                 if mode == "direct_java":
                     elapsed[mode] = direct(source, reference, args.classpath)
                 else:
-                    elapsed[mode] = compile_program(
-                        source, candidate, args.driver, args.classpath, args.revision, args.rust_lowering
-                    )["end_to_end"]
+                    candidate_times = compile_program(
+                        source, candidate, args.driver, args.classpath, args.revision,
+                        args.rust_lowering, args.rust_optimizer_passes
+                    )
+                    elapsed[mode] = candidate_times["end_to_end"]
             compare(reference, candidate, args.comparator)
             warmup = index < args.warmups
             record = {"pair": index, "warmup": warmup, "order": order, "elapsed_ns": elapsed}
+            record["mixed_stage_ns"] = {k: v for k, v in candidate_times.items() if k != "end_to_end"}
             print(json.dumps(record), file=records, flush=True)
             if not warmup:
                 for mode, duration in elapsed.items():
@@ -95,5 +102,7 @@ if __name__ == "__main__":
     parser.add_argument("--revision", required=True)
     parser.add_argument("--warmups", type=int, default=3)
     parser.add_argument("--rust-lowering", action="store_true", help="time Rust lowering through S2")
+    parser.add_argument("--rust-optimizer-passes", action="store_true",
+                        help="benchmark the Java optimizer with the Rust JNI passes enabled")
     parser.add_argument("--samples", type=int, default=20)
     benchmark(parser.parse_args())
