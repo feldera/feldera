@@ -3,7 +3,7 @@
 use sqlparser_064::dialect::Dialect;
 use sqlparser_064::{
     ast::{
-        DataType, DescribeAlias, Expr, FunctionArg, FunctionArgExpr, FunctionArguments,
+        DataType, Expr, FunctionArg, FunctionArgExpr, FunctionArguments,
         ObjectNamePart, ObjectType, Query, Select, Set, Spanned, Statement, TableFactor, Visit,
         Visitor,
     },
@@ -179,11 +179,6 @@ impl Visitor for ScopedChecks {
                 values,
                 ..
             }) => scope.is_none() && !hivevar && values.len() == 1,
-            Statement::ExplainTable {
-                describe_alias,
-                hive_format,
-                ..
-            } => *describe_alias != DescribeAlias::Explain && hive_format.is_none(),
             Statement::Drop {
                 object_type,
                 names,

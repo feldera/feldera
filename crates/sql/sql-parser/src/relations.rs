@@ -70,7 +70,7 @@ fn table_or_default_argument(parser: &mut Parser, named: bool) -> Result<Functio
     let arg = if matches!(token.token, Token::Word(w) if w.keyword == Keyword::DEFAULT) {
         FunctionArgExpr::Expr(sqlparser_064::ast::Expr::DefaultValue(token.span))
     } else {
-        let name = parser.parse_object_name(false)?;
+        let name = super::statements::compound_name(parser)?;
         let span = Span::new(
             token.span.start,
             parser.token_at(parser.index() - 1).span.end,

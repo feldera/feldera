@@ -35,7 +35,7 @@ mod type_policy;
 mod unicode;
 mod values;
 
-pub use statements::{Statement, ViewColumn};
+pub use statements::{ExplainDepth, ExplainDetail, ExplainFormat, ExplainPlan, Statement, ViewColumn};
 
 #[derive(Debug)]
 pub struct FelderaDialect;
@@ -141,6 +141,13 @@ impl Dialect for FelderaDialect {
         parser: &mut Parser,
     ) -> Option<Result<sqlparser_064::ast::Join, ParserError>> {
         relations::join(parser)
+    }
+
+    fn parse_explicit_table_name(
+        &self,
+        parser: &mut Parser,
+    ) -> Option<Result<sqlparser_064::ast::ObjectName, ParserError>> {
+        Some(statements::compound_name(parser))
     }
 
     fn parse_function_arg(
@@ -447,7 +454,8 @@ pub fn parse_at_with_starts(
     preceding_lines: u64,
     record_start: impl FnMut(sqlparser_064::tokenizer::Location),
 ) -> Result<Vec<Statement>, ParserError> {
-    let mut tokens = source_tokens(sql)?;
+    let mut unicode_names = Vec::new();
+    let mut tokens = unicode::tokenize(sql, &FelderaDialect, |pos| unicode_names.push(pos))?;
     if preceding_lines != 0 {
         for token in &mut tokens {
             if token.span.start.line != 0 {
@@ -479,7 +487,13 @@ pub fn parse_at_with_starts(
     reserved::validate_tokens(&tokens)?;
     reject::validate_lossy_tokens(&tokens)?;
     attributes::validate_tokens(&mut tokens)?;
-    statements::parse_with_starts(tokens, record_start)
+    // Calcite distinguishes ordinary quoted names from U&"..." in the
+    // DESCRIBE lookahead. Both have the same decoded identifier token.
+    // Each location also belongs to a checked token span above.
+    for name in &mut unicode_names {
+        name.line += preceding_lines;
+    }
+    statements::parse_with_starts(tokens, &unicode_names, record_start)
 }
 
 #[cfg(test)]

@@ -967,6 +967,14 @@ pub trait Dialect: Debug + Any {
         None
     }
 
+    /// Parse the relation name of an explicit TABLE query after its keyword.
+    fn parse_explicit_table_name(
+        &self,
+        _parser: &mut Parser,
+    ) -> Option<Result<crate::ast::ObjectName, ParserError>> {
+        None
+    }
+
     /// Override one function argument, including its optional argument name.
     fn parse_function_arg(
         &self,

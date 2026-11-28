@@ -8,7 +8,7 @@ use sqlparser_064::{
     dialect::Dialect,
     keywords::Keyword,
     parser::ParserError,
-    tokenizer::{Token, TokenWithSpan, Tokenizer},
+    tokenizer::{Location, Token, TokenWithSpan, Tokenizer},
 };
 
 pub(super) fn tokens(sql: &str) -> Result<Vec<TokenWithSpan>, ParserError> {
@@ -18,6 +18,14 @@ pub(super) fn tokens(sql: &str) -> Result<Vec<TokenWithSpan>, ParserError> {
 pub(super) fn tokens_with_dialect(
     sql: &str,
     dialect: &dyn Dialect,
+) -> Result<Vec<TokenWithSpan>, ParserError> {
+    tokenize(sql, dialect, |_| {})
+}
+
+pub(super) fn tokenize(
+    sql: &str,
+    dialect: &dyn Dialect,
+    mut record_unicode_name: impl FnMut(Location),
 ) -> Result<Vec<TokenWithSpan>, ParserError> {
     let tokens = super::string_literals::join_charset_prefixes(
         Tokenizer::new(dialect, sql)
@@ -42,6 +50,7 @@ pub(super) fn tokens_with_dialect(
             ParserError::ParserError(message) => super::diagnostic::at(message, token.span.start),
             error => error,
         })?;
+        record_unicode_name(token.span.start);
         token.token = Token::make_word(&name, Some('"'));
         token.span.end = tokens[end - 1].span.end;
         result.push(token);

@@ -60,11 +60,11 @@ pub(super) fn join_charset_prefixes(tokens: Vec<TokenWithSpan>) -> Vec<TokenWith
 
 #[cfg(test)]
 mod tests {
-    use super::super::{statements, unicode};
+    use super::super::statements;
     use sqlparser_064::ast::{Expr, SelectItem, SetExpr, Statement, Value};
 
     fn projection(sql: &str) -> SelectItem {
-        let nodes = statements::parse(unicode::tokens(sql).unwrap()).unwrap();
+        let nodes = crate::parse(sql).unwrap();
         let statements::Statement::Upstream(statement) = &nodes[0] else {
             panic!("upstream statement")
         };

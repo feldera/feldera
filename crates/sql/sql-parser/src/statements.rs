@@ -14,10 +14,19 @@ use sqlparser_064::{
 };
 use std::{fmt, ops::ControlFlow};
 
+mod explain;
+pub use explain::{ExplainDepth, ExplainDetail, ExplainFormat, ExplainPlan};
+
 #[derive(Debug)]
 pub enum Statement {
     Upstream(Box<UpstreamStatement>),
     CreateType(Box<crate::CreateType>),
+    ExplainPlan(ExplainPlan),
+    DescribeTable {
+        name: ObjectName,
+        column: Option<Ident>,
+    },
+    DescribeSchema(ObjectName),
     DeclareRecursiveView {
         name: ObjectName,
         columns: Vec<ViewColumn>,
@@ -39,11 +48,45 @@ pub struct ViewColumn {
 }
 
 pub(crate) fn identifier(parser: &mut Parser) -> Result<Ident, ParserError> {
+    if !matches!(parser.peek_token_ref().token, Token::Word(_)) {
+        return parser.expected_ref("identifier", parser.peek_token_ref());
+    }
     let name = parser.parse_identifier()?;
+    if name.value.is_empty() {
+        return Err(crate::diagnostic::located(
+            "empty quoted identifier",
+            name.span,
+        ));
+    }
+    // Calcite enforces its identifier limit after folding unquoted names.
+    let length = if name.quote_style.is_some() || name.value.is_ascii() {
+        name.value.encode_utf16().count()
+    } else {
+        name.value.to_lowercase().encode_utf16().count()
+    };
+    if length > 128 {
+        return Err(crate::diagnostic::at(
+            "identifier exceeds 128 UTF-16 units",
+            name.span.start,
+        ));
+    }
     if let ControlFlow::Break(error) = super::reserved::identifier(&name) {
         return Err(error);
     }
     Ok(name)
+}
+
+pub(crate) fn compound_name(parser: &mut Parser) -> Result<ObjectName, ParserError> {
+    let mut parts = vec![identifier(parser)?];
+    while parser.consume_token(&Token::Period) {
+        if parser.peek_token_ref().token == Token::Mul {
+            let star = parser.next_token();
+            parts.push(Ident::with_span(star.span, "*"));
+            break;
+        }
+        parts.push(identifier(parser)?);
+    }
+    Ok(ObjectName::from(parts))
 }
 
 fn view_column(parser: &mut Parser) -> Result<ViewColumn, ParserError> {
@@ -62,8 +105,30 @@ fn view_column(parser: &mut Parser) -> Result<ViewColumn, ParserError> {
     })
 }
 
-fn parse_statement(parser: &mut Parser) -> Result<Statement, ParserError> {
+fn parse_statement(
+    parser: &mut Parser,
+    unicode_names: &[Location],
+) -> Result<Statement, ParserError> {
     let start = parser.peek_token().span.start;
+    if parser.peek_keyword(Keyword::EXPLAIN) {
+        let keyword = parser.next_token();
+        if !parser.parse_keyword(Keyword::PLAN) {
+            return Err(crate::diagnostic::located(
+                "expected EXPLAIN PLAN",
+                keyword.span,
+            ));
+        }
+        return explain::plan(parser);
+    }
+    if parser.parse_keyword(Keyword::DESCRIBE) {
+        return explain::describe(parser, unicode_names);
+    }
+    if parser.peek_keyword(Keyword::TABLE) {
+        let query = parser.parse_query()?;
+        return Ok(Statement::Upstream(Box::new(UpstreamStatement::Query(
+            query,
+        ))));
+    }
     // Upstream consumes LOCAL/GLOBAL/TRANSIENT before CREATE VIEW but drops
     // those modifiers. Intercept the complete Feldera prefix before that loss.
     if parser.peek_keyword(Keyword::CREATE) {
@@ -146,13 +211,9 @@ fn parse_statement(parser: &mut Parser) -> Result<Statement, ParserError> {
         .map(|statement| Statement::Upstream(Box::new(statement)))
 }
 
-#[cfg(test)]
-pub(super) fn parse(tokens: Vec<TokenWithSpan>) -> Result<Vec<Statement>, ParserError> {
-    parse_with_starts(tokens, |_| {})
-}
-
 pub(super) fn parse_with_starts(
     mut tokens: Vec<TokenWithSpan>,
+    unicode_names: &[Location],
     mut record_start: impl FnMut(Location),
 ) -> Result<Vec<Statement>, ParserError> {
     // Upstream's synthetic EOF has an empty span. Retain the original input end
@@ -175,37 +236,8 @@ pub(super) fn parse_with_starts(
             return Ok(statements);
         }
         scoped_checks.statement_start = parser.peek_token().span.start;
-        let mut statement = parse_statement(&mut parser)?;
-        if let Statement::Upstream(statement) = &mut statement {
-            if let ControlFlow::Break(error) = VisitMut::visit(statement.as_mut(), &mut hints) {
-                return Err(error);
-            }
-        }
-        if let Statement::Upstream(statement) = &statement {
-            super::lateness::validate(statement)?;
-        }
-        let mut identifiers = super::reserved::ReservedIdentifiers::default();
-        let validation = (|| match &statement {
-            Statement::Upstream(statement) => {
-                statement.visit(&mut scoped_checks)?;
-                statement.visit(&mut identifiers)
-            }
-            Statement::CreateType(ty) => {
-                ty.visit_fields(&mut scoped_checks)?;
-                ty.visit_fields(&mut identifiers)
-            }
-            Statement::DeclareRecursiveView { columns, .. } => {
-                columns.iter().try_for_each(|column| {
-                    column.data_type.visit(&mut scoped_checks)?;
-                    column.data_type.visit(&mut identifiers)
-                })
-            }
-            Statement::Lateness { expression, .. } => {
-                expression.visit(&mut scoped_checks)?;
-                expression.visit(&mut identifiers)
-            }
-        })();
-        if let ControlFlow::Break(error) = validation {
+        let mut statement = parse_statement(&mut parser, unicode_names)?;
+        if let ControlFlow::Break(error) = statement.validate(&mut hints, &mut scoped_checks) {
             return Err(error);
         }
         record_start(scoped_checks.statement_start);
@@ -221,11 +253,58 @@ pub(super) fn parse_with_starts(
     }
 }
 
+impl Statement {
+    fn validate(
+        &mut self,
+        hints: &mut super::hints::Attachments,
+        checks: &mut super::reject::ScopedChecks,
+    ) -> ControlFlow<ParserError> {
+        let mut identifiers = super::reserved::ReservedIdentifiers::default();
+        let node = match self {
+            Self::Upstream(node) => node.as_mut(),
+            Self::ExplainPlan(plan) => plan.statement.as_mut(),
+            Self::CreateType(ty) => {
+                ty.visit_fields(checks)?;
+                return ty.visit_fields(&mut identifiers);
+            }
+            Self::DeclareRecursiveView { columns, .. } => {
+                return columns.iter().try_for_each(|column| {
+                    column.data_type.visit(checks)?;
+                    column.data_type.visit(&mut identifiers)
+                });
+            }
+            Self::Lateness { expression, .. } => {
+                Visit::visit(expression.as_ref(), checks)?;
+                return Visit::visit(expression.as_ref(), &mut identifiers);
+            }
+            // DESCRIBE names are checked as they are parsed.
+            Self::DescribeSchema(_) | Self::DescribeTable { .. } => {
+                return ControlFlow::Continue(())
+            }
+        };
+        VisitMut::visit(node, hints)?;
+        if let Err(error) = super::lateness::validate(node) {
+            return ControlFlow::Break(error);
+        }
+        Visit::visit(node, checks)?;
+        Visit::visit(node, &mut identifiers)
+    }
+}
+
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Upstream(statement) => statement.fmt(f),
             Self::CreateType(ty) => ty.fmt(f),
+            Self::ExplainPlan(plan) => plan.fmt(f),
+            Self::DescribeSchema(name) => write!(f, "DESCRIBE SCHEMA {name}"),
+            Self::DescribeTable { name, column } => {
+                write!(f, "DESCRIBE TABLE {name}")?;
+                if let Some(column) = column {
+                    write!(f, " {column}")?;
+                }
+                Ok(())
+            }
             Self::DeclareRecursiveView { name, columns, .. } => {
                 write!(f, "DECLARE RECURSIVE VIEW {name} (")?;
                 for (index, column) in columns.iter().enumerate() {
@@ -261,7 +340,7 @@ mod tests {
             ("CREATE LOCAL VIEW v AS SELECT 1", 8, false),
             ("CREATE OR REPLACE LOCAL VIEW v AS SELECT 1", 19, true),
         ] {
-            let nodes = parse(super::super::unicode::tokens(sql).unwrap()).unwrap();
+            let nodes = crate::parse(sql).unwrap();
             let Statement::Upstream(node) = &nodes[0] else {
                 panic!("expected view")
             };
@@ -280,7 +359,7 @@ mod tests {
             "CREATE OR ALTER TABLE t(x INT)",
         ] {
             assert!(
-                parse(super::super::unicode::tokens(sql).unwrap()).is_err(),
+                crate::parse(sql).is_err(),
                 "{sql}"
             );
         }
@@ -289,7 +368,7 @@ mod tests {
     #[test]
     fn extensions_retain_names_nullability_expressions_and_statement_boundaries() {
         let sql = "DECLARE RECURSIVE VIEW s.\"V\"(\"select\" INT NOT NULL, y VARCHAR NULL);\nLATENESS \"V\".\"select\" (2 + 3); SELECT ';';";
-        let statements = parse(super::super::unicode::tokens(sql).unwrap()).unwrap();
+        let statements = crate::parse(sql).unwrap();
         assert_eq!(statements.len(), 3);
         let Statement::DeclareRecursiveView {
             name,

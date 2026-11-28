@@ -118,6 +118,16 @@ pub(crate) const RESERVED: &[&str] = &[
     "WITH",
 ];
 
+/// All lexical keywords matter when choosing the implicit table form of DESCRIBE.
+/// The inventory uses SQL spellings from the pinned FMPP non-reserved lists.
+pub(super) fn is_keyword(word: &str) -> bool {
+    let uppercase = word.to_ascii_uppercase();
+    RESERVED.binary_search(&uppercase.as_str()).is_ok()
+        || include_str!("non_reserved_keywords.txt")
+            .split_ascii_whitespace()
+            .any(|keyword| keyword == uppercase)
+}
+
 pub(super) fn identifier(name: &Ident) -> ControlFlow<ParserError> {
     if name.quote_style.is_none()
         && RESERVED

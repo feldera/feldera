@@ -221,7 +221,7 @@ impl Spanned for Cte {
 
 /// # partial span
 ///
-/// [SetExpr::Table] is not implemented.
+/// [SetExpr::Table] spans its relation name.
 impl Spanned for SetExpr {
     fn span(&self) -> Span {
         match self {
@@ -235,7 +235,7 @@ impl Spanned for SetExpr {
             } => left.span().union(&right.span()),
             SetExpr::Values(values) => values.span(),
             SetExpr::Insert(statement) => statement.span(),
-            SetExpr::Table(_) => Span::empty(),
+            SetExpr::Table(table) => table.name.span(),
             SetExpr::Update(statement) => statement.span(),
             SetExpr::Delete(statement) => statement.span(),
             SetExpr::Merge(statement) => statement.span(),

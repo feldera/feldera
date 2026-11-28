@@ -77,6 +77,11 @@ def generate(repo, calcite, executable, output, manifest_path):
     non_reserved = drift.words_in_list(
         config, "nonReservedKeywords", False
     ) | drift.words_in_list(config, "nonReservedKeywordsToAdd", False)
+    # The FMPP list uses JavaCC token names for these two SQL spellings.
+    spellings = {"DOT_FORMAT": "DOT", "MORE_": "MORE"}
+    actual = (repo / "crates/sql/sql-parser/src/non_reserved_keywords.txt").read_text().split()
+    if actual != sorted(spellings.get(word, word) for word in non_reserved):
+        raise ValueError("Rust non-reserved keyword inventory differs from the FMPP grammar")
     reserved = declared - non_reserved
     documented = documented_reserved(grammar)
     upstream = json.loads(

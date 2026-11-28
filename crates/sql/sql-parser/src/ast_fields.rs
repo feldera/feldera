@@ -5,7 +5,7 @@
 
 use sqlparser_064::ast::{
     CreateIndex, Delete, Expr, Fetch, FromTable, Insert, Merge, MergeAction, MergeClauseKind,
-    MergeInsertKind, MergeUpdateKind, OrderByOptions, Query, Select, SelectFlavor, Spanned,
+    MergeInsertKind, MergeUpdateKind, OrderByOptions, Query, Select, SelectFlavor, SetExpr, Spanned,
     Statement, TableFactor, TableObject, TableWithJoins, Update,
 };
 use sqlparser_064::parser::ParserError;
@@ -23,6 +23,13 @@ fn require(allowed: bool, node: &impl Spanned) -> ControlFlow<ParserError> {
 }
 
 pub(super) fn query(query: &Query) -> ControlFlow<ParserError> {
+    // Upstream can wrap DML in a query, for example WITH ... DELETE.
+    // Calcite accepts DML only through its statement production.
+    if let SetExpr::Insert(stmt) | SetExpr::Delete(stmt) | SetExpr::Merge(stmt) | SetExpr::Update(stmt) =
+        query.body.as_ref()
+    {
+        return require(false, stmt);
+    }
     let Query {
         with: _,
         body: _,

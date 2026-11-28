@@ -298,7 +298,20 @@
      }
  }
  
-@@ -1738,7 +1743,7 @@
+@@ -1402,6 +1407,12 @@
+                             id_parts.push(Ident::new(s))
+                         }
+                         Token::Mul => {
++                            if self.dialect.supports_qualified_wildcard_operand()
++                                && self.get_next_precedence()? > self.dialect.prec_unknown()
++                            {
++                                self.index = index;
++                                return self.parse_expr();
++                            }
+                             return Ok(Expr::QualifiedWildcard(
+                                 ObjectName::from(id_parts),
+                                 AttachedToken(next_token),
+@@ -1738,7 +1749,7 @@
              Token::SingleQuotedString(_)
              | Token::DoubleQuotedString(_)
              | Token::HexStringLiteral(_)
@@ -307,7 +320,7 @@
              {
                  Ok(Expr::Prefixed {
                      prefix: w.to_ident(w_span),
-@@ -1863,7 +1868,7 @@
+@@ -1863,7 +1874,7 @@
              _ => None,
          };
          let opt_expr = self.maybe_parse(|parser| {
@@ -316,7 +329,7 @@
                  DataType::Interval { .. } => parser.parse_interval(),
                  // Custom names need dialect consent, else `NOT 'a'` would read as a typed string.
                  DataType::Custom(name, modifiers)
-@@ -2035,7 +2040,9 @@
+@@ -2035,7 +2046,9 @@
                      ),
                  })
              }
@@ -327,7 +340,7 @@
              {
                  self.prev_token();
                  Ok(Expr::Value(self.parse_value()?))
-@@ -2095,7 +2102,7 @@
+@@ -2095,7 +2108,7 @@
                          }
                      };
                  self.expect_token(&Token::RParen)?;
@@ -336,7 +349,18 @@
              }
              Token::Placeholder(_) | Token::Colon | Token::AtSign => {
                  self.prev_token();
-@@ -2635,7 +2642,7 @@
+@@ -2138,7 +2151,9 @@
+                     Token::Mul => {
+                         // Postgres explicitly allows funcnm(tablenm.*) and the
+                         // function array_agg traverses this control flow
+-                        if dialect_of!(self is PostgreSqlDialect) {
++                        if dialect_of!(self is PostgreSqlDialect)
++                            || self.dialect.supports_qualified_wildcard_operand()
++                        {
+                             ending_wildcard = Some(self.next_token());
+                         } else {
+                             // Put back the consumed `.` tokens before exiting.
+@@ -2635,7 +2650,7 @@
          {
              self.parse_xmlparse_argument_list()?
          } else {
@@ -345,7 +369,7 @@
          };
          let mut parameters = FunctionArguments::None;
          // ClickHouse aggregations support parametric functions like `HISTOGRAM(0.5, 0.6)(x, y)`
-@@ -2644,7 +2651,7 @@
+@@ -2644,7 +2659,7 @@
              && self.consume_token(&Token::LParen)
          {
              parameters = FunctionArguments::List(args);
@@ -354,7 +378,7 @@
          }
  
          let within_group = if self.parse_keywords(&[Keyword::WITHIN, Keyword::GROUP]) {
-@@ -2658,6 +2665,7 @@
+@@ -2658,6 +2673,7 @@
          };
  
          let filter = if self.dialect.supports_filter_during_aggregation()
@@ -362,7 +386,7 @@
              && self.parse_keyword(Keyword::FILTER)
              && self.consume_token(&Token::LParen)
              && self.parse_keyword(Keyword::WHERE)
-@@ -2738,7 +2746,7 @@
+@@ -2738,7 +2754,7 @@
      /// Parse time-related function `name` possibly followed by `(...)` arguments.
      pub fn parse_time_functions(&mut self, name: ObjectName) -> Result<Expr, ParserError> {
          let args = if self.consume_token(&Token::LParen) {
@@ -371,7 +395,7 @@
          } else {
              FunctionArguments::None
          };
-@@ -2779,10 +2787,37 @@
+@@ -2779,10 +2795,37 @@
          } else {
              (self.parse_window_frame_bound()?, None)
          };
@@ -409,7 +433,7 @@
          })
      }
  
-@@ -2814,7 +2849,16 @@
+@@ -2814,7 +2857,16 @@
          if self.dialect.supports_group_by_expr() {
              if self.parse_keywords(&[Keyword::GROUPING, Keyword::SETS]) {
                  self.expect_token(&Token::LParen)?;
@@ -427,7 +451,7 @@
                  self.expect_token(&Token::RParen)?;
                  Ok(Expr::GroupingSets(result))
              } else if self.parse_keyword(Keyword::CUBE) {
-@@ -3036,9 +3080,7 @@
+@@ -3036,9 +3088,7 @@
          {
              ExtractSyntax::Comma
          } else {
@@ -438,7 +462,7 @@
          };
  
          let expr = self.parse_expr()?;
-@@ -3685,6 +3727,7 @@
+@@ -3685,6 +3735,7 @@
              let field_type = parser.parse_data_type()?;
  
              Ok(StructField {
@@ -446,7 +470,7 @@
                  field_name: Some(field_name),
                  field_type,
                  options: None,
-@@ -3728,6 +3771,7 @@
+@@ -3728,6 +3779,7 @@
          let options = self.maybe_parse_options(Keyword::OPTIONS)?;
          Ok((
              StructField {
@@ -454,7 +478,7 @@
                  field_name,
                  field_type,
                  options,
-@@ -3818,7 +3862,10 @@
+@@ -3818,7 +3870,10 @@
          self.expect_token(&Token::LBrace)?;
          let fields = self.parse_comma_separated0(Self::parse_duckdb_map_field, Token::RBrace)?;
          self.expect_token(&Token::RBrace)?;
@@ -466,7 +490,7 @@
      }
  
      /// Parse a field for a duckdb [map]
-@@ -4223,7 +4270,8 @@
+@@ -4223,7 +4278,8 @@
                      let negated = self.parse_keyword(Keyword::NOT);
                      let regexp = self.parse_keyword(Keyword::REGEXP);
                      let rlike = self.parse_keyword(Keyword::RLIKE);
@@ -476,11 +500,38 @@
                          self.parse_keyword(Keyword::NULL)
                      } else {
                          false
-@@ -4278,6 +4326,14 @@
+@@ -4276,9 +4332,42 @@
+                         self.expected_ref("IN or BETWEEN after NOT", self.peek_token_ref())
+                     }
                  }
++                Keyword::FORMAT if dialect.supports_format_json() => {
++                    self.expect_keyword_is(Keyword::JSON)?;
++                    let encoding = if self.parse_keyword(Keyword::ENCODING) {
++                        let token = self.next_token();
++                        match token.token {
++                            Token::Word(w)
++                                if w.quote_style.is_none()
++                                    && matches!(
++                                        w.value.to_ascii_uppercase().as_str(),
++                                        "UTF8" | "UTF16" | "UTF32"
++                                    ) =>
++                            {
++                                Some(w.into_ident(token.span))
++                            }
++                            _ => return self.expected("UTF8, UTF16 or UTF32", token),
++                        }
++                    } else {
++                        None
++                    };
++                    Ok(Expr::FormatJson {
++                        span: expr.span().union(&self.get_current_token().span),
++                        expr: Box::new(expr),
++                        encoding,
++                    })
++                }
                  Keyword::NOTNULL if dialect.supports_notnull_operator() => {
                      Ok(Expr::IsNotNull(Box::new(expr)))
-+                }
+                 }
 +                Keyword::MEMBER if dialect.supports_multiset_membership() => {
 +                    self.expect_keyword_is(Keyword::OF)?;
 +                    Ok(Expr::BinaryOp {
@@ -488,10 +539,11 @@
 +                        op: BinaryOperator::MemberOf,
 +                        right: Box::new(self.parse_subexpr(precedence)?),
 +                    })
-                 }
++                }
                  Keyword::MEMBER => {
                      if self.parse_keyword(Keyword::OF) {
-@@ -4605,6 +4661,15 @@
+                         self.expect_token(&Token::LParen)?;
+@@ -4605,6 +4694,15 @@
  
      /// Parses `BETWEEN <low> AND <high>`, assuming the `BETWEEN` keyword was already consumed.
      pub fn parse_between(&mut self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
@@ -507,7 +559,7 @@
          let mut low = self.parse_subexpr(self.dialect.between_low_bound_precedence())?;
          if self.dialect.supports_comparison_in_between_low_bound()
              && matches!(
-@@ -4624,6 +4689,7 @@
+@@ -4624,6 +4722,7 @@
          self.expect_keyword_is(Keyword::AND)?;
          let high = self.parse_subexpr(self.dialect.prec_value(Precedence::Between))?;
          Ok(Expr::Between {
@@ -515,7 +567,7 @@
              expr: Box::new(expr),
              negated,
              low: Box::new(low),
-@@ -7065,6 +7131,7 @@
+@@ -7065,6 +7164,7 @@
              ]);
  
          Ok(CreateView {
@@ -523,7 +575,7 @@
              or_alter,
              name,
              columns,
-@@ -13453,7 +13520,10 @@
+@@ -13453,7 +13553,10 @@
              }) => Ok(value),
              Token::SingleQuotedString(s) => Ok(s),
              Token::DoubleQuotedString(s) => Ok(s),
@@ -535,12 +587,10 @@
                  Ok(s)
              }
              Token::UnicodeStringLiteral(s) => Ok(s),
-@@ -13550,10 +13620,37 @@
-         self.expect_token(&Token::RParen)?;
- 
+@@ -13552,8 +13655,35 @@
          Ok(values)
-+    }
-+
+     }
+ 
 +    fn parse_timezone_qualifier(&mut self) -> Result<TimezoneInfo, ParserError> {
 +        if self.parse_keyword(Keyword::WITH) {
 +            let local =
@@ -557,8 +607,8 @@
 +        } else {
 +            Ok(TimezoneInfo::None)
 +        }
-     }
- 
++    }
++
      /// Parse a SQL datatype (in the context of a CREATE TABLE statement for example)
      pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
 +        let start = self.index;
@@ -573,7 +623,7 @@
          let (ty, trailing_bracket) = self.parse_data_type_helper()?;
          if trailing_bracket.0 {
              return parser_err!(
-@@ -13785,15 +13882,7 @@
+@@ -13785,15 +13915,7 @@
                  }
                  Keyword::TIMESTAMP => {
                      let precision = self.parse_optional_precision()?;
@@ -590,7 +640,7 @@
                      Ok(DataType::Timestamp(precision, tz))
                  }
                  Keyword::TIMESTAMPTZ => Ok(DataType::Timestamp(
-@@ -13805,15 +13894,7 @@
+@@ -13805,15 +13927,7 @@
                  }
                  Keyword::TIME => {
                      let precision = self.parse_optional_precision()?;
@@ -607,7 +657,7 @@
                      Ok(DataType::Time(precision, tz))
                  }
                  Keyword::TIMETZ => Ok(DataType::Time(
-@@ -13824,10 +13905,15 @@
+@@ -13824,10 +13938,15 @@
                      if self.dialect.supports_interval_options() {
                          let fields = self.maybe_parse_optional_interval_fields()?;
                          let precision = self.parse_optional_precision()?;
@@ -624,7 +674,7 @@
                              precision: None,
                          })
                      }
-@@ -14072,10 +14158,11 @@
+@@ -14072,10 +14191,11 @@
              }
          }
  
@@ -640,7 +690,7 @@
                  let size = self.maybe_parse(|p| p.parse_literal_uint())?;
                  self.expect_token(&Token::RBracket)?;
                  size
-@@ -14083,6 +14170,9 @@
+@@ -14083,6 +14203,9 @@
                  None
              };
              data = DataType::Array(ArrayElemTypeDef::Qualified(Box::new(data), size));
@@ -650,7 +700,7 @@
          }
  
          Ok((data, trailing_bracket))
-@@ -14375,6 +14465,11 @@
+@@ -14375,6 +14498,11 @@
      /// Parse an optional `GROUP BY` clause, returning `Some(GroupByExpr)` when present.
      pub fn parse_optional_group_by(&mut self) -> Result<Option<GroupByExpr>, ParserError> {
          if self.parse_keywords(&[Keyword::GROUP, Keyword::BY]) {
@@ -662,7 +712,7 @@
              let expressions = if self.parse_keyword(Keyword::ALL) {
                  None
              } else {
-@@ -14477,6 +14572,12 @@
+@@ -14477,6 +14605,12 @@
                          "Missing offset for LIMIT <offset>, <limit>".to_string(),
                      )
                  })?;
@@ -675,7 +725,7 @@
                  return Ok(Some(LimitClause::OffsetCommaLimit {
                      offset,
                      limit: self.parse_expr()?,
-@@ -16398,7 +16499,7 @@
+@@ -16398,7 +16532,7 @@
              match ws {
                  Whitespace::SingleLineComment { comment, prefix } => {
                      if let Some((hint_prefix, text)) = Self::extract_hint_prefix_and_text(comment) {
@@ -684,7 +734,7 @@
                              prefix: hint_prefix,
                              text,
                              style: OptimizerHintStyle::SingleLine {
-@@ -16410,7 +16511,7 @@
+@@ -16410,7 +16544,7 @@
                  }
                  Whitespace::MultiLineComment(comment) => {
                      if let Some((hint_prefix, text)) = Self::extract_hint_prefix_and_text(comment) {
@@ -693,7 +743,33 @@
                              prefix: hint_prefix,
                              text,
                              style: OptimizerHintStyle::MultiLine,
-@@ -17181,6 +17282,10 @@
+@@ -16566,19 +16700,14 @@
+ 
+     /// Parse `CREATE TABLE x AS TABLE y`
+     pub fn parse_as_table(&mut self) -> Result<Table, ParserError> {
+-        let first_name = self.parse_identifier()?;
++        if let Some(name) = self.dialect.parse_explicit_table_name(self) {
++            return name.map(|name| Table { name });
++        }
++        let mut parts = vec![self.parse_identifier()?];
+         if self.consume_token(&Token::Period) {
+-            let second_name = self.parse_identifier()?;
+-            Ok(Table {
+-                table_name: Some(second_name),
+-                schema_name: Some(first_name),
+-            })
+-        } else {
+-            Ok(Table {
+-                table_name: Some(first_name),
+-                schema_name: None,
+-            })
++            parts.push(self.parse_identifier()?);
+         }
++        Ok(Table { name: ObjectName::from(parts) })
+     }
+ 
+     /// Parse a `SET ROLE` statement. Expects SET to be consumed already.
+@@ -17181,6 +17310,10 @@
      fn parse_joins(&mut self) -> Result<Vec<Join>, ParserError> {
          let mut joins = vec![];
          loop {
@@ -704,7 +780,7 @@
              let global = self.parse_keyword(Keyword::GLOBAL);
              let join = if self.parse_keyword(Keyword::CROSS) {
                  let join_operator = if self.parse_keyword(Keyword::JOIN) {
-@@ -17314,7 +17419,8 @@
+@@ -17314,7 +17447,8 @@
                              }
                              _ => {
                                  return Err(ParserError::ParserError(format!(
@@ -714,7 +790,7 @@
                                  )))
                              }
                          }
-@@ -17524,6 +17630,7 @@
+@@ -17524,6 +17658,7 @@
                          | TableFactor::OpenJsonTable { alias, .. }
                          | TableFactor::TableFunction { alias, .. }
                          | TableFactor::Pivot { alias, .. }
@@ -722,7 +798,7 @@
                          | TableFactor::Unpivot { alias, .. }
                          | TableFactor::MatchRecognize { alias, .. }
                          | TableFactor::SemanticView { alias, .. }
-@@ -17758,6 +17865,7 @@
+@@ -17758,6 +17893,7 @@
              }
  
              let mut table = TableFactor::Table {
@@ -730,7 +806,7 @@
                  name,
                  alias,
                  args,
-@@ -17809,6 +17917,7 @@
+@@ -17809,6 +17945,7 @@
          let alias = self.maybe_parse_table_alias()?;
  
          Ok(TableFactor::Table {
@@ -738,7 +814,7 @@
              name,
              alias,
              args,
-@@ -18359,12 +18468,16 @@
+@@ -18359,12 +18496,16 @@
  
      /// Parses a the timestamp version specifier (i.e. query historical data)
      pub fn maybe_parse_table_version(&mut self) -> Result<Option<TableVersion>, ParserError> {
@@ -760,7 +836,7 @@
                  return self.parse_table_version_changes().map(Some);
              } else if self.peek_keyword(Keyword::AT) || self.peek_keyword(Keyword::BEFORE) {
                  let func_name = self.parse_object_name(true)?;
-@@ -18649,6 +18762,34 @@
+@@ -18649,6 +18790,34 @@
              None
          };
          self.expect_token(&Token::LParen)?;
@@ -795,7 +871,7 @@
          let value = self.parse_expr()?;
          self.expect_keyword_is(Keyword::FOR)?;
          let name = self.parse_identifier()?;
-@@ -18666,6 +18807,16 @@
+@@ -18666,6 +18835,16 @@
              columns,
              alias,
          })
@@ -812,7 +888,7 @@
      }
  
      /// Parse an object UNPIVOT table factor in FROM clause.
-@@ -20066,6 +20217,9 @@
+@@ -20066,6 +20245,9 @@
  
      /// Parse a single function argument, handling named and unnamed variants.
      pub fn parse_function_args(&mut self) -> Result<FunctionArg, ParserError> {
@@ -822,7 +898,7 @@
          // Parse the argument expression once, then check for a named-arg
          // operator. Parsing it speculatively and re-parsing on the unnamed
          // path is O(2^depth) on nested calls like `CAST(CASE (CAST(CASE (…`.
-@@ -20224,7 +20378,10 @@
+@@ -20224,7 +20406,10 @@
      /// FIRST_VALUE(x ORDER BY 1,2,3);
      /// FIRST_VALUE(x IGNORE NULL);
      /// ```
@@ -834,7 +910,7 @@
          let mut clauses = vec![];
  
          // Handle clauses that may exist with an empty argument list
-@@ -20261,7 +20418,7 @@
+@@ -20261,7 +20446,7 @@
              clauses.push(FunctionArgumentClause::Where(self.parse_expr()?));
          }
  
@@ -843,7 +919,7 @@
              if let Some(null_treatment) = self.parse_null_treatment()? {
                  clauses.push(FunctionArgumentClause::IgnoreOrRespectNulls(null_treatment));
              }
-@@ -20293,10 +20450,16 @@
+@@ -20293,10 +20478,16 @@
              )))
          }
  
@@ -862,7 +938,17 @@
          }
  
          if let Some(on_overflow) = self.parse_listagg_on_overflow()? {
-@@ -20513,7 +20676,14 @@
+@@ -20321,7 +20512,8 @@
+         })
+     }
+ 
+-    fn parse_json_null_clause(&mut self) -> Option<JsonNullClause> {
++    /// Parse the optional constructor policy for SQL null values.
++    pub fn parse_json_null_clause(&mut self) -> Option<JsonNullClause> {
+         if self.parse_keywords(&[Keyword::ABSENT, Keyword::ON, Keyword::NULL]) {
+             Some(JsonNullClause::AbsentOnNull)
+         } else if self.parse_keywords(&[Keyword::NULL, Keyword::ON, Keyword::NULL]) {
+@@ -20513,7 +20705,14 @@
      pub fn parse_optional_select_item_exclude(
          &mut self,
      ) -> Result<Option<ExcludeSelectItem>, ParserError> {
@@ -878,7 +964,7 @@
              if self.consume_token(&Token::LParen) {
                  let columns =
                      self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
-@@ -20966,6 +21136,9 @@
+@@ -20966,6 +21165,9 @@
          allow_empty: bool,
          value_keyword: bool,
      ) -> Result<Values, ParserError> {
@@ -911,6 +997,24 @@
              LimitClause::OffsetCommaLimit { offset, limit } => offset.span().union(&limit.span()),
          }
      }
+@@ -218,7 +221,7 @@
+ 
+ /// # partial span
+ ///
+-/// [SetExpr::Table] is not implemented.
++/// [SetExpr::Table] spans its relation name.
+ impl Spanned for SetExpr {
+     fn span(&self) -> Span {
+         match self {
+@@ -232,7 +235,7 @@
+             } => left.span().union(&right.span()),
+             SetExpr::Values(values) => values.span(),
+             SetExpr::Insert(statement) => statement.span(),
+-            SetExpr::Table(_) => Span::empty(),
++            SetExpr::Table(table) => table.name.span(),
+             SetExpr::Update(statement) => statement.span(),
+             SetExpr::Delete(statement) => statement.span(),
+             SetExpr::Merge(statement) => statement.span(),
 @@ -912,6 +915,7 @@
              ColumnOption::Policy(..) => Span::empty(),
              ColumnOption::Tags(..) => Span::empty(),
@@ -945,11 +1049,15 @@
              Expr::TypedString(TypedString { value, .. }) => value.span(),
              Expr::Function(function) => function.span(),
              Expr::GroupingSets(vec) => {
-@@ -1829,12 +1836,16 @@
+@@ -1829,12 +1836,20 @@
                      .chain(iter::once(end_token.0.span)),
              ),
              Expr::Exists { subquery, .. } => subquery.span(),
 +            Expr::RowConstructor { span, .. }
++            | Expr::Unique { span, .. }
++            | Expr::TranslateUsing { span, .. }
++            | Expr::JsonObject { span, .. }
++            | Expr::FormatJson { span, .. }
 +            | Expr::WildcardExclusion { span, .. }
 +            | Expr::MapQuery { span, .. } => *span,
              Expr::Subquery(query) => query.span(),
@@ -962,7 +1070,7 @@
              Expr::Wildcard(token) => token.0.span,
              Expr::QualifiedWildcard(object_name, token) => union_spans(
                  object_name
-@@ -2131,6 +2142,7 @@
+@@ -2131,6 +2146,7 @@
                  alias,
                  args: _,
                  with_hints: _,
@@ -970,7 +1078,7 @@
                  version: _,
                  with_ordinality: _,
                  partitions: _,
-@@ -2142,6 +2154,7 @@
+@@ -2142,6 +2158,7 @@
                  name.0
                      .iter()
                      .map(|i| i.span())
@@ -978,7 +1086,7 @@
                      .chain(alias.as_ref().map(|alias| {
                          union_spans(
                              iter::once(alias.name.span)
-@@ -2209,6 +2222,15 @@
+@@ -2209,6 +2226,15 @@
                      .chain(default_on_null.as_ref().map(|i| i.span()))
                      .chain(alias.as_ref().map(|i| i.span())),
              ),
@@ -994,7 +1102,7 @@
              TableFactor::Unpivot {
                  table,
                  value,
-@@ -2365,6 +2387,7 @@
+@@ -2365,6 +2391,7 @@
  impl Spanned for FunctionArgExpr {
      fn span(&self) -> Span {
          match self {
@@ -1002,18 +1110,18 @@
              FunctionArgExpr::Expr(expr) => expr.span(),
              FunctionArgExpr::QualifiedWildcard(object_name) => {
                  union_spans(object_name.0.iter().map(|i| i.span()))
-@@ -2441,6 +2464,10 @@
-             JoinOperator::CrossApply => Span::empty(),
-             JoinOperator::OuterApply => Span::empty(),
+@@ -2443,6 +2470,10 @@
              JoinOperator::AsOf {
-+                match_condition,
-+                constraint,
-+            }
-+            | JoinOperator::LeftAsOf {
                  match_condition,
                  constraint,
++            }
++            | JoinOperator::LeftAsOf {
++                match_condition,
++                constraint,
              } => match_condition.span().union(&constraint.span()),
-@@ -2600,6 +2627,15 @@
+             JoinOperator::Anti(join_constraint) => join_constraint.span(),
+             JoinOperator::Semi(join_constraint) => join_constraint.span(),
+@@ -2600,6 +2631,15 @@
              UpdateTableFromKind::AfterSet(from) => from,
          };
          union_spans(from.iter().map(|t| t.span()))
@@ -1029,7 +1137,7 @@
      }
  }
  
-@@ -2609,6 +2645,9 @@
+@@ -2609,6 +2649,9 @@
              TableObject::TableName(ObjectName(segments)) => {
                  union_spans(segments.iter().map(|i| i.span()))
              }
@@ -1039,7 +1147,7 @@
              TableObject::TableFunction(func) => func.span(),
              TableObject::TableQuery(query) => query.span(),
          }
-@@ -2673,6 +2712,7 @@
+@@ -2673,6 +2716,7 @@
      fn span(&self) -> Span {
          union_spans(
              core::iter::once(self.name.span())
@@ -1220,7 +1328,36 @@
  // Licensed to the Apache Software Foundation (ASF) under one
  // or more contributor license agreements.  See the NOTICE file
  // distributed with this work for additional information
-@@ -589,7 +590,7 @@
+@@ -298,24 +299,14 @@
+ /// A [`TABLE` command](https://www.postgresql.org/docs/current/sql-select.html#SQL-TABLE)
+ #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+ pub struct Table {
+-    /// Optional table name (absent for e.g. `TABLE` command without argument).
+-    pub table_name: Option<Ident>,
+-    /// Optional schema/catalog name qualifying the table.
+-    pub schema_name: Option<Ident>,
++    /// The complete qualified name following TABLE.
++    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
++    pub name: ObjectName,
+ }
+ 
+ impl fmt::Display for Table {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+-        if let Some(ref table_name) = self.table_name {
+-            if let Some(ref schema_name) = self.schema_name {
+-                write!(f, "TABLE {}.{}", schema_name, table_name,)?;
+-            } else {
+-                write!(f, "TABLE {}", table_name)?;
+-            }
+-        } else {
+-            write!(f, "TABLE")?;
+-        }
+-        Ok(())
++        write!(f, "TABLE {}", self.name)
+     }
+ }
+ 
+@@ -589,7 +580,7 @@
              clause.fmt(f)?;
          }
          match &self.group_by {
@@ -1229,7 +1366,7 @@
                  SpaceOrNewline.fmt(f)?;
                  self.group_by.fmt(f)?;
              }
-@@ -1313,6 +1314,27 @@
+@@ -1313,6 +1304,27 @@
      pub expr: Expr,
      /// Optional alias for the expression.
      pub alias: Option<Ident>,
@@ -1257,7 +1394,7 @@
  }
  
  impl fmt::Display for ExprWithAlias {
-@@ -1516,6 +1538,8 @@
+@@ -1516,6 +1528,8 @@
          args: Option<TableFunctionArgs>,
          /// MSSQL-specific `WITH (...)` hints such as NOLOCK.
          with_hints: Vec<Expr>,
@@ -1266,10 +1403,12 @@
          /// Optional version qualifier to facilitate table time-travel, as
          /// supported by BigQuery and MSSQL.
          version: Option<TableVersion>,
-@@ -1693,6 +1717,23 @@
+@@ -1691,6 +1705,23 @@
+         /// Whether to include or exclude NULLs during unpivot.
+         null_inclusion: Option<NullInclusion>,
          /// Optional alias for the resulting table.
-         alias: Option<TableAlias>,
-     },
++        alias: Option<TableAlias>,
++    },
 +    /// UNPIVOT with grouped measure and axis columns.
 +    GroupedUnpivot {
 +        /// Input relation.
@@ -1285,12 +1424,10 @@
 +        /// End of the UNPIVOT clause before the optional alias.
 +        closing_token: AttachedToken,
 +        /// Result relation alias.
-+        alias: Option<TableAlias>,
-+    },
+         alias: Option<TableAlias>,
+     },
      /// Object unpivoting on a SUPER expression in the FROM clause.
-     ///
-     /// Syntax:
-@@ -2262,6 +2303,7 @@
+@@ -2262,6 +2293,7 @@
                  alias,
                  args,
                  with_hints,
@@ -1298,7 +1435,7 @@
                  version,
                  partitions,
                  with_ordinality,
-@@ -2280,6 +2322,9 @@
+@@ -2280,6 +2312,9 @@
                      Some(TableInheritance::IncludeDescendants) => write!(f, "{name} *")?,
                      None => name.fmt(f)?,
                  }
@@ -1308,17 +1445,17 @@
                  if let Some(json_path) = json_path {
                      json_path.fmt(f)?;
                  }
-@@ -2300,6 +2345,9 @@
+@@ -2299,6 +2334,9 @@
+                 }
                  if *with_ordinality {
                      write!(f, " WITH ORDINALITY")?;
-                 }
++                }
 +                if let Some(version @ TableVersion::ForSystemTimeAsOf(_)) = version {
 +                    write!(f, " {version}")?;
-+                }
+                 }
                  if let Some(TableSampleKind::BeforeTableAlias(sample)) = sample {
                      write!(f, " {sample}")?;
-                 }
-@@ -2312,7 +2360,10 @@
+@@ -2312,7 +2350,10 @@
                  if !with_hints.is_empty() {
                      write!(f, " WITH ({})", display_comma_separated(with_hints))?;
                  }
@@ -1330,7 +1467,7 @@
                      write!(f, " {version}")?;
                  }
                  if let Some(TableSampleKind::AfterTableAlias(sample)) = sample {
-@@ -2483,6 +2534,31 @@
+@@ -2483,6 +2524,31 @@
                      "({} FOR {} IN ({}))",
                      value,
                      name,
@@ -1362,50 +1499,50 @@
                      display_comma_separated(columns)
                  )?;
                  if let Some(alias) = alias {
-@@ -2858,6 +2934,14 @@
-                 constraint,
-             } => f.write_fmt(format_args!(
-                 "ASOF JOIN {} MATCH_CONDITION ({match_condition}){}",
-+                self.relation,
-+                suffix(constraint)
-+            )),
+@@ -2861,6 +2927,14 @@
+                 self.relation,
+                 suffix(constraint)
+             )),
 +            JoinOperator::LeftAsOf {
 +                match_condition,
 +                constraint,
 +            } => f.write_fmt(format_args!(
 +                "LEFT ASOF JOIN {} MATCH_CONDITION ({match_condition}){}",
++                self.relation,
++                suffix(constraint)
++            )),
+             JoinOperator::StraightJoin(constraint) => f.write_fmt(format_args!(
+                 "STRAIGHT_JOIN {}{}",
                  self.relation,
-                 suffix(constraint)
-             )),
-@@ -2923,6 +3007,13 @@
+@@ -2921,6 +2995,13 @@
+         /// Condition used to match records in the `ASOF` join.
+         match_condition: Expr,
          /// Additional constraint applied to the `ASOF` join.
-         constraint: JoinConstraint,
-     },
++        constraint: JoinConstraint,
++    },
 +    /// A left-preserving ASOF join, distinct from the inner ASOF form.
 +    LeftAsOf {
 +        /// Condition choosing the nearest matching row.
 +        match_condition: Expr,
 +        /// Equality or other additional ON constraint.
-+        constraint: JoinConstraint,
-+    },
+         constraint: JoinConstraint,
+     },
      /// `STRAIGHT_JOIN` (MySQL non-standard behavior)
-     ///
-     /// See <https://dev.mysql.com/doc/refman/8.4/en/join.html>.
-@@ -3189,6 +3280,13 @@
+@@ -3188,6 +3269,13 @@
+         offset: Expr,
          /// The limit expression.
          limit: Expr,
-     },
++    },
 +    /// LIMIT offset, ALL.
 +    OffsetCommaAll {
 +        /// Number of rows skipped.
 +        offset: Expr,
 +        /// Location of the ALL keyword.
 +        all: AttachedToken,
-+    },
+     },
  }
  
- impl fmt::Display for LimitClause {
-@@ -3213,6 +3311,9 @@
+@@ -3213,6 +3301,9 @@
              }
              LimitClause::OffsetCommaLimit { offset, limit } => {
                  write!(f, " LIMIT {offset}, {limit}")
@@ -1415,7 +1552,7 @@
              }
          }
      }
-@@ -3873,6 +3974,8 @@
+@@ -3873,6 +3964,8 @@
  /// Represents the two syntactic forms that `GROUP BY` can take, including
  /// `GROUP BY ALL` with optional modifiers and ordinary `GROUP BY <exprs>`.
  pub enum GroupByExpr {
@@ -1424,7 +1561,7 @@
      /// ALL syntax of [Snowflake], [DuckDB] and [ClickHouse].
      ///
      /// [Snowflake]: <https://docs.snowflake.com/en/sql-reference/constructs/group-by#label-group-by-all-columns>
-@@ -3890,6 +3993,13 @@
+@@ -3890,6 +3983,13 @@
  impl fmt::Display for GroupByExpr {
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
@@ -1534,12 +1671,10 @@
                  if let Some(leading_field) = &self.leading_field {
                      write!(f, " {leading_field}")?;
                  }
-@@ -596,6 +604,17 @@
-             }
-         }
+@@ -598,6 +606,17 @@
      }
-+}
-+
+ }
+ 
 +#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 +#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -1549,9 +1684,11 @@
 +    Symmetric,
 +    /// Preserve the given ordering of the bounds.
 +    Asymmetric,
- }
- 
++}
++
  /// A field definition within a struct
+ ///
+ /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#struct_type
 @@ -609,6 +628,12 @@
      pub field_name: Option<Ident>,
      /// The field data type.
@@ -1613,7 +1750,31 @@
      }
  }
  
-@@ -1045,6 +1091,8 @@
+@@ -925,6 +971,23 @@
+                 Ok(())
+             }
+         }
++    }
++}
++
++/// One name/value pair in a SQL/JSON object constructor.
++#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub struct JsonObjectEntry {
++    /// Expression that supplies the member name.
++    pub key: Expr,
++    /// Expression that supplies the member value.
++    pub value: Expr,
++}
++
++impl fmt::Display for JsonObjectEntry {
++    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++        write!(f, "KEY {} VALUE {}", self.key, self.value)
+     }
+ }
+ 
+@@ -1045,6 +1108,8 @@
      },
      /// `<expr> [ NOT ] BETWEEN <low> AND <high>`
      Between {
@@ -1622,7 +1783,7 @@
          /// Expression being compared.
          expr: Box<Expr>,
          /// `true` when the `NOT` modifier is present.
-@@ -1292,6 +1340,10 @@
+@@ -1292,6 +1357,10 @@
      Nested(Box<Expr>),
      /// A literal value, such as string, number, date or NULL
      Value(ValueWithSpan),
@@ -1633,7 +1794,45 @@
      /// Prefixed expression, e.g. introducer strings, projection prefix
      /// <https://dev.mysql.com/doc/refman/8.0/en/charset-introducer.html>
      /// <https://docs.snowflake.com/en/sql-reference/constructs/connect-by>
-@@ -1336,6 +1388,29 @@
+@@ -1332,10 +1401,67 @@
+         subquery: Box<Query>,
+         /// Whether the `EXISTS` is negated (`NOT EXISTS`).
+         negated: bool,
++    },
++    /// Prefix uniqueness predicate over a row or query expression.
++    Unique {
++        /// Operand of the predicate.
++        expr: Box<Expr>,
++        /// Range from UNIQUE through its operand.
++        span: Span,
+     },
++    /// Translate a character expression using a named character set.
++    TranslateUsing {
++        /// Expression to translate.
++        expr: Box<Expr>,
++        /// Character set after USING.
++        charset: Ident,
++        /// Complete range of the call.
++        span: Span,
++    },
++    /// SQL/JSON object constructor with ordered name/value pairs.
++    JsonObject {
++        /// Key and value expressions in source order.
++        entries: Vec<JsonObjectEntry>,
++        /// Explicit treatment of SQL NULL values.
++        null_clause: Option<JsonNullClause>,
++        /// Range of the whole call.
++        span: Span,
++    },
++    /// A postfix FORMAT JSON clause applied to an expression.
++    FormatJson {
++        /// SQL expression carrying JSON.
++        expr: Box<Expr>,
++        /// Explicit UTF encoding, when supplied.
++        encoding: Option<Ident>,
++        /// Range through the end of the representation clause.
++        span: Span,
++    },
      /// A parenthesized subquery `(SELECT ...)`, used in expression like
      /// `SELECT (subquery) AS x` or `WHERE (subquery) = x`
      Subquery(Box<Query>),
@@ -1663,7 +1862,7 @@
      /// The `GROUPING SETS` expr.
      GroupingSets(Vec<Vec<Expr>>),
      /// The `CUBE` expr.
-@@ -1390,6 +1465,13 @@
+@@ -1390,6 +1516,13 @@
      Array(Array),
      /// An interval expression e.g. `INTERVAL '1' YEAR`
      Interval(Interval),
@@ -1677,7 +1876,7 @@
      /// `MySQL` specific text search function [(1)].
      ///
      /// Syntax:
-@@ -1852,15 +1934,21 @@
+@@ -1852,15 +1985,21 @@
                  target
              ),
              Expr::Between {
@@ -1700,7 +1899,7 @@
                  low,
                  high
              ),
-@@ -2113,7 +2201,37 @@
+@@ -2113,7 +2252,37 @@
              Expr::Collate { expr, collation } => write!(f, "{expr} COLLATE {collation}"),
              Expr::Nested(ast) => write!(f, "({ast})"),
              Expr::Value(v) => write!(f, "{v}"),
@@ -1739,10 +1938,35 @@
              Expr::TypedString(ts) => ts.fmt(f),
              Expr::Function(fun) => fun.fmt(f),
              Expr::Case {
-@@ -2148,13 +2266,32 @@
+@@ -2148,13 +2317,57 @@
                  subquery
              ),
              Expr::Subquery(s) => write!(f, "({s})"),
++            Expr::Unique { expr, .. } => write!(f, "UNIQUE {expr}"),
++            Expr::TranslateUsing { expr, charset, .. } => {
++                write!(f, "TRANSLATE({expr} USING {charset})")
++            }
++            Expr::JsonObject {
++                entries,
++                null_clause,
++                ..
++            } => {
++                write!(f, "JSON_OBJECT({}", display_comma_separated(entries))?;
++                if let Some(clause) = null_clause {
++                    if !entries.is_empty() {
++                        write!(f, " ")?;
++                    }
++                    write!(f, "{clause}")?;
++                }
++                write!(f, ")")
++            }
++            Expr::FormatJson { expr, encoding, .. } => {
++                write!(f, "{expr} FORMAT JSON")?;
++                if let Some(encoding) = encoding {
++                    write!(f, " ENCODING {encoding}")?;
++                }
++                Ok(())
++            }
 +            Expr::RowConstructor { fields, .. } => {
 +                write!(f, "ROW({})", display_comma_separated(fields))
 +            }
@@ -1773,7 +1997,7 @@
                  }
                  write!(f, ")")
              }
-@@ -2290,6 +2427,7 @@
+@@ -2290,6 +2503,7 @@
              } => {
                  write!(f, "{timestamp} AT TIME ZONE {time_zone}")
              }
@@ -1781,25 +2005,25 @@
              Expr::Interval(interval) => {
                  write!(f, "{interval}")
              }
-@@ -2413,6 +2551,9 @@
+@@ -2412,6 +2626,9 @@
+                 )?;
              } else {
                  write!(f, "{} {}", window_frame.units, window_frame.start_bound)?;
-             }
++            }
 +            if let Some(exclusion) = window_frame.exclusion {
 +                write!(f, " {exclusion}")?;
-+            }
+             }
          }
          Ok(())
-     }
-@@ -2435,9 +2576,36 @@
+@@ -2435,9 +2652,36 @@
      /// indicates the shorthand form (e.g. `ROWS 1 PRECEDING`), which must
      /// behave the same as `end_bound = WindowFrameBound::CurrentRow`.
      pub end_bound: Option<WindowFrameBound>,
 -    // TBD: EXCLUDE
 +    /// Rows excluded after computing the frame bounds.
 +    pub exclusion: Option<WindowFrameExclusion>,
- }
- 
++}
++
 +/// An explicit SQL window frame exclusion.
 +#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -1813,8 +2037,8 @@
 +    Ties,
 +    /// Keep every row in the frame.
 +    NoOthers,
-+}
-+
+ }
+ 
 +impl fmt::Display for WindowFrameExclusion {
 +    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 +        f.write_str(match self {
@@ -1829,7 +2053,7 @@
  impl Default for WindowFrame {
      /// Returns default value for window frame
      ///
-@@ -2447,6 +2615,7 @@
+@@ -2447,6 +2691,7 @@
              units: WindowFrameUnits::Range,
              start_bound: WindowFrameBound::Preceding(None),
              end_bound: None,
@@ -1837,7 +2061,7 @@
          }
      }
  }
-@@ -8121,6 +8290,14 @@
+@@ -8121,6 +8366,14 @@
  #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
  /// Expression forms allowed as a function argument.
  pub enum FunctionArgExpr {
@@ -1852,7 +2076,7 @@
      /// A normal expression argument.
      Expr(Expr),
      /// Qualified wildcard, e.g. `alias.*` or `schema.table.*`.
-@@ -8146,6 +8323,7 @@
+@@ -8146,6 +8399,7 @@
  impl fmt::Display for FunctionArgExpr {
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
@@ -1860,7 +2084,7 @@
              FunctionArgExpr::Expr(expr) => write!(f, "{expr}"),
              FunctionArgExpr::QualifiedWildcard(prefix) => write!(f, "{prefix}.*"),
              FunctionArgExpr::Wildcard => f.write_str("*"),
-@@ -8529,7 +8707,7 @@
+@@ -8529,7 +8783,7 @@
      /// The `SEPARATOR` clause to the [`GROUP_CONCAT`] function in MySQL.
      ///
      /// [`GROUP_CONCAT`]: https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html#function_group-concat
@@ -1869,10 +2093,11 @@
      /// The `ON NULL` clause for some JSON functions.
      ///
      /// [MSSQL `JSON_ARRAY`](https://learn.microsoft.com/en-us/sql/t-sql/functions/json-array-transact-sql?view=sql-server-ver16)
-@@ -11403,6 +11581,15 @@
+@@ -11402,6 +11656,15 @@
+     /// INSERT INTO my_table
      /// ```
      TableName(#[cfg_attr(feature = "visitor", visit(with = "visit_relation"))] ObjectName),
- 
++
 +    /// A named INSERT target with structured SQL optimizer hints.
 +    HintedTableName {
 +        /// Target relation.
@@ -1881,11 +2106,10 @@
 +        /// Hints following the target name.
 +        hints: Vec<OptimizerHint>,
 +    },
-+
+ 
      /// Table specified as a function.
      /// Example:
-     /// ```sql
-@@ -11426,6 +11613,13 @@
+@@ -11426,6 +11689,13 @@
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
              Self::TableName(table_name) => write!(f, "{table_name}"),
@@ -1899,7 +2123,7 @@
              Self::TableFunction(func) => write!(f, "FUNCTION {func}"),
              Self::TableQuery(table_query) => write!(f, "({table_query})"),
          }
-@@ -12451,23 +12645,127 @@
+@@ -12451,23 +12721,127 @@
  #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
  #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
  #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2042,7 +2266,7 @@
  /// The commentary style of an [optimizer hint](OptimizerHint)
  #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
  #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-@@ -12485,22 +12783,21 @@
+@@ -12485,22 +12859,21 @@
  }
  
  impl fmt::Display for OptimizerHint {
@@ -2054,18 +2278,18 @@
 -                f.write_str("+")?;
 -                f.write_str(&self.text)?;
 -                f.write_str("\n")
-+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-+        match self {
-+            Self::Structured { hints, .. } => {
-+                write!(f, "/*+ {} */", display_comma_separated(hints))
-             }
+-            }
 -            OptimizerHintStyle::MultiLine => {
 -                f.write_str("/*")?;
 -                f.write_str(&self.prefix)?;
 -                f.write_str("+")?;
 -                f.write_str(&self.text)?;
 -                f.write_str("*/")
--            }
++    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++        match self {
++            Self::Structured { hints, .. } => {
++                write!(f, "/*+ {} */", display_comma_separated(hints))
+             }
 +            Self::Raw {
 +                prefix,
 +                text,
@@ -2240,18 +2464,18 @@
  
  #[cfg(not(feature = "std"))]
  use alloc::boxed::Box;
-@@ -636,6 +637,11 @@
-     /// ```
-     fn supports_window_function_null_treatment_arg(&self) -> bool {
+@@ -638,6 +639,11 @@
          false
-+    }
-+
+     }
+ 
 +    /// Whether this named function accepts IGNORE or RESPECT NULLS inside its argument list.
 +    fn supports_inline_null_treatment_for(&self, _name: &[ObjectNamePart]) -> bool {
 +        self.supports_window_function_null_treatment_arg()
-     }
- 
++    }
++
      /// Returns true if the dialect supports defining structs or objects using a
+     /// syntax like `{'x': 1, 'y': 2, 'z': 3}`.
+     fn supports_dictionary_syntax(&self) -> bool {
 @@ -753,7 +759,37 @@
          false
      }
@@ -2291,12 +2515,20 @@
      fn supports_limit_comma(&self) -> bool {
          false
      }
-@@ -926,6 +962,39 @@
+@@ -926,6 +962,47 @@
          false
      }
  
 +    /// Override one join clause without replacing table-factor parsing.
 +    fn parse_join(&self, _parser: &mut Parser) -> Option<Result<crate::ast::Join, ParserError>> {
++        None
++    }
++
++    /// Parse the relation name of an explicit TABLE query after its keyword.
++    fn parse_explicit_table_name(
++        &self,
++        _parser: &mut Parser,
++    ) -> Option<Result<crate::ast::ObjectName, ParserError>> {
 +        None
 +    }
 +
@@ -2331,7 +2563,7 @@
      /// Dialect-specific infix parser override
      ///
      /// This method is called to parse the next infix expression.
-@@ -1126,11 +1195,25 @@
+@@ -1126,11 +1203,25 @@
          None
      }
  
@@ -2357,13 +2589,10 @@
      /// Dialect-specific column option parser override
      ///
      /// This method is called to parse the next column option.
-@@ -1443,6 +1526,27 @@
+@@ -1446,6 +1537,27 @@
+         false
+     }
  
-     /// Returns true if the dialect supports `<<` and `>>` shift operators.
-     fn supports_bitwise_shift_operators(&self) -> bool {
-+        false
-+    }
-+
 +    /// Treat `/*+ ... */` as SQL hint syntax. Strings and ordinary comments
 +    /// inside the hint do not terminate its outer delimiter.
 +    fn supports_sql_hint_comments(&self) -> bool {
@@ -2382,10 +2611,13 @@
 +
 +    /// Whether two consecutive slashes start a line comment.
 +    fn supports_slash_line_comments(&self) -> bool {
-         false
-     }
- 
-@@ -1765,8 +1869,28 @@
++        false
++    }
++
+     /// Returns true if the dialect supports nested comments
+     /// e.g. `/* /* nested */ */`
+     fn supports_nested_comments(&self) -> bool {
+@@ -1765,8 +1877,38 @@
      /// [SQLite](https://www.sqlite.org/lang_keywords.html)
      fn supports_string_literal_table_alias(&self, _explicit: bool) -> bool {
          true
@@ -2396,11 +2628,21 @@
 +        false
 +    }
 +
-+    /// Whether the named aggregate accepts a SEPARATOR argument clause.
-+    fn supports_function_separator(&self, _name: &[ObjectNamePart]) -> bool {
++    /// Allow a qualified wildcard as a scalar operand.
++    fn supports_qualified_wildcard_operand(&self) -> bool {
 +        false
      }
  
++    /// Allow an expression to be marked as JSON with optional UTF encoding.
++    fn supports_format_json(&self) -> bool {
++        false
++    }
++
++    /// Whether the named aggregate accepts a SEPARATOR argument clause.
++    fn supports_function_separator(&self, _name: &[ObjectNamePart]) -> bool {
++        false
++    }
++
 +    /// Whether a table factor accepts the SQL system-time snapshot clause.
 +    fn supports_system_time_as_of(&self) -> bool {
 +        self.supports_table_versioning()
@@ -2414,15 +2656,15 @@
      /// Returns true if this dialect supports querying historical table data
      /// by specifying which version of the data to query.
      fn supports_table_versioning(&self) -> bool {
-@@ -1780,6 +1904,11 @@
-         false
-     }
- 
-+    /// Preserve the backslash in unknown E-string escapes, as Calcite does.
-+    fn preserves_unknown_string_escapes(&self) -> bool {
+@@ -1777,6 +1919,11 @@
+     ///
+     /// Postgres: <https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-STRINGS-ESCAPE>
+     fn supports_string_escape_constant(&self) -> bool {
 +        false
 +    }
 +
-     /// Returns true if the dialect supports the table hints in the `FROM` clause.
-     fn supports_table_hints(&self) -> bool {
++    /// Preserve the backslash in unknown E-string escapes, as Calcite does.
++    fn preserves_unknown_string_escapes(&self) -> bool {
          false
+     }
+ 

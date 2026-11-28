@@ -330,7 +330,7 @@ mod tests {
     use sqlparser_064::ast::SetExpr;
 
     fn statements(sql: &str) -> Vec<super::super::statements::Statement> {
-        super::super::statements::parse(super::super::unicode::tokens(sql).unwrap()).unwrap()
+        crate::parse(sql).unwrap()
     }
 
     fn contents(hint: &OptimizerHint) -> &[SqlHint] {

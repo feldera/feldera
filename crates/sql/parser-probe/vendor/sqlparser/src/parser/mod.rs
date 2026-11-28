@@ -16700,19 +16700,14 @@ impl<'a> Parser<'a> {
 
     /// Parse `CREATE TABLE x AS TABLE y`
     pub fn parse_as_table(&mut self) -> Result<Table, ParserError> {
-        let first_name = self.parse_identifier()?;
-        if self.consume_token(&Token::Period) {
-            let second_name = self.parse_identifier()?;
-            Ok(Table {
-                table_name: Some(second_name),
-                schema_name: Some(first_name),
-            })
-        } else {
-            Ok(Table {
-                table_name: Some(first_name),
-                schema_name: None,
-            })
+        if let Some(name) = self.dialect.parse_explicit_table_name(self) {
+            return name.map(|name| Table { name });
         }
+        let mut parts = vec![self.parse_identifier()?];
+        if self.consume_token(&Token::Period) {
+            parts.push(self.parse_identifier()?);
+        }
+        Ok(Table { name: ObjectName::from(parts) })
     }
 
     /// Parse a `SET ROLE` statement. Expects SET to be consumed already.

@@ -17,6 +17,9 @@ The Feldera parser adds dialect extension points, type visitor hooks and additio
 - `JoinOperator::LeftAsOf` retains left-preserving semantics separately from
   the existing inner ASOF node. `FunctionArgExpr::Table` retains a relational
   argument, its qualified name and its source span. Visitors traverse both.
+- The explicit `TABLE` query carries its complete relation name. The Feldera
+  dialect reads compound identifiers and qualified wildcards through the same
+  grammar as relational function arguments and plan inspection.
 - `CreateView::local` retains Feldera LOCAL semantics and the modifier span. The
   adapter recognizes the exact CREATE [OR REPLACE] LOCAL VIEW prefix before the
   upstream parser can drop it; Display retains the LOCAL keyword. Stock parsing
@@ -67,6 +70,13 @@ pinned Calcite reader recovers the original scalar. MAP subqueries and inline
 foreign keys have dedicated AST forms and source ranges. The parser also
 retains aliases on ROW fields, compound column names in wildcard exclusions,
 nested grouping sets, and the measure, axis, and mapping lists of UNPIVOT.
+
+Four expression forms retain their source ranges: the UNIQUE predicate,
+`TRANSLATE(value USING charset)`, the SQL/JSON object constructor with its
+ordered entries and null clause, and the postfix `FORMAT JSON` clause with its
+optional encoding. Two dialect capabilities, off in stock dialects, permit a
+qualified wildcard as a scalar operand and the `FORMAT JSON` clause.
+`Parser::parse_json_null_clause` is public so that the adapter can call it.
 
 The join and TABLE-argument grammar lives in `crates/sql/sql-parser/src/relations.rs`; VALUES
 grammar lives in `crates/sql/sql-parser/src/values.rs`. The adapter requires both

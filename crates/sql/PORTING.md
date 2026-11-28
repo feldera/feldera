@@ -136,11 +136,14 @@ SQL. In the full semantic run the current Java build failed on the *original*
 comparisons passed. All 8,571 cases passed both semantic comparison and strict typed S1 comparison
 in a separate run that placed the P0 archived `FelderaTypeCoercion` class first on the same classpath.
 That class overrides inferred column nullability. The current build omits the
-override. The run retains both original failures. A subsequent parser run covered
-UNIQUE predicates, TRANSLATE character sets, JSON_OBJECT key/value pairs, and
-FORMAT JSON encodings. Java parsed the formatted SQL into equivalent ASTs for
-all 8,571 frozen programs and 1,059 of 2,136 adversarial grammar cases.
-Rust rejected all 1,061 Java rejections and refused 16 additional Java acceptances.
+override. The run retains both original failures. The parser also covers
+UNIQUE predicates, TRANSLATE character sets, JSON_OBJECT entries, FORMAT JSON
+encodings, EXPLAIN PLAN, DESCRIBE and qualified TABLE operands. Java parsed the
+formatted SQL into equivalent ASTs for all 8,571 frozen programs and 1,063 of
+2,136 adversarial grammar cases. Rust rejected all 1,061 Java rejections and
+refused 12 additional Java acceptances. A separate 1,386-case comparison of
+plan options, nested query and DML syntax, table names and keyword lookahead
+matched Java on every verdict and on the ASTs of all 721 accepted cases.
 Against the product compiler, 766 of the shared rejections matched severity,
 error class, start and snippet together. The remaining 295 are open P5a differences.
 [Diagnostic comparison](scripts/validate_syntax_diagnostics.py)
