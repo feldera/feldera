@@ -5682,6 +5682,8 @@ dependencies = [
  "feldera-fxp",
  "libm",
  "md-5 0.10.6",
+ "num-bigint 0.4.8",
+ "num-traits",
  "serde",
  "serde_json",
 ]

@@ -243,12 +243,16 @@ decimal, floating-point, temporal, UUID and VARIANT types. Each matched Java
 at S2 and through Gen-2 emission.
 
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 206 of 8,571 programs. All 206 matched Java compilation
+Gen-2 options. Rust bound 460 of 8,571 programs. All 460 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 151
-to S2. Of those, 149 checkpoints matched previously verified bytes and two
-matched a fresh Java lowering and resumed in the Java optimizer.
-The remaining 8,365 programs still need whole-program binding.
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 405
+to S2. Each checkpoint reproduced bytes previously compared with Java lowering.
+The remaining 8,111 programs still need whole-program binding.
+
+Four directed constant views exercise nine unary trigonometric functions with
+exact numeric, explicitly approximate and NULL operands. All four matched Java
+binding, independent S2 lowering and Gen-2 emission. The legacy folding profile
+uses the ARM64 HotSpot results for sine and cosine.
 
 The binder expands qualified and overlapping wildcards in projection order.
 It preserves repeated SELECT aliases in the validated row and assigns unique

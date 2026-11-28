@@ -105,7 +105,7 @@ pub(super) fn projection(
                     key: ABS_KEY,
                     arguments: vec![TableOperand::Column(input)],
                     ty,
-                    position: Some(tokens.end_at_call_close(expression.span(), source.span())?),
+                    position: Some(tokens.call_position(function.name.span(), 0)?),
                 },
                 format!("ABS({pretty})"),
                 format!("ABS({diagnostic})"),

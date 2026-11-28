@@ -3,31 +3,50 @@
 
 use crate::model::{Refusal, Result, Value, unsupported};
 
+/// Unary trigonometric kernels shared by the fold evaluator and SQL binder.
+pub fn trigonometric_kernel(
+    name: &str,
+    profile: crate::SemanticsProfile,
+) -> Option<fn(f64) -> f64> {
+    let legacy = profile == crate::SemanticsProfile::LegacyJanino;
+    Some(match name {
+        "SIN" if legacy => crate::legacy::trigonometry::sin,
+        "COS" if legacy => crate::legacy::trigonometry::cos,
+        "SIN" => f64::sin,
+        "COS" => f64::cos,
+        "TAN" if legacy => libm::tan,
+        "TAN" => f64::tan,
+        "COT" if legacy => |n| 1.0 / libm::tan(n),
+        "COT" => |n| 1.0 / n.tan(),
+        "ASIN" if legacy => libm::asin,
+        "ACOS" if legacy => libm::acos,
+        "ATAN" if legacy => libm::atan,
+        "ASIN" => f64::asin,
+        "ACOS" => f64::acos,
+        "ATAN" => f64::atan,
+        "DEGREES" => f64::to_degrees,
+        "RADIANS" => f64::to_radians,
+        _ => return None,
+    })
+}
+
 pub(crate) fn registered(name: &str) -> bool {
-    matches!(
-        name,
-        "SIN"
-            | "COS"
-            | "TAN"
-            | "COT"
-            | "COTH"
-            | "CSCH"
-            | "SEC"
-            | "CSC"
-            | "ASIN"
-            | "ACOS"
-            | "ATAN"
-            | "ATAN2"
-            | "LN"
-            | "LOG"
-            | "LOG10"
-            | "EXP"
-            | "POWER"
-            | "DEGREES"
-            | "RADIANS"
-            | "IS_NAN"
-            | "IS_INF"
-    )
+    trigonometric_kernel(name, crate::SemanticsProfile::Runtime).is_some()
+        || matches!(
+            name,
+            "COTH"
+                | "CSCH"
+                | "SEC"
+                | "CSC"
+                | "ATAN2"
+                | "LN"
+                | "LOG"
+                | "LOG10"
+                | "EXP"
+                | "POWER"
+                | "IS_NAN"
+                | "IS_INF"
+        )
 }
 
 fn number(value: &Value) -> Result<f64> {
@@ -50,32 +69,26 @@ pub(crate) fn evaluate(
             match name {
                 "IS_NAN" => return Ok(Value::Bool(n.is_nan())),
                 "IS_INF" => return Ok(Value::Bool(n.is_infinite())),
-                "SIN" => n.sin(),
-                "COS" => n.cos(),
-                "TAN" if profile == crate::SemanticsProfile::LegacyJanino => libm::tan(n),
-                "TAN" => n.tan(),
-                "COT" => 1.0 / n.tan(),
                 "COTH" => 1.0 / n.tanh(),
                 "CSCH" => 1.0 / n.sinh(),
                 "SEC" => 1.0 / n.cos(),
                 "CSC" => 1.0 / n.sin(),
-                "ASIN" => n.asin(),
-                "ACOS" => n.acos(),
-                "ATAN" => n.atan(),
                 "EXP" => match profile {
                     crate::SemanticsProfile::Runtime => n.exp(),
                     crate::SemanticsProfile::LegacyExpLog
                     | crate::SemanticsProfile::LegacyJanino => libm::exp(n),
                 },
-                "DEGREES" => n.to_degrees(),
-                "RADIANS" => n.to_radians(),
                 "LN" | "LOG" | "LOG10" => {
                     if n.is_sign_negative() {
                         return Err(Refusal::RuntimeError("negative logarithm argument"));
                     }
                     if name == "LOG10" { n.log10() } else { n.ln() }
                 }
-                _ => return Err(unsupported("unary floating-point function")),
+                _ => {
+                    let kernel = trigonometric_kernel(name, profile)
+                        .ok_or_else(|| unsupported("unary floating-point function"))?;
+                    kernel(n)
+                }
             }
         }
         [left, right] => {

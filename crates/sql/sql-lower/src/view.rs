@@ -332,7 +332,12 @@ pub(super) fn lower(
     if root.fields.len() != schema.columns.len() {
         return Err(Error("view column count differs from SELECT output".into()));
     }
-    if root.fields.iter().enumerate().any(|(i, f)| f.index as usize != i) {
+    if root
+        .fields
+        .iter()
+        .enumerate()
+        .any(|(i, f)| f.index as usize != i)
+    {
         return Err(Error("view fields are out of projection order".into()));
     }
     let row = program.producers.relations[root.relation as usize].row;
@@ -341,8 +346,28 @@ pub(super) fn lower(
     };
     let query_schema = stream_schema(schema, fields)?;
     let stream = match program.properties.relations[root.relation as usize].fields {
-        Properties::Values { .. } => {
-            super::values::lower(checkpoint, program, ids, &query_schema, root, source)?
+        Properties::Values { .. } => super::values::lower(
+            checkpoint,
+            program,
+            ids,
+            &query_schema,
+            root.relation,
+            source,
+        )?,
+        Properties::Project { .. }
+            if matches!(
+                program.producers.relations[root.relation as usize].inputs.as_slice(),
+                &[input] if matches!(program.properties.relations[input as usize].fields, Properties::Values { .. })
+            ) =>
+        {
+            super::projection::over_values(
+                checkpoint,
+                program,
+                ids,
+                &query_schema,
+                root.relation,
+                source,
+            )?
         }
         Properties::Set { .. } => super::set::lower(
             checkpoint,

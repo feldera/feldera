@@ -257,7 +257,7 @@ impl BoundAggregate {
                 name: output.name.name.clone(),
                 arguments,
                 filter,
-                position: tokens.simple_aggregate_position(expression.span())?,
+                position: tokens.call_position(call.name.span(), 0)?,
             });
             plan.projection.push(output);
         }

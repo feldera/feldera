@@ -26,8 +26,20 @@ NUMERIC_COLUMN_CASES = {
                      "TINYINT UNSIGNED", "SMALLINT UNSIGNED", "INT UNSIGNED", "BIGINT UNSIGNED")
 }
 
+TRIGONOMETRIC_CASES = {
+    "exact_trigonometry": "CREATE VIEW v AS SELECT SIN(-0.5), TAN(1), COS(0), ACOS(-0.75),"
+                          " ASIN(2), COT(0), ATAN(NULL), DEGREES(1), RADIANS(90);",
+    "approximate_trigonometry": "/* 🦀 */ CREATE VIEW v AS SELECT ((cos(CAST(0.25 AS DOUBLE)))) AS x,"
+                                " sin(CAST(-0.0 AS DOUBLE PRECISION)), atan(CAST(NULL AS DOUBLE));",
+    "mixed_trigonometry": "CREATE VIEW v AS SELECT COS(CAST(1 AS FLOAT8)), SIN(1),"
+                          " COS(NULL), COS(CAST(1 AS DOUBLE));",
+    "double_literal_scale": "CREATE VIEW v AS SELECT TAN(CAST(10 AS DOUBLE)),"
+                            " COS(CAST(-123 AS DOUBLE)), SIN(CAST(0.0001 AS DOUBLE));",
+}
+
 CASES = {
     **NUMERIC_COLUMN_CASES,
+    **TRIGONOMETRIC_CASES,
     "array_insert_permutation": "CREATE TABLE t(a BIGINT ARRAY,b INT);"
                                 " INSERT INTO t(b,a) VALUES(5, ARRAY[(-3),-2,0]);"
                                 " INSERT INTO t VALUES(ARRAY[9223372036854775807], 4);"

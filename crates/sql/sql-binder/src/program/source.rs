@@ -244,33 +244,41 @@ impl<'a> DeclarationTokens<'a> {
         self.coordinates(first.span.union(&last.span))
     }
 
-    pub(super) fn end_at_call_close(&self, call: Span, last: Span) -> Result<Coordinates, Failure> {
-        let index = self
+    /// Function spans in sqlparser can omit their closing delimiters. Calcite
+    /// includes the whole call as well as parentheses around the expression.
+    pub(super) fn call_position(
+        &self,
+        name: Span,
+        enclosing: usize,
+    ) -> Result<Coordinates, Failure> {
+        let name_index = self.tokens.partition_point(|t| t.span.start < name.start);
+        let first = name_index
+            .checked_sub(enclosing)
+            .ok_or_else(|| unsupported("missing parentheses around scalar call"))?;
+        if self
             .tokens
-            .partition_point(|token| token.span.start < last.end);
-        let closing = self
-            .tokens
-            .get(index)
-            .filter(|token| token.token == Token::RParen)
-            .ok_or_else(|| unsupported("missing closing parenthesis of scalar call"))?;
-        self.coordinates(Span {
-            start: call.start,
-            end: closing.span.end,
-        })
-    }
-
-    pub(super) fn simple_aggregate_position(&self, call: Span) -> Result<Coordinates, Failure> {
-        let index = self
-            .tokens
-            .partition_point(|token| token.span.start <= call.start);
-        let closing = self.tokens[index..]
-            .iter()
-            .find(|token| token.token == Token::RParen)
-            .ok_or_else(|| unsupported("missing closing parenthesis of aggregate call"))?;
-        self.coordinates(Span {
-            start: call.start,
-            end: closing.span.end,
-        })
+            .get(name_index + 1)
+            .is_none_or(|t| t.token != Token::LParen)
+            || self.tokens[first..name_index]
+                .iter()
+                .any(|t| t.token != Token::LParen)
+        {
+            return Err(unsupported("missing scalar call arguments"));
+        }
+        let mut depth = 0;
+        for (index, token) in self.tokens[first..].iter().enumerate() {
+            match token.token {
+                Token::LParen => depth += 1,
+                Token::RParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return self.token_range(&self.tokens[first..=first + index]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Err(unsupported("missing closing parenthesis of scalar call"))
     }
 
     pub(super) fn end_at_is_true(&self, operand: Span) -> Result<Coordinates, Failure> {

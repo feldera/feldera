@@ -70,6 +70,72 @@ pub(super) fn projected_fields(
     }
 }
 
+/// A constant SELECT with unreduced calls is a Project over a VALUES row.
+pub(super) fn over_values(
+    checkpoint: &mut Value,
+    program: &Program,
+    ids: &mut Ids,
+    output: &CatalogSchema,
+    root: u32,
+    source: &feldera_sql_rel_model::statements::StatementSource,
+) -> Result<super::view::Stream, Error> {
+    use feldera_sql_rel_model::catalog::{Column, Name};
+    let (input, fields) = projected_fields(program, root, output)?;
+    let fields = fields.ok_or_else(|| Error("missing projection fields".into()))?;
+    let row = program.producers.relations[input as usize].row;
+    let feldera_sql_rel_model::types::TypeKind::Row {
+        fields: columns, ..
+    } = &program.table.type_table.types[row.0 as usize].kind
+    else {
+        return Err(Error("VALUES input requires a row type".into()));
+    };
+    let input_schema = CatalogSchema {
+        columns: columns
+            .iter()
+            .enumerate()
+            .map(|(i, field)| Column {
+                name: Name {
+                    name: field.name.name.clone(),
+                    quoted: field.name.name != field.name.name.to_lowercase(),
+                },
+                index: i as u32,
+                ty: field.ty,
+                diagnostic: output.diagnostic.clone(),
+                primary_key: false,
+                unused: false,
+                lateness: None,
+                default_value: None,
+                default_position: None,
+            })
+            .collect(),
+        ..output.clone()
+    };
+    let stream = super::values::lower(checkpoint, program, ids, &input_schema, input, source)?;
+    let projection = Projection {
+        input: &input_schema,
+        output,
+        fields: &fields,
+    };
+    let id = ids.relation(root);
+    let origin = projection.relation(&stream.origin, id, ids.plan(root)?)?;
+    let generated = checkpoint["next_generated_name"]
+        .as_u64()
+        .ok_or_else(|| Error("missing generated name counter".into()))?;
+    let map = projection.map(program, ids, &stream.operator, origin.clone(), generated)?;
+    let result = super::view::Stream {
+        origin,
+        operator: map["id"].clone(),
+        output_type: reference(&map["outputType"])?,
+        relation: json!({"ref":id}),
+    };
+    checkpoint["circuit"]["allOperators"]
+        .as_array_mut()
+        .expect("system operators")
+        .push(map);
+    checkpoint["next_generated_name"] = (generated + 1).into();
+    Ok(result)
+}
+
 /// Calcite compresses the leading identity fields in its relational digest.
 fn digest(columns: &[Field], input: &str, scan: usize) -> String {
     let prefix = columns

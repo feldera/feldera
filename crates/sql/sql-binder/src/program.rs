@@ -3,6 +3,7 @@
 mod graph;
 mod insert;
 mod literal;
+mod math;
 mod names;
 mod order;
 mod source;
@@ -254,6 +255,9 @@ fn constant_operand(
         });
     }
 
+    if let Some(operand) = math::trigonometric_call(program, tokens, expr)? {
+        return Ok(operand);
+    }
     let (bound, range, warning) = super::bind_projection_value(scope, expr, expr.span(), true)?;
     if warning.is_some() {
         return Err(unsupported(

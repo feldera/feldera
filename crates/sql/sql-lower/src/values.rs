@@ -6,7 +6,7 @@ mod type_name;
 use super::{
     projection::expressions,
     source_table::{range, statement_position, stream_type, Ids, RowLayout},
-    view::{plan_id, reference, Stream},
+    view::{reference, Stream},
     Error,
 };
 use feldera_sql_rel_model::{
@@ -15,7 +15,7 @@ use feldera_sql_rel_model::{
     literals::LiteralValue,
     program::Program,
     relation_properties::Properties,
-    statements::{RelRoot, StatementSource},
+    statements::StatementSource,
     types::{FloatFlavor, Precision, SqlType, TimeZone, TypeKind},
 };
 use serde_json::{json, Value};
@@ -25,11 +25,11 @@ pub(super) fn lower(
     program: &Program,
     ids: &mut Ids,
     schema: &CatalogSchema,
-    root: &RelRoot,
+    relation_id: u32,
     source: &StatementSource,
 ) -> Result<Stream, Error> {
-    let rel = &program.properties.relations[root.relation as usize];
-    let roots = expressions(program, root.relation)?;
+    let rel = &program.properties.relations[relation_id as usize];
+    let roots = expressions(program, relation_id)?;
     let Properties::Values { tuples } = rel.fields else {
         return Err(Error("expected a VALUES relation".into()));
     };
@@ -38,7 +38,6 @@ pub(super) fn lower(
     if tuples > 1
         || !rel.metadata.traits.is_empty()
         || !rel.metadata.hints.is_empty()
-        || root.fields.len() != schema.columns.len()
         || roots.len() != expected_cells
     {
         return Err(Error("unsupported VALUES metadata".into()));
@@ -75,7 +74,7 @@ pub(super) fn lower(
             format!("SELECT *\nFROM (VALUES ({})) AS `t` ({aliases})", row.sql),
         ),
         None => {
-            let nulls = vec!["NULL"; root.fields.len()].join(", ");
+            let nulls = vec!["NULL"; schema.columns.len()].join(", ");
             (
                 vec![],
                 String::new(),
@@ -88,10 +87,10 @@ pub(super) fn lower(
     zset["data"] = data.into();
     zset["type"] = output_type.clone();
     zset["elementType"] = element_ref;
-    let relation = ids.relation(root.relation);
+    let relation = ids.relation(relation_id);
     let operator = ids.next_operator();
-    let plan = plan_id(checkpoint, &schema.name.name)?;
-    let row = program.producers.relations[root.relation as usize].row;
+    let plan = ids.plan(relation_id)?;
+    let row = program.producers.relations[relation_id as usize].row;
     let row_name = type_name::render(&program.table.type_table, row)?;
     let origin = json!({"id":relation,"relId":relation,"planId":plan,"tableScan":false,
         "digest":format!("LogicalValues.(type={row_name},tuples=[{tuples_text}])"),
@@ -296,9 +295,6 @@ fn lower_literal(
             LiteralValue::Float64 { bits },
         ) => {
             let n = f64::from_bits(*bits);
-            if !n.is_finite() {
-                return Err(Error("nonfinite VALUES double".into()));
-            }
             let mut literal = ids.generated("DBSPDoubleLiteral");
             literal["value"] = (*bits as i64).into();
             let (digest, sql) = double_spelling(n);
@@ -348,11 +344,20 @@ fn clock_text(nanos: u64, precision: u32) -> Result<(String, String), Error> {
 
 // The relational digest uses Calcite's Double spelling with an explicit
 // exponent. SQL rendering goes through its BigDecimal scientific formatter.
-fn double_spelling(n: f64) -> (String, String) {
+pub(super) fn double_spelling(n: f64) -> (String, String) {
+    if !n.is_finite() {
+        let spelling = if n.is_nan() {
+            "NaN"
+        } else if n.is_sign_negative() {
+            "-Infinity"
+        } else {
+            "Infinity"
+        };
+        return (spelling.into(), format!("CAST('{spelling}' AS DOUBLE)"));
+    }
     let scientific = format!("{n:e}");
     let (mantissa, exponent) = scientific.split_once('e').expect("scientific float");
     let exponent: i32 = exponent.parse().expect("finite float exponent");
-    let sql = format!("{mantissa}E{exponent}");
     let (mut digits, power) = if n == 0.0 || (-3..7).contains(&exponent) {
         (n.to_string(), 0)
     } else {
@@ -361,5 +366,16 @@ fn double_spelling(n: f64) -> (String, String) {
     if !digits.contains('.') {
         digits.push_str(".0");
     }
+    // Calcite normalizes BigDecimal.valueOf(double) to scientific notation.
+    // Its scale is observable: 10.0 has three significant digits, 1.00E1.
+    let sql = if n == 0.0 {
+        "0E0".into()
+    } else {
+        let decimal = digits.trim_start_matches('-').replace('.', "");
+        let (first, rest) = decimal.trim_start_matches('0').split_at(1);
+        let sign = if n < 0.0 { "-" } else { "" };
+        let point = if rest.is_empty() { "" } else { "." };
+        format!("{sign}{first}{point}{rest}E{exponent}")
+    };
     (format!("{digits}E{power}"), sql)
 }

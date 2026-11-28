@@ -1665,3 +1665,18 @@ fn overlay_preserves_character_offsets_and_refuses_incompatible_ranges() {
         ));
     }
 }
+
+#[test]
+fn legacy_trigonometry_preserves_the_java_fold_bits() {
+    use feldera_fold_probe::{SemanticsProfile, trigonometric_kernel};
+    for (name, angle, expected) in [
+        ("SIN", -47684.6543254, 13830554026030611534_u64),
+        ("COS", 0.772086721204076, 4604628485705084684),
+        ("COS", 1.2345678901234568e37, 4605872953008218190),
+        ("SIN", -8.03745686315932e26, 0x3fe77a34e4f564a5),
+        ("COS", -45221668420832.195, 0x3fe8da3d4ac6f3e2),
+    ] {
+        let kernel = trigonometric_kernel(name, SemanticsProfile::LegacyJanino).unwrap();
+        assert_eq!(kernel(angle).to_bits(), expected, "{name}({angle})");
+    }
+}

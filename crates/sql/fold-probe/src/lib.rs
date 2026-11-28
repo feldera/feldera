@@ -21,6 +21,7 @@ mod temporal;
 mod temporal_rounding;
 mod uuid;
 
+pub use math::trigonometric_kernel;
 pub use model::{Expression, Refusal, SqlType};
 pub use profile::SemanticsProfile;
 

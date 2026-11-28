@@ -1,6 +1,8 @@
 //! Bounded legacy-parser checks. These run only in the named Janino profile,
 //! and only when a cast is evaluated, preserving lazy CASE/COALESCE behavior.
 
+pub(crate) mod trigonometry;
+
 use crate::model::{Refusal, Result};
 
 pub(crate) fn check_float_spelling(text: &str) -> Result<()> {

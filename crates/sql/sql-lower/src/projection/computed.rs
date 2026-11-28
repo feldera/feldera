@@ -1,5 +1,6 @@
 //! Scalar calls over fields of a projected row.
 
+use super::field::DoubleLiteral;
 use crate::{
     closure::RowParameter,
     source_table::{range, Ids, RowLayout},
@@ -29,6 +30,10 @@ enum Call {
         symbol: &'static str,
         opcode: BinaryOp,
         reuse_left_type: bool,
+    },
+    Trigonometric {
+        name: String,
+        argument: DoubleLiteral,
     },
     Abs {
         field: usize,
@@ -100,6 +105,41 @@ impl Computed {
                         && left_type.nullable == result.nullable,
                 }
             }
+            ("calcite-s1-fixture", key, &[arg]) => {
+                let name = key
+                    .strip_prefix("SqlStdOperatorTable.")
+                    .filter(|name| {
+                        matches!(
+                            *name,
+                            "SIN"
+                                | "COS"
+                                | "TAN"
+                                | "COT"
+                                | "ASIN"
+                                | "ACOS"
+                                | "ATAN"
+                                | "DEGREES"
+                                | "RADIANS"
+                        )
+                    })
+                    .ok_or_else(|| Error("unsupported unary projection call".into()))?;
+                let argument = DoubleLiteral::resolve(program, arg)?;
+                if !matches!(
+                    result.kind,
+                    TypeKind::Float {
+                        flavor: FloatFlavor::Double
+                    }
+                ) || result.nullable != argument.is_null()
+                {
+                    return Err(Error(
+                        "trigonometric result differs from its operand type".into(),
+                    ));
+                }
+                Call::Trigonometric {
+                    name: name.into(),
+                    argument,
+                }
+            }
             ("feldera-s1-builtins", ABS_KEY, &[arg]) => {
                 let (field, input) = column(arg)?;
                 if input.kind != result.kind || input.nullable != result.nullable {
@@ -145,6 +185,7 @@ impl Computed {
                 ..
             } => format!("{symbol}(${left}, ${right})"),
             Call::Abs { field, .. } => format!("abs(${field})"),
+            Call::Trigonometric { ref name, argument } => format!("{name}({})", argument.digest()),
         }
     }
 
@@ -158,6 +199,7 @@ impl Computed {
                 ..
             } => format!("{} {symbol} {}", field(left)?, field(right)?),
             Call::Abs { field: index, .. } => format!("ABS({})", field(index)?),
+            Call::Trigonometric { ref name, argument } => format!("{name}({})", argument.sql()),
         })
     }
 
@@ -195,21 +237,47 @@ impl Computed {
                 field,
                 ref function,
             } => {
-                let mut segment = ids.generated("DBSPSimplePathSegment");
-                segment["identifier"] = function.as_str().into();
-                segment["genericArgs"] = json!([]);
-                let mut path = ids.generated("DBSPPath");
-                path["components"] = vec![segment].into();
-                let mut function = ids.generated("DBSPPathExpression");
-                function["path"] = path;
-                function["type"] = ids.singleton(CircuitType::Any, "ANY", false);
-                let mut expr = ids.node("DBSPApplyExpression", &self.position);
-                expr["function"] = function;
-                expr["arguments"] = vec![parameter.read(ids, field)?].into();
-                expr["type"] = output.column_type(ids, index);
-                expr
+                let argument = parameter.read(ids, field)?;
+                self.apply(ids, function, argument, output, index)
+            }
+            Call::Trigonometric { ref name, argument } => {
+                let literal = argument.lower(ids);
+                if argument.is_null() {
+                    literal
+                } else {
+                    self.apply(
+                        ids,
+                        &format!("{}_d", name.to_ascii_lowercase()),
+                        literal,
+                        output,
+                        index,
+                    )
+                }
             }
         };
         Ok(expr)
+    }
+
+    fn apply(
+        &self,
+        ids: &mut Ids,
+        identifier: &str,
+        argument: Value,
+        output: &RowLayout<'_>,
+        index: usize,
+    ) -> Value {
+        let mut segment = ids.generated("DBSPSimplePathSegment");
+        segment["identifier"] = identifier.into();
+        segment["genericArgs"] = json!([]);
+        let mut path = ids.generated("DBSPPath");
+        path["components"] = vec![segment].into();
+        let mut function = ids.generated("DBSPPathExpression");
+        function["path"] = path;
+        function["type"] = ids.singleton(CircuitType::Any, "ANY", false);
+        let mut expr = ids.node("DBSPApplyExpression", &self.position);
+        expr["function"] = function;
+        expr["arguments"] = vec![argument].into();
+        expr["type"] = output.column_type(ids, index);
+        expr
     }
 }
