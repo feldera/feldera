@@ -4,6 +4,15 @@ use super::{BoundExpression, ExpressionKind, Failure, Kind, unsupported};
 use feldera_fold_probe::{Expression, Refusal, SemanticsProfile, SqlType, evaluate_with_profile};
 use feldera_sql_rel_model::literals::LiteralValue;
 
+pub(super) fn runtime_error(bound: &BoundExpression) -> bool {
+    expression(bound).is_ok_and(|expr| {
+        matches!(
+            evaluate_with_profile(&expr, SemanticsProfile::LegacyJanino),
+            Err(Refusal::RuntimeError(_))
+        )
+    })
+}
+
 pub(super) fn fold(bound: BoundExpression) -> Result<BoundExpression, Failure> {
     let request = expression(&bound)?;
     let result = match evaluate_with_profile(&request, SemanticsProfile::LegacyJanino) {

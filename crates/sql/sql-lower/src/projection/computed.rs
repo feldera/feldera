@@ -1,8 +1,9 @@
 //! Scalar calls over fields of a projected row.
 
 use super::{
-    field::DoubleLiteral,
+    array::{ArrayConstructor, ArrayLengthArgument},
     interval_count::{cast, IntervalCount},
+    trigonometric::TrigonometricArgument,
 };
 use crate::{
     closure::RowParameter,
@@ -99,9 +100,13 @@ enum Call {
         widen_right: bool,
     },
     IntervalCount(Box<IntervalCount>),
+    ArrayLength {
+        name: &'static str,
+        argument: ArrayLengthArgument,
+    },
     Trigonometric {
         name: String,
-        argument: DoubleLiteral,
+        argument: TrigonometricArgument,
     },
     Abs {
         field: usize,
@@ -214,6 +219,39 @@ impl Computed {
                         && left_type.nullable == result.nullable,
                 }
             }
+            (
+                "calcite-s1-fixture",
+                key @ ("SqlStdOperatorTable.CARDINALITY"
+                | "SqlLibraryOperators.ARRAY_LENGTH"
+                | "SqlLibraryOperators.ARRAY_SIZE"),
+                &[arg],
+            ) => {
+                let name = match key {
+                    "SqlStdOperatorTable.CARDINALITY" => "CARDINALITY",
+                    "SqlLibraryOperators.ARRAY_LENGTH" => "ARRAY_LENGTH",
+                    _ => "ARRAY_SIZE",
+                };
+                let node = &program.expressions.expressions[arg.0 as usize];
+                let ty = &program.table.type_table.types[node.ty.0 as usize];
+                let argument = match (&ty.kind, &node.kind) {
+                    (TypeKind::Null {}, ObjectKind::Literal { .. }) => ArrayLengthArgument::Null,
+                    (TypeKind::Array { .. }, _) => ArrayLengthArgument::Constructor(Box::new(
+                        ArrayConstructor::resolve(program, arg)?,
+                    )),
+                    _ => return Err(Error("expected an ARRAY length operand".into())),
+                };
+                if !matches!(
+                    result.kind,
+                    TypeKind::Integer {
+                        width: feldera_sql_rel_model::types::IntegerWidth::I32,
+                        signed: true
+                    }
+                ) || result.nullable != ty.nullable
+                {
+                    return Err(Error("unexpected ARRAY length result type".into()));
+                }
+                Call::ArrayLength { name, argument }
+            }
             ("calcite-s1-fixture", key, &[arg]) => {
                 let name = key
                     .strip_prefix("SqlStdOperatorTable.")
@@ -232,7 +270,7 @@ impl Computed {
                         )
                     })
                     .ok_or_else(|| Error("unsupported unary projection call".into()))?;
-                let argument = DoubleLiteral::resolve(program, arg)?;
+                let argument = TrigonometricArgument::resolve(program, arg)?;
                 if !matches!(
                     result.kind,
                     TypeKind::Float {
@@ -295,8 +333,12 @@ impl Computed {
                 ..
             } => format!("{symbol}({}, {})", left.digest(), right.digest()),
             Call::IntervalCount(ref count) => count.digest(),
+            Call::ArrayLength { name, ref argument } => format!("{name}({})", argument.digest()),
             Call::Abs { field, .. } => format!("abs(${field})"),
-            Call::Trigonometric { ref name, argument } => format!("{name}({})", argument.digest()),
+            Call::Trigonometric {
+                ref name,
+                ref argument,
+            } => format!("{name}({})", argument.digest()),
         }
     }
 
@@ -325,8 +367,12 @@ impl Computed {
                 right.sql(input, self.precedence() + 1)?
             ),
             Call::IntervalCount(ref count) => count.sql(),
+            Call::ArrayLength { name, ref argument } => format!("{name}({})", argument.sql()),
             Call::Abs { field: index, .. } => format!("ABS({})", field(index)?),
-            Call::Trigonometric { ref name, argument } => format!("{name}({})", argument.sql()),
+            Call::Trigonometric {
+                ref name,
+                ref argument,
+            } => format!("{name}({})", argument.sql()),
         })
     }
 
@@ -365,6 +411,10 @@ impl Computed {
                 }
                 expr
             }
+            Call::ArrayLength { ref argument, .. } => {
+                let value = argument.lower(ids)?;
+                self.apply(ids, argument.function(), value)
+            }
             Call::IntervalCount(ref count) => {
                 let ty = self.result.node(ids);
                 count.lower(ids, ty)?
@@ -376,8 +426,11 @@ impl Computed {
                 let argument = parameter.read(ids, field)?;
                 self.apply(ids, function, argument)
             }
-            Call::Trigonometric { ref name, argument } => {
-                let literal = argument.lower(ids);
+            Call::Trigonometric {
+                ref name,
+                ref argument,
+            } => {
+                let literal = argument.lower(ids, &self.position)?;
                 if argument.is_null() {
                     literal
                 } else {

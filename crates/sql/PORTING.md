@@ -261,14 +261,22 @@ decimal, floating-point, temporal, UUID and VARIANT types. Each matched Java
 at S2 and through Gen-2 emission.
 
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 675 of 8,571 programs. The original 556 produced
-identical bound programs. All 119 new programs matched direct Java in the
-Linux devcontainer at every captured optimizer observation, persistent-ID
-inputs, schema, diagnostics and final Gen-2 bytes. Rust lowered 626 programs
-to S2. Of those, 501 reproduced the previously verified checkpoint bytes and
-125 matched independent Java lowering and resumed through the Java optimizer.
-The remaining 7,896 programs still need whole-program binding. All 49 bound
-programs that still require Java lowering use aggregates.
+Gen-2 options. Rust bound 695 of 8,571 programs and lowered 646 to S2.
+The literal ARRAY implementation preserved the 675 previously verified bound
+programs and reproduced all 626 previous S2 checkpoints byte for byte.
+For the 20 additional programs, direct Java and Rust-bound replay agreed on
+optimizer observations, persistent-ID inputs, schema, diagnostics and Gen-2
+bytes. Independent Java lowering matched all 20 Rust S2 checkpoints, and the
+Java optimizer resumed each one. The remaining 7,876 programs still need
+whole-program binding. All 49 bound programs that require Java lowering use
+aggregates.
+
+Eight directed programs exercise literal ARRAY element coercion, typed and
+untyped NULLs, temporal precision warnings, length functions and project-wide
+folding. A checked division by zero keeps sibling array and trigonometric calls
+in the plan. All eight matched Java through binding, S2 lowering and Gen-2
+emission. Additional comparisons checked source positions and expression types
+on 294 directed bindings.
 
 TIMESTAMPDIFF retains the interval subtraction, result width, unit conversion
 and precision diagnostics for non-null local date and time literals. The

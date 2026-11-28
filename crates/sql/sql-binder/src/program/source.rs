@@ -218,7 +218,11 @@ impl<'a> DeclarationTokens<'a> {
 
     /// sqlparser's ARRAY span covers its elements. Recover the constructor
     /// and closing bracket from the original tokens of this scalar array.
-    pub(super) fn scalar_array_position(&self, elements: Span) -> Result<Coordinates, Failure> {
+    pub(super) fn scalar_array_position(
+        &self,
+        elements: Span,
+        enclosing: usize,
+    ) -> Result<Coordinates, Failure> {
         let first = self
             .tokens
             .partition_point(|t| t.span.start < elements.start);
@@ -231,7 +235,22 @@ impl<'a> DeclarationTokens<'a> {
             .iter()
             .position(|t| t.token == Token::RBracket)
             .ok_or_else(|| unsupported("missing closing ARRAY bracket"))?;
-        self.token_range(&self.tokens[open..=last + close])
+        let close = last + close;
+        let start = open
+            .checked_sub(enclosing)
+            .ok_or_else(|| unsupported("missing parentheses around ARRAY"))?;
+        let end = close + 1 + enclosing;
+        if self.tokens[start..open]
+            .iter()
+            .any(|t| t.token != Token::LParen)
+            || self
+                .tokens
+                .get(close + 1..end)
+                .is_none_or(|suffix| suffix.iter().any(|t| t.token != Token::RParen))
+        {
+            return Err(unsupported("missing parentheses around ARRAY"));
+        }
+        self.token_range(&self.tokens[start..end])
     }
 
     fn token_range(&self, tokens: &[TokenWithSpan]) -> Result<Coordinates, Failure> {
@@ -242,6 +261,20 @@ impl<'a> DeclarationTokens<'a> {
             .last()
             .ok_or_else(|| unsupported("incomplete SQL source"))?;
         self.coordinates(first.span.union(&last.span))
+    }
+
+    pub(super) fn cast_position(
+        &self,
+        child: Span,
+        enclosing: usize,
+    ) -> Result<Coordinates, Failure> {
+        let end = self.tokens.partition_point(|t| t.span.start < child.start);
+        let name = self.tokens[..end]
+            .iter()
+            .rev()
+            .find(|t| matches!(&t.token, Token::Word(w) if w.keyword == Keyword::CAST))
+            .ok_or_else(|| unsupported("missing CAST before its literal operand"))?;
+        self.call_position(name.span, enclosing)
     }
 
     /// Function spans in sqlparser can omit their closing delimiters. Calcite

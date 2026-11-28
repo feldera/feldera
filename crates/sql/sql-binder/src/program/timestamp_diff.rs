@@ -178,6 +178,7 @@ pub(super) fn bind(
         root,
         ty,
         folded: false,
+        reduction_changed: false,
         display,
     })
 }

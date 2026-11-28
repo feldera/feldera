@@ -1,6 +1,6 @@
 //! The NULL constructors in DBSPLiteral.none differ in their type identity.
 //! Some retain the supplied output type, others construct a fresh or singleton type.
-use super::{range, reference, ConstantField, Error, Ids};
+use super::{range, reference, Error, Ids};
 use feldera_sql_ir::TypeKind as CircuitType;
 use feldera_sql_rel_model::types::{FloatFlavor, TypeKind};
 use serde_json::Value;
@@ -9,10 +9,10 @@ pub(super) fn lower(
     ids: &mut Ids,
     kind: &TypeKind,
     scalar: &mut Value,
-    output_field: &Value,
-) -> Result<ConstantField, Error> {
+    output_field: Option<&Value>,
+) -> Result<Value, Error> {
     let position = range(0, 0, 0, 0);
-    let mut literal = match kind {
+    let literal = match kind {
         TypeKind::Null {} => ids.generated("DBSPNullLiteral"),
         TypeKind::Integer { width, signed } => {
             let prefix = if *signed { "I" } else { "U" };
@@ -26,13 +26,17 @@ pub(super) fn lower(
             flavor: FloatFlavor::Real,
         } => ids.generated("DBSPRealLiteral"),
         TypeKind::Character { .. } => {
-            *scalar = reference(output_field)?;
+            if let Some(output_field) = output_field {
+                *scalar = reference(output_field)?;
+            }
             let mut literal = ids.generated("DBSPStringLiteral");
             literal["charset"] = "UTF-8".into();
             literal
         }
         TypeKind::Binary { .. } | TypeKind::Decimal { .. } => {
-            *scalar = reference(output_field)?;
+            if let Some(output_field) = output_field {
+                *scalar = reference(output_field)?;
+            }
             let class = if matches!(kind, TypeKind::Binary { .. }) {
                 "DBSPBinaryLiteral"
             } else {
@@ -63,19 +67,7 @@ pub(super) fn lower(
         }
         _ => return Err(Error("unsupported typed NULL in VALUES".into())),
     };
-    if matches!(kind, TypeKind::Integer { .. } | TypeKind::Boolean {}) {
-        scalar
-            .as_object_mut()
-            .expect("fresh scalar")
-            .remove("position");
-        scalar["sourceEmpty"] = true.into();
-    }
-    literal["type"] = reference(scalar)?;
-    Ok(ConstantField {
-        literal,
-        digest: "null".into(),
-        sql: "NULL".into(),
-    })
+    Ok(literal)
 }
 
 fn singleton_literal(

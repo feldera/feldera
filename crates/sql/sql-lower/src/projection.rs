@@ -1,9 +1,11 @@
 //! Lower a relational projection to a DBSP map. The closure shares its
 //! parameter across field reads and retains the anonymous Calcite row types.
 
+mod array;
 mod computed;
 mod field;
 mod interval_count;
+mod trigonometric;
 pub(super) use field::Field;
 
 use super::{
@@ -40,7 +42,13 @@ pub(super) fn expressions(
 pub(super) fn expression_types(
     program: &Program,
     root: u32,
-) -> Result<Vec<feldera_sql_rel_model::TypeId>, Error> {
+) -> Result<
+    Vec<(
+        feldera_sql_rel_model::TypeId,
+        &feldera_sql_rel_model::expression_objects::ObjectPosition,
+    )>,
+    Error,
+> {
     use feldera_sql_rel_model::expression_objects::ObjectKind;
     let mut pending: Vec<_> = expressions(program, root)?.iter().rev().copied().collect();
     let mut visited = std::collections::HashSet::new();
@@ -48,7 +56,7 @@ pub(super) fn expression_types(
     while let Some(id) = pending.pop() {
         if visited.insert(id.0) {
             let expr = &program.expressions.expressions[id.0 as usize];
-            types.push(expr.ty);
+            types.push((expr.ty, &expr.position));
             if let ObjectKind::Call { arguments, .. } = &expr.kind {
                 pending.extend(arguments.iter().rev().copied());
             }

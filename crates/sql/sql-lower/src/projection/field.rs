@@ -1,4 +1,4 @@
-use super::computed::Computed;
+use super::{array::ArrayConstructor, computed::Computed};
 use crate::{
     closure::RowParameter,
     integer::SignedInteger,
@@ -22,6 +22,7 @@ pub(crate) enum Field {
     NullableInteger(SignedInteger),
     Double(DoubleLiteral),
     Computed(Box<Computed>),
+    Array(Box<ArrayConstructor>),
 }
 
 /// Rex digests for approximate literals include their SQL type inside calls.
@@ -29,6 +30,10 @@ pub(crate) enum Field {
 pub(crate) struct DoubleLiteral(Option<u64>);
 
 impl DoubleLiteral {
+    pub(super) fn null() -> Self {
+        Self(None)
+    }
+
     pub(super) fn resolve(program: &Program, id: ExprId) -> Result<Self, Error> {
         use feldera_sql_rel_model::{literals::LiteralValue, types::FloatFlavor};
         let expr = &program.expressions.expressions[id.0 as usize];
@@ -118,6 +123,11 @@ impl Field {
             ObjectKind::Literal { .. } if !ty.nullable => {
                 Ok(Self::Integer(SignedInteger::resolve(program, id)?))
             }
+            ObjectKind::Call { .. } if matches!(ty.kind, TypeKind::Array { .. }) => {
+                ArrayConstructor::resolve(program, id)
+                    .map(Box::new)
+                    .map(Self::Array)
+            }
             ObjectKind::Call { .. } if matches!(expr.position, ObjectPosition::Present { .. }) => {
                 Computed::resolve(program, id)
                     .map(Box::new)
@@ -155,6 +165,7 @@ impl Field {
             Self::Double(n) => n.digest(),
             Self::NullableInteger(n) => format!("CAST({}):{}", n.digest(), n.sql_type()),
             Self::Computed(call) => call.digest(),
+            Self::Array(array) => array.digest.clone(),
         }
     }
 
@@ -172,6 +183,7 @@ impl Field {
             Self::Double(n) => n.sql(),
             Self::NullableInteger(n) => format!("CAST({} AS {})", n.value, n.sql_type()),
             Self::Computed(call) => call.sql(schema)?,
+            Self::Array(array) => array.sql.clone(),
         };
         if alias
             .get(..5)
@@ -194,6 +206,7 @@ impl Field {
     ) -> Result<Value, Error> {
         match self {
             Self::Computed(call) => call.lower(ids, parameter),
+            Self::Array(array) => array.lower(ids),
             Self::Integer(n) => Ok(n.lower(ids)),
             Self::Double(n) => Ok(n.lower(ids)),
             Self::NullableInteger(n) => {

@@ -66,7 +66,20 @@ TIMESTAMP_DIFF_CASES = {
                            " TIMESTAMPDIFF(YEAR, DATE '2001-01-01', DATE '2001-12-31');",
 }
 
+LITERAL_ARRAY_CASES = {
+    "array_numeric_coercion": "CREATE VIEW v AS SELECT ARRAY[1.25, NULL, 3000000000] AS a;",
+    "array_string_widths": "CREATE VIEW v AS SELECT ARRAY['a', 'hello', NULL] AS a;",
+    "array_all_null": "CREATE VIEW v AS SELECT ARRAY[NULL, NULL] AS a;",
+    "array_temporal": "CREATE VIEW v AS SELECT ARRAY[TIME '12:34:56.1234', NULL] AS a;",
+    "array_folded_sibling": "CREATE VIEW v AS SELECT ((ARRAY[1, 2])) AS a, CARDINALITY(ARRAY[1, NULL]) AS n;",
+    "array_length_temporal": "CREATE VIEW v AS SELECT ARRAY_LENGTH(ARRAY[TIME '12:34:56.1234']) AS n;",
+    "trig_failed_reduction": "CREATE VIEW v AS SELECT 3 / 0, SIN(1.50), TAN((CAST(-1 AS DOUBLE))), SIN(NULL);",
+    "array_failed_reduction": "CREATE VIEW v AS SELECT 3 / 0 AS quotient, ARRAY_SIZE(ARRAY[1, 2]) AS n;",
+}
+
+
 CASES = {
+    **LITERAL_ARRAY_CASES,
     **TIMESTAMP_DIFF_CASES,
     "runtime_integer_divide": "CREATE VIEW v AS SELECT 1 / 0, 2 / (1 / 0), (3 / 0) / 2;",
     **NUMERIC_COLUMN_CASES,

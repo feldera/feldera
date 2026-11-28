@@ -1,8 +1,10 @@
 //! Assemble bounded S1 programs over the fixed compiler system prelude.
 
+mod array;
 mod graph;
 mod insert;
 mod literal;
+mod literal_type;
 mod math;
 mod names;
 mod order;
@@ -171,18 +173,34 @@ fn append_constant_view(
         preserve_parentheses: true,
         tokens: Default::default(),
     };
-    for (index, item) in select.projection.iter().enumerate() {
-        let (expr, alias) = match item {
-            SelectItem::UnnamedExpr(expr) => (expr, None),
-            SelectItem::ExprWithAlias { expr, alias } => (expr, Some(alias)),
-            _ => return Err(unsupported("expected a scalar SELECT item")),
-        };
+    let projections = select
+        .projection
+        .iter()
+        .map(|item| match item {
+            SelectItem::UnnamedExpr(expr) => Ok((expr, None)),
+            SelectItem::ExprWithAlias { expr, alias } => Ok((expr, Some(alias))),
+            _ => Err(unsupported("expected a scalar SELECT item")),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    // The reference executor evaluates a project's reducible expressions in one
+    // batch. A checked arithmetic failure leaves every candidate unreduced.
+    let fold = projections.len() == 1
+        || !projections.iter().any(|(expr, _)| {
+            let (inner, _) = without_parentheses(expr);
+            matches!(inner, super::Expr::BinaryOp { .. })
+                && super::bind(expr, &scope, 0)
+                    .is_ok_and(|bound| super::constant::runtime_error(&bound))
+        });
+    let mut reduced = false;
+    for (index, (expr, alias)) in projections.into_iter().enumerate() {
         let ConstantOperand {
             root,
             ty,
             folded,
             mut display,
-        } = constant_operand(program, &scope, tokens, expr)?;
+            reduction_changed,
+        } = constant_operand(program, &scope, tokens, expr, fold)?;
+        reduced |= reduction_changed;
         let field = match alias {
             Some(ident) => projection_alias(ident, &mut display.pretty, &mut display.diagnostic),
             None => Name {
@@ -195,6 +213,9 @@ fn append_constant_view(
         fields.push((field, ty));
         pretty.push(display.pretty);
         diagnostic.push(display.diagnostic);
+    }
+    if reduced {
+        array::replace_folded_constructors(program, &roots);
     }
     let text = QueryText {
         pretty: format!("SELECT {}", pretty.join(", ")),
@@ -224,6 +245,7 @@ struct ConstantOperand {
     root: feldera_sql_rel_model::expressions::ExprId,
     ty: TypeId,
     folded: bool,
+    reduction_changed: bool,
     display: source::SqlDisplay,
 }
 
@@ -232,6 +254,7 @@ fn constant_operand(
     scope: &super::ColumnScope<'_>,
     tokens: &DeclarationTokens<'_>,
     expr: &super::Expr,
+    fold: bool,
 ) -> Result<ConstantOperand, Failure> {
     use sqlparser_064::ast::Spanned;
     if let Ok(cell) = literal::Cell::parse(expr) {
@@ -252,19 +275,21 @@ fn constant_operand(
             root,
             ty,
             folded,
+            reduction_changed: false,
             display,
         });
     }
 
-    if let Some(operand) = constant_call(program, tokens, expr)? {
+    if let Some(operand) = constant_call(program, tokens, expr, fold)? {
         return Ok(operand);
     }
-    let (bound, range, warning) = super::bind_projection_value(scope, expr, expr.span(), true)?;
+    let (bound, range, warning) = super::bind_projection_value(scope, expr, expr.span(), fold)?;
     if warning.is_some() {
         return Err(unsupported(
             "constant program has unsupported frontend diagnostics",
         ));
     }
+    let reduction_changed = matches!(bound.kind, super::ExpressionKind::FoldedLiteral { .. });
     let display = display_constant(expr)?;
     let fragment = super::frel::emit(scope.sql, &bound, super::span(range), None)?;
     let (root, ty, folded) = append_expression(program, fragment)?;
@@ -272,20 +297,32 @@ fn constant_operand(
         root,
         ty,
         folded,
+        reduction_changed,
         display,
     })
+}
+
+fn without_parentheses(mut expr: &super::Expr) -> (&super::Expr, usize) {
+    let mut count = 0;
+    while let super::Expr::Nested(inner) = expr {
+        count += 1;
+        expr = inner;
+    }
+    (expr, count)
 }
 
 fn constant_call(
     program: &mut Program,
     tokens: &DeclarationTokens<'_>,
-    mut expr: &super::Expr,
+    expr: &super::Expr,
+    fold: bool,
 ) -> Result<Option<ConstantOperand>, Failure> {
     use super::{Expr, Spanned};
-    let mut enclosing = 0;
-    while let Expr::Nested(inner) = expr {
-        enclosing += 1;
-        expr = inner;
+    let (expr, enclosing) = without_parentheses(expr);
+    if let Expr::Array(array) = expr {
+        return array::LiteralArray::parse(array)?
+            .projection(program, tokens, expr.span(), enclosing, fold)
+            .map(Some);
     }
     let Expr::Function(function) = expr else {
         return Ok(None);
@@ -293,10 +330,13 @@ fn constant_call(
     let (name, arguments) = super::scalar_args(function)?;
     let name = name.to_ascii_uppercase();
     let position = || tokens.call_position(function.name.span(), enclosing);
+    if matches!(name.as_str(), "ARRAY_LENGTH" | "ARRAY_SIZE" | "CARDINALITY") {
+        return array::length(program, tokens, &name, &arguments, position()?, fold).map(Some);
+    }
     if name == "TIMESTAMPDIFF" {
         return timestamp_diff::bind(program, tokens, &arguments, position()?).map(Some);
     }
-    math::trigonometric_call(program, &name, &arguments, position)
+    math::trigonometric_call(program, tokens, &name, &arguments, position, fold)
 }
 
 fn check_prelude(program: &Program) -> Result<(), Failure> {

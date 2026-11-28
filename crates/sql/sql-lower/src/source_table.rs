@@ -169,6 +169,21 @@ pub(super) fn range(line: u32, column: u32, end_line: u32, end_column: u32) -> V
     json!({"start_line_number":line, "start_column":column, "end_line_number":end_line, "end_column":end_column})
 }
 
+pub(super) fn expression_range(
+    position: &feldera_sql_rel_model::expression_objects::ObjectPosition,
+) -> Value {
+    use feldera_sql_rel_model::expression_objects::ObjectPosition;
+    match position {
+        ObjectPosition::Present { position, .. } => range(
+            position.line,
+            position.column,
+            position.end_line,
+            position.end_column,
+        ),
+        ObjectPosition::Absent {} => range(0, 0, 0, 0),
+    }
+}
+
 pub(super) fn location(origin: &Origin) -> Value {
     let [line, column, end_line, end_column] = origin.coordinates();
     range(line, column, end_line, end_column)

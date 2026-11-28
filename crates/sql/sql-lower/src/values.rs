@@ -1,8 +1,9 @@
 //! Lower empty and single-row VALUES relations to weighted collections.
 
 mod null;
+pub(super) mod scalar;
 pub(super) mod temporal;
-mod type_name;
+pub(super) mod type_name;
 
 use super::{
     projection::expressions,
@@ -11,13 +12,8 @@ use super::{
     Error,
 };
 use feldera_sql_rel_model::{
-    catalog::CatalogSchema,
-    expression_objects::ObjectKind,
-    literals::LiteralValue,
-    program::Program,
-    relation_properties::Properties,
-    statements::StatementSource,
-    types::{FloatFlavor, Precision, SqlType, TypeKind},
+    catalog::CatalogSchema, expression_objects::ObjectKind, program::Program,
+    relation_properties::Properties, statements::StatementSource,
 };
 use serde_json::{json, Value};
 
@@ -145,14 +141,10 @@ fn lower_row(
             return Err(Error("expected a VALUES literal".into()));
         };
         let ty = &program.table.type_table.types[column.ty.0 as usize];
-        let cell = if ty.nullable && matches!(literal.value, LiteralValue::Null {}) {
-            null::lower(ids, &ty.kind, scalar, &element_fields[index])?
-        } else {
-            lower_literal(ids, ty, &literal.value, scalar)?
-        };
+        let cell = scalar::ScalarLiteral::resolve(ty, &literal.value)?;
+        fields.push(cell.expression(ids, ty, scalar, Some(&element_fields[index]))?);
         values.push(cell.digest);
         sql_values.push(cell.sql);
-        fields.push(cell.literal);
     }
     let mut tuple = ids.generated("DBSPTypeTuple");
     tuple["tupFields"] = scalars.into();
@@ -165,117 +157,6 @@ fn lower_row(
         tuple: row,
         digest: values.join(", "),
         sql: sql_values.join(", "),
-    })
-}
-
-struct ConstantField {
-    literal: Value,
-    digest: String,
-    sql: String,
-}
-
-fn lower_literal(
-    ids: &mut Ids,
-    ty: &SqlType,
-    value: &LiteralValue,
-    scalar: &mut Value,
-) -> Result<ConstantField, Error> {
-    use base64::{engine::general_purpose::STANDARD, Engine};
-    let unknown = range(0, 0, 0, 0);
-    let (mut literal, digest, sql) = match (&ty.kind, value) {
-        (_, _) if ty.nullable => {
-            return Err(Error("unsupported nullable VALUES literal type".into()));
-        }
-        (TypeKind::Uuid {}, LiteralValue::Uuid { bytes }) => {
-            let text = feldera_sql_rel_model::literals::uuid_to_text(*bytes);
-            let mut literal = ids.node("DBSPUuidLiteral", &unknown);
-            literal["value"] = text.clone().into();
-            let sql = format!("UUID '{text}'");
-            (literal, text, sql)
-        }
-        (TypeKind::Date {} | TypeKind::Time { .. } | TypeKind::Timestamp { .. }, _) => {
-            let literal = temporal::TemporalLiteral::resolve(&ty.kind, value)?;
-            (literal.expression(ids), literal.digest, literal.sql)
-        }
-        (TypeKind::Decimal { .. }, LiteralValue::Decimal { value }) => {
-            let (sql, digest) = value
-                .sql_and_digest()
-                .ok_or_else(|| Error("unsupported SQL decimal literal".into()))?;
-            let mut literal = ids.node("DBSPDecimalLiteral", &unknown);
-            literal["value"] = digest.clone().into();
-            (literal, digest, sql)
-        }
-        (
-            TypeKind::Integer {
-                width,
-                signed: true,
-            },
-            LiteralValue::Integer { value },
-        ) => {
-            let mut literal = ids.generated(&format!("DBSPI{}Literal", width.bits()));
-            literal["value"] = value.clone().into();
-            (literal, value.clone(), value.clone())
-        }
-        (TypeKind::Boolean {}, LiteralValue::Boolean { value }) => {
-            let mut literal = ids.generated("DBSPBoolLiteral");
-            literal["value"] = (*value).into();
-            (literal, value.to_string(), value.to_string().to_uppercase())
-        }
-        (
-            TypeKind::Character {
-                fixed: true,
-                length: Precision::Specified(_),
-                metadata,
-            },
-            LiteralValue::Character { value },
-        ) if *metadata == feldera_sql_rel_model::types::CharacterMetadata::implicit() => {
-            let mut literal = ids.generated("DBSPStringLiteral");
-            literal["value"] = value.clone().into();
-            literal["charset"] = "UTF-8".into();
-            let text = format!("_UTF-8'{}'", value.replace('\'', "''"));
-            (literal, text.clone(), text)
-        }
-        (
-            TypeKind::Binary {
-                fixed: true,
-                length: Precision::Specified(_),
-            },
-            LiteralValue::Binary { value },
-        ) => {
-            let mut literal = ids.node("DBSPBinaryLiteral", &unknown);
-            literal["value"] = STANDARD.encode(value).into();
-            let digest = format!("X'{}'", hex::encode(value));
-            let sql = digest.to_uppercase();
-            (literal, digest, sql)
-        }
-        (
-            TypeKind::Float {
-                flavor: FloatFlavor::Double,
-            },
-            LiteralValue::Float64 { bits },
-        ) => {
-            let n = f64::from_bits(*bits);
-            let mut literal = ids.generated("DBSPDoubleLiteral");
-            literal["value"] = (*bits as i64).into();
-            let (digest, sql) = double_spelling(n);
-            (literal, digest, sql)
-        }
-        _ => return Err(Error("unsupported scalar VALUES element".into())),
-    };
-    // Integral and boolean constant constructors create types without a source
-    // object. String and binary literals use types associated with the relation.
-    if matches!(ty.kind, TypeKind::Integer { .. } | TypeKind::Boolean {}) {
-        scalar
-            .as_object_mut()
-            .expect("scalar type")
-            .remove("position");
-        scalar["sourceEmpty"] = true.into();
-    }
-    literal["type"] = reference(scalar)?;
-    Ok(ConstantField {
-        literal,
-        digest,
-        sql,
     })
 }
 

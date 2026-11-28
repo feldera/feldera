@@ -7,7 +7,7 @@ use feldera_sql_rel_model::{
 };
 use std::fmt::Write;
 
-pub(super) fn render(types: &TypeTable, id: TypeId) -> Result<String, Error> {
+pub(crate) fn render(types: &TypeTable, id: TypeId) -> Result<String, Error> {
     let mut text = String::new();
     write_type(
         types,

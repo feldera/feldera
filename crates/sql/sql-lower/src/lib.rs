@@ -43,6 +43,21 @@ pub enum Input<'a> {
     Checkpoint,
 }
 
+/// Constant rows acquire their runtime types while compiling the relation,
+/// before the compiler visits the view declaration.
+fn has_values_input(program: &Program, root: u32) -> bool {
+    use feldera_sql_rel_model::relation_properties::Properties;
+    let properties = |id: u32| &program.properties.relations[id as usize].fields;
+    match properties(root) {
+        Properties::Values { .. } => true,
+        Properties::Project { .. } => matches!(
+            program.producers.relations[root as usize].inputs.as_slice(),
+            &[input] if matches!(properties(input), Properties::Values { .. })
+        ),
+        _ => false,
+    }
+}
+
 /// Lower the supported default-profile table declarations and table-scan views.
 pub fn lower_program(
     program: &Program,
@@ -217,12 +232,7 @@ pub fn lower_program(
         | Statement::CreateView { source, schema, .. } = statement
         {
             let position = match statement {
-                Statement::CreateView { root, .. }
-                    if matches!(
-                        program.properties.relations[root.relation as usize].fields,
-                        feldera_sql_rel_model::relation_properties::Properties::Values { .. }
-                    ) =>
-                {
+                Statement::CreateView { root, .. } if has_values_input(program, root.relation) => {
                     source_table::range(0, 0, 0, 0)
                 }
                 _ => source_table::statement_position(source),
@@ -254,16 +264,19 @@ pub fn lower_program(
                 program.properties.relations[root.relation as usize].fields,
                 feldera_sql_rel_model::relation_properties::Properties::Project { .. }
             ) {
-                source_table::precision_warnings(
-                    projection::expression_types(program, root.relation)?,
-                    &program.table.type_table,
-                    &source_table::range(0, 0, 0, 0),
-                    &context,
-                    &mut precision_warnings,
-                    checkpoint["diagnostics"]["messages"]
-                        .as_array_mut()
-                        .expect("system diagnostics"),
-                );
+                let messages = checkpoint["diagnostics"]["messages"]
+                    .as_array_mut()
+                    .expect("system diagnostics");
+                for (ty, position) in projection::expression_types(program, root.relation)? {
+                    source_table::precision_warnings(
+                        [ty],
+                        &program.table.type_table,
+                        &source_table::expression_range(position),
+                        &context,
+                        &mut precision_warnings,
+                        messages,
+                    );
+                }
             }
             view::lower(
                 &mut checkpoint,

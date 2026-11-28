@@ -36,7 +36,7 @@ pub(crate) struct ColumnLayout {
 }
 
 impl ColumnLayout {
-    pub(super) fn lower(ty: &ColumnType<'_>) -> Result<Self, Error> {
+    pub(crate) fn lower(ty: &ColumnType<'_>) -> Result<Self, Error> {
         let mut budget = feldera_sql_rel_model::ValidationLimits::default().references;
         Self::lower_field(ty, 1, &mut budget)
     }
@@ -100,7 +100,7 @@ impl ColumnLayout {
         };
         let parameters = arguments
             .iter()
-            .map(|arg| arg.short.as_str())
+            .map(|arg| arg.type_argument(Repr::Struct))
             .collect::<Vec<_>>()
             .join(", ");
         let suffix = if nullable { "?" } else { "" };
@@ -231,6 +231,15 @@ impl ColumnLayout {
         }
     }
 
+    // DBSPTypeNull prints "null" as a field and "null?" inside a generic type.
+    fn type_argument(&self, repr: Repr) -> Cow<'_, str> {
+        if self.class == CircuitType::Null {
+            Cow::Borrowed("null?")
+        } else {
+            self.display(repr)
+        }
+    }
+
     fn display(&self, repr: Repr) -> Cow<'_, str> {
         if repr == Repr::Struct {
             return Cow::Borrowed(&self.short);
@@ -241,7 +250,7 @@ impl ColumnLayout {
             Children::Collection(args) => {
                 let args = args
                     .iter()
-                    .map(|arg| arg.display(repr))
+                    .map(|arg| arg.type_argument(repr))
                     .collect::<Vec<_>>()
                     .join(", ");
                 let name = if self.class == CircuitType::Array {
