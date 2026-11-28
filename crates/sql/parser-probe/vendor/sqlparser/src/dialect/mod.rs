@@ -1894,6 +1894,12 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Whether WHERE, GROUP BY, HAVING, WINDOW and QUALIFY in a SELECT
+    /// require a preceding FROM clause.
+    fn select_clauses_require_from(&self) -> bool {
+        false
+    }
+
     /// Whether this keyword after FROM ( can only start a query. For such
     /// prefixes the parser can report the query error without retrying a join.
     fn starts_unambiguous_derived_query(&self, _keyword: Keyword) -> bool {

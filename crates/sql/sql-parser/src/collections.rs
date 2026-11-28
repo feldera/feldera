@@ -44,7 +44,7 @@ pub(super) fn parse_map(parser: &mut Parser) -> Result<Expr, ParserError> {
                 trailing_key = Some(Box::new(key));
                 break;
             }
-            parser.expect_token(&Token::Comma)?;
+            map_separator(parser)?;
             let value = non_query_element(parser)?;
             entries.push(MapEntry {
                 key: Box::new(key),
@@ -53,13 +53,24 @@ pub(super) fn parse_map(parser: &mut Parser) -> Result<Expr, ParserError> {
             if parser.consume_token(&Token::RBracket) {
                 break;
             }
-            parser.expect_token(&Token::Comma)?;
+            map_separator(parser)?;
         }
     }
     Ok(Expr::Map(Map {
         entries,
         trailing_key,
     }))
+}
+
+fn map_separator(parser: &mut Parser) -> Result<(), ParserError> {
+    let comma = parser.expect_token(&Token::Comma)?;
+    if parser.peek_token_ref().token == Token::RBracket {
+        return Err(crate::diagnostic::located(
+            "expected a MAP element after comma",
+            comma.span,
+        ));
+    }
+    Ok(())
 }
 
 /// ROW field aliases require an explicit AS. Each field keeps its identifier span.

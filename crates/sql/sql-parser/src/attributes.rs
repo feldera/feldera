@@ -2,7 +2,7 @@
 //! These do not validate connector names or configuration values.
 
 use sqlparser_064::{
-    ast::{ColumnOption, CreateTableOptions, ObjectNamePart, Spanned, SqlOption, Statement},
+    ast::{CreateTableOptions, ObjectNamePart, Spanned, SqlOption, Statement},
     keywords::Keyword,
     parser::ParserError,
     tokenizer::{Token, TokenWithSpan},
@@ -78,28 +78,7 @@ fn properties(options: &CreateTableOptions) -> Result<(), ParserError> {
 
 pub(super) fn validate(statement: &Statement) -> Result<(), ParserError> {
     match statement {
-        Statement::CreateTable(table) => {
-            properties(&table.table_options)?;
-            for column in &table.columns {
-                let mut default_seen = false;
-                let mut primary_key_seen = false;
-                for option in &column.options {
-                    let seen = match option.option {
-                        ColumnOption::Default(_) => &mut default_seen,
-                        ColumnOption::PrimaryKey(_) => &mut primary_key_seen,
-                        _ => continue,
-                    };
-                    if std::mem::replace(seen, true) {
-                        // Column options lack their own spans in this upstream
-                        // AST. Identify the column; do not invent a token span.
-                        return Err(super::diagnostic::at(
-                            "duplicate DEFAULT or PRIMARY KEY column attribute",
-                            column.name.span.start,
-                        ));
-                    }
-                }
-            }
-        }
+        Statement::CreateTable(table) => properties(&table.table_options)?,
         Statement::CreateView(view) => properties(&view.options)?,
         _ => (),
     }

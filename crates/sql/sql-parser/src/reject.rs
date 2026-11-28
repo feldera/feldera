@@ -96,18 +96,6 @@ impl Visitor for NoQueries<'_, '_> {
     }
 }
 
-/// Reject spellings that upstream erases before the AST guard can inspect them.
-/// Upstream represents `==` as ordinary equality.
-pub(super) fn validate_lossy_tokens(tokens: &[TokenWithSpan]) -> Result<(), ParserError> {
-    if let Some(token) = tokens.iter().find(|token| token.token == Token::DoubleEq) {
-        return Err(super::diagnostic::at(
-            "double-equals syntax is outside the Feldera grammar",
-            token.span.start,
-        ));
-    }
-    Ok(())
-}
-
 pub(super) struct ScopedChecks {
     ambiguous_table_arguments: HashMap<Location, Location>,
     lambda_arguments: HashSet<(u64, u64)>,

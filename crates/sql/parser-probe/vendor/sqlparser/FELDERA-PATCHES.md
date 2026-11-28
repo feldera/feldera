@@ -130,3 +130,7 @@ Unknown escapes preserve their backslash.
 Feldera disables the SELECT TOP modifier so TOP can name a column or function.
 After `FROM (SELECT` or `FROM (WITH`, it preserves the derived query's
 parse error. Ambiguous parentheses still allow the nested-join grammar.
+
+The SELECT parser lets a dialect require FROM before WHERE, GROUP BY, HAVING,
+WINDOW and QUALIFY. Located errors can carry a dialect diagnostic class.
+Feldera uses it for duplicate column attributes detected while parsing DDL.

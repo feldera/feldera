@@ -259,7 +259,7 @@
  // Licensed under the Apache License, Version 2.0 (the "License");
  // you may not use this file except in compliance with the License.
  // You may obtain a copy of the License at
-@@ -59,6 +60,13 @@
+@@ -59,6 +60,15 @@
      TokenizerError(String),
      /// Generic parser error with a message.
      ParserError(String),
@@ -267,13 +267,15 @@
 +    Located {
 +        /// Diagnostic text without a location suffix.
 +        message: String,
++        /// Optional public diagnostic class supplied by the dialect.
++        diagnostic_class: Option<&'static str>,
 +        /// Half-open token range in the input.
 +        span: Span,
 +    },
      /// Raised when a recursion depth limit is exceeded.
      RecursionLimitExceeded,
  }
-@@ -178,15 +186,12 @@
+@@ -178,15 +188,12 @@
  
  impl fmt::Display for ParserError {
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -289,13 +291,13 @@
 +        f.write_str("sql parser error: ")?;
 +        match self {
 +            Self::TokenizerError(s) | Self::ParserError(s) => f.write_str(s),
-+            Self::Located { message, span } => write!(f, "{message}{}", span.start),
++            Self::Located { message, span, .. } => write!(f, "{message}{}", span.start),
 +            Self::RecursionLimitExceeded => f.write_str("recursion limit exceeded"),
 +        }
      }
  }
  
-@@ -1402,6 +1407,12 @@
+@@ -1402,6 +1409,12 @@
                              id_parts.push(Ident::new(s))
                          }
                          Token::Mul => {
@@ -308,7 +310,7 @@
                              return Ok(Expr::QualifiedWildcard(
                                  ObjectName::from(id_parts),
                                  AttachedToken(next_token),
-@@ -1604,6 +1615,7 @@
+@@ -1604,6 +1617,7 @@
                          null_treatment: None,
                          filter: None,
                          over: None,
@@ -316,7 +318,7 @@
                          within_group: vec![],
                      })))
                  }
-@@ -1666,6 +1678,7 @@
+@@ -1666,6 +1680,7 @@
                          filter: None,
                          null_treatment: None,
                          over: None,
@@ -324,7 +326,7 @@
                          within_group: vec![],
                      })))
                  }
-@@ -1738,7 +1751,7 @@
+@@ -1738,7 +1753,7 @@
              Token::SingleQuotedString(_)
              | Token::DoubleQuotedString(_)
              | Token::HexStringLiteral(_)
@@ -333,7 +335,7 @@
              {
                  Ok(Expr::Prefixed {
                      prefix: w.to_ident(w_span),
-@@ -1863,7 +1876,7 @@
+@@ -1863,7 +1878,7 @@
              _ => None,
          };
          let opt_expr = self.maybe_parse(|parser| {
@@ -342,7 +344,7 @@
                  DataType::Interval { .. } => parser.parse_interval(),
                  // Custom names need dialect consent, else `NOT 'a'` would read as a typed string.
                  DataType::Custom(name, modifiers)
-@@ -2035,7 +2048,9 @@
+@@ -2035,7 +2050,9 @@
                      ),
                  })
              }
@@ -353,7 +355,7 @@
              {
                  self.prev_token();
                  Ok(Expr::Value(self.parse_value()?))
-@@ -2095,7 +2110,7 @@
+@@ -2095,7 +2112,7 @@
                          }
                      };
                  self.expect_token(&Token::RParen)?;
@@ -362,7 +364,7 @@
              }
              Token::Placeholder(_) | Token::Colon | Token::AtSign => {
                  self.prev_token();
-@@ -2138,7 +2153,9 @@
+@@ -2138,7 +2155,9 @@
                      Token::Mul => {
                          // Postgres explicitly allows funcnm(tablenm.*) and the
                          // function array_agg traverses this control flow
@@ -373,7 +375,7 @@
                              ending_wildcard = Some(self.next_token());
                          } else {
                              // Put back the consumed `.` tokens before exiting.
-@@ -2626,6 +2643,7 @@
+@@ -2626,6 +2645,7 @@
                  filter: None,
                  null_treatment: None,
                  over: None,
@@ -381,7 +383,7 @@
                  within_group: vec![],
              });
          }
-@@ -2635,7 +2653,7 @@
+@@ -2635,7 +2655,7 @@
          {
              self.parse_xmlparse_argument_list()?
          } else {
@@ -390,7 +392,7 @@
          };
          let mut parameters = FunctionArguments::None;
          // ClickHouse aggregations support parametric functions like `HISTOGRAM(0.5, 0.6)(x, y)`
-@@ -2644,9 +2662,25 @@
+@@ -2644,9 +2664,25 @@
              && self.consume_token(&Token::LParen)
          {
              parameters = FunctionArguments::List(args);
@@ -417,7 +419,7 @@
          let within_group = if self.parse_keywords(&[Keyword::WITHIN, Keyword::GROUP]) {
              self.expect_token(&Token::LParen)?;
              self.expect_keywords(&[Keyword::ORDER, Keyword::BY])?;
-@@ -2658,10 +2692,11 @@
+@@ -2658,10 +2694,11 @@
          };
  
          let filter = if self.dialect.supports_filter_during_aggregation()
@@ -430,7 +432,7 @@
              let filter = Some(Box::new(self.parse_expr()?));
              self.expect_token(&Token::RParen)?;
              filter
-@@ -2669,17 +2704,17 @@
+@@ -2669,17 +2706,17 @@
              None
          };
  
@@ -458,7 +460,7 @@
  
          let over = if self.parse_keyword(Keyword::OVER) {
              if self.consume_token(&Token::LParen) {
-@@ -2713,6 +2748,7 @@
+@@ -2713,6 +2750,7 @@
              parameters,
              args: FunctionArguments::List(args),
              null_treatment,
@@ -466,7 +468,7 @@
              filter,
              over,
              within_group,
-@@ -2738,7 +2774,7 @@
+@@ -2738,7 +2776,7 @@
      /// Parse time-related function `name` possibly followed by `(...)` arguments.
      pub fn parse_time_functions(&mut self, name: ObjectName) -> Result<Expr, ParserError> {
          let args = if self.consume_token(&Token::LParen) {
@@ -475,7 +477,7 @@
          } else {
              FunctionArguments::None
          };
-@@ -2750,6 +2786,7 @@
+@@ -2750,6 +2788,7 @@
              filter: None,
              over: None,
              null_treatment: None,
@@ -483,7 +485,7 @@
              within_group: vec![],
          }))
      }
-@@ -2779,10 +2816,37 @@
+@@ -2779,10 +2818,37 @@
          } else {
              (self.parse_window_frame_bound()?, None)
          };
@@ -521,7 +523,7 @@
          })
      }
  
-@@ -2814,7 +2878,16 @@
+@@ -2814,7 +2880,16 @@
          if self.dialect.supports_group_by_expr() {
              if self.parse_keywords(&[Keyword::GROUPING, Keyword::SETS]) {
                  self.expect_token(&Token::LParen)?;
@@ -539,7 +541,7 @@
                  self.expect_token(&Token::RParen)?;
                  Ok(Expr::GroupingSets(result))
              } else if self.parse_keyword(Keyword::CUBE) {
-@@ -3036,9 +3109,7 @@
+@@ -3036,9 +3111,7 @@
          {
              ExtractSyntax::Comma
          } else {
@@ -550,7 +552,7 @@
          };
  
          let expr = self.parse_expr()?;
-@@ -3685,6 +3756,7 @@
+@@ -3685,6 +3758,7 @@
              let field_type = parser.parse_data_type()?;
  
              Ok(StructField {
@@ -558,7 +560,7 @@
                  field_name: Some(field_name),
                  field_type,
                  options: None,
-@@ -3728,6 +3800,7 @@
+@@ -3728,6 +3802,7 @@
          let options = self.maybe_parse_options(Keyword::OPTIONS)?;
          Ok((
              StructField {
@@ -566,7 +568,7 @@
                  field_name,
                  field_type,
                  options,
-@@ -3818,7 +3891,10 @@
+@@ -3818,7 +3893,10 @@
          self.expect_token(&Token::LBrace)?;
          let fields = self.parse_comma_separated0(Self::parse_duckdb_map_field, Token::RBrace)?;
          self.expect_token(&Token::RBrace)?;
@@ -578,7 +580,7 @@
      }
  
      /// Parse a field for a duckdb [map]
-@@ -4223,7 +4299,8 @@
+@@ -4223,7 +4301,8 @@
                      let negated = self.parse_keyword(Keyword::NOT);
                      let regexp = self.parse_keyword(Keyword::REGEXP);
                      let rlike = self.parse_keyword(Keyword::RLIKE);
@@ -588,7 +590,7 @@
                          self.parse_keyword(Keyword::NULL)
                      } else {
                          false
-@@ -4236,6 +4313,11 @@
+@@ -4236,6 +4315,11 @@
                                  self.parse_subexpr(self.dialect.prec_value(Precedence::Like))?,
                              ),
                              regexp,
@@ -600,10 +602,11 @@
                          })
                      } else if negated && null {
                          Ok(Expr::IsNotNull(Box::new(expr)))
-@@ -4276,9 +4358,42 @@
+@@ -4275,10 +4359,43 @@
+                     } else {
                          self.expected_ref("IN or BETWEEN after NOT", self.peek_token_ref())
                      }
-                 }
++                }
 +                Keyword::FORMAT if dialect.supports_format_json() => {
 +                    self.expect_keyword_is(Keyword::JSON)?;
 +                    let encoding = if self.parse_keyword(Keyword::ENCODING) {
@@ -628,7 +631,7 @@
 +                        expr: Box::new(expr),
 +                        encoding,
 +                    })
-+                }
+                 }
                  Keyword::NOTNULL if dialect.supports_notnull_operator() => {
                      Ok(Expr::IsNotNull(Box::new(expr)))
                  }
@@ -643,7 +646,7 @@
                  Keyword::MEMBER => {
                      if self.parse_keyword(Keyword::OF) {
                          self.expect_token(&Token::LParen)?;
-@@ -4333,6 +4448,13 @@
+@@ -4333,6 +4450,13 @@
  
      /// Parse the `ESCAPE CHAR` portion of `LIKE`, `ILIKE`, and `SIMILAR TO`
      pub fn parse_escape_char(&mut self) -> Result<Option<Box<Expr>>, ParserError> {
@@ -657,7 +660,7 @@
          if self.parse_keyword(Keyword::ESCAPE) {
              Ok(Some(Box::new(self.parse_subexpr(
                  self.dialect.prec_value(Precedence::Like),
-@@ -4605,6 +4727,15 @@
+@@ -4605,6 +4729,15 @@
  
      /// Parses `BETWEEN <low> AND <high>`, assuming the `BETWEEN` keyword was already consumed.
      pub fn parse_between(&mut self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
@@ -673,7 +676,7 @@
          let mut low = self.parse_subexpr(self.dialect.between_low_bound_precedence())?;
          if self.dialect.supports_comparison_in_between_low_bound()
              && matches!(
-@@ -4624,6 +4755,7 @@
+@@ -4624,6 +4757,7 @@
          self.expect_keyword_is(Keyword::AND)?;
          let high = self.parse_subexpr(self.dialect.prec_value(Precedence::Between))?;
          Ok(Expr::Between {
@@ -681,7 +684,7 @@
              expr: Box::new(expr),
              negated,
              low: Box::new(low),
-@@ -7065,6 +7197,7 @@
+@@ -7065,6 +7199,7 @@
              ]);
  
          Ok(CreateView {
@@ -689,7 +692,7 @@
              or_alter,
              name,
              columns,
-@@ -8940,6 +9073,7 @@
+@@ -8940,6 +9075,7 @@
          }
  
          Ok(CreateIndex {
@@ -697,7 +700,7 @@
              name: index_name,
              table_name,
              using,
-@@ -12773,6 +12907,7 @@
+@@ -12773,6 +12909,7 @@
                  over: None,
                  filter: None,
                  null_treatment: None,
@@ -705,7 +708,7 @@
                  within_group: vec![],
              }))
          }
-@@ -13453,7 +13588,10 @@
+@@ -13453,7 +13590,10 @@
              }) => Ok(value),
              Token::SingleQuotedString(s) => Ok(s),
              Token::DoubleQuotedString(s) => Ok(s),
@@ -717,7 +720,7 @@
                  Ok(s)
              }
              Token::UnicodeStringLiteral(s) => Ok(s),
-@@ -13550,10 +13688,37 @@
+@@ -13550,10 +13690,37 @@
          self.expect_token(&Token::RParen)?;
  
          Ok(values)
@@ -755,7 +758,7 @@
          let (ty, trailing_bracket) = self.parse_data_type_helper()?;
          if trailing_bracket.0 {
              return parser_err!(
-@@ -13785,15 +13950,7 @@
+@@ -13785,15 +13952,7 @@
                  }
                  Keyword::TIMESTAMP => {
                      let precision = self.parse_optional_precision()?;
@@ -772,7 +775,7 @@
                      Ok(DataType::Timestamp(precision, tz))
                  }
                  Keyword::TIMESTAMPTZ => Ok(DataType::Timestamp(
-@@ -13805,15 +13962,7 @@
+@@ -13805,15 +13964,7 @@
                  }
                  Keyword::TIME => {
                      let precision = self.parse_optional_precision()?;
@@ -789,7 +792,7 @@
                      Ok(DataType::Time(precision, tz))
                  }
                  Keyword::TIMETZ => Ok(DataType::Time(
-@@ -13824,10 +13973,15 @@
+@@ -13824,10 +13975,15 @@
                      if self.dialect.supports_interval_options() {
                          let fields = self.maybe_parse_optional_interval_fields()?;
                          let precision = self.parse_optional_precision()?;
@@ -806,7 +809,7 @@
                              precision: None,
                          })
                      }
-@@ -14072,10 +14226,11 @@
+@@ -14072,10 +14228,11 @@
              }
          }
  
@@ -822,7 +825,7 @@
                  let size = self.maybe_parse(|p| p.parse_literal_uint())?;
                  self.expect_token(&Token::RBracket)?;
                  size
-@@ -14083,6 +14238,9 @@
+@@ -14083,6 +14240,9 @@
                  None
              };
              data = DataType::Array(ArrayElemTypeDef::Qualified(Box::new(data), size));
@@ -832,7 +835,7 @@
          }
  
          Ok((data, trailing_bracket))
-@@ -14375,6 +14533,11 @@
+@@ -14375,6 +14535,11 @@
      /// Parse an optional `GROUP BY` clause, returning `Some(GroupByExpr)` when present.
      pub fn parse_optional_group_by(&mut self) -> Result<Option<GroupByExpr>, ParserError> {
          if self.parse_keywords(&[Keyword::GROUP, Keyword::BY]) {
@@ -844,7 +847,7 @@
              let expressions = if self.parse_keyword(Keyword::ALL) {
                  None
              } else {
-@@ -14477,6 +14640,12 @@
+@@ -14477,6 +14642,12 @@
                          "Missing offset for LIMIT <offset>, <limit>".to_string(),
                      )
                  })?;
@@ -857,11 +860,13 @@
                  return Ok(Some(LimitClause::OffsetCommaLimit {
                      offset,
                      limit: self.parse_expr()?,
-@@ -15528,24 +15697,39 @@
+@@ -15528,24 +15699,39 @@
  
              let order_by = self.parse_optional_order_by()?;
  
 -            let mut limit_clause = self.parse_optional_limit_clause()?;
+-
+-            let settings = self.parse_settings()?;
 +            let mut query = Query {
 +                with,
 +                body,
@@ -879,10 +884,9 @@
 +                return Ok(Box::new(query));
 +            }
  
--            let settings = self.parse_settings()?;
-+            query.limit_clause = self.parse_optional_limit_clause()?;
- 
 -            let fetch = if self.parse_keyword(Keyword::FETCH) {
++            query.limit_clause = self.parse_optional_limit_clause()?;
++
 +            query.settings = self.parse_settings()?;
 +
 +            query.fetch = if self.parse_keyword(Keyword::FETCH) {
@@ -904,7 +908,7 @@
                  }
              }
  
-@@ -15554,11 +15738,11 @@
+@@ -15554,11 +15740,11 @@
              // as before it. The locking clause above is parsed for every
              // dialect, so accept a trailing limit here too rather than gating it
              // behind a dialect flag.
@@ -919,7 +923,7 @@
                  if self.dialect.supports_select_format() && self.parse_keyword(Keyword::FORMAT) {
                      if self.parse_keyword(Keyword::NULL) {
                          Some(FormatClause::Null)
-@@ -15570,25 +15754,13 @@
+@@ -15570,25 +15756,13 @@
                      None
                  };
  
@@ -947,7 +951,7 @@
          }
      }
  
-@@ -15954,6 +16126,7 @@
+@@ -15954,6 +16128,7 @@
                      from: None,
                      materialized: None,
                      closing_paren_token: closing_paren_token.into(),
@@ -955,7 +959,7 @@
                  };
                  if self.parse_keyword(Keyword::FROM) {
                      cte.from = Some(self.parse_identifier()?);
-@@ -15999,6 +16172,7 @@
+@@ -15999,6 +16174,7 @@
              from: None,
              materialized: is_materialized,
              closing_paren_token: closing_paren_token.into(),
@@ -963,7 +967,7 @@
          };
          if self.dialect.supports_from_first_insert() && self.parse_keyword(Keyword::FROM) {
              cte.from = Some(self.parse_identifier()?);
-@@ -16015,8 +16189,12 @@
+@@ -16015,8 +16191,12 @@
      ///   set_operation ::= query_body { 'UNION' | 'EXCEPT' | 'INTERSECT' } [ 'ALL' ] query_body
      /// ```
      pub fn parse_query_body(&mut self, precedence: u8) -> Result<Box<SetExpr>, ParserError> {
@@ -978,7 +982,7 @@
          let expr = if self.peek_keyword(Keyword::SELECT)
              || (self.peek_keyword(Keyword::FROM) && self.dialect.supports_from_first_select())
          {
-@@ -16043,7 +16221,7 @@
+@@ -16043,7 +16223,7 @@
              );
          };
  
@@ -987,7 +991,7 @@
      }
  
      /// Parse any extra set expressions that may be present in a query body
-@@ -16174,7 +16352,10 @@
+@@ -16174,7 +16354,10 @@
  
          let mut top_before_distinct = false;
          let mut top = None;
@@ -999,7 +1003,7 @@
              top = Some(self.parse_top()?);
              top_before_distinct = true;
          }
-@@ -16185,7 +16366,10 @@
+@@ -16185,7 +16368,10 @@
              self.parse_all_or_distinct()?
          };
  
@@ -1011,7 +1015,22 @@
              top = Some(self.parse_top()?);
          }
  
-@@ -16398,7 +16582,7 @@
+@@ -16221,6 +16407,14 @@
+             (vec![], false)
+         };
+ 
++        if from.is_empty() && self.dialect.select_clauses_require_from() {
++            let next = self.peek_token_ref();
++            if matches!(&next.token, Token::Word(w) if matches!(w.keyword,
++                Keyword::WHERE | Keyword::GROUP | Keyword::HAVING | Keyword::WINDOW | Keyword::QUALIFY)) {
++                return self.expected_ref("FROM before this SELECT clause", next);
++            }
++        }
++
+         let mut lateral_views = vec![];
+         loop {
+             if self.parse_keywords(&[Keyword::LATERAL, Keyword::VIEW]) {
+@@ -16398,7 +16592,7 @@
              match ws {
                  Whitespace::SingleLineComment { comment, prefix } => {
                      if let Some((hint_prefix, text)) = Self::extract_hint_prefix_and_text(comment) {
@@ -1020,7 +1039,7 @@
                              prefix: hint_prefix,
                              text,
                              style: OptimizerHintStyle::SingleLine {
-@@ -16410,7 +16594,7 @@
+@@ -16410,7 +16604,7 @@
                  }
                  Whitespace::MultiLineComment(comment) => {
                      if let Some((hint_prefix, text)) = Self::extract_hint_prefix_and_text(comment) {
@@ -1029,7 +1048,7 @@
                              prefix: hint_prefix,
                              text,
                              style: OptimizerHintStyle::MultiLine,
-@@ -16566,19 +16750,14 @@
+@@ -16566,19 +16760,14 @@
  
      /// Parse `CREATE TABLE x AS TABLE y`
      pub fn parse_as_table(&mut self) -> Result<Table, ParserError> {
@@ -1055,7 +1074,7 @@
      }
  
      /// Parse a `SET ROLE` statement. Expects SET to be consumed already.
-@@ -17181,6 +17360,10 @@
+@@ -17181,6 +17370,10 @@
      fn parse_joins(&mut self) -> Result<Vec<Join>, ParserError> {
          let mut joins = vec![];
          loop {
@@ -1066,7 +1085,7 @@
              let global = self.parse_keyword(Keyword::GLOBAL);
              let join = if self.parse_keyword(Keyword::CROSS) {
                  let join_operator = if self.parse_keyword(Keyword::JOIN) {
-@@ -17314,7 +17497,8 @@
+@@ -17314,7 +17507,8 @@
                              }
                              _ => {
                                  return Err(ParserError::ParserError(format!(
@@ -1076,7 +1095,7 @@
                                  )))
                              }
                          }
-@@ -17445,7 +17629,11 @@
+@@ -17445,7 +17639,11 @@
              // `FROM ((((...`, where the nested-join fallback recurses back into
              // `parse_table_factor` and re-attempts the same speculative parse.
              let derived_pos = self.index;
@@ -1089,7 +1108,7 @@
                  .failed_derived_table_factor_positions
                  .contains(&derived_pos)
              {
-@@ -17524,6 +17712,7 @@
+@@ -17524,6 +17722,7 @@
                          | TableFactor::OpenJsonTable { alias, .. }
                          | TableFactor::TableFunction { alias, .. }
                          | TableFactor::Pivot { alias, .. }
@@ -1097,7 +1116,7 @@
                          | TableFactor::Unpivot { alias, .. }
                          | TableFactor::MatchRecognize { alias, .. }
                          | TableFactor::SemanticView { alias, .. }
-@@ -17758,6 +17947,7 @@
+@@ -17758,6 +17957,7 @@
              }
  
              let mut table = TableFactor::Table {
@@ -1105,7 +1124,7 @@
                  name,
                  alias,
                  args,
-@@ -17809,6 +17999,7 @@
+@@ -17809,6 +18009,7 @@
          let alias = self.maybe_parse_table_alias()?;
  
          Ok(TableFactor::Table {
@@ -1113,7 +1132,7 @@
              name,
              alias,
              args,
-@@ -18359,12 +18550,16 @@
+@@ -18359,12 +18560,16 @@
  
      /// Parses a the timestamp version specifier (i.e. query historical data)
      pub fn maybe_parse_table_version(&mut self) -> Result<Option<TableVersion>, ParserError> {
@@ -1135,7 +1154,7 @@
                  return self.parse_table_version_changes().map(Some);
              } else if self.peek_keyword(Keyword::AT) || self.peek_keyword(Keyword::BEFORE) {
                  let func_name = self.parse_object_name(true)?;
-@@ -18649,6 +18844,34 @@
+@@ -18649,6 +18854,34 @@
              None
          };
          self.expect_token(&Token::LParen)?;
@@ -1170,7 +1189,7 @@
          let value = self.parse_expr()?;
          self.expect_keyword_is(Keyword::FOR)?;
          let name = self.parse_identifier()?;
-@@ -18668,6 +18891,16 @@
+@@ -18668,6 +18901,16 @@
          })
      }
  
@@ -1187,7 +1206,7 @@
      /// Parse an object UNPIVOT table factor in FROM clause.
      ///
      /// Syntax:
-@@ -18692,6 +18925,9 @@
+@@ -18692,6 +18935,9 @@
  
      /// Parse a JOIN constraint (`NATURAL`, `ON <expr>`, `USING (...)`, or no constraint).
      pub fn parse_join_constraint(&mut self, natural: bool) -> Result<JoinConstraint, ParserError> {
@@ -1197,7 +1216,7 @@
          if natural {
              Ok(JoinConstraint::Natural)
          } else if self.parse_keyword(Keyword::ON) {
-@@ -20066,6 +20302,9 @@
+@@ -20066,6 +20312,9 @@
  
      /// Parse a single function argument, handling named and unnamed variants.
      pub fn parse_function_args(&mut self) -> Result<FunctionArg, ParserError> {
@@ -1207,7 +1226,7 @@
          // Parse the argument expression once, then check for a named-arg
          // operator. Parsing it speculatively and re-parsing on the unnamed
          // path is O(2^depth) on nested calls like `CAST(CASE (CAST(CASE (…`.
-@@ -20224,7 +20463,10 @@
+@@ -20224,7 +20473,10 @@
      /// FIRST_VALUE(x ORDER BY 1,2,3);
      /// FIRST_VALUE(x IGNORE NULL);
      /// ```
@@ -1219,7 +1238,7 @@
          let mut clauses = vec![];
  
          // Handle clauses that may exist with an empty argument list
-@@ -20261,7 +20503,7 @@
+@@ -20261,7 +20513,7 @@
              clauses.push(FunctionArgumentClause::Where(self.parse_expr()?));
          }
  
@@ -1228,7 +1247,7 @@
              if let Some(null_treatment) = self.parse_null_treatment()? {
                  clauses.push(FunctionArgumentClause::IgnoreOrRespectNulls(null_treatment));
              }
-@@ -20293,10 +20535,16 @@
+@@ -20293,10 +20545,16 @@
              )))
          }
  
@@ -1247,7 +1266,7 @@
          }
  
          if let Some(on_overflow) = self.parse_listagg_on_overflow()? {
-@@ -20321,7 +20569,8 @@
+@@ -20321,7 +20579,8 @@
          })
      }
  
@@ -1257,7 +1276,7 @@
          if self.parse_keywords(&[Keyword::ABSENT, Keyword::ON, Keyword::NULL]) {
              Some(JsonNullClause::AbsentOnNull)
          } else if self.parse_keywords(&[Keyword::NULL, Keyword::ON, Keyword::NULL]) {
-@@ -20513,7 +20762,14 @@
+@@ -20513,7 +20772,14 @@
      pub fn parse_optional_select_item_exclude(
          &mut self,
      ) -> Result<Option<ExcludeSelectItem>, ParserError> {
@@ -1273,7 +1292,7 @@
              if self.consume_token(&Token::LParen) {
                  let columns =
                      self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
-@@ -20966,6 +21222,9 @@
+@@ -20966,6 +21232,9 @@
          allow_empty: bool,
          value_keyword: bool,
      ) -> Result<Values, ParserError> {
@@ -3387,7 +3406,7 @@
      /// Dialect-specific infix parser override
      ///
      /// This method is called to parse the next infix expression.
-@@ -1126,9 +1249,23 @@
+@@ -1126,11 +1249,25 @@
          None
      }
  
@@ -3399,8 +3418,8 @@
      /// Parses a dialect-specific type, leaving the cursor unchanged on `None` to use standard parsing.
      fn parse_data_type(&self, _parser: &mut Parser) -> Option<Result<DataType, ParserError>> {
          None
-+    }
-+
+     }
+ 
 +    /// Validate a parsed type before its source tokens are discarded.
 +    fn validate_data_type(
 +        &self,
@@ -3408,13 +3427,18 @@
 +        _tokens: &[TokenWithSpan],
 +    ) -> Result<(), ParserError> {
 +        Ok(())
-     }
- 
++    }
++
      /// Dialect-specific column option parser override
-@@ -1446,6 +1583,27 @@
-         false
-     }
+     ///
+     /// This method is called to parse the next column option.
+@@ -1443,6 +1580,27 @@
  
+     /// Returns true if the dialect supports `<<` and `>>` shift operators.
+     fn supports_bitwise_shift_operators(&self) -> bool {
++        false
++    }
++
 +    /// Treat `/*+ ... */` as SQL hint syntax. Strings and ordinary comments
 +    /// inside the hint do not terminate its outer delimiter.
 +    fn supports_sql_hint_comments(&self) -> bool {
@@ -3433,12 +3457,9 @@
 +
 +    /// Whether two consecutive slashes start a line comment.
 +    fn supports_slash_line_comments(&self) -> bool {
-+        false
-+    }
-+
-     /// Returns true if the dialect supports nested comments
-     /// e.g. `/* /* nested */ */`
-     fn supports_nested_comments(&self) -> bool {
+         false
+     }
+ 
 @@ -1525,6 +1683,11 @@
      /// Returns true if the dialect supports the `LOAD extension` statement
      fn supports_load_extension(&self) -> bool {
@@ -3451,23 +3472,31 @@
      }
  
      /// Returns true if this dialect expects the `TOP` option
-@@ -1731,6 +1894,12 @@
-         false
-     }
- 
-+    /// Whether this keyword after FROM ( can only start a query. For such
-+    /// prefixes the parser can report the query error without retrying a join.
-+    fn starts_unambiguous_derived_query(&self, _keyword: Keyword) -> bool {
+@@ -1728,6 +1891,18 @@
+     /// SQLite reads `OVER` as a keyword only when `(` or a name follows, see
+     /// `analyzeOverKeyword` in [tokenize.c](https://sqlite.org/src/file?name=src/tokenize.c)
+     fn supports_over_keyword_as_column_alias(&self) -> bool {
 +        false
 +    }
 +
-     /// Returns true if the specified keyword should be parsed as a table factor identifier.
-     /// See [keywords::RESERVED_FOR_TABLE_FACTOR]
-     fn is_table_factor(&self, kw: &Keyword, _parser: &mut Parser) -> bool {
-@@ -1767,6 +1936,36 @@
-         true
++    /// Whether WHERE, GROUP BY, HAVING, WINDOW and QUALIFY in a SELECT
++    /// require a preceding FROM clause.
++    fn select_clauses_require_from(&self) -> bool {
++        false
++    }
++
++    /// Whether this keyword after FROM ( can only start a query. For such
++    /// prefixes the parser can report the query error without retrying a join.
++    fn starts_unambiguous_derived_query(&self, _keyword: Keyword) -> bool {
+         false
      }
  
+@@ -1765,8 +1940,38 @@
+     /// [SQLite](https://www.sqlite.org/lang_keywords.html)
+     fn supports_string_literal_table_alias(&self, _explicit: bool) -> bool {
+         true
++    }
++
 +    /// Whether MEMBER OF accepts an arbitrary right operand (SQL multisets).
 +    fn supports_multiset_membership(&self) -> bool {
 +        false
@@ -3476,8 +3505,8 @@
 +    /// Allow a qualified wildcard as a scalar operand.
 +    fn supports_qualified_wildcard_operand(&self) -> bool {
 +        false
-+    }
-+
+     }
+ 
 +    /// Allow an expression to be marked as JSON with optional UTF encoding.
 +    fn supports_format_json(&self) -> bool {
 +        false
@@ -3501,7 +3530,7 @@
      /// Returns true if this dialect supports querying historical table data
      /// by specifying which version of the data to query.
      fn supports_table_versioning(&self) -> bool {
-@@ -1780,6 +1979,11 @@
+@@ -1780,6 +1985,11 @@
          false
      }
  

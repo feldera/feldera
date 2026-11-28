@@ -168,9 +168,15 @@ into equivalent ASTs for all 144 and 93 accepted cases.
 The parser treats TOP as a name in SELECT lists and reports syntax errors
 inside derived SELECT and WITH queries. All 116 directed verdicts and all
 80 accepted formatter ASTs matched Java. Of the 36 directed rejections, 14
-matched the product diagnostic. On the larger suite, 861 of the 1,061 shared
-rejections matched severity, error class, start and snippet together. The
-remaining 200 are open P5a differences.
+matched the product diagnostic. The parser now locates unsupported operators
+at their original punctuation and detects SELECT clauses that require FROM
+at the clause keyword. Repeated DEFAULT, PRIMARY KEY and LATENESS attributes
+carry the compiler's error class and the range of the repeated expression
+or key. All 28 directed duplicate-attribute diagnostics matched Java on
+severity, class, start and snippet. On the larger suite, matches rose from
+861 to 901 of 1,061 shared rejections, leaving 160 P5a diagnostic differences.
+Java recovered the same parsed AST from formatted SQL for all 8,571 frozen
+programs and the 1,073 shared acceptances in the adversarial suite.
 [Diagnostic comparison](scripts/validate_syntax_diagnostics.py)
 
 In a 360-case comparison of index declarations, drops, LIMIT, OFFSET and FETCH,

@@ -47,7 +47,7 @@ pub fn syntax(sql: &str) -> Result<Option<Value>, Box<dyn Error>> {
         .unwrap_or_default();
     let mut message = json!(range);
     message["warning"] = false.into();
-    message["error_type"] = "Error parsing SQL".into();
+    message["error_type"] = diagnostic.error_type.into();
     message["message"] = diagnostic.message.into();
     // Java keeps CR in source lines and drops trailing empty strings from split.
     let visible = lines
@@ -87,6 +87,22 @@ pub fn preview(sql: &str) -> Result<Value, Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::syntax;
+
+    #[test]
+    fn repeated_column_attributes_report_the_second_declaration() {
+        for (attributes, column, end) in [
+            ("DEFAULT 1 DEFAULT (2+3)", 19, 23),
+            ("PRIMARY KEY PRIMARY   KEY", 13, 25),
+            ("LATENESS 1 LATENESS 2", 21, 21),
+        ] {
+            let sql = format!("CREATE TABLE t(x INT\n{attributes})");
+            let msg = syntax(&sql).unwrap().expect("duplicate column attribute");
+            assert_eq!(msg["error_type"], "Compilation error");
+            assert_eq!(msg["start_line_number"], 2);
+            assert_eq!(msg["start_column"], column, "{sql}");
+            assert_eq!(msg["end_column"], end, "{sql}");
+        }
+    }
 
     #[test]
     fn eof_uses_the_last_utf16_column_and_the_original_source_lines() {

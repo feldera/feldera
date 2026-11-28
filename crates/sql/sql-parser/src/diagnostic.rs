@@ -3,7 +3,7 @@
 use sqlparser_064::{
     ast::DataType,
     keywords::Keyword,
-    parser::ParserError,
+    parser::{Parser, ParserError},
     tokenizer::{Location, Span, Token, TokenWithSpan},
 };
 
@@ -14,8 +14,78 @@ pub(super) fn at(message: impl std::fmt::Display, location: Location) -> ParserE
 pub(super) fn located(message: impl Into<String>, span: Span) -> ParserError {
     ParserError::Located {
         message: message.into(),
+        diagnostic_class: None,
         span,
     }
+}
+
+/// Upstream combines punctuation from several dialects into one token.
+/// JavaCC reports the individual Feldera token at which the expression fails.
+pub(super) fn invalid_operator(parser: &Parser, prefix: bool) -> Option<ParserError> {
+    let token = parser.peek_token_ref();
+    let (offset, width) = match token.token {
+        Token::DoubleEq
+        | Token::DoubleTilde
+        | Token::DoubleTildeAsterisk
+        | Token::HashArrow
+        | Token::HashLongArrow
+        | Token::AtArrow
+        | Token::AtAt
+        | Token::AtQuestion
+        | Token::Overlap
+        | Token::DoubleExclamationMark
+        | Token::PGSquareRoot
+        | Token::Pipe
+        | Token::Assignment => (0, 1),
+        Token::Colon if prefix => (0, 1),
+        Token::Gt | Token::ShiftRight
+            if matches!(
+                parser.peek_nth_token_ref(1).token,
+                Token::Gt | Token::ShiftRight
+            ) =>
+        {
+            (0, 1)
+        }
+        Token::Tilde
+            if matches!(
+                parser.peek_nth_token_ref(1).token,
+                Token::Tilde | Token::TildeAsterisk
+            ) =>
+        {
+            (0, 1)
+        }
+        Token::Tilde
+        | Token::TildeAsterisk
+        | Token::ExclamationMarkTilde
+        | Token::ExclamationMarkTildeAsterisk
+            if prefix =>
+        {
+            (0, 1)
+        }
+        // After a left operand, !~ starts a legal regex comparison and the
+        // next tilde fails as its right operand.
+        Token::ExclamationMarkDoubleTilde | Token::ExclamationMarkDoubleTildeAsterisk => {
+            (if prefix { 0 } else { 2 }, 1)
+        }
+        Token::Sharp | Token::AtSign | Token::ArrowAt | Token::CaretAt => {
+            let next = parser.peek_nth_token_ref(1);
+            if next.token == Token::EOF && next.span.start == token.span.end {
+                return Some(located("unrecognized character at end of input", next.span));
+            }
+            (
+                u64::from(matches!(token.token, Token::ArrowAt | Token::CaretAt)),
+                1,
+            )
+        }
+        Token::PGCubeRoot => (0, 2),
+        _ => return None,
+    };
+    let start = token.span.start;
+    let location = |n| Location::new(start.line, start.column + n);
+    Some(located(
+        format!("unexpected operator {}", token.token),
+        Span::new(location(offset), location(offset + width)),
+    ))
 }
 
 /// A syntax failure and its original token span. Some tokenizer failures
@@ -23,6 +93,7 @@ pub(super) fn located(message: impl Into<String>, span: Span) -> ParserError {
 pub struct SyntaxDiagnostic {
     pub message: String,
     pub span: Option<Span>,
+    pub error_type: &'static str,
 }
 
 /// Inspect syntax independently of name resolution. Recursion-limit failures
@@ -31,10 +102,15 @@ pub fn syntax_diagnostic(sql: &str) -> Result<Option<SyntaxDiagnostic>, ParserEr
     let message = match crate::parse(sql) {
         Ok(_) => return Ok(None),
         Err(ParserError::ParserError(message) | ParserError::TokenizerError(message)) => message,
-        Err(ParserError::Located { message, span }) => {
+        Err(ParserError::Located {
+            message,
+            diagnostic_class,
+            span,
+        }) => {
             return Ok(Some(SyntaxDiagnostic {
                 message,
                 span: Some(span),
+                error_type: diagnostic_class.unwrap_or("Error parsing SQL"),
             }));
         }
         Err(error) => return Err(error),
@@ -69,7 +145,11 @@ pub fn syntax_diagnostic(sql: &str) -> Result<Option<SyntaxDiagnostic>, ParserEr
             })
             .unwrap_or(Span::new(start, start))
     });
-    Ok(Some(SyntaxDiagnostic { message, span }))
+    Ok(Some(SyntaxDiagnostic {
+        message,
+        span,
+        error_type: "Error parsing SQL",
+    }))
 }
 
 /// The AST stores the width and modifiers but discards their locations.
@@ -152,6 +232,40 @@ mod tests {
 mod span_tests {
     use super::syntax_diagnostic;
     use sqlparser_064::tokenizer::{Location, Span};
+
+    #[test]
+    fn operator_and_clause_errors_preserve_the_original_token() {
+        for (sql, line, column, width) in [
+            ("SELECT @name", 1, 8, 1),
+            ("SELECT :name", 1, 8, 1),
+            ("SELECT a == b", 1, 10, 1),
+            ("SELECT a !~~ b", 1, 12, 1),
+            ("SELECT a >>> b", 1, 10, 1),
+            ("SELECT a <@ b", 1, 11, 1),
+            ("SELECT * FROM (SELECT 1\n WHERE TRUE) q", 2, 2, 5),
+            ("SELECT (a + b) YEAR TO MONTH", 1, 8, 21),
+            ("SELECT MAP[1, 2,]", 1, 16, 1),
+        ] {
+            let error = syntax_diagnostic(sql).unwrap().expect("invalid SQL");
+            assert_eq!(error.error_type, "Error parsing SQL");
+            assert_eq!(
+                error.span,
+                Some(Span::new(
+                    Location::new(line, column),
+                    Location::new(line, column + width)
+                )),
+                "{sql}"
+            );
+        }
+        for sql in [
+            "SELECT a ~* b",
+            "SELECT a !~ b",
+            "SELECT a >> -b",
+            "SELECT ?",
+        ] {
+            assert!(syntax_diagnostic(sql).unwrap().is_none(), "{sql}");
+        }
+    }
 
     #[test]
     fn derived_query_errors_keep_the_offending_token() {

@@ -128,6 +128,9 @@ impl Dialect for FelderaDialect {
     }
 
     fn get_next_precedence(&self, parser: &Parser) -> Option<Result<u8, ParserError>> {
+        if let Some(error) = diagnostic::invalid_operator(parser, false) {
+            return Some(Err(error));
+        }
         // Calcite requires IS in the postfix null test. An adjacent NOT NULL
         // can instead be a column or type modifier for the enclosing parser.
         if parser.peek_keyword(Keyword::NOT)
@@ -162,6 +165,10 @@ impl Dialect for FelderaDialect {
 
     fn is_select_item_alias(&self, explicit: bool, keyword: &Keyword, parser: &mut Parser) -> bool {
         explicit || *keyword == Keyword::END || self.is_column_alias(keyword, parser)
+    }
+
+    fn select_clauses_require_from(&self) -> bool {
+        true
     }
 
     fn supports_local_time_zone(&self) -> bool {
@@ -366,6 +373,9 @@ impl Dialect for FelderaDialect {
     }
 
     fn parse_prefix(&self, parser: &mut Parser) -> Option<Result<Expr, ParserError>> {
+        if let Some(error) = diagnostic::invalid_operator(parser, true) {
+            return Some(Err(error));
+        }
         if parser.peek_keyword(Keyword::SUBSTR) || parser.peek_keyword(Keyword::SUBSTRING) {
             return Some(substring::parse(parser));
         }
@@ -458,10 +468,16 @@ impl Dialect for FelderaDialect {
             return Some(Err(error));
         }
         let start = parser.peek_token().span.start;
-        if parser.parse_keyword(Keyword::INTERVAL) {
+        if parser.peek_keyword(Keyword::INTERVAL) {
+            let previous = parser.get_current_token();
+            let position = if previous.token == Token::DoubleColon {
+                previous.span.start
+            } else {
+                start
+            };
             return Some(Err(diagnostic::at(
                 "interval type qualifiers are supported only as a direct CAST target",
-                start,
+                position,
             )));
         }
         if !parser.parse_keyword(Keyword::ROW) {
@@ -590,7 +606,6 @@ pub fn parse_at_with_starts(
         }
     }
     reserved::validate_tokens(&tokens)?;
-    reject::validate_lossy_tokens(&tokens)?;
     attributes::validate_tokens(&mut tokens)?;
     // Calcite distinguishes ordinary quoted names from U&"..." in the
     // DESCRIBE lookahead. Both have the same decoded identifier token.

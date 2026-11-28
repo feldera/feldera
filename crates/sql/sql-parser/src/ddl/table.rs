@@ -140,8 +140,12 @@ fn column(parser: &mut Parser) -> Result<ColumnDef, ParserError> {
             .then_some(ColumnOption::Null)
     };
     options.extend(nullability.map(|option| ColumnOptionDef { name: None, option }));
+    let mut has_primary_key = false;
+    let mut default_value = false;
+    let mut lateness = false;
     loop {
         let start = parser.peek_token_ref().span;
+        let operand = parser.peek_nth_token_ref(1).span;
         let option = if parser.parse_keywords(&[Keyword::PRIMARY, Keyword::KEY]) {
             ColumnOption::PrimaryKey(primary_key(Vec::new()))
         } else if parser.parse_keywords(&[Keyword::FOREIGN, Keyword::KEY, Keyword::REFERENCES]) {
@@ -153,6 +157,25 @@ fn column(parser: &mut Parser) -> Result<ColumnDef, ParserError> {
         } else {
             break;
         };
+        let repeated = match &option {
+            ColumnOption::PrimaryKey(_) if std::mem::replace(&mut has_primary_key, true) => {
+                Some(("already declared a primary key", start))
+            }
+            ColumnOption::Default(_) if std::mem::replace(&mut default_value, true) => {
+                Some(("already has a default value", operand))
+            }
+            ColumnOption::Lateness { .. } if std::mem::replace(&mut lateness, true) => {
+                Some(("already has lateness", operand))
+            }
+            _ => None,
+        };
+        if let Some((problem, first)) = repeated {
+            return Err(ParserError::Located {
+                diagnostic_class: Some("Compilation error"),
+                message: format!("Column '{}' {problem}", name.value),
+                span: first.union(&parser.get_current_token().span),
+            });
+        }
         options.push(ColumnOptionDef { name: None, option });
     }
     Ok(ColumnDef {

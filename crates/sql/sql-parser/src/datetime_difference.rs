@@ -57,23 +57,7 @@ pub(super) fn parse(
         return Ok(expr);
     }
     let start = parser.token_at(opening_index).span.start;
-    let qualifier = parser.next_token();
-    let mut value = &expr;
-    while let Expr::Nested(inner) = value {
-        value = inner;
-    }
-    if !matches!(
-        value,
-        Expr::BinaryOp {
-            op: BinaryOperator::Minus,
-            ..
-        }
-    ) {
-        return Err(super::diagnostic::at(
-            "interval qualifier requires a subtraction",
-            qualifier.span.start,
-        ));
-    }
+    parser.next_token();
     let mut leading_precision = None;
     let mut fractional_seconds_precision = None;
     if parser.consume_token(&Token::LParen) {
@@ -107,6 +91,22 @@ pub(super) fn parse(
         last_field = last;
     }
     let span = Span::new(start, parser.token_at(parser.index() - 1).span.end);
+    let mut value = &expr;
+    while let Expr::Nested(inner) = value {
+        value = inner;
+    }
+    if !matches!(
+        value,
+        Expr::BinaryOp {
+            op: BinaryOperator::Minus,
+            ..
+        }
+    ) {
+        return Err(super::diagnostic::located(
+            "interval qualifier requires a subtraction",
+            span,
+        ));
+    }
     Ok(Expr::QualifiedDateTimeDifference {
         interval: Box::new(Interval {
             value: Box::new(expr),

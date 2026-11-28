@@ -149,10 +149,10 @@ fn parse_statement(
         {
             return Err(super::diagnostic::at(
                 "CREATE modifier or target is outside the Feldera grammar",
-                if offset == 1 {
-                    start
-                } else {
+                if keyword_at(1, Keyword::OR) {
                     parser.peek_nth_token(1).span.start
+                } else {
+                    start
                 },
             ));
         }
@@ -160,19 +160,35 @@ fn parse_statement(
             return crate::CreateType::parse(parser).map(|ty| Statement::CreateType(Box::new(ty)));
         }
     }
-    if parser.parse_keywords(&[Keyword::DECLARE, Keyword::RECURSIVE, Keyword::VIEW]) {
+    if parser.parse_keywords(&[Keyword::DECLARE, Keyword::RECURSIVE]) {
+        parser.expect_keyword(Keyword::VIEW)?;
         let mut parts = vec![ObjectNamePart::Identifier(identifier(parser)?)];
         while parser.consume_token(&Token::Period) {
             parts.push(ObjectNamePart::Identifier(identifier(parser)?));
         }
         parser.expect_token(&Token::LParen)?;
-        let columns = parser.parse_comma_separated(view_column)?;
+        let mut columns = vec![view_column(parser)?];
+        while parser.consume_token(&Token::Comma) {
+            if parser.peek_token_ref().token == Token::RParen {
+                return Err(super::diagnostic::located(
+                    "expected a view column after comma",
+                    parser.get_current_token().span,
+                ));
+            }
+            columns.push(view_column(parser)?);
+        }
         parser.expect_token(&Token::RParen)?;
         return Ok(Statement::DeclareRecursiveView {
             name: ObjectName(parts),
             columns,
             span: Span::new(start, parser.token_at(parser.index() - 1).span.end),
         });
+    }
+    if parser.peek_keyword(Keyword::DECLARE) {
+        return Err(super::diagnostic::at(
+            "expected DECLARE RECURSIVE VIEW",
+            start,
+        ));
     }
     if matches!(&parser.peek_token().token, Token::Word(word)
         if word.quote_style.is_none() && word.value.eq_ignore_ascii_case("LATENESS"))

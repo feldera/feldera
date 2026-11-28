@@ -64,6 +64,8 @@ pub enum ParserError {
     Located {
         /// Diagnostic text without a location suffix.
         message: String,
+        /// Optional public diagnostic class supplied by the dialect.
+        diagnostic_class: Option<&'static str>,
         /// Half-open token range in the input.
         span: Span,
     },
@@ -189,7 +191,7 @@ impl fmt::Display for ParserError {
         f.write_str("sql parser error: ")?;
         match self {
             Self::TokenizerError(s) | Self::ParserError(s) => f.write_str(s),
-            Self::Located { message, span } => write!(f, "{message}{}", span.start),
+            Self::Located { message, span, .. } => write!(f, "{message}{}", span.start),
             Self::RecursionLimitExceeded => f.write_str("recursion limit exceeded"),
         }
     }
@@ -16404,6 +16406,14 @@ impl<'a> Parser<'a> {
         } else {
             (vec![], false)
         };
+
+        if from.is_empty() && self.dialect.select_clauses_require_from() {
+            let next = self.peek_token_ref();
+            if matches!(&next.token, Token::Word(w) if matches!(w.keyword,
+                Keyword::WHERE | Keyword::GROUP | Keyword::HAVING | Keyword::WINDOW | Keyword::QUALIFY)) {
+                return self.expected_ref("FROM before this SELECT clause", next);
+            }
+        }
 
         let mut lateral_views = vec![];
         loop {
