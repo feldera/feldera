@@ -1,7 +1,16 @@
+mod catalog;
 mod input;
+mod output;
 mod share;
 
+pub use iceberg::spec::DataFile;
 pub use input::IcebergInputEndpoint;
+#[cfg(any(test, feature = "testing"))]
+pub use output::test_support;
+pub use output::{
+    iceberg_output_serde_config, BatchWriter, IcebergSink, Layout, PendingCommit, SinkError,
+    OP_COLUMN, TS_COLUMN,
+};
 
 use feldera_types::serde_with_context::{
     serde_config::{DecimalFormat, UuidFormat},

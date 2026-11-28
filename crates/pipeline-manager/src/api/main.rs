@@ -495,6 +495,8 @@ It contains the following fields:
         feldera_types::transport::dynamodb::DynamoDBWriteMode,
         feldera_types::transport::dynamodb::DynamoDBWriterConfig,
         feldera_types::transport::iceberg::IcebergReaderConfig,
+        feldera_types::transport::iceberg::IcebergWriterConfig,
+        feldera_types::transport::iceberg::IcebergWriteMode,
         feldera_types::transport::iceberg::IcebergIngestMode,
         feldera_types::transport::iceberg::IcebergCatalogType,
         feldera_types::transport::iceberg::RestCatalogConfig,

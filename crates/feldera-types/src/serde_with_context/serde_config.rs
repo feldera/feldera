@@ -20,6 +20,8 @@ pub enum TimeFormat {
     String(&'static str),
     /// Time specified in microseconds from the start of the day.
     Micros,
+    /// Time specified in microseconds from the start of the day as a signed 64-bit integer.
+    MicrosSigned,
     /// Time specified in milliseconds from the start of the day.
     Millis,
     /// Time specified in nanoseconds from the start of the day as an unsigned 64-bit integer.

@@ -21,7 +21,7 @@ use crate::transport::delta_table::{
 use crate::transport::dynamodb::DynamoDBWriterConfig;
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::http::{HttpInputConfig, HttpOutputConfig};
-use crate::transport::iceberg::IcebergReaderConfig;
+use crate::transport::iceberg::{IcebergReaderConfig, IcebergWriterConfig};
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nats::{NatsInputConfig, NatsOutputConfig};
 use crate::transport::nexmark::NexmarkInputConfig;
@@ -4229,6 +4229,7 @@ pub enum TransportConfig {
     RedisOutput(RedisOutputConfig),
     // Prevent rust from complaining about large size difference between enum variants.
     IcebergInput(Box<IcebergReaderConfig>),
+    IcebergOutput(Box<IcebergWriterConfig>),
     PostgresInput(PostgresReaderConfig),
     PostgresCdcInput(PostgresCdcReaderConfig),
     PostgresOutput(PostgresWriterConfig),
@@ -4281,6 +4282,10 @@ impl TransportConfig {
                     config.glue_catalog_config.warehouse.as_deref(),
                 ),
             ],
+            TransportConfig::IcebergOutput(config) => vec![(
+                "glue.warehouse",
+                config.glue_catalog_config.warehouse.as_deref(),
+            )],
             _ => Vec::new(),
         };
         locations
@@ -4344,6 +4349,7 @@ impl TransportConfig {
             TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
             TransportConfig::DynamoDBOutput(_) => "dynamodb_output".to_string(),
             TransportConfig::IcebergInput(_) => "iceberg_input".to_string(),
+            TransportConfig::IcebergOutput(_) => "iceberg_output".to_string(),
             TransportConfig::PostgresInput(_) => "postgres_input".to_string(),
             TransportConfig::PostgresCdcInput(_) => "postgres_cdc_input".to_string(),
             TransportConfig::PostgresOutput(_) => "postgres_output".to_string(),

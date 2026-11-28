@@ -10,7 +10,12 @@ rust-version = { workspace = true }
 readme = { workspace = true }
 publish = false
 
+[features]
+# Memory-catalog test warehouse for the output connector suites.
+testing = ["dep:tempfile"]
+
 [dependencies]
+tempfile = { workspace = true, optional = true }
 feldera-types = { workspace = true }
 feldera-adapterlib = { workspace = true }
 feldera-storage = { workspace = true }
@@ -28,6 +33,7 @@ iceberg-catalog-rest = { workspace = true }
 iceberg-catalog-s3tables = { workspace = true }
 iceberg-storage-opendal = { workspace = true }
 url = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
 chrono = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -36,6 +42,8 @@ roaring = { workspace = true }
 opendal = { workspace = true }
 
 [dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }
 crc32fast = { workspace = true }
 feldera-sqllib = { workspace = true }
 parquet-variant = { workspace = true }

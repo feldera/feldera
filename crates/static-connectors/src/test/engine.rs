@@ -270,6 +270,27 @@ impl StaticTestEngine {
                 |row| records::DeltaMergeKey { id: row.id },
             );
         }
+        #[cfg(feature = "with-iceberg")]
+        {
+            use crate::test::data::DeltaTestKey;
+            use crate::test::suites::iceberg_output;
+            engine.serve::<records::EveryType>(iceberg_output::value_relation(), BTreeMap::new());
+            engine.serve_index::<DeltaTestKey, records::EveryType>(
+                iceberg_output::key_relation(),
+                iceberg_output::value_relation(),
+                |row| DeltaTestKey { bigint: row.bigint },
+            );
+            engine.serve::<records::Basic>(iceberg_output::basic_relation(), BTreeMap::new());
+            engine.serve::<records::NullableEveryType>(
+                iceberg_output::nullable_value_relation(),
+                BTreeMap::new(),
+            );
+            engine.serve_index::<DeltaTestKey, records::NullableEveryType>(
+                iceberg_output::key_relation_of(&iceberg_output::nullable_value_relation()),
+                iceberg_output::nullable_value_relation(),
+                |row| DeltaTestKey { bigint: row.bigint },
+            );
+        }
         #[cfg(feature = "with-deltalake")]
         {
             use crate::test::data::{

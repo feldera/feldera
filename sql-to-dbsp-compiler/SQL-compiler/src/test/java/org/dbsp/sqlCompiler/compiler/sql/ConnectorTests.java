@@ -742,6 +742,78 @@ public class ConnectorTests extends BaseSQLTests {
     }
 
     @Test
+    public void icebergWriterMissingTableName() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "iceberg_output",
+                  "config": {
+                    "catalog_type": "rest",
+                    "rest.uri": "http://localhost:8181"
+                  }
+                }""",
+                "required field \"table_name\" is missing");
+    }
+
+    @Test
+    public void icebergWriterTableNameWithoutNamespace() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "iceberg_output",
+                  "config": {
+                    "catalog_type": "rest",
+                    "rest.uri": "http://localhost:8181",
+                    "table_name": "orders"
+                  }
+                }""",
+                "\"table_name\" must have the format \"namespace.table\"");
+    }
+
+    @Test
+    public void icebergWriterZeroThreads() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "iceberg_output",
+                  "config": {
+                    "catalog_type": "rest",
+                    "rest.uri": "http://localhost:8181",
+                    "table_name": "db.orders",
+                    "threads": 0
+                  }
+                }""",
+                "\"threads\" must be greater than 0");
+    }
+
+    @Test
+    public void icebergWriterPropertyOfAnotherCatalog() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "iceberg_output",
+                  "config": {
+                    "catalog_type": "rest",
+                    "rest.uri": "http://localhost:8181",
+                    "table_name": "db.orders",
+                    "glue.region": "us-east-1"
+                  }
+                }""",
+                "\"glue.region\" is only valid when \"catalog_type\": \"glue\"");
+    }
+
+    @Test
+    public void icebergWriterHasNoTruncateMode() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "iceberg_output",
+                  "config": {
+                    "catalog_type": "rest",
+                    "rest.uri": "http://localhost:8181",
+                    "table_name": "db.orders",
+                    "mode": "truncate"
+                  }
+                }""",
+                "truncate");
+    }
+
+    @Test
     public void deltaWriterZeroThreads() {
         viewConnectorTest("""
                 "transport": {

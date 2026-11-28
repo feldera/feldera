@@ -47,6 +47,7 @@ impl SensitiveValues for TransportConfig {
             Self::DynamoDBOutput(c) => c.visit_sensitive_values(visit),
             Self::RedisOutput(c) => c.visit_sensitive_values(visit),
             Self::IcebergInput(c) => c.visit_sensitive_values(visit),
+            Self::IcebergOutput(c) => c.visit_sensitive_values(visit),
             Self::PostgresInput(c) => c.visit_sensitive_values(visit),
             Self::PostgresCdcInput(c) => c.visit_sensitive_values(visit),
             Self::PostgresOutput(c) => c.visit_sensitive_values(visit),

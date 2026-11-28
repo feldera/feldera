@@ -4124,6 +4124,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Time {
             TimeFormat::Nanos => serializer.serialize_u64(self.nanoseconds),
             TimeFormat::NanosSigned => serializer.serialize_i64(self.nanoseconds as i64),
             TimeFormat::Micros => serializer.serialize_u64(self.nanoseconds / 1_000),
+            TimeFormat::MicrosSigned => serializer.serialize_i64((self.nanoseconds / 1_000) as i64),
             TimeFormat::Millis => serializer.serialize_u64(self.nanoseconds / 1_000_000),
         }
     }
@@ -4174,6 +4175,20 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Time {
                 let micros = u64::deserialize(deserializer)?;
                 micros
                     .checked_mul(1_000)
+                    .and_then(Self::legal_from_nanoseconds)
+                    .ok_or_else(|| {
+                        decoded_out_of_range(
+                            "time",
+                            format_args!("{micros} microseconds since midnight"),
+                            TIME_RANGE,
+                        )
+                    })
+            }
+            TimeFormat::MicrosSigned => {
+                let micros = i64::deserialize(deserializer)?;
+                u64::try_from(micros)
+                    .ok()
+                    .and_then(|micros| micros.checked_mul(1_000))
                     .and_then(Self::legal_from_nanoseconds)
                     .ok_or_else(|| {
                         decoded_out_of_range(
@@ -5238,6 +5253,7 @@ mod test {
         let nanos = config.clone().with_time_format(TimeFormat::Nanos);
         let signed = config.clone().with_time_format(TimeFormat::NanosSigned);
         let micros = config.clone().with_time_format(TimeFormat::Micros);
+        let micros_signed = config.clone().with_time_format(TimeFormat::MicrosSigned);
         let millis = config.clone().with_time_format(TimeFormat::Millis);
         assert_eq!(
             decode_error::<Time>(86400000000000u64, &nanos),
@@ -5255,6 +5271,12 @@ mod test {
             decode_error::<Time>(86400000u64, &millis),
             format!("time 86400000 milliseconds since midnight is {range}")
         );
+        for out_of_range in [-1i64, 86400000000, i64::MAX] {
+            assert_eq!(
+                decode_error::<Time>(out_of_range, &micros_signed),
+                format!("time {out_of_range} microseconds since midnight is {range}")
+            );
+        }
         // The limits are legal
         let last = Time::from_nanoseconds(86399999999999);
         assert_eq!(decode::<Time>("23:59:59.999999999", &config), last);
@@ -5262,6 +5284,10 @@ mod test {
         assert_eq!(decode::<Time>(86399999999999i64, &signed), last);
         assert_eq!(
             decode::<Time>(86399999999u64, &micros),
+            Time::from_nanoseconds(86399999999000)
+        );
+        assert_eq!(
+            decode::<Time>(86399999999i64, &micros_signed),
             Time::from_nanoseconds(86399999999000)
         );
         assert_eq!(

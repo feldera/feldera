@@ -1884,3 +1884,152 @@ pub fn rest_follow_rejects_v2_delete_files(engine: &dyn PipelineTestEngine) {
     );
     pipeline.stop().unwrap();
 }
+
+/// Output connector config for REST-catalog table `table` on the test store.
+fn rest_output_config(table: &str) -> Value {
+    let mut config = rest_follow_config(table, "snapshot");
+    config.as_object_mut().unwrap().remove("mode");
+    config
+}
+
+/// Creates `namespace` in the test REST catalog if it is missing.
+fn rest_create_namespace(namespace: &str) {
+    let uri = env_or("FELDERA_ICEBERG_REST_URI", "http://localhost:8181");
+    let response = reqwest::blocking::Client::new()
+        .post(format!("{uri}/v1/namespaces"))
+        .header("content-type", "application/json")
+        .body(json!({ "namespace": [namespace] }).to_string())
+        .send()
+        .unwrap();
+    assert!(
+        response.status().is_success() || response.status() == reqwest::StatusCode::CONFLICT,
+        "creating namespace '{namespace}': {}",
+        response.status()
+    );
+}
+
+/// Runs a pipeline that writes `rows` of `relation` to `table` through the output connector.
+fn write_with_output_connector(
+    engine: &dyn PipelineTestEngine,
+    relation: &Relation,
+    table: &str,
+    rows: &[Value],
+) {
+    init_test_logger();
+    let input_file = data_to_ndjson(rows);
+    let transport = rest_output_config(table);
+    let config = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_file.path() },
+                },
+                "format": { "name": "json", "config": { "update_format": "raw" } }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": { "name": "iceberg_output", "config": transport },
+                "enable_output_buffer": true,
+                "max_output_buffer_size_records": 2000,
+                "max_output_buffer_time_millis": 100
+            }
+        }
+    }))
+    .unwrap();
+    let circuit = TestCircuit::Identity {
+        relation: relation.clone(),
+        persistent_output_ids: vec![None],
+        input_properties: Vec::new(),
+        materialized: true,
+        persistent_ids: true,
+        table_version: 0,
+        attribute_defaults: BTreeMap::new(),
+    };
+    let controller = engine
+        .controller(
+            &circuit,
+            &config,
+            Box::new(move |e, _| panic!("iceberg output pipeline: error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+    wait(|| controller.pipeline_complete(), 120_000)
+        .expect("timeout waiting for the output pipeline to complete");
+    controller.stop().unwrap();
+}
+
+/// Reads `table` with the input connector as rows of `relation`.
+fn read_with_input_connector(
+    engine: &dyn PipelineTestEngine,
+    relation: &Relation,
+    table: &str,
+    rows: usize,
+) -> ZSet {
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline(
+        engine,
+        relation,
+        &[],
+        rest_follow_config(table, "snapshot"),
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+    wait(|| pipeline.pipeline_complete(), 120_000)
+        .expect("timeout waiting for the input pipeline to complete");
+    wait(|| output_record_count(json_file.path()) >= rows, 60_000)
+        .expect("timed out writing output");
+    assert!(
+        err_receiver.is_empty(),
+        "the input pipeline reported errors"
+    );
+    pipeline.stop().unwrap();
+    output_zset(relation, json_file.path())
+}
+
+/// Table name that is unique to this run.
+fn fresh_table(name: &str) -> String {
+    let namespace = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    rest_create_namespace(&namespace);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    format!("{namespace}.{name}_{nanos}")
+}
+
+/// The output connector creates the table and writes every SQL type. The input connector
+/// reads back the same rows.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_output_round_trip(engine: &dyn PipelineTestEngine) {
+    let all = data(5000);
+    let table = fresh_table("output_round_trip");
+
+    write_with_output_connector(engine, &relation(), &table, &all);
+
+    let zset = read_with_input_connector(engine, &relation(), &table, all.len());
+    assert_eq!(zset.len(), all.len());
+    assert_eq!(zset, expected_zset(&relation(), &all));
+}
+
+/// A second pipeline appends to the table that the first one created.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_output_appends_to_its_table(engine: &dyn PipelineTestEngine) {
+    let relation = subset_relation();
+    let all: Vec<Value> = data(2000)
+        .into_iter()
+        .map(|row| json!({ "i": row["i"], "s": row["s"], "l": row["l"] }))
+        .collect();
+    let table = fresh_table("output_appends");
+
+    write_with_output_connector(engine, &relation, &table, &all[..1000]);
+    write_with_output_connector(engine, &relation, &table, &all[1000..]);
+
+    let zset = read_with_input_connector(engine, &relation, &table, all.len());
+    assert_eq!(zset, expected_zset(&relation, &all));
+}

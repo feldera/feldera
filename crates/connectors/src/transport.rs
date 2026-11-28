@@ -180,6 +180,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::NatsOutput(_)
         | TransportConfig::RedisOutput(_)
         | TransportConfig::IcebergInput(_)
+        | TransportConfig::IcebergOutput(_)
         | TransportConfig::S2Output(_)
         | TransportConfig::NullOutput => return Ok(None),
     };

@@ -284,6 +284,10 @@ public final class ConnectorValidator {
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, DeltaTableWriterConfig.class, reporter);
                     break;
+                case "iceberg_output":
+                    validateConfig(transportConfig, outerJson, configPointer,
+                            outerStart, IcebergWriterConfig.class, reporter);
+                    break;
                 case "http_output":
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, HttpOutputConfig.class, reporter);

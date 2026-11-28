@@ -23,6 +23,8 @@ pub use crate::integrated::delta_table::output::parallel as delta_output;
 pub use crate::integrated::delta_table::test as delta_table;
 #[cfg(feature = "with-dynamodb")]
 pub use crate::integrated::dynamodb::test as dynamodb;
+#[cfg(feature = "with-iceberg")]
+pub use crate::integrated::iceberg::tests as iceberg_output;
 #[cfg(feature = "with-postgres-cdc")]
 pub use crate::integrated::postgres::cdc_input::tests as postgres_cdc_destination;
 pub use crate::integrated::postgres::output::tests as postgres_output;

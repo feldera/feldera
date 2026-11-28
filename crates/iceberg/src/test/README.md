@@ -10,8 +10,8 @@ feature gated using:
 * `iceberg-tests-rest` - enables tests using S3 and Rest catalog.
 * `iceberg-tests-s3tables` - enables tests using an Amazon S3 Tables catalog.
 
-The `iceberg-rust` crate does not yes support writing Iceberg tables; therefore
-we use `pyiceberg` to create test tables for the Iceberg source connector.  The
+The tests of the source connector create their tables with `pyiceberg`, which can
+also overwrite and delete rows.  The
 `create_test_tables_s3.py` script in this directory can be used to create an
 Iceberg table.  By default it creates the table in the local FS.  It can also be
 used with the `--catalog glue` flag to create a table in S3 using AWS Glue catalog.
@@ -103,6 +103,24 @@ Overridable settings (defaults in parentheses): `FELDERA_ICEBERG_REST_URI`
 `FELDERA_ICEBERG_S3_ENDPOINT` (`http://localhost:9000`), `FELDERA_ICEBERG_S3_KEY`
 (`minio`), `FELDERA_ICEBERG_S3_SECRET` (`miniopasswd`), `FELDERA_ICEBERG_S3_REGION`
 (`us-east-1`), `FELDERA_ICEBERG_S3_PATH_STYLE` (`true`).
+
+## Output connector tests
+
+Most cases of the output connector need no service: they use a catalog in memory over a
+temporary directory.
+
+* Sink core: `cargo test -p feldera-iceberg --lib output::`
+* Endpoint, in the `static-connectors` crate:
+  `cargo test --test connector_suites -- integrated::iceberg::tests`
+
+The `rest_output_*` cases write a table with the output connector and read it back with the
+input connector. They use the REST catalog and the S3 store of the follow-mode tests, and
+create the namespace `FELDERA_ICEBERG_NAMESPACE` (default `follow_ns`) if it does not exist:
+
+* `cargo test --features="iceberg-tests-follow" --test connector_suites -- test::iceberg::rest_output`
+
+Do not check these tables with PyIceberg: up to version 0.12 it cannot read the manifest
+files that `iceberg-rust` writes. Spark and DuckDB can.
 
 # Running tests in CI
 
