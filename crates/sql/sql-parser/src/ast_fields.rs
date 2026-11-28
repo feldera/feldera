@@ -34,7 +34,7 @@ pub(super) fn query(query: &Query) -> ControlFlow<ParserError> {
         with: _,
         body: _,
         order_by: _,
-        limit_clause,
+        limit_clause: _,
         fetch,
         locks,
         for_clause,
@@ -42,21 +42,6 @@ pub(super) fn query(query: &Query) -> ControlFlow<ParserError> {
         format_clause,
         pipe_operators,
     } = query;
-    let count_or_offset = |expr: &Expr| {
-        matches!(expr, Expr::Value(value) if matches!(&value.value,
-            sqlparser_064::ast::Value::Number(_, false)) || matches!(&value.value,
-            sqlparser_064::ast::Value::Placeholder(param) if param == "?"))
-    };
-    match limit_clause {
-        Some(sqlparser_064::ast::LimitClause::OffsetCommaLimit { offset, limit }) => {
-            require(count_or_offset(offset), offset)?;
-            require(count_or_offset(limit), limit)?;
-        }
-        Some(sqlparser_064::ast::LimitClause::OffsetCommaAll { offset, .. }) => {
-            require(count_or_offset(offset), offset)?;
-        }
-        _ => (),
-    }
     let fetch_allowed = fetch.as_ref().is_none_or(
         |Fetch {
              with_ties,
@@ -261,6 +246,7 @@ fn create_index(index: &CreateIndex) -> bool {
     // Feldera's SqlCreateIndex accepts only a name, relation and simple column
     // identifiers. Every upstream option is explicit so additions need review.
     let CreateIndex {
+        or_replace: _,
         name,
         table_name: _,
         using,

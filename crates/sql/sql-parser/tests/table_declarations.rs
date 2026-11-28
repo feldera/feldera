@@ -31,6 +31,11 @@ fn table_grammar_reports_the_token_that_ends_the_declaration() {
         ("CREATE TABLE t(x INT, PRIMARY KEY(x DESC))", "DESC"),
         ("CREATE VIEW v(x COMMENT 'name') AS SELECT 1", "COMMENT"),
         ("CREATE TABLE t(x INT) WITH (k='v')", "k"),
+        ("CREATE INDEX i ON t(x DESC)", "DESC"),
+        ("CREATE INDEX i ON t(x) WHERE x>1", "WHERE"),
+        ("DROP TABLE t CASCADE", "CASCADE"),
+        ("DROP VIEW t, u", ","),
+        ("DROP TEMPORARY TABLE t", "DROP"),
     ] {
         let error = feldera_sql_parser::syntax_diagnostic(sql).unwrap().unwrap();
         assert_eq!(
@@ -38,5 +43,16 @@ fn table_grammar_reports_the_token_that_ends_the_declaration() {
             sql.find(unexpected).unwrap() + 1,
             "{sql}"
         );
+    }
+}
+
+#[test]
+fn index_replacement_and_drop_if_exists_survive_formatting() {
+    for sql in [
+        r#"CREATE OR REPLACE INDEX "a".i ON s.v(x, "FROM")"#,
+        r#"DROP VIEW IF EXISTS s."VIEW""#,
+        "DROP TABLE IF EXISTS s.t",
+    ] {
+        assert_eq!(emit_statements(&parse(sql).unwrap()).unwrap(), [sql]);
     }
 }

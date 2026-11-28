@@ -66,8 +66,15 @@ fn preserves_between_symmetry_and_grouping_set_deduplication() {
 }
 
 #[test]
-fn comma_limits_preserve_operand_order_and_accept_only_literal_or_parameter_bounds() {
-    for sql in ["SELECT 1 LIMIT 2, 7", "SELECT 1 LIMIT ?, ALL"] {
+fn pagination_preserves_clause_and_parameter_order() {
+    for sql in [
+        "SELECT 1 LIMIT 2, 7",
+        "SELECT 1 LIMIT ?, ALL OFFSET 3",
+        "SELECT 1 OFFSET ? ROWS LIMIT ?, ?",
+        "SELECT 1 FETCH FIRST (? + 1) ROWS ONLY",
+        "SELECT 1 LIMIT DECIMAL '01.0', DECIMAL '-2'",
+        "SELECT 1 OFFSET 1 + 2 FETCH FIRST DECIMAL '３' ROWS ONLY",
+    ] {
         let rendered = emit_statements(&parse(sql).unwrap()).unwrap();
         assert_eq!(rendered, [sql]);
     }
@@ -76,7 +83,14 @@ fn comma_limits_preserve_operand_order_and_accept_only_literal_or_parameter_boun
         "SELECT 1 LIMIT ALL, 3",
         "SELECT 1 LIMIT 3, -2",
         "SELECT 1 LIMIT 1, x + 3",
-        "SELECT 1 LIMIT ?, ALL OFFSET 3",
+        "SELECT 1 LIMIT 1+2",
+        "SELECT 1 LIMIT DECIMAL '1'",
+        "SELECT 1 LIMIT ALL FETCH FIRST 1 ROW ONLY",
+        "SELECT 1 FETCH FIRST ROW ONLY",
+        "SELECT 1 FETCH 1 ROW ONLY",
+        "SELECT 1 FETCH FIRST 1 ROWS",
+        "SELECT 1 FETCH FIRST DECIMAL '1e' ROW ONLY",
+        "SELECT 1 OFFSET (SELECT 1)",
     ] {
         assert!(parse(sql).is_err(), "{sql}");
     }

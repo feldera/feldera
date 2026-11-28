@@ -222,7 +222,7 @@ pub(super) fn table_factor(table: &TableFactor) -> ControlFlow<ParserError> {
         ..
     } = table
     {
-        if let Err(error) = super::reject::validate_non_query(time) {
+        if let Err(error) = super::reject::validate_non_query(time, None) {
             return ControlFlow::Break(error);
         }
     }

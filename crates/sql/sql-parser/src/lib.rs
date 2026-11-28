@@ -14,6 +14,8 @@ mod create_type;
 pub use create_type::{Attribute, CreateType, TypeDefinition};
 mod datetime_difference;
 mod ddl;
+mod decimal;
+pub use decimal::plain_decimal;
 mod diagnostic;
 pub use diagnostic::{syntax_diagnostic, SyntaxDiagnostic};
 mod expression_policy;
@@ -22,6 +24,7 @@ mod grammar;
 mod hints;
 mod json_object;
 mod lateness;
+mod pagination;
 mod reject;
 mod relations;
 pub(crate) mod reserved;
@@ -175,6 +178,17 @@ impl Dialect for FelderaDialect {
 
     fn supports_sql_hint_comments(&self) -> bool {
         true
+    }
+
+    fn parse_query_suffix(
+        &self,
+        parser: &mut Parser,
+        query: &mut sqlparser_064::ast::Query,
+    ) -> Option<Result<(), ParserError>> {
+        // Other query suffixes still go through the upstream parser and AST policies.
+        parser
+            .peek_one_of_keywords(&[Keyword::LIMIT, Keyword::OFFSET, Keyword::FETCH])
+            .map(|_| pagination::parse(parser, query))
     }
 
     fn parse_values(

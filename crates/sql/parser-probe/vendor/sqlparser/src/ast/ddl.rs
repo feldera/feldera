@@ -3040,6 +3040,8 @@ impl fmt::Display for ClusteredBy {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateIndex {
+    /// Whether to replace an existing index.
+    pub or_replace: bool,
     /// index name
     pub name: Option<ObjectName>,
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
@@ -3083,7 +3085,8 @@ impl fmt::Display for CreateIndex {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "CREATE {unique}INDEX {concurrently}{async_}{if_not_exists}",
+            "CREATE {replace}{unique}INDEX {concurrently}{async_}{if_not_exists}",
+            replace = if self.or_replace { "OR REPLACE " } else { "" },
             unique = if self.unique { "UNIQUE " } else { "" },
             concurrently = if self.concurrently {
                 "CONCURRENTLY "

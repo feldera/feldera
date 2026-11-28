@@ -95,7 +95,16 @@ pub(super) fn declaration(parser: &mut Parser, replace: bool) -> Result<Statemen
 
 pub(super) fn names(parser: &mut Parser) -> Result<Vec<Ident>, ParserError> {
     parser.expect_token(&Token::LParen)?;
-    let names = parser.parse_comma_separated(identifier)?;
+    let mut names = vec![identifier(parser)?];
+    while parser.consume_token(&Token::Comma) {
+        if !crate::reserved::starts_identifier(&parser.peek_token_ref().token) {
+            return Err(crate::diagnostic::located(
+                "expected a column name after comma",
+                parser.get_current_token().span,
+            ));
+        }
+        names.push(identifier(parser)?);
+    }
     parser.expect_token(&Token::RParen)?;
     Ok(names)
 }

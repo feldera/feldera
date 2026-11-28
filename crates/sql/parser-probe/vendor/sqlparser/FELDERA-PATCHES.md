@@ -63,6 +63,9 @@ The Feldera parser adds dialect extension points, type visitor hooks and additio
 The dialect also retains the symmetry qualifier on BETWEEN and DISTINCT on a
 grouping list. Its LIMIT clauses preserve the order of the offset and count,
 including an explicit ALL after a comma and the position of that keyword.
+An optional query-suffix hook lets the Feldera parser enforce its LIMIT,
+OFFSET and FETCH grammar. It preserves both offsets when a comma-style LIMIT
+and an explicit OFFSET occur together. CREATE INDEX retains OR REPLACE.
 
 Unicode strings retain escapes until the Feldera parser has read UESCAPE after the
 last fragment. Rendering non-BMP characters uses paired UTF-16 escapes so the

@@ -9073,6 +9073,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(CreateIndex {
+            or_replace: false,
             name: index_name,
             table_name,
             using,
@@ -15696,24 +15697,39 @@ impl<'a> Parser<'a> {
 
             let order_by = self.parse_optional_order_by()?;
 
-            let mut limit_clause = self.parse_optional_limit_clause()?;
+            let mut query = Query {
+                with,
+                body,
+                order_by,
+                limit_clause: None,
+                fetch: None,
+                locks: vec![],
+                for_clause: None,
+                settings: None,
+                format_clause: None,
+                pipe_operators: vec![],
+            };
+            if let Some(suffix) = self.dialect.parse_query_suffix(self, &mut query) {
+                suffix?;
+                return Ok(Box::new(query));
+            }
 
-            let settings = self.parse_settings()?;
+            query.limit_clause = self.parse_optional_limit_clause()?;
 
-            let fetch = if self.parse_keyword(Keyword::FETCH) {
+            query.settings = self.parse_settings()?;
+
+            query.fetch = if self.parse_keyword(Keyword::FETCH) {
                 Some(self.parse_fetch()?)
             } else {
                 None
             };
 
-            let mut for_clause = None;
-            let mut locks = Vec::new();
             while self.parse_keyword(Keyword::FOR) {
                 if let Some(parsed_for_clause) = self.parse_for_clause()? {
-                    for_clause = Some(parsed_for_clause);
+                    query.for_clause = Some(parsed_for_clause);
                     break;
                 } else {
-                    locks.push(self.parse_lock()?);
+                    query.locks.push(self.parse_lock()?);
                 }
             }
 
@@ -15722,11 +15738,11 @@ impl<'a> Parser<'a> {
             // as before it. The locking clause above is parsed for every
             // dialect, so accept a trailing limit here too rather than gating it
             // behind a dialect flag.
-            if limit_clause.is_none() {
-                limit_clause = self.parse_optional_limit_clause()?;
+            if query.limit_clause.is_none() {
+                query.limit_clause = self.parse_optional_limit_clause()?;
             }
 
-            let format_clause =
+            query.format_clause =
                 if self.dialect.supports_select_format() && self.parse_keyword(Keyword::FORMAT) {
                     if self.parse_keyword(Keyword::NULL) {
                         Some(FormatClause::Null)
@@ -15738,25 +15754,13 @@ impl<'a> Parser<'a> {
                     None
                 };
 
-            let pipe_operators = if self.dialect.supports_pipe_operator() {
+            query.pipe_operators = if self.dialect.supports_pipe_operator() {
                 self.parse_pipe_operators()?
             } else {
                 Vec::new()
             };
 
-            Ok(Query {
-                with,
-                body,
-                order_by,
-                limit_clause,
-                fetch,
-                locks,
-                for_clause,
-                settings,
-                format_clause,
-                pipe_operators,
-            }
-            .into())
+            Ok(Box::new(query))
         }
     }
 

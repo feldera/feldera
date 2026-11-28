@@ -85,7 +85,7 @@ fn declaration(parser: &mut Parser) -> Result<Statement, ParserError> {
     let return_type = nullable_type(parser)?;
     let function_body = if parser.parse_keyword(Keyword::AS) {
         let body = parser.parse_expr()?;
-        super::reject::validate_non_query(&body)?;
+        super::reject::validate_non_query(&body, Some(parser))?;
         Some(CreateFunctionBody::AsBeforeOptions {
             body,
             link_symbol: None,

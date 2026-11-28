@@ -34,7 +34,7 @@ pub fn syntax(sql: &str) -> Result<Option<Value>, Box<dyn Error>> {
     let Some(diagnostic) = feldera_sql_parser::syntax_diagnostic(sql)? else {
         return Ok(None);
     };
-    let lines: Vec<_> = sql.lines().collect();
+    let lines: Vec<_> = sql.split('\n').collect();
     let range = diagnostic
         .span
         .and_then(|s| {
@@ -49,7 +49,12 @@ pub fn syntax(sql: &str) -> Result<Option<Value>, Box<dyn Error>> {
     message["warning"] = false.into();
     message["error_type"] = "Error parsing SQL".into();
     message["message"] = diagnostic.message.into();
-    message["snippet"] = range.snippet(&lines)?.into();
+    // Java keeps CR in source lines and drops trailing empty strings from split.
+    let visible = lines
+        .iter()
+        .rposition(|line| !line.is_empty())
+        .map_or(0, |i| i + 1);
+    message["snippet"] = range.snippet(&lines[..visible])?.into();
     Ok(Some(message))
 }
 
@@ -75,6 +80,24 @@ pub fn preview(sql: &str) -> Result<Value, Box<dyn Error>> {
                     json!({"advisory":true, "status":"unsupported", "reason":failure.to_string(), "messages":[]})
                 }
             })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::syntax;
+
+    #[test]
+    fn eof_uses_the_last_utf16_column_and_the_original_source_lines() {
+        for (tail, line, column) in [("", 1, 29), (" ", 1, 30), ("\r\n", 1, 31), ("\n\n", 2, 1)] {
+            let source = format!("SELECT '🦀' FETCH FIRST 1 ROW{tail}");
+            let message = syntax(&source).unwrap().unwrap();
+            assert_eq!(message["start_line_number"], line);
+            assert_eq!(message["start_column"], column, "{source:?}");
+            if tail == "\n\n" {
+                assert_eq!(message["snippet"], "");
+            }
         }
     }
 }

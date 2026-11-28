@@ -6,7 +6,7 @@ use sqlparser_064::{
         DataType, Expr, FunctionArg, FunctionArgExpr, FunctionArguments, ObjectNamePart,
         ObjectType, Query, Select, Set, Spanned, Statement, TableFactor, Visit, Visitor,
     },
-    parser::ParserError,
+    parser::{Parser, ParserError},
     tokenizer::{Location, Token, TokenWithSpan},
 };
 use std::{
@@ -14,9 +14,12 @@ use std::{
     ops::ControlFlow,
 };
 
-struct NoQueries;
+struct NoQueries<'a, 'sql>(Option<&'a Parser<'sql>>);
 
-pub(super) fn validate_non_query(expression: &Expr) -> Result<(), ParserError> {
+pub(super) fn validate_non_query(
+    expression: &Expr,
+    parser: Option<&Parser>,
+) -> Result<(), ParserError> {
     // Expression2 passes its enclosing context to the leading operand. The
     // right operand of a binary operator, CASE arms and ordinary function
     // arguments have their own ACCEPT_SUB_QUERY context. ROW and parentheses
@@ -36,13 +39,17 @@ pub(super) fn validate_non_query(expression: &Expr) -> Result<(), ParserError> {
             kind: CastKind::DoubleColon,
             expr,
             ..
-        } => return validate_non_query(expr),
+        } => return validate_non_query(expr, parser),
         Expr::RowConstructor { fields, .. } => {
             return fields
                 .iter()
-                .try_for_each(|field| validate_non_query(&field.expr));
+                .try_for_each(|field| validate_non_query(&field.expr, parser));
         }
-        Expr::Tuple(fields) => return fields.iter().try_for_each(validate_non_query),
+        Expr::Tuple(fields) => {
+            return fields
+                .iter()
+                .try_for_each(|field| validate_non_query(field, parser))
+        }
         Expr::Function(_)
         | Expr::Case { .. }
         | Expr::Array(_)
@@ -58,19 +65,33 @@ pub(super) fn validate_non_query(expression: &Expr) -> Result<(), ParserError> {
     }
     // For other expression forms, reject embedded queries until their
     // operand grammar has been compared with Calcite.
-    match expression.visit(&mut NoQueries) {
+    match expression.visit(&mut NoQueries(parser)) {
         ControlFlow::Break(error) => Err(error),
         ControlFlow::Continue(()) => Ok(()),
     }
 }
 
-impl Visitor for NoQueries {
+impl Visitor for NoQueries<'_, '_> {
     type Break = ParserError;
 
     fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<Self::Break> {
+        // The query AST starts at SELECT. The Java error identifies the
+        // parenthesis that opened the query, even with intervening comments.
+        let query_start = query.span().start;
+        let previous = self.0.and_then(|parser| {
+            (0..parser.index())
+                .rev()
+                .map(|i| parser.token_at(i))
+                .find(|token| {
+                    token.span.start < query_start && !matches!(token.token, Token::Whitespace(_))
+                })
+        });
+        let start = previous
+            .filter(|token| token.token == Token::LParen)
+            .map_or(query_start, |token| token.span.start);
         ControlFlow::Break(super::diagnostic::at(
             "queries in non-query expressions are unsupported",
-            query.span().start,
+            start,
         ))
     }
 }
@@ -272,6 +293,17 @@ impl Visitor for ScopedChecks {
             }
         }
         if let Expr::TypedString(literal) = expression {
+            if matches!(
+                literal.data_type,
+                DataType::Decimal(sqlparser_064::ast::ExactNumberInfo::None)
+            ) && matches!(&literal.value.value, sqlparser_064::ast::Value::SingleQuotedString(text)
+                    if crate::plain_decimal(text).is_none())
+            {
+                return ControlFlow::Break(super::diagnostic::located(
+                    "invalid DECIMAL literal",
+                    literal.value.span,
+                ));
+            }
             if matches!(literal.value.value, sqlparser_064::ast::Value::Null) {
                 return ControlFlow::Break(super::diagnostic::at(
                     "typed literals require a string value",

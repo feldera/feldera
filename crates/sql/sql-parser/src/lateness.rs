@@ -14,7 +14,7 @@ pub(super) fn parse_option(parser: &mut Parser) -> Result<Option<ColumnOption>, 
     }
     let keyword = parser.next_token();
     let expression = parser.parse_expr()?;
-    super::reject::validate_non_query(&expression)?;
+    super::reject::validate_non_query(&expression, Some(parser))?;
     Ok(Some(ColumnOption::Lateness {
         expression,
         span: keyword.span.union(&parser.get_current_token().span),

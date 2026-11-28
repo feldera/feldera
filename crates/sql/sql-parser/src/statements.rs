@@ -182,7 +182,7 @@ fn parse_statement(
         parser.expect_token(&Token::Period)?;
         let column = identifier(parser)?;
         let expression = parser.parse_expr()?;
-        super::reject::validate_non_query(&expression)?;
+        super::reject::validate_non_query(&expression, Some(parser))?;
         return Ok(Statement::Lateness {
             view,
             column,

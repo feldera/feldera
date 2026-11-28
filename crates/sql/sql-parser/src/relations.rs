@@ -103,10 +103,10 @@ pub(super) fn cte_cycle(parser: &mut Parser) -> Result<Option<Box<CycleClause>>,
     let mark = identifier(parser)?;
     let values = if parser.parse_keyword(Keyword::TO) {
         let marked = parser.parse_expr()?;
-        super::reject::validate_non_query(&marked)?;
+        super::reject::validate_non_query(&marked, Some(parser))?;
         parser.expect_keyword_is(Keyword::DEFAULT)?;
         let default = parser.parse_expr()?;
-        super::reject::validate_non_query(&default)?;
+        super::reject::validate_non_query(&default, Some(parser))?;
         Some(CycleMarkValues { marked, default })
     } else {
         None

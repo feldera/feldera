@@ -3327,6 +3327,18 @@ pub enum LimitClause {
         /// The limit expression.
         limit: Expr,
     },
+    /// LIMIT and an explicit OFFSET in input order, including a comma-style LIMIT.
+    /// Placeholders in either offset still occupy their original parameter positions.
+    LimitWithOffset {
+        /// The OFFSET clause.
+        offset: Offset,
+        /// Whether OFFSET preceded LIMIT.
+        offset_first: bool,
+        /// Optional first operand of a comma-style LIMIT.
+        start: Option<Box<Expr>>,
+        /// Row count, or ALL when absent.
+        count: Option<Box<Expr>>,
+    },
     /// LIMIT offset, ALL.
     OffsetCommaAll {
         /// Number of rows skipped.
@@ -3358,6 +3370,28 @@ impl fmt::Display for LimitClause {
             }
             LimitClause::OffsetCommaLimit { offset, limit } => {
                 write!(f, " LIMIT {offset}, {limit}")
+            }
+            LimitClause::LimitWithOffset {
+                offset,
+                offset_first,
+                start,
+                count,
+            } => {
+                if *offset_first {
+                    write!(f, " {offset}")?;
+                }
+                f.write_str(" LIMIT ")?;
+                if let Some(start) = start {
+                    write!(f, "{start}, ")?;
+                }
+                match count {
+                    Some(count) => write!(f, "{count}")?,
+                    None => f.write_str("ALL")?,
+                }
+                if !*offset_first {
+                    write!(f, " {offset}")?;
+                }
+                Ok(())
             }
             LimitClause::OffsetCommaAll { offset, .. } => {
                 write!(f, " LIMIT {offset}, ALL")

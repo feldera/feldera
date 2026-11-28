@@ -128,12 +128,18 @@ pub(super) fn is_keyword(word: &str) -> bool {
             .any(|keyword| keyword == uppercase)
 }
 
+fn is_reserved(name: &str) -> bool {
+    RESERVED
+        .binary_search(&name.to_ascii_uppercase().as_str())
+        .is_ok()
+}
+
+pub(super) fn starts_identifier(token: &Token) -> bool {
+    matches!(token, Token::Word(w) if w.quote_style.is_some() || !is_reserved(&w.value))
+}
+
 pub(super) fn identifier(name: &Ident) -> ControlFlow<ParserError> {
-    if name.quote_style.is_none()
-        && RESERVED
-            .binary_search(&name.value.to_ascii_uppercase().as_str())
-            .is_ok()
-    {
+    if name.quote_style.is_none() && is_reserved(&name.value) {
         ControlFlow::Break(ParserError::ParserError(format!(
             "reserved word {} requires quoting at Line: {}, Column: {}",
             name.value, name.span.start.line, name.span.start.column,

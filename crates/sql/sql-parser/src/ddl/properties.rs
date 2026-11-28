@@ -10,7 +10,12 @@ pub(crate) fn parse(parser: &mut Parser) -> Result<CreateTableOptions, ParserErr
     if !parser.parse_keyword(Keyword::WITH) {
         return Ok(CreateTableOptions::None);
     }
-    parser.expect_token(&Token::LParen)?;
+    if !parser.consume_token(&Token::LParen) {
+        return Err(crate::diagnostic::located(
+            "expected parenthesized properties after WITH",
+            parser.get_current_token().span,
+        ));
+    }
     let options = parser.parse_comma_separated(|parser| {
         let key = literal(parser)?;
         parser.expect_token(&Token::Eq)?;

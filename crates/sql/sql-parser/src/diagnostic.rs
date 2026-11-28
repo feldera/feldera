@@ -47,8 +47,27 @@ pub fn syntax_diagnostic(sql: &str) -> Result<Option<SyntaxDiagnostic>, ParserEr
     let span = start.map(|start| {
         crate::source_tokens(sql)
             .ok()
-            .and_then(|tokens| tokens.into_iter().find(|t| t.span.start == start))
-            .map_or(Span::new(start, start), |t| t.span)
+            .and_then(|tokens| {
+                if tokens.last().is_some_and(|last| last.span.end == start) {
+                    // JavaCC locates EOF at the last character it read, including
+                    // a trailing newline. Token ends are exclusive in sqlparser.
+                    let last = if start.column > 1 {
+                        Location::new(start.line, start.column - 1)
+                    } else {
+                        let previous_line = sql.strip_suffix('\n')?.rsplit('\n').next()?;
+                        Location::new(
+                            start.line.checked_sub(1)?,
+                            previous_line.chars().count() as u64 + 1,
+                        )
+                    };
+                    return Some(Span::new(last, last));
+                }
+                tokens
+                    .into_iter()
+                    .find(|t| t.span.start == start)
+                    .map(|t| t.span)
+            })
+            .unwrap_or(Span::new(start, start))
     });
     Ok(Some(SyntaxDiagnostic { message, span }))
 }

@@ -157,6 +157,15 @@ impl Spanned for LimitClause {
                     .chain(offset.as_ref().map(|i| i.span()))
                     .chain(limit_by.iter().map(|i| i.span())),
             ),
+            LimitClause::LimitWithOffset {
+                offset,
+                start,
+                count,
+                ..
+            } => start
+                .iter()
+                .chain(count)
+                .fold(offset.span(), |span, bound| span.union(&bound.span())),
             LimitClause::OffsetCommaAll { offset, all } => offset.span().union(&all.0.span),
             LimitClause::OffsetCommaLimit { offset, limit } => offset.span().union(&limit.span()),
         }
@@ -750,6 +759,7 @@ impl Spanned for ForValues {
 impl Spanned for CreateIndex {
     fn span(&self) -> Span {
         let CreateIndex {
+            or_replace: _,
             name,
             table_name,
             using: _,

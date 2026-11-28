@@ -28,7 +28,7 @@ pub(super) fn parse_multiset(parser: &mut Parser) -> Result<Expr, ParserError> {
 
 fn non_query_element(parser: &mut Parser) -> Result<Expr, ParserError> {
     let expr = parser.parse_expr()?;
-    crate::reject::validate_non_query(&expr)?;
+    crate::reject::validate_non_query(&expr, Some(parser))?;
     Ok(expr)
 }
 

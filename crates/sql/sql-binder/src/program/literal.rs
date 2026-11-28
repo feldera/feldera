@@ -260,34 +260,7 @@ impl Cell {
     /// its SQL type from the plain spelling. Leading zeros in SQL tokens
     /// contribute to precision, while leading zeros in this string do not.
     fn quoted_decimal(text: &str) -> Option<Self> {
-        let text = text.trim_matches(' ');
-        let (mantissa, power) = match text.split_once(['e', 'E']) {
-            Some((mantissa, exponent)) => (mantissa, exponent.parse::<i32>().ok()?),
-            None => (text, 0),
-        };
-        let unsigned = mantissa.strip_prefix(['-', '+']).unwrap_or(mantissa);
-        let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
-        if whole.is_empty() && fraction.is_empty()
-            || !whole
-                .bytes()
-                .chain(fraction.bytes())
-                .all(|b| b.is_ascii_digit())
-        {
-            return None;
-        }
-        let scale = i32::try_from(fraction.len()).ok()?.checked_sub(power)?;
-        let mut n: i128 = format!("{whole}{fraction}").parse().ok()?;
-        if mantissa.starts_with('-') {
-            n = -n;
-        }
-        if scale < 0 {
-            n = n.checked_mul(10_i128.checked_pow(scale.unsigned_abs())?)?;
-        }
-        let decimal = ExactDecimal {
-            coefficient: n.to_string(),
-            scale: scale.max(0),
-        };
-        let (sql, _) = decimal.sql_and_digest()?;
-        Self::number(sql.trim_start_matches('-'), n < 0).ok()
+        let sql = feldera_sql_parser::plain_decimal(text)?;
+        Self::number(sql.trim_start_matches('-'), sql.starts_with('-')).ok()
     }
 }

@@ -1020,6 +1020,15 @@ pub trait Dialect: Debug + Any {
         None
     }
 
+    /// Parse the clauses following ORDER BY for dialects with a dedicated query suffix.
+    fn parse_query_suffix(
+        &self,
+        _parser: &mut Parser,
+        _query: &mut crate::ast::Query,
+    ) -> Option<Result<(), ParserError>> {
+        None
+    }
+
     /// Override a VALUES body after the VALUES (or VALUE) keyword.
     fn parse_values(
         &self,
