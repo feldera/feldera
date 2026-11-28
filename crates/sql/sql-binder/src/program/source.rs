@@ -216,6 +216,24 @@ impl<'a> DeclarationTokens<'a> {
         self.token_range(&self.tokens[first..last])
     }
 
+    /// sqlparser's ARRAY span covers its elements. Recover the constructor
+    /// and closing bracket from the original tokens of this scalar array.
+    pub(super) fn scalar_array_position(&self, elements: Span) -> Result<Coordinates, Failure> {
+        let first = self
+            .tokens
+            .partition_point(|t| t.span.start < elements.start);
+        let last = self.tokens.partition_point(|t| t.span.start < elements.end);
+        let open = self.tokens[..first].iter().rposition(|t| t.token == Token::LBracket)
+            .and_then(|i| i.checked_sub(1))
+            .filter(|&i| matches!(&self.tokens[i].token, Token::Word(w) if w.keyword == sqlparser_064::keywords::Keyword::ARRAY))
+            .ok_or_else(|| unsupported("missing ARRAY constructor"))?;
+        let close = self.tokens[last..]
+            .iter()
+            .position(|t| t.token == Token::RBracket)
+            .ok_or_else(|| unsupported("missing closing ARRAY bracket"))?;
+        self.token_range(&self.tokens[open..=last + close])
+    }
+
     fn token_range(&self, tokens: &[TokenWithSpan]) -> Result<Coordinates, Failure> {
         let first = tokens
             .first()

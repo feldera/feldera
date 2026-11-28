@@ -6,8 +6,10 @@ use super::{graph, source::DeclarationTokens};
 use crate::{Expr, Failure, Value, unsupported};
 use feldera_sql_rel_model::{
     TypeId,
+    expression_objects::ObjectPosition,
     expressions::ExprId,
     literals::{ExactDecimal, LiteralValue},
+    operators::OperatorObject,
     program::Program,
     source::Origin,
     types::{CharacterMetadata, IntegerWidth, Precision, SqlType, TypeKind},
@@ -64,12 +66,15 @@ impl Cell {
         if let Some(result) = wrapped {
             let result = graph::insert_type(&mut program.table.type_table, result);
             Ok((
-                graph::wrap_non_bmp_literal(
+                graph::append_constant_call(
                     program,
-                    literal,
-                    ty,
+                    OperatorObject::non_bmp_literal(),
+                    vec![literal],
                     result,
-                    tokens.literal_position(expr)?,
+                    ObjectPosition::Present {
+                        position: tokens.literal_position(expr)?,
+                        internal: None,
+                    },
                 ),
                 result,
             ))

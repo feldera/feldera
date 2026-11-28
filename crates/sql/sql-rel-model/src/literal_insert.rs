@@ -12,7 +12,7 @@ use crate::{
     program::Program,
     relation_properties::Properties,
     statements::{Statement, TargetColumn},
-    typed_literals::{decimal_fits, integer_fits},
+    typed_literals::{check_cardinality, decimal_fits, integer_fits},
     types::{SqlType, TimeZone, TypeKind},
 };
 use std::collections::HashSet;
@@ -111,6 +111,10 @@ pub fn validate(
     for row in site.roots.chunks_exact(fields.len()) {
         for &(i, dest) in &order {
             let id = row[i];
+            if projected && matches!(types[fields[i].ty.0 as usize].kind, TypeKind::Array { .. }) {
+                validate_array_assignment(program, id, fields[i].ty, dest.ty)?;
+                continue;
+            }
             let value = source_value(program, id, fields[i].ty, projected)?;
             if !fits_source(value, &types[fields[i].ty.0 as usize]) {
                 return Err("literal does not fit the INSERT source row".into());
@@ -127,6 +131,73 @@ pub fn validate(
         }
     }
     Ok(warnings)
+}
+
+/// An ARRAY constructor in a constant projection has a typed child for
+/// each element. Check both the constructor and the destination array.
+fn validate_array_assignment(
+    program: &Program,
+    id: ExprId,
+    source: TypeId,
+    target: TypeId,
+) -> Result<(), String> {
+    let types = &program.table.type_table.types;
+    let graph = &program.expressions;
+    let expr = &graph.expressions[id.0 as usize];
+    let (
+        TypeKind::Array {
+            element: source_element,
+            cardinality: source_bound,
+        },
+        TypeKind::Array {
+            element: target_element,
+            cardinality: target_bound,
+        },
+    ) = (
+        &types[source.0 as usize].kind,
+        &types[target.0 as usize].kind,
+    )
+    else {
+        return Err("expected an array destination for ARRAY in INSERT".into());
+    };
+    let ObjectKind::Call {
+        operator,
+        arguments,
+    } = &expr.kind
+    else {
+        return Err("expected an ARRAY constructor in INSERT projection".into());
+    };
+    let signature = &graph.operators[operator.0 as usize];
+    for (bound, path) in [
+        (source_bound, "INSERT source"),
+        (target_bound, "INSERT destination"),
+    ] {
+        check_cardinality(arguments.len(), *bound, path).map_err(|e| e.to_string())?;
+    }
+    if arguments.is_empty()
+        && types[source_element.0 as usize].kind != types[target_element.0 as usize].kind
+    {
+        return Err("empty ARRAY requires an element type conversion".into());
+    }
+    if expr.ty != source
+        || graph.operator_objects[signature.object.0 as usize]
+            != OperatorObject::array_constructor()
+    {
+        return Err("unexpected constructor for INSERT array".into());
+    }
+    for &argument in arguments {
+        let child = &graph.expressions[argument.0 as usize];
+        let ObjectKind::Literal { literal } = &child.kind else {
+            return Err("expected literal elements in INSERT array".into());
+        };
+        if child.ty != *source_element
+            || !fits_source(&literal.value, &types[source_element.0 as usize])
+            || !fits_source(&literal.value, &types[target_element.0 as usize])
+        {
+            return Err("array element requires an unsupported INSERT cast".into());
+        }
+    }
+    Ok(())
 }
 
 /// A projected INSERT can contain Feldera's identity call on a supplementary

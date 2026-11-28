@@ -134,6 +134,14 @@ pub const ABS_KEY: &str =
     "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions$AbsFunction#abs";
 
 impl OperatorObject {
+    pub fn array_constructor() -> Self {
+        Self::Builtin {
+            registry: "calcite-s1-fixture".into(),
+            registry_version: "1".into(),
+            key: "SqlStdOperatorTable.ARRAY_VALUE_CONSTRUCTOR".into(),
+        }
+    }
+
     pub fn non_bmp_literal() -> Self {
         Self::Builtin {
             registry: "feldera-s1-internals".into(),

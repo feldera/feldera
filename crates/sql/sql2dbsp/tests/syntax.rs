@@ -111,6 +111,53 @@ fn preview_preserves_public_column_names_and_primary_key_order() {
 }
 
 #[test]
+fn insert_array_retains_its_element_values_and_source_range() {
+    let sql = "CREATE TABLE t(v BIGINT ARRAY);\nINSERT INTO t VALUES (ARRAY [5, -2, 5]);";
+    let output = invoke("--emit-s1", sql);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let program: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let graph = &program["expressions"];
+    let expressions = graph["expressions"].as_array().unwrap();
+    let array = expressions
+        .iter()
+        .find(|e| e["kind"]["kind"] == "call")
+        .unwrap();
+    let operator = array["kind"]["operator"].as_u64().unwrap() as usize;
+    let object = graph["operators"][operator]["object"].as_u64().unwrap() as usize;
+    assert_eq!(
+        graph["operator_objects"][object]["key"],
+        "SqlStdOperatorTable.ARRAY_VALUE_CONSTRUCTOR"
+    );
+    let position = &array["position"]["position"];
+    assert_eq!(position["line"], 2);
+    assert_eq!(position["column"], 23);
+    assert_eq!(position["end_column"], 38);
+    let values: Vec<_> = array["kind"]["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| {
+            expressions[arg.as_u64().unwrap() as usize]["kind"]["literal"]["value"]["value"]
+                .as_str()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(values, ["5", "-2", "5"]);
+    assert!(
+        !invoke(
+            "--emit-s1",
+            "CREATE TABLE t(v INT); INSERT INTO t VALUES (ARRAY[1]);"
+        )
+        .status
+        .success()
+    );
+}
+
+#[test]
 fn supplementary_literals_share_the_operator_but_keep_their_positions() {
     use serde_json::Value;
     let sql = "CREATE VIEW v AS SELECT 'é' AS a, '😀' AS b, ('🐕') AS c;";

@@ -34,7 +34,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P3 | Build `d325a41b8` matched all 17,098 frozen compilations through 6,996,738 ordered S4 observations and emission. Build `10a4d9029` passed all 8,256 executable classic cases. Build `084caac1d` matched 216 selected compilations, passed 352 nightly optimizer tests, and restored COUNT and LATENESS in both directions. [Full replay](evidence/p3-asof-window-keys.json) · [Runtime](evidence/p3-constant-views-and-static-windows.json) · [Selected replay and restores](evidence/p3-static-value-constructors.json) · [DATE defaults](evidence/p3-date-default-year-range.json) | Finish the remaining Java paths for window sharing and expression analysis, and run the exit checks on the finished build, including the three latency modes. Independent maintainer acceptance and 30 qualifying field-shadow days with at least 200 distinct programs per day remain open. [Demo comparisons](evidence/p3-product-demos.json) · [Cold compilation](BENCHMARKS.md#cold-compilation-across-output-modes-2026-11-25) |
 | P4 | Rust S1-to-S2 lowering for keyed and unkeyed tables, view chains, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
-| P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
+| P5 | JVM-free syntax checking, structured syntax diagnostics, one-batch API submissions and low-verbosity query plans for supported programs. The local `fda sql preview` and `fda sql format` commands expose schema preview, advisory diagnostics and formatting. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, per-pipeline compiler selection and P5d acceptance gates. |
 
 The P2 checkpoint test compiled the same grouped COUNT through Java and the hybrid driver,
 then built each generated Rust file as a separate executable. Each executable restored the
@@ -243,12 +243,12 @@ decimal, floating-point, temporal, UUID and VARIANT types. Each matched Java
 at S2 and through Gen-2 emission.
 
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 204 of 8,571 programs. All 204 matched Java compilation
+Gen-2 options. Rust bound 206 of 8,571 programs. All 206 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 149
-to S2. Of those, 144 checkpoints matched previously verified bytes and five
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 151
+to S2. Of those, 149 checkpoints matched previously verified bytes and two
 matched a fresh Java lowering and resumed in the Java optimizer.
-The remaining 8,367 programs still need whole-program binding.
+The remaining 8,365 programs still need whole-program binding.
 
 The binder expands qualified and overlapping wildcards in projection order.
 It preserves repeated SELECT aliases in the validated row and assigns unique
@@ -256,6 +256,13 @@ names to the relational output. Twenty-five directed programs matched Java
 through Gen-2 emission. Twenty-four also matched independent Java S2 lowering,
 including empty results, set operations, and view columns with embedded quotes.
 The aggregate case used Java lowering.
+
+Eight directed programs inserted arrays of same-type scalar literals. They
+matched Java on constructor arguments, types, source positions, statement
+text, S2 lowering and Gen-2 emission. These programs cover repeated INSERTs,
+reordered columns, wide integers, decimals, booleans, strings, dates, UUIDs
+and binary values. Two frozen programs now compile their shared array setup
+and final view through Rust lowering.
 
 Five directed programs exercised nullable operands, repeated builtins and a
 projection above a filter. Ten more exercised all four arithmetic operations

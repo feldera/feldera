@@ -28,6 +28,17 @@ NUMERIC_COLUMN_CASES = {
 
 CASES = {
     **NUMERIC_COLUMN_CASES,
+    "array_insert_permutation": "CREATE TABLE t(a BIGINT ARRAY,b INT);"
+                                " INSERT INTO t(b,a) VALUES(5, ARRAY[(-3),-2,0]);"
+                                " INSERT INTO t VALUES(ARRAY[9223372036854775807], 4);"
+                                " CREATE VIEW v AS SELECT * FROM t;",
+    "array_insert_elements": "CREATE TABLE t(a VARCHAR ARRAY, b DATE ARRAY);"
+                             " INSERT INTO t VALUES(ARRAY['a','b'], ARRAY[DATE '1999-01-01',DATE '2000-02-29']);",
+    "array_insert_decimal": "CREATE TABLE t(a DECIMAL(7,2) ARRAY,i INT NOT NULL);"
+                            " INSERT INTO t VALUES(ARRAY[1.25,2.50],6);",
+    "array_insert_multiline": "/* 🙂 */ CREATE TABLE t(a INT ARRAY, b BOOLEAN ARRAY);"
+                              " INSERT INTO t VALUES(ARRAY[1,2],\n ARRAY [TRUE, FALSE]);"
+                              " CREATE VIEW v AS SELECT b,a FROM t;",
     "qualified_wildcard": "CREATE TABLE t(a INT, b INT);"
                           " CREATE VIEW v AS SELECT q.*, a + b FROM t AS q;",
     "overlapping_wildcards": "CREATE TABLE t(a INT, a0 INT);"

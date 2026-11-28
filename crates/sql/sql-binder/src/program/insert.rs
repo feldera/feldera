@@ -2,6 +2,8 @@
 //! widens integer literals to their VALUES column type, but retains the
 //! individual widths of character and binary literals and the type of NULL.
 
+mod value;
+
 use super::{
     StatementText, append_boundary,
     graph::{append_literal, append_project, append_values, insert_row_fields, insert_type},
@@ -19,6 +21,7 @@ use feldera_sql_rel_model::{
     types::{IntegerWidth, Precision, SqlType, TypeKind},
 };
 use sqlparser_064::ast::{Insert, TableObject};
+use value::InsertValue;
 
 pub(super) fn bind(
     program: &mut Program,
@@ -57,9 +60,19 @@ pub(super) fn bind(
     };
     let mut rows = Vec::with_capacity(values.rows.len());
     for row in &values.rows {
-        rows.push(row.iter().map(Cell::parse).collect::<Result<Vec<_>, _>>()?);
+        rows.push(
+            row.iter()
+                .map(InsertValue::parse)
+                .collect::<Result<Vec<_>, _>>()?,
+        );
     }
-    let relation = if rows.iter().flatten().any(Cell::needs_non_bmp_wrapper) {
+    let literals: Option<Vec<Vec<&Cell>>> = rows
+        .iter()
+        .map(|row| row.iter().map(InsertValue::literal).collect())
+        .collect();
+    let relation = if let Some(literals) = literals {
+        bind_values(program, &literals)?
+    } else {
         let [cells] = rows.as_slice() else {
             return Err(unsupported(
                 "multirow INSERT with projected values requires a union",
@@ -79,8 +92,6 @@ pub(super) fn bind(
         let relation = program.table.relations;
         append_project(program, row, roots)?;
         relation
-    } else {
-        bind_values(program, &rows)?
     };
     let columns = (!columns.is_empty()).then_some(columns);
     literal_insert::validate(
@@ -113,7 +124,7 @@ pub(super) fn bind(
             .map(|row| {
                 let fields = row
                     .iter()
-                    .map(|cell| cell.text.render(quoted))
+                    .map(|cell| cell.render(quoted))
                     .collect::<Vec<_>>();
                 format!("{prefix}({})", fields.join(", "))
             })
@@ -137,7 +148,7 @@ pub(super) fn bind(
     Ok(())
 }
 
-fn bind_values(program: &mut Program, rows: &[Vec<Cell>]) -> Result<u32, Failure> {
+fn bind_values(program: &mut Program, rows: &[Vec<&Cell>]) -> Result<u32, Failure> {
     let width = rows.first().map_or(0, Vec::len);
     if width == 0 || rows.iter().any(|row| row.len() != width) {
         return Err(unsupported(

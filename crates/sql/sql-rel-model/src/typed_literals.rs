@@ -340,7 +340,7 @@ fn check_length(length: usize, precision: Precision, path: &str) -> Result<(), V
     Ok(())
 }
 
-fn check_cardinality(
+pub(crate) fn check_cardinality(
     length: usize,
     cardinality: Cardinality,
     path: &str,
