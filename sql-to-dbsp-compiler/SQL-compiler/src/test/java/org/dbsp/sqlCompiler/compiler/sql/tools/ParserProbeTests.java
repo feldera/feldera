@@ -134,6 +134,19 @@ public class ParserProbeTests {
     }
 
     @Test
+    public void jsonConstructorGrammarErrorsHaveSourcePositions() throws IOException {
+        for (String sql : java.util.List.of(
+                "SELECT JSON_OBJECT(KEY x, y)",
+                "SELECT JSON_OBJECTAGG(KEY x: y)",
+                "SELECT JSON_ARRAYAGG(x ORDER BY y) WITHIN GROUP (ORDER BY z)")) {
+            var compiler = new DBSPCompiler(new CompilerOptions());
+            var result = ParserProbe.parse(compiler, submission(sql));
+            Assert.assertEquals("rejected", result.get("verdict").asText());
+            Assert.assertTrue(result.get("column").asInt() > 0);
+        }
+    }
+
+    @Test
     public void emptySubmissionUsesCompilerLineAccounting() throws IOException {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
         ObjectNode empty = ParserProbe.parse(compiler, submission(""));

@@ -144,6 +144,10 @@ public final class ParserProbe {
                     || emptyIntervalLiteral(error)
                     || integerLiteralOverflow(error)
                     || unknownCharacterSet(error)
+                    || RESOURCE.illegalComma().ex().getMessage().equals(cause.getMessage())
+                    || RESOURCE.illegalColon().ex().getMessage().equals(cause.getMessage())
+                    || RESOURCE.ambiguousSortOrderInJsonArrayAggFunc().ex().getMessage()
+                            .equals(cause.getMessage())
                     || RESOURCE.invalidStatement().ex().getMessage().equals(cause.getMessage())
                     || RESOURCE.asofRequiresMatchCondition().ex().getMessage().equals(cause.getMessage())
                     || RESOURCE.matchConditionRequiresAsof().ex().getMessage().equals(cause.getMessage()));

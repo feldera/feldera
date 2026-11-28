@@ -22,13 +22,13 @@ mod expression_policy;
 mod functions;
 mod grammar;
 mod hints;
-mod json_object;
 mod lateness;
 mod pagination;
 mod reject;
 mod relations;
 pub(crate) mod reserved;
 mod settings;
+mod sql_json;
 mod statements;
 mod unparse;
 pub use unparse::emit_statements;
@@ -363,6 +363,10 @@ impl Dialect for FelderaDialect {
         self.supports_function_separator(name) || grammar::is_percentile(name)
     }
 
+    fn supports_generic_json_clauses(&self) -> bool {
+        false
+    }
+
     fn supports_function_separator(&self, name: &[sqlparser_064::ast::ObjectNamePart]) -> bool {
         matches!(name, [sqlparser_064::ast::ObjectNamePart::Identifier(ident)] if ident.quote_style.is_none()
             && matches!(ident.value.to_ascii_uppercase().as_str(), "ARRAY_AGG" | "ARRAY_CONCAT_AGG" | "STRING_AGG" | "GROUP_CONCAT"))
@@ -385,11 +389,8 @@ impl Dialect for FelderaDialect {
                 parser.peek_token_ref().span,
             )));
         }
-        if matches!(&parser.peek_token_ref().token, Token::Word(w)
-            if w.quote_style.is_none() && w.value.eq_ignore_ascii_case("JSON_OBJECT"))
-            && parser.peek_nth_token_ref(1).token == Token::LParen
-        {
-            return Some(json_object::parse(parser));
+        if let Some(function) = sql_json::JsonFunction::peek(parser) {
+            return Some(function.parse(parser));
         }
         if parser.peek_keyword(Keyword::UNIQUE) {
             let start = parser.next_token().span;

@@ -602,11 +602,10 @@
                          })
                      } else if negated && null {
                          Ok(Expr::IsNotNull(Box::new(expr)))
-@@ -4275,10 +4359,43 @@
-                     } else {
+@@ -4276,9 +4360,42 @@
                          self.expected_ref("IN or BETWEEN after NOT", self.peek_token_ref())
                      }
-+                }
+                 }
 +                Keyword::FORMAT if dialect.supports_format_json() => {
 +                    self.expect_keyword_is(Keyword::JSON)?;
 +                    let encoding = if self.parse_keyword(Keyword::ENCODING) {
@@ -631,7 +630,7 @@
 +                        expr: Box::new(expr),
 +                        encoding,
 +                    })
-                 }
++                }
                  Keyword::NOTNULL if dialect.supports_notnull_operator() => {
                      Ok(Expr::IsNotNull(Box::new(expr)))
                  }
@@ -720,12 +719,10 @@
                  Ok(s)
              }
              Token::UnicodeStringLiteral(s) => Ok(s),
-@@ -13550,10 +13690,37 @@
-         self.expect_token(&Token::RParen)?;
- 
+@@ -13552,8 +13692,35 @@
          Ok(values)
-+    }
-+
+     }
+ 
 +    fn parse_timezone_qualifier(&mut self) -> Result<TimezoneInfo, ParserError> {
 +        if self.parse_keyword(Keyword::WITH) {
 +            let local =
@@ -742,8 +739,8 @@
 +        } else {
 +            Ok(TimezoneInfo::None)
 +        }
-     }
- 
++    }
++
      /// Parse a SQL datatype (in the context of a CREATE TABLE statement for example)
      pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
 +        let start = self.index;
@@ -1053,11 +1050,7 @@
      /// Parse `CREATE TABLE x AS TABLE y`
      pub fn parse_as_table(&mut self) -> Result<Table, ParserError> {
 -        let first_name = self.parse_identifier()?;
-+        if let Some(name) = self.dialect.parse_explicit_table_name(self) {
-+            return name.map(|name| Table { name });
-+        }
-+        let mut parts = vec![self.parse_identifier()?];
-         if self.consume_token(&Token::Period) {
+-        if self.consume_token(&Token::Period) {
 -            let second_name = self.parse_identifier()?;
 -            Ok(Table {
 -                table_name: Some(second_name),
@@ -1068,6 +1061,11 @@
 -                table_name: Some(first_name),
 -                schema_name: None,
 -            })
++        if let Some(name) = self.dialect.parse_explicit_table_name(self) {
++            return name.map(|name| Table { name });
++        }
++        let mut parts = vec![self.parse_identifier()?];
++        if self.consume_token(&Token::Period) {
 +            parts.push(self.parse_identifier()?);
          }
 +        Ok(Table { name: ObjectName::from(parts) })
@@ -1226,7 +1224,7 @@
          // Parse the argument expression once, then check for a named-arg
          // operator. Parsing it speculatively and re-parsing on the unnamed
          // path is O(2^depth) on nested calls like `CAST(CASE (CAST(CASE (…`.
-@@ -20224,7 +20473,10 @@
+@@ -20224,21 +20473,16 @@
      /// FIRST_VALUE(x ORDER BY 1,2,3);
      /// FIRST_VALUE(x IGNORE NULL);
      /// ```
@@ -1238,7 +1236,22 @@
          let mut clauses = vec![];
  
          // Handle clauses that may exist with an empty argument list
-@@ -20261,7 +20513,7 @@
+ 
+-        if let Some(null_clause) = self.parse_json_null_clause() {
+-            clauses.push(FunctionArgumentClause::JsonNullClause(null_clause));
+-        }
++        self.parse_generic_json_clauses(&mut clauses)?;
+ 
+-        if let Some(json_returning_clause) = self.maybe_parse_json_returning_clause()? {
+-            clauses.push(FunctionArgumentClause::JsonReturningClause(
+-                json_returning_clause,
+-            ));
+-        }
+-
+         if self.consume_token(&Token::RParen) {
+             return Ok(FunctionArgumentList {
+                 duplicate_treatment: None,
+@@ -20261,7 +20505,7 @@
              clauses.push(FunctionArgumentClause::Where(self.parse_expr()?));
          }
  
@@ -1247,7 +1260,7 @@
              if let Some(null_treatment) = self.parse_null_treatment()? {
                  clauses.push(FunctionArgumentClause::IgnoreOrRespectNulls(null_treatment));
              }
-@@ -20293,10 +20545,16 @@
+@@ -20293,16 +20537,39 @@
              )))
          }
  
@@ -1266,8 +1279,41 @@
          }
  
          if let Some(on_overflow) = self.parse_listagg_on_overflow()? {
-@@ -20321,7 +20579,8 @@
-         })
+             clauses.push(FunctionArgumentClause::OnOverflow(on_overflow));
+         }
++
++        self.parse_generic_json_clauses(&mut clauses)?;
++
++        self.expect_token(&Token::RParen)?;
++        Ok(FunctionArgumentList {
++            duplicate_treatment,
++            args,
++            clauses,
++        })
++    }
+ 
++    fn parse_generic_json_clauses(
++        &mut self,
++        clauses: &mut Vec<FunctionArgumentClause>,
++    ) -> Result<(), ParserError> {
++        if !self.dialect.supports_generic_json_clauses() {
++            return Ok(());
++        }
+         if let Some(null_clause) = self.parse_json_null_clause() {
+             clauses.push(FunctionArgumentClause::JsonNullClause(null_clause));
+         }
+@@ -20312,16 +20579,11 @@
+                 json_returning_clause,
+             ));
+         }
+-
+-        self.expect_token(&Token::RParen)?;
+-        Ok(FunctionArgumentList {
+-            duplicate_treatment,
+-            args,
+-            clauses,
+-        })
++        Ok(())
      }
  
 -    fn parse_json_null_clause(&mut self) -> Option<JsonNullClause> {
@@ -1276,7 +1322,7 @@
          if self.parse_keywords(&[Keyword::ABSENT, Keyword::ON, Keyword::NULL]) {
              Some(JsonNullClause::AbsentOnNull)
          } else if self.parse_keywords(&[Keyword::NULL, Keyword::ON, Keyword::NULL]) {
-@@ -20513,7 +20772,14 @@
+@@ -20513,7 +20775,14 @@
      pub fn parse_optional_select_item_exclude(
          &mut self,
      ) -> Result<Option<ExcludeSelectItem>, ParserError> {
@@ -1292,7 +1338,7 @@
              if self.consume_token(&Token::LParen) {
                  let columns =
                      self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
-@@ -20966,6 +21232,9 @@
+@@ -20966,6 +21235,9 @@
          allow_empty: bool,
          value_keyword: bool,
      ) -> Result<Values, ParserError> {
@@ -1451,7 +1497,7 @@
              Expr::TypedString(TypedString { value, .. }) => value.span(),
              Expr::Function(function) => function.span(),
              Expr::GroupingSets(vec) => {
-@@ -1829,12 +1857,22 @@
+@@ -1829,12 +1857,23 @@
                      .chain(iter::once(end_token.0.span)),
              ),
              Expr::Exists { subquery, .. } => subquery.span(),
@@ -1459,6 +1505,7 @@
 +            | Expr::Unique { span, .. }
 +            | Expr::TranslateUsing { span, .. }
 +            | Expr::JsonObject { span, .. }
++            | Expr::JsonObjectAgg { span, .. }
 +            | Expr::FormatJson { span, .. }
 +            | Expr::WildcardExclusion { span, .. }
 +            | Expr::MultisetQuery { span, .. }
@@ -1474,7 +1521,7 @@
              Expr::Wildcard(token) => token.0.span,
              Expr::QualifiedWildcard(object_name, token) => union_spans(
                  object_name
-@@ -1922,6 +1960,7 @@
+@@ -1922,6 +1961,7 @@
              filter,
              null_treatment: _, // enum
              over: _,           // todo
@@ -1482,7 +1529,7 @@
              within_group,
          } = self;
  
-@@ -1932,6 +1971,7 @@
+@@ -1932,6 +1972,7 @@
                  .chain(iter::once(args.span()))
                  .chain(iter::once(parameters.span()))
                  .chain(filter.iter().map(|i| i.span()))
@@ -1490,7 +1537,26 @@
                  .chain(within_group.iter().map(|i| i.span())),
          )
      }
-@@ -2131,6 +2171,7 @@
+@@ -1978,7 +2019,17 @@
+             FunctionArgumentClause::Having(HavingBound(_kind, expr)) => expr.span(),
+             FunctionArgumentClause::Separator(value) => value.span(),
+             FunctionArgumentClause::JsonNullClause(_) => Span::empty(),
+-            FunctionArgumentClause::JsonReturningClause(_) => Span::empty(),
++            FunctionArgumentClause::JsonPassing(bindings) => {
++                union_spans(bindings.iter().map(Spanned::span))
++            }
++            FunctionArgumentClause::JsonOnEmpty(crate::ast::JsonResponse::Default(expr))
++            | FunctionArgumentClause::JsonOnError(crate::ast::JsonResponse::Default(expr)) => {
++                expr.span()
++            }
++            FunctionArgumentClause::JsonOnEmpty(_)
++            | FunctionArgumentClause::JsonOnError(_)
++            | FunctionArgumentClause::JsonWrapper(_)
++            | FunctionArgumentClause::JsonReturningClause(_) => Span::empty(),
+         }
+     }
+ }
+@@ -2131,6 +2182,7 @@
                  alias,
                  args: _,
                  with_hints: _,
@@ -1498,7 +1564,7 @@
                  version: _,
                  with_ordinality: _,
                  partitions: _,
-@@ -2142,6 +2183,7 @@
+@@ -2142,6 +2194,7 @@
                  name.0
                      .iter()
                      .map(|i| i.span())
@@ -1506,7 +1572,7 @@
                      .chain(alias.as_ref().map(|alias| {
                          union_spans(
                              iter::once(alias.name.span)
-@@ -2209,6 +2251,15 @@
+@@ -2209,6 +2262,15 @@
                      .chain(default_on_null.as_ref().map(|i| i.span()))
                      .chain(alias.as_ref().map(|i| i.span())),
              ),
@@ -1522,7 +1588,7 @@
              TableFactor::Unpivot {
                  table,
                  value,
-@@ -2365,6 +2416,7 @@
+@@ -2365,6 +2427,7 @@
  impl Spanned for FunctionArgExpr {
      fn span(&self) -> Span {
          match self {
@@ -1530,18 +1596,18 @@
              FunctionArgExpr::Expr(expr) => expr.span(),
              FunctionArgExpr::QualifiedWildcard(object_name) => {
                  union_spans(object_name.0.iter().map(|i| i.span()))
-@@ -2441,6 +2493,10 @@
-             JoinOperator::CrossApply => Span::empty(),
-             JoinOperator::OuterApply => Span::empty(),
+@@ -2443,6 +2506,10 @@
              JoinOperator::AsOf {
-+                match_condition,
-+                constraint,
-+            }
-+            | JoinOperator::LeftAsOf {
                  match_condition,
                  constraint,
++            }
++            | JoinOperator::LeftAsOf {
++                match_condition,
++                constraint,
              } => match_condition.span().union(&constraint.span()),
-@@ -2462,8 +2518,10 @@
+             JoinOperator::Anti(join_constraint) => join_constraint.span(),
+             JoinOperator::Semi(join_constraint) => join_constraint.span(),
+@@ -2462,8 +2529,10 @@
  impl Spanned for JoinConstraint {
      fn span(&self) -> Span {
          match self {
@@ -1554,7 +1620,7 @@
              JoinConstraint::UsingAlias(columns, alias) => union_spans(
                  columns
                      .iter()
-@@ -2600,6 +2658,15 @@
+@@ -2600,6 +2669,15 @@
              UpdateTableFromKind::AfterSet(from) => from,
          };
          union_spans(from.iter().map(|t| t.span()))
@@ -1570,7 +1636,7 @@
      }
  }
  
-@@ -2609,6 +2676,9 @@
+@@ -2609,6 +2687,9 @@
              TableObject::TableName(ObjectName(segments)) => {
                  union_spans(segments.iter().map(|i| i.span()))
              }
@@ -1580,7 +1646,7 @@
              TableObject::TableFunction(func) => func.span(),
              TableObject::TableQuery(query) => query.span(),
          }
-@@ -2673,6 +2743,7 @@
+@@ -2673,6 +2754,7 @@
      fn span(&self) -> Span {
          union_spans(
              core::iter::once(self.name.span())
@@ -2315,10 +2381,12 @@
                  if let Some(leading_field) = &self.leading_field {
                      write!(f, " {leading_field}")?;
                  }
-@@ -598,6 +606,17 @@
+@@ -596,6 +604,17 @@
+             }
+         }
      }
- }
- 
++}
++
 +#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 +#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2328,11 +2396,9 @@
 +    Symmetric,
 +    /// Preserve the given ordering of the bounds.
 +    Asymmetric,
-+}
-+
+ }
+ 
  /// A field definition within a struct
- ///
- /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#struct_type
 @@ -609,6 +628,12 @@
      pub field_name: Option<Ident>,
      /// The field data type.
@@ -2447,10 +2513,11 @@
      /// Prefixed expression, e.g. introducer strings, projection prefix
      /// <https://dev.mysql.com/doc/refman/8.0/en/charset-introducer.html>
      /// <https://docs.snowflake.com/en/sql-reference/constructs/connect-by>
-@@ -1333,9 +1404,80 @@
+@@ -1332,10 +1403,90 @@
+         subquery: Box<Query>,
          /// Whether the `EXISTS` is negated (`NOT EXISTS`).
          negated: bool,
-     },
++    },
 +    /// Prefix uniqueness predicate over a row or query expression.
 +    Unique {
 +        /// Operand of the predicate.
@@ -2466,11 +2533,20 @@
 +        charset: Ident,
 +        /// Complete range of the call.
 +        span: Span,
-+    },
+     },
 +    /// SQL/JSON object constructor with ordered name/value pairs.
 +    JsonObject {
 +        /// Key and value expressions in source order.
 +        entries: Vec<JsonObjectEntry>,
++        /// Explicit treatment of SQL NULL values.
++        null_clause: Option<JsonNullClause>,
++        /// Range of the whole call.
++        span: Span,
++    },
++    /// Aggregate one key/value pair from each input row into an object.
++    JsonObjectAgg {
++        /// Object member supplied by each row.
++        entry: Box<JsonObjectEntry>,
 +        /// Explicit treatment of SQL NULL values.
 +        null_clause: Option<JsonNullClause>,
 +        /// Range of the whole call.
@@ -2528,7 +2604,7 @@
      /// The `GROUPING SETS` expr.
      GroupingSets(Vec<Vec<Expr>>),
      /// The `CUBE` expr.
-@@ -1390,6 +1532,13 @@
+@@ -1390,6 +1541,13 @@
      Array(Array),
      /// An interval expression e.g. `INTERVAL '1' YEAR`
      Interval(Interval),
@@ -2542,7 +2618,7 @@
      /// `MySQL` specific text search function [(1)].
      ///
      /// Syntax:
-@@ -1852,15 +2001,21 @@
+@@ -1852,15 +2010,21 @@
                  target
              ),
              Expr::Between {
@@ -2565,7 +2641,7 @@
                  low,
                  high
              ),
-@@ -1920,14 +2075,16 @@
+@@ -1920,14 +2084,16 @@
                  expr,
                  pattern,
                  regexp,
@@ -2590,7 +2666,7 @@
              Expr::IsNormalized {
                  expr,
                  form,
-@@ -2113,7 +2270,37 @@
+@@ -2113,7 +2279,37 @@
              Expr::Collate { expr, collation } => write!(f, "{expr} COLLATE {collation}"),
              Expr::Nested(ast) => write!(f, "({ast})"),
              Expr::Value(v) => write!(f, "{v}"),
@@ -2629,7 +2705,7 @@
              Expr::TypedString(ts) => ts.fmt(f),
              Expr::Function(fun) => fun.fmt(f),
              Expr::Case {
-@@ -2148,13 +2335,61 @@
+@@ -2148,13 +2344,70 @@
                  subquery
              ),
              Expr::Subquery(s) => write!(f, "({s})"),
@@ -2650,6 +2726,15 @@
 +                    write!(f, "{clause}")?;
 +                }
 +                write!(f, ")")
++            }
++            Expr::JsonObjectAgg {
++                entry, null_clause, ..
++            } => {
++                write!(f, "JSON_OBJECTAGG({entry}")?;
++                if let Some(clause) = null_clause {
++                    write!(f, " {clause}")?;
++                }
++                f.write_str(")")
 +            }
 +            Expr::FormatJson { expr, encoding, .. } => {
 +                write!(f, "{expr} FORMAT JSON")?;
@@ -2692,7 +2777,7 @@
                  }
                  write!(f, ")")
              }
-@@ -2290,6 +2525,7 @@
+@@ -2290,6 +2543,7 @@
              } => {
                  write!(f, "{timestamp} AT TIME ZONE {time_zone}")
              }
@@ -2700,25 +2785,25 @@
              Expr::Interval(interval) => {
                  write!(f, "{interval}")
              }
-@@ -2412,6 +2648,9 @@
-                 )?;
+@@ -2413,6 +2667,9 @@
              } else {
                  write!(f, "{} {}", window_frame.units, window_frame.start_bound)?;
-+            }
+             }
 +            if let Some(exclusion) = window_frame.exclusion {
 +                write!(f, " {exclusion}")?;
-             }
++            }
          }
          Ok(())
-@@ -2435,9 +2674,36 @@
+     }
+@@ -2435,9 +2692,36 @@
      /// indicates the shorthand form (e.g. `ROWS 1 PRECEDING`), which must
      /// behave the same as `end_bound = WindowFrameBound::CurrentRow`.
      pub end_bound: Option<WindowFrameBound>,
 -    // TBD: EXCLUDE
 +    /// Rows excluded after computing the frame bounds.
 +    pub exclusion: Option<WindowFrameExclusion>,
- }
- 
++}
++
 +/// An explicit SQL window frame exclusion.
 +#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2732,8 +2817,8 @@
 +    Ties,
 +    /// Keep every row in the frame.
 +    NoOthers,
-+}
-+
+ }
+ 
 +impl fmt::Display for WindowFrameExclusion {
 +    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 +        f.write_str(match self {
@@ -2748,7 +2833,7 @@
  impl Default for WindowFrame {
      /// Returns default value for window frame
      ///
-@@ -2447,6 +2713,7 @@
+@@ -2447,6 +2731,7 @@
              units: WindowFrameUnits::Range,
              start_bound: WindowFrameBound::Preceding(None),
              end_bound: None,
@@ -2756,12 +2841,10 @@
          }
      }
  }
-@@ -2495,6 +2762,17 @@
-             NullTreatment::RespectNulls => "RESPECT NULLS",
-         })
+@@ -2497,6 +2782,17 @@
      }
-+}
-+
+ }
+ 
 +/// Position of an external null treatment relative to grouping and FILTER.
 +#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2771,10 +2854,12 @@
 +    AfterArguments(NullTreatment),
 +    /// After WITHIN and FILTER, before OVER.
 +    AfterFilter(NullTreatment),
- }
- 
++}
++
  /// Specifies [WindowFrame]'s `start_bound` and `end_bound`
-@@ -8121,6 +8399,14 @@
+ #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+ #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+@@ -8121,6 +8417,14 @@
  #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
  /// Expression forms allowed as a function argument.
  pub enum FunctionArgExpr {
@@ -2789,7 +2874,7 @@
      /// A normal expression argument.
      Expr(Expr),
      /// Qualified wildcard, e.g. `alias.*` or `schema.table.*`.
-@@ -8146,6 +8432,7 @@
+@@ -8146,6 +8450,7 @@
  impl fmt::Display for FunctionArgExpr {
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
@@ -2797,7 +2882,7 @@
              FunctionArgExpr::Expr(expr) => write!(f, "{expr}"),
              FunctionArgExpr::QualifiedWildcard(prefix) => write!(f, "{prefix}.*"),
              FunctionArgExpr::Wildcard => f.write_str("*"),
-@@ -8371,6 +8658,8 @@
+@@ -8371,6 +8676,8 @@
      /// The arguments to the function, including any options specified within the
      /// delimiting parentheses.
      pub args: FunctionArguments,
@@ -2806,7 +2891,7 @@
      /// A clause used with certain aggregate functions to control the ordering
      /// within grouped sets before the function is applied.
      ///
-@@ -8389,7 +8678,7 @@
+@@ -8389,7 +8696,7 @@
      /// ```
      ///
      /// [Snowflake](https://docs.snowflake.com/en/sql-reference/functions/first_value)
@@ -2815,7 +2900,7 @@
      /// The `OVER` clause, indicating a window function call.
      pub over: Option<WindowType>,
  }
-@@ -8402,6 +8691,16 @@
+@@ -8402,6 +8709,16 @@
  
          write!(f, "{}{}{}", self.name, self.parameters, self.args)?;
  
@@ -2832,7 +2917,7 @@
          if !self.within_group.is_empty() {
              write!(
                  f,
-@@ -8414,7 +8713,7 @@
+@@ -8414,7 +8731,7 @@
              write!(f, " FILTER (WHERE {filter_cond})")?;
          }
  
@@ -2841,7 +2926,7 @@
              write!(f, " {null_treatment}")?;
          }
  
-@@ -8529,7 +8828,7 @@
+@@ -8529,7 +8846,7 @@
      /// The `SEPARATOR` clause to the [`GROUP_CONCAT`] function in MySQL.
      ///
      /// [`GROUP_CONCAT`]: https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html#function_group-concat
@@ -2850,7 +2935,35 @@
      /// The `ON NULL` clause for some JSON functions.
      ///
      /// [MSSQL `JSON_ARRAY`](https://learn.microsoft.com/en-us/sql/t-sql/functions/json-array-transact-sql?view=sql-server-ver16)
-@@ -9156,6 +9455,14 @@
+@@ -8540,6 +8857,14 @@
+     ///
+     /// [`JSON_OBJECT`](https://www.postgresql.org/docs/current/functions-json.html#:~:text=json_object)
+     JsonReturningClause(JsonReturningClause),
++    /// Variables supplied to a SQL/JSON path.
++    JsonPassing(Vec<ExprWithAlias>),
++    /// Array wrapper policy of JSON_QUERY.
++    JsonWrapper(JsonWrapper),
++    /// Response to an empty SQL/JSON path result.
++    JsonOnEmpty(JsonResponse),
++    /// Response to a SQL/JSON evaluation error.
++    JsonOnError(JsonResponse),
+ }
+ 
+ impl fmt::Display for FunctionArgumentClause {
+@@ -8557,6 +8882,12 @@
+             FunctionArgumentClause::Having(bound) => write!(f, "{bound}"),
+             FunctionArgumentClause::Separator(sep) => write!(f, "SEPARATOR {sep}"),
+             FunctionArgumentClause::JsonNullClause(null_clause) => write!(f, "{null_clause}"),
++            FunctionArgumentClause::JsonPassing(bindings) => {
++                write!(f, "PASSING {}", display_comma_separated(bindings))
++            }
++            FunctionArgumentClause::JsonWrapper(wrapper) => write!(f, "{wrapper}"),
++            FunctionArgumentClause::JsonOnEmpty(response) => write!(f, "{response} ON EMPTY"),
++            FunctionArgumentClause::JsonOnError(response) => write!(f, "{response} ON ERROR"),
+             FunctionArgumentClause::JsonReturningClause(returning_clause) => {
+                 write!(f, "{returning_clause}")
+             }
+@@ -9156,6 +9487,14 @@
  #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
  /// SQL option syntax used in table and server definitions.
  pub enum SqlOption {
@@ -2865,7 +2978,7 @@
      /// Clustered represents the clustered version of table storage for MSSQL.
      ///
      /// <https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-azure-sql-data-warehouse?view=aps-pdw-2016-au7#TableOptions>
-@@ -9206,6 +9513,7 @@
+@@ -9206,6 +9545,7 @@
  impl fmt::Display for SqlOption {
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
@@ -2873,7 +2986,75 @@
              SqlOption::Clustered(c) => write!(f, "{c}"),
              SqlOption::Ident(ident) => {
                  write!(f, "{ident}")
-@@ -11403,6 +11711,15 @@
+@@ -11323,8 +11663,67 @@
+     pub terse: bool,
+     /// Additional options controlling the SHOW output.
+     pub show_options: ShowStatementOptions,
++}
++
++/// Array wrapping of a SQL/JSON query result.
++#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub enum JsonWrapper {
++    /// Return the path result as-is.
++    Without,
++    /// Wrap only results that require an array.
++    Conditional,
++    /// Always wrap the result in an array.
++    Unconditional,
++}
++
++impl Display for JsonWrapper {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str(match self {
++            Self::Without => "WITHOUT ARRAY WRAPPER",
++            Self::Conditional => "WITH CONDITIONAL ARRAY WRAPPER",
++            Self::Unconditional => "WITH UNCONDITIONAL ARRAY WRAPPER",
++        })
++    }
++}
++
++/// Action for ON EMPTY or ON ERROR in a SQL/JSON path call.
++#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub enum JsonResponse {
++    /// Return SQL TRUE or FALSE.
++    Boolean(bool),
++    /// Return the UNKNOWN truth value.
++    Unknown,
++    /// Propagate an error.
++    Error,
++    /// Return SQL NULL.
++    Null,
++    /// Evaluate the supplied expression.
++    Default(Box<Expr>),
++    /// Return an empty JSON array.
++    EmptyArray,
++    /// Return an empty JSON object.
++    EmptyObject,
+ }
+ 
++impl Display for JsonResponse {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str(match self {
++            Self::Boolean(true) => "TRUE",
++            Self::Boolean(false) => "FALSE",
++            Self::Unknown => "UNKNOWN",
++            Self::Error => "ERROR",
++            Self::Null => "NULL",
++            Self::Default(expr) => return write!(f, "DEFAULT {expr}"),
++            Self::EmptyArray => "EMPTY ARRAY",
++            Self::EmptyObject => "EMPTY OBJECT",
++        })
++    }
++}
++
+ /// MSSQL's json null clause
+ ///
+ /// ```plaintext
+@@ -11403,6 +11802,15 @@
      /// ```
      TableName(#[cfg_attr(feature = "visitor", visit(with = "visit_relation"))] ObjectName),
  
@@ -2889,7 +3070,7 @@
      /// Table specified as a function.
      /// Example:
      /// ```sql
-@@ -11426,6 +11743,13 @@
+@@ -11426,6 +11834,13 @@
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
              Self::TableName(table_name) => write!(f, "{table_name}"),
@@ -2903,7 +3084,7 @@
              Self::TableFunction(func) => write!(f, "FUNCTION {func}"),
              Self::TableQuery(table_query) => write!(f, "({table_query})"),
          }
-@@ -12451,21 +12775,125 @@
+@@ -12451,23 +12866,127 @@
  #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
  #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
  #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2998,8 +3179,8 @@
 +            Self::StringChain(values) => write!(f, "{}", display_separated(values, " ")),
 +        }
 +    }
-+}
-+
+ }
+ 
 +/// An identifier or literal used in a hint key/value pair.
 +#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -3041,10 +3222,12 @@
 +            }
 +        }
 +    }
- }
- 
++}
++
  /// The commentary style of an [optimizer hint](OptimizerHint)
-@@ -12485,22 +12913,21 @@
+ #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+ #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+@@ -12485,22 +13004,21 @@
  }
  
  impl fmt::Display for OptimizerHint {
@@ -3406,7 +3589,7 @@
      /// Dialect-specific infix parser override
      ///
      /// This method is called to parse the next infix expression.
-@@ -1126,11 +1249,25 @@
+@@ -1126,9 +1249,23 @@
          None
      }
  
@@ -3418,8 +3601,8 @@
      /// Parses a dialect-specific type, leaving the cursor unchanged on `None` to use standard parsing.
      fn parse_data_type(&self, _parser: &mut Parser) -> Option<Result<DataType, ParserError>> {
          None
-     }
- 
++    }
++
 +    /// Validate a parsed type before its source tokens are discarded.
 +    fn validate_data_type(
 +        &self,
@@ -3427,11 +3610,9 @@
 +        _tokens: &[TokenWithSpan],
 +    ) -> Result<(), ParserError> {
 +        Ok(())
-+    }
-+
+     }
+ 
      /// Dialect-specific column option parser override
-     ///
-     /// This method is called to parse the next column option.
 @@ -1443,6 +1580,27 @@
  
      /// Returns true if the dialect supports `<<` and `>>` shift operators.
@@ -3460,25 +3641,22 @@
          false
      }
  
-@@ -1525,6 +1683,11 @@
-     /// Returns true if the dialect supports the `LOAD extension` statement
-     fn supports_load_extension(&self) -> bool {
+@@ -1527,6 +1685,11 @@
          false
-+    }
-+
+     }
+ 
 +    /// Whether TOP can introduce a row-limit clause in a SELECT list.
 +    fn supports_select_top(&self) -> bool {
 +        true
-     }
- 
-     /// Returns true if this dialect expects the `TOP` option
-@@ -1728,6 +1891,18 @@
-     /// SQLite reads `OVER` as a keyword only when `(` or a name follows, see
-     /// `analyzeOverKeyword` in [tokenize.c](https://sqlite.org/src/file?name=src/tokenize.c)
-     fn supports_over_keyword_as_column_alias(&self) -> bool {
-+        false
 +    }
 +
+     /// Returns true if this dialect expects the `TOP` option
+     /// before the `ALL`/`DISTINCT` options in a `SELECT` statement.
+     fn supports_top_before_distinct(&self) -> bool {
+@@ -1731,6 +1894,18 @@
+         false
+     }
+ 
 +    /// Whether WHERE, GROUP BY, HAVING, WINDOW and QUALIFY in a SELECT
 +    /// require a preceding FROM clause.
 +    fn select_clauses_require_from(&self) -> bool {
@@ -3488,13 +3666,17 @@
 +    /// Whether this keyword after FROM ( can only start a query. For such
 +    /// prefixes the parser can report the query error without retrying a join.
 +    fn starts_unambiguous_derived_query(&self, _keyword: Keyword) -> bool {
-         false
-     }
- 
-@@ -1765,8 +1940,38 @@
++        false
++    }
++
+     /// Returns true if the specified keyword should be parsed as a table factor identifier.
+     /// See [keywords::RESERVED_FOR_TABLE_FACTOR]
+     fn is_table_factor(&self, kw: &Keyword, _parser: &mut Parser) -> bool {
+@@ -1764,7 +1939,43 @@
+     ///
      /// [SQLite](https://www.sqlite.org/lang_keywords.html)
      fn supports_string_literal_table_alias(&self, _explicit: bool) -> bool {
-         true
++        true
 +    }
 +
 +    /// Whether MEMBER OF accepts an arbitrary right operand (SQL multisets).
@@ -3505,11 +3687,17 @@
 +    /// Allow a qualified wildcard as a scalar operand.
 +    fn supports_qualified_wildcard_operand(&self) -> bool {
 +        false
-     }
- 
++    }
++
 +    /// Allow an expression to be marked as JSON with optional UTF encoding.
 +    fn supports_format_json(&self) -> bool {
 +        false
++    }
++
++    /// Whether ordinary function arguments accept SQL/JSON null and return clauses.
++    /// A dialect with dedicated SQL/JSON grammar can parse them there instead.
++    fn supports_generic_json_clauses(&self) -> bool {
+         true
 +    }
 +
 +    /// Whether the named aggregate accepts a SEPARATOR argument clause.
@@ -3525,12 +3713,10 @@
 +    /// Whether an explicit window frame can end with an EXCLUDE clause.
 +    fn supports_window_frame_exclusion(&self) -> bool {
 +        false
-+    }
-+
+     }
+ 
      /// Returns true if this dialect supports querying historical table data
-     /// by specifying which version of the data to query.
-     fn supports_table_versioning(&self) -> bool {
-@@ -1780,6 +1985,11 @@
+@@ -1780,6 +1991,11 @@
          false
      }
  

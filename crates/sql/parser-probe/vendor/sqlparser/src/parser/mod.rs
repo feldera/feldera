@@ -20481,15 +20481,7 @@ impl<'a> Parser<'a> {
 
         // Handle clauses that may exist with an empty argument list
 
-        if let Some(null_clause) = self.parse_json_null_clause() {
-            clauses.push(FunctionArgumentClause::JsonNullClause(null_clause));
-        }
-
-        if let Some(json_returning_clause) = self.maybe_parse_json_returning_clause()? {
-            clauses.push(FunctionArgumentClause::JsonReturningClause(
-                json_returning_clause,
-            ));
-        }
+        self.parse_generic_json_clauses(&mut clauses)?;
 
         if self.consume_token(&Token::RParen) {
             return Ok(FunctionArgumentList {
@@ -20561,6 +20553,23 @@ impl<'a> Parser<'a> {
             clauses.push(FunctionArgumentClause::OnOverflow(on_overflow));
         }
 
+        self.parse_generic_json_clauses(&mut clauses)?;
+
+        self.expect_token(&Token::RParen)?;
+        Ok(FunctionArgumentList {
+            duplicate_treatment,
+            args,
+            clauses,
+        })
+    }
+
+    fn parse_generic_json_clauses(
+        &mut self,
+        clauses: &mut Vec<FunctionArgumentClause>,
+    ) -> Result<(), ParserError> {
+        if !self.dialect.supports_generic_json_clauses() {
+            return Ok(());
+        }
         if let Some(null_clause) = self.parse_json_null_clause() {
             clauses.push(FunctionArgumentClause::JsonNullClause(null_clause));
         }
@@ -20570,13 +20579,7 @@ impl<'a> Parser<'a> {
                 json_returning_clause,
             ));
         }
-
-        self.expect_token(&Token::RParen)?;
-        Ok(FunctionArgumentList {
-            duplicate_treatment,
-            args,
-            clauses,
-        })
+        Ok(())
     }
 
     /// Parse the optional constructor policy for SQL null values.

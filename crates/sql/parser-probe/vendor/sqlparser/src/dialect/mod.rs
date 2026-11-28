@@ -1957,6 +1957,12 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Whether ordinary function arguments accept SQL/JSON null and return clauses.
+    /// A dialect with dedicated SQL/JSON grammar can parse them there instead.
+    fn supports_generic_json_clauses(&self) -> bool {
+        true
+    }
+
     /// Whether the named aggregate accepts a SEPARATOR argument clause.
     fn supports_function_separator(&self, _name: &[ObjectNamePart]) -> bool {
         false

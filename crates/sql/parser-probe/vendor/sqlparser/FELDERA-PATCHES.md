@@ -134,3 +134,8 @@ parse error. Ambiguous parentheses still allow the nested-join grammar.
 The SELECT parser lets a dialect require FROM before WHERE, GROUP BY, HAVING,
 WINDOW and QUALIFY. Located errors can carry a dialect diagnostic class.
 Feldera uses it for duplicate column attributes detected while parsing DDL.
+
+SQL/JSON path functions retain PASSING bindings, RETURNING types, array
+wrappers, and ON EMPTY and ON ERROR actions. JSON_OBJECTAGG stores its key
+and value separately and formats them with KEY and VALUE. The Feldera dialect
+parses SQL/JSON clauses in the grammar of each built-in function.

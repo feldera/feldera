@@ -1429,6 +1429,15 @@ pub enum Expr {
         /// Range of the whole call.
         span: Span,
     },
+    /// Aggregate one key/value pair from each input row into an object.
+    JsonObjectAgg {
+        /// Object member supplied by each row.
+        entry: Box<JsonObjectEntry>,
+        /// Explicit treatment of SQL NULL values.
+        null_clause: Option<JsonNullClause>,
+        /// Range of the whole call.
+        span: Span,
+    },
     /// A postfix FORMAT JSON clause applied to an expression.
     FormatJson {
         /// SQL expression carrying JSON.
@@ -2352,6 +2361,15 @@ impl fmt::Display for Expr {
                     write!(f, "{clause}")?;
                 }
                 write!(f, ")")
+            }
+            Expr::JsonObjectAgg {
+                entry, null_clause, ..
+            } => {
+                write!(f, "JSON_OBJECTAGG({entry}")?;
+                if let Some(clause) = null_clause {
+                    write!(f, " {clause}")?;
+                }
+                f.write_str(")")
             }
             Expr::FormatJson { expr, encoding, .. } => {
                 write!(f, "{expr} FORMAT JSON")?;
@@ -8839,6 +8857,14 @@ pub enum FunctionArgumentClause {
     ///
     /// [`JSON_OBJECT`](https://www.postgresql.org/docs/current/functions-json.html#:~:text=json_object)
     JsonReturningClause(JsonReturningClause),
+    /// Variables supplied to a SQL/JSON path.
+    JsonPassing(Vec<ExprWithAlias>),
+    /// Array wrapper policy of JSON_QUERY.
+    JsonWrapper(JsonWrapper),
+    /// Response to an empty SQL/JSON path result.
+    JsonOnEmpty(JsonResponse),
+    /// Response to a SQL/JSON evaluation error.
+    JsonOnError(JsonResponse),
 }
 
 impl fmt::Display for FunctionArgumentClause {
@@ -8856,6 +8882,12 @@ impl fmt::Display for FunctionArgumentClause {
             FunctionArgumentClause::Having(bound) => write!(f, "{bound}"),
             FunctionArgumentClause::Separator(sep) => write!(f, "SEPARATOR {sep}"),
             FunctionArgumentClause::JsonNullClause(null_clause) => write!(f, "{null_clause}"),
+            FunctionArgumentClause::JsonPassing(bindings) => {
+                write!(f, "PASSING {}", display_comma_separated(bindings))
+            }
+            FunctionArgumentClause::JsonWrapper(wrapper) => write!(f, "{wrapper}"),
+            FunctionArgumentClause::JsonOnEmpty(response) => write!(f, "{response} ON EMPTY"),
+            FunctionArgumentClause::JsonOnError(response) => write!(f, "{response} ON ERROR"),
             FunctionArgumentClause::JsonReturningClause(returning_clause) => {
                 write!(f, "{returning_clause}")
             }
@@ -11631,6 +11663,65 @@ pub struct ShowObjects {
     pub terse: bool,
     /// Additional options controlling the SHOW output.
     pub show_options: ShowStatementOptions,
+}
+
+/// Array wrapping of a SQL/JSON query result.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum JsonWrapper {
+    /// Return the path result as-is.
+    Without,
+    /// Wrap only results that require an array.
+    Conditional,
+    /// Always wrap the result in an array.
+    Unconditional,
+}
+
+impl Display for JsonWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Without => "WITHOUT ARRAY WRAPPER",
+            Self::Conditional => "WITH CONDITIONAL ARRAY WRAPPER",
+            Self::Unconditional => "WITH UNCONDITIONAL ARRAY WRAPPER",
+        })
+    }
+}
+
+/// Action for ON EMPTY or ON ERROR in a SQL/JSON path call.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum JsonResponse {
+    /// Return SQL TRUE or FALSE.
+    Boolean(bool),
+    /// Return the UNKNOWN truth value.
+    Unknown,
+    /// Propagate an error.
+    Error,
+    /// Return SQL NULL.
+    Null,
+    /// Evaluate the supplied expression.
+    Default(Box<Expr>),
+    /// Return an empty JSON array.
+    EmptyArray,
+    /// Return an empty JSON object.
+    EmptyObject,
+}
+
+impl Display for JsonResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Boolean(true) => "TRUE",
+            Self::Boolean(false) => "FALSE",
+            Self::Unknown => "UNKNOWN",
+            Self::Error => "ERROR",
+            Self::Null => "NULL",
+            Self::Default(expr) => return write!(f, "DEFAULT {expr}"),
+            Self::EmptyArray => "EMPTY ARRAY",
+            Self::EmptyObject => "EMPTY OBJECT",
+        })
+    }
 }
 
 /// MSSQL's json null clause

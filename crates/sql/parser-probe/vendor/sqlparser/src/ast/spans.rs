@@ -1861,6 +1861,7 @@ impl Spanned for Expr {
             | Expr::Unique { span, .. }
             | Expr::TranslateUsing { span, .. }
             | Expr::JsonObject { span, .. }
+            | Expr::JsonObjectAgg { span, .. }
             | Expr::FormatJson { span, .. }
             | Expr::WildcardExclusion { span, .. }
             | Expr::MultisetQuery { span, .. }
@@ -2018,7 +2019,17 @@ impl Spanned for FunctionArgumentClause {
             FunctionArgumentClause::Having(HavingBound(_kind, expr)) => expr.span(),
             FunctionArgumentClause::Separator(value) => value.span(),
             FunctionArgumentClause::JsonNullClause(_) => Span::empty(),
-            FunctionArgumentClause::JsonReturningClause(_) => Span::empty(),
+            FunctionArgumentClause::JsonPassing(bindings) => {
+                union_spans(bindings.iter().map(Spanned::span))
+            }
+            FunctionArgumentClause::JsonOnEmpty(crate::ast::JsonResponse::Default(expr))
+            | FunctionArgumentClause::JsonOnError(crate::ast::JsonResponse::Default(expr)) => {
+                expr.span()
+            }
+            FunctionArgumentClause::JsonOnEmpty(_)
+            | FunctionArgumentClause::JsonOnError(_)
+            | FunctionArgumentClause::JsonWrapper(_)
+            | FunctionArgumentClause::JsonReturningClause(_) => Span::empty(),
         }
     }
 }

@@ -125,6 +125,11 @@ pub(super) fn allows(expression: &Expr) -> bool {
             null_clause: _,
             span: _,
         }
+        | JsonObjectAgg {
+            entry: _,
+            null_clause: _,
+            span: _,
+        }
         | FormatJson {
             expr: _,
             encoding: _,

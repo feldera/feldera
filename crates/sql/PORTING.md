@@ -174,10 +174,17 @@ at the clause keyword. Repeated DEFAULT, PRIMARY KEY and LATENESS attributes
 carry the compiler's error class and the range of the repeated expression
 or key. All 28 directed duplicate-attribute diagnostics matched Java on
 severity, class, start and snippet. On the larger suite, matches rose from
-861 to 901 of 1,061 shared rejections, leaving 160 P5a diagnostic differences.
+861 to 901 of 1,061 shared rejections.
 Java recovered the same parsed AST from formatted SQL for all 8,571 frozen
 programs and the 1,073 shared acceptances in the adversarial suite.
 [Diagnostic comparison](scripts/validate_syntax_diagnostics.py)
+
+The SQL/JSON comparison covered constructors, aggregates, path clauses, and
+quoted or schema-qualified routine names. All 1,274 verdicts matched Java.
+On all 323 acceptances, Java recovered the same AST from the original and
+Rust-formatted SQL. The frozen formatter comparison also passed all 8,571
+programs. Structured diagnostics now match on 902 of the 1,061 shared
+rejections in the adversarial grammar suite. [SQL/JSON regression tests](sql-parser/tests/sql_json.rs)
 
 In a 360-case comparison of index declarations, drops, LIMIT, OFFSET and FETCH,
 all verdicts matched Java. Java recovered the same AST from formatted SQL in
