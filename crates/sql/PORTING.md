@@ -231,12 +231,17 @@ maps and records. A typed NULL integer or Boolean produces one row of weight
 one. Four directed programs covered both cardinalities and a renamed output,
 matching Java at S2 and through Gen-2 emission.
 
+Seven further cases exercise typed NULLs and UNKNOWN in constant views and
+multirow INSERTs. They cover signed and unsigned integers, text, binary,
+decimal, floating-point, temporal, UUID and VARIANT types. Each matched Java
+at S2 and through Gen-2 emission.
+
 The frozen audit used the original submission calls and default nonincremental
-Gen-2 options. Rust bound 176 of 8,571 programs. All 176 matched Java compilation
+Gen-2 options. Rust bound 189 of 8,571 programs. All 189 matched Java compilation
 at every captured optimizer observation, persistent-ID inputs, schema,
-diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 119 of
-the 176 to S2. All 119 matched independent Java lowering and the Java optimizer
-resumed every checkpoint. The remaining 8,395 programs still need whole-program
+diagnostics and final Gen-2 bytes in the Linux devcontainer. Rust lowered 126 of
+the 189 to S2. All 126 matched independent Java lowering and the Java optimizer
+resumed every checkpoint. The remaining 8,382 programs still need whole-program
 binding. The parser's 8,571 successes measure syntax acceptance.
 [Submission audit](scripts/measure_submission_binding.py) · [Downstream comparison](scripts/compare_submission_binding.py) · [S2 consumer test](scripts/compare_submission_lowering.py)
 

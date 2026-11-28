@@ -16,7 +16,7 @@ use sqlparser_064::ast::{
 
 /// The statement printer quotes type aliases. The diagnostic printer uses
 /// the same resolved names without quotes, including inside collections.
-pub(super) struct TypeSpelling {
+pub(in crate::program) struct TypeSpelling {
     pub(super) quoted: String,
     pub(super) diagnostic: String,
 }
@@ -29,7 +29,7 @@ impl TypeSpelling {
         }
     }
 
-    pub(super) fn spelling(&self, quoted: bool) -> &str {
+    pub(in crate::program) fn spelling(&self, quoted: bool) -> &str {
         if quoted {
             &self.quoted
         } else {
@@ -113,17 +113,6 @@ pub(super) fn declare_type(
         .checked_sub(1)
         .ok_or_else(|| unsupported("table type nesting exceeds the validation limit"))?;
     let (kind, spelling) = match data_type {
-        // sqlparser represents VARIANT as an identifier. Quoted names still
-        // resolve through the ordinary user-defined type catalog.
-        DataType::Custom(name, modifiers)
-            if modifiers.is_empty()
-                && matches!(name.0.as_slice(), [sqlparser_064::ast::ObjectNamePart::Identifier(id)] if id.quote_style.is_none() && id.value.eq_ignore_ascii_case("VARIANT")) =>
-        {
-            (
-                TypeKind::Variant {},
-                TypeSpelling::render(|_| "VARIANT".into()),
-            )
-        }
         DataType::Struct(fields, StructBracketKind::Parentheses) => {
             let mut record = RecordFields::default();
             for field in fields {
@@ -166,14 +155,8 @@ pub(super) fn declare_type(
             )
         }
         _ => {
-            if let Some((kind, alias)) = default_type_alias(data_type) {
-                (
-                    kind,
-                    TypeSpelling {
-                        quoted: format!("`{alias}`"),
-                        diagnostic: alias,
-                    },
-                )
+            if let Some(builtin) = builtin_alias(data_type) {
+                builtin
             } else if let DataType::Custom(name, modifiers) = data_type
                 && modifiers.is_empty()
             {
@@ -183,14 +166,7 @@ pub(super) fn declare_type(
                     .ok_or_else(|| unsupported(format!("unknown type {}", spelling.diagnostic)))?;
                 (types.types[id.0 as usize].kind.clone(), spelling)
             } else {
-                let (kind, spelling) = scalar_type(data_type, nullable)?;
-                (
-                    kind,
-                    TypeSpelling {
-                        quoted: spelling.clone(),
-                        diagnostic: spelling,
-                    },
-                )
+                scalar_type(data_type, nullable)?
             }
         }
     };
@@ -225,6 +201,41 @@ pub(super) fn warns_on_unspecified_precision(ty: &DataType) -> bool {
             | DataType::Decimal(ExactNumberInfo::None)
             | DataType::Dec(ExactNumberInfo::None)
     )
+}
+
+/// Scalar CAST targets use the declaration's type spelling, including
+/// backticks on Calcite's catalog aliases in statement output.
+pub(in crate::program) fn null_cast_type(
+    data_type: &DataType,
+) -> Result<(TypeKind, TypeSpelling), Failure> {
+    if warns_on_unspecified_precision(data_type) {
+        return Err(unsupported(
+            "unspecified DECIMAL in a NULL cast requires a diagnostic",
+        ));
+    }
+    builtin_alias(data_type).map_or_else(|| scalar_type(data_type, true), Ok)
+}
+
+fn builtin_alias(data_type: &DataType) -> Option<(TypeKind, TypeSpelling)> {
+    // sqlparser represents VARIANT as an identifier. A quoted name resolves
+    // through the ordinary catalog.
+    if let DataType::Custom(name, modifiers) = data_type
+        && modifiers.is_empty()
+        && matches!(name.0.as_slice(), [sqlparser_064::ast::ObjectNamePart::Identifier(id)] if id.quote_style.is_none() && id.value.eq_ignore_ascii_case("VARIANT"))
+    {
+        return Some((
+            TypeKind::Variant {},
+            TypeSpelling::render(|_| "VARIANT".into()),
+        ));
+    }
+    let (kind, alias) = default_type_alias(data_type)?;
+    Some((
+        kind,
+        TypeSpelling {
+            quoted: format!("`{alias}`"),
+            diagnostic: alias,
+        },
+    ))
 }
 
 // Calcite registers these names as catalog aliases. A type declaration
@@ -265,12 +276,12 @@ fn default_type_alias(data_type: &DataType) -> Option<(TypeKind, String)> {
     Some((kind, alias))
 }
 
-fn scalar_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, String), Failure> {
+fn scalar_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, TypeSpelling), Failure> {
     use sqlparser_064::ast::{BinaryLength, TimezoneInfo};
 
     let integer =
         |width, signed, spelling: &str| (TypeKind::Integer { width, signed }, spelling.into());
-    let kind = match data_type {
+    let (kind, spelling): (_, String) = match data_type {
         DataType::Numeric(info) | DataType::Decimal(info) | DataType::Dec(info) => {
             let (precision, scale, spelling) = match *info {
                 ExactNumberInfo::None => (38, 0, "DECIMAL".into()),
@@ -417,5 +428,11 @@ fn scalar_type(data_type: &DataType, nullable: bool) -> Result<(TypeKind, String
             }
         },
     };
-    Ok(kind)
+    Ok((
+        kind,
+        TypeSpelling {
+            quoted: spelling.clone(),
+            diagnostic: spelling,
+        },
+    ))
 }

@@ -320,21 +320,13 @@ impl ColumnLayout {
                 };
             }
         };
-        let slot = match self.class {
-            CircuitType::Double => Some(&mut ids.doubles[usize::from(self.nullable)]),
-            CircuitType::Real => Some(&mut ids.reals[usize::from(self.nullable)]),
-            CircuitType::Null => Some(&mut ids.null),
-            _ => None,
-        };
-        let mut node = if let Some(slot) = slot {
-            if let Some(id) = slot {
-                return json!({"node":id});
-            }
-            let id = ids.inner;
-            ids.inner += 1;
-            *slot = Some(id);
-            json!({"class":self.class.wire_name(),"id":id,"sourceEmpty":true,"singleton":true})
-        } else if self.source_empty() {
+        if matches!(
+            self.class,
+            CircuitType::Double | CircuitType::Real | CircuitType::Null
+        ) {
+            return ids.singleton(self.class, &self.code, self.nullable);
+        }
+        let mut node = if self.source_empty() {
             ids.generated(self.class.wire_name())
         } else {
             ids.node(self.class.wire_name(), &range(0, 0, 0, 0))

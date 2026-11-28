@@ -14,6 +14,14 @@ pub(super) struct SqlDisplay {
 }
 
 impl SqlDisplay {
+    pub(super) fn literal(text: &super::literal::CellText) -> Self {
+        Self {
+            pretty: text.render(true).into_owned(),
+            diagnostic: text.render(false).into_owned(),
+            precedence: u8::MAX,
+        }
+    }
+
     pub(super) fn atom(text: String) -> Self {
         Self {
             diagnostic: text.clone(),

@@ -1,5 +1,6 @@
 //! Lower empty and single-row VALUES relations to weighted collections.
 
+mod null;
 mod type_name;
 
 use super::{
@@ -52,7 +53,14 @@ pub(super) fn lower(
     let row = if empty {
         None
     } else {
-        Some(lower_row(program, ids, roots, schema, &layout)?)
+        Some(lower_row(
+            program,
+            ids,
+            roots,
+            schema,
+            &layout,
+            &output["elementType"]["tupFields"],
+        )?)
     };
     let aliases = root
         .fields
@@ -117,12 +125,18 @@ fn lower_row(
     roots: &[feldera_sql_rel_model::expressions::ExprId],
     schema: &CatalogSchema,
     layout: &RowLayout<'_>,
+    element_fields: &Value,
 ) -> Result<ConstantRow, Error> {
     let mut scalars = layout.column_types(ids);
     let mut fields = Vec::with_capacity(roots.len());
     let mut values = Vec::with_capacity(roots.len());
     let mut sql_values = Vec::with_capacity(roots.len());
-    for ((&expr_id, column), scalar) in roots.iter().zip(&schema.columns).zip(&mut scalars) {
+    for (index, ((&expr_id, column), scalar)) in roots
+        .iter()
+        .zip(&schema.columns)
+        .zip(&mut scalars)
+        .enumerate()
+    {
         let expr = &program.expressions.expressions[expr_id.0 as usize];
         if expr.ty != column.ty {
             return Err(Error("VALUES column differs from SELECT output".into()));
@@ -131,7 +145,11 @@ fn lower_row(
             return Err(Error("expected a VALUES literal".into()));
         };
         let ty = &program.table.type_table.types[column.ty.0 as usize];
-        let cell = lower_literal(ids, ty, &literal.value, scalar)?;
+        let cell = if ty.nullable && matches!(literal.value, LiteralValue::Null {}) {
+            null::lower(ids, &ty.kind, scalar, &element_fields[index])?
+        } else {
+            lower_literal(ids, ty, &literal.value, scalar)?
+        };
         values.push(cell.digest);
         sql_values.push(cell.sql);
         fields.push(cell.literal);
@@ -165,18 +183,6 @@ fn lower_literal(
     use base64::{engine::general_purpose::STANDARD, Engine};
     let unknown = range(0, 0, 0, 0);
     let (mut literal, digest, sql) = match (&ty.kind, value) {
-        (kind, LiteralValue::Null {}) if ty.nullable => {
-            let class = match kind {
-                TypeKind::Null {} => "DBSPNullLiteral".to_owned(),
-                TypeKind::Boolean {} => "DBSPBoolLiteral".to_owned(),
-                TypeKind::Integer {
-                    width,
-                    signed: true,
-                } => format!("DBSPI{}Literal", width.bits()),
-                _ => return Err(Error("unsupported typed NULL in VALUES".into())),
-            };
-            (ids.generated(&class), "null".into(), "NULL".into())
-        }
         (_, _) if ty.nullable => {
             return Err(Error("unsupported nullable VALUES literal type".into()));
         }

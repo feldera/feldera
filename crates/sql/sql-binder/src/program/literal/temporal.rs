@@ -1,7 +1,7 @@
 //! Bind local temporal literals. The statement keeps the fractional spelling
 //! from SQL, while each Rex literal carries its resolved precision.
 
-use super::Cell;
+use super::{Cell, CellText};
 use crate::DataType;
 use feldera_sql_rel_model::{
     literals::{LiteralValue, date_from_text},
@@ -17,7 +17,7 @@ pub(super) fn parse(ty: &DataType, text: &str) -> Option<Cell> {
             Some(Cell {
                 value: LiteralValue::Date { epoch_days },
                 kind: TypeKind::Date {},
-                sql: format!("DATE '{date}'"),
+                text: CellText::Literal(format!("DATE '{date}'")),
             })
         }
         DataType::Time(None, TimezoneInfo::None) => {
@@ -27,7 +27,7 @@ pub(super) fn parse(ty: &DataType, text: &str) -> Option<Cell> {
                     nanoseconds_since_midnight,
                 },
                 kind: TypeKind::Time { precision, zone },
-                sql: format!("TIME '{time}'"),
+                text: CellText::Literal(format!("TIME '{time}'")),
             })
         }
         DataType::Timestamp(None, TimezoneInfo::None) => {
@@ -41,7 +41,7 @@ pub(super) fn parse(ty: &DataType, text: &str) -> Option<Cell> {
                     nanoseconds_since_midnight,
                 },
                 kind: TypeKind::Timestamp { precision, zone },
-                sql: format!("TIMESTAMP '{date} {time}'"),
+                text: CellText::Literal(format!("TIMESTAMP '{date} {time}'")),
             })
         }
         _ => None,

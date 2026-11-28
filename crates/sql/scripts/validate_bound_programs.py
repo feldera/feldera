@@ -15,6 +15,27 @@ METERS = "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW t
 SET_TABLES = ("CREATE TABLE a(x INT, y BIGINT NOT NULL); CREATE TABLE b(p INT, q BIGINT NOT NULL);"
               " CREATE TABLE c(n INT, m BIGINT NOT NULL); CREATE VIEW v AS ")
 CASES = {
+    "cast_null_scalars": "CREATE VIEW v AS SELECT CAST(NULL AS INT UNSIGNED) AS u,"
+                         " CAST(NULL AS VARCHAR(3)) AS s, CAST(NULL AS CHAR) AS c,"
+                         " CAST(NULL AS BINARY(2)) AS b, CAST(NULL AS DECIMAL(12,2)) AS d,"
+                         " CAST(NULL AS REAL) AS r, CAST(NULL AS DOUBLE PRECISION) AS f,"
+                         " CAST(NULL AS VARIANT) AS v;",
+    "cast_null_temporal": "CREATE VIEW a AS SELECT CAST(NULL AS TIME(3)) AS t, CAST(NULL AS UUID) AS u;"
+                          " CREATE VIEW b AS SELECT CAST(NULL AS TIMESTAMP) AS ts, CAST(NULL AS DATE) AS d,"
+                          " CAST(NULL AS TIME) AS t, CAST(NULL AS UUID) AS u;",
+    "cast_null_aliases": "CREATE VIEW v AS SELECT CAST((NULL) AS INT2) AS i,"
+                         " CAST(NULL AS TEXT) AS s, CAST(NULL AS BYTEA) AS b, UNKNOWN AS flag;",
+    "cast_null_insert": "CREATE TABLE t(k BIGINT, s VARCHAR(12), b BOOLEAN);"
+                        " INSERT INTO t VALUES (1, 'x', TRUE), (CAST(NULL AS SMALLINT), 'abc', UNKNOWN),"
+                        " (2147483648, CAST(NULL AS VARCHAR(8)), NULL); CREATE VIEW v AS SELECT * FROM t;",
+    "cast_null_precision": "CREATE TABLE t(b VARBINARY(8), n DECIMAL(6,2), t TIME);"
+                           " INSERT INTO t VALUES (X'AB', 1.25, TIME '10:00:00.1'),"
+                           " (X'1234', CAST(NULL AS DECIMAL(6,2)), TIME '11:00:00.123');",
+    "unknown_insert": "CREATE TABLE t(b BOOLEAN, s VARCHAR);"
+                      " INSERT INTO t VALUES (UNKNOWN, 'a'), (TRUE, 'abc'), (NULL, NULL);",
+    "cast_null_numeric_widths": "CREATE TABLE t(a INT, b BIGINT, c DECIMAL(9,2)); INSERT INTO t VALUES"
+                                " (1, CAST(NULL AS TINYINT UNSIGNED), CAST(NULL AS SMALLINT)),"
+                                " (CAST(NULL AS INT UNSIGNED), CAST(NULL AS SMALLINT), 0.25);",
     "unicode_origins": "/* 😀 é */ CREATE TABLE t(a INT, b INT); /* 🦀 */"
                       " CREATE VIEW v AS SELECT a FROM t WHERE b > 1;",
     "unicode_identifiers": "CREATE TABLE Über(Á INT); CREATE VIEW Ä AS SELECT ÜBER.Á FROM über;",

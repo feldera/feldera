@@ -5,7 +5,7 @@
 use super::{
     StatementText, append_boundary,
     graph::{append_literal, append_project, append_values, insert_row_fields, insert_type},
-    literal::Cell,
+    literal::{Cell, CellText},
     source::DeclarationTokens,
 };
 use crate::{Failure, SetExpr, local_name, query_body, unsupported};
@@ -111,7 +111,10 @@ pub(super) fn bind(
         let rows = rows
             .iter()
             .map(|row| {
-                let fields = row.iter().map(|cell| cell.sql.as_str()).collect::<Vec<_>>();
+                let fields = row
+                    .iter()
+                    .map(|cell| cell.text.render(quoted))
+                    .collect::<Vec<_>>();
                 format!("{prefix}({})", fields.join(", "))
             })
             .collect::<Vec<_>>();
@@ -147,7 +150,7 @@ fn bind_values(program: &mut Program, rows: &[Vec<Cell>]) -> Result<u32, Failure
         let mut nullable = false;
         for row in rows {
             let cell = &row[i];
-            nullable |= matches!(cell.kind, TypeKind::Null {});
+            nullable |= matches!(cell.value, LiteralValue::Null {});
             widen(&mut kind, &cell.kind)?;
         }
         let ty = insert_type(
@@ -164,16 +167,37 @@ fn bind_values(program: &mut Program, rows: &[Vec<Cell>]) -> Result<u32, Failure
         program,
         columns.iter().map(|(name, ty)| (name.as_str(), *ty)),
     );
+    // A CAST makes Calcite convert VALUES rows to projections before
+    // reducing them back to literals. All cells inherit their column's
+    // common type, including bare NULL and fields in other columns.
+    let has_cast = rows
+        .iter()
+        .flatten()
+        .any(|cell| matches!(cell.text, CellText::CastNull(_)));
     let mut roots = Vec::new();
     for cells in rows {
         for (cell, (_, column_type)) in cells.iter().zip(&columns) {
-            let kind = match cell.kind {
-                TypeKind::Integer { .. } | TypeKind::Decimal { .. } => {
-                    &program.table.type_table.types[column_type.0 as usize].kind
-                }
-                _ => &cell.kind,
+            let kind = if has_cast
+                || matches!(
+                    cell.kind,
+                    TypeKind::Integer { .. } | TypeKind::Decimal { .. }
+                ) {
+                &program.table.type_table.types[column_type.0 as usize].kind
+            } else {
+                &cell.kind
             };
-            let value = if let TypeKind::Decimal { scale, .. } = kind {
+            let is_null = matches!(cell.value, LiteralValue::Null {});
+            if !is_null
+                && matches!(kind, TypeKind::Integer { signed: false, .. })
+                && matches!(cell.kind, TypeKind::Integer { signed: true, .. })
+            {
+                return Err(unsupported(
+                    "signed VALUES literal requires a projected unsigned cast",
+                ));
+            }
+            let value = if let TypeKind::Decimal { scale, .. } = kind
+                && !is_null
+            {
                 let decimal = cell
                     .value
                     .as_exact_decimal()
@@ -190,7 +214,7 @@ fn bind_values(program: &mut Program, rows: &[Vec<Cell>]) -> Result<u32, Failure
             };
             let ty = SqlType {
                 kind: kind.clone(),
-                nullable: matches!(kind, TypeKind::Null {}),
+                nullable: is_null,
                 origin: Origin::Absent {},
             };
             let ty = insert_type(&mut program.table.type_table, ty);
@@ -206,7 +230,20 @@ fn widen(kind: &mut TypeKind, next: &TypeKind) -> Result<(), Failure> {
     }
     match (kind, next) {
         (current @ TypeKind::Null {}, next) => *current = next.clone(),
-        (TypeKind::Integer { width, .. }, TypeKind::Integer { .. }) => *width = IntegerWidth::I64,
+        (
+            TypeKind::Integer { width, signed },
+            TypeKind::Integer {
+                width: other,
+                signed: rhs,
+            },
+        ) => {
+            // Calcite keeps the first spelling at equal width, even when
+            // signedness differs. Otherwise the wider operand supplies both.
+            if width.bits() < other.bits() {
+                *width = *other;
+                *signed = *rhs;
+            }
+        }
         (
             TypeKind::Time {
                 precision: Precision::Specified(current),
@@ -242,26 +279,33 @@ fn widen(kind: &mut TypeKind, next: &TypeKind) -> Result<(), Failure> {
         (
             TypeKind::Character {
                 fixed,
-                length: Precision::Specified(width),
+                length: width,
                 ..
             },
             TypeKind::Character {
-                length: Precision::Specified(n),
+                fixed: other_fixed,
+                length: other,
                 ..
             },
         )
         | (
             TypeKind::Binary {
                 fixed,
-                length: Precision::Specified(width),
+                length: width,
             },
             TypeKind::Binary {
-                length: Precision::Specified(n),
+                fixed: other_fixed,
+                length: other,
                 ..
             },
         ) => {
-            *fixed &= *width == *n;
-            *width = (*width).max(*n);
+            *fixed &= *other_fixed && width == other;
+            *width = match (*width, *other) {
+                (Precision::Specified(a), Precision::Specified(b)) => {
+                    Precision::Specified(a.max(b))
+                }
+                _ => Precision::Unspecified,
+            };
         }
         _ => return Err(unsupported("incompatible INSERT VALUES column types")),
     }
@@ -273,6 +317,14 @@ fn decimal_shape(kind: &TypeKind) -> Option<(u32, u32)> {
         TypeKind::Decimal {
             precision, scale, ..
         } => Some((*precision, *scale)),
+        TypeKind::Integer {
+            width: IntegerWidth::I8,
+            ..
+        } => Some((3, 0)),
+        TypeKind::Integer {
+            width: IntegerWidth::I16,
+            ..
+        } => Some((5, 0)),
         TypeKind::Integer {
             width: IntegerWidth::I32,
             ..

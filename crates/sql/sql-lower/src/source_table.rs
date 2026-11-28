@@ -6,8 +6,8 @@ mod column_layout;
 mod type_declaration;
 
 use super::Error;
-use column_layout::{ColumnLayout, Repr, field, field_hash, structure};
-use feldera_sql_ir::build::CollectionType;
+use column_layout::{field, field_hash, structure, ColumnLayout, Repr};
+use feldera_sql_ir::{build::CollectionType, TypeKind as CircuitType};
 use feldera_sql_rel_model::{
     catalog::{CatalogSchema, Name},
     operators::DiagnosticSource,
@@ -15,7 +15,7 @@ use feldera_sql_rel_model::{
     statements::StatementSource,
     types::{Precision, TimeZone, TypeKind, TypeTable},
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 pub(super) use type_declaration::declare_record;
 
 pub(super) struct Ids {
@@ -24,10 +24,7 @@ pub(super) struct Ids {
     relations: Vec<usize>,
     origin: u64,
     plan: std::collections::HashMap<u32, usize>,
-    doubles: [Option<u64>; 2],
-    reals: [Option<u64>; 2],
-    null: Option<u64>,
-    bools: [Option<u64>; 2],
+    singletons: std::collections::HashMap<(CircuitType, bool), u64>,
 }
 
 impl Ids {
@@ -52,10 +49,7 @@ impl Ids {
             inner: next(graph),
             plan,
             relations: relation_ids(program),
-            doubles: [None; 2],
-            reals: [None; 2],
-            null: None,
-            bools: [None; 2],
+            singletons: Default::default(),
             operator: ops
                 .iter()
                 .filter_map(|n| n["id"].as_u64())
@@ -93,14 +87,14 @@ impl Ids {
         id
     }
 
-    pub(super) fn boolean(&mut self, nullable: bool) -> Value {
-        if let Some(id) = self.bools[usize::from(nullable)] {
+    pub(super) fn singleton(&mut self, kind: CircuitType, code: &str, nullable: bool) -> Value {
+        if let Some(id) = self.singletons.get(&(kind, nullable)) {
             return json!({"node":id});
         }
-        self.bools[usize::from(nullable)] = Some(self.inner);
-        let mut ty = self.generated("DBSPTypeBool");
+        self.singletons.insert((kind, nullable), self.inner);
+        let mut ty = self.generated(kind.wire_name());
         ty["singleton"] = true.into();
-        ty["code"] = "BOOL".into();
+        ty["code"] = code.into();
         ty["mayBeNull"] = nullable.into();
         ty
     }

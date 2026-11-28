@@ -231,7 +231,7 @@ impl Predicate {
                 nullable,
                 ..
             } => {
-                let ty = ids.boolean(*nullable);
+                let ty = ids.singleton(feldera_sql_ir::TypeKind::Bool, "BOOL", *nullable);
                 let mut body = ids.node("DBSPBinaryExpression", &self.position);
                 body["left"] = left.lower(ids, &mut parameter)?;
                 body["right"] = right.lower(ids, &mut parameter)?;

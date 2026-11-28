@@ -7,7 +7,8 @@ mod filter;
 mod sets;
 mod types;
 
-use types::{TypeSpelling, declare_type};
+use types::declare_type;
+pub(super) use types::{TypeSpelling, null_cast_type};
 
 use super::{
     BoundQuery, QueryText, StatementText, ViewDeclaration, append_boundary, append_schema,

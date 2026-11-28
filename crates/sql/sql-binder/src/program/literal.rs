@@ -12,12 +12,34 @@ use feldera_sql_rel_model::{
     source::Origin,
     types::{CharacterMetadata, IntegerWidth, Precision, SqlType, TypeKind},
 };
-use sqlparser_064::ast::UnaryOperator;
+use sqlparser_064::ast::{CastKind, UnaryOperator};
+use std::borrow::Cow;
+
+pub(super) enum CellText {
+    Literal(String),
+    CastNull(super::table::TypeSpelling),
+}
+
+impl CellText {
+    pub(super) fn render(&self, quoted: bool) -> Cow<'_, str> {
+        match self {
+            Self::Literal(text) => Cow::Borrowed(text),
+            Self::CastNull(ty) => Cow::Owned(format!("CAST(NULL AS {})", ty.spelling(quoted))),
+        }
+    }
+}
+
+fn is_null_literal(mut expr: &Expr) -> bool {
+    while let Expr::Nested(inner) = expr {
+        expr = inner;
+    }
+    matches!(expr, Expr::Value(literal) if literal.value == Value::Null)
+}
 
 pub(super) struct Cell {
     pub(super) value: LiteralValue,
     pub(super) kind: TypeKind,
-    pub(super) sql: String,
+    pub(super) text: CellText,
 }
 
 impl Cell {
@@ -32,7 +54,7 @@ impl Cell {
         expr: &Expr,
     ) -> Result<(ExprId, TypeId), Failure> {
         let source = SqlType {
-            nullable: matches!(self.kind, TypeKind::Null {}),
+            nullable: matches!(self.value, LiteralValue::Null {}),
             kind: self.kind.clone(),
             origin: Origin::Absent {},
         };
@@ -82,7 +104,7 @@ impl Cell {
                     width,
                     signed: true,
                 },
-                sql,
+                text: CellText::Literal(sql),
             });
         }
 
@@ -108,13 +130,35 @@ impl Cell {
                 scale,
                 explicit_scale: true,
             },
-            sql,
+            text: CellText::Literal(sql),
         })
     }
 
     pub(super) fn parse(expr: &Expr) -> Result<Self, Failure> {
         match expr {
             Expr::Nested(expr) => Self::parse(expr),
+            Expr::Cast {
+                kind: CastKind::Cast,
+                expr,
+                data_type,
+                format: None,
+            } if is_null_literal(expr) => {
+                let (kind, ty) = super::table::null_cast_type(data_type)?;
+                Ok(Self {
+                    kind,
+                    value: LiteralValue::Null {},
+                    text: CellText::CastNull(ty),
+                })
+            }
+            Expr::Identifier(ident)
+                if ident.quote_style.is_none() && ident.value.eq_ignore_ascii_case("UNKNOWN") =>
+            {
+                Ok(Self {
+                    kind: TypeKind::Boolean {},
+                    value: LiteralValue::Null {},
+                    text: CellText::Literal("UNKNOWN".into()),
+                })
+            }
             Expr::TypedString(typed)
                 if typed.data_type
                     == crate::DataType::Decimal(sqlparser_064::ast::ExactNumberInfo::None) =>
@@ -135,7 +179,7 @@ impl Cell {
                     return Ok(Self {
                         value: LiteralValue::Uuid { bytes },
                         kind: TypeKind::Uuid {},
-                        sql: format!("UUID '{text}'"),
+                        text: CellText::Literal(format!("UUID '{text}'")),
                     });
                 }
                 temporal::parse(&typed.data_type, text)
@@ -197,7 +241,11 @@ impl Cell {
                     }
                     _ => return Err(unsupported("unsupported SQL literal")),
                 };
-                Ok(Self { value, kind, sql })
+                Ok(Self {
+                    value,
+                    kind,
+                    text: CellText::Literal(sql),
+                })
             }
             _ => Err(unsupported("expected a literal VALUES element")),
         }
