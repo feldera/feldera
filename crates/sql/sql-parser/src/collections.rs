@@ -1,7 +1,7 @@
 //! Parse Feldera's MAP, MULTISET and ROW constructors.
 
 use sqlparser_064::{
-    ast::{Expr, Map, MapEntry},
+    ast::{Expr, Ident, Map, MapEntry},
     keywords::Keyword,
     parser::{Parser, ParserError},
     tokenizer::Token,
@@ -73,6 +73,20 @@ fn map_separator(parser: &mut Parser) -> Result<(), ParserError> {
     Ok(())
 }
 
+/// The row grammar consumes AS only when an identifier follows.
+pub(super) fn field_alias(parser: &mut Parser) -> Result<Option<Ident>, ParserError> {
+    if !parser.parse_keyword(Keyword::AS) {
+        return Ok(None);
+    }
+    if !super::reserved::starts_identifier(&parser.peek_token_ref().token) {
+        return Err(super::diagnostic::located(
+            "expected a field name after AS",
+            parser.get_current_token().span,
+        ));
+    }
+    super::statements::identifier(parser).map(Some)
+}
+
 /// ROW field aliases require an explicit AS. Each field keeps its identifier span.
 pub(super) fn parse_row(parser: &mut Parser) -> Result<Expr, ParserError> {
     use sqlparser_064::ast::ExprWithAlias;
@@ -80,21 +94,17 @@ pub(super) fn parse_row(parser: &mut Parser) -> Result<Expr, ParserError> {
     parser.expect_token(&Token::LParen)?;
     let mut first = true;
     let fields = parser.parse_comma_separated(|parser| {
+        if parser.peek_keyword(Keyword::DEFAULT) {
+            first = false;
+            return Ok(ExprWithAlias { expr: Expr::DefaultValue(parser.next_token().span), alias: None });
+        }
         let expr = if first && matches!(parser.peek_token().token, Token::Word(w) if matches!(w.keyword, Keyword::SELECT | Keyword::WITH | Keyword::VALUES | Keyword::TABLE)) {
             Expr::Subquery(parser.parse_query()?)
         } else {
             row_operand(parser)?
         };
         first = false;
-        let alias = if parser.parse_keyword(Keyword::AS) {
-            let name = parser.parse_identifier()?;
-            if let std::ops::ControlFlow::Break(error) = super::reserved::identifier(&name) {
-                return Err(error);
-            }
-            Some(name)
-        } else {
-            None
-        };
+        let alias = field_alias(parser)?;
         Ok(ExprWithAlias { expr, alias })
     })?;
     let end = parser.expect_token(&Token::RParen)?.span;
@@ -106,7 +116,17 @@ pub(super) fn parse_row(parser: &mut Parser) -> Result<Expr, ParserError> {
 
 pub(super) fn row_operand(parser: &mut Parser) -> Result<Expr, ParserError> {
     use sqlparser_064::ast::Spanned;
-    let mut expr = parser.parse_wildcard_expr()?;
+    let mut expr = if parser.peek_token_ref().token == Token::LParen
+        && parser.peek_nth_token_ref(1).token == Token::Mul
+        && parser.peek_nth_token_ref(2).token == Token::RParen
+    {
+        parser.next_token();
+        let wildcard = parser.parse_wildcard_expr()?;
+        parser.next_token();
+        wildcard
+    } else {
+        parser.parse_wildcard_expr()?
+    };
     if matches!(&expr, Expr::QualifiedWildcard(_, _) | Expr::Wildcard(_))
         && parser
             .parse_one_of_keywords(&[Keyword::EXCEPT, Keyword::EXCLUDE])

@@ -24,6 +24,7 @@ mod grammar;
 mod hints;
 mod lateness;
 mod pagination;
+mod predicates;
 mod reject;
 mod relations;
 pub(crate) mod reserved;
@@ -111,12 +112,39 @@ impl Dialect for FelderaDialect {
         relations::cte_cycle(parser)
     }
 
+    fn supports_parenthesized_wildcard(&self) -> bool {
+        false
+    }
+
+    fn parse_parenthesized_field(&self, parser: &mut Parser) -> Result<Expr, ParserError> {
+        values::parenthesized_field(parser)
+    }
+
+    fn parse_is_predicate(
+        &self,
+        parser: &mut Parser,
+        expr: Expr,
+        precedence: u8,
+    ) -> Result<Expr, ParserError> {
+        predicates::after_is(parser, expr, precedence)
+    }
+
     fn parse_infix(
         &self,
         parser: &mut Parser,
         _expr: &Expr,
         _precedence: u8,
     ) -> Option<Result<Expr, ParserError>> {
+        if parser.peek_keyword(Keyword::NOT)
+            && matches!(&parser.peek_nth_token_ref(1).token, Token::Word(w)
+                if matches!(w.keyword, Keyword::LIKE | Keyword::ILIKE | Keyword::RLIKE))
+            && matches!(&parser.peek_nth_token_ref(2).token, Token::Word(w) if w.keyword == Keyword::ANY)
+        {
+            return Some(Err(diagnostic::located(
+                "expected a pattern expression",
+                parser.peek_nth_token_ref(2).span,
+            )));
+        }
         // Calcite's lookahead recognizes the positive IN predicate only at IN (.
         if parser.peek_keyword(Keyword::IN) && parser.peek_nth_token_ref(1).token != Token::LParen {
             return Some(Err(diagnostic::located(
@@ -130,6 +158,9 @@ impl Dialect for FelderaDialect {
     fn get_next_precedence(&self, parser: &Parser) -> Option<Result<u8, ParserError>> {
         if let Some(error) = diagnostic::invalid_operator(parser, false) {
             return Some(Err(error));
+        }
+        if predicates::ends_expression(parser) {
+            return Some(Ok(self.prec_unknown()));
         }
         // Calcite requires IS in the postfix null test. An adjacent NOT NULL
         // can instead be a column or type modifier for the enclosing parser.

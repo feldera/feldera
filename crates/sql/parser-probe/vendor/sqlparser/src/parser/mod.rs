@@ -1432,7 +1432,7 @@ impl<'a> Parser<'a> {
                 return Ok(Expr::Wildcard(AttachedToken(next_token)));
             }
             // Handle parenthesized wildcard: (*)
-            Token::LParen => {
+            Token::LParen if self.dialect.supports_parenthesized_wildcard() => {
                 let [maybe_mul, maybe_rparen] = self.peek_tokens_ref();
                 if maybe_mul.token == Token::Mul && maybe_rparen.token == Token::RParen {
                     let mul_token = self.next_token(); // consume Mul
@@ -2100,7 +2100,7 @@ impl<'a> Parser<'a> {
                         // expression parens (the outer parens are CREATE TABLE syntax),
                         // so it remains a column constraint.
                         let exprs = self.with_state(ParserState::Normal, |p| {
-                            p.parse_comma_separated(Parser::parse_expr)
+                            p.parse_comma_separated(|p| dialect.parse_parenthesized_field(p))
                         })?;
                         match exprs.len() {
                             0 => return Err(ParserError::ParserError(
@@ -4223,60 +4223,7 @@ impl<'a> Parser<'a> {
             }
         } else if let Token::Word(w) = &tok.token {
             match w.keyword {
-                Keyword::IS => {
-                    if self.parse_keyword(Keyword::NULL) {
-                        Ok(Expr::IsNull(Box::new(expr)))
-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::NULL]) {
-                        Ok(Expr::IsNotNull(Box::new(expr)))
-                    } else if self.parse_keywords(&[Keyword::TRUE]) {
-                        Ok(Expr::IsTrue(Box::new(expr)))
-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::TRUE]) {
-                        Ok(Expr::IsNotTrue(Box::new(expr)))
-                    } else if self.parse_keywords(&[Keyword::FALSE]) {
-                        Ok(Expr::IsFalse(Box::new(expr)))
-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::FALSE]) {
-                        Ok(Expr::IsNotFalse(Box::new(expr)))
-                    } else if self.parse_keywords(&[Keyword::DISTINCT, Keyword::FROM]) {
-                        // The right operand binds no more loosely than `IS`
-                        // itself, so that e.g. `a IS DISTINCT FROM b AND c`
-                        // parses as `(a IS DISTINCT FROM b) AND c`.
-                        let expr2 = self.parse_subexpr(precedence)?;
-                        Ok(Expr::IsDistinctFrom(Box::new(expr), Box::new(expr2)))
-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::DISTINCT, Keyword::FROM])
-                    {
-                        let expr2 = self.parse_subexpr(precedence)?;
-                        Ok(Expr::IsNotDistinctFrom(Box::new(expr), Box::new(expr2)))
-                    } else if self.dialect.supports_is_operator() {
-                        let op = if self.parse_keyword(Keyword::NOT) {
-                            BinaryOperator::IsNot
-                        } else {
-                            BinaryOperator::Is
-                        };
-                        // SQLite gives `IS` the same precedence as `=` (https://www.sqlite.org/lang_expr.html).
-                        Ok(Expr::BinaryOp {
-                            left: Box::new(expr),
-                            op,
-                            right: Box::new(
-                                self.parse_subexpr(self.dialect.prec_value(Precedence::Eq))?,
-                            ),
-                        })
-                    } else if self.parse_keywords(&[Keyword::UNKNOWN]) {
-                        Ok(Expr::IsUnknown(Box::new(expr)))
-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::UNKNOWN]) {
-                        Ok(Expr::IsNotUnknown(Box::new(expr)))
-                    } else if self.parse_keyword(Keyword::JSON) {
-                        self.parse_is_json_predicate(expr, false)
-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::JSON]) {
-                        self.parse_is_json_predicate(expr, true)
-                    } else if let Ok(is_normalized) = self.parse_unicode_is_normalized(expr) {
-                        Ok(is_normalized)
-                    } else {
-                        self.expected_ref(
-                            "[NOT] NULL | TRUE | FALSE | DISTINCT | [NOT] JSON [VALUE | SCALAR | ARRAY | OBJECT] [WITH | WITHOUT UNIQUE [KEYS]] | [form] NORMALIZED FROM after IS",
-                            self.peek_token_ref(),
-                        )
-                    }
-                }
+                Keyword::IS => dialect.parse_is_predicate(self, expr, precedence),
                 Keyword::AT => {
                     self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
                     Ok(Expr::AtTimeZone {
@@ -13610,8 +13557,66 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse the default predicate after consuming IS.
+    pub fn parse_is_predicate(&mut self, expr: Expr, precedence: u8) -> Result<Expr, ParserError> {
+        if self.parse_keyword(Keyword::NULL) {
+            Ok(Expr::IsNull(Box::new(expr)))
+        } else if self.parse_keywords(&[Keyword::NOT, Keyword::NULL]) {
+            Ok(Expr::IsNotNull(Box::new(expr)))
+        } else if self.parse_keywords(&[Keyword::TRUE]) {
+            Ok(Expr::IsTrue(Box::new(expr)))
+        } else if self.parse_keywords(&[Keyword::NOT, Keyword::TRUE]) {
+            Ok(Expr::IsNotTrue(Box::new(expr)))
+        } else if self.parse_keywords(&[Keyword::FALSE]) {
+            Ok(Expr::IsFalse(Box::new(expr)))
+        } else if self.parse_keywords(&[Keyword::NOT, Keyword::FALSE]) {
+            Ok(Expr::IsNotFalse(Box::new(expr)))
+        } else if self.parse_keywords(&[Keyword::DISTINCT, Keyword::FROM]) {
+            // The right operand binds no more loosely than `IS`
+            // itself, so that e.g. `a IS DISTINCT FROM b AND c`
+            // parses as `(a IS DISTINCT FROM b) AND c`.
+            let expr2 = self.parse_subexpr(precedence)?;
+            Ok(Expr::IsDistinctFrom(Box::new(expr), Box::new(expr2)))
+        } else if self.parse_keywords(&[Keyword::NOT, Keyword::DISTINCT, Keyword::FROM]) {
+            let expr2 = self.parse_subexpr(precedence)?;
+            Ok(Expr::IsNotDistinctFrom(Box::new(expr), Box::new(expr2)))
+        } else if self.dialect.supports_is_operator() {
+            let op = if self.parse_keyword(Keyword::NOT) {
+                BinaryOperator::IsNot
+            } else {
+                BinaryOperator::Is
+            };
+            // SQLite gives `IS` the same precedence as `=` (https://www.sqlite.org/lang_expr.html).
+            Ok(Expr::BinaryOp {
+                left: Box::new(expr),
+                op,
+                right: Box::new(self.parse_subexpr(self.dialect.prec_value(Precedence::Eq))?),
+            })
+        } else if self.parse_keywords(&[Keyword::UNKNOWN]) {
+            Ok(Expr::IsUnknown(Box::new(expr)))
+        } else if self.parse_keywords(&[Keyword::NOT, Keyword::UNKNOWN]) {
+            Ok(Expr::IsNotUnknown(Box::new(expr)))
+        } else if self.parse_keyword(Keyword::JSON) {
+            self.parse_is_json_predicate(expr, false, true)
+        } else if self.parse_keywords(&[Keyword::NOT, Keyword::JSON]) {
+            self.parse_is_json_predicate(expr, true, true)
+        } else if let Ok(is_normalized) = self.parse_unicode_is_normalized(expr) {
+            Ok(is_normalized)
+        } else {
+            self.expected_ref(
+                "[NOT] NULL | TRUE | FALSE | DISTINCT | [NOT] JSON [VALUE | SCALAR | ARRAY | OBJECT] [WITH | WITHOUT UNIQUE [KEYS]] | [form] NORMALIZED FROM after IS",
+                self.peek_token_ref(),
+            )
+        }
+    }
+
     /// Parse the `IS [NOT] JSON` predicate after `JSON` (and optional `NOT`) was consumed.
-    fn parse_is_json_predicate(&mut self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
+    pub fn parse_is_json_predicate(
+        &mut self,
+        expr: Expr,
+        negated: bool,
+        allow_unique_keys: bool,
+    ) -> Result<Expr, ParserError> {
         let kind = match self.parse_one_of_keywords(&[
             Keyword::VALUE,
             Keyword::SCALAR,
@@ -13625,7 +13630,10 @@ impl<'a> Parser<'a> {
             _ => None,
         };
 
-        let unique_keys = match self.parse_one_of_keywords(&[Keyword::WITH, Keyword::WITHOUT]) {
+        let modifier = allow_unique_keys
+            .then(|| self.parse_one_of_keywords(&[Keyword::WITH, Keyword::WITHOUT]))
+            .flatten();
+        let unique_keys = match modifier {
             Some(Keyword::WITH) => {
                 self.expect_keyword_is(Keyword::UNIQUE)?;
                 let _ = self.parse_keyword(Keyword::KEYS);

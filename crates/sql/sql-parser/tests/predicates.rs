@@ -164,3 +164,75 @@ fn keeps_datetime_difference_qualifiers_through_nested_expressions() {
         assert!(parse(&format!("SELECT {expr} FROM t")).is_err(), "{expr}");
     }
 }
+
+#[test]
+fn multiset_predicates_preserve_the_operand_and_negation() {
+    use sqlparser_064::ast::{Expr, MultisetPredicate, SelectItem, SetExpr, Statement};
+
+    for (suffix, expected, negated) in [
+        ("IS EMPTY", MultisetPredicate::Empty, false),
+        ("IS NOT EMPTY", MultisetPredicate::Empty, true),
+        ("IS A SET", MultisetPredicate::ASet, false),
+        ("IS NOT A SET", MultisetPredicate::ASet, true),
+    ] {
+        let sql = format!("SELECT MULTISET[1, 2] {suffix} AND true");
+        let statements = parse(&sql).unwrap();
+        assert_eq!(emit_statements(&statements).unwrap(), [sql]);
+        let feldera_sql_parser::Statement::Upstream(statement) = &statements[0] else {
+            panic!("expected an ordinary SQL statement");
+        };
+        let Statement::Query(query) = statement.as_ref() else {
+            panic!("expected a query")
+        };
+        let SetExpr::Select(select) = query.body.as_ref() else {
+            panic!("expected SELECT")
+        };
+        let SelectItem::UnnamedExpr(Expr::BinaryOp { left, .. }) = &select.projection[0] else {
+            panic!("expected a conjunction");
+        };
+        assert!(
+            matches!(left.as_ref(), Expr::IsMultiset { expr, predicate, negated: n, .. }
+            if *predicate == expected && *n == negated && matches!(expr.as_ref(), Expr::MultisetValue { .. }))
+        );
+    }
+}
+
+#[test]
+fn implicit_aliases_end_the_predicate_in_select_lists() {
+    use feldera_sql_parser::syntax_diagnostic;
+
+    for (sql, expected) in [
+        ("SELECT x REGEXP FROM t", "SELECT x AS REGEXP FROM t"),
+        ("SELECT x IS FROM t", "SELECT x AS IS FROM t"),
+        (
+            "SELECT x IS JSON WITHOUT FROM t",
+            "SELECT x IS JSON AS WITHOUT FROM t",
+        ),
+        (
+            "SELECT (x IS NOT EMPTY AS field), ROW(DEFAULT) FROM t",
+            "SELECT (x IS NOT EMPTY AS field), ROW(DEFAULT) FROM t",
+        ),
+    ] {
+        assert_eq!(emit_statements(&parse(sql).unwrap()).unwrap(), [expected]);
+    }
+    for (sql, token) in [
+        ("SELECT x AT TIME ZONE 'UTC' FROM t", "TIME"),
+        ("SELECT x IS NOT NFC NORMALIZED", "NOT"),
+        ("SELECT x IS NOT A bag", "A"),
+        ("SELECT x NOT LIKE ANY (1, 2)", "ANY"),
+        ("SELECT * FROM t WHERE x REGEXP y", "REGEXP"),
+        (
+            "SELECT * FROM t WHERE x IS JSON WITHOUT UNIQUE KEYS",
+            "WITHOUT",
+        ),
+        ("SELECT (x AS SELECT)", "AS"),
+    ] {
+        let start = sql.find(token).unwrap();
+        let span = syntax_diagnostic(sql).unwrap().unwrap().span.unwrap();
+        assert_eq!(
+            (span.start.column, span.end.column),
+            (start as u64 + 1, (start + token.len()) as u64 + 1),
+            "{sql}"
+        );
+    }
+}

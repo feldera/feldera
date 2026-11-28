@@ -1672,6 +1672,7 @@ impl Spanned for Expr {
             Expr::IsNotNull(expr) => expr.span(),
             Expr::IsUnknown(expr) => expr.span(),
             Expr::IsNotUnknown(expr) => expr.span(),
+            Expr::IsMultiset { expr, span, .. } => expr.span().union(span),
             Expr::IsJson {
                 expr,
                 kind: _,

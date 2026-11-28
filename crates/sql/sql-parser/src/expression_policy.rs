@@ -4,23 +4,7 @@
 //! guards. This match forces review of new expression variants and fields;
 //! it does not declare those nested policies complete.
 
-use sqlparser_064::ast::{
-    Array as ArrayLiteral, CeilFloorKind, Expr, ExtractSyntax, InTarget, Value,
-};
-
-fn string_literal(expression: &Expr) -> bool {
-    matches!(expression,
-        Expr::Value(value) if matches!(value.value,
-            Value::SingleQuotedString(_) | Value::NationalStringLiteral(_)))
-        || matches!(
-            expression,
-            Expr::StringLiteralChain(_)
-                | Expr::Prefixed {
-                    prefix: _,
-                    value: _
-                }
-        )
-}
+use sqlparser_064::ast::{Array as ArrayLiteral, CeilFloorKind, Expr, ExtractSyntax, InTarget};
 
 pub(super) fn allows(expression: &Expr) -> bool {
     use Expr::*;
@@ -65,8 +49,8 @@ pub(super) fn allows(expression: &Expr) -> bool {
         } => styles.is_empty(),
         AtTimeZone {
             timestamp: _,
-            time_zone,
-        } => string_literal(time_zone),
+            time_zone: _,
+        } => false,
         Extract {
             field: _,
             syntax,
@@ -106,6 +90,12 @@ pub(super) fn allows(expression: &Expr) -> bool {
         | IsNotNull(_)
         | IsUnknown(_)
         | IsNotUnknown(_)
+        | IsMultiset {
+            expr: _,
+            predicate: _,
+            negated: _,
+            span: _,
+        }
         | IsDistinctFrom(_, _)
         | IsNotDistinctFrom(_, _)
         | Nested(_)
@@ -279,6 +269,7 @@ mod tests {
             "x IS NFC NORMALIZED",
             "x REGEXP y",
             "x AT TIME ZONE y",
+            "x AT TIME ZONE 'UTC'",
             "x IS JSON WITH UNIQUE KEYS",
             "[1,2]",
             "x IN UNNEST(a)",
@@ -298,7 +289,6 @@ mod tests {
             "FLOOR(x TO DAY)",
             "EXTRACT(YEAR FROM x)",
             "x RLIKE y",
-            "x AT TIME ZONE 'UTC'",
             "x IS JSON",
             "ARRAY[1,2]",
             "x IN (1,2)",

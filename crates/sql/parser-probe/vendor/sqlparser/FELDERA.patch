@@ -310,6 +310,15 @@
                              return Ok(Expr::QualifiedWildcard(
                                  ObjectName::from(id_parts),
                                  AttachedToken(next_token),
+@@ -1419,7 +1432,7 @@
+                 return Ok(Expr::Wildcard(AttachedToken(next_token)));
+             }
+             // Handle parenthesized wildcard: (*)
+-            Token::LParen => {
++            Token::LParen if self.dialect.supports_parenthesized_wildcard() => {
+                 let [maybe_mul, maybe_rparen] = self.peek_tokens_ref();
+                 if maybe_mul.token == Token::Mul && maybe_rparen.token == Token::RParen {
+                     let mul_token = self.next_token(); // consume Mul
 @@ -1604,6 +1617,7 @@
                          null_treatment: None,
                          filter: None,
@@ -355,6 +364,15 @@
              {
                  self.prev_token();
                  Ok(Expr::Value(self.parse_value()?))
+@@ -2083,7 +2100,7 @@
+                         // expression parens (the outer parens are CREATE TABLE syntax),
+                         // so it remains a column constraint.
+                         let exprs = self.with_state(ParserState::Normal, |p| {
+-                            p.parse_comma_separated(Parser::parse_expr)
++                            p.parse_comma_separated(|p| dialect.parse_parenthesized_field(p))
+                         })?;
+                         match exprs.len() {
+                             0 => return Err(ParserError::ParserError(
 @@ -2095,7 +2112,7 @@
                          }
                      };
@@ -485,10 +503,11 @@
              within_group: vec![],
          }))
      }
-@@ -2779,10 +2818,37 @@
+@@ -2778,11 +2817,38 @@
+             (start_bound, end_bound)
          } else {
              (self.parse_window_frame_bound()?, None)
-         };
++        };
 +        let exclusion = if self.dialect.supports_window_frame_exclusion()
 +            && self.parse_keyword(Keyword::EXCLUDE)
 +        {
@@ -514,7 +533,7 @@
 +            )
 +        } else {
 +            None
-+        };
+         };
          Ok(WindowFrame {
              units,
              start_bound,
@@ -580,7 +599,69 @@
      }
  
      /// Parse a field for a duckdb [map]
-@@ -4223,7 +4301,8 @@
+@@ -4145,60 +4223,7 @@
+             }
+         } else if let Token::Word(w) = &tok.token {
+             match w.keyword {
+-                Keyword::IS => {
+-                    if self.parse_keyword(Keyword::NULL) {
+-                        Ok(Expr::IsNull(Box::new(expr)))
+-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::NULL]) {
+-                        Ok(Expr::IsNotNull(Box::new(expr)))
+-                    } else if self.parse_keywords(&[Keyword::TRUE]) {
+-                        Ok(Expr::IsTrue(Box::new(expr)))
+-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::TRUE]) {
+-                        Ok(Expr::IsNotTrue(Box::new(expr)))
+-                    } else if self.parse_keywords(&[Keyword::FALSE]) {
+-                        Ok(Expr::IsFalse(Box::new(expr)))
+-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::FALSE]) {
+-                        Ok(Expr::IsNotFalse(Box::new(expr)))
+-                    } else if self.parse_keywords(&[Keyword::DISTINCT, Keyword::FROM]) {
+-                        // The right operand binds no more loosely than `IS`
+-                        // itself, so that e.g. `a IS DISTINCT FROM b AND c`
+-                        // parses as `(a IS DISTINCT FROM b) AND c`.
+-                        let expr2 = self.parse_subexpr(precedence)?;
+-                        Ok(Expr::IsDistinctFrom(Box::new(expr), Box::new(expr2)))
+-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::DISTINCT, Keyword::FROM])
+-                    {
+-                        let expr2 = self.parse_subexpr(precedence)?;
+-                        Ok(Expr::IsNotDistinctFrom(Box::new(expr), Box::new(expr2)))
+-                    } else if self.dialect.supports_is_operator() {
+-                        let op = if self.parse_keyword(Keyword::NOT) {
+-                            BinaryOperator::IsNot
+-                        } else {
+-                            BinaryOperator::Is
+-                        };
+-                        // SQLite gives `IS` the same precedence as `=` (https://www.sqlite.org/lang_expr.html).
+-                        Ok(Expr::BinaryOp {
+-                            left: Box::new(expr),
+-                            op,
+-                            right: Box::new(
+-                                self.parse_subexpr(self.dialect.prec_value(Precedence::Eq))?,
+-                            ),
+-                        })
+-                    } else if self.parse_keywords(&[Keyword::UNKNOWN]) {
+-                        Ok(Expr::IsUnknown(Box::new(expr)))
+-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::UNKNOWN]) {
+-                        Ok(Expr::IsNotUnknown(Box::new(expr)))
+-                    } else if self.parse_keyword(Keyword::JSON) {
+-                        self.parse_is_json_predicate(expr, false)
+-                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::JSON]) {
+-                        self.parse_is_json_predicate(expr, true)
+-                    } else if let Ok(is_normalized) = self.parse_unicode_is_normalized(expr) {
+-                        Ok(is_normalized)
+-                    } else {
+-                        self.expected_ref(
+-                            "[NOT] NULL | TRUE | FALSE | DISTINCT | [NOT] JSON [VALUE | SCALAR | ARRAY | OBJECT] [WITH | WITHOUT UNIQUE [KEYS]] | [form] NORMALIZED FROM after IS",
+-                            self.peek_token_ref(),
+-                        )
+-                    }
+-                }
++                Keyword::IS => dialect.parse_is_predicate(self, expr, precedence),
+                 Keyword::AT => {
+                     self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
+                     Ok(Expr::AtTimeZone {
+@@ -4223,7 +4248,8 @@
                      let negated = self.parse_keyword(Keyword::NOT);
                      let regexp = self.parse_keyword(Keyword::REGEXP);
                      let rlike = self.parse_keyword(Keyword::RLIKE);
@@ -590,7 +671,7 @@
                          self.parse_keyword(Keyword::NULL)
                      } else {
                          false
-@@ -4236,6 +4315,11 @@
+@@ -4236,6 +4262,11 @@
                                  self.parse_subexpr(self.dialect.prec_value(Precedence::Like))?,
                              ),
                              regexp,
@@ -602,7 +683,7 @@
                          })
                      } else if negated && null {
                          Ok(Expr::IsNotNull(Box::new(expr)))
-@@ -4276,9 +4360,42 @@
+@@ -4276,9 +4307,42 @@
                          self.expected_ref("IN or BETWEEN after NOT", self.peek_token_ref())
                      }
                  }
@@ -645,7 +726,7 @@
                  Keyword::MEMBER => {
                      if self.parse_keyword(Keyword::OF) {
                          self.expect_token(&Token::LParen)?;
-@@ -4333,6 +4450,13 @@
+@@ -4333,6 +4397,13 @@
  
      /// Parse the `ESCAPE CHAR` portion of `LIKE`, `ILIKE`, and `SIMILAR TO`
      pub fn parse_escape_char(&mut self) -> Result<Option<Box<Expr>>, ParserError> {
@@ -659,7 +740,7 @@
          if self.parse_keyword(Keyword::ESCAPE) {
              Ok(Some(Box::new(self.parse_subexpr(
                  self.dialect.prec_value(Precedence::Like),
-@@ -4605,6 +4729,15 @@
+@@ -4605,6 +4676,15 @@
  
      /// Parses `BETWEEN <low> AND <high>`, assuming the `BETWEEN` keyword was already consumed.
      pub fn parse_between(&mut self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
@@ -675,7 +756,7 @@
          let mut low = self.parse_subexpr(self.dialect.between_low_bound_precedence())?;
          if self.dialect.supports_comparison_in_between_low_bound()
              && matches!(
-@@ -4624,6 +4757,7 @@
+@@ -4624,6 +4704,7 @@
          self.expect_keyword_is(Keyword::AND)?;
          let high = self.parse_subexpr(self.dialect.prec_value(Precedence::Between))?;
          Ok(Expr::Between {
@@ -683,7 +764,7 @@
              expr: Box::new(expr),
              negated,
              low: Box::new(low),
-@@ -7065,6 +7199,7 @@
+@@ -7065,6 +7146,7 @@
              ]);
  
          Ok(CreateView {
@@ -691,7 +772,7 @@
              or_alter,
              name,
              columns,
-@@ -8940,6 +9075,7 @@
+@@ -8940,6 +9022,7 @@
          }
  
          Ok(CreateIndex {
@@ -699,7 +780,7 @@
              name: index_name,
              table_name,
              using,
-@@ -12773,6 +12909,7 @@
+@@ -12773,6 +12856,7 @@
                  over: None,
                  filter: None,
                  null_treatment: None,
@@ -707,7 +788,7 @@
                  within_group: vec![],
              }))
          }
-@@ -13453,7 +13590,10 @@
+@@ -13453,7 +13537,10 @@
              }) => Ok(value),
              Token::SingleQuotedString(s) => Ok(s),
              Token::DoubleQuotedString(s) => Ok(s),
@@ -719,7 +800,90 @@
                  Ok(s)
              }
              Token::UnicodeStringLiteral(s) => Ok(s),
-@@ -13552,8 +13692,35 @@
+@@ -13467,11 +13554,69 @@
+             Some(Keyword::TRUE) => Ok(true),
+             Some(Keyword::FALSE) => Ok(false),
+             _ => self.expected_ref("TRUE or FALSE", self.peek_token_ref()),
++        }
++    }
++
++    /// Parse the default predicate after consuming IS.
++    pub fn parse_is_predicate(&mut self, expr: Expr, precedence: u8) -> Result<Expr, ParserError> {
++        if self.parse_keyword(Keyword::NULL) {
++            Ok(Expr::IsNull(Box::new(expr)))
++        } else if self.parse_keywords(&[Keyword::NOT, Keyword::NULL]) {
++            Ok(Expr::IsNotNull(Box::new(expr)))
++        } else if self.parse_keywords(&[Keyword::TRUE]) {
++            Ok(Expr::IsTrue(Box::new(expr)))
++        } else if self.parse_keywords(&[Keyword::NOT, Keyword::TRUE]) {
++            Ok(Expr::IsNotTrue(Box::new(expr)))
++        } else if self.parse_keywords(&[Keyword::FALSE]) {
++            Ok(Expr::IsFalse(Box::new(expr)))
++        } else if self.parse_keywords(&[Keyword::NOT, Keyword::FALSE]) {
++            Ok(Expr::IsNotFalse(Box::new(expr)))
++        } else if self.parse_keywords(&[Keyword::DISTINCT, Keyword::FROM]) {
++            // The right operand binds no more loosely than `IS`
++            // itself, so that e.g. `a IS DISTINCT FROM b AND c`
++            // parses as `(a IS DISTINCT FROM b) AND c`.
++            let expr2 = self.parse_subexpr(precedence)?;
++            Ok(Expr::IsDistinctFrom(Box::new(expr), Box::new(expr2)))
++        } else if self.parse_keywords(&[Keyword::NOT, Keyword::DISTINCT, Keyword::FROM]) {
++            let expr2 = self.parse_subexpr(precedence)?;
++            Ok(Expr::IsNotDistinctFrom(Box::new(expr), Box::new(expr2)))
++        } else if self.dialect.supports_is_operator() {
++            let op = if self.parse_keyword(Keyword::NOT) {
++                BinaryOperator::IsNot
++            } else {
++                BinaryOperator::Is
++            };
++            // SQLite gives `IS` the same precedence as `=` (https://www.sqlite.org/lang_expr.html).
++            Ok(Expr::BinaryOp {
++                left: Box::new(expr),
++                op,
++                right: Box::new(self.parse_subexpr(self.dialect.prec_value(Precedence::Eq))?),
++            })
++        } else if self.parse_keywords(&[Keyword::UNKNOWN]) {
++            Ok(Expr::IsUnknown(Box::new(expr)))
++        } else if self.parse_keywords(&[Keyword::NOT, Keyword::UNKNOWN]) {
++            Ok(Expr::IsNotUnknown(Box::new(expr)))
++        } else if self.parse_keyword(Keyword::JSON) {
++            self.parse_is_json_predicate(expr, false, true)
++        } else if self.parse_keywords(&[Keyword::NOT, Keyword::JSON]) {
++            self.parse_is_json_predicate(expr, true, true)
++        } else if let Ok(is_normalized) = self.parse_unicode_is_normalized(expr) {
++            Ok(is_normalized)
++        } else {
++            self.expected_ref(
++                "[NOT] NULL | TRUE | FALSE | DISTINCT | [NOT] JSON [VALUE | SCALAR | ARRAY | OBJECT] [WITH | WITHOUT UNIQUE [KEYS]] | [form] NORMALIZED FROM after IS",
++                self.peek_token_ref(),
++            )
+         }
+     }
+ 
+     /// Parse the `IS [NOT] JSON` predicate after `JSON` (and optional `NOT`) was consumed.
+-    fn parse_is_json_predicate(&mut self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
++    pub fn parse_is_json_predicate(
++        &mut self,
++        expr: Expr,
++        negated: bool,
++        allow_unique_keys: bool,
++    ) -> Result<Expr, ParserError> {
+         let kind = match self.parse_one_of_keywords(&[
+             Keyword::VALUE,
+             Keyword::SCALAR,
+@@ -13485,7 +13630,10 @@
+             _ => None,
+         };
+ 
+-        let unique_keys = match self.parse_one_of_keywords(&[Keyword::WITH, Keyword::WITHOUT]) {
++        let modifier = allow_unique_keys
++            .then(|| self.parse_one_of_keywords(&[Keyword::WITH, Keyword::WITHOUT]))
++            .flatten();
++        let unique_keys = match modifier {
+             Some(Keyword::WITH) => {
+                 self.expect_keyword_is(Keyword::UNIQUE)?;
+                 let _ = self.parse_keyword(Keyword::KEYS);
+@@ -13552,8 +13700,35 @@
          Ok(values)
      }
  
@@ -755,7 +919,7 @@
          let (ty, trailing_bracket) = self.parse_data_type_helper()?;
          if trailing_bracket.0 {
              return parser_err!(
-@@ -13785,15 +13952,7 @@
+@@ -13785,15 +13960,7 @@
                  }
                  Keyword::TIMESTAMP => {
                      let precision = self.parse_optional_precision()?;
@@ -772,7 +936,7 @@
                      Ok(DataType::Timestamp(precision, tz))
                  }
                  Keyword::TIMESTAMPTZ => Ok(DataType::Timestamp(
-@@ -13805,15 +13964,7 @@
+@@ -13805,15 +13972,7 @@
                  }
                  Keyword::TIME => {
                      let precision = self.parse_optional_precision()?;
@@ -789,7 +953,7 @@
                      Ok(DataType::Time(precision, tz))
                  }
                  Keyword::TIMETZ => Ok(DataType::Time(
-@@ -13824,10 +13975,15 @@
+@@ -13824,10 +13983,15 @@
                      if self.dialect.supports_interval_options() {
                          let fields = self.maybe_parse_optional_interval_fields()?;
                          let precision = self.parse_optional_precision()?;
@@ -806,7 +970,7 @@
                              precision: None,
                          })
                      }
-@@ -14072,10 +14228,11 @@
+@@ -14072,10 +14236,11 @@
              }
          }
  
@@ -822,7 +986,7 @@
                  let size = self.maybe_parse(|p| p.parse_literal_uint())?;
                  self.expect_token(&Token::RBracket)?;
                  size
-@@ -14083,6 +14240,9 @@
+@@ -14083,6 +14248,9 @@
                  None
              };
              data = DataType::Array(ArrayElemTypeDef::Qualified(Box::new(data), size));
@@ -832,7 +996,7 @@
          }
  
          Ok((data, trailing_bracket))
-@@ -14375,6 +14535,11 @@
+@@ -14375,6 +14543,11 @@
      /// Parse an optional `GROUP BY` clause, returning `Some(GroupByExpr)` when present.
      pub fn parse_optional_group_by(&mut self) -> Result<Option<GroupByExpr>, ParserError> {
          if self.parse_keywords(&[Keyword::GROUP, Keyword::BY]) {
@@ -844,7 +1008,7 @@
              let expressions = if self.parse_keyword(Keyword::ALL) {
                  None
              } else {
-@@ -14477,6 +14642,12 @@
+@@ -14477,6 +14650,12 @@
                          "Missing offset for LIMIT <offset>, <limit>".to_string(),
                      )
                  })?;
@@ -857,12 +1021,13 @@
                  return Ok(Some(LimitClause::OffsetCommaLimit {
                      offset,
                      limit: self.parse_expr()?,
-@@ -15528,24 +15699,39 @@
+@@ -15527,25 +15706,40 @@
+             let body = self.parse_query_body(self.dialect.prec_unknown())?;
  
              let order_by = self.parse_optional_order_by()?;
- 
--            let mut limit_clause = self.parse_optional_limit_clause()?;
 -
+-            let mut limit_clause = self.parse_optional_limit_clause()?;
+ 
 -            let settings = self.parse_settings()?;
 +            let mut query = Query {
 +                with,
@@ -905,7 +1070,7 @@
                  }
              }
  
-@@ -15554,11 +15740,11 @@
+@@ -15554,11 +15748,11 @@
              // as before it. The locking clause above is parsed for every
              // dialect, so accept a trailing limit here too rather than gating it
              // behind a dialect flag.
@@ -920,7 +1085,7 @@
                  if self.dialect.supports_select_format() && self.parse_keyword(Keyword::FORMAT) {
                      if self.parse_keyword(Keyword::NULL) {
                          Some(FormatClause::Null)
-@@ -15570,25 +15756,13 @@
+@@ -15570,25 +15764,13 @@
                      None
                  };
  
@@ -948,7 +1113,7 @@
          }
      }
  
-@@ -15954,6 +16128,7 @@
+@@ -15954,6 +16136,7 @@
                      from: None,
                      materialized: None,
                      closing_paren_token: closing_paren_token.into(),
@@ -956,7 +1121,7 @@
                  };
                  if self.parse_keyword(Keyword::FROM) {
                      cte.from = Some(self.parse_identifier()?);
-@@ -15999,6 +16174,7 @@
+@@ -15999,6 +16182,7 @@
              from: None,
              materialized: is_materialized,
              closing_paren_token: closing_paren_token.into(),
@@ -964,7 +1129,7 @@
          };
          if self.dialect.supports_from_first_insert() && self.parse_keyword(Keyword::FROM) {
              cte.from = Some(self.parse_identifier()?);
-@@ -16015,8 +16191,12 @@
+@@ -16015,8 +16199,12 @@
      ///   set_operation ::= query_body { 'UNION' | 'EXCEPT' | 'INTERSECT' } [ 'ALL' ] query_body
      /// ```
      pub fn parse_query_body(&mut self, precedence: u8) -> Result<Box<SetExpr>, ParserError> {
@@ -979,7 +1144,7 @@
          let expr = if self.peek_keyword(Keyword::SELECT)
              || (self.peek_keyword(Keyword::FROM) && self.dialect.supports_from_first_select())
          {
-@@ -16043,7 +16223,7 @@
+@@ -16043,7 +16231,7 @@
              );
          };
  
@@ -988,7 +1153,7 @@
      }
  
      /// Parse any extra set expressions that may be present in a query body
-@@ -16174,7 +16354,10 @@
+@@ -16174,7 +16362,10 @@
  
          let mut top_before_distinct = false;
          let mut top = None;
@@ -1000,7 +1165,7 @@
              top = Some(self.parse_top()?);
              top_before_distinct = true;
          }
-@@ -16185,7 +16368,10 @@
+@@ -16185,7 +16376,10 @@
              self.parse_all_or_distinct()?
          };
  
@@ -1012,7 +1177,7 @@
              top = Some(self.parse_top()?);
          }
  
-@@ -16221,6 +16407,14 @@
+@@ -16221,6 +16415,14 @@
              (vec![], false)
          };
  
@@ -1027,7 +1192,7 @@
          let mut lateral_views = vec![];
          loop {
              if self.parse_keywords(&[Keyword::LATERAL, Keyword::VIEW]) {
-@@ -16398,7 +16592,7 @@
+@@ -16398,7 +16600,7 @@
              match ws {
                  Whitespace::SingleLineComment { comment, prefix } => {
                      if let Some((hint_prefix, text)) = Self::extract_hint_prefix_and_text(comment) {
@@ -1036,7 +1201,7 @@
                              prefix: hint_prefix,
                              text,
                              style: OptimizerHintStyle::SingleLine {
-@@ -16410,7 +16604,7 @@
+@@ -16410,7 +16612,7 @@
                  }
                  Whitespace::MultiLineComment(comment) => {
                      if let Some((hint_prefix, text)) = Self::extract_hint_prefix_and_text(comment) {
@@ -1045,12 +1210,16 @@
                              prefix: hint_prefix,
                              text,
                              style: OptimizerHintStyle::MultiLine,
-@@ -16566,19 +16760,14 @@
+@@ -16566,19 +16768,14 @@
  
      /// Parse `CREATE TABLE x AS TABLE y`
      pub fn parse_as_table(&mut self) -> Result<Table, ParserError> {
 -        let first_name = self.parse_identifier()?;
--        if self.consume_token(&Token::Period) {
++        if let Some(name) = self.dialect.parse_explicit_table_name(self) {
++            return name.map(|name| Table { name });
++        }
++        let mut parts = vec![self.parse_identifier()?];
+         if self.consume_token(&Token::Period) {
 -            let second_name = self.parse_identifier()?;
 -            Ok(Table {
 -                table_name: Some(second_name),
@@ -1061,18 +1230,13 @@
 -                table_name: Some(first_name),
 -                schema_name: None,
 -            })
-+        if let Some(name) = self.dialect.parse_explicit_table_name(self) {
-+            return name.map(|name| Table { name });
-+        }
-+        let mut parts = vec![self.parse_identifier()?];
-+        if self.consume_token(&Token::Period) {
 +            parts.push(self.parse_identifier()?);
          }
 +        Ok(Table { name: ObjectName::from(parts) })
      }
  
      /// Parse a `SET ROLE` statement. Expects SET to be consumed already.
-@@ -17181,6 +17370,10 @@
+@@ -17181,6 +17378,10 @@
      fn parse_joins(&mut self) -> Result<Vec<Join>, ParserError> {
          let mut joins = vec![];
          loop {
@@ -1083,7 +1247,7 @@
              let global = self.parse_keyword(Keyword::GLOBAL);
              let join = if self.parse_keyword(Keyword::CROSS) {
                  let join_operator = if self.parse_keyword(Keyword::JOIN) {
-@@ -17314,7 +17507,8 @@
+@@ -17314,7 +17515,8 @@
                              }
                              _ => {
                                  return Err(ParserError::ParserError(format!(
@@ -1093,7 +1257,7 @@
                                  )))
                              }
                          }
-@@ -17445,7 +17639,11 @@
+@@ -17445,7 +17647,11 @@
              // `FROM ((((...`, where the nested-join fallback recurses back into
              // `parse_table_factor` and re-attempts the same speculative parse.
              let derived_pos = self.index;
@@ -1106,7 +1270,7 @@
                  .failed_derived_table_factor_positions
                  .contains(&derived_pos)
              {
-@@ -17524,6 +17722,7 @@
+@@ -17524,6 +17730,7 @@
                          | TableFactor::OpenJsonTable { alias, .. }
                          | TableFactor::TableFunction { alias, .. }
                          | TableFactor::Pivot { alias, .. }
@@ -1114,7 +1278,7 @@
                          | TableFactor::Unpivot { alias, .. }
                          | TableFactor::MatchRecognize { alias, .. }
                          | TableFactor::SemanticView { alias, .. }
-@@ -17758,6 +17957,7 @@
+@@ -17758,6 +17965,7 @@
              }
  
              let mut table = TableFactor::Table {
@@ -1122,7 +1286,7 @@
                  name,
                  alias,
                  args,
-@@ -17809,6 +18009,7 @@
+@@ -17809,6 +18017,7 @@
          let alias = self.maybe_parse_table_alias()?;
  
          Ok(TableFactor::Table {
@@ -1130,7 +1294,7 @@
              name,
              alias,
              args,
-@@ -18359,12 +18560,16 @@
+@@ -18359,12 +18568,16 @@
  
      /// Parses a the timestamp version specifier (i.e. query historical data)
      pub fn maybe_parse_table_version(&mut self) -> Result<Option<TableVersion>, ParserError> {
@@ -1152,7 +1316,7 @@
                  return self.parse_table_version_changes().map(Some);
              } else if self.peek_keyword(Keyword::AT) || self.peek_keyword(Keyword::BEFORE) {
                  let func_name = self.parse_object_name(true)?;
-@@ -18649,6 +18854,34 @@
+@@ -18649,6 +18862,34 @@
              None
          };
          self.expect_token(&Token::LParen)?;
@@ -1187,10 +1351,12 @@
          let value = self.parse_expr()?;
          self.expect_keyword_is(Keyword::FOR)?;
          let name = self.parse_identifier()?;
-@@ -18668,6 +18901,16 @@
+@@ -18666,6 +18907,16 @@
+             columns,
+             alias,
          })
-     }
- 
++    }
++
 +    fn parse_unpivot_identifiers(&mut self) -> Result<Vec<Ident>, ParserError> {
 +        if self.consume_token(&Token::LParen) {
 +            let names = self.parse_comma_separated(Parser::parse_identifier)?;
@@ -1199,12 +1365,10 @@
 +        } else {
 +            Ok(vec![self.parse_identifier()?])
 +        }
-+    }
-+
+     }
+ 
      /// Parse an object UNPIVOT table factor in FROM clause.
-     ///
-     /// Syntax:
-@@ -18692,6 +18935,9 @@
+@@ -18692,6 +18943,9 @@
  
      /// Parse a JOIN constraint (`NATURAL`, `ON <expr>`, `USING (...)`, or no constraint).
      pub fn parse_join_constraint(&mut self, natural: bool) -> Result<JoinConstraint, ParserError> {
@@ -1214,7 +1378,7 @@
          if natural {
              Ok(JoinConstraint::Natural)
          } else if self.parse_keyword(Keyword::ON) {
-@@ -20066,6 +20312,9 @@
+@@ -20066,6 +20320,9 @@
  
      /// Parse a single function argument, handling named and unnamed variants.
      pub fn parse_function_args(&mut self) -> Result<FunctionArg, ParserError> {
@@ -1224,7 +1388,7 @@
          // Parse the argument expression once, then check for a named-arg
          // operator. Parsing it speculatively and re-parsing on the unnamed
          // path is O(2^depth) on nested calls like `CAST(CASE (CAST(CASE (…`.
-@@ -20224,21 +20473,16 @@
+@@ -20224,20 +20481,15 @@
      /// FIRST_VALUE(x ORDER BY 1,2,3);
      /// FIRST_VALUE(x IGNORE NULL);
      /// ```
@@ -1240,18 +1404,17 @@
 -        if let Some(null_clause) = self.parse_json_null_clause() {
 -            clauses.push(FunctionArgumentClause::JsonNullClause(null_clause));
 -        }
-+        self.parse_generic_json_clauses(&mut clauses)?;
- 
+-
 -        if let Some(json_returning_clause) = self.maybe_parse_json_returning_clause()? {
 -            clauses.push(FunctionArgumentClause::JsonReturningClause(
 -                json_returning_clause,
 -            ));
 -        }
--
++        self.parse_generic_json_clauses(&mut clauses)?;
+ 
          if self.consume_token(&Token::RParen) {
              return Ok(FunctionArgumentList {
-                 duplicate_treatment: None,
-@@ -20261,7 +20505,7 @@
+@@ -20261,7 +20513,7 @@
              clauses.push(FunctionArgumentClause::Where(self.parse_expr()?));
          }
  
@@ -1260,7 +1423,7 @@
              if let Some(null_treatment) = self.parse_null_treatment()? {
                  clauses.push(FunctionArgumentClause::IgnoreOrRespectNulls(null_treatment));
              }
-@@ -20293,16 +20537,39 @@
+@@ -20293,16 +20545,39 @@
              )))
          }
  
@@ -1283,7 +1446,7 @@
          }
 +
 +        self.parse_generic_json_clauses(&mut clauses)?;
-+
+ 
 +        self.expect_token(&Token::RParen)?;
 +        Ok(FunctionArgumentList {
 +            duplicate_treatment,
@@ -1291,7 +1454,7 @@
 +            clauses,
 +        })
 +    }
- 
++
 +    fn parse_generic_json_clauses(
 +        &mut self,
 +        clauses: &mut Vec<FunctionArgumentClause>,
@@ -1302,7 +1465,7 @@
          if let Some(null_clause) = self.parse_json_null_clause() {
              clauses.push(FunctionArgumentClause::JsonNullClause(null_clause));
          }
-@@ -20312,16 +20579,11 @@
+@@ -20312,16 +20587,11 @@
                  json_returning_clause,
              ));
          }
@@ -1322,7 +1485,7 @@
          if self.parse_keywords(&[Keyword::ABSENT, Keyword::ON, Keyword::NULL]) {
              Some(JsonNullClause::AbsentOnNull)
          } else if self.parse_keywords(&[Keyword::NULL, Keyword::ON, Keyword::NULL]) {
-@@ -20513,7 +20775,14 @@
+@@ -20513,7 +20783,14 @@
      pub fn parse_optional_select_item_exclude(
          &mut self,
      ) -> Result<Option<ExcludeSelectItem>, ParserError> {
@@ -1338,7 +1501,7 @@
              if self.consume_token(&Token::LParen) {
                  let columns =
                      self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
-@@ -20966,6 +21235,9 @@
+@@ -20966,6 +21243,9 @@
          allow_empty: bool,
          value_keyword: bool,
      ) -> Result<Values, ParserError> {
@@ -1463,7 +1626,15 @@
  /// - [Expr::Struct] # BigQuery specific
  /// - [Expr::Named] # BigQuery specific
  /// - [Expr::Dictionary] # DuckDB specific
-@@ -1681,6 +1698,7 @@
+@@ -1655,6 +1672,7 @@
+             Expr::IsNotNull(expr) => expr.span(),
+             Expr::IsUnknown(expr) => expr.span(),
+             Expr::IsNotUnknown(expr) => expr.span(),
++            Expr::IsMultiset { expr, span, .. } => expr.span().union(span),
+             Expr::IsJson {
+                 expr,
+                 kind: _,
+@@ -1681,6 +1699,7 @@
                  ),
              },
              Expr::Between {
@@ -1471,7 +1642,7 @@
                  expr,
                  negated: _,
                  low,
-@@ -1702,7 +1720,15 @@
+@@ -1702,7 +1721,15 @@
                  escape_char: _,
                  any: _,
              } => expr.span().union(&pattern.span()),
@@ -1488,7 +1659,7 @@
              Expr::IsNormalized {
                  expr,
                  form: _,
-@@ -1732,6 +1758,8 @@
+@@ -1732,6 +1759,8 @@
                  .union(&union_spans(collation.0.iter().map(|i| i.span()))),
              Expr::Nested(expr) => expr.span(),
              Expr::Value(value) => value.span(),
@@ -1497,7 +1668,7 @@
              Expr::TypedString(TypedString { value, .. }) => value.span(),
              Expr::Function(function) => function.span(),
              Expr::GroupingSets(vec) => {
-@@ -1829,12 +1857,23 @@
+@@ -1829,12 +1858,23 @@
                      .chain(iter::once(end_token.0.span)),
              ),
              Expr::Exists { subquery, .. } => subquery.span(),
@@ -1521,7 +1692,7 @@
              Expr::Wildcard(token) => token.0.span,
              Expr::QualifiedWildcard(object_name, token) => union_spans(
                  object_name
-@@ -1922,6 +1961,7 @@
+@@ -1922,6 +1962,7 @@
              filter,
              null_treatment: _, // enum
              over: _,           // todo
@@ -1529,7 +1700,7 @@
              within_group,
          } = self;
  
-@@ -1932,6 +1972,7 @@
+@@ -1932,6 +1973,7 @@
                  .chain(iter::once(args.span()))
                  .chain(iter::once(parameters.span()))
                  .chain(filter.iter().map(|i| i.span()))
@@ -1537,7 +1708,7 @@
                  .chain(within_group.iter().map(|i| i.span())),
          )
      }
-@@ -1978,7 +2019,17 @@
+@@ -1978,7 +2020,17 @@
              FunctionArgumentClause::Having(HavingBound(_kind, expr)) => expr.span(),
              FunctionArgumentClause::Separator(value) => value.span(),
              FunctionArgumentClause::JsonNullClause(_) => Span::empty(),
@@ -1556,7 +1727,7 @@
          }
      }
  }
-@@ -2131,6 +2182,7 @@
+@@ -2131,6 +2183,7 @@
                  alias,
                  args: _,
                  with_hints: _,
@@ -1564,7 +1735,7 @@
                  version: _,
                  with_ordinality: _,
                  partitions: _,
-@@ -2142,6 +2194,7 @@
+@@ -2142,6 +2195,7 @@
                  name.0
                      .iter()
                      .map(|i| i.span())
@@ -1572,7 +1743,7 @@
                      .chain(alias.as_ref().map(|alias| {
                          union_spans(
                              iter::once(alias.name.span)
-@@ -2209,6 +2262,15 @@
+@@ -2209,6 +2263,15 @@
                      .chain(default_on_null.as_ref().map(|i| i.span()))
                      .chain(alias.as_ref().map(|i| i.span())),
              ),
@@ -1588,7 +1759,7 @@
              TableFactor::Unpivot {
                  table,
                  value,
-@@ -2365,6 +2427,7 @@
+@@ -2365,6 +2428,7 @@
  impl Spanned for FunctionArgExpr {
      fn span(&self) -> Span {
          match self {
@@ -1596,7 +1767,7 @@
              FunctionArgExpr::Expr(expr) => expr.span(),
              FunctionArgExpr::QualifiedWildcard(object_name) => {
                  union_spans(object_name.0.iter().map(|i| i.span()))
-@@ -2443,6 +2506,10 @@
+@@ -2443,6 +2507,10 @@
              JoinOperator::AsOf {
                  match_condition,
                  constraint,
@@ -1607,7 +1778,7 @@
              } => match_condition.span().union(&constraint.span()),
              JoinOperator::Anti(join_constraint) => join_constraint.span(),
              JoinOperator::Semi(join_constraint) => join_constraint.span(),
-@@ -2462,8 +2529,10 @@
+@@ -2462,8 +2530,10 @@
  impl Spanned for JoinConstraint {
      fn span(&self) -> Span {
          match self {
@@ -1620,7 +1791,7 @@
              JoinConstraint::UsingAlias(columns, alias) => union_spans(
                  columns
                      .iter()
-@@ -2600,6 +2669,15 @@
+@@ -2600,6 +2670,15 @@
              UpdateTableFromKind::AfterSet(from) => from,
          };
          union_spans(from.iter().map(|t| t.span()))
@@ -1636,7 +1807,7 @@
      }
  }
  
-@@ -2609,6 +2687,9 @@
+@@ -2609,6 +2688,9 @@
              TableObject::TableName(ObjectName(segments)) => {
                  union_spans(segments.iter().map(|i| i.span()))
              }
@@ -1646,7 +1817,7 @@
              TableObject::TableFunction(func) => func.span(),
              TableObject::TableQuery(query) => query.span(),
          }
-@@ -2673,6 +2754,7 @@
+@@ -2673,6 +2755,7 @@
      fn span(&self) -> Span {
          union_spans(
              core::iter::once(self.name.span())
@@ -2381,12 +2552,10 @@
                  if let Some(leading_field) = &self.leading_field {
                      write!(f, " {leading_field}")?;
                  }
-@@ -596,6 +604,17 @@
-             }
-         }
+@@ -598,6 +606,17 @@
      }
-+}
-+
+ }
+ 
 +#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 +#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2396,9 +2565,11 @@
 +    Symmetric,
 +    /// Preserve the given ordering of the bounds.
 +    Asymmetric,
- }
- 
++}
++
  /// A field definition within a struct
+ ///
+ /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#struct_type
 @@ -609,6 +628,12 @@
      pub field_name: Option<Ident>,
      /// The field data type.
@@ -2460,13 +2631,10 @@
      }
  }
  
-@@ -925,6 +971,23 @@
-                 Ok(())
-             }
-         }
-+    }
-+}
-+
+@@ -928,6 +974,23 @@
+     }
+ }
+ 
 +/// One name/value pair in a SQL/JSON object constructor.
 +#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2481,10 +2649,31 @@
 +impl fmt::Display for JsonObjectEntry {
 +    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 +        write!(f, "KEY {} VALUE {}", self.key, self.value)
-     }
- }
- 
-@@ -1045,6 +1108,8 @@
++    }
++}
++
+ /// An SQL expression of any type.
+ ///
+ /// # Semantics / Type Checking
+@@ -1008,6 +1071,17 @@
+     IsUnknown(Box<Expr>),
+     /// `IS NOT UNKNOWN` operator
+     IsNotUnknown(Box<Expr>),
++    /// A multiset tested for emptiness or distinctness.
++    IsMultiset {
++        /// Multiset being tested.
++        expr: Box<Expr>,
++        /// The collection property being tested.
++        predicate: MultisetPredicate,
++        /// Whether the predicate is negated.
++        negated: bool,
++        /// Location of the postfix operator.
++        span: Span,
++    },
+     /// `IS DISTINCT FROM` operator
+     IsDistinctFrom(Box<Expr>, Box<Expr>),
+     /// `IS NOT DISTINCT FROM` operator
+@@ -1045,6 +1119,8 @@
      },
      /// `<expr> [ NOT ] BETWEEN <low> AND <high>`
      Between {
@@ -2493,7 +2682,7 @@
          /// Expression being compared.
          expr: Box<Expr>,
          /// `true` when the `NOT` modifier is present.
-@@ -1112,6 +1177,8 @@
+@@ -1112,6 +1188,8 @@
          pattern: Box<Expr>,
          /// true for REGEXP, false for RLIKE (no difference in semantics)
          regexp: bool,
@@ -2502,7 +2691,7 @@
      },
      /// `ANY` operation e.g. `foo > ANY(bar)`, comparison operator is one of `[=, >, <, =>, =<, !=]`
      /// <https://docs.snowflake.com/en/sql-reference/operators-subquery#all-any>
-@@ -1292,6 +1359,10 @@
+@@ -1292,6 +1370,10 @@
      Nested(Box<Expr>),
      /// A literal value, such as string, number, date or NULL
      Value(ValueWithSpan),
@@ -2513,11 +2702,10 @@
      /// Prefixed expression, e.g. introducer strings, projection prefix
      /// <https://dev.mysql.com/doc/refman/8.0/en/charset-introducer.html>
      /// <https://docs.snowflake.com/en/sql-reference/constructs/connect-by>
-@@ -1332,10 +1403,90 @@
-         subquery: Box<Query>,
+@@ -1333,9 +1415,89 @@
          /// Whether the `EXISTS` is negated (`NOT EXISTS`).
          negated: bool,
-+    },
+     },
 +    /// Prefix uniqueness predicate over a row or query expression.
 +    Unique {
 +        /// Operand of the predicate.
@@ -2533,7 +2721,7 @@
 +        charset: Ident,
 +        /// Complete range of the call.
 +        span: Span,
-     },
++    },
 +    /// SQL/JSON object constructor with ordered name/value pairs.
 +    JsonObject {
 +        /// Key and value expressions in source order.
@@ -2604,7 +2792,7 @@
      /// The `GROUPING SETS` expr.
      GroupingSets(Vec<Vec<Expr>>),
      /// The `CUBE` expr.
-@@ -1390,6 +1541,13 @@
+@@ -1390,6 +1552,13 @@
      Array(Array),
      /// An interval expression e.g. `INTERVAL '1' YEAR`
      Interval(Interval),
@@ -2618,7 +2806,30 @@
      /// `MySQL` specific text search function [(1)].
      ///
      /// Syntax:
-@@ -1852,15 +2010,21 @@
+@@ -1819,6 +1988,22 @@
+             Expr::IsNotNull(ast) => write!(f, "{ast} IS NOT NULL"),
+             Expr::IsUnknown(ast) => write!(f, "{ast} IS UNKNOWN"),
+             Expr::IsNotUnknown(ast) => write!(f, "{ast} IS NOT UNKNOWN"),
++            Expr::IsMultiset {
++                expr,
++                predicate,
++                negated,
++                ..
++            } => {
++                let keyword = match predicate {
++                    MultisetPredicate::Empty => "EMPTY",
++                    MultisetPredicate::ASet => "A SET",
++                };
++                write!(
++                    f,
++                    "{expr} IS {}{keyword}",
++                    if *negated { "NOT " } else { "" }
++                )
++            }
+             Expr::IsJson {
+                 expr,
+                 kind,
+@@ -1852,15 +2037,21 @@
                  target
              ),
              Expr::Between {
@@ -2641,7 +2852,7 @@
                  low,
                  high
              ),
-@@ -1920,14 +2084,16 @@
+@@ -1920,14 +2111,16 @@
                  expr,
                  pattern,
                  regexp,
@@ -2666,7 +2877,7 @@
              Expr::IsNormalized {
                  expr,
                  form,
-@@ -2113,7 +2279,37 @@
+@@ -2113,7 +2306,37 @@
              Expr::Collate { expr, collation } => write!(f, "{expr} COLLATE {collation}"),
              Expr::Nested(ast) => write!(f, "({ast})"),
              Expr::Value(v) => write!(f, "{v}"),
@@ -2705,7 +2916,7 @@
              Expr::TypedString(ts) => ts.fmt(f),
              Expr::Function(fun) => fun.fmt(f),
              Expr::Case {
-@@ -2148,13 +2344,70 @@
+@@ -2148,13 +2371,70 @@
                  subquery
              ),
              Expr::Subquery(s) => write!(f, "({s})"),
@@ -2777,7 +2988,7 @@
                  }
                  write!(f, ")")
              }
-@@ -2290,6 +2543,7 @@
+@@ -2290,6 +2570,7 @@
              } => {
                  write!(f, "{timestamp} AT TIME ZONE {time_zone}")
              }
@@ -2785,17 +2996,17 @@
              Expr::Interval(interval) => {
                  write!(f, "{interval}")
              }
-@@ -2413,6 +2667,9 @@
+@@ -2412,6 +2693,9 @@
+                 )?;
              } else {
                  write!(f, "{} {}", window_frame.units, window_frame.start_bound)?;
-             }
++            }
 +            if let Some(exclusion) = window_frame.exclusion {
 +                write!(f, " {exclusion}")?;
-+            }
+             }
          }
          Ok(())
-     }
-@@ -2435,9 +2692,36 @@
+@@ -2435,7 +2719,34 @@
      /// indicates the shorthand form (e.g. `ROWS 1 PRECEDING`), which must
      /// behave the same as `end_bound = WindowFrameBound::CurrentRow`.
      pub end_bound: Option<WindowFrameBound>,
@@ -2817,8 +3028,8 @@
 +    Ties,
 +    /// Keep every row in the frame.
 +    NoOthers,
- }
- 
++}
++
 +impl fmt::Display for WindowFrameExclusion {
 +    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 +        f.write_str(match self {
@@ -2828,12 +3039,10 @@
 +            Self::NoOthers => "EXCLUDE NO OTHERS",
 +        })
 +    }
-+}
-+
+ }
+ 
  impl Default for WindowFrame {
-     /// Returns default value for window frame
-     ///
-@@ -2447,6 +2731,7 @@
+@@ -2447,6 +2758,7 @@
              units: WindowFrameUnits::Range,
              start_bound: WindowFrameBound::Preceding(None),
              end_bound: None,
@@ -2841,10 +3050,12 @@
          }
      }
  }
-@@ -2497,6 +2782,17 @@
+@@ -2495,6 +2807,17 @@
+             NullTreatment::RespectNulls => "RESPECT NULLS",
+         })
      }
- }
- 
++}
++
 +/// Position of an external null treatment relative to grouping and FILTER.
 +#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2854,12 +3065,10 @@
 +    AfterArguments(NullTreatment),
 +    /// After WITHIN and FILTER, before OVER.
 +    AfterFilter(NullTreatment),
-+}
-+
+ }
+ 
  /// Specifies [WindowFrame]'s `start_bound` and `end_bound`
- #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
- #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-@@ -8121,6 +8417,14 @@
+@@ -8121,6 +8444,14 @@
  #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
  /// Expression forms allowed as a function argument.
  pub enum FunctionArgExpr {
@@ -2874,7 +3083,7 @@
      /// A normal expression argument.
      Expr(Expr),
      /// Qualified wildcard, e.g. `alias.*` or `schema.table.*`.
-@@ -8146,6 +8450,7 @@
+@@ -8146,6 +8477,7 @@
  impl fmt::Display for FunctionArgExpr {
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
@@ -2882,7 +3091,7 @@
              FunctionArgExpr::Expr(expr) => write!(f, "{expr}"),
              FunctionArgExpr::QualifiedWildcard(prefix) => write!(f, "{prefix}.*"),
              FunctionArgExpr::Wildcard => f.write_str("*"),
-@@ -8371,6 +8676,8 @@
+@@ -8371,6 +8703,8 @@
      /// The arguments to the function, including any options specified within the
      /// delimiting parentheses.
      pub args: FunctionArguments,
@@ -2891,7 +3100,7 @@
      /// A clause used with certain aggregate functions to control the ordering
      /// within grouped sets before the function is applied.
      ///
-@@ -8389,7 +8696,7 @@
+@@ -8389,7 +8723,7 @@
      /// ```
      ///
      /// [Snowflake](https://docs.snowflake.com/en/sql-reference/functions/first_value)
@@ -2900,7 +3109,7 @@
      /// The `OVER` clause, indicating a window function call.
      pub over: Option<WindowType>,
  }
-@@ -8402,6 +8709,16 @@
+@@ -8402,6 +8736,16 @@
  
          write!(f, "{}{}{}", self.name, self.parameters, self.args)?;
  
@@ -2917,7 +3126,7 @@
          if !self.within_group.is_empty() {
              write!(
                  f,
-@@ -8414,7 +8731,7 @@
+@@ -8414,7 +8758,7 @@
              write!(f, " FILTER (WHERE {filter_cond})")?;
          }
  
@@ -2926,7 +3135,7 @@
              write!(f, " {null_treatment}")?;
          }
  
-@@ -8529,7 +8846,7 @@
+@@ -8529,7 +8873,7 @@
      /// The `SEPARATOR` clause to the [`GROUP_CONCAT`] function in MySQL.
      ///
      /// [`GROUP_CONCAT`]: https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html#function_group-concat
@@ -2935,7 +3144,7 @@
      /// The `ON NULL` clause for some JSON functions.
      ///
      /// [MSSQL `JSON_ARRAY`](https://learn.microsoft.com/en-us/sql/t-sql/functions/json-array-transact-sql?view=sql-server-ver16)
-@@ -8540,6 +8857,14 @@
+@@ -8540,6 +8884,14 @@
      ///
      /// [`JSON_OBJECT`](https://www.postgresql.org/docs/current/functions-json.html#:~:text=json_object)
      JsonReturningClause(JsonReturningClause),
@@ -2950,7 +3159,7 @@
  }
  
  impl fmt::Display for FunctionArgumentClause {
-@@ -8557,6 +8882,12 @@
+@@ -8557,6 +8909,12 @@
              FunctionArgumentClause::Having(bound) => write!(f, "{bound}"),
              FunctionArgumentClause::Separator(sep) => write!(f, "SEPARATOR {sep}"),
              FunctionArgumentClause::JsonNullClause(null_clause) => write!(f, "{null_clause}"),
@@ -2963,7 +3172,25 @@
              FunctionArgumentClause::JsonReturningClause(returning_clause) => {
                  write!(f, "{returning_clause}")
              }
-@@ -9156,6 +9487,14 @@
+@@ -8644,6 +9002,17 @@
+     TREE,
+ }
+ 
++/// Property tested by a SQL multiset predicate.
++#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub enum MultisetPredicate {
++    /// The multiset has zero elements.
++    Empty,
++    /// Every element occurs at most once.
++    ASet,
++}
++
+ /// Optional type constraint for `IS JSON`.
+ #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+ #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+@@ -9156,6 +9525,14 @@
  #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
  /// SQL option syntax used in table and server definitions.
  pub enum SqlOption {
@@ -2978,7 +3205,7 @@
      /// Clustered represents the clustered version of table storage for MSSQL.
      ///
      /// <https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-azure-sql-data-warehouse?view=aps-pdw-2016-au7#TableOptions>
-@@ -9206,6 +9545,7 @@
+@@ -9206,6 +9583,7 @@
  impl fmt::Display for SqlOption {
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
@@ -2986,7 +3213,7 @@
              SqlOption::Clustered(c) => write!(f, "{c}"),
              SqlOption::Ident(ident) => {
                  write!(f, "{ident}")
-@@ -11323,8 +11663,67 @@
+@@ -11323,8 +11701,67 @@
      pub terse: bool,
      /// Additional options controlling the SHOW output.
      pub show_options: ShowStatementOptions,
@@ -3003,8 +3230,8 @@
 +    Conditional,
 +    /// Always wrap the result in an array.
 +    Unconditional,
-+}
-+
+ }
+ 
 +impl Display for JsonWrapper {
 +    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 +        f.write_str(match self {
@@ -3034,8 +3261,8 @@
 +    EmptyArray,
 +    /// Return an empty JSON object.
 +    EmptyObject,
- }
- 
++}
++
 +impl Display for JsonResponse {
 +    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 +        f.write_str(match self {
@@ -3054,7 +3281,7 @@
  /// MSSQL's json null clause
  ///
  /// ```plaintext
-@@ -11403,6 +11802,15 @@
+@@ -11403,6 +11840,15 @@
      /// ```
      TableName(#[cfg_attr(feature = "visitor", visit(with = "visit_relation"))] ObjectName),
  
@@ -3070,7 +3297,7 @@
      /// Table specified as a function.
      /// Example:
      /// ```sql
-@@ -11426,6 +11834,13 @@
+@@ -11426,6 +11872,13 @@
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
              Self::TableName(table_name) => write!(f, "{table_name}"),
@@ -3084,7 +3311,7 @@
              Self::TableFunction(func) => write!(f, "FUNCTION {func}"),
              Self::TableQuery(table_query) => write!(f, "({table_query})"),
          }
-@@ -12451,23 +12866,127 @@
+@@ -12451,21 +12904,125 @@
  #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
  #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
  #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -3179,8 +3406,8 @@
 +            Self::StringChain(values) => write!(f, "{}", display_separated(values, " ")),
 +        }
 +    }
- }
- 
++}
++
 +/// An identifier or literal used in a hint key/value pair.
 +#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -3222,12 +3449,10 @@
 +            }
 +        }
 +    }
-+}
-+
+ }
+ 
  /// The commentary style of an [optimizer hint](OptimizerHint)
- #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
- #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-@@ -12485,22 +13004,21 @@
+@@ -12485,22 +13042,21 @@
  }
  
  impl fmt::Display for OptimizerHint {
@@ -3441,18 +3666,18 @@
  
  #[cfg(not(feature = "std"))]
  use alloc::boxed::Box;
-@@ -638,6 +639,11 @@
+@@ -636,6 +637,11 @@
+     /// ```
+     fn supports_window_function_null_treatment_arg(&self) -> bool {
          false
-     }
- 
++    }
++
 +    /// Whether this named function accepts IGNORE or RESPECT NULLS inside its argument list.
 +    fn supports_inline_null_treatment_for(&self, _name: &[ObjectNamePart]) -> bool {
 +        self.supports_window_function_null_treatment_arg()
-+    }
-+
+     }
+ 
      /// Returns true if the dialect supports defining structs or objects using a
-     /// syntax like `{'x': 1, 'y': 2, 'z': 3}`.
-     fn supports_dictionary_syntax(&self) -> bool {
 @@ -753,7 +759,37 @@
          false
      }
@@ -3589,7 +3814,7 @@
      /// Dialect-specific infix parser override
      ///
      /// This method is called to parse the next infix expression.
-@@ -1126,9 +1249,23 @@
+@@ -1126,11 +1249,25 @@
          None
      }
  
@@ -3601,8 +3826,8 @@
      /// Parses a dialect-specific type, leaving the cursor unchanged on `None` to use standard parsing.
      fn parse_data_type(&self, _parser: &mut Parser) -> Option<Result<DataType, ParserError>> {
          None
-+    }
-+
+     }
+ 
 +    /// Validate a parsed type before its source tokens are discarded.
 +    fn validate_data_type(
 +        &self,
@@ -3610,10 +3835,12 @@
 +        _tokens: &[TokenWithSpan],
 +    ) -> Result<(), ParserError> {
 +        Ok(())
-     }
- 
++    }
++
      /// Dialect-specific column option parser override
-@@ -1443,6 +1580,27 @@
+     ///
+     /// This method is called to parse the next column option.
+@@ -1443,9 +1580,30 @@
  
      /// Returns true if the dialect supports `<<` and `>>` shift operators.
      fn supports_bitwise_shift_operators(&self) -> bool {
@@ -3623,9 +3850,9 @@
 +    /// Treat `/*+ ... */` as SQL hint syntax. Strings and ordinary comments
 +    /// inside the hint do not terminate its outer delimiter.
 +    fn supports_sql_hint_comments(&self) -> bool {
-+        false
-+    }
-+
+         false
+     }
+ 
 +    /// Consume a dialect-specific suffix after a parenthesized expression.
 +    fn parenthesized_suffix(
 +        &self,
@@ -3638,9 +3865,12 @@
 +
 +    /// Whether two consecutive slashes start a line comment.
 +    fn supports_slash_line_comments(&self) -> bool {
-         false
-     }
- 
++        false
++    }
++
+     /// Returns true if the dialect supports nested comments
+     /// e.g. `/* /* nested */ */`
+     fn supports_nested_comments(&self) -> bool {
 @@ -1527,6 +1685,11 @@
          false
      }
@@ -3672,11 +3902,28 @@
      /// Returns true if the specified keyword should be parsed as a table factor identifier.
      /// See [keywords::RESERVED_FOR_TABLE_FACTOR]
      fn is_table_factor(&self, kw: &Keyword, _parser: &mut Parser) -> bool {
-@@ -1764,7 +1939,43 @@
-     ///
-     /// [SQLite](https://www.sqlite.org/lang_keywords.html)
-     fn supports_string_literal_table_alias(&self, _explicit: bool) -> bool {
+@@ -1767,6 +1942,62 @@
+         true
+     }
+ 
++    /// Whether (*) stands for * in select items and ordinary function arguments.
++    fn supports_parenthesized_wildcard(&self) -> bool {
 +        true
++    }
++
++    /// Parse one scalar field inside a parenthesized expression or implicit row.
++    fn parse_parenthesized_field(&self, parser: &mut Parser) -> Result<Expr, ParserError> {
++        parser.parse_expr()
++    }
++
++    /// Parse a predicate after IS, taking ownership of its left operand.
++    fn parse_is_predicate(
++        &self,
++        parser: &mut Parser,
++        expr: Expr,
++        precedence: u8,
++    ) -> Result<Expr, ParserError> {
++        parser.parse_is_predicate(expr, precedence)
 +    }
 +
 +    /// Whether MEMBER OF accepts an arbitrary right operand (SQL multisets).
@@ -3697,7 +3944,7 @@
 +    /// Whether ordinary function arguments accept SQL/JSON null and return clauses.
 +    /// A dialect with dedicated SQL/JSON grammar can parse them there instead.
 +    fn supports_generic_json_clauses(&self) -> bool {
-         true
++        true
 +    }
 +
 +    /// Whether the named aggregate accepts a SEPARATOR argument clause.
@@ -3713,21 +3960,23 @@
 +    /// Whether an explicit window frame can end with an EXCLUDE clause.
 +    fn supports_window_frame_exclusion(&self) -> bool {
 +        false
-     }
- 
++    }
++
      /// Returns true if this dialect supports querying historical table data
-@@ -1780,6 +1991,11 @@
-         false
-     }
- 
-+    /// Use Calcite's lexical and numeric escape rules for E-strings.
-+    fn uses_calcite_string_escapes(&self) -> bool {
+     /// by specifying which version of the data to query.
+     fn supports_table_versioning(&self) -> bool {
+@@ -1777,6 +2008,11 @@
+     ///
+     /// Postgres: <https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-STRINGS-ESCAPE>
+     fn supports_string_escape_constant(&self) -> bool {
 +        false
 +    }
 +
-     /// Returns true if the dialect supports the table hints in the `FROM` clause.
-     fn supports_table_hints(&self) -> bool {
++    /// Use Calcite's lexical and numeric escape rules for E-strings.
++    fn uses_calcite_string_escapes(&self) -> bool {
          false
+     }
+ 
 --- /dev/null
 +++ b/src/tokenizer/calcite_escape.rs
 @@ -0,0 +1,96 @@

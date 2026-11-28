@@ -1942,6 +1942,26 @@ pub trait Dialect: Debug + Any {
         true
     }
 
+    /// Whether (*) stands for * in select items and ordinary function arguments.
+    fn supports_parenthesized_wildcard(&self) -> bool {
+        true
+    }
+
+    /// Parse one scalar field inside a parenthesized expression or implicit row.
+    fn parse_parenthesized_field(&self, parser: &mut Parser) -> Result<Expr, ParserError> {
+        parser.parse_expr()
+    }
+
+    /// Parse a predicate after IS, taking ownership of its left operand.
+    fn parse_is_predicate(
+        &self,
+        parser: &mut Parser,
+        expr: Expr,
+        precedence: u8,
+    ) -> Result<Expr, ParserError> {
+        parser.parse_is_predicate(expr, precedence)
+    }
+
     /// Whether MEMBER OF accepts an arbitrary right operand (SQL multisets).
     fn supports_multiset_membership(&self) -> bool {
         false

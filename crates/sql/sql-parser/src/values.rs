@@ -88,19 +88,32 @@ fn value_expression(parser: &mut Parser) -> Result<Expr, ParserError> {
     }
 }
 
+pub(super) fn parenthesized_field(parser: &mut Parser) -> Result<Expr, ParserError> {
+    field(parser, false, false)
+}
+
 fn field(parser: &mut Parser, explicit_row: bool, wrapped_row: bool) -> Result<Expr, ParserError> {
     if parser.peek_keyword(Keyword::DEFAULT) {
         return Ok(Expr::DefaultValue(parser.next_token().span));
+    }
+    if !explicit_row && parser.peek_token_ref().token == Token::Mul {
+        return Err(super::diagnostic::located(
+            "expected a scalar field expression",
+            parser.get_current_token().span,
+        ));
     }
     let expr = if explicit_row && !wrapped_row {
         super::collections::row_operand(parser)?
     } else {
         value_expression(parser)?
     };
-    if !wrapped_row && parser.parse_keyword(Keyword::AS) {
+    if wrapped_row {
+        return Ok(expr);
+    }
+    if let Some(name) = super::collections::field_alias(parser)? {
         Ok(Expr::Named {
             expr: Box::new(expr),
-            name: super::statements::identifier(parser)?,
+            name,
         })
     } else {
         Ok(expr)

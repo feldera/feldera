@@ -139,3 +139,8 @@ SQL/JSON path functions retain PASSING bindings, RETURNING types, array
 wrappers, and ON EMPTY and ON ERROR actions. JSON_OBJECTAGG stores its key
 and value separately and formats them with KEY and VALUE. The Feldera dialect
 parses SQL/JSON clauses in the grammar of each built-in function.
+
+The Feldera dialect parses multiset emptiness and distinctness after IS. The
+AST retains the collection predicate, negation and operator span. The
+parenthesized field grammar preserves explicit aliases on implicit rows and
+limits the parenthesized wildcard to explicit ROW operands.

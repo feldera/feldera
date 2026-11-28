@@ -186,6 +186,15 @@ Rust-formatted SQL. The frozen formatter comparison also passed all 8,571
 programs. Structured diagnostics now match on 902 of the 1,061 shared
 rejections in the adversarial grammar suite. [SQL/JSON regression tests](sql-parser/tests/sql_json.rs)
 
+The parser now accepts IS [NOT] EMPTY and IS [NOT] A SET. The predicate
+lookahead also preserves implicit column aliases such as REGEXP and WITHOUT.
+Direct Java rejects AT TIME ZONE even with a quoted time-zone literal.
+Across 644 directed cases, all verdicts matched. The 305 accepted programs
+kept their Java AST after formatting and all 339 rejected programs matched
+on diagnostic class, severity, start and snippet. All 8,571 frozen formatter
+pairs matched Java. Structured diagnostic matches on the larger rejection
+suite rose to 920 of 1,061. [Predicate regressions](sql-parser/tests/predicates.rs)
+
 In a 360-case comparison of index declarations, drops, LIMIT, OFFSET and FETCH,
 all verdicts matched Java. Java recovered the same AST from formatted SQL in
 all 95 accepted cases. All 265 rejections matched the product's structured

@@ -1071,6 +1071,17 @@ pub enum Expr {
     IsUnknown(Box<Expr>),
     /// `IS NOT UNKNOWN` operator
     IsNotUnknown(Box<Expr>),
+    /// A multiset tested for emptiness or distinctness.
+    IsMultiset {
+        /// Multiset being tested.
+        expr: Box<Expr>,
+        /// The collection property being tested.
+        predicate: MultisetPredicate,
+        /// Whether the predicate is negated.
+        negated: bool,
+        /// Location of the postfix operator.
+        span: Span,
+    },
     /// `IS DISTINCT FROM` operator
     IsDistinctFrom(Box<Expr>, Box<Expr>),
     /// `IS NOT DISTINCT FROM` operator
@@ -1977,6 +1988,22 @@ impl fmt::Display for Expr {
             Expr::IsNotNull(ast) => write!(f, "{ast} IS NOT NULL"),
             Expr::IsUnknown(ast) => write!(f, "{ast} IS UNKNOWN"),
             Expr::IsNotUnknown(ast) => write!(f, "{ast} IS NOT UNKNOWN"),
+            Expr::IsMultiset {
+                expr,
+                predicate,
+                negated,
+                ..
+            } => {
+                let keyword = match predicate {
+                    MultisetPredicate::Empty => "EMPTY",
+                    MultisetPredicate::ASet => "A SET",
+                };
+                write!(
+                    f,
+                    "{expr} IS {}{keyword}",
+                    if *negated { "NOT " } else { "" }
+                )
+            }
             Expr::IsJson {
                 expr,
                 kind,
@@ -8973,6 +9000,17 @@ pub enum AnalyzeFormat {
     TRADITIONAL,
     /// Tree-style explain output.
     TREE,
+}
+
+/// Property tested by a SQL multiset predicate.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum MultisetPredicate {
+    /// The multiset has zero elements.
+    Empty,
+    /// Every element occurs at most once.
+    ASet,
 }
 
 /// Optional type constraint for `IS JSON`.
