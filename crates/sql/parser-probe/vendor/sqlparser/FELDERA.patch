@@ -1057,7 +1057,15 @@
              ColumnOption::Invisible => Span::empty(),
          }
      }
-@@ -1452,7 +1457,7 @@
+@@ -1129,6 +1134,7 @@
+             SqlOption::Clustered(table_options_clustered) => table_options_clustered.span(),
+             SqlOption::Ident(ident) => ident.span(),
+             SqlOption::KeyValue { key, value } => key.span().union(&value.span()),
++            SqlOption::LiteralKeyValue { key, value } => key.span().union(&value.span()),
+             SqlOption::Partition {
+                 column_name,
+                 range_direction: _,
+@@ -1452,7 +1458,7 @@
      fn span(&self) -> Span {
          match self {
              GroupByExpr::All(_) => Span::empty(),
@@ -1066,7 +1074,7 @@
                  union_spans(exprs.iter().map(|i| i.span()))
              }
          }
-@@ -1681,6 +1686,7 @@
+@@ -1681,6 +1687,7 @@
                  ),
              },
              Expr::Between {
@@ -1074,7 +1082,7 @@
                  expr,
                  negated: _,
                  low,
-@@ -1732,6 +1738,8 @@
+@@ -1732,6 +1739,8 @@
                  .union(&union_spans(collation.0.iter().map(|i| i.span()))),
              Expr::Nested(expr) => expr.span(),
              Expr::Value(value) => value.span(),
@@ -1083,7 +1091,7 @@
              Expr::TypedString(TypedString { value, .. }) => value.span(),
              Expr::Function(function) => function.span(),
              Expr::GroupingSets(vec) => {
-@@ -1829,12 +1837,22 @@
+@@ -1829,12 +1838,22 @@
                      .chain(iter::once(end_token.0.span)),
              ),
              Expr::Exists { subquery, .. } => subquery.span(),
@@ -1106,7 +1114,7 @@
              Expr::Wildcard(token) => token.0.span,
              Expr::QualifiedWildcard(object_name, token) => union_spans(
                  object_name
-@@ -2131,6 +2149,7 @@
+@@ -2131,6 +2150,7 @@
                  alias,
                  args: _,
                  with_hints: _,
@@ -1114,7 +1122,7 @@
                  version: _,
                  with_ordinality: _,
                  partitions: _,
-@@ -2142,6 +2161,7 @@
+@@ -2142,6 +2162,7 @@
                  name.0
                      .iter()
                      .map(|i| i.span())
@@ -1122,7 +1130,7 @@
                      .chain(alias.as_ref().map(|alias| {
                          union_spans(
                              iter::once(alias.name.span)
-@@ -2209,6 +2229,15 @@
+@@ -2209,6 +2230,15 @@
                      .chain(default_on_null.as_ref().map(|i| i.span()))
                      .chain(alias.as_ref().map(|i| i.span())),
              ),
@@ -1138,7 +1146,7 @@
              TableFactor::Unpivot {
                  table,
                  value,
-@@ -2365,6 +2394,7 @@
+@@ -2365,6 +2395,7 @@
  impl Spanned for FunctionArgExpr {
      fn span(&self) -> Span {
          match self {
@@ -1146,18 +1154,18 @@
              FunctionArgExpr::Expr(expr) => expr.span(),
              FunctionArgExpr::QualifiedWildcard(object_name) => {
                  union_spans(object_name.0.iter().map(|i| i.span()))
-@@ -2441,6 +2471,10 @@
-             JoinOperator::CrossApply => Span::empty(),
-             JoinOperator::OuterApply => Span::empty(),
+@@ -2443,6 +2474,10 @@
              JoinOperator::AsOf {
-+                match_condition,
-+                constraint,
-+            }
-+            | JoinOperator::LeftAsOf {
                  match_condition,
                  constraint,
++            }
++            | JoinOperator::LeftAsOf {
++                match_condition,
++                constraint,
              } => match_condition.span().union(&constraint.span()),
-@@ -2603,12 +2637,24 @@
+             JoinOperator::Anti(join_constraint) => join_constraint.span(),
+             JoinOperator::Semi(join_constraint) => join_constraint.span(),
+@@ -2603,12 +2638,24 @@
      }
  }
  
@@ -1182,7 +1190,7 @@
              TableObject::TableFunction(func) => func.span(),
              TableObject::TableQuery(query) => query.span(),
          }
-@@ -2673,6 +2719,7 @@
+@@ -2673,6 +2720,7 @@
      fn span(&self) -> Span {
          union_spans(
              core::iter::once(self.name.span())
@@ -1846,10 +1854,11 @@
      /// Prefixed expression, e.g. introducer strings, projection prefix
      /// <https://dev.mysql.com/doc/refman/8.0/en/charset-introducer.html>
      /// <https://docs.snowflake.com/en/sql-reference/constructs/connect-by>
-@@ -1333,9 +1402,80 @@
+@@ -1332,10 +1401,81 @@
+         subquery: Box<Query>,
          /// Whether the `EXISTS` is negated (`NOT EXISTS`).
          negated: bool,
-     },
++    },
 +    /// Prefix uniqueness predicate over a row or query expression.
 +    Unique {
 +        /// Operand of the predicate.
@@ -1865,7 +1874,7 @@
 +        charset: Ident,
 +        /// Complete range of the call.
 +        span: Span,
-+    },
+     },
 +    /// SQL/JSON object constructor with ordered name/value pairs.
 +    JsonObject {
 +        /// Key and value expressions in source order.
@@ -2091,8 +2100,8 @@
 -    // TBD: EXCLUDE
 +    /// Rows excluded after computing the frame bounds.
 +    pub exclusion: Option<WindowFrameExclusion>,
- }
- 
++}
++
 +/// An explicit SQL window frame exclusion.
 +#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2106,8 +2115,8 @@
 +    Ties,
 +    /// Keep every row in the frame.
 +    NoOthers,
-+}
-+
+ }
+ 
 +impl fmt::Display for WindowFrameExclusion {
 +    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 +        f.write_str(match self {
@@ -2162,7 +2171,30 @@
      /// The `ON NULL` clause for some JSON functions.
      ///
      /// [MSSQL `JSON_ARRAY`](https://learn.microsoft.com/en-us/sql/t-sql/functions/json-array-transact-sql?view=sql-server-ver16)
-@@ -11403,6 +11675,15 @@
+@@ -9156,6 +9428,14 @@
+ #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+ /// SQL option syntax used in table and server definitions.
+ pub enum SqlOption {
++    /// A property whose key is a SQL string literal or literal chain.
++    /// The literal keeps its introducer, charset and source span.
++    LiteralKeyValue {
++        /// The literal key.
++        key: Box<Expr>,
++        /// The literal value.
++        value: Expr,
++    },
+     /// Clustered represents the clustered version of table storage for MSSQL.
+     ///
+     /// <https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-azure-sql-data-warehouse?view=aps-pdw-2016-au7#TableOptions>
+@@ -9206,6 +9486,7 @@
+ impl fmt::Display for SqlOption {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+         match self {
++            SqlOption::LiteralKeyValue { key, value } => write!(f, "{key} = {value}"),
+             SqlOption::Clustered(c) => write!(f, "{c}"),
+             SqlOption::Ident(ident) => {
+                 write!(f, "{ident}")
+@@ -11403,6 +11684,15 @@
      /// ```
      TableName(#[cfg_attr(feature = "visitor", visit(with = "visit_relation"))] ObjectName),
  
@@ -2178,7 +2210,7 @@
      /// Table specified as a function.
      /// Example:
      /// ```sql
-@@ -11426,6 +11707,13 @@
+@@ -11426,6 +11716,13 @@
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          match self {
              Self::TableName(table_name) => write!(f, "{table_name}"),
@@ -2192,7 +2224,7 @@
              Self::TableFunction(func) => write!(f, "FUNCTION {func}"),
              Self::TableQuery(table_query) => write!(f, "({table_query})"),
          }
-@@ -12451,23 +12739,127 @@
+@@ -12451,23 +12748,127 @@
  #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
  #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
  #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2228,8 +2260,8 @@
 +        /// Original comment span, including delimiters.
 +        span: Span,
 +    },
-+}
-+
+ }
+ 
 +/// One named optimizer hint with homogeneous options.
 +#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 +#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2307,8 +2339,8 @@
 +            Self::Literal(value) => value.fmt(f),
 +        }
 +    }
- }
- 
++}
++
 +impl fmt::Display for SqlHint {
 +    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 +        self.name.fmt(f)?;
@@ -2335,7 +2367,7 @@
  /// The commentary style of an [optimizer hint](OptimizerHint)
  #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
  #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-@@ -12485,22 +12877,21 @@
+@@ -12485,22 +12886,21 @@
  }
  
  impl fmt::Display for OptimizerHint {

@@ -159,22 +159,6 @@ fn parse_statement(
         if keyword_at(offset, Keyword::TYPE) {
             return crate::CreateType::parse(parser).map(|ty| Statement::CreateType(Box::new(ty)));
         }
-        if keyword_at(offset, Keyword::LOCAL) {
-            parser.expect_keyword(Keyword::CREATE)?;
-            let or_replace = parser.parse_keywords(&[Keyword::OR, Keyword::REPLACE]);
-            let local = parser.next_token().span;
-            if !parser.peek_keyword(Keyword::VIEW) {
-                return Err(super::diagnostic::at(
-                    "LOCAL is supported only before VIEW",
-                    local.start,
-                ));
-            }
-            let mut view = parser.parse_create_view(false, or_replace, false, None)?;
-            view.local = Some(local);
-            return Ok(Statement::Upstream(Box::new(
-                UpstreamStatement::CreateView(view),
-            )));
-        }
     }
     if parser.parse_keywords(&[Keyword::DECLARE, Keyword::RECURSIVE, Keyword::VIEW]) {
         let mut parts = vec![ObjectNamePart::Identifier(identifier(parser)?)];
@@ -295,7 +279,10 @@ impl Statement {
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Upstream(statement) => statement.fmt(f),
+            Self::Upstream(statement) => match statement.as_ref() {
+                UpstreamStatement::CreateTable(table) => super::ddl::table::display(table, f),
+                other => other.fmt(f),
+            },
             Self::CreateType(ty) => ty.fmt(f),
             Self::ExplainPlan(plan) => plan.fmt(f),
             Self::DescribeSchema(name) => write!(f, "DESCRIBE SCHEMA {name}"),

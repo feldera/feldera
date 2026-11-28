@@ -9428,6 +9428,14 @@ pub enum PartitionRangeDirection {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 /// SQL option syntax used in table and server definitions.
 pub enum SqlOption {
+    /// A property whose key is a SQL string literal or literal chain.
+    /// The literal keeps its introducer, charset and source span.
+    LiteralKeyValue {
+        /// The literal key.
+        key: Box<Expr>,
+        /// The literal value.
+        value: Expr,
+    },
     /// Clustered represents the clustered version of table storage for MSSQL.
     ///
     /// <https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-azure-sql-data-warehouse?view=aps-pdw-2016-au7#TableOptions>
@@ -9478,6 +9486,7 @@ pub enum SqlOption {
 impl fmt::Display for SqlOption {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            SqlOption::LiteralKeyValue { key, value } => write!(f, "{key} = {value}"),
             SqlOption::Clustered(c) => write!(f, "{c}"),
             SqlOption::Ident(ident) => {
                 write!(f, "{ident}")

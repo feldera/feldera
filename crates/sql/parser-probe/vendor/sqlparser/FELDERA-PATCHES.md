@@ -83,6 +83,10 @@ MULTISET stores either an element list or a query primary. The adapter uses
 constructor require parentheses. Column LATENESS stores an expression and
 its span so visitors can validate nested queries and preserve their hints.
 
+Table and view properties retain string-literal keys and values.
+`SqlOption::LiteralKeyValue` preserves a key's introducer, continuation
+fragments and source span. Ordinary single-quoted keys use `KeyValue`.
+
 The join and TABLE-argument grammar lives in `crates/sql/sql-parser/src/relations.rs`; VALUES
 grammar lives in `crates/sql/sql-parser/src/values.rs`. The adapter requires both
 MATCH_CONDITION and ON for ASOF joins and preserves named TABLE arguments.

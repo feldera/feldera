@@ -1,6 +1,10 @@
 //! Complete top-level DDL field policies for the pinned Feldera grammar.
 //! Nested columns and constraints have their own policies below.
 
+pub(super) mod declaration;
+pub(super) mod table;
+pub(super) mod properties;
+
 use sqlparser_064::ast::{
     ColumnDef, ColumnOption, CreateTable, CreateTableOptions, CreateView, Expr,
     ForeignKeyConstraint, HiveDistributionStyle, IndexColumn, ObjectNamePart, OrderByExpr,

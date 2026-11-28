@@ -441,6 +441,11 @@ fn function_arguments_allowed(function: &sqlparser_064::ast::Function) -> bool {
 }
 
 pub(super) fn data_type(data_type: &DataType, fallback: Location) -> ControlFlow<ParserError> {
+    // A bare name in ExtendedTableElement has no type. Explicit type
+    // productions are checked separately by the dialect's validate_data_type hook.
+    if matches!(data_type, DataType::Unspecified) {
+        return ControlFlow::Continue(());
+    }
     if !super::type_policy::allows(data_type) {
         return ControlFlow::Break(super::diagnostic::at(
             "type parameter or shape is outside the Feldera grammar",

@@ -65,6 +65,13 @@ impl Dialect for FelderaDialect {
     }
 
     fn get_next_precedence(&self, parser: &Parser) -> Option<Result<u8, ParserError>> {
+        // Calcite requires IS in the postfix null test. An adjacent NOT NULL
+        // can instead be a column or type modifier for the enclosing parser.
+        if parser.peek_keyword(Keyword::NOT)
+            && matches!(&parser.peek_nth_token_ref(1).token, Token::Word(w) if w.keyword == Keyword::NULL)
+        {
+            return Some(Ok(self.prec_unknown()));
+        }
         if parser.peek_token_ref().token == Token::Colon {
             // The pinned dialect uses a colon between JSON object keys and values.
             return Some(Ok(self.prec_unknown()));
@@ -169,7 +176,9 @@ impl Dialect for FelderaDialect {
         &self,
         parser: &mut Parser,
     ) -> Option<Result<UpstreamStatement, ParserError>> {
-        functions::parse(parser).or_else(|| settings::parse(parser))
+        ddl::declaration::parse(parser)
+            .or_else(|| functions::parse(parser))
+            .or_else(|| settings::parse(parser))
     }
 
     fn parse_column_option(
@@ -180,7 +189,7 @@ impl Dialect for FelderaDialect {
         if parser.parse_keywords(&[Keyword::FOREIGN, Keyword::KEY, Keyword::REFERENCES]) {
             return Ok(Some(ddl::inline_foreign_key(parser, start).map(Some)));
         }
-        lateness::column_option(parser)
+        Ok(lateness::parse_option(parser)?.map(|option| Ok(Some(option))))
     }
 
     fn is_identifier_start(&self, ch: char) -> bool {

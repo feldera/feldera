@@ -2,10 +2,7 @@
 //! These do not validate connector names or configuration values.
 
 use sqlparser_064::{
-    ast::{
-        ColumnOption, CreateTableOptions, Expr, ObjectNamePart, Spanned, SqlOption, Statement,
-        Value,
-    },
+    ast::{ColumnOption, CreateTableOptions, ObjectNamePart, Spanned, SqlOption, Statement},
     keywords::Keyword,
     parser::ParserError,
     tokenizer::{Token, TokenWithSpan},
@@ -55,22 +52,21 @@ fn properties(options: &CreateTableOptions) -> Result<(), ParserError> {
         return Ok(());
     };
     for option in options {
-        let SqlOption::KeyValue { key, value } = option else {
-            return Err(super::diagnostic::at(
-                "properties require string key/value pairs",
-                option.span().start,
-            ));
+        let value = match option {
+            SqlOption::KeyValue { key, value } if matches!(key.0.as_slice(), [ObjectNamePart::Identifier(name)] if name.quote_style == Some('\'')) => {
+                value
+            }
+            SqlOption::LiteralKeyValue { key, value } if super::ddl::properties::is_string(key) => {
+                value
+            }
+            _ => {
+                return Err(super::diagnostic::at(
+                    "properties require string key/value pairs",
+                    option.span().start,
+                ))
+            }
         };
-        if !matches!(key.0.as_slice(), [ObjectNamePart::Identifier(name)] if name.quote_style == Some('\''))
-        {
-            return Err(super::diagnostic::at(
-                "property keys require string literals",
-                key.span().start,
-            ));
-        }
-        if !matches!(value, Expr::Value(value) if matches!(value.value,
-            Value::SingleQuotedString(_) | Value::HexStringLiteral(_)))
-        {
+        if !super::ddl::properties::is_string(value) {
             return Err(super::diagnostic::at(
                 "property values require string literals",
                 value.span().start,

@@ -6,9 +6,7 @@ use sqlparser_064::{
     tokenizer::Token,
 };
 
-pub(super) fn column_option(
-    parser: &mut Parser,
-) -> Result<Option<Result<Option<ColumnOption>, ParserError>>, ParserError> {
+pub(super) fn parse_option(parser: &mut Parser) -> Result<Option<ColumnOption>, ParserError> {
     if !matches!(&parser.peek_token().token, Token::Word(word)
         if word.quote_style.is_none() && word.value.eq_ignore_ascii_case("LATENESS"))
     {
@@ -17,10 +15,10 @@ pub(super) fn column_option(
     let keyword = parser.next_token();
     let expression = parser.parse_expr()?;
     super::reject::validate_non_query(&expression)?;
-    Ok(Some(Ok(Some(ColumnOption::Lateness {
+    Ok(Some(ColumnOption::Lateness {
         expression,
         span: keyword.span.union(&parser.get_current_token().span),
-    }))))
+    }))
 }
 
 pub(super) fn validate(statement: &Statement) -> Result<(), ParserError> {

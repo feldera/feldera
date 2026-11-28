@@ -146,9 +146,13 @@ plan options, nested query and DML syntax, table names and keyword lookahead
 matched Java on every verdict and on the ASTs of all 721 accepted cases.
 Another 342 cases exercised scalar subqueries in function arguments, ROW, MAP,
 MULTISET, LATENESS and system-time expressions. All verdicts and the ASTs of
-the 209 accepted cases matched Java.
-Against the product compiler, 766 of the shared rejections matched severity,
-error class, start and snippet together. The remaining 295 are open P5a differences.
+the 209 accepted cases matched Java. A further 378 cases covered table and view
+declarations, including column attributes, interleaved constraints and string
+properties. All verdicts matched. Java parsed the formatted declarations into
+the original ASTs for all 212 accepted cases, including tables with a primary
+or foreign key before the first column or between two columns.
+Against the product compiler, 806 of the 1,061 shared rejections matched severity,
+error class, start and snippet together. The remaining 255 are open P5a differences.
 [Diagnostic comparison](scripts/validate_syntax_diagnostics.py)
 
 An additional 161 parser cases exercised aggregate arguments, window exclusions,

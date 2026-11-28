@@ -346,8 +346,8 @@ mod tests {
             ("DECLARE RECURSIVE VIEW v(x INT) trailing", 1, 33),
             ("SELECT 1;\nLATENESS v.x  ", 2, 15),
             ("SELECT 1;\nSELECT (\n  ", 3, 3),
-            ("CREATE TABLE t (n INT CONSTRAINT c LATENESS 1)", 1, 17),
-            ("CREATE VIEW v(n LATENESS 1) AS SELECT 1", 1, 15),
+            ("CREATE TABLE t (n INT CONSTRAINT c LATENESS 1)", 1, 23),
+            ("CREATE VIEW v(n LATENESS 1) AS SELECT 1", 1, 17),
             ("ALTER TABLE t ADD COLUMN n INT LATENESS 1", 1, 26),
             ("SELECT * FROM a RIGHT ASOF JOIN b ON TRUE", 1, 23),
         ] {
