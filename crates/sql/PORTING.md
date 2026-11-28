@@ -278,14 +278,26 @@ resumed each one. The comparison started a fresh JVM for each of the 210
 distinct bound inputs to isolate Calcite's relation counter. All 695 earlier
 bindings remained byte-identical. Of the 646 earlier S2 checkpoints, 510 stayed
 byte-identical and 136 matched structurally with identical compiler envelopes.
-The remaining 7,456 programs need whole-program binding. All 49 bound programs
-that still require Java lowering use aggregates.
 
 Six directed programs cover LEFT, RIGHT, SUBSTRING and SUBSTR on BMP text,
 binary data, negative indices and NULL arguments. All six matched Java through
 Gen-2 emission from both bound programs and Rust S2. The parser also matched
 Java on 70 ordinary, qualified, quoted and keyword calls and identifiers.
 Java recovered the original parsed SQL from all 41 accepted formatted cases.
+
+Exact numeric ROUND and TRUNCATE raised frozen coverage to 1,269 bound and
+1,220 lowered programs. All 154 additional programs matched direct Java through
+Gen-2 emission. Independent Java lowering matched each Rust S2 checkpoint,
+and Java resumed all 154. All 1,115 earlier bindings remained byte-identical.
+The remaining 7,302 programs need whole-program binding. All 49 bound programs
+that require Java lowering use aggregates.
+
+Six directed programs check decimal ties, negative digit positions, integer
+wraparound, NULL inference, cast syntax, and rounding in a projection with
+an array. Each matched Java through Gen-2 emission and independent S2 lowering.
+The exact numeric binder retains decimal scale and truncates the operand to an
+explicit cast's scale before rounding. Approximate operands and calls that
+survive constant reduction still need runtime rounding support.
 
 Eight directed programs exercise literal ARRAY element coercion, typed and
 untyped NULLs, temporal precision warnings, length functions and project-wide

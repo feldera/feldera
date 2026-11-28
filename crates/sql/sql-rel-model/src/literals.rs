@@ -81,6 +81,17 @@ pub enum DecimalRounding {
     Truncate,
 }
 
+impl DecimalRounding {
+    fn divide(self, coefficient: i128, factor: i128) -> i128 {
+        let quotient = coefficient / factor;
+        if matches!(self, Self::HalfUp) && (coefficient % factor).abs() >= factor / 2 {
+            quotient + coefficient.signum()
+        } else {
+            quotient
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LiteralValue {
@@ -206,17 +217,31 @@ impl ExactDecimal {
         let result = if change >= 0 {
             n.checked_mul(factor)?
         } else {
-            let integral = n / factor;
-            if matches!(rounding, DecimalRounding::HalfUp) && (n % factor).abs() >= factor / 2 {
-                integral + n.signum()
-            } else {
-                integral
-            }
+            rounding.divide(n, factor)
         };
         Some(Self {
             coefficient: result.to_string(),
             scale: scale as i32,
         })
+    }
+
+    /// Round at a SQL digit position, retaining the operand's declared scale.
+    /// A negative position discards digits to the left of the decimal point.
+    pub fn rounded_coefficient(&self, digits: i32, rounding: DecimalRounding) -> Option<i128> {
+        if !(0..=38).contains(&self.scale) {
+            return None;
+        }
+        let n: i128 = self.coefficient.parse().ok()?;
+        let discarded = i64::from(self.scale) - i64::from(digits);
+        let result = match discarded {
+            ..=0 => n,
+            1..=38 => {
+                let factor = 10_i128.pow(discarded as u32);
+                rounding.divide(n, factor).checked_mul(factor)?
+            }
+            _ => 0,
+        };
+        Some(result)
     }
 
     /// The SQL writer keeps fractional zeros. Java's BigDecimal uses

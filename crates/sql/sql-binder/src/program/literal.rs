@@ -45,6 +45,30 @@ pub(super) struct Cell {
 }
 
 impl Cell {
+    pub(super) fn as_nullable_integer(&self) -> Result<Option<i32>, Failure> {
+        match (&self.kind, &self.value) {
+            (
+                TypeKind::Integer {
+                    width: IntegerWidth::I32,
+                    signed: true,
+                },
+                LiteralValue::Integer { value },
+            ) => value
+                .parse()
+                .map(Some)
+                .map_err(|_| unsupported("invalid INTEGER literal")),
+            (
+                TypeKind::Integer {
+                    width: IntegerWidth::I32,
+                    signed: true,
+                }
+                | TypeKind::Null {},
+                LiteralValue::Null {},
+            ) => Ok(None),
+            _ => Err(unsupported("expected an INTEGER or NULL literal")),
+        }
+    }
+
     pub(super) fn needs_non_bmp_wrapper(&self) -> bool {
         self.value.contains_supplementary_character()
     }

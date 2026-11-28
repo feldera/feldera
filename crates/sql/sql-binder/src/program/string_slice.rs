@@ -9,7 +9,7 @@ use feldera_sql_rel_model::{
     operators::OperatorObject,
     program::Program,
     source::Origin,
-    types::{IntegerWidth, SqlType, TypeKind},
+    types::{SqlType, TypeKind},
 };
 
 #[derive(Clone, Copy)]
@@ -22,33 +22,9 @@ enum Length {
 impl Length {
     fn from_operand(cell: Option<&Cell>) -> Result<Self, Failure> {
         match cell {
-            Some(cell) => Ok(index(cell)?.map_or(Self::Null, Self::Count)),
+            Some(cell) => Ok(cell.as_nullable_integer()?.map_or(Self::Null, Self::Count)),
             None => Ok(Self::Omitted),
         }
-    }
-}
-
-fn index(cell: &Cell) -> Result<Option<i32>, Failure> {
-    match (&cell.kind, &cell.value) {
-        (
-            TypeKind::Integer {
-                width: IntegerWidth::I32,
-                signed: true,
-            },
-            LiteralValue::Integer { value },
-        ) => value
-            .parse()
-            .map(Some)
-            .map_err(|_| unsupported("invalid INTEGER slice index")),
-        (
-            TypeKind::Integer {
-                signed: true,
-                width: IntegerWidth::I32,
-            }
-            | TypeKind::Null {},
-            LiteralValue::Null {},
-        ) => Ok(None),
-        _ => Err(unsupported("slice index requires an integer literal")),
     }
 }
 
@@ -90,7 +66,7 @@ pub(super) fn bind(
     if name == "SUBSTR" && matches!(start.kind, TypeKind::Null {}) {
         return Err(unsupported("SUBSTR requires a typed start index"));
     }
-    let start = index(start)?;
+    let start = start.as_nullable_integer()?;
     let length = Length::from_operand(length)?;
     let nullable = start.is_none()
         || matches!(length, Length::Null)

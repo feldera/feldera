@@ -66,6 +66,20 @@ TIMESTAMP_DIFF_CASES = {
                            " TIMESTAMPDIFF(YEAR, DATE '2001-01-01', DATE '2001-12-31');",
 }
 
+ROUNDING_CASES = {
+    "round_exact_ties": "CREATE VIEW v AS SELECT ROUND(15.50), ROUND(-15.50),"
+                        " TRUNCATE(-15.50), TRUNCATE(0.042, 2);",
+    "round_negative_places": "CREATE VIEW v AS SELECT ROUND(125,-1), ROUND(-125,-1),"
+                             " TRUNCATE(-125,-1), ROUND(0.00125,-38);",
+    "round_integer_width": "CREATE VIEW v AS SELECT ROUND(2147483647,-1),"
+                           " ROUND(-2147483648,-1), ROUND(9223372036854775807,-1);",
+    "round_nulls": "CREATE VIEW v AS SELECT ROUND(NULL,NULL), ROUND(CAST(NULL AS BIGINT),2),"
+                   " TRUNCATE(15.50,NULL), ROUND(3,CAST(NULL AS INTEGER));",
+    "round_decimal_casts": "CREATE VIEW v AS SELECT ROUND(-1.555::DECIMAL(5,2),2),"
+                           " TRUNCATE(CAST(1.555 AS DECIMAL(5,2)),1), ROUND(NULL::DECIMAL(6,3));",
+    "round_array_projection": "CREATE VIEW v AS SELECT ARRAY[1,2], ROUND(1.555), TRUNCATE(19,-1);",
+}
+
 STRING_SLICE_CASES = {
     "slice_unicode": "CREATE VIEW v AS SELECT LEFT('éhéllo', 2), RIGHT('éhéllo', 3),"
                      " SUBSTRING('éhéllo' FROM -1 FOR 4), SUBSTR('éhéllo', -2, 1);",
@@ -95,6 +109,7 @@ LITERAL_ARRAY_CASES = {
 
 CASES = {
     **STRING_SLICE_CASES,
+    **ROUNDING_CASES,
     **LITERAL_ARRAY_CASES,
     **TIMESTAMP_DIFF_CASES,
     "runtime_integer_divide": "CREATE VIEW v AS SELECT 1 / 0, 2 / (1 / 0), (3 / 0) / 2;",

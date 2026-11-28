@@ -8,6 +8,7 @@ mod literal_type;
 mod math;
 mod names;
 mod order;
+mod rounding;
 mod source;
 mod string_slice;
 mod table;
@@ -348,6 +349,9 @@ fn constant_call(
     };
     let (name, arguments) = super::scalar_args(function)?;
     let name = name.to_ascii_uppercase();
+    if matches!(name.as_str(), "ROUND" | "TRUNCATE") {
+        return rounding::bind(program, &name, &arguments, fold).map(Some);
+    }
     if matches!(name.as_str(), "LEFT" | "RIGHT" | "SUBSTR" | "SUBSTRING") {
         return string_slice::bind(program, &name, &arguments, fold).map(Some);
     }
