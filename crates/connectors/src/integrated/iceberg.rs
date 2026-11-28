@@ -1356,6 +1356,44 @@ pub mod tests {
         assert_eq!(all, ["d", "d", "i", "i", "i"]);
     }
 
+    /// With an index, each key is one operation, also when each `fill` call holds only one.
+    #[engine_test]
+    pub fn indexed_changes_can_span_chunks(engine: &dyn ConnectorTestEngine) {
+        let warehouse = TOKIO.block_on(TestWarehouse::new());
+        let relation = value_relation();
+        let key = key_relation();
+        let (sink, _) = TOKIO.block_on(warehouse.flaky_sink("t", &relation, Faults::default()));
+        let layout = TOKIO.block_on(sink.begin()).unwrap();
+        // Key 0 is inserted, key 1 is updated (rows 1 and 3), and key 2 is deleted.
+        let rows = sample_rows(4);
+        let bigint = rows.schema().index_of("bigint").unwrap();
+        let mut columns = rows.columns().to_vec();
+        columns[bigint] = Arc::new(Int64Array::from(vec![0, 1, 2, 1]));
+        let rows = RecordBatch::try_new(rows.schema(), columns).unwrap();
+        let batch = engine
+            .indexed_output_batch(&key, &relation, &rows, &[1, -1, -1, 1])
+            .unwrap();
+        let format = RecordFormat::Parquet(iceberg_output_serde_config());
+        let range = batch.split(1, format).unwrap().remove(0);
+        let cursor = range.cursor().unwrap();
+        let mut rows = cursor.arrow_sink(layout.row_schema()).unwrap();
+        let mut change_log = ChangeLog::new(cursor, &relation.name, Some(&key), true);
+
+        // One operation per call.
+        let mut all = Vec::new();
+        for _ in 0..10 {
+            let mut ops = Vec::new();
+            let more = change_log.fill(rows.as_mut(), &mut ops, 1, &mut |e| panic!("{e}"));
+            assert!(ops.len() <= 1);
+            all.extend(ops);
+            if !matches!(more, Ok(true)) {
+                break;
+            }
+        }
+        assert_eq!(all, ["i", "u", "d"]);
+        assert_eq!(rows.finish().unwrap().num_rows(), 3);
+    }
+
     /// A catalog that never answers fails the open after [DEFAULT_OPEN_TIME], not after every
     /// retry has timed out.
     #[cfg(test)]
