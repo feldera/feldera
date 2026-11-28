@@ -42,6 +42,7 @@ pub fn platform_enable_unstable(requested_features: &str) {
         "runtime_version",
         "testing",
         "rust_compiler_full_cleanup",
+        "sql_shadow_compiler",
     ]);
     let mut enabled = HashSet::new();
     for requested_feature in requested_features.split(',') {
@@ -75,7 +76,29 @@ pub(crate) fn enable_test_unstable_features() {
         "compiler_selection",
         "runtime_version",
         "testing",
+        "sql_shadow_compiler",
     ]));
+}
+
+/// Runs one test of this binary in a new process, where process-wide state starts unset.
+/// The child must run exactly one test: after a rename, `--exact` matches none and still succeeds.
+#[cfg(test)]
+pub(crate) fn run_test_in_new_process<K, V>(test_path: &str, env: impl IntoIterator<Item = (K, V)>)
+where
+    K: AsRef<std::ffi::OsStr>,
+    V: AsRef<std::ffi::OsStr>,
+{
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test_path])
+        .envs(env)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("test result: ok. 1 passed"),
+        "{test_path} in a new process:\n{stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// To query whether the platform enabled a certain unstable feature.

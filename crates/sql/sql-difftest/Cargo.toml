@@ -21,3 +21,4 @@ path = "src/main.rs"
 [dev-dependencies]
 feldera-sql-expr = { path = "../sql-expr" }
 feldera-sql-opt = { path = "../sql-opt" }
+tempfile = { workspace = true }

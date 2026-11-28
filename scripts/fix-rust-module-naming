@@ -1,7 +1,9 @@
 #! /bin/sh -e
 
 exit_status=0
-for src in $(git ls-files -- '*/mod.rs' ':!crates/sql/**')
+# Cargo requires mod.rs for a module that integration tests or examples share.
+for src in $(git ls-files -- '*/mod.rs' \
+    ':!crates/sql/parser-probe/vendor/**' ':!crates/sql/*/tests/**' ':!crates/sql/*/examples/**')
 do
     dst=$(echo "$src" | sed 's|/mod\.rs$|.rs|')
     echo "renaming $src to $dst to fit preferred style..."

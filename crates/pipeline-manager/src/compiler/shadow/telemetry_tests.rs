@@ -60,16 +60,10 @@ async fn shadow_admission_counters_and_diagnostics() {
     let Ok(root) = std::env::var(ROOT) else {
         // Isolate PATH, counters and the log subscriber from parallel tests.
         let dir = tempfile::tempdir().unwrap();
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "compiler::shadow::telemetry_tests::shadow_admission_counters_and_diagnostics",
-            ])
-            .env(ROOT, dir.path())
-            .env("PATH", dir.path())
-            .status()
-            .unwrap();
-        assert!(status.success());
+        crate::run_test_in_new_process(
+            "compiler::shadow::telemetry_tests::shadow_admission_counters_and_diagnostics",
+            [(ROOT, dir.path()), ("PATH", dir.path())],
+        );
         return;
     };
     let root = PathBuf::from(root);
@@ -97,6 +91,10 @@ async fn shadow_admission_counters_and_diagnostics() {
     let start = |config: &CompilerConfig, primary: &SqlCompilationResult| {
         launch(&common, config, &program_config, id, sql, primary).unwrap()
     };
+
+    // A new process starts with no unstable feature.
+    assert!(launch(&common, &config, &program_config, id, sql, &primary).is_none());
+    crate::enable_test_unstable_features();
 
     check_launch_scope(&common, &config).await;
 
@@ -234,7 +232,7 @@ kill -STOP $$"#,
     check_counters(
         "SQL shadow skipped",
         &[
-            ("skipped", 4),
+            ("skipped", 5),
             ("dropped_busy", 1),
             ("skipped_sql_too_large", 1),
             ("skipped_observation_too_large", 1),

@@ -38,7 +38,8 @@ fn compare_with(mode: &str, left: &Path, right: &Path) -> std::process::Output {
 
 #[test]
 fn c0_probes_require_structured_parity_and_report_reviewable_changes() {
-    let root = std::env::temp_dir().join(format!("probe-comparison-c0-{}", std::process::id()));
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
     let (left, right) = (root.join("left"), root.join("right"));
     let mut expected = row();
     let diagnostic = json!({
@@ -101,12 +102,12 @@ fn c0_probes_require_structured_parity_and_report_reviewable_changes() {
     let malformed = compare_with("--compare-probes-c0", &left, &right);
     assert_eq!(malformed.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&malformed.stderr).contains("invalid actual diagnostics"));
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn compares_canonical_graphs_and_every_observable_field() {
-    let root = std::env::temp_dir().join(format!("probe-comparison-{}", std::process::id()));
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
     let (left, right) = (root.join("left"), root.join("right"));
     let mut changed = row();
     write_batch(&left, &changed);
@@ -135,12 +136,12 @@ fn compares_canonical_graphs_and_every_observable_field() {
     fs::write(left.join("golden.jsonl"), "").unwrap();
     fs::write(right.join("golden.jsonl"), "").unwrap();
     assert_eq!(compare(&left, &right).status.code(), Some(1));
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn reports_bug_fixes_without_certifying_a_broken_oracle() {
-    let root = std::env::temp_dir().join(format!("probe-bug-fix-{}", std::process::id()));
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
     let (left, right) = (root.join("left"), root.join("right"));
     let mut broken = row();
     broken["accepted"] = json!(false);
@@ -186,5 +187,4 @@ fn reports_bug_fixes_without_certifying_a_broken_oracle() {
     manifest["compiler_bugs"] = json!(2);
     fs::write(left.join("complete.json"), manifest.to_string()).unwrap();
     assert_eq!(compare(&left, &right).status.code(), Some(1));
-    fs::remove_dir_all(root).unwrap();
 }

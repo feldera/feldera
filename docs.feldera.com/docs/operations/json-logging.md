@@ -36,8 +36,23 @@ Each log entry is a JSON object whose members are:
 
 ## SQL shadow compilation
 
-To compare SQL compiler results, start the compiler server with
-`--shadow-sql-compiler java`. Shadow compilation is off by default.
+:::warning
+
+Shadow compilation is experimental. Its options and log events can change or be removed.
+
+:::
+
+To compare SQL compiler results, enable the `sql_shadow_compiler`
+[unstable feature](/get-started/enterprise/helm-chart-reference#miscellaneous) and start the
+compiler server with `--shadow-sql-compiler java`. Shadow compilation is off by default.
+Without the unstable feature, the server skips each shadow and logs the reason.
+
+| Compiler server option | Type | Default | Description |
+|---|---|---|---|
+| `--shadow-sql-compiler` | `java`, `hybrid` or `rust-optimizer` | not set (off) | The second compiler. `java` runs the Java compiler again. `hybrid` runs the `sql2dbsp` driver, which supervises the Java compiler. `rust-optimizer` is `hybrid` with the Rust optimizer passes. |
+| `--shadow-sql-compiler-timeout-secs` | integer, at least 1 | `30` | Deadline of one shadow compilation. |
+| `--retain-sql-shadow-mismatches` | flag | off | Keep mismatch bundles. Only for `rust-optimizer`. |
+
 Each server runs at most one shadow at a time, after a stored pipeline compilation.
 The Java heap limit is 512 MiB. In `rust-optimizer` mode, the Rust passes use
 native memory through JNI outside this heap limit. Without an explicit Java heap limit,
@@ -57,6 +72,16 @@ Each mismatch event identifies the first difference in `difference_class`.
 A warning identifies each distinct system failure. These logs omit SQL text
 and compiler diagnostics. For each compiler package and UTC day, a stored
 pipeline and its SQL text can each qualify only once for `matched_distinct`.
+
+| `message` | Level | Fields |
+|---|---|---|
+| `SQL shadow skipped` | `INFO` | `reason` and the counters `skipped`, `dropped_busy`, `skipped_sql_too_large`, `skipped_observation_too_large`. |
+| `SQL shadow completed` | `INFO` | `outcome` (`Equal`, `Different`, `TimedOut` or `Failed`), `failure_class` for `Failed`, and the counters `completed`, `compared`, `equal`, `different`, `timed_out`, `failed_to_start`, `skipped_observation_too_large`. |
+| `SQL shadow mismatch` | `INFO` | `difference_class`: `Verdict`, `Diagnostics`, `Schema`, `Dataflow`, `CircuitIr` or `ProgramInfo`. |
+| `Rust optimizer daily shadow sample` | `INFO` | `date`, `compiler_build`, `package_sha256`, `matched_distinct`, `differences`, `difference_this_attempt`, `incomplete`. Written after each `rust-optimizer` shadow. |
+| `SQL shadow compiler failed. ...` | `WARN` | `program`, `cause`, and one of `io_error`, `exit_code`, `signal`. Written once for each distinct cause. |
+| `SQL shadow cleanup failed. ...` | `WARN` | `kind` and `directory`. |
+| `SQL shadow cleanup recovered. ...` | `INFO` | none |
 
 To keep local evidence for investigating a Rust optimizer mismatch, enable
 `--retain-sql-shadow-mismatches` alongside `--shadow-sql-compiler rust-optimizer`.

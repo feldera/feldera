@@ -32,7 +32,7 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY (unknown)
                 )""";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "does not correspond to a column",
                 Diagnostic.error("No such column", 3, 18,
                         "    3|    PRIMARY KEY (unknown)\n" +
                         "                       ^^^^^^^\n" +
@@ -46,7 +46,7 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE TABLE T(T INT);
                 CREATE TABLE T(T INT);
                 """;
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "Duplicate declaration",
                 Diagnostic.error("Duplicate declaration", 2, 1,
                         "    1|CREATE TABLE T(T INT);\n" +
                         "    2|CREATE TABLE T(T INT);\n" +
@@ -61,28 +61,28 @@ public class NegativeParserTests extends BaseSQLTests {
     @Test
     public void testTableProperties() {
         String ddl = "CREATE TABLE T(T INT) WITH ( 5 )";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"5\".\n",
                 Diagnostic.error("Error parsing SQL", 1, 30,
                         "    1|CREATE TABLE T(T INT) WITH ( 5 )\n" +
                         "                                   ^\n"));
 
         // properties need to be SQL strings
         ddl = "CREATE TABLE T(T INT) WITH ( a = b )";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"a\".\n",
                 Diagnostic.error("Error parsing SQL", 1, 30,
                         "    1|CREATE TABLE T(T INT) WITH ( a = b )\n" +
                         "                                   ^\n"));
 
         // properties need to be SQL strings
         ddl = "CREATE TABLE T(T INT) WITH ( NULL = 'NULL' )";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"NULL\".\n",
                 Diagnostic.error("Error parsing SQL", 1, 30,
                         "    1|CREATE TABLE T(T INT) WITH ( NULL = 'NULL' )\n" +
                         "                                   ^^^^\n"));
 
         // properties cannot be an empty list
         ddl = "CREATE TABLE T(T INT) WITH ( )";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \")\".\n",
                 Diagnostic.error("Error parsing SQL", 1, 30,
                         "    1|CREATE TABLE T(T INT) WITH ( )\n" +
                         "                                   ^\n"));
@@ -95,7 +95,7 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null PRIMARY KEY,
                     PRIMARY KEY (git_commit_id)
                 )""";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "in table with another PRIMARY KEY constraint",
                 Diagnostic.error("Duplicate key", 2, 5,
                         "    2|    git_commit_id bigint not null PRIMARY KEY,\n" +
                         "          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n" +
@@ -113,7 +113,7 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE TABLE productvariant_t (
                     id BIGINT DEFAULT NULL DEFAULT 1
                 );""";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "Column 'id' already has a default value",
                 Diagnostic.error("Compilation error", 2, 36,
                         "    2|    id BIGINT DEFAULT NULL DEFAULT 1\n" +
                         "                                         ^\n" +
@@ -152,7 +152,7 @@ public class NegativeParserTests extends BaseSQLTests {
     public void duplicatedKey2() {
         String ddl = "create table git_commit (\n" +
                 "    git_commit_id bigint not null PRIMARY KEY PRIMARY KEY)";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "Column 'git_commit_id' already declared a primary key",
                 Diagnostic.error("Compilation error", 2, 47,
                         "    1|create table git_commit (\n" +
                         "    2|    git_commit_id bigint not null PRIMARY KEY PRIMARY KEY)\n" +
@@ -166,7 +166,7 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY (git_commit_id, git_commit_id)
                 )""";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "already declared as key",
                 Diagnostic.error("Duplicate key column", 3, 33,
                         "    3|    PRIMARY KEY (git_commit_id, git_commit_id)\n" +
                         "                                      ^^^^^^^^^^^^^\n" +
@@ -185,7 +185,7 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY ()
                 )""";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL",
                 Diagnostic.error("Error parsing SQL", 3, 18,
                         "    3|    PRIMARY KEY ()\n" +
                         "                       ^\n" +
@@ -232,7 +232,7 @@ public class NegativeParserTests extends BaseSQLTests {
                 "COL1 INT" +
                 ", COL1 DOUBLE" +
                 ");";
-        this.statementsFailingInCompilation(ddl,
+        this.statementsFailingInCompilation(ddl, "Column with name 'col1' already defined",
                 Diagnostic.error("Duplicate name", 2, 11,
                         "    1|CREATE TABLE T (\n" +
                         "    2|COL1 INT, COL1 DOUBLE);\n" +
@@ -247,7 +247,7 @@ public class NegativeParserTests extends BaseSQLTests {
     @Test
     public void testRejectFloatType() {
         String statement = "CREATE TABLE T(c1 FLOAT);";
-        this.statementsFailingInCompilation(statement,
+        this.statementsFailingInCompilation(statement, "Do not use",
                 Diagnostic.error("Illegal type", 1, 19,
                         "    1|CREATE TABLE T(c1 FLOAT);\n" +
                         "                        ^^^^^\n"));

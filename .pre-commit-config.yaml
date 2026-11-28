@@ -31,7 +31,8 @@ repos:
       - id: cargo-machete
         exclude: *parser_vendor
         name: Cargo Machete
-        entry: bash -O extglob -c 'cargo machete --fix crates/!(sql) crates/sql/sql-difftest'
+        # parser-probe is left out: the vendored sqlparser keeps its upstream manifest.
+        entry: bash -O extglob -c 'cargo machete --fix crates/!(sql) crates/sql/!(parser-probe|evidence|scripts)/'
         language: rust
         files: \.rs$
         pass_filenames: false

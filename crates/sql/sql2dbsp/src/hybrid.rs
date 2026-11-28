@@ -54,21 +54,34 @@ struct Request {
     allow_stateless_java_fallback: bool,
 }
 
+/// An error with no path of its own, such as a pipe or signal failure.
 impl From<io::Error> for Failure {
     fn from(value: io::Error) -> Self {
         Self::Internal(value.to_string())
     }
 }
-impl From<serde_json::Error> for Failure {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Internal(value.to_string())
+
+/// Name the operation and the path of a failed file access.
+trait AtPath<T> {
+    fn at(self, operation: &str, path: &Path) -> Result<T, Failure>;
+}
+
+impl<T, E: std::fmt::Display> AtPath<T> for Result<T, E> {
+    fn at(self, operation: &str, path: &Path) -> Result<T, Failure> {
+        self.map_err(|error| Failure::at_path(operation, path, error))
     }
+}
+
+fn current_executable() -> Result<PathBuf, Failure> {
+    env::current_exe().map_err(|error| {
+        Failure::Internal(format!("Cannot locate the sql2dbsp executable: {error}"))
+    })
 }
 
 /// Java emits a JSON diagnostic array on stderr under -je. A JVM startup line
 /// may precede it. Accept only a complete array of structured messages.
 fn messages(file: &Path) -> Result<Value, Failure> {
-    let bytes = fs::read(file)?;
+    let bytes = fs::read(file).at("read the compiler diagnostics", file)?;
     let mut input = bytes.trim_ascii_start();
     while input.starts_with(b"WARNING:") || input.starts_with(b"Picked up JAVA_TOOL_OPTIONS:") {
         input = input
@@ -98,7 +111,7 @@ impl Request {
     fn jvm(&self, rust_passes: bool) -> Result<Command, Failure> {
         let mut command = Command::new("java");
         if rust_passes {
-            let binary = env::current_exe()?;
+            let binary = current_executable()?;
             let directory = binary
                 .parent()
                 .ok_or_else(|| Failure::Internal("compiler has no parent directory".into()))?;
@@ -200,7 +213,7 @@ impl Request {
             (Engine::Gen2, _) => out.join("circuit.json"),
             (Engine::Classic, Some(_)) => {
                 let path = out.join("rust");
-                fs::create_dir_all(path.join("crates"))?;
+                fs::create_dir_all(path.join("crates")).at("create the workspace", &path)?;
                 path
             }
             (Engine::Classic, None) => out.join("circuit.rs"),
@@ -305,7 +318,7 @@ impl Request {
         out: &Path,
     ) -> Result<Value, Failure> {
         let attempt = scratch.join("worker");
-        let mut worker = Command::new(env::current_exe()?);
+        let mut worker = Command::new(current_executable()?);
         worker
             .arg("--s3-worker")
             .arg(&self.producer_commit)
@@ -314,11 +327,21 @@ impl Request {
             .arg(&attempt);
         let status = supervisor.run(&mut worker, &scratch.join("worker.log"), true)?;
         let files = attempt.join("result");
-        let record: Value = serde_json::from_slice(&fs::read(files.join("result.json"))?)?;
-        if record["producer_commit"] != self.producer_commit
-            || record["runtime_abi"] != self.runtime_abi
-        {
-            return Err(Failure::Internal("worker result identity mismatch".into()));
+        let result = files.join("result.json");
+        let bytes = fs::read(&result).at("read the S3 worker result", &result)?;
+        let record: Value =
+            serde_json::from_slice(&bytes).at("parse the S3 worker result", &result)?;
+        for (field, expected) in [
+            ("producer_commit", &self.producer_commit),
+            ("runtime_abi", &self.runtime_abi),
+        ] {
+            if record[field] != **expected {
+                return Err(Failure::Internal(format!(
+                    "The S3 worker result has {field} {}, not {expected}. \
+                     Run the worker of this sql2dbsp build",
+                    record[field]
+                )));
+            }
         }
         match record["status"].as_str() {
             Some("ok") if status.success() => (),
@@ -340,11 +363,14 @@ impl Request {
                 )))
             }
         }
-        for name in ["schema.json", "dataflow.json"] {
-            fs::rename(files.join(name), out.join(name))?;
-        }
+        let mut artifacts = vec!["schema.json", "dataflow.json"];
         if matches!(self.engine, Engine::Gen2) {
-            fs::rename(files.join("circuit.json"), out.join("circuit.json"))?;
+            artifacts.push("circuit.json");
+        }
+        for name in artifacts {
+            let artifact = files.join(name);
+            fs::rename(&artifact, out.join(name))
+                .at("publish the S3 worker artifact", &artifact)?;
         }
         Ok(record["messages"].clone())
     }
@@ -356,8 +382,8 @@ fn digests(
     dir: &Path,
     hashes: &mut serde_json::Map<String, Value>,
 ) -> Result<(), Failure> {
-    for item in fs::read_dir(dir)? {
-        let path = item?.path();
+    for item in fs::read_dir(dir).at("list", dir)? {
+        let path = item.at("list", dir)?.path();
         if path.is_dir() {
             digests(supervisor, root, &path, hashes)?;
         } else {
@@ -375,11 +401,11 @@ fn digests(
 
 fn file_digest(supervisor: &Supervisor, path: &Path) -> Result<[u8; 32], Failure> {
     let mut digest = Sha256::new();
-    let mut file = File::open(path)?;
+    let mut file = File::open(path).at("open", path)?;
     let mut buffer = [0; 65536];
     loop {
         supervisor.remaining()?;
-        let count = file.read(&mut buffer)?;
+        let count = file.read(&mut buffer).at("read", path)?;
         if count == 0 {
             return Ok(digest.finalize().into());
         }
@@ -388,23 +414,33 @@ fn file_digest(supervisor: &Supervisor, path: &Path) -> Result<[u8; 32], Failure
 }
 
 pub(super) fn run(manifest: &Path, attempt: &Path) -> io::Result<ExitCode> {
-    let file = File::open(manifest)?;
+    let invalid_request = |reason: &dyn std::fmt::Display| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid hybrid request {}: {reason}", manifest.display()),
+        )
+    };
+    let file = File::open(manifest).map_err(|e| invalid_request(&e))?;
     if file.metadata()?.len() > 1024 * 1024 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "hybrid request exceeds one MiB",
-        ));
+        return Err(invalid_request(&"the file exceeds one MiB"));
     }
-    let request: Request = serde_json::from_reader(file)?;
-    if request.producer_commit.is_empty()
-        || request.runtime_abi.is_empty()
-        || request.deadline_ms == 0
-        || matches!(request.engine, Engine::Gen2) && request.workspace.is_some()
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "invalid compiler identity, deadline, or workspace mode",
-        ));
+    let request: Request = serde_json::from_reader(file).map_err(|e| invalid_request(&e))?;
+    let rejected_field = [
+        (
+            "producer_commit is empty",
+            request.producer_commit.is_empty(),
+        ),
+        ("runtime_abi is empty", request.runtime_abi.is_empty()),
+        ("deadline_ms is zero", request.deadline_ms == 0),
+        (
+            "the gen2 engine does not accept a workspace",
+            matches!(request.engine, Engine::Gen2) && request.workspace.is_some(),
+        ),
+    ]
+    .into_iter()
+    .find_map(|(reason, is_rejected)| is_rejected.then_some(reason));
+    if let Some(reason) = rejected_field {
+        return Err(invalid_request(&reason));
     }
     fs::create_dir(attempt)?;
     let mut ready = tempfile::tempdir_in(attempt)?;

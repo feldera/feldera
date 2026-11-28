@@ -17,6 +17,10 @@ feldera-fxp = { path = "../../fxp", default-features = false, features = ["dbsp"
 feldera-types = { path = "../../feldera-types" }
 serde = "1"
 
+[package.metadata.cargo-machete]
+# The deserialize_table_record! macro expands to serde paths.
+ignored = ["serde"]
+
 [dev-dependencies]
 tempfile = "3"
 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64", "validation"] }

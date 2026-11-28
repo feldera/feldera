@@ -1,5 +1,7 @@
 //! Transform the circuit in explicit pass order, preserving operator identities.
 
+#![forbid(unsafe_code)]
+
 mod aggregate_groups;
 mod aggregate_input;
 pub use aggregate_input::{trim_aggregate_input, AggregateInput, ProjectedAggregateInput};

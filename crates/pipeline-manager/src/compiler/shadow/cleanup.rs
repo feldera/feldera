@@ -44,7 +44,8 @@ impl Cleanup {
         if let Err(e) = self.remove().await {
             warn!(
                 kind = ?e.kind(),
-                "SQL shadow cleanup failed. Check the compiler working directory. The next shadow will retry cleanup."
+                directory = %self.directory.display(),
+                "SQL shadow cleanup failed. Check this directory. The next shadow will retry cleanup."
             );
             *stale = Some(self);
             if outcome != Outcome::Different {

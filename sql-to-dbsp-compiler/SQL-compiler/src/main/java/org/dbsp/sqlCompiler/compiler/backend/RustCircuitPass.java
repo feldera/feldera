@@ -252,8 +252,16 @@ public final class RustCircuitPass implements CircuitTransform {
     private static final ObjectMapper MAPPER = Utilities.deterministicObjectMapper()
             .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
 
+    private static final String LIBRARY = "feldera_sql_opt_jni";
+
     static {
-        System.loadLibrary("feldera_sql_opt_jni");
+        try {
+            System.loadLibrary(LIBRARY);
+        } catch (UnsatisfiedLinkError e) {
+            throw new UnsatisfiedLinkError("Cannot load the Rust optimizer library '" + LIBRARY + "': "
+                    + e.getMessage() + ". Add its directory to java.library.path,"
+                    + " or compile without --rust-optimizer-passes.");
+        }
     }
 
     private final DBSPCompiler compiler;

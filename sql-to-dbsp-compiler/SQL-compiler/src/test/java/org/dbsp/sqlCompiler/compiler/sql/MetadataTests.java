@@ -2178,6 +2178,7 @@ public class MetadataTests extends BaseSQLTests {
                         CREATE TABLE T (
                            FOREIGN KEY (a) REFERENCES UNKNOWN(a)
                         );""",
+                "Table 'unknown', referred in FOREIGN KEY constraint of table 't', does not exist",
                 new Warning("Table not found", 2, 31, """
                         2|   FOREIGN KEY (a) REFERENCES UNKNOWN(a)
                                                         ^^^^^^^

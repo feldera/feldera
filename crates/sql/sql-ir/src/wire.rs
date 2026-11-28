@@ -7,7 +7,7 @@ pub use streaming::LiveCircuitDecoder;
 use super::{Circuit, Error, Field, Node, NodeClass, NodeId, OperatorKind, OutputPort};
 use indexmap::IndexMap;
 use serde_json::{json, Map, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 type Arena = BTreeMap<NodeId, Node>;
 
@@ -76,6 +76,7 @@ pub(super) fn validated(root: NodeId, nodes: Arena) -> Result<Circuit, Error> {
         }
     }
     validate_bodies(root, &nodes)?;
+    validate_inner_graph(&nodes)?;
     Ok(Circuit {
         live_relations: false,
         root,
@@ -142,6 +143,7 @@ impl Circuit {
         for &root in &roots {
             check_references(&Field::Reference(root), &defined)?;
         }
+        validate_inner_graph(&extra)?;
 
         // Preserve the larger sorted map. For a closure batch, only the
         // circuit header needs insertion into the freshly decoded arena.
@@ -398,6 +400,82 @@ fn validate_bodies(root: NodeId, nodes: &Arena) -> Result<(), Error> {
     Ok(())
 }
 
+/// Recursive passes use one stack frame for each level of an expression or type.
+const MAX_INNER_DEPTH: usize = 512;
+
+/// An inner node whose fields are being visited, with the depth found below it so far.
+struct OpenInnerNode {
+    id: NodeId,
+    first_edge: usize,
+    depth: usize,
+}
+
+/// Reject inner cycles and chains that are too deep for a recursive pass.
+/// An edge that leaves `batch` ends at a node that an earlier call checked.
+fn validate_inner_graph(batch: &Arena) -> Result<(), Error> {
+    // `None` marks a node on the current path.
+    let mut depths: HashMap<NodeId, Option<usize>> = HashMap::new();
+    let mut path: Vec<OpenInnerNode> = Vec::new();
+    let mut edges = Vec::new();
+    for (&start, node) in batch.range(NodeId::Inner(0)..=NodeId::Inner(u64::MAX)) {
+        if depths.contains_key(&start) {
+            continue;
+        }
+        open_inner_node(start, node, &mut depths, &mut path, &mut edges);
+        while let Some(open) = path.last_mut() {
+            if edges.len() > open.first_edge {
+                let child = edges.pop().expect("an edge of the open node");
+                match (depths.get(&child), batch.get(&child)) {
+                    (Some(Some(depth)), _) => open.depth = open.depth.max(depth + 1),
+                    (Some(None), _) => {
+                        return Err(Error(format!(
+                            "inner node {} contains itself. Write expressions and types as an acyclic graph.",
+                            child.number()
+                        )));
+                    }
+                    (None, Some(node)) => {
+                        open_inner_node(child, node, &mut depths, &mut path, &mut edges)
+                    }
+                    (None, None) => open.depth = open.depth.max(1),
+                }
+                continue;
+            }
+            let closed = path.pop().expect("the open node");
+            if closed.depth >= MAX_INNER_DEPTH {
+                return Err(Error(format!(
+                    "inner node {} exceeds the resource limit of {MAX_INNER_DEPTH} nested expressions or types. \
+                     Reduce the nesting or compile with the Java optimizer.",
+                    closed.id.number()
+                )));
+            }
+            depths.insert(closed.id, Some(closed.depth));
+            if let Some(parent) = path.last_mut() {
+                parent.depth = parent.depth.max(closed.depth + 1);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn open_inner_node(
+    id: NodeId,
+    node: &Node,
+    depths: &mut HashMap<NodeId, Option<usize>>,
+    path: &mut Vec<OpenInnerNode>,
+    edges: &mut Vec<NodeId>,
+) {
+    depths.insert(id, None);
+    let first_edge = edges.len();
+    for field in node.fields.values() {
+        field.collect_inner_edges(edges);
+    }
+    path.push(OpenInnerNode {
+        id,
+        first_edge,
+        depth: 0,
+    });
+}
+
 fn validate_outer(id: NodeId, node: &Node, nodes: &Arena) -> Result<(), Error> {
     for (field, required) in [
         (
@@ -550,9 +628,7 @@ mod tests {
             Circuit::from_live_json_bytes(&bytes),
             LiveCircuitDecoder::default().decode(&bytes),
         ] {
-            let error = result
-                .expect_err("accepted invalid body membership")
-                .to_string();
+            let error = result.expect_err("accepted an invalid circuit").to_string();
             assert!(error.contains(reason), "{error}");
         }
     }
@@ -582,6 +658,64 @@ mod tests {
             let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":body});
             check_decoders(graph, reason);
         }
+    }
+
+    fn circuit_with_inner_nodes(nodes: Value) -> Value {
+        json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+            {"class":"DBSPMapOperator","id":1,"inputs":[],"function":nodes}]})
+    }
+
+    /// Flat definitions: the JSON nesting stays shallow while the graph gets deep.
+    fn unwrap_chain(len: u64) -> Value {
+        (1..=len)
+            .map(|id| {
+                let mut unwrap = json!({"class":"DBSPUnwrapExpression","id":id});
+                if id < len {
+                    unwrap["expression"] = json!({"node":id + 1});
+                }
+                unwrap
+            })
+            .collect()
+    }
+
+    #[test]
+    fn all_decoders_require_a_bounded_acyclic_inner_graph() {
+        let own_field =
+            json!({"class":"DBSPTypeTuple","id":1,"mayBeNull":false,"tupFields":[{"node":1}]});
+        let ancestor = json!({"class":"DBSPUnwrapExpression","id":1,"expression":
+            {"class":"DBSPUnwrapExpression","id":2,"expression":{"node":1}}});
+        for cycle in [own_field, ancestor] {
+            check_decoders(
+                circuit_with_inner_nodes(cycle),
+                "inner node 1 contains itself",
+            );
+        }
+        check_decoders(
+            circuit_with_inner_nodes(unwrap_chain(513)),
+            "inner node 1 exceeds the resource limit of 512 nested expressions or types",
+        );
+
+        Circuit::from_json(circuit_with_inner_nodes(unwrap_chain(512))).unwrap();
+        let shared_child = json!({"class":"DBSPBinaryExpression","id":1,
+            "left":{"class":"DBSPUnwrapExpression","id":2},"right":{"node":2}});
+        Circuit::from_json(circuit_with_inner_nodes(shared_child)).unwrap();
+    }
+
+    #[test]
+    fn additional_inner_roots_form_a_bounded_acyclic_graph() {
+        let circuit = || Circuit::from_json(circuit_with_inner_nodes(json!([]))).unwrap();
+        let cycle = json!({"class":"DBSPUnwrapExpression","id":7,"expression":{"node":7}});
+        let error = circuit().with_inner_roots([cycle]).unwrap_err().to_string();
+        assert!(error.contains("inner node 7 contains itself"), "{error}");
+
+        let Value::Array(chain) = unwrap_chain(513) else {
+            unreachable!("a chain is an array");
+        };
+        let error = circuit().with_inner_roots(chain).unwrap_err().to_string();
+        assert!(
+            error.contains("inner node 1 exceeds the resource limit"),
+            "{error}"
+        );
     }
 
     #[test]

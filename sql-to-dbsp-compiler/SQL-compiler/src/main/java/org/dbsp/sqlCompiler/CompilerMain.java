@@ -236,7 +236,8 @@ public class CompilerMain {
                 compiler.messages.reportError(e);
                 return compiler.messages;
             } catch (IOException | RuntimeException e) {
-                compiler.reportError(SourcePositionRange.INVALID, stage + " export failed", e.getMessage());
+                compiler.reportError(SourcePositionRange.INVALID, stage + " export failed",
+                        "Cannot write " + file + ": " + e);
                 return compiler.messages;
             }
         }

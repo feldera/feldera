@@ -93,15 +93,18 @@ impl Supervisor {
             .checked_add(budget)
             .ok_or_else(|| Failure::Internal("invalid deadline".into()))?;
         let cancellation = Cancellation::new()?;
-        fs::create_dir_all(directory)?;
+        fs::create_dir_all(directory)
+            .map_err(|e| Failure::at_path("create the worker slot directory", directory, e))?;
         loop {
             cancellation.check(deadline, Duration::ZERO)?;
             for slot in 0..4 {
+                let lock = directory.join(format!("worker-{slot}.lock"));
                 let file = File::options()
                     .create(true)
                     .truncate(false)
                     .write(true)
-                    .open(directory.join(format!("worker-{slot}.lock")))?;
+                    .open(&lock)
+                    .map_err(|e| Failure::at_path("open the worker slot", &lock, e))?;
                 match file.try_lock() {
                     Ok(()) => {
                         return Ok(Self {
@@ -111,7 +114,9 @@ impl Supervisor {
                         })
                     }
                     Err(std::fs::TryLockError::WouldBlock) => {}
-                    Err(std::fs::TryLockError::Error(e)) => return Err(e.into()),
+                    Err(std::fs::TryLockError::Error(e)) => {
+                        return Err(Failure::at_path("lock the worker slot", &lock, e))
+                    }
                 }
             }
             cancellation.check(deadline, POLL)?;
@@ -163,10 +168,10 @@ impl Supervisor {
         mut poll: impl FnMut(&mut std::process::Child) -> Result<(), Failure>,
     ) -> Result<ExitStatus, Failure> {
         self.remaining()?;
-        command
-            .stdin(stdin)
-            .stdout(Stdio::null())
-            .stderr(File::create_new(stderr)?);
+        command.stdin(stdin).stdout(Stdio::null()).stderr(
+            File::create_new(stderr)
+                .map_err(|e| Failure::at_path("create the compiler log", stderr, e))?,
+        );
         // Children inherit the service's process group so cancellation of a program
         // revision also reaches the JVM and the worker while the supervisor is running.
         // SAFETY: the post-fork hook only reads errno and calls getrlimit, setrlimit, and write.

@@ -24,3 +24,7 @@ vite.config.ts.timestamp-*
 .ruff_cache
 playwright-artifacts
 feldera.egg-info
+# Records and tools of the SQL compiler migration. No image builds or runs them.
+crates/sql/evidence/
+crates/sql/scripts/
+crates/sql/*.md

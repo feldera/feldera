@@ -3,6 +3,8 @@
 //! The returned statements preserve Feldera-specific declarations and the
 //! upstream typed syntax for ordinary SQL. Catalog resolution belongs to the binder.
 
+#![forbid(unsafe_code)]
+
 #[cfg(test)]
 mod aggregate_tests;
 mod ast_fields;

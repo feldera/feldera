@@ -451,7 +451,8 @@ still returns `200`, with the errors carried in the body:
 ```
 
 This functionality is also available via the Python SDK (`client.validate_program(...)`) and
-the `fda` CLI (`fda validate-program [program.sql] [--ir] [--runtime-version <version>]`).
+the `fda` CLI (`fda validate-program [program.sql] [--ir] [--runtime-version <version>]
+[--program-config <file.json>]`).
 
 Specifying a non-default `runtime_version` for either endpoint requires the `runtime_version`
 unstable feature to be enabled on the platform, via the [`unstableFeatures` Helm

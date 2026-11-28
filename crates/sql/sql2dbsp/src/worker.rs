@@ -19,6 +19,11 @@ pub(super) enum Failure {
 }
 
 impl Failure {
+    /// A failed access to `path`. `operation` completes the sentence "Cannot ...".
+    pub(super) fn at_path(operation: &str, path: &Path, error: impl std::fmt::Display) -> Self {
+        Self::Internal(format!("Cannot {operation} {}: {error}", path.display()))
+    }
+
     pub(super) fn check_messages(messages: &Value) -> Result<(), Self> {
         let entries = messages.as_array().ok_or_else(|| {
             Self::Internal(

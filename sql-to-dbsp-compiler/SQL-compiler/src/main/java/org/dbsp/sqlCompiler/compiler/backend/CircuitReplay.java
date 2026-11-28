@@ -40,7 +40,8 @@ public final class CircuitReplay {
 
     public static final class ResourceLimit extends BaseCompilerException {
         public ResourceLimit(String message) {
-            super(message + ". Compile the original SQL directly with the Java optimizer without --rust-optimizer-passes.",
+            super(message + ". Compile the original SQL directly with the Java optimizer,"
+                            + " without checkpoint flags and without --rust-optimizer-passes.",
                     SourcePositionRange.INVALID);
         }
 

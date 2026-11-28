@@ -3850,6 +3850,7 @@ impl Position {
         factories: &Factories<K, A>,
         item: (&'a mut K, &'a mut A),
     ) -> Option<(&'a mut K, &'a mut A)> {
+        // SAFETY: Only a row position has a path. The caller supplies its factory and item types.
         unsafe {
             self.path().map(|path| {
                 path.item(factories, (item.0, item.1));
@@ -3864,6 +3865,7 @@ impl Position {
         &self,
         factories: &Factories<K, A>,
     ) -> Option<&dyn ArchivedItem<'_, K, A>> {
+        // SAFETY: Only a row position has a path. The caller supplies its item factory.
         unsafe { self.path().map(|path| path.archived_item(factories)) }
     }
 

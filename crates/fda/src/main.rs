@@ -1219,15 +1219,17 @@ async fn read_program_code(
 }
 
 async fn read_program_config(path: Option<String>) -> Option<ProgramConfig> {
-    read_file(path)
+    let path = path?;
+    let text = read_file(Some(path.clone()))
         .await
-        .unwrap_or_else(|()| std::process::exit(1))
-        .map(|text| {
-            serde_json::from_str(&text).unwrap_or_else(|error| {
-                eprintln!("Invalid program configuration JSON: {error}");
-                std::process::exit(1)
-            })
-        })
+        .unwrap_or_else(|()| std::process::exit(1))?;
+    Some(serde_json::from_str(&text).unwrap_or_else(|error| {
+        eprintln!(
+            "Invalid program configuration in '{path}': {error}. \
+             Pass a JSON object such as {{\"profile\": \"optimized\"}} to --program-config."
+        );
+        std::process::exit(1)
+    }))
 }
 
 /// Validate a SQL program via `POST /v0/validate_program` and print the result

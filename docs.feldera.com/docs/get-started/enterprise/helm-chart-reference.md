@@ -408,7 +408,7 @@ Configure HTTPS for all Feldera components. See the [HTTPS guide](./https.md) fo
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `unstableFeatures` | `[]` | List of unstable feature flags to enable. Possible values: `"testing"`, `"runtime_version"`, `"rust_compiler_full_cleanup"`. Do not also set `FELDERA_UNSTABLE_FEATURES` in `controlPlane.env`. |
+| `unstableFeatures` | `[]` | List of unstable feature flags to enable. Possible values: `"testing"`, `"runtime_version"`, `"rust_compiler_full_cleanup"`, `"compiler_selection"`, `"sql_shadow_compiler"`. Do not also set `FELDERA_UNSTABLE_FEATURES` in `controlPlane.env`. |
 | `felderaSentryEnabled` | `false` | Send crash reports and logs to Feldera's Sentry installation. |
 | `cloudApiEndpoint` | `"https://cloud1.feldera.com"` | Feldera cloud API endpoint used for license verification and runner telemetry. |
 | `disableClusterMonitorResources` | `false` | Whether to disable cluster monitoring of its own (Kubernetes) resources. |

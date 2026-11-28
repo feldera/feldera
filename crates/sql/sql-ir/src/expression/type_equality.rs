@@ -268,21 +268,23 @@ mod tests {
     }
 
     #[test]
-    fn comparing_separate_recursive_rows_reports_a_cycle() -> Result<(), Error> {
+    fn recursive_rows_are_rejected_before_comparison() -> Result<(), Error> {
         let circuit = Circuit::from_json(json!({
             "class":"DBSPCircuit", "id":0, "allOperators":[], "declarations":[]
         }))?;
-        let (circuit, roots) = circuit.with_inner_roots([1, 2].map(|id| {
+        let recursive_rows = [1, 2].map(|id| {
             json!({
                 "class":"DBSPTypeTuple", "id":id, "mayBeNull":false,
                 "tupFields":[{"node":id}]
             })
-        }))?;
-        let edit = CircuitEditor::new(circuit);
-        let err = edit
-            .same_type(edit.type_id(roots[0])?, edit.type_id(roots[1])?)
-            .unwrap_err();
-        assert_eq!(err.to_string(), "cycle in compared types");
+        });
+        // The decoder accepts acyclic types only, so `same_type` keeps its cycle
+        // check for types that a pass builds.
+        let err = circuit.with_inner_roots(recursive_rows).unwrap_err();
+        assert!(
+            err.to_string().contains("inner node 1 contains itself"),
+            "{err}"
+        );
         Ok(())
     }
 

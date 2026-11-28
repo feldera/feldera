@@ -3,6 +3,8 @@
 //! Allocation ids and definition placement may differ. Node sharing, ordered edges,
 //! output ports, metadata, source positions, and annotations must remain identical.
 
+#![forbid(unsafe_code)]
+
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};

@@ -290,6 +290,9 @@ pub(super) fn launch(
         COUNTERS.skipped(reason, counter);
         None
     };
+    if !crate::has_unstable_feature("sql_shadow_compiler") {
+        return skipped("the sql_shadow_compiler unstable feature is off", None);
+    }
     if sql.len() > MAX_SQL_BYTES {
         return skipped("SQL exceeds 1 MiB", Some(&COUNTERS.skipped_sql_too_large));
     }
@@ -417,7 +420,11 @@ async fn run(
                         )
                         .await
                     {
-                        warn!(kind = ?error.kind(), "Could not retain the local SQL optimizer mismatch bundle");
+                        warn!(
+                            kind = ?error.kind(),
+                            "Could not retain the SQL optimizer mismatch bundle. \
+                             Check sql-shadow-mismatches in the compiler working directory."
+                        );
                     }
                     Outcome::Different
                 }
@@ -860,6 +867,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "set FELDERA_SHADOW_TEST_JAR to the SQL compiler jar"]
     async fn real_java_shadow_is_bounded_and_does_not_publish() {
+        crate::enable_test_unstable_features();
         let directory = tempfile::tempdir().unwrap();
         let config = real_compiler_config(directory.path(), &[]);
         let common = CommonConfig::test_config();

@@ -10,6 +10,16 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (SQL): a `LATENESS` expression that evaluates to `NULL`,
+  for example `LATENESS CAST(NULL AS INTERVAL SECOND)`, is now a compilation
+  error.  Before, the compiler accepted it.  Remove the annotation or give it a
+  non-null constant.
+- Avro format: the compiler now rejects `"registry_urls": null`.  Before, the
+  pipeline failed when it started.  Remove the property to use the default, an
+  empty list.
+- `feldera-fxp` crate: the `rand` implementations are now behind the default
+  feature `random`.  A dependency with `default-features = false` that uses
+  `UniformDecimal` must enable `random`.
 - Delta Lake: applying a deletion vector no longer fails on Parquet files that
   Databricks Photon writes with 256-value `DELTA_BINARY_PACKED` miniblocks, as
   it does for tables with `delta.parquet.format.version = 2.12.0`. Before, the

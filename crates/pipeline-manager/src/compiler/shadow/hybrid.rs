@@ -36,17 +36,28 @@ pub(in crate::compiler) async fn messages(
         SqlCompilationError::SystemError(format!("Invalid hybrid result: {error}"))
     })?;
     let engine = if runtime.is_gen2() { "gen2" } else { "classic" };
-    if attempt.schema_version != 1
-        || attempt.compiler != "hybrid"
-        || attempt.rust_optimizer_passes != rust_optimizer
-        || attempt.producer_commit != env!("VERGEN_GIT_SHA")
-        || attempt.runtime_abi.as_bytes() != runtime.as_bytes()
-        || attempt.engine != engine
-    {
+    let identity = [
+        ("schema_version", attempt.schema_version == 1),
+        ("compiler", attempt.compiler == "hybrid"),
+        (
+            "rust_optimizer_passes",
+            attempt.rust_optimizer_passes == rust_optimizer,
+        ),
+        (
+            "producer_commit",
+            attempt.producer_commit == env!("VERGEN_GIT_SHA"),
+        ),
+        (
+            "runtime_abi",
+            attempt.runtime_abi.as_bytes() == runtime.as_bytes(),
+        ),
+        ("engine", attempt.engine == engine),
+    ];
+    if let Some((field, _)) = identity.iter().find(|(_, is_expected)| !is_expected) {
         shadow.cause.operation = "hybrid result identity mismatch";
-        return Err(SqlCompilationError::SystemError(
-            "Hybrid result identity mismatch".into(),
-        ));
+        return Err(SqlCompilationError::SystemError(format!(
+            "Hybrid result identity mismatch in {field}. Install the sql2dbsp of this manager release."
+        )));
     }
     match (attempt.status.as_str(), success) {
         ("ok", true) => {

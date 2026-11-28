@@ -4732,12 +4732,10 @@ async fn compiler_selection_stored_java() {
     let Ok(saved) = std::env::var(SAVED) else {
         let stored = check_stored_java_compiler(&db).await;
         // A fresh manager process starts with a new feature set.
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "db::test::compiler_selection_stored_java"])
-            .env(SAVED, serde_json::to_string(&stored).unwrap())
-            .status()
-            .unwrap();
-        assert!(status.success());
+        crate::run_test_in_new_process(
+            "db::test::compiler_selection_stored_java",
+            [(SAVED, serde_json::to_string(&stored).unwrap())],
+        );
         return;
     };
 

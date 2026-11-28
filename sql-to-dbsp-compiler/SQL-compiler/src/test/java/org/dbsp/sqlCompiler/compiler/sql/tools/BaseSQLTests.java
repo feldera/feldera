@@ -209,8 +209,21 @@ public class BaseSQLTests {
         }
     }
 
+    /** As {@link #statementsFailingInCompilation(String, Diagnostic, Diagnostic...)};
+     * the error text must also contain {@code messageFragment}. */
+    public void statementsFailingInCompilation(
+            String statements, String messageFragment, Diagnostic first, Diagnostic... rest) {
+        String messages = this.checkDiagnostics(statements, first, rest);
+        this.shouldMatch(messages, messageFragment, false);
+    }
+
     /** Assert a failed compilation and all of its ordered C0 diagnostics. */
     public void statementsFailingInCompilation(String statements, Diagnostic first, Diagnostic... rest) {
+        this.checkDiagnostics(statements, first, rest);
+    }
+
+    /** @return The text of all messages, for assertions on their bodies. */
+    private String checkDiagnostics(String statements, Diagnostic first, Diagnostic... rest) {
         DBSPCompiler compiler = this.compileForErrorAssertions(statements);
         String rendered = compiler.messages.toString();
         Assert.assertNotEquals(rendered, 0, compiler.messages.exitCode);
@@ -224,6 +237,7 @@ public class BaseSQLTests {
         DiagnosticExporter.recordDirect(DiagnosticAssertions.Target.STRUCTURED_ERRORS, "equals", expected, actual);
         DiagnosticExporter.record(this, compiler, first.errorType(), false,
                 DiagnosticExporter.AssertionKind.COMPILATION_ERROR, rendered);
+        return rendered;
     }
 
     /** Cargo features that make the optional dependencies of the 'temp' crate available. */
@@ -248,8 +262,20 @@ public class BaseSQLTests {
 
     public record Warning(String errorType, int line, int column, String snippet) {}
 
+    /** As {@link #shouldWarn(String, Warning...)};
+     * the warning text must also contain {@code messageFragment}. */
+    public void shouldWarn(String statements, String messageFragment, Warning... expected) {
+        String messages = this.checkWarnings(statements, expected);
+        this.shouldMatch(messages, messageFragment, false);
+    }
+
     /** Assert the ordered C0 diagnostic fields for a successful compilation. */
     public void shouldWarn(String statements, Warning... expected) {
+        this.checkWarnings(statements, expected);
+    }
+
+    /** @return The text of all messages, for assertions on their bodies. */
+    private String checkWarnings(String statements, Warning... expected) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
@@ -264,6 +290,8 @@ public class BaseSQLTests {
         Assert.assertEquals(List.of(expected), actual);
         DiagnosticExporter.recordDirect(DiagnosticAssertions.Target.STRUCTURED_WARNINGS, "equals",
                 List.of(expected), actual);
+        // CompilerMessages.toString() omits warnings in quiet mode.
+        return compiler.messages.messages.toString();
     }
 
     @Rule

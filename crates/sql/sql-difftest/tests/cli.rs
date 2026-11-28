@@ -46,8 +46,8 @@ fn streaming_canonicalization_preserves_boundaries_and_rejects_bad_records() {
 
 #[test]
 fn cli_reports_equality_differences_and_input_errors() {
-    let directory = std::env::temp_dir().join(format!("sql-difftest-cli-{}", std::process::id()));
-    fs::create_dir(&directory).unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let directory = temporary.path();
     let expected = directory.join("expected.json");
     let actual = directory.join("actual.json");
     let dump =
@@ -76,14 +76,12 @@ fn cli_reports_equality_differences_and_input_errors() {
             .code(),
         Some(2)
     );
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
 fn completed_captures_require_every_observation_in_order() {
-    let directory =
-        std::env::temp_dir().join(format!("sql-difftest-captures-{}", std::process::id()));
-    fs::create_dir(&directory).unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let directory = temporary.path();
     let left = directory.join("left");
     let right = directory.join("right");
     fs::create_dir(&left).unwrap();
@@ -172,13 +170,12 @@ fn completed_captures_require_every_observation_in_order() {
     assert_eq!(run().status.code(), Some(1));
     fs::remove_file(right.join("complete.json")).unwrap();
     assert_eq!(run().status.code(), Some(2));
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
 fn standalone_s3_capture_checks_metadata_and_file_identity() {
-    let directory = std::env::temp_dir().join(format!("sql-difftest-s3-{}", std::process::id()));
-    fs::create_dir(&directory).unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let directory = temporary.path();
     let dump = json!({
         "schema_version": 1, "producer_commit": "test", "runtime_abi": "test",
         "engine_mode": "classic", "options": {}, "replayable": false,
@@ -197,8 +194,8 @@ fn standalone_s3_capture_checks_metadata_and_file_identity() {
     let run = || {
         Command::new(env!("CARGO_BIN_EXE_sql-difftest"))
             .arg("--directories")
-            .arg(&directory)
-            .arg(&directory)
+            .arg(directory)
+            .arg(directory)
             .output()
             .unwrap()
     };
@@ -214,14 +211,12 @@ fn standalone_s3_capture_checks_metadata_and_file_identity() {
     )
     .unwrap();
     assert_eq!(run().status.code(), Some(1));
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
 fn paired_pass_replay_requires_the_same_checkpoint_state_and_population() {
-    let directory =
-        std::env::temp_dir().join(format!("sql-difftest-paired-{}", std::process::id()));
-    fs::create_dir(&directory).unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let directory = temporary.path();
     let population = directory.join("population");
     let control = directory.join("control");
     let candidate = directory.join("candidate");
@@ -289,12 +284,12 @@ fn paired_pass_replay_requires_the_same_checkpoint_state_and_population() {
     }
     summary["streamed_invocations"] = json!(2);
     assert_eq!(compare(&format!("{chunk}\n{summary}")), Some(1));
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
 fn comparison_and_roundtrip_reject_invalid_body_membership() {
-    let path = std::env::temp_dir().join(format!("sql-difftest-body-{}.json", std::process::id()));
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("body.json");
     let nested = |id, body| {
         json!({"class":"DBSPNestedOperator","id":id,"allOperators":body,
                                    "inputs":[], "internalOutputs":[], "outputViews":[]})
@@ -316,7 +311,6 @@ fn comparison_and_roundtrip_reject_invalid_body_membership() {
                 .code()
         };
         let codes = [run(path.as_os_str()), run("--roundtrip-circuit".as_ref())];
-        fs::remove_file(&path).unwrap();
         assert_eq!(codes, [Some(1), Some(1)]);
     }
 }

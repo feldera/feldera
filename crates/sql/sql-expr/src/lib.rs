@@ -1,5 +1,7 @@
 //! Shared transformations of circuit expressions and types.
 
+#![forbid(unsafe_code)]
+
 mod canonical;
 pub mod constant_rows;
 pub use canonical::{

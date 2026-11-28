@@ -1,4 +1,7 @@
 //! Compiler source coordinates are one-based inclusive UTF-16 offsets.
+
+#![forbid(unsafe_code)]
+
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 

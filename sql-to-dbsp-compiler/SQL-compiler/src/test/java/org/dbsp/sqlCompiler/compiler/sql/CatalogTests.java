@@ -481,7 +481,7 @@ public class CatalogTests extends BaseSQLTests {
         sql = """
                 CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
                 CREATE INDEX IX ON T(id);""";
-        this.shouldWarn(sql, new Warning("Indexed table", 2, 14, """
+        this.shouldWarn(sql, "INDEX 'ix' refers to TABLE 't'; this has no effect.", new Warning("Indexed table", 2, 14, """
                         1|CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
                         2|CREATE INDEX IX ON T(id);
                                        ^^

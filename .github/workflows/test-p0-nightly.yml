@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'sql-to-dbsp-compiler/**'
+      - 'crates/sql/sql-difftest/**'
+      - '.github/workflows/test-p0-nightly.yml'
   schedule:
     - cron: "17 8 * * *"
   workflow_dispatch:
@@ -672,6 +674,8 @@ jobs:
         run: |
           cargo fmt --manifest-path crates/sql/native-dbsp-probe/Cargo.toml -- --check
           cargo test --locked --manifest-path crates/sql/native-dbsp-probe/Cargo.toml
+          # No other job enables the feature that holds these DBSP tests.
+          cargo test --locked -p dbsp --features native-abi --lib native_abi
           cargo clippy --locked --manifest-path crates/sql/native-dbsp-probe/Cargo.toml --all-targets -- -D warnings
 
       - name: Check the native batch ABI spike
@@ -882,6 +886,9 @@ jobs:
     timeout-minutes: 60
     name: Compare compiler output with the reference commit
     runs-on: [gke-runners-amd64]
+    env:
+      # Code from a pull request must not write to the shared compilation cache.
+      RUSTC_WRAPPER: ${{ github.event_name != 'pull_request' && 'sccache' || '' }}
     container:
       image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-4c59cc4f717bdd391dd0b00c65b65af61f35aee2
     steps:

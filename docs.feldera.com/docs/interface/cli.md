@@ -212,6 +212,13 @@ fda sql format pipeline.sql > formatted.sql
 The preview command exits successfully when it produces a verdict. File and
 compiler invocation failures produce a nonzero exit status.
 
+:::warning
+
+`fda sql format` prints one statement per line and removes all comments.
+Keep the original file if you need its comments.
+
+:::
+
 ## Connecting & Authentication
 
 To connect to the Feldera manager, you need to provide the URL of the manager. You can either provide the URL as an

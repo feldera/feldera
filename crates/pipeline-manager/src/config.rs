@@ -336,6 +336,7 @@ pub struct CommonConfig {
     ///
     /// Currently supported features:
     /// - `compiler_selection` allows a caller to set `program_config.compiler`.
+    /// - `sql_shadow_compiler` permits `--shadow-sql-compiler` on the compiler server.
     /// - `runtime_version`: Allows to override the runtime version of a pipeline on the platform.
     /// - `testing`
     /// - `rust_compiler_full_cleanup`: the Rust compiler fully cleans up the target directory if the
@@ -1917,9 +1918,11 @@ impl BasePath {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum ShadowCompiler {
+    /// Run the Java compiler a second time.
     Java,
+    /// Run the `sql2dbsp` hybrid driver, which supervises the Java compiler.
     Hybrid,
-    /// Run the implemented Rust optimizer passes before the hybrid S3 worker.
+    /// Run the hybrid driver with the Rust optimizer passes enabled.
     RustOptimizer,
 }
 
@@ -1948,6 +1951,7 @@ pub struct CompilerConfig {
     #[arg(long, default_value_t = default_sql_compiler_path())]
     pub sql_compiler_path: String,
 
+    /// Experimental: requires the `sql_shadow_compiler` unstable feature.
     /// Compare stored pipeline compilations with a second compiler. Each server
     /// runs one shadow at a time. The Java heap limit is 512 MiB. In rust-optimizer
     /// mode, JNI also uses native memory outside this limit. Without an explicit

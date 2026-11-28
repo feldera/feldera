@@ -5879,6 +5879,7 @@ dependencies = [
  "feldera-sql-opt",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

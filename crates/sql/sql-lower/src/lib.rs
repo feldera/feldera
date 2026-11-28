@@ -2,6 +2,8 @@
 //! The initial circuit contains only compiler-owned operators. Each user table
 //! is built from its validated S1 schema, statement and original source spans.
 
+#![forbid(unsafe_code)]
+
 mod closure;
 mod filter;
 mod integer;

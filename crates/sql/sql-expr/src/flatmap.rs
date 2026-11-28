@@ -148,6 +148,9 @@ pub struct FlatmapColumns {
 }
 
 impl FlatmapColumns {
+    /// The shuffle width sizes allocations before a pass can compare it with the row.
+    const MAX_WIDTH: usize = 1 << 16;
+
     pub fn read(node: &feldera_sql_ir::Node) -> Result<Self, Error> {
         let Some(Field::Object(shuffle)) = node.field("shuffle") else {
             return Err(Error::new("flatmap requires an output shuffle"));
@@ -156,6 +159,13 @@ impl FlatmapColumns {
             .get("inputLength")
             .and_then(index)
             .ok_or_else(|| Error::new("invalid flatmap shuffle width"))?;
+        if width > Self::MAX_WIDTH {
+            return Err(Error::new(format!(
+                "flatmap shuffle width {width} exceeds the resource limit of {} columns. \
+                 Reduce the row width or compile with the Java optimizer.",
+                Self::MAX_WIDTH
+            )));
+        }
         let output = match shuffle.get("class") {
             Some(Field::Data(name)) if name == "IdShuffle" => (0..width).collect(),
             Some(Field::Data(name)) if name == "ExplicitShuffle" => {
@@ -287,4 +297,37 @@ fn indexes(field: Option<&Field>) -> Result<Vec<usize>, Error> {
         .iter()
         .map(|field| index(field).ok_or_else(|| Error::new("invalid flatmap field index")))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_sql_ir::Circuit;
+    use serde_json::json;
+
+    fn read_with_width(width: u64) -> Result<FlatmapColumns, Error> {
+        let circuit = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "allOperators": [], "declarations": []
+        }))?;
+        let (circuit, roots) = circuit.with_inner_roots([json!({
+            "class": "DBSPFlatmap", "id": 1, "passthroughIndexes": [],
+            "shuffle": {"class": "IdShuffle", "inputLength": width}
+        })])?;
+        FlatmapColumns::read(circuit.node(roots[0]).expect("the decoded flatmap"))
+    }
+
+    #[test]
+    fn shuffle_width_is_bounded_before_it_sizes_the_columns() {
+        let widest = FlatmapColumns::MAX_WIDTH;
+        assert_eq!(read_with_width(widest as u64).unwrap().output.len(), widest);
+        let error = read_with_width(1 << 40)
+            .err()
+            .expect("accepted an 8 TiB shuffle");
+        assert!(
+            error
+                .to_string()
+                .contains("width 1099511627776 exceeds the resource limit of 65536 columns"),
+            "{error}"
+        );
+    }
 }

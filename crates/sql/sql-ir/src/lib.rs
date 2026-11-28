@@ -4,6 +4,8 @@
 //! and expressions) have independent identities. An edge always names a node
 //! in one of these arenas, even when its definition occurs at the edge site.
 
+#![forbid(unsafe_code)]
+
 pub mod build;
 mod coalesce;
 mod prune;

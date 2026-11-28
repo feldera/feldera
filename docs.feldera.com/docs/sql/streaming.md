@@ -13,7 +13,7 @@ for a detailed description of these constructs and their usage.
 
 Lateness is a constant bound associated with a timestamp column in a
 table or view, such that updates to the table are not allowed to arrive more than
-lateness time units out of order.
+lateness time units out of order.  The bound must not be `NULL`.
 
 See the [Time Series Analysis Guide](/tutorials/time-series#timestamp-columns-and-lateness)
 for details.

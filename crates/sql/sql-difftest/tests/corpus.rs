@@ -194,12 +194,12 @@ fn portable_outputs_normalize_exact_decimal_values_and_keep_signed_weights() {
 
 #[test]
 fn directory_validation_rejects_missing_cases_and_false_counts() {
-    let root = std::env::temp_dir().join(format!("sql-corpus-{}", std::process::id()));
-    fs::create_dir(&root).unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
     let run = || {
         Command::new(env!("CARGO_BIN_EXE_sql-difftest"))
             .arg("--validate-corpus")
-            .arg(&root)
+            .arg(root)
             .output()
             .unwrap()
     };
@@ -219,17 +219,16 @@ fn directory_validation_rejects_missing_cases_and_false_counts() {
     fs::write(test.join("complete.json"), manifest.to_string()).unwrap();
     fs::write(test.join("unexpected.json"), "{}").unwrap();
     assert_ne!(run().status.code(), Some(0));
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn probe_tables_cannot_certify_partial_runs_or_compiler_bugs() {
-    let root = std::env::temp_dir().join(format!("sql-probes-{}", std::process::id()));
-    fs::create_dir(&root).unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
     let run = || {
         Command::new(env!("CARGO_BIN_EXE_sql-difftest"))
             .arg("--validate-probes")
-            .arg(&root)
+            .arg(root)
             .output()
             .unwrap()
     };
@@ -253,5 +252,4 @@ fn probe_tables_cannot_certify_partial_runs_or_compiler_bugs() {
     manifest["oracle_ready"] = json!(false);
     fs::write(root.join("complete.json"), manifest.to_string()).unwrap();
     assert_ne!(run().status.code(), Some(0));
-    fs::remove_dir_all(root).unwrap();
 }
