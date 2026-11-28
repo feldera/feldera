@@ -23,6 +23,20 @@ use feldera_sql_rel_model::{
     types::{Field, IntegerWidth, SqlType, StructKind, TypeKind},
 };
 
+/// The Java registries provide singleton builtins. Constructors and user
+/// functions keep their individual declaration identities.
+pub(super) fn insert_operator(program: &mut Program, object: OperatorObject) -> OperatorObjectId {
+    let objects = &mut program.expressions.operator_objects;
+    if matches!(object, OperatorObject::Builtin { .. })
+        && let Some(index) = objects.iter().position(|candidate| *candidate == object)
+    {
+        return OperatorObjectId(index as u32);
+    }
+    let id = OperatorObjectId(objects.len() as u32);
+    objects.push(object);
+    id
+}
+
 pub(super) fn append_expression(
     program: &mut Program,
     fragment: ExpressionTable,
@@ -39,13 +53,13 @@ pub(super) fn append_expression(
         .map(|ty| insert_type(&mut program.table.type_table, ty))
         .collect();
     let ty = |id: TypeId| type_map[id.0 as usize];
-    let object_offset = program.expressions.operator_objects.len() as u32;
+    let objects: Vec<_> = fragment
+        .operator_objects
+        .into_iter()
+        .map(|object| insert_operator(program, object))
+        .collect();
     let operator_offset = program.expressions.operators.len() as u32;
     let expression_offset = program.expressions.expressions.len() as u32;
-    program
-        .expressions
-        .operator_objects
-        .extend(fragment.operator_objects);
     program
         .expressions
         .operators
@@ -54,7 +68,7 @@ pub(super) fn append_expression(
                 .operators
                 .into_iter()
                 .map(|operator| ResolvedOperator {
-                    object: OperatorObjectId(object_offset + operator.object.0),
+                    object: objects[operator.object.0 as usize],
                     result: ty(operator.result),
                     parameters: operator.parameters.into_iter().map(ty).collect(),
                 }),
@@ -358,15 +372,14 @@ fn append_table_expression(
             ty,
             position,
         } => {
-            let object = OperatorObjectId(program.expressions.operator_objects.len() as u32);
-            program
-                .expressions
-                .operator_objects
-                .push(OperatorObject::Builtin {
+            let object = insert_operator(
+                program,
+                OperatorObject::Builtin {
                     registry: (*registry).into(),
                     registry_version: "1".into(),
                     key: (*key).into(),
-                });
+                },
+            );
             let operator = OperatorId(program.expressions.operators.len() as u32);
             program.expressions.operators.push(ResolvedOperator {
                 object,
@@ -486,20 +499,11 @@ pub(super) fn wrap_non_bmp_literal(
     result: TypeId,
     position: Coordinates,
 ) -> ExprId {
-    let builtin = OperatorObject::non_bmp_literal();
+    let object = insert_operator(program, OperatorObject::non_bmp_literal());
     let table = &mut program.expressions;
-    let index = table
-        .operator_objects
-        .iter()
-        .position(|item| item == &builtin)
-        .unwrap_or_else(|| {
-            let index = table.operator_objects.len();
-            table.operator_objects.push(builtin);
-            index
-        });
     let operator = OperatorId(table.operators.len() as u32);
     table.operators.push(ResolvedOperator {
-        object: OperatorObjectId(index as u32),
+        object,
         result,
         parameters: vec![literal_type],
     });

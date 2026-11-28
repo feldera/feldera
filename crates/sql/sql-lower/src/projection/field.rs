@@ -1,3 +1,4 @@
+use super::computed::Computed;
 use crate::{
     closure::RowParameter,
     integer::SignedInteger,
@@ -19,6 +20,19 @@ pub(crate) enum Field {
     Column(usize),
     Integer(SignedInteger),
     NullableInteger(SignedInteger),
+    Computed(Computed),
+}
+
+pub(super) fn quote(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
+}
+
+pub(super) fn column_name(schema: &CatalogSchema, index: usize) -> Result<&str, Error> {
+    schema
+        .columns
+        .get(index)
+        .map(|column| column.name.name.as_str())
+        .ok_or_else(|| Error(format!("projection field {index} outside input schema")))
 }
 
 impl Field {
@@ -36,6 +50,14 @@ impl Field {
             )),
             ObjectKind::Literal { .. } if !ty.nullable => {
                 Ok(Self::Integer(SignedInteger::resolve(program, id)?))
+            }
+            ObjectKind::Call {
+                operator,
+                arguments,
+            } if let ObjectPosition::Present { position, .. } = &expr.position => {
+                let resolved = &program.expressions.operators[operator.0 as usize];
+                Computed::resolve(program, resolved.object, arguments, ty, position)
+                    .map(Self::Computed)
             }
             ObjectKind::Call {
                 operator,
@@ -67,23 +89,31 @@ impl Field {
             Self::Column(i) => format!("${i}"),
             Self::Integer(n) => n.digest(),
             Self::NullableInteger(n) => format!("CAST({}):{}", n.digest(), n.sql_type()),
+            Self::Computed(call) => call.digest(),
         }
     }
 
-    pub(super) fn sql(&self, schema: &CatalogSchema, alias: &str) -> String {
-        let quote = |name: &str| format!("`{}`", name.replace('`', "``"));
+    pub(super) fn sql(&self, schema: &CatalogSchema, alias: &str) -> Result<String, Error> {
         let value = match self {
             Self::Column(i) => {
-                let name = &schema.columns[*i].name.name;
+                let name = column_name(schema, *i)?;
                 if name == alias {
-                    return quote(name);
+                    return Ok(quote(name));
                 }
                 quote(name)
             }
             Self::Integer(n) => n.value.to_string(),
             Self::NullableInteger(n) => format!("CAST({} AS {})", n.value, n.sql_type()),
+            Self::Computed(call) => call.sql(schema)?,
         };
-        format!("{value} AS {}", quote(alias))
+        if alias
+            .get(..5)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("EXPR$"))
+        {
+            Ok(value)
+        } else {
+            Ok(format!("{value} AS {}", quote(alias)))
+        }
     }
 
     pub(super) fn lower(
@@ -96,6 +126,10 @@ impl Field {
         position: &Value,
     ) -> Result<Value, Error> {
         match self {
+            Self::Computed(call) => {
+                let result_type = output.column_type(ids, index);
+                call.lower(ids, parameter, result_type)
+            }
             Self::Integer(n) => Ok(n.lower(ids)),
             Self::NullableInteger(n) => {
                 let mut cast = ids.node("DBSPCastExpression", position);

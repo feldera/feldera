@@ -12,6 +12,7 @@ use crate::{
 };
 use feldera_sql_rel_model::{
     catalog::Name,
+    operators::ABS_KEY,
     program::Program,
     types::{FloatFlavor, IntegerWidth, TypeKind},
 };
@@ -106,7 +107,7 @@ pub(super) fn projection(
             (
                 ProjectValue::Call {
                     registry: FELDERA,
-                    key: "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions$AbsFunction#abs",
+                    key: ABS_KEY,
                     arguments: vec![TableOperand::Column(input)],
                     ty,
                     position: Some(tokens.end_at_call_close(expression.span(), source.span())?),

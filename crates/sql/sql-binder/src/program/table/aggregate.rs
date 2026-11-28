@@ -7,7 +7,7 @@ use super::{
 use crate::program::{
     graph::{
         ProjectInput, ProjectValue, TableOperand, append_aggregate, append_integer,
-        append_table_project, append_values, insert_row_fields, insert_type,
+        append_table_project, append_values, insert_operator, insert_row_fields, insert_type,
     },
     source::DeclarationTokens,
 };
@@ -15,7 +15,7 @@ use crate::{Expr, SelectItem, Spanned, frel::CALCITE, local_name, unsupported};
 use feldera_sql_rel_model::{
     TypeId,
     catalog::Name,
-    operators::{OperatorObject, OperatorObjectId},
+    operators::OperatorObject,
     program::Program,
     relation_metadata::Coordinates,
     relation_properties::{Aggregate, OptionalField, OptionalFields, OptionalName},
@@ -52,22 +52,13 @@ enum Input {
 
 impl Call {
     fn transport(&self, program: &mut Program) -> Aggregate {
-        let objects = &mut program.expressions.operator_objects;
         let object = OperatorObject::Builtin {
-            registry: "calcite-s1-fixture".into(),
+            registry: CALCITE.into(),
             registry_version: "1".into(),
             key: self.key.into(),
         };
-        let operator =
-            if let Some(index) = objects.iter().position(|candidate| *candidate == object) {
-                OperatorObjectId(index as u32)
-            } else {
-                let id = OperatorObjectId(objects.len() as u32);
-                objects.push(object);
-                id
-            };
         Aggregate {
-            operator,
+            operator: insert_operator(program, object),
             ty: self.ty,
             name: OptionalName::Present {
                 name: self.name.clone(),

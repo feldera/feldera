@@ -1,6 +1,7 @@
 //! Lower a relational projection to a DBSP map. The closure shares its
 //! parameter across field reads and retains the anonymous Calcite row types.
 
+mod computed;
 mod field;
 pub(super) use field::Field;
 
@@ -109,7 +110,7 @@ impl Projection<'_> {
         for (field, output) in self.fields.iter().zip(&self.output.columns) {
             let name = &output.name.name;
             text.push(format!("{name}=[{}]", field.digest()));
-            select.push(field.sql(self.input, name));
+            select.push(field.sql(self.input, name)?);
         }
         let from = scan["sql"]
             .as_str()

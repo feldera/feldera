@@ -36,6 +36,15 @@ CASES = {
         "scalar_widths", "temporal_precision", "explicit_view_columns", "named_constant",
         "inline_key", "composite_key", "interleaved_key", "insert_values", "insert_permutation",
         "insert_heterogeneous_permutation", "insert_widths", "insert_null")},
+    "required_arithmetic": "CREATE TABLE t(a INT NOT NULL, b INT NOT NULL);"
+                           " CREATE VIEW v AS SELECT a+b AS add1, b-a AS sub1, a*b FROM t;",
+    "nullable_arithmetic": "CREATE TABLE t(a INT, b INT NOT NULL);"
+                           " CREATE VIEW v AS SELECT a+b AS add1, b-a AS sub1, a*b AS mul1 FROM t;",
+    "two_nullable_operands": "CREATE TABLE t(a INT, b INT); CREATE VIEW v AS SELECT a + b FROM t;",
+    "abs_projection": "CREATE TABLE t(a DOUBLE NOT NULL, b DOUBLE);"
+                      " CREATE VIEW v AS SELECT ABS(a) AS a1, ABS(b), b FROM t;",
+    "filtered_arithmetic": "CREATE TABLE t(a INT NOT NULL, b INT);"
+                           " CREATE VIEW v AS SELECT b, a+b AS n FROM t WHERE a > 2;",
     "two_constants": "CREATE VIEW a AS SELECT 5 AS first;\nCREATE VIEW b AS SELECT 7 AS second;",
     "table_and_constant": "CREATE TABLE t(x INT);\nCREATE VIEW v AS SELECT 42 AS answer;",
     "folded_tangent": "CREATE VIEW vv AS SELECT TAN(1);",

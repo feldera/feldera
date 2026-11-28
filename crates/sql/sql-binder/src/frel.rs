@@ -8,7 +8,7 @@ use feldera_sql_rel_model::{
         ExpressionTable, OperatorId, ResolvedOperator, Scope, ScopeId,
     },
     literals::{ExactDecimal, Literal, LiteralValue},
-    operators::{OperatorObject, OperatorObjectId},
+    operators::{ABS_KEY, OperatorObject, OperatorObjectId},
     source::{Identifier, Origin, Position, Source, SourceId},
     types::{
         Field, FloatFlavor, IntegerWidth, Precision, SqlType, StructKind, TimeZone, TypeKind,
@@ -237,9 +237,7 @@ impl<'a> Emitter<'a> {
             }
             ExpressionKind::Function { name, operands } => {
                 let key = match name.as_str() {
-                    "ABS" => {
-                        "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions$AbsFunction#abs"
-                    }
+                    "ABS" => ABS_KEY,
                     _ => return Err(unsupported("function outside the FRel registry subset")),
                 };
                 let arguments = self.arguments(operands)?;

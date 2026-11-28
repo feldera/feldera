@@ -45,11 +45,24 @@ impl Ids {
             }
         }
         let ops = graph["allOperators"].as_array().expect("system operators");
+        // Seed type identities used by the system closures, including ANY
+        // used by function paths in user projections.
+        let singletons = ops
+            .iter()
+            .filter_map(|op| {
+                let ty = &op["function"]["type"]["resultType"];
+                if ty["singleton"] != true {
+                    return None;
+                }
+                let kind = CircuitType::from_wire(ty["class"].as_str()?)?;
+                Some(((kind, ty["mayBeNull"].as_bool()?), ty["id"].as_u64()?))
+            })
+            .collect();
         Self {
             inner: next(graph),
             plan,
             relations: relation_ids(program),
-            singletons: Default::default(),
+            singletons,
             operator: ops
                 .iter()
                 .filter_map(|n| n["id"].as_u64())

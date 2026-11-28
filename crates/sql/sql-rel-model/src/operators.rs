@@ -129,6 +129,10 @@ pub enum ComponentPositions {
     Present { positions: Vec<NamePosition> },
 }
 
+/// Registry key used at S1 for Feldera's ABS function.
+pub const ABS_KEY: &str =
+    "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions$AbsFunction#abs";
+
 impl OperatorObject {
     pub fn non_bmp_literal() -> Self {
         Self::Builtin {
