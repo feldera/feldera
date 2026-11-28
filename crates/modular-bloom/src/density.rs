@@ -1,5 +1,10 @@
 use crate::layout::ModuleLayout;
 
+/// Bits set in `words`.
+pub(crate) fn count_set_bits(words: &[u64]) -> u64 {
+    words.iter().map(|w| u64::from(w.count_ones())).sum()
+}
+
 /// How many bits are set in each module of a filter.
 ///
 /// Recorded when the filter is built so that a later reader can work out what
@@ -23,7 +28,7 @@ impl ModuleDensity {
         Self::new(
             words
                 .chunks(layout.words_per_module() as usize)
-                .map(|module| module.iter().map(|w| u64::from(w.count_ones())).sum())
+                .map(count_set_bits)
                 .collect(),
         )
     }

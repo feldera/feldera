@@ -11,6 +11,7 @@ publish = true
 description = "Bloom filters split into independently droppable modules, so accuracy can be traded for memory without rebuilding"
 
 [dependencies]
+smallvec = { workspace = true }
 thiserror = { workspace = true }
 
 # fastbloom is the oracle the compatibility tests check our hash schedule

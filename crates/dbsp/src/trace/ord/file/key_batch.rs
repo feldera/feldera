@@ -22,7 +22,7 @@ use crate::{
     trace::{
         Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
         Builder, Cursor, WeightedItem,
-        filter::BatchFilters,
+        filter::{BatchFilters, LazyCursorFilters},
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
     },
     utils::Tup2,
@@ -430,6 +430,8 @@ where
     R: WeightTrait + ?Sized,
 {
     batch: &'s FileKeyBatch<K, T, R>,
+    #[size_of(skip)]
+    filters: LazyCursorFilters<'s, K>,
     pub(crate) cursor: RawKeyCursor<'s, K, T, R>,
     val_valid: bool,
 
@@ -446,6 +448,7 @@ where
     fn clone(&self) -> Self {
         Self {
             batch: self.batch,
+            filters: self.filters.clone(),
             cursor: self.cursor.clone(),
             val_valid: self.val_valid,
 
@@ -476,6 +479,7 @@ where
 
         Self {
             batch,
+            filters: batch.filters.for_cursor_lazily(),
             cursor,
             val_valid: key_valid,
             time: batch.factories.factories1.key_factory.default_box(),
@@ -604,7 +608,7 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
-        if !self.batch.filters.maybe_contains_key(key, hash) {
+        if !self.filters.maybe_contains_key(key, hash) {
             return false;
         }
         self.seek_key(key);

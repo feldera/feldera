@@ -10,6 +10,7 @@ use dyn_clone::DynClone;
 
 use crate::{circuit::metadata::MetaItem, dynamic::Factory};
 
+pub(crate) use batch::LazyCursorFilters;
 pub use batch::{BatchFilterStats, BatchFilters};
 
 pub trait FilterFunc<V: ?Sized>: Fn(&V) -> bool + DynClone + Send + Sync {}

@@ -629,6 +629,8 @@ where
     let mut cursor = batch.cursor();
     assert!(!cursor.seek_key_exact(low.as_ref(), None));
     assert!(!cursor.seek_key_exact(high.as_ref(), None));
+    // A cursor adds its filter counts to the batch when it drops.
+    drop(cursor);
 
     let range_after = batch.range_filter_stats();
     let membership_after = batch.membership_filter_stats();
@@ -3641,6 +3643,125 @@ fn file_val_batch_filter_follows_the_rate() {
         },
         LADDER_KEYS,
     );
+}
+
+/// With the experimental `bloom_filter_eviction` dev tweak on, high memory
+/// pressure drops one module from a large file batch's Bloom filter, and the
+/// filter then reads it back from the file. The batch finds every key
+/// throughout.
+///
+/// `rate` picks the block format: four modules at 1e-4 are written as a
+/// modular block, one module at 0.1 in the original one-module encoding.
+/// `keys` must make the filter large enough to be enrolled.
+fn assert_bloom_evicts_and_restores(rate: f64, keys: u64, modules: u32) {
+    // A limit small enough that the filter, about 1 MiB, can end the pressure
+    // by itself, which eviction requires.
+    const LIMIT: u64 = 8 << 20;
+    const LOW: u64 = LIMIT / 8;
+    // The last module goes only at critical pressure, which starts at 95%.
+    // High pressure starts at 90%.
+    let pressured = if modules == 1 {
+        LIMIT / 100 * 96
+    } else {
+        LIMIT / 100 * 91
+    };
+    let key = |i: u64| i * 7919;
+    let assert_all_keys = move |batch: &FileWSet<DynData, DynZWeight>, when: &str| {
+        for i in (0..keys).step_by(997) {
+            let mut cursor = batch.cursor();
+            assert!(
+                cursor.seek_key_exact(key(i).erase(), None),
+                "lost key {} {when}",
+                key(i)
+            );
+        }
+    };
+
+    with_mock_process_rss(LOW, || {
+        let dir = tempdir().expect("temp dir");
+        let mut config = CircuitConfig::with_workers(1)
+            .with_temporary_storage(dir.path())
+            .with_max_rss_bytes(Some(LIMIT));
+        config.dev_tweaks.bloom_filter_eviction = Some(true);
+        config.dev_tweaks.enable_roaring = Some(false);
+        set_false_positive_rate(&mut config, rate);
+        run_in_circuit_with_storage_config(config, move || {
+            let factories = <FileWSetFactories<DynData, DynZWeight>>::new::<u64, (), ZWeight>();
+            let mut builder = <FileWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(
+                &factories,
+                keys as usize,
+                0,
+            );
+            for i in 0..keys {
+                let weight: ZWeight = 1;
+                builder.push_time_diff(&(), weight.erase());
+                builder.push_key(key(i).erase());
+            }
+            let batch = builder.done();
+            assert_eq!(batch.membership_filter_kind(), FilterKind::Bloom);
+            let full = batch.membership_filter_stats().size_byte;
+            assert!(
+                full >= crate::storage::tracking_bloom_filter::MIN_EVICTABLE_BYTES,
+                "a filter of {full} bytes is too small to enroll"
+            );
+
+            crate::circuit::runtime::tests::set_mock_process_rss_bytes(pressured);
+            let runtime = Runtime::runtime().unwrap();
+            // Wait for the trim itself, not the module limit: the monitor
+            // thread publishes the module limit before it trims.
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while batch.membership_filter_stats().size_byte == full {
+                assert!(Instant::now() < deadline, "the filter was never trimmed");
+                sleep(Duration::from_millis(100));
+            }
+            // Back to low pressure, so the module limit stays where it is.
+            crate::circuit::runtime::tests::set_mock_process_rss_bytes(LOW);
+            assert_eq!(runtime.bloom_filter_max_modules(), Some(modules - 1));
+
+            let shrunk = batch.membership_filter_stats().size_byte;
+            assert!(
+                shrunk < full,
+                "the filter kept {shrunk} bytes of {full} after the module limit dropped"
+            );
+            assert_all_keys(&batch, "after eviction");
+
+            // A batch opened under pressure reads only the modules it keeps,
+            // and still enrolls, so it can read the rest back later.
+            let path = batch.file_reader().unwrap().path().to_string().into();
+            let reopened = FileWSet::<DynData, DynZWeight>::from_path(&factories, &path)
+                .expect("reopening the batch");
+            assert_eq!(reopened.membership_filter_stats().size_byte, shrunk);
+            assert_all_keys(&reopened, "after reopening under pressure");
+
+            // The module limit only comes back after a minute of low pressure,
+            // so read the dropped modules directly, the way a restoring tick
+            // does.
+            let filters = runtime.bloom_filter_manager().live_filters();
+            assert_eq!(filters.len(), 2, "the reopened batch did not enroll");
+            for filter in &filters {
+                let added = filter.restore_one().expect("reading the module back");
+                assert!(added > 0, "no module was read back");
+                assert_eq!(filter.resident_modules(), modules);
+            }
+            assert_eq!(batch.membership_filter_stats().size_byte, full);
+            assert_eq!(reopened.membership_filter_stats().size_byte, full);
+            assert_all_keys(&batch, "after restoring");
+            assert_all_keys(&reopened, "after restoring the reopened batch");
+        });
+    });
+}
+
+#[test]
+fn bloom_filter_modules_evict_and_restore_in_a_modular_block() {
+    // About 1.4 MiB of filter at four modules.
+    assert_bloom_evicts_and_restores(1e-4, 600_000, 4);
+}
+
+#[test]
+fn bloom_filter_module_evicts_and_restores_in_a_one_module_block() {
+    // About 1.1 MiB of filter at one module, which the writer stores in the
+    // encoding that predates modular filters.
+    assert_bloom_evicts_and_restores(1e-1, 1_900_000, 1);
 }
 
 /// Retention by `LastN`, `TopN` and `BottomN`: every value satisfying the filter

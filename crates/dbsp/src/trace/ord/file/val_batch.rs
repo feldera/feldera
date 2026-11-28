@@ -21,7 +21,8 @@ use crate::{
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, WeightedItem,
-        filter::BatchFilters, ord::merge_batcher::MergeBatcher,
+        filter::{BatchFilters, LazyCursorFilters},
+        ord::merge_batcher::MergeBatcher,
     },
     utils::Tup2,
 };
@@ -437,6 +438,8 @@ where
     R: WeightTrait + ?Sized,
 {
     batch: &'s FileValBatch<K, V, T, R>,
+    #[size_of(skip)]
+    filters: LazyCursorFilters<'s, K>,
     timediff_factory: &'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>,
     weight_factory: &'static dyn Factory<R>,
     key_cursor: RawKeyCursor<'s, K, V, T, R>,
@@ -470,6 +473,7 @@ where
     fn clone(&self) -> Self {
         Self {
             batch: self.batch,
+            filters: self.filters.clone(),
             timediff_factory: self.timediff_factory,
             weight_factory: self.weight_factory,
             key_cursor: self.key_cursor.clone(),
@@ -498,6 +502,7 @@ where
 
         Self {
             batch,
+            filters: batch.filters.for_cursor_lazily(),
             timediff_factory: batch.factories.timediff_factory,
             weight_factory: batch.factories.weight_factory,
             key_cursor,
@@ -637,7 +642,7 @@ where
     }
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
-        if !self.batch.filters.maybe_contains_key(key, hash) {
+        if !self.filters.maybe_contains_key(key, hash) {
             return false;
         }
         self.seek_key(key);

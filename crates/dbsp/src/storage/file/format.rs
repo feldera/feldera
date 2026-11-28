@@ -141,6 +141,11 @@ pub struct BlockHeader {
     pub magic: [u8; 4],
 }
 
+impl FixedLen for BlockHeader {
+    /// `checksum` and `magic`.
+    const LEN: usize = size_of::<u32>() + size_of::<[u8; 4]>();
+}
+
 impl BlockHeader {
     pub(crate) fn new(magic: &[u8; 4]) -> Self {
         Self {
@@ -866,11 +871,46 @@ pub struct ModularBloomFilterHeader {
     pub set_bits: Vec<u64>,
 }
 
+impl BloomFilterBlock {
+    /// Byte offset of `data`: the block header, `num_hashes` and `len`.
+    pub const DATA_OFFSET: usize = BlockHeader::LEN + size_of::<u32>() + size_of::<u64>();
+}
+
 impl ModularBloomFilterHeader {
-    /// Serialized length of the header, given `total_modules`.
+    /// Serialized length of the header, given `total_modules`: the block
+    /// header, `total_modules`, `hashes_per_module`, `words_per_module`, then
+    /// one `set_bits` entry per module.
     pub fn len_for(total_modules: u32) -> usize {
-        // Block header, three scalars, then one count per module.
-        8 + 4 + 4 + 8 + total_modules as usize * 8
+        BlockHeader::LEN
+            + size_of::<u32>()
+            + size_of::<u32>()
+            + size_of::<u64>()
+            + total_modules as usize * size_of::<u64>()
+    }
+}
+
+/// Whether a filter of `total_modules` modules is written as a
+/// [`BloomFilterBlock`], the encoding that predates modular filters, instead of
+/// a [`ModularBloomFilterHeader`] followed by the modules.
+///
+/// A one-module filter is a plain fastbloom filter, so writing it in the
+/// original encoding keeps the file readable by binaries that predate modular
+/// filters.
+pub fn bloom_filter_block_is_legacy(total_modules: u32) -> bool {
+    total_modules == 1
+}
+
+/// Byte offset of module 0 in the filter block written for a filter of
+/// `total_modules` modules.
+///
+/// In a [`BloomFilterBlock`] the data follows the block header, `num_hashes`
+/// and the word count. In a modular block it follows the
+/// [`ModularBloomFilterHeader`].
+pub fn bloom_filter_data_offset(total_modules: u32) -> usize {
+    if bloom_filter_block_is_legacy(total_modules) {
+        BloomFilterBlock::DATA_OFFSET
+    } else {
+        ModularBloomFilterHeader::len_for(total_modules)
     }
 }
 
@@ -896,8 +936,8 @@ pub struct ModularBloomFilterBlockRef<'a> {
     /// Bits set in each module, one entry per module.
     pub set_bits: &'a [u64],
 
-    /// Module contents, `total_modules * words_per_module` elements.
-    pub data: &'a [u64],
+    /// Each module's words, in order, written one after another.
+    pub modules: &'a [&'a [u64]],
 }
 
 /// A block representing a roaring bitmap filter.
@@ -939,4 +979,51 @@ pub struct RoaringBitmapFilterBlockRef<'a> {
 
     /// Serialized roaring bitmap contents, as in [`RoaringBitmapFilterBlock`].
     pub data: &'a [u8],
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        BLOOM_FILTER_BLOCK_MAGIC, BlockHeader, BloomFilterBlockRef,
+        MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ModularBloomFilterBlockRef, bloom_filter_data_offset,
+    };
+    use binrw::BinWrite;
+    use std::io::Cursor;
+
+    /// The first data word of a serialized Bloom filter block is at
+    /// `bloom_filter_data_offset`, in both encodings.
+    #[test]
+    fn bloom_filter_data_starts_at_its_offset() {
+        const WORD: u64 = 0x0123_4567_89ab_cdef;
+        let word_at = |bytes: &[u8], offset: usize| {
+            u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap())
+        };
+
+        let mut legacy = Cursor::new(Vec::new());
+        BloomFilterBlockRef {
+            header: BlockHeader::new(&BLOOM_FILTER_BLOCK_MAGIC),
+            num_hashes: 13,
+            data: &[WORD],
+        }
+        .write_le(&mut legacy)
+        .unwrap();
+        assert_eq!(word_at(legacy.get_ref(), bloom_filter_data_offset(1)), WORD);
+
+        for total_modules in [2u32, 4, 8] {
+            let mut modular = Cursor::new(Vec::new());
+            ModularBloomFilterBlockRef {
+                header: BlockHeader::new(&MODULAR_BLOOM_FILTER_BLOCK_MAGIC),
+                total_modules,
+                hashes_per_module: 3,
+                words_per_module: 1,
+                set_bits: &vec![1; total_modules as usize],
+                modules: &vec![&[WORD][..]; total_modules as usize],
+            }
+            .write_le(&mut modular)
+            .unwrap();
+            let offset = bloom_filter_data_offset(total_modules);
+            assert_eq!(word_at(modular.get_ref(), offset), WORD);
+            assert_eq!(modular.get_ref().len(), offset + total_modules as usize * 8);
+        }
+    }
 }

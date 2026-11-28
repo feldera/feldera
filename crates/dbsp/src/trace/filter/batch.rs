@@ -4,17 +4,19 @@
 //! present", so callers can reject cheap cases before doing the exact lookup.
 
 use crate::{
+    Runtime,
     dynamic::{DataTrait, DynVec},
     storage::{
         file::{
-            BatchKeyFilter, FilterKind, FilterStats, TrackingFilterStats, TrackingRoaringBitmap,
-            reader::FilteredKeys,
+            BatchKeyFilter, FilterKind, FilterStats, LocalFilterCounts, TrackingFilterStats,
+            TrackingRoaringBitmap, reader::FilteredKeys,
         },
-        tracking_bloom_filter::TrackingBloomFilter,
+        tracking_bloom_filter::{BloomFilterSnapshot, TrackingBloomFilter},
     },
     trace::filter::key_range::KeyRange,
 };
 use size_of::SizeOf;
+use std::cell::OnceCell;
 use std::sync::Arc;
 
 /// A cheap, in-memory precheck used by `seek_key_exact`.
@@ -37,6 +39,12 @@ where
 
     /// Statistics for this filter.
     fn stats(&self) -> FilterStats;
+
+    /// The Bloom filter behind this filter, if it is one, so that a cursor can
+    /// take a snapshot of it.
+    fn as_bloom(&self) -> Option<&TrackingBloomFilter> {
+        None
+    }
 }
 
 /// Ordered key filters for exact-key probes against file-backed batches.
@@ -128,8 +136,23 @@ where
         key_range: Option<KeyRange<K>>,
         membership_filter: Option<BatchKeyFilter>,
     ) -> Self {
-        let membership_filter = membership_filter.map(Arc::<dyn BatchFilter<K>>::from);
-        Self::new(key_range, membership_filter)
+        Self::new(key_range, membership_filter.map(Self::share_file_filter))
+    }
+
+    /// Shares a filter read from or written to a file with the batch.
+    ///
+    /// The writer and the reader both hand over the filter here, after the
+    /// file holds every module, so this is where eviction may start. The
+    /// manager keeps a weak handle to the same allocation the batch shares, so
+    /// it can trim the filter the batch actually probes.
+    fn share_file_filter(filter: BatchKeyFilter) -> Arc<dyn BatchFilter<K>> {
+        match filter {
+            BatchKeyFilter::Bloom(bloom) => match Runtime::runtime() {
+                Some(runtime) => runtime.bloom_filter_manager().enroll(bloom),
+                None => Arc::new(bloom),
+            },
+            filter => Arc::from(filter),
+        }
     }
 
     /// Returns cumulative statistics for the range and membership filters.
@@ -156,14 +179,42 @@ where
         self.range_filter.range.as_ref().map(|range| range.bounds())
     }
 
+    /// The filter chain for one cursor, taken at its first exact seek. See
+    /// [`LazyCursorFilters`].
+    pub(crate) fn for_cursor_lazily(&self) -> LazyCursorFilters<'_, K> {
+        LazyCursorFilters {
+            filters: self,
+            cursor: OnceCell::new(),
+        }
+    }
+
+    /// The filter chain for one cursor. See [`CursorFilters`].
+    fn for_cursor(&self) -> CursorFilters<'_, K> {
+        let membership = match &self.membership_filter {
+            None => Membership::None,
+            Some(filter) => match filter.as_bloom() {
+                // A filter that is still building admits every key, so it is
+                // left out of the chain.
+                Some(bloom) => bloom.snapshot().map_or(Membership::None, Membership::Bloom),
+                None => Membership::Other(filter.as_ref()),
+            },
+        };
+        CursorFilters {
+            range: self.range_filter.range.as_ref(),
+            range_counts: LocalFilterCounts::new(&self.range_filter.tracking),
+            membership,
+        }
+    }
+
     /// Returns `keys`, optionally narrowed to the indexes that pass the filter
     /// chain when that is cheap enough to be worthwhile.
     pub(crate) fn filtered_keys<'a>(&self, keys: &'a DynVec<K>) -> FilteredKeys<'a, K> {
         debug_assert!(keys.is_sorted_by(&|a, b| a.cmp(b)));
+        let filters = self.for_cursor();
 
         let mut filter_pass_keys = Vec::with_capacity(keys.len().min(50));
         for (index, key) in keys.dyn_iter().enumerate() {
-            if self.maybe_contains_key(key, None) {
+            if filters.maybe_contains_key(key, None) {
                 filter_pass_keys.push(index);
                 if filter_pass_keys.len() >= keys.len() / 300 {
                     return FilteredKeys::all(keys);
@@ -178,19 +229,130 @@ where
     ///
     /// Passing a cached `hash` avoids recomputing it when the caller already
     /// has one available.
-    pub fn maybe_contains_key(&self, key: &K, mut hash: Option<u64>) -> bool {
+    ///
+    /// A cursor probes through `Self::for_cursor_lazily` instead, which
+    /// prepares the chain once for many probes.
+    pub fn maybe_contains_key(&self, key: &K, hash: Option<u64>) -> bool {
+        self.for_cursor().maybe_contains_key(key, hash)
+    }
+}
+
+/// [`CursorFilters`] taken at a cursor's first exact seek, so a cursor that
+/// only scans never pays for them.
+pub(crate) struct LazyCursorFilters<'a, K>
+where
+    K: DataTrait + ?Sized,
+{
+    filters: &'a BatchFilters<K>,
+    cursor: OnceCell<CursorFilters<'a, K>>,
+}
+
+impl<K> LazyCursorFilters<'_, K>
+where
+    K: DataTrait + ?Sized,
+{
+    /// Returns `false` only when `key` is definitely not present. Same as
+    /// [`BatchFilters::maybe_contains_key`].
+    pub fn maybe_contains_key(&self, key: &K, hash: Option<u64>) -> bool {
+        self.cursor
+            .get_or_init(|| self.filters.for_cursor())
+            .maybe_contains_key(key, hash)
+    }
+}
+
+impl<K> Clone for LazyCursorFilters<'_, K>
+where
+    K: DataTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            filters: self.filters,
+            cursor: self.cursor.clone(),
+        }
+    }
+}
+
+impl<K> std::fmt::Debug for LazyCursorFilters<'_, K>
+where
+    K: DataTrait + ?Sized,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LazyCursorFilters").finish_non_exhaustive()
+    }
+}
+
+/// [`BatchFilters`] as one cursor probes them.
+///
+/// It takes a snapshot of the Bloom filter when the cursor starts, and counts
+/// hits and misses itself, so a probe needs no atomic operation. See
+/// [`TrackingBloomFilter::snapshot`] and [`LocalFilterCounts`].
+struct CursorFilters<'a, K>
+where
+    K: DataTrait + ?Sized,
+{
+    range: Option<&'a KeyRange<K>>,
+    range_counts: LocalFilterCounts<'a>,
+    membership: Membership<'a, K>,
+}
+
+enum Membership<'a, K>
+where
+    K: DataTrait + ?Sized,
+{
+    None,
+    Bloom(BloomFilterSnapshot<'a>),
+    Other(&'a dyn BatchFilter<K>),
+}
+
+impl<K> Clone for Membership<'_, K>
+where
+    K: DataTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::None => Self::None,
+            Self::Bloom(bloom) => Self::Bloom(bloom.clone()),
+            Self::Other(filter) => Self::Other(*filter),
+        }
+    }
+}
+
+impl<K> CursorFilters<'_, K>
+where
+    K: DataTrait + ?Sized,
+{
+    fn maybe_contains_key(&self, key: &K, mut hash: Option<u64>) -> bool {
         // The range filter runs first so later filters only see keys inside
         // the batch bounds. That matters for roaring-backed batches: once the
         // range check has accepted the key, min-offset conversion is known to
         // fit in `u32` because roaring filters are only built for batches
         // whose full key range fits in `u32`.
-        if !self.range_filter.maybe_contains_key(key, &mut hash) {
+        let in_range = self.range.is_some_and(|range| range.contains(key));
+        self.range_counts.record(in_range);
+        if !in_range {
             return false;
         }
+        match &self.membership {
+            Membership::None => true,
+            Membership::Bloom(bloom) => {
+                bloom.contains_hash_with(|| *hash.get_or_insert_with(|| key.default_hash()))
+            }
+            Membership::Other(filter) => filter.maybe_contains_key(key, &mut hash),
+        }
+    }
+}
 
-        self.membership_filter
-            .as_ref()
-            .is_none_or(|filter| filter.maybe_contains_key(key, &mut hash))
+impl<K> Clone for CursorFilters<'_, K>
+where
+    K: DataTrait + ?Sized,
+{
+    /// The clone starts its own counts, so no outcome is added twice.
+    fn clone(&self) -> Self {
+        Self {
+            range: self.range,
+            range_counts: self.range_counts.clone(),
+            membership: self.membership.clone(),
+        }
     }
 }
 
@@ -221,25 +383,6 @@ where
     }
 }
 
-impl<K> BatchFilter<K> for Arc<TrackedRangeFilter<K>>
-where
-    K: DataTrait + ?Sized,
-{
-    fn maybe_contains_key(&self, key: &K, _hash: &mut Option<u64>) -> bool {
-        let is_hit = self.range.as_ref().is_some_and(|range| range.contains(key));
-        self.tracking.record(is_hit);
-        is_hit
-    }
-
-    fn kind(&self) -> FilterKind {
-        FilterKind::Range
-    }
-
-    fn stats(&self) -> FilterStats {
-        self.as_ref().stats()
-    }
-}
-
 impl<K> BatchFilter<K> for TrackingBloomFilter
 where
     K: DataTrait + ?Sized,
@@ -255,6 +398,10 @@ where
 
     fn stats(&self) -> FilterStats {
         TrackingBloomFilter::stats(self)
+    }
+
+    fn as_bloom(&self) -> Option<&TrackingBloomFilter> {
+        Some(self)
     }
 }
 
@@ -289,21 +436,23 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{BatchFilter, TrackedRangeFilter};
+    use super::BatchFilters;
     use crate::{dynamic::DynData, storage::file::FilterStats, trace::filter::key_range::KeyRange};
-    use std::sync::Arc;
 
     #[test]
     fn tracked_range_filter_stats() {
-        let filter = Arc::new(TrackedRangeFilter::new(Some(KeyRange::from_refs(
-            (&1i32) as &DynData,
-            (&10i32) as &DynData,
-        ))));
+        let filters = BatchFilters::new(
+            Some(KeyRange::from_refs(
+                (&1i32) as &DynData,
+                (&10i32) as &DynData,
+            )),
+            None,
+        );
 
-        assert!(filter.maybe_contains_key((&5i32) as &DynData, &mut None));
-        assert!(!filter.maybe_contains_key((&11i32) as &DynData, &mut None));
+        assert!(filters.maybe_contains_key((&5i32) as &DynData, None));
+        assert!(!filters.maybe_contains_key((&11i32) as &DynData, None));
 
-        let stats = filter.stats();
+        let stats = filters.stats().range_filter;
         assert!(stats.size_byte > 0);
         assert_eq!(
             stats,

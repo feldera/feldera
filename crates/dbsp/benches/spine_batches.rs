@@ -31,7 +31,7 @@
 //! ```text
 //! cargo bench -p dbsp --bench spine_batches -- [--per-level N] [--top-records N]
 //!     [--probes N] [--cache-mib N] [--scale N] [--dir PATH] [--cold] [--direct]
-//!     [--no-roaring] [--bloom-fp RATE] [--no-scan]
+//!     [--no-roaring] [--bloom-fp RATE] [--no-scan] [--bloom-filter-eviction]
 //! ```
 //!
 //! Keys here are integers packed into a range narrow enough for a batch to
@@ -44,6 +44,10 @@
 //! reading it costs what reading the data would have.  A rate of zero leaves
 //! the batches no membership filter at all, so every batch answers every
 //! lookup by descending its index.
+//!
+//! `--bloom-filter-eviction` turns on Bloom filter eviction, so large filters take
+//! the code path that eviction needs.  Nothing is evicted, since the bench puts
+//! no pressure on memory, so this measures what the path costs.
 //!
 //! What filter each run ended up with is reported with its size, and the hits
 //! and misses the lookups drew from it, since a filter that is not there and a
@@ -139,6 +143,7 @@ struct Args {
     roaring: bool,
     bloom_fp: f64,
     scan: bool,
+    bloom_filter_eviction: bool,
 }
 
 impl Args {
@@ -155,6 +160,7 @@ impl Args {
             roaring: true,
             bloom_fp: 0.0001,
             scan: true,
+            bloom_filter_eviction: false,
         };
         let argv: Vec<String> = std::env::args().collect();
         let mut i = 1;
@@ -186,6 +192,7 @@ impl Args {
                 "--no-roaring" => args.roaring = false,
                 "--bloom-fp" => args.bloom_fp = rate(&mut i),
                 "--no-scan" => args.scan = false,
+                "--bloom-filter-eviction" => args.bloom_filter_eviction = true,
                 "--bench" => {}
                 other => panic!("unknown argument {other}"),
             }
@@ -784,6 +791,7 @@ fn main() {
     // to pay.
     config.dev_tweaks.enable_roaring = Some(args.roaring);
     config.dev_tweaks.bloom_false_positive_rate = Some(args.bloom_fp);
+    config.dev_tweaks.bloom_filter_eviction = Some(args.bloom_filter_eviction);
 
     let path = temp.path().to_path_buf();
     let handle = Runtime::run(config, move |_parker| {

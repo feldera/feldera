@@ -10,15 +10,24 @@ use dyn_clone::clone_box;
 use feldera_modular_bloom::{ModuleDensity, ModuleLayout};
 use std::io;
 use std::ops::Not;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 use tracing::{debug, info};
 
 use roaring::RoaringLookupStats;
 pub(crate) use roaring::TouchedWindowCounter;
 pub use roaring::TrackingRoaringBitmap;
+pub(crate) use stats::LocalFilterCounts;
 pub use stats::{FilterKind, FilterStats, TrackingFilterStats};
 
-pub(crate) use bloom::{rate_can_evict, resident_modules};
+#[cfg(test)]
+pub(crate) use bloom::resident_modules;
+pub(crate) use bloom::{modules_for_rate, modules_to_load, rate_can_evict, target_modules};
+
+/// The Bloom filter module limit under memory pressure, or `None` when eviction
+/// is off or there is no runtime.
+pub(crate) fn bloom_filter_max_modules() -> Option<u32> {
+    Runtime::runtime().and_then(|runtime| runtime.bloom_filter_manager().max_modules())
+}
 
 /// The configured false positive rate, which decides both how new filters are
 /// written and how many modules an existing filter keeps resident.
@@ -69,19 +78,20 @@ impl BatchKeyFilter {
             .map(Self::Bloom)
     }
 
-    /// Builds a Bloom filter holding the modules in `words`, which are the
-    /// leading modules of a stored filter.
+    /// Builds a Bloom filter holding `modules`, which are the leading modules
+    /// of a stored filter.
     ///
     /// `density` gives the bits set in every module the file holds, including
-    /// those `words` omits, and the filter reports false positive rates from
-    /// it. Returns `None` unless `words` is a whole number of modules and no
-    /// more of them than `layout` declares.
+    /// those `modules` omits, and the filter reports false positive rates from
+    /// it. Returns `None` unless each module has the right length and the bits
+    /// set that `density` records, and there are no more of them than `layout`
+    /// declares.
     pub(crate) fn from_modular(
         layout: ModuleLayout,
-        words: &[u64],
+        modules: impl IntoIterator<Item = Arc<[u64]>>,
         density: ModuleDensity,
     ) -> Option<Self> {
-        bloom::load_modular_bloom_filter(layout, words, density).map(Self::Bloom)
+        bloom::load_modular_bloom_filter(layout, modules, density).map(Self::Bloom)
     }
 
     /// Loads the roaring filter that a file stores for its keys.

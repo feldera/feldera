@@ -10,8 +10,9 @@
 //! fp=0.001 - 3 modules, 14.42 bits/key
 //! fp=0.0001 - 4 modules, 19.23 bits/key
 
-use crate::storage::tracking_bloom_filter::TrackingBloomFilter;
+use crate::storage::tracking_bloom_filter::{TrackingBloomFilter, is_evictable_size};
 use feldera_modular_bloom::{ModularBloomFilter, ModuleDensity, ModuleLayout};
+use std::sync::Arc;
 
 /// Maximum number of modules in a Bloom filter.
 pub(crate) const MAX_MODULES: u32 = 4;
@@ -71,6 +72,58 @@ pub(crate) fn rate_for_modules(modules: u32) -> f64 {
 /// `true` when `rate` keeps fewer than [`MAX_MODULES`] modules.
 pub(crate) fn rate_can_evict(rate: f64) -> bool {
     modules_for_rate(rate) < MAX_MODULES
+}
+
+/// Modules a stored filter keeps at `configured_rate` when at most
+/// `max_modules` modules are allowed.
+///
+/// This is what loading the filter would keep: at the configured rate while
+/// `max_modules` allows every module that rate keeps, otherwise at the rate
+/// `max_modules` modules give.
+pub(crate) fn target_modules(
+    layout: &ModuleLayout,
+    density: &ModuleDensity,
+    configured_rate: f64,
+    max_modules: u32,
+) -> u32 {
+    let rate = if max_modules >= modules_for_rate(configured_rate) {
+        configured_rate
+    } else {
+        rate_for_modules(max_modules)
+    };
+    resident_modules(layout, density, rate)
+}
+
+/// Modules to read when loading a stored filter.
+///
+/// # Arguments
+///
+/// - `layout` and `density`: the stored filter.
+/// - `rate`: the configured false positive rate.
+/// - `max_modules`: the module limit under memory pressure, or `None` when
+///   eviction is off.
+///
+/// # Returns
+///
+/// - `None` when the configured rate asks for no filter.
+/// - Otherwise what the configured rate keeps, but under memory pressure only
+///   what the manager would trim the filter to, if the filter is large enough
+///   to enroll. That can be 0: the filter then admits every key, and can still
+///   read its modules back later. A filter too small to enroll loads in full,
+///   since nothing would read its modules back.
+pub(crate) fn modules_to_load(
+    layout: &ModuleLayout,
+    density: &ModuleDensity,
+    rate: f64,
+    max_modules: Option<u32>,
+) -> Option<u32> {
+    let resident = resident_modules(layout, density, rate);
+    (resident > 0).then(|| match max_modules {
+        Some(max_modules) if is_evictable_size(layout.bytes_per_module() * resident as usize) => {
+            target_modules(layout, density, rate, max_modules)
+        }
+        _ => resident,
+    })
 }
 
 /// Number of leading modules to keep resident when loading a stored filter.
@@ -179,18 +232,25 @@ pub(super) fn deserialize_bloom_filter(
 /// - Otherwise the filter, holding the modules in `words`.
 pub(super) fn load_modular_bloom_filter(
     layout: ModuleLayout,
-    words: &[u64],
+    modules: impl IntoIterator<Item = Arc<[u64]>>,
     density: ModuleDensity,
 ) -> Option<TrackingBloomFilter> {
-    ModularBloomFilter::from_modules_with_density(layout, words, density)
-        .ok()
-        .map(TrackingBloomFilter::loaded)
+    let mut filter = ModularBloomFilter::from_modules_with_density(layout, &[], density).ok()?;
+    for module in modules {
+        filter.push_module(module).ok()?;
+    }
+    Some(TrackingBloomFilter::loaded(filter))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_MODULES, modules_for_rate, rate_for_modules, resident_modules};
+    use super::{
+        MAX_MODULES, load_modular_bloom_filter, modules_for_rate, modules_to_load,
+        rate_for_modules, resident_modules,
+    };
+    use crate::storage::tracking_bloom_filter::MIN_EVICTABLE_BYTES;
     use feldera_modular_bloom::{ModuleDensity, ModuleLayout};
+    use std::sync::Arc;
 
     #[test]
     fn rates_map_to_modules_in_log_space() {
@@ -282,5 +342,39 @@ mod tests {
         // nominal is not given modules the ladder would not have kept.
         let dense = density_delivering(&layout, 0.5);
         assert_eq!(resident_modules(&layout, &dense, 1e-2), 2);
+    }
+
+    /// Under memory pressure a load reads only what the module limit keeps,
+    /// down to no module, but a rate that asks for no filter still gives none.
+    #[test]
+    fn a_load_under_pressure_reads_only_the_module_limit() {
+        let layout = ModuleLayout::for_keys(100_000, 1e-4, 4).unwrap();
+        let density = uniform(&layout);
+        assert_eq!(modules_to_load(&layout, &density, 1e-4, None), Some(4));
+        assert_eq!(modules_to_load(&layout, &density, 1e-4, Some(4)), Some(4));
+        assert_eq!(modules_to_load(&layout, &density, 1e-4, Some(2)), Some(2));
+        assert_eq!(modules_to_load(&layout, &density, 1e-4, Some(0)), Some(0));
+        assert_eq!(modules_to_load(&layout, &density, 1e-2, Some(3)), Some(2));
+        assert_eq!(modules_to_load(&layout, &density, 1.0, Some(0)), None);
+
+        // A filter too small to enroll would never get its modules back, so it
+        // loads in full.
+        let small = ModuleLayout::for_keys(10_000, 1e-4, 4).unwrap();
+        assert!(small.total_bytes() < MIN_EVICTABLE_BYTES);
+        let density = uniform(&small);
+        assert_eq!(modules_to_load(&small, &density, 1e-4, Some(0)), Some(4));
+    }
+
+    /// A loaded module must have the bits set that the file records for it,
+    /// so a corrupt module gives no filter instead of false negatives.
+    #[test]
+    fn a_module_with_other_bits_set_loads_no_filter() {
+        let layout = ModuleLayout::new(2, 4, 3).unwrap();
+        let density = ModuleDensity::new(vec![1, 1]);
+        let module = |word: u64| -> Arc<[u64]> { Arc::from([word, 0, 0, 0]) };
+
+        let loaded = load_modular_bloom_filter(layout, [module(1), module(2)], density.clone());
+        assert_eq!(loaded.unwrap().resident_modules(), 2);
+        assert!(load_modular_bloom_filter(layout, [module(1), module(3)], density).is_none());
     }
 }

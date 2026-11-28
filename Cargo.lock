@@ -5770,6 +5770,7 @@ dependencies = [
  "criterion",
  "fastbloom",
  "proptest",
+ "smallvec",
  "thiserror 2.0.18",
 ]
 
