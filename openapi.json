@@ -17035,14 +17035,36 @@
             "description": "Extra flags to pass to `rclone`.\n\nWARNING: Supplying incorrect or conflicting flags can break `rclone`.\nUse with caution.\n\nRefer to the docs to see the supported flags:\n- [Global flags](https://rclone.org/flags/)\n- [S3 specific flags](https://rclone.org/s3/)",
             "nullable": true
           },
+          "gc_files_per_delete": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The most files that one `rclone delete` run of the object store\ngarbage collection removes, for example `10000`.\n\nrclone looks up every file of a run before it deletes any, and its\nmemory grows with the files of the run until the run ends, so this\nbounds its memory: about 100 MiB for 10,000 files. Must be at least 1.\n\nDefault: 10000",
+            "default": 10000,
+            "nullable": true,
+            "minimum": 0
+          },
+          "gc_pass_new_files": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The batch files that one pass of the object store garbage collection\nmay take beyond those of the oldest checkpoint that retention no\nlonger keeps, for example `100000`.\n\nAfter each push, the garbage collection removes the checkpoints that\nretention no longer keeps, in passes, oldest first. A pass takes\ncheckpoints until their batch files exceed those of its oldest\ncheckpoint by this many, and holds the names of these files in memory,\nso this bounds the memory of a pass. A pass always takes its oldest\ncheckpoint, however many files it has.\n\nDefault: 100000",
+            "default": 100000,
+            "nullable": true,
+            "minimum": 0
+          },
+          "gc_time_budget": {
+            "type": "string",
+            "description": "The time after which the object store garbage collection that follows\na push starts no new pass, for example `5m`.\n\nThe next push waits for the garbage collection. The checkpoints that\nit leaves when the time runs out stay in the bucket, and can still be\nrestored, until the garbage collection of a later push removes them.\n\nDefault: 5m",
+            "default": "5m",
+            "nullable": true
+          },
           "ignore_checksum": {
             "type": "boolean",
-            "description": "Set to skip post copy check of checksums, and only check the file sizes.\nThis can significantly improve the throughput.\nDefualt: false",
+            "description": "Set to skip post copy check of checksums, and only check the file sizes.\nThis can significantly improve the throughput.\nDefault: false",
             "nullable": true
           },
           "min_retention": {
             "type": "string",
-            "description": "The minimum age a checkpoint must reach before it becomes eligible for\ndeletion, for example `30d`. All younger checkpoints will be preserved.\nUnset selects the default, `DEFAULT_RETENTION_MIN_AGE`.",
+            "description": "The minimum age a checkpoint must reach before it becomes eligible for\ndeletion, for example `30d`. All younger checkpoints will be preserved.\n\nDefault: 30d",
             "default": "30d",
             "nullable": true
           },
@@ -17098,7 +17120,7 @@
           },
           "standby_pull_interval": {
             "type": "string",
-            "description": "The interval between each attempt to fetch the latest checkpoint from\nobject store while in standby mode, for example `10s`.\n\nApplies only when `start_from_checkpoint` is set to `latest`. Unset\nselects the default, `DEFAULT_PULL_INTERVAL`.",
+            "description": "The interval between each attempt to fetch the latest checkpoint from\nobject store while in standby mode, for example `10s`.\n\nApplies only when `start_from_checkpoint` is set to `latest`.\n\nDefault: 10s",
             "default": "10s",
             "nullable": true
           },

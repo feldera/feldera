@@ -76,6 +76,15 @@ pub const DEFAULT_PULL_INTERVAL: ConfigDuration = ConfigDuration::from_secs(10);
 /// Default minimum age a checkpoint reaches before it may be deleted.
 pub const DEFAULT_RETENTION_MIN_AGE: ConfigDuration = ConfigDuration::from_days(30);
 
+/// Default of [`SyncConfig::gc_pass_new_files`].
+pub const DEFAULT_GC_PASS_NEW_FILES: u64 = 100_000;
+
+/// Default of [`SyncConfig::gc_files_per_delete`].
+pub const DEFAULT_GC_FILES_PER_DELETE: u64 = 10_000;
+
+/// Default of [`SyncConfig::gc_time_budget`].
+pub const DEFAULT_GC_TIME_BUDGET: ConfigDuration = ConfigDuration::from_secs(5 * 60);
+
 // The defaults as the OpenAPI schema shows them, one function per
 // `#[schema(default = ...)]`.
 fn default_clock_resolution() -> String {
@@ -89,6 +98,15 @@ fn default_pull_interval() -> String {
 }
 fn default_retention_min_age() -> String {
     DEFAULT_RETENTION_MIN_AGE.to_string()
+}
+fn default_gc_pass_new_files() -> u64 {
+    DEFAULT_GC_PASS_NEW_FILES
+}
+fn default_gc_files_per_delete() -> u64 {
+    DEFAULT_GC_FILES_PER_DELETE
+}
+fn default_gc_time_budget() -> String {
+    DEFAULT_GC_TIME_BUDGET.to_string()
 }
 
 duration_setting!(
@@ -813,7 +831,7 @@ pub struct SyncConfig {
 
     /// Set to skip post copy check of checksums, and only check the file sizes.
     /// This can significantly improve the throughput.
-    /// Defualt: false
+    /// Default: false
     pub ignore_checksum: Option<bool>,
 
     /// Number of streams to use for multi-thread downloads.
@@ -853,8 +871,9 @@ pub struct SyncConfig {
     /// The interval between each attempt to fetch the latest checkpoint from
     /// object store while in standby mode, for example `10s`.
     ///
-    /// Applies only when `start_from_checkpoint` is set to `latest`. Unset
-    /// selects the default, `DEFAULT_PULL_INTERVAL`.
+    /// Applies only when `start_from_checkpoint` is set to `latest`.
+    ///
+    /// Default: 10s
     #[serde(
         default,
         alias = "pull_interval",
@@ -898,7 +917,8 @@ pub struct SyncConfig {
 
     /// The minimum age a checkpoint must reach before it becomes eligible for
     /// deletion, for example `30d`. All younger checkpoints will be preserved.
-    /// Unset selects the default, `DEFAULT_RETENTION_MIN_AGE`.
+    ///
+    /// Default: 30d
     #[serde(
         default,
         alias = "retention_min_age",
@@ -907,6 +927,46 @@ pub struct SyncConfig {
     )]
     #[schema(value_type = Option<String>, default = default_retention_min_age)]
     pub min_retention: Option<ConfigDuration>,
+
+    /// The batch files that one pass of the object store garbage collection
+    /// may take beyond those of the oldest checkpoint that retention no
+    /// longer keeps, for example `100000`.
+    ///
+    /// After each push, the garbage collection removes the checkpoints that
+    /// retention no longer keeps, in passes, oldest first. A pass takes
+    /// checkpoints until their batch files exceed those of its oldest
+    /// checkpoint by this many, and holds the names of these files in memory,
+    /// so this bounds the memory of a pass. A pass always takes its oldest
+    /// checkpoint, however many files it has.
+    ///
+    /// Default: 100000
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(default = default_gc_pass_new_files)]
+    pub gc_pass_new_files: Option<u64>,
+
+    /// The most files that one `rclone delete` run of the object store
+    /// garbage collection removes, for example `10000`.
+    ///
+    /// rclone looks up every file of a run before it deletes any, and its
+    /// memory grows with the files of the run until the run ends, so this
+    /// bounds its memory: about 100 MiB for 10,000 files. Must be at least 1.
+    ///
+    /// Default: 10000
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(default = default_gc_files_per_delete)]
+    pub gc_files_per_delete: Option<u64>,
+
+    /// The time after which the object store garbage collection that follows
+    /// a push starts no new pass, for example `5m`.
+    ///
+    /// The next push waits for the garbage collection. The checkpoints that
+    /// it leaves when the time runs out stay in the bucket, and can still be
+    /// restored, until the garbage collection of a later push removes them.
+    ///
+    /// Default: 5m
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>, default = default_gc_time_budget)]
+    pub gc_time_budget: Option<ConfigDuration>,
 
     /// A read-only bucket used as a fallback checkpoint source.
     ///
@@ -984,12 +1044,36 @@ impl SyncConfig {
         self.min_retention.unwrap_or(DEFAULT_RETENTION_MIN_AGE)
     }
 
+    /// The batch files that a pass of the object store garbage collection
+    /// may take beyond those of the oldest checkpoint that retention no
+    /// longer keeps, or [`DEFAULT_GC_PASS_NEW_FILES`].
+    pub fn gc_pass_new_files(&self) -> u64 {
+        self.gc_pass_new_files.unwrap_or(DEFAULT_GC_PASS_NEW_FILES)
+    }
+
+    /// The most files that one `rclone delete` run of the object store
+    /// garbage collection removes, or [`DEFAULT_GC_FILES_PER_DELETE`].
+    pub fn gc_files_per_delete(&self) -> u64 {
+        self.gc_files_per_delete
+            .unwrap_or(DEFAULT_GC_FILES_PER_DELETE)
+    }
+
+    /// The time after which the object store garbage collection of a push
+    /// starts no new pass, or [`DEFAULT_GC_TIME_BUDGET`].
+    pub fn gc_time_budget(&self) -> ConfigDuration {
+        self.gc_time_budget.unwrap_or(DEFAULT_GC_TIME_BUDGET)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         #[allow(deprecated)]
         if self.standby {
             return Err(
                 "The `standby` config field has been deprecated. Use `initial=standby` when starting the pipeline instead.".to_owned()
             );
+        }
+
+        if self.gc_files_per_delete == Some(0) {
+            return Err("invalid sync config: `gc_files_per_delete` must be at least 1".to_owned());
         }
 
         if let Some(ref rb) = self.read_bucket {
@@ -2318,6 +2402,7 @@ mod test {
 
     use crate::config::{
         ConnectorConfig, DEFAULT_CLOCK_RESOLUTION, DEFAULT_DATAFUSION_MEMORY_CEILING,
+        DEFAULT_GC_FILES_PER_DELETE, DEFAULT_GC_PASS_NEW_FILES, DEFAULT_GC_TIME_BUDGET,
         DEFAULT_PULL_INTERVAL, DEFAULT_RETENTION_MIN_AGE, FileBackendConfig, FtConfig, FtModel,
         OutputBufferConfig, PipelineConfig, ResourceConfig, RuntimeConfig, StorageBackendConfig,
         StorageOptions, SyncConfig, TransportConfig,
@@ -3429,6 +3514,44 @@ mod test {
         assert_eq!(runtime.max_buffering_delay(), ConfigDuration::ZERO);
         assert_eq!(runtime.clock_resolution(), DEFAULT_CLOCK_RESOLUTION);
         assert_eq!(runtime.provisioning_timeout, None);
+    }
+
+    /// The limits of the object store garbage collection take their settings,
+    /// and their defaults when unset; a delete run of no files is refused.
+    #[test]
+    fn sync_gc_limits() {
+        let sync: SyncConfig = serde_json::from_str(r#"{"bucket": "b"}"#).unwrap();
+        assert_eq!(sync.gc_pass_new_files(), DEFAULT_GC_PASS_NEW_FILES);
+        assert_eq!(sync.gc_files_per_delete(), DEFAULT_GC_FILES_PER_DELETE);
+        assert_eq!(sync.gc_time_budget(), DEFAULT_GC_TIME_BUDGET);
+        // Unset limits stay out of the configuration that the pipeline gets.
+        let json = serde_json::to_value(&sync).unwrap();
+        for field in ["gc_pass_new_files", "gc_files_per_delete", "gc_time_budget"] {
+            assert!(json.get(field).is_none(), "{field} in {json}");
+        }
+
+        let sync: SyncConfig = serde_json::from_str(
+            r#"{"bucket": "b", "gc_pass_new_files": 0, "gc_files_per_delete": 2,
+                "gc_time_budget": "0s"}"#,
+        )
+        .unwrap();
+        assert_eq!(sync.gc_pass_new_files(), 0);
+        assert_eq!(sync.gc_files_per_delete(), 2);
+        assert_eq!(sync.gc_time_budget(), ConfigDuration::ZERO);
+        assert_eq!(sync.validate(), Ok(()));
+        let json = serde_json::to_value(&sync).unwrap();
+        assert_eq!(serde_json::from_value::<SyncConfig>(json).unwrap(), sync);
+
+        let sync: SyncConfig =
+            serde_json::from_str(r#"{"bucket": "b", "gc_files_per_delete": 0}"#).unwrap();
+        let error = sync.validate().unwrap_err();
+        assert!(error.contains("gc_files_per_delete"), "{error}");
+
+        // The time budget is a duration such as `5m`, not a bare number.
+        assert!(
+            serde_json::from_str::<SyncConfig>(r#"{"bucket": "b", "gc_time_budget": 300}"#)
+                .is_err()
+        );
     }
 
     /// Regression test: `Option<f64>` fields inside `StorageOptions` must

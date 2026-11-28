@@ -6948,15 +6948,53 @@ export type SyncConfig = {
    */
   flags?: Array<string> | null
   /**
+   * The most files that one `rclone delete` run of the object store
+   * garbage collection removes, for example `10000`.
+   *
+   * rclone looks up every file of a run before it deletes any, and its
+   * memory grows with the files of the run until the run ends, so this
+   * bounds its memory: about 100 MiB for 10,000 files. Must be at least 1.
+   *
+   * Default: 10000
+   */
+  gc_files_per_delete?: number | null
+  /**
+   * The batch files that one pass of the object store garbage collection
+   * may take beyond those of the oldest checkpoint that retention no
+   * longer keeps, for example `100000`.
+   *
+   * After each push, the garbage collection removes the checkpoints that
+   * retention no longer keeps, in passes, oldest first. A pass takes
+   * checkpoints until their batch files exceed those of its oldest
+   * checkpoint by this many, and holds the names of these files in memory,
+   * so this bounds the memory of a pass. A pass always takes its oldest
+   * checkpoint, however many files it has.
+   *
+   * Default: 100000
+   */
+  gc_pass_new_files?: number | null
+  /**
+   * The time after which the object store garbage collection that follows
+   * a push starts no new pass, for example `5m`.
+   *
+   * The next push waits for the garbage collection. The checkpoints that
+   * it leaves when the time runs out stay in the bucket, and can still be
+   * restored, until the garbage collection of a later push removes them.
+   *
+   * Default: 5m
+   */
+  gc_time_budget?: string | null
+  /**
    * Set to skip post copy check of checksums, and only check the file sizes.
    * This can significantly improve the throughput.
-   * Defualt: false
+   * Default: false
    */
   ignore_checksum?: boolean | null
   /**
    * The minimum age a checkpoint must reach before it becomes eligible for
    * deletion, for example `30d`. All younger checkpoints will be preserved.
-   * Unset selects the default, `DEFAULT_RETENTION_MIN_AGE`.
+   *
+   * Default: 30d
    */
   min_retention?: string | null
   /**
@@ -7044,8 +7082,9 @@ export type SyncConfig = {
    * The interval between each attempt to fetch the latest checkpoint from
    * object store while in standby mode, for example `10s`.
    *
-   * Applies only when `start_from_checkpoint` is set to `latest`. Unset
-   * selects the default, `DEFAULT_PULL_INTERVAL`.
+   * Applies only when `start_from_checkpoint` is set to `latest`.
+   *
+   * Default: 10s
    */
   standby_pull_interval?: string | null
   start_from_checkpoint?: StartFromCheckpoint | null

@@ -286,6 +286,92 @@ def test_gc_after_rollback(scenario):
     p.restored(c4)
 
 
+@enterprise_only
+@single_host_only
+def test_gc_in_bounded_passes(scenario):
+    """A remote GC with small limits removes the expired checkpoints a pass
+    at a time, oldest first. Every checkpoint that it leaves can still be
+    restored, also after a return to one of them. A pass also takes newer
+    expired checkpoints while their batch files exceed those of its oldest
+    one by at most `gc_pass_new_files`. With time to spare, one GC runs
+    passes until no expired checkpoint is left.
+
+    The audit of each push checks what the GC removed. With a
+    `gc_time_budget` of 0s, a GC runs one pass, which the audit models.
+    """
+    p = scenario.pipeline()
+    # The GC keeps all four checkpoints: there are no more than
+    # `retention_min_count` of them.
+    p.start(retention_min_count=4)
+    p.load()
+    made = []
+    for _ in range(4):
+        p.round()
+        p.checkpoint()
+        made.append(p.push())
+
+    # One pass per GC, which takes only its oldest checkpoint, and rclone
+    # runs of two files.
+    one_pass = dict(
+        retention_min_count=1,
+        gc_pass_new_files=0,
+        gc_files_per_delete=2,
+        gc_time_budget="0s",
+    )
+    p.stop()
+    p.start(**one_pass)
+    for _ in range(2):
+        p.round()
+        p.checkpoint()
+        made.append(p.push())
+    left = p.bucket.audit().uuids()
+    assert made[0].uuid not in left and made[1].uuid not in left, (
+        "the GCs removed no checkpoint"
+    )
+    assert made[2].uuid in left, "the GCs left no expired checkpoint"
+
+    # Go back to an expired checkpoint that the GCs left, and carry on. The
+    # push of the next checkpoint collects the oldest expired checkpoint,
+    # which shares files with the new one and with the expired checkpoints
+    # that the GC leaves; the audit requires every checkpoint to be whole.
+    p.wipe()
+    p.start(start_from=made[2].uuid, strict=True, **one_pass)
+    p.restored(made[2])
+    p.checkpoint()
+    made.append(p.push())
+
+    # A limit of the files that the second-oldest expired checkpoint adds to
+    # the oldest one's makes a pass take exactly those two, and leaves the
+    # rest for the GC below.
+    assert p.bucket.audit().uuids() == {c.uuid for c in made[3:]}, (
+        "the bucket does not hold the four checkpoints that this stage expects"
+    )
+    oldest, second = made[3], made[4]
+    p.stop()
+    p.start(
+        retention_min_count=1,
+        gc_pass_new_files=len(second.batches - oldest.batches),
+        gc_time_budget="0s",
+    )
+    p.round()
+    p.checkpoint()
+    made.append(p.push())
+    left = p.bucket.audit().uuids()
+    assert oldest.uuid not in left and second.uuid not in left, (
+        "the pass took only its oldest checkpoint"
+    )
+    assert made[5].uuid in left, "the pass took more than two checkpoints"
+
+    # With the default time budget, one GC runs a pass for each expired
+    # checkpoint.
+    p.stop()
+    p.start(retention_min_count=1, gc_pass_new_files=0)
+    p.round()
+    p.checkpoint()
+    newest = p.push()
+    assert p.bucket.audit().uuids() == {newest.uuid}
+
+
 # ---------------------------------------------------------------------------
 # Restores from a bucket that is built once
 # ---------------------------------------------------------------------------
