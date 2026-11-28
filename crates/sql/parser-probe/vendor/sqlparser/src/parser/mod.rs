@@ -1615,6 +1615,7 @@ impl<'a> Parser<'a> {
                         null_treatment: None,
                         filter: None,
                         over: None,
+                        within_distinct: vec![],
                         within_group: vec![],
                     })))
                 }
@@ -1677,6 +1678,7 @@ impl<'a> Parser<'a> {
                         filter: None,
                         null_treatment: None,
                         over: None,
+                        within_distinct: vec![],
                         within_group: vec![],
                     })))
                 }
@@ -2641,6 +2643,7 @@ impl<'a> Parser<'a> {
                 filter: None,
                 null_treatment: None,
                 over: None,
+                within_distinct: vec![],
                 within_group: vec![],
             });
         }
@@ -2662,6 +2665,22 @@ impl<'a> Parser<'a> {
             args = self.parse_function_argument_list(&name)?;
         }
 
+        let early_nulls = self.dialect.null_treatment_precedes_grouping();
+        let mut null_treatment = None;
+        if early_nulls
+            && matches!(&self.peek_nth_token_ref(1).token, Token::Word(w) if w.keyword == Keyword::NULLS)
+        {
+            null_treatment = self
+                .parse_null_treatment()?
+                .map(FunctionNullTreatment::AfterArguments);
+        }
+        let within_distinct = if self.dialect.supports_within_distinct()
+            && self.parse_keywords(&[Keyword::WITHIN, Keyword::DISTINCT])
+        {
+            self.parse_parenthesized(|p| p.parse_comma_separated(Parser::parse_expr))?
+        } else {
+            vec![]
+        };
         let within_group = if self.parse_keywords(&[Keyword::WITHIN, Keyword::GROUP]) {
             self.expect_token(&Token::LParen)?;
             self.expect_keywords(&[Keyword::ORDER, Keyword::BY])?;
@@ -2676,8 +2695,8 @@ impl<'a> Parser<'a> {
             && self.peek_nth_token_ref(1).token == Token::LParen
             && self.parse_keyword(Keyword::FILTER)
             && self.consume_token(&Token::LParen)
-            && self.parse_keyword(Keyword::WHERE)
         {
+            self.expect_keyword_is(Keyword::WHERE)?;
             let filter = Some(Box::new(self.parse_expr()?));
             self.expect_token(&Token::RParen)?;
             filter
@@ -2685,17 +2704,17 @@ impl<'a> Parser<'a> {
             None
         };
 
-        // Syntax for null treatment shows up either in the args list
-        // or after the function call, but not both.
-        let null_treatment = if args
-            .clauses
-            .iter()
-            .all(|clause| !matches!(clause, FunctionArgumentClause::IgnoreOrRespectNulls(_)))
+        // Dialects with trailing treatment use it only without inline treatment.
+        if !early_nulls
+            && args
+                .clauses
+                .iter()
+                .all(|clause| !matches!(clause, FunctionArgumentClause::IgnoreOrRespectNulls(_)))
         {
-            self.parse_null_treatment()?
-        } else {
-            None
-        };
+            null_treatment = self
+                .parse_null_treatment()?
+                .map(FunctionNullTreatment::AfterFilter);
+        }
 
         let over = if self.parse_keyword(Keyword::OVER) {
             if self.consume_token(&Token::LParen) {
@@ -2729,6 +2748,7 @@ impl<'a> Parser<'a> {
             parameters,
             args: FunctionArguments::List(args),
             null_treatment,
+            within_distinct,
             filter,
             over,
             within_group,
@@ -2766,6 +2786,7 @@ impl<'a> Parser<'a> {
             filter: None,
             over: None,
             null_treatment: None,
+            within_distinct: vec![],
             within_group: vec![],
         }))
     }
@@ -4292,6 +4313,11 @@ impl<'a> Parser<'a> {
                                 self.parse_subexpr(self.dialect.prec_value(Precedence::Like))?,
                             ),
                             regexp,
+                            escape_char: if rlike && self.dialect.supports_rlike_escape() {
+                                self.parse_escape_char()?
+                            } else {
+                                None
+                            },
                         })
                     } else if negated && null {
                         Ok(Expr::IsNotNull(Box::new(expr)))
@@ -4422,6 +4448,13 @@ impl<'a> Parser<'a> {
 
     /// Parse the `ESCAPE CHAR` portion of `LIKE`, `ILIKE`, and `SIMILAR TO`
     pub fn parse_escape_char(&mut self) -> Result<Option<Box<Expr>>, ParserError> {
+        if self.peek_keyword(Keyword::ESCAPE)
+            && self
+                .dialect
+                .is_bare_escape_alias(&self.peek_nth_token_ref(1).token)
+        {
+            return Ok(None);
+        }
         if self.parse_keyword(Keyword::ESCAPE) {
             Ok(Some(Box::new(self.parse_subexpr(
                 self.dialect.prec_value(Precedence::Like),
@@ -12873,6 +12906,7 @@ impl<'a> Parser<'a> {
                 over: None,
                 filter: None,
                 null_treatment: None,
+                within_distinct: vec![],
                 within_group: vec![],
             }))
         }
@@ -16088,6 +16122,7 @@ impl<'a> Parser<'a> {
                     from: None,
                     materialized: None,
                     closing_paren_token: closing_paren_token.into(),
+                    cycle: None,
                 };
                 if self.parse_keyword(Keyword::FROM) {
                     cte.from = Some(self.parse_identifier()?);
@@ -16133,6 +16168,7 @@ impl<'a> Parser<'a> {
             from: None,
             materialized: is_materialized,
             closing_paren_token: closing_paren_token.into(),
+            cycle: self.dialect.parse_cte_cycle(self)?,
         };
         if self.dialect.supports_from_first_insert() && self.parse_keyword(Keyword::FROM) {
             cte.from = Some(self.parse_identifier()?);
@@ -18875,6 +18911,9 @@ impl<'a> Parser<'a> {
 
     /// Parse a JOIN constraint (`NATURAL`, `ON <expr>`, `USING (...)`, or no constraint).
     pub fn parse_join_constraint(&mut self, natural: bool) -> Result<JoinConstraint, ParserError> {
+        if let Some(constraint) = self.dialect.parse_join_constraint(self, natural) {
+            return constraint;
+        }
         if natural {
             Ok(JoinConstraint::Natural)
         } else if self.parse_keyword(Keyword::ON) {

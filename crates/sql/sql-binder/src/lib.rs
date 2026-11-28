@@ -417,6 +417,7 @@ fn scalar_args(function: &Function) -> Result<(&str, Vec<&Expr>), Failure> {
         parameters: FunctionArguments::None,
         args,
         within_group,
+        within_distinct,
         filter: None,
         null_treatment: None,
         over: None,
@@ -435,7 +436,11 @@ fn scalar_args(function: &Function) -> Result<(&str, Vec<&Expr>), Failure> {
     else {
         return Err(unsupported("expected positional call arguments"));
     };
-    if name.quote_style.is_some() || !within_group.is_empty() || !clauses.is_empty() {
+    if name.quote_style.is_some()
+        || !within_group.is_empty()
+        || !within_distinct.is_empty()
+        || !clauses.is_empty()
+    {
         return Err(unsupported(
             "function clauses or quoted names are outside the probe",
         ));

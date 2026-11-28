@@ -282,15 +282,6 @@ impl Visitor for ScopedChecks {
         let Expr::Function(function) = expression else {
             return ControlFlow::Continue(());
         };
-        // Upstream attaches suffix null treatment after FILTER. Calcite's
-        // grammar requires it before FILTER; inline argument treatment is
-        // represented separately and remains valid for its supported functions.
-        if function.filter.is_some() && function.null_treatment.is_some() {
-            return ControlFlow::Break(super::diagnostic::at(
-                "suffix null treatment after FILTER is unsupported",
-                expression.span().start,
-            ));
-        }
         // The upstream expression parser can add a schema prefix after parsing
         // the call. Check the fully qualified name once it is available.
         if !super::FelderaDialect.supports_inline_null_treatment_for(&function.name.0)

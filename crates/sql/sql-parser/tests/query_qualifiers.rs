@@ -1,6 +1,50 @@
 use feldera_sql_parser::{emit_statements, parse};
 
 #[test]
+fn cycle_marks_belong_to_their_cte() {
+    let sql = "WITH RECURSIVE x AS (SELECT 1) CYCLE a, b SET mark TO 1 + 1 DEFAULT 0 USING path, y AS (SELECT 2) CYCLE c SET m USING p SELECT * FROM x";
+    assert_eq!(emit_statements(&parse(sql).unwrap()).unwrap(), [sql]);
+    for clause in [
+        "a.b SET m USING p",
+        "a SET m TO 1 USING p",
+        "a SET m TO (SELECT 1) DEFAULT 0 USING p",
+    ] {
+        assert!(
+            parse(&format!(
+                "WITH x AS (SELECT 1) CYCLE {clause} SELECT * FROM x"
+            ))
+            .is_err(),
+            "{clause}"
+        );
+    }
+}
+
+#[test]
+fn natural_joins_keep_their_explicit_conditions() {
+    for join in [
+        "NATURAL LEFT ASOF JOIN b MATCH_CONDITION (a.t >= b.t) ON a.k = b.k",
+        "NATURAL CROSS JOIN b USING(k, v)",
+        "NATURAL LEFT JOIN b ON a.k = b.k",
+        "CROSS JOIN b USING(k)",
+    ] {
+        let sql = format!("SELECT * FROM a {join}");
+        let emitted = emit_statements(&parse(&sql).unwrap()).unwrap();
+        assert_eq!(emitted, [sql]);
+        assert_eq!(
+            emit_statements(&parse(&emitted[0]).unwrap()).unwrap(),
+            emitted
+        );
+    }
+    for join in [
+        "JOIN b USING(b.x)",
+        "NATURAL JOIN b USING(SELECT)",
+        "CROSS JOIN b USING(k) AS c",
+    ] {
+        assert!(parse(&format!("SELECT * FROM a {join}")).is_err(), "{join}");
+    }
+}
+
+#[test]
 fn preserves_between_symmetry_and_grouping_set_deduplication() {
     for clause in [
         "WHERE x NOT BETWEEN SYMMETRIC 4 AND 2",

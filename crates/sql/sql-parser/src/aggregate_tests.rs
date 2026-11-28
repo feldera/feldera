@@ -78,6 +78,26 @@ fn grouping_sets_keep_empty_sets_tuple_groups_duplicates_and_order() {
 }
 
 #[test]
+fn aggregate_modifiers_follow_the_order_of_the_java_grammar() {
+    let sql = "SELECT ARRAY_AGG(x IGNORE NULLS) RESPECT NULLS WITHIN DISTINCT (x, y) WITHIN GROUP (ORDER BY z) FILTER (WHERE flag) OVER () FROM t";
+    assert_eq!(
+        crate::emit_statements(&crate::parse(sql).unwrap()).unwrap(),
+        [sql]
+    );
+    for suffix in [
+        "WITHIN DISTINCT ()",
+        "WITHIN GROUP (ORDER BY z) IGNORE NULLS",
+        "FILTER (WHERE flag) WITHIN DISTINCT (x)",
+        "IGNORE NULLS RESPECT NULLS",
+    ] {
+        assert!(
+            crate::parse(&format!("SELECT SUM(x) {suffix} FROM t")).is_err(),
+            "{suffix}"
+        );
+    }
+}
+
+#[test]
 fn null_treatment_keeps_placement_and_window_clause() {
     for (keyword, expected) in [
         ("IGNORE", NullTreatment::IgnoreNulls),
@@ -108,7 +128,12 @@ fn null_treatment_keeps_placement_and_window_clause() {
                 assert!(function.null_treatment.is_none());
             } else {
                 assert!(arguments.clauses.is_empty());
-                assert_eq!(function.null_treatment, Some(expected));
+                assert_eq!(
+                    function.null_treatment,
+                    Some(sqlparser_064::ast::FunctionNullTreatment::AfterArguments(
+                        expected
+                    ))
+                );
             }
         }
     }

@@ -66,6 +66,47 @@ impl Dialect for FelderaDialect {
         true
     }
 
+    fn supports_rlike_escape(&self) -> bool {
+        true
+    }
+
+    fn is_bare_escape_alias(&self, next: &Token) -> bool {
+        matches!(
+            next,
+            Token::EOF | Token::SemiColon | Token::Comma | Token::RParen
+        ) || matches!(next, Token::Word(w) if matches!(w.keyword, Keyword::FROM | Keyword::WHERE
+                | Keyword::GROUP | Keyword::HAVING | Keyword::WINDOW | Keyword::QUALIFY
+                | Keyword::ORDER | Keyword::LIMIT | Keyword::OFFSET | Keyword::FETCH
+                | Keyword::UNION | Keyword::EXCEPT | Keyword::INTERSECT))
+    }
+
+    fn null_treatment_precedes_grouping(&self) -> bool {
+        true
+    }
+
+    fn supports_within_distinct(&self) -> bool {
+        true
+    }
+
+    fn supports_cross_join_constraint(&self) -> bool {
+        true
+    }
+
+    fn parse_join_constraint(
+        &self,
+        parser: &mut Parser,
+        natural: bool,
+    ) -> Option<Result<sqlparser_064::ast::JoinConstraint, ParserError>> {
+        Some(relations::join_constraint(parser, natural))
+    }
+
+    fn parse_cte_cycle(
+        &self,
+        parser: &mut Parser,
+    ) -> Result<Option<Box<sqlparser_064::ast::CycleClause>>, ParserError> {
+        relations::cte_cycle(parser)
+    }
+
     fn get_next_precedence(&self, parser: &Parser) -> Option<Result<u8, ParserError>> {
         // Calcite requires IS in the postfix null test. An adjacent NOT NULL
         // can instead be a column or type modifier for the enclosing parser.

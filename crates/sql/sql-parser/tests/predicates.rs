@@ -1,6 +1,22 @@
 use feldera_sql_parser::{emit_statements, parse};
 
 #[test]
+fn rlike_distinguishes_an_escape_operand_from_an_alias() {
+    for (sql, expected) in [
+        (
+            "SELECT x NOT RLIKE p ESCAPE f(y) FROM t",
+            "SELECT x NOT RLIKE p ESCAPE f(y) FROM t",
+        ),
+        (
+            "SELECT x RLIKE p ESCAPE FROM t",
+            "SELECT x RLIKE p AS ESCAPE FROM t",
+        ),
+    ] {
+        assert_eq!(emit_statements(&parse(sql).unwrap()).unwrap(), [expected]);
+    }
+}
+
+#[test]
 fn unique_binds_addition_before_testing_the_result_for_null() {
     use feldera_sql_parser::FelderaDialect;
     use sqlparser_064::{

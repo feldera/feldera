@@ -206,6 +206,7 @@ impl Spanned for Cte {
             alias,
             query,
             from,
+            cycle,
             materialized: _, // enum
             closing_paren_token,
         } = self;
@@ -214,6 +215,7 @@ impl Spanned for Cte {
             core::iter::once(alias.span())
                 .chain(core::iter::once(query.span()))
                 .chain(from.iter().map(|item| item.span))
+                .chain(cycle.iter().map(|clause| clause.path.span))
                 .chain(core::iter::once(closing_paren_token.0.span)),
         )
     }
@@ -1639,7 +1641,6 @@ impl Spanned for AssignmentTarget {
 ///
 /// Missing spans:
 /// - [Expr::MatchAgainst] # MySQL specific
-/// - [Expr::RLike] # MySQL specific
 /// - [Expr::Struct] # BigQuery specific
 /// - [Expr::Named] # BigQuery specific
 /// - [Expr::Dictionary] # DuckDB specific
@@ -1709,7 +1710,15 @@ impl Spanned for Expr {
                 escape_char: _,
                 any: _,
             } => expr.span().union(&pattern.span()),
-            Expr::RLike { .. } => Span::empty(),
+            Expr::RLike {
+                expr,
+                pattern,
+                escape_char,
+                ..
+            } => expr
+                .span()
+                .union(&pattern.span())
+                .union_opt(&escape_char.as_ref().map(|escape| escape.span())),
             Expr::IsNormalized {
                 expr,
                 form: _,
@@ -1941,6 +1950,7 @@ impl Spanned for Function {
             filter,
             null_treatment: _, // enum
             over: _,           // todo
+            within_distinct,
             within_group,
         } = self;
 
@@ -1951,6 +1961,7 @@ impl Spanned for Function {
                 .chain(iter::once(args.span()))
                 .chain(iter::once(parameters.span()))
                 .chain(filter.iter().map(|i| i.span()))
+                .chain(within_distinct.iter().map(|i| i.span()))
                 .chain(within_group.iter().map(|i| i.span())),
         )
     }
@@ -2497,8 +2508,10 @@ impl Spanned for JoinOperator {
 impl Spanned for JoinConstraint {
     fn span(&self) -> Span {
         match self {
-            JoinConstraint::On(expr) => expr.span(),
-            JoinConstraint::Using(vec) => union_spans(vec.iter().map(|i| i.span())),
+            JoinConstraint::On(expr) | JoinConstraint::NaturalOn(expr) => expr.span(),
+            JoinConstraint::Using(vec) | JoinConstraint::NaturalUsing(vec) => {
+                union_spans(vec.iter().map(|i| i.span()))
+            }
             JoinConstraint::UsingAlias(columns, alias) => union_spans(
                 columns
                     .iter()

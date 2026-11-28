@@ -145,6 +145,7 @@ impl BoundAggregate {
                 || call.null_treatment.is_some()
                 || call.over.is_some()
                 || !call.within_group.is_empty()
+                || !call.within_distinct.is_empty()
                 || call.uses_odbc_syntax
             {
                 return Err(unsupported(

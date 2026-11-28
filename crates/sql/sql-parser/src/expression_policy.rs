@@ -53,6 +53,7 @@ pub(super) fn allows(expression: &Expr) -> bool {
             expr: _,
             pattern: _,
             regexp,
+            escape_char: _,
         } => !regexp,
         Convert {
             is_try: _,

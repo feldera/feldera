@@ -43,6 +43,7 @@ pub(super) fn parse(parser: &mut Parser) -> Result<Expr, ParserError> {
         filter: None,
         null_treatment: None,
         over: None,
+        within_distinct: vec![],
         within_group: vec![],
     }))
 }

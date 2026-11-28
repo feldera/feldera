@@ -716,6 +716,7 @@ where
 ///           filter: None,
 ///           over: None,
 ///           parameters: FunctionArguments::None,
+///           within_distinct: vec![],
 ///           within_group: vec![],
 ///      });
 ///   }

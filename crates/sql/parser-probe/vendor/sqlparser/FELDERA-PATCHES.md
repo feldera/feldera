@@ -90,6 +90,11 @@ fragments and source span. Ordinary single-quoted keys use `KeyValue`.
 The join and TABLE-argument grammar lives in `crates/sql/sql-parser/src/relations.rs`; VALUES
 grammar lives in `crates/sql/sql-parser/src/values.rs`. The adapter requires both
 MATCH_CONDITION and ON for ASOF joins and preserves named TABLE arguments.
+The AST retains CTE cycle keys, mark values and path columns. Natural joins
+can carry an explicit ON predicate or USING list. RLIKE retains its escape
+operand. External null treatment retains its position relative to WITHIN
+DISTINCT, WITHIN GROUP and FILTER, including when the arguments already
+specify null treatment.
 The Feldera dialect enables repeated ARRAY layers and refuses bracketed sizes,
 which the Java parser rejects. No token rewrite simulates these constructs.
 

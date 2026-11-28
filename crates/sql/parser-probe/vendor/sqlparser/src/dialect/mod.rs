@@ -967,6 +967,43 @@ pub trait Dialect: Debug + Any {
         None
     }
 
+    /// Override ON and USING syntax, including constraints on NATURAL joins.
+    fn parse_join_constraint(
+        &self,
+        _parser: &mut Parser,
+        _natural: bool,
+    ) -> Option<Result<crate::ast::JoinConstraint, ParserError>> {
+        None
+    }
+
+    /// Parse an optional CYCLE clause immediately after a CTE definition.
+    fn parse_cte_cycle(
+        &self,
+        _parser: &mut Parser,
+    ) -> Result<Option<Box<crate::ast::CycleClause>>, ParserError> {
+        Ok(None)
+    }
+
+    /// Whether RLIKE accepts an ESCAPE operand.
+    fn supports_rlike_escape(&self) -> bool {
+        false
+    }
+
+    /// Whether a bare ESCAPE can be a projection alias before this token.
+    fn is_bare_escape_alias(&self, _next: &Token) -> bool {
+        false
+    }
+
+    /// Whether an external IGNORE/RESPECT NULLS comes before WITHIN and FILTER.
+    fn null_treatment_precedes_grouping(&self) -> bool {
+        false
+    }
+
+    /// Whether aggregates accept WITHIN DISTINCT (key, ...).
+    fn supports_within_distinct(&self) -> bool {
+        false
+    }
+
     /// Parse the relation name of an explicit TABLE query after its keyword.
     fn parse_explicit_table_name(
         &self,

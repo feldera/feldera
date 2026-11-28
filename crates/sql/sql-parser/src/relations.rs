@@ -1,7 +1,10 @@
 //! Relational syntax supplied through the small vendored parser hooks.
 
 use sqlparser_064::{
-    ast::{FunctionArg, FunctionArgExpr, FunctionArgOperator, Join, JoinConstraint, JoinOperator},
+    ast::{
+        CycleClause, CycleMarkValues, FunctionArg, FunctionArgExpr, FunctionArgOperator, Join,
+        JoinConstraint, JoinOperator,
+    },
     keywords::Keyword,
     parser::{Parser, ParserError},
     tokenizer::{Span, Token},
@@ -9,22 +12,42 @@ use sqlparser_064::{
 use std::ops::ControlFlow;
 
 pub(super) fn join(parser: &mut Parser) -> Option<Result<Join, ParserError>> {
+    let natural = parser.parse_keyword(Keyword::NATURAL);
+    if natural && parser.parse_keywords(&[Keyword::CROSS, Keyword::JOIN]) {
+        return Some(parser.parse_table_factor().and_then(|relation| {
+            Ok(Join {
+                relation,
+                global: false,
+                join_operator: JoinOperator::CrossJoin(join_constraint(parser, true)?),
+            })
+        }));
+    }
     let left = parser.parse_keywords(&[Keyword::LEFT, Keyword::ASOF]);
     if !left && !parser.parse_keyword(Keyword::ASOF) {
+        if natural {
+            parser.prev_token(); // ordinary NATURAL join uses the upstream join grammar
+        }
         return None;
     }
-    Some(asof(parser, left))
+    Some(asof(parser, natural, left))
 }
 
-fn asof(parser: &mut Parser, left: bool) -> Result<Join, ParserError> {
+fn asof(parser: &mut Parser, natural: bool, left: bool) -> Result<Join, ParserError> {
     parser.expect_keyword_is(Keyword::JOIN)?;
     let relation = parser.parse_table_factor()?;
     parser.expect_keyword_is(Keyword::MATCH_CONDITION)?;
-    let match_condition = parser.parse_expr()?;
-    // Calcite requires ON for both ASOF forms; USING and an absent condition
-    // are syntax errors even though upstream's generic ASOF accepts them.
+    let mut match_condition = parser.parse_expr()?;
+    // The ASOF printer supplies parentheses around the whole match condition.
+    while let sqlparser_064::ast::Expr::Nested(inner) = match_condition {
+        match_condition = *inner;
+    }
     parser.expect_keyword_is(Keyword::ON)?;
-    let constraint = JoinConstraint::On(parser.parse_expr()?);
+    let on = parser.parse_expr()?;
+    let constraint = if natural {
+        JoinConstraint::NaturalOn(on)
+    } else {
+        JoinConstraint::On(on)
+    };
     let join_operator = if left {
         JoinOperator::LeftAsOf {
             match_condition,
@@ -41,6 +64,61 @@ fn asof(parser: &mut Parser, left: bool) -> Result<Join, ParserError> {
         global: false,
         join_operator,
     })
+}
+
+pub(super) fn join_constraint(
+    parser: &mut Parser,
+    natural: bool,
+) -> Result<JoinConstraint, ParserError> {
+    if parser.parse_keyword(Keyword::ON) {
+        let on = parser.parse_expr()?;
+        Ok(if natural {
+            JoinConstraint::NaturalOn(on)
+        } else {
+            JoinConstraint::On(on)
+        })
+    } else if parser.parse_keyword(Keyword::USING) {
+        let columns = parser
+            .parse_parenthesized(|p| p.parse_comma_separated(crate::statements::identifier))?;
+        let names = columns.into_iter().map(Into::into).collect();
+        Ok(if natural {
+            JoinConstraint::NaturalUsing(names)
+        } else {
+            JoinConstraint::Using(names)
+        })
+    } else if natural {
+        Ok(JoinConstraint::Natural)
+    } else {
+        Ok(JoinConstraint::None)
+    }
+}
+
+pub(super) fn cte_cycle(parser: &mut Parser) -> Result<Option<Box<CycleClause>>, ParserError> {
+    use crate::statements::identifier;
+    if !parser.parse_keyword(Keyword::CYCLE) {
+        return Ok(None);
+    }
+    let columns = parser.parse_comma_separated(identifier)?;
+    parser.expect_keyword_is(Keyword::SET)?;
+    let mark = identifier(parser)?;
+    let values = if parser.parse_keyword(Keyword::TO) {
+        let marked = parser.parse_expr()?;
+        super::reject::validate_non_query(&marked)?;
+        parser.expect_keyword_is(Keyword::DEFAULT)?;
+        let default = parser.parse_expr()?;
+        super::reject::validate_non_query(&default)?;
+        Some(CycleMarkValues { marked, default })
+    } else {
+        None
+    };
+    parser.expect_keyword_is(Keyword::USING)?;
+    let path = identifier(parser)?;
+    Ok(Some(Box::new(CycleClause {
+        columns,
+        mark,
+        values,
+        path,
+    })))
 }
 
 pub(super) fn function_argument(parser: &mut Parser) -> Option<Result<FunctionArg, ParserError>> {
@@ -109,10 +187,12 @@ mod tests {
             let (JoinOperator::AsOf {
                 match_condition,
                 constraint,
+                ..
             }
             | JoinOperator::LeftAsOf {
                 match_condition,
                 constraint,
+                ..
             }) = operator
             else {
                 panic!("expected asof")

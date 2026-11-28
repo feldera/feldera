@@ -802,6 +802,8 @@ pub struct Cte {
     pub materialized: Option<CteAsMaterialized>,
     /// Token for the closing parenthesis of the CTE definition.
     pub closing_paren_token: AttachedToken,
+    /// Optional SQL CYCLE clause on this CTE.
+    pub cycle: Option<Box<CycleClause>>,
 }
 
 impl fmt::Display for Cte {
@@ -829,7 +831,51 @@ impl fmt::Display for Cte {
         if let Some(ref fr) = self.from {
             write!(f, " FROM {fr}")?;
         }
+        if let Some(cycle) = &self.cycle {
+            write!(f, " {cycle}")?;
+        }
         Ok(())
+    }
+}
+
+/// Cycle detection columns, mark, and path for a common table expression.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CycleClause {
+    /// Column values that identify a repeated row.
+    pub columns: Vec<Ident>,
+    /// Output column containing the cycle mark.
+    pub mark: Ident,
+    /// Explicit TO and DEFAULT values. Omission selects TRUE and FALSE.
+    pub values: Option<CycleMarkValues>,
+    /// Output column containing the traversal path.
+    pub path: Ident,
+}
+
+/// The paired expressions in CYCLE ... TO ... DEFAULT ...
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CycleMarkValues {
+    /// Mark when the row closes a cycle.
+    pub marked: Expr,
+    /// Mark on the other rows.
+    pub default: Expr,
+}
+
+impl fmt::Display for CycleClause {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "CYCLE {} SET {}",
+            display_comma_separated(&self.columns),
+            self.mark
+        )?;
+        if let Some(values) = &self.values {
+            write!(f, " TO {} DEFAULT {}", values.marked, values.default)?;
+        }
+        write!(f, " USING {}", self.path)
     }
 }
 
@@ -2807,7 +2853,9 @@ impl fmt::Display for Join {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fn prefix(constraint: &JoinConstraint) -> &'static str {
             match constraint {
-                JoinConstraint::Natural => "NATURAL ",
+                JoinConstraint::Natural
+                | JoinConstraint::NaturalOn(_)
+                | JoinConstraint::NaturalUsing(_) => "NATURAL ",
                 _ => "",
             }
         }
@@ -2816,8 +2864,10 @@ impl fmt::Display for Join {
             impl fmt::Display for Suffix<'_> {
                 fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                     match self.0 {
-                        JoinConstraint::On(expr) => write!(f, " ON {expr}"),
-                        JoinConstraint::Using(attrs) => {
+                        JoinConstraint::On(expr) | JoinConstraint::NaturalOn(expr) => {
+                            write!(f, " ON {expr}")
+                        }
+                        JoinConstraint::Using(attrs) | JoinConstraint::NaturalUsing(attrs) => {
                             write!(f, " USING({})", display_comma_separated(attrs))
                         }
                         JoinConstraint::UsingAlias(columns, alias) => {
@@ -2877,7 +2927,8 @@ impl fmt::Display for Join {
                 suffix(constraint)
             )),
             JoinOperator::CrossJoin(constraint) => f.write_fmt(format_args!(
-                "CROSS JOIN {}{}",
+                "{}CROSS JOIN {}{}",
+                prefix(constraint),
                 self.relation,
                 suffix(constraint)
             )),
@@ -2923,7 +2974,8 @@ impl fmt::Display for Join {
                 match_condition,
                 constraint,
             } => f.write_fmt(format_args!(
-                "ASOF JOIN {} MATCH_CONDITION ({match_condition}){}",
+                "{}ASOF JOIN {} MATCH_CONDITION ({match_condition}){}",
+                prefix(constraint),
                 self.relation,
                 suffix(constraint)
             )),
@@ -2931,7 +2983,8 @@ impl fmt::Display for Join {
                 match_condition,
                 constraint,
             } => f.write_fmt(format_args!(
-                "LEFT ASOF JOIN {} MATCH_CONDITION ({match_condition}){}",
+                "{}LEFT ASOF JOIN {} MATCH_CONDITION ({match_condition}){}",
+                prefix(constraint),
                 self.relation,
                 suffix(constraint)
             )),
@@ -3031,6 +3084,10 @@ pub enum JoinConstraint {
     UsingAlias(Vec<ObjectName>, Ident),
     /// `NATURAL` join (columns matched automatically).
     Natural,
+    /// NATURAL join with an explicit ON condition.
+    NaturalOn(Expr),
+    /// NATURAL join with an explicit USING list.
+    NaturalUsing(Vec<ObjectName>),
     /// No constraint specified (e.g. `CROSS JOIN`).
     None,
 }

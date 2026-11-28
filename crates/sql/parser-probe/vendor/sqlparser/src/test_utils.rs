@@ -459,6 +459,7 @@ pub fn call(function: &str, args: impl IntoIterator<Item = Expr>) -> Expr {
         filter: None,
         null_treatment: None,
         over: None,
+        within_distinct: vec![],
         within_group: vec![],
     })
 }

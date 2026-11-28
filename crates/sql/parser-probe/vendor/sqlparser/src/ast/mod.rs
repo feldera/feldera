@@ -103,17 +103,17 @@ pub use self::dml::{
 };
 pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
-    AfterMatchSkip, ConnectByKind, Cte, CteAsMaterialized, Distinct, EmptyMatchesMode,
-    ExceptSelectItem, ExcludeSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy, Fetch, ForClause,
-    ForJson, ForXml, FormatClause, GroupByExpr, GroupByWithModifier, IdentWithAlias,
-    IlikeSelectItem, InputFormatClause, Interpolate, InterpolateExpr, Join, JoinConstraint,
-    JoinOperator, JsonTableColumn, JsonTableColumnErrorHandling, JsonTableNamedColumn,
-    JsonTableNestedColumn, LateralView, LimitClause, LockClause, LockType, MatchRecognizePattern,
-    MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NonBlock, Offset,
-    OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr, OrderByKind, OrderByOptions,
-    OrderBySort, PipeOperator, PivotValueSource, ProjectionSelect, Query, RenameSelectItem,
-    RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch, Select,
-    SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SelectModifiers,
+    AfterMatchSkip, ConnectByKind, Cte, CteAsMaterialized, CycleClause, CycleMarkValues, Distinct,
+    EmptyMatchesMode, ExceptSelectItem, ExcludeSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy,
+    Fetch, ForClause, ForJson, ForXml, FormatClause, GroupByExpr, GroupByWithModifier,
+    IdentWithAlias, IlikeSelectItem, InputFormatClause, Interpolate, InterpolateExpr, Join,
+    JoinConstraint, JoinOperator, JsonTableColumn, JsonTableColumnErrorHandling,
+    JsonTableNamedColumn, JsonTableNestedColumn, LateralView, LimitClause, LockClause, LockType,
+    MatchRecognizePattern, MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr,
+    NonBlock, Offset, OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr, OrderByKind,
+    OrderByOptions, OrderBySort, PipeOperator, PivotValueSource, ProjectionSelect, Query,
+    RenameSelectItem, RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch,
+    Select, SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SelectModifiers,
     SetExpr, SetOperator, SetQuantifier, Setting, SymbolDefinition, Table, TableAlias,
     TableAliasColumnDef, TableFactor, TableFunctionArgs, TableIndexDirective,
     TableIndexHintForClause, TableIndexHintType, TableIndexHints, TableIndexType, TableInheritance,
@@ -1177,6 +1177,8 @@ pub enum Expr {
         pattern: Box<Expr>,
         /// true for REGEXP, false for RLIKE (no difference in semantics)
         regexp: bool,
+        /// Optional ESCAPE operand in dialects that support it for RLIKE.
+        escape_char: Option<Box<Expr>>,
     },
     /// `ANY` operation e.g. `foo > ANY(bar)`, comparison operator is one of `[=, >, <, =>, =<, !=]`
     /// <https://docs.snowflake.com/en/sql-reference/operators-subquery#all-any>
@@ -2073,14 +2075,16 @@ impl fmt::Display for Expr {
                 expr,
                 pattern,
                 regexp,
-            } => write!(
-                f,
-                "{} {}{} {}",
-                expr,
-                if *negated { "NOT " } else { "" },
-                if *regexp { "REGEXP" } else { "RLIKE" },
-                pattern
-            ),
+                escape_char,
+            } => {
+                let op = if *regexp { "REGEXP" } else { "RLIKE" };
+                let not = if *negated { "NOT " } else { "" };
+                write!(f, "{expr} {not}{op} {pattern}")?;
+                if let Some(escape) = escape_char {
+                    write!(f, " ESCAPE {escape}")?;
+                }
+                Ok(())
+            }
             Expr::IsNormalized {
                 expr,
                 form,
@@ -2758,6 +2762,17 @@ impl fmt::Display for NullTreatment {
             NullTreatment::RespectNulls => "RESPECT NULLS",
         })
     }
+}
+
+/// Position of an external null treatment relative to grouping and FILTER.
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum FunctionNullTreatment {
+    /// Immediately after the argument list, before WITHIN or FILTER.
+    AfterArguments(NullTreatment),
+    /// After WITHIN and FILTER, before OVER.
+    AfterFilter(NullTreatment),
 }
 
 /// Specifies [WindowFrame]'s `start_bound` and `end_bound`
@@ -8643,6 +8658,8 @@ pub struct Function {
     /// The arguments to the function, including any options specified within the
     /// delimiting parentheses.
     pub args: FunctionArguments,
+    /// Distinct keys in WITHIN DISTINCT, before WITHIN GROUP.
+    pub within_distinct: Vec<Expr>,
     /// A clause used with certain aggregate functions to control the ordering
     /// within grouped sets before the function is applied.
     ///
@@ -8661,7 +8678,7 @@ pub struct Function {
     /// ```
     ///
     /// [Snowflake](https://docs.snowflake.com/en/sql-reference/functions/first_value)
-    pub null_treatment: Option<NullTreatment>,
+    pub null_treatment: Option<FunctionNullTreatment>,
     /// The `OVER` clause, indicating a window function call.
     pub over: Option<WindowType>,
 }
@@ -8674,6 +8691,16 @@ impl fmt::Display for Function {
 
         write!(f, "{}{}{}", self.name, self.parameters, self.args)?;
 
+        if let Some(FunctionNullTreatment::AfterArguments(treatment)) = self.null_treatment {
+            write!(f, " {treatment}")?;
+        }
+        if !self.within_distinct.is_empty() {
+            write!(
+                f,
+                " WITHIN DISTINCT ({})",
+                display_comma_separated(&self.within_distinct)
+            )?;
+        }
         if !self.within_group.is_empty() {
             write!(
                 f,
@@ -8686,7 +8713,7 @@ impl fmt::Display for Function {
             write!(f, " FILTER (WHERE {filter_cond})")?;
         }
 
-        if let Some(null_treatment) = &self.null_treatment {
+        if let Some(FunctionNullTreatment::AfterFilter(null_treatment)) = self.null_treatment {
             write!(f, " {null_treatment}")?;
         }
 

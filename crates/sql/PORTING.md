@@ -139,9 +139,9 @@ That class overrides inferred column nullability. The current build omits the
 override. The run retains both original failures. The parser also covers
 UNIQUE predicates, TRANSLATE character sets, JSON_OBJECT entries, FORMAT JSON
 encodings, EXPLAIN PLAN, DESCRIBE and qualified TABLE operands. Java parsed the
-formatted SQL into equivalent ASTs for all 8,571 frozen programs and 1,066 of
+formatted SQL into equivalent ASTs for all 8,571 frozen programs and 1,070 of
 2,136 adversarial grammar cases. Rust rejected all 1,061 Java rejections and
-refused nine additional Java acceptances. A separate 1,386-case comparison of
+refused five additional Java acceptances. A separate 1,386-case comparison of
 plan options, nested query and DML syntax, table names and keyword lookahead
 matched Java on every verdict and on the ASTs of all 721 accepted cases.
 Another 342 cases exercised scalar subqueries in function arguments, ROW, MAP,
@@ -151,8 +151,12 @@ declarations, including column attributes, interleaved constraints and string
 properties. All verdicts matched. Java parsed the formatted declarations into
 the original ASTs for all 212 accepted cases, including tables with a primary
 or foreign key before the first column or between two columns.
-Against the product compiler, 806 of the 1,061 shared rejections matched severity,
-error class, start and snippet together. The remaining 255 are open P5a differences.
+Two directed comparisons covered CTE cycle detection, aggregate modifier order,
+natural and cross joins, and pattern escape operands and aliases. Rust matched
+Java on all 242 and 231 verdicts, respectively. Java parsed the formatted output
+into equivalent ASTs for all 144 and 93 accepted cases.
+Against the product compiler, 808 of the 1,061 shared rejections matched severity,
+error class, start and snippet together. The remaining 253 are open P5a differences.
 [Diagnostic comparison](scripts/validate_syntax_diagnostics.py)
 
 An additional 161 parser cases exercised aggregate arguments, window exclusions,
